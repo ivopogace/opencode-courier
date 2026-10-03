@@ -2,6 +2,7 @@ import { Plugin } from "@opencode-ai/plugin"
 import { Schema } from "effect"
 import { randomUUID } from "node:crypto"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
+import { cleanup, inspectWorktree, type CleanupPorts, type CleanupResult } from "./cleanup.js"
 import { cancel, deliverDue, schedule, TICK_MS, type LaterPorts } from "./later.js"
 import { pruneExpired } from "./roster.js"
 
@@ -32,6 +33,15 @@ const ChildrenInput = Schema.Struct({
   ),
 })
 
+const CleanupInput = Schema.Struct({
+  sessionID: Schema.String.annotate({ description: "The isolated child whose worktree to remove." }),
+  force: Schema.optional(
+    Schema.Boolean.annotate({
+      description: "Remove it even with uncommitted changes or commits on no branch; that work is lost.",
+    }),
+  ),
+})
+
 const LaterInput = Schema.Struct({
   message: Schema.String.annotate({ description: "The message to deliver." }),
   delayMinutes: Schema.optional(
@@ -56,6 +66,13 @@ const rethrow =
     throw describeFailure(tool, error)
   }
 
+function describeCleanup(result: CleanupResult) {
+  if (result.outcome === "removed") return `Removed the worktree ${result.directory} of ${result.sessionID}.`
+  if (result.outcome === "gone")
+    return `The worktree ${result.directory} of ${result.sessionID} was already gone; dropped it from courier_children.`
+  return `Kept the worktree ${result.directory} of ${result.sessionID}: it has ${result.reason}. Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it.`
+}
+
 export default Plugin.define({
   id: "courier",
   setup: async (ctx) => {
@@ -65,6 +82,12 @@ export default Plugin.define({
       storage: ctx.storage,
       directory: ctx.location.directory,
       now: Date.now,
+    }
+    const cleanupPorts: CleanupPorts = {
+      storage: ctx.storage,
+      worktree: ctx.worktree,
+      directory: ctx.location.directory,
+      inspect: inspectWorktree,
     }
     const later: LaterPorts = {
       storage: ctx.storage,
@@ -132,6 +155,20 @@ export default Plugin.define({
             content: listed.length ? JSON.stringify(listed, null, 2) : "No sessions started with courier_spawn.",
             metadata: { children: listed },
           }
+        },
+      })
+
+      tools.add({
+        name: "courier_cleanup",
+        options: { codemode: false },
+        description:
+          "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, " +
+          "and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and " +
+          "the result lists them; commit or branch what you want, or pass force: true to discard it.",
+        input: CleanupInput,
+        execute: async (input, context) => {
+          const result = await cleanup(cleanupPorts, context.sessionID, input).catch(rethrow("courier_cleanup"))
+          return { content: describeCleanup(result), metadata: result }
         },
       })
 

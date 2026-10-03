@@ -24,7 +24,10 @@ async function setUp(stored: Record<string, unknown> = {}) {
       get: record("session.get", {}),
       context: record("session.context", []),
     },
-    worktree: { create: record("worktree.create", { directory: "/wt" }) },
+    worktree: {
+      create: record("worktree.create", { directory: "/wt" }),
+      remove: record("worktree.remove", undefined),
+    },
     storage: {
       get: async (key: string) => store.get(key),
       set: async (key: string, value: unknown) => void store.set(key, value),
@@ -48,7 +51,7 @@ async function setUp(stored: Record<string, unknown> = {}) {
 test("registers the courier tools", async () => {
   const { tools } = await setUp()
 
-  expect([...tools.keys()]).toEqual(["courier_spawn", "courier_send", "courier_status", "courier_children", "courier_later", "courier_cancel"])
+  expect([...tools.keys()]).toEqual(["courier_spawn", "courier_send", "courier_status", "courier_children", "courier_cleanup", "courier_later", "courier_cancel"])
 })
 
 test("registers them as direct tools, not code-mode ones only reachable through execute", async () => {
@@ -89,6 +92,20 @@ test("courier_children lists what courier_spawn started from the calling session
   expect(empty.metadata.children).toHaveLength(1)
   const none = await tools.get("courier_children").execute({}, { sessionID: "ses_x" })
   expect(none).toEqual({ content: "No sessions started with courier_spawn.", metadata: { children: [] } })
+})
+
+test("courier_cleanup reports the worktree of an isolated child that is already gone, and forgets it", async () => {
+  const { tools, store } = await setUp()
+
+  await tools.get("courier_spawn").execute({ task: "t", isolate: true }, { sessionID: "ses_parent" })
+  const result = await tools.get("courier_cleanup").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })
+
+  expect(result.metadata).toEqual({ sessionID: "ses_child", directory: "/wt", outcome: "gone" })
+  expect(result.content).toContain("already gone")
+  expect([...store.keys()].filter((key) => key.startsWith("roster/"))).toEqual([])
+  await expect(tools.get("courier_cleanup").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })).rejects.toThrow(
+    "courier_cleanup failed: ses_child is not on the courier_children list of ses_parent.",
+  )
 })
 
 test("courier_send signs the message with the calling session", async () => {

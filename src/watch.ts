@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { envelope } from "./courier.js"
+import { formShown } from "./question.js"
 import { permissionNotice, settledNotice, type PermissionAsked, type PermissionReplied, type Waiting } from "./relay.js"
 import { allEntries, entriesOf, lineage, type RosterEntry, type RosterStorage } from "./roster.js"
 
@@ -157,12 +158,15 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "permission.asked") return reportAsked(ports, state, event as unknown as PermissionAsked)
   if (event.type === "permission.replied") return reportReplied(ports, state, event as unknown as PermissionReplied)
+  // Not claimed: every instance may resolve the same waiting call, which is harmless.
+  if (event.type === "form.created") formShown(event as unknown as Parameters<typeof formShown>[0])
   return []
 }
 
 /**
  * Follows OpenCode's events until `signal` aborts, telling parents when a spawned child's turn
- * fails, when it waits for a permission and when that request is answered without them.
+ * fails, when it waits for a permission and when that request is answered without them, and
+ * noting the question forms shown, which the question relay waits for.
  */
 export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
   while (!signal.aborted) {

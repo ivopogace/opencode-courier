@@ -1,11 +1,14 @@
 import { Plugin } from "@opencode-ai/plugin"
-import { Schema } from "effect"
+import { Plugin as EffectPlugin } from "@opencode-ai/plugin/effect"
+import { fromPromise } from "@opencode-ai/plugin/promise/adapter"
+import { Effect, Schema } from "effect"
 import { randomUUID } from "node:crypto"
 import type { Server } from "node:http"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
 import { cleanup, headOf, inspectWorktree, type CleanupPorts, type CleanupResult } from "./cleanup.js"
 import { cancel, deliverDue, schedule, TICK_MS, type LaterPorts } from "./later.js"
 import { answer, pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
+import { answerQuestion, isQuestion, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
 import { pruneExpired } from "./roster.js"
 import { watchChildren, type WatchState } from "./watch.js"
 import { listen, readConfig, subscribe, unsubscribe, type WebhookConfig, type WebhookPorts } from "./webhook.js"
@@ -62,11 +65,20 @@ const LaterInput = Schema.Struct({
 const AnswerInput = Schema.Struct({
   sessionID: Schema.String.annotate({ description: "The session you started that is waiting, as its notice names it." }),
   requestID: Schema.String.annotate({ description: "The request id from the notice." }),
-  reply: Schema.Literals(["once", "always", "reject"]).annotate({
-    description: "The choice the person made: once, always (only when the notice offers it) or reject.",
-  }),
+  reply: Schema.optional(
+    Schema.Literals(["once", "always", "reject"]).annotate({
+      description: "For a permission request: the choice the person made, once, always (only when the notice offers it) or reject.",
+    }),
+  ),
   message: Schema.optional(
-    Schema.String.annotate({ description: "With reject, the person's reason, passed on with the refusal." }),
+    Schema.String.annotate({ description: "For a permission request, with reject: the person's reason, passed on with the refusal." }),
+  ),
+  answers: Schema.optional(
+    Schema.Array(Schema.Union([Schema.String, Schema.Array(Schema.String)])).annotate({
+      description:
+        "For a question: one entry per question, in order, each the label the person chose or the text they gave, " +
+        "or a list of labels where the question allows several.",
+    }),
   ),
 })
 
@@ -189,21 +201,40 @@ function describeCleanup(result: CleanupResult) {
   return `Kept the worktree ${result.directory} of ${result.sessionID}: it has ${result.reason}. Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it.`
 }
 
-function describeAnswer(result: Awaited<ReturnType<typeof answer>>) {
+const END_TURN = "If nothing else is left to do now, end your turn by replying without calling more tools."
+
+function describeAnswer(result: Awaited<ReturnType<typeof answer>> | Awaited<ReturnType<typeof answerQuestion>>) {
+  const kind = isQuestion(result.requestID) ? "question" : "request"
   if (!result.answered)
     return (
-      `${result.sessionID} no longer waits on request ${result.requestID}: it was answered some other way, or the ` +
+      `${result.sessionID} no longer waits on ${kind} ${result.requestID}: it was answered some other way, or the ` +
       "session stopped waiting. Nothing was passed on; tell the person their answer is not needed."
     )
-  return (
-    `Passed on ${result.reply} for request ${result.requestID} of ${result.sessionID}, which carries on and reports ` +
-    "back with courier_send. If nothing else is left to do now, end your turn by replying without calling more tools."
-  )
+  if ("reply" in result)
+    return `Passed on ${result.reply} for request ${result.requestID} of ${result.sessionID}, which carries on and reports back with courier_send. ${END_TURN}`
+  const how = "by" in result && result.by === "message" ? " as a message, since its question had been cut off" : ""
+  return `Passed the answers to question ${result.requestID} on to ${result.sessionID}${how}; it carries on and reports back with courier_send. ${END_TURN}`
 }
 
-export default Plugin.define({
+/** What a question relay needs from the plugin instance that wraps the question tool. */
+export interface RelaySlot {
+  ports?: QuestionPorts
+}
+
+/**
+ * The courier tools, scheduler, webhook receiver and event watcher, as a promise plugin. `relay`
+ * receives this instance's ports for the question relay while it is loaded.
+ */
+export const courier = (relay: RelaySlot = {}) => Plugin.define({
   id: "courier",
   setup: async (ctx) => {
+    const questionPorts: QuestionPorts = {
+      storage: ctx.storage,
+      session: ctx.session,
+      now: Date.now,
+      newID: () => `question_${randomUUID()}`,
+      log: (message) => console.error(message),
+    }
     const ports: CourierPorts = {
       session: ctx.session,
       agent: ctx.agent,
@@ -212,10 +243,35 @@ export default Plugin.define({
       directory: ctx.location.directory,
       now: Date.now,
       head: headOf,
-      pending: (sessionID) => pendingOf(permissions(), sessionID),
+      pending: async (sessionID) => {
+        const [requests, questions] = await Promise.all([
+          pendingOf(permissions(), sessionID),
+          pendingQuestions(ctx.storage, sessionID),
+        ])
+        return [...requests, ...questions]
+      },
     }
     const cleanupPorts: CleanupPorts = { ...ports, inspect: inspectWorktree }
     const answerPorts: AnswerPorts = { storage: ctx.storage, permissions }
+    // One tool answers both: a question's id is the plugin's own, a permission request's OpenCode's.
+    const answerRequest = async (callerID: string, input: typeof AnswerInput.Type) => {
+      const { sessionID, requestID } = input
+      if (isQuestion(requestID)) {
+        if (input.reply !== undefined || input.message !== undefined)
+          throw new Error(`${requestID} is a question: pass the person's answers in answers, not reply or message.`)
+        if (input.answers === undefined) throw new Error(`${requestID} is a question: answers is required, one entry per question.`)
+        return answerQuestion(questionPorts, callerID, { sessionID, requestID, answers: input.answers })
+      }
+      if (input.answers !== undefined)
+        throw new Error(`${requestID} is a permission request: pass the person's choice in reply (once, always or reject), not answers.`)
+      if (input.reply === undefined) throw new Error(`${requestID} is a permission request: reply is required, once, always or reject.`)
+      return answer(answerPorts, watched.waiting, callerID, {
+        sessionID,
+        requestID,
+        reply: input.reply,
+        ...(input.message !== undefined ? { message: input.message } : {}),
+      })
+    }
     const later: LaterPorts = {
       storage: ctx.storage,
       session: ctx.session,
@@ -237,8 +293,8 @@ export default Plugin.define({
         options: { codemode: false },
         description:
           "Start a new OpenCode session on a task and return immediately. It runs on your model. The session reports " +
-          "back with courier_send, which wakes this session, and you are told if its turn fails instead or it waits for a " +
-          "permission. DO NOT poll it or call courier_status in a loop: once you have started the sessions " +
+          "back with courier_send, which wakes this session, and you are told if its turn fails instead, it waits for a " +
+          "permission or it asks a question. DO NOT poll it or call courier_status in a loop: once you have started the sessions " +
           "you need, end your turn by replying without calling more tools; each report starts a new turn in which you " +
           "carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and " +
           "courier_cancel it when it does.",
@@ -316,13 +372,14 @@ export default Plugin.define({
         name: "courier_answer",
         options: { codemode: false },
         description:
-          "Pass on the answer to a permission request that a session you started with courier_spawn (or one started " +
-          "from it) waits on, after a notice from it named the request. The answer is the person's, not yours: first ask the person you are " +
-          "working with, offering the choices the notice lists, then call this with the one they chose. Never choose " +
-          "for them. The session carries on once it has the answer.",
+          "Pass on the answer to a permission request or a question that a session you started with courier_spawn (or " +
+          "one started from it) waits on, after a notice from it named the request. The answer is the person's, not yours: " +
+          "first ask the person you are working with, offering the choices the notice lists, then call this with what " +
+          "they chose: reply for a permission request, answers for a question. Never choose for them. The session " +
+          "carries on once it has the answer.",
         input: AnswerInput,
         execute: async (input, context) => {
-          const result = await answer(answerPorts, watched.waiting, context.sessionID, input).catch(rethrow("courier_answer"))
+          const result = await answerRequest(context.sessionID, input).catch(rethrow("courier_answer"))
           return { content: describeAnswer(result), metadata: result }
         },
       })
@@ -405,6 +462,8 @@ export default Plugin.define({
     })
 
     void pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => console.error(`courier roster prune: ${String(error)}`))
+    relay.ports = questionPorts
+    void noticeCutOff(questionPorts).catch((error: unknown) => questionPorts.log(`courier question: stored questions: ${String(error)}`))
 
     let ticking = false
     const tick = async () => {
@@ -429,7 +488,25 @@ export default Plugin.define({
       clearInterval(timer)
       watching.abort()
       locations.delete(location)
+      if (relay.ports === questionPorts) relay.ports = undefined
       await leave?.()
     }
   },
+})
+
+/**
+ * The plugin OpenCode loads. It is an Effect plugin, because the question relay wraps OpenCode's own
+ * question tool, whose execute the promise API hands out only as a promise that cannot be
+ * interrupted, so a child's question could not be withdrawn once its parent answered. Everything
+ * else is the promise plugin above, run through the plugin package's own adapter, as OpenCode runs
+ * a promise plugin.
+ */
+export default EffectPlugin.define({
+  id: "courier",
+  effect: (host) =>
+    Effect.gen(function* () {
+      const relay: RelaySlot = {}
+      yield* fromPromise(courier(relay)).effect(host)
+      yield* relayQuestions(host, () => relay.ports)
+    }),
 })

@@ -74,8 +74,8 @@ for HTTP deliveries and turns them into messages for subscribed sessions:
 - `POST /hook/<name>` takes anything else, for sessions subscribed to `<name>`. A JSON body's
   `text`, `summary` or `message` field is delivered, otherwise the body itself.
 
-Every delivery must carry an `X-Hub-Signature-256` header: `sha256=` followed by the hex
-HMAC-SHA256 under the shared secret. For GitHub that is of the raw body, as GitHub sends it. For
+Every delivery must carry an `X-Hub-Signature-256` header: `sha256=` followed by exactly 64 hex
+digits, the HMAC-SHA256 under the shared secret. For GitHub that is of the raw body, as GitHub sends it. For
 `/hook/<name>` it is of the name, a newline and the body, so a captured delivery cannot be sent to
 another topic:
 
@@ -86,8 +86,10 @@ curl -X POST -H "x-hub-signature-256: sha256=$sig" --data-binary "$body" http://
 
 A missing or wrong signature gets `401`, and the body is not parsed. The check is constant-time.
 Bodies over 1 MiB (`maxBytes`) get `413`. A delivered event gets `202`, with the number of
-sessions it reached, which can be 0. The last 1000 accepted signatures are remembered in memory, and
-a delivery whose signature was already accepted gets `200 already delivered`. That stops replays of
+sessions it reached, which can be 0. The digests of the last 1000 accepted deliveries are remembered in
+memory (as lowercase hex, so re-casing the header does not get around it), and a delivery already
+accepted gets `200 already delivered`. One that reached nobody because every delivery to a session
+failed is forgotten again, so it can be retried. That stops replays of
 a captured delivery, and it also means a GitHub Redeliver of a delivery that already arrived is
 ignored. Redelivering one that failed works. Generic senders that post the same text twice should
 add something unique, such as a timestamp, to the body.

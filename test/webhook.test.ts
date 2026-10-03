@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
+  checkSignature,
   defuse,
   dispatch,
   genericEvent,
@@ -16,7 +17,6 @@ import {
   subscribe,
   subscriptions,
   unsubscribe,
-  verifySignature,
   type WebhookPorts,
 } from "../src/webhook.js"
 
@@ -61,7 +61,10 @@ const githubRequest = (body: string, headers: Record<string, string> = {}) => ({
   body: Buffer.from(body),
 })
 
-describe("verifySignature", () => {
+const verifySignature = (secret: string, body: Uint8Array, header: string | undefined) =>
+  checkSignature(secret, body, header) !== undefined
+
+describe("checkSignature", () => {
   // The example from GitHub's "Validating webhook deliveries" documentation.
   test("accepts GitHub's documented example", () => {
     const header = "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17"
@@ -79,7 +82,8 @@ describe("verifySignature", () => {
     expect(verifySignature(SECRET, body, `${good}zz`)).toBe(false)
     expect(verifySignature(SECRET, body, `${good}0`)).toBe(false)
     expect(verifySignature(SECRET, body, ` ${good}`)).toBe(false)
-    expect(verifySignature(SECRET, body, good.toUpperCase().replace("SHA256=", "sha256="))).toBe(true)
+    expect(checkSignature(SECRET, body, good.toUpperCase().replace("SHA256=", "sha256="))).toBe(good.slice(7))
+    expect(verifySignature(SECRET, body, good.replace("sha256=", "SHA256="))).toBe(false)
     expect(verifySignature("another secret", body, good)).toBe(false)
     expect(verifySignature(SECRET, Buffer.from("Hello, World?"), good)).toBe(false)
   })
@@ -196,7 +200,10 @@ describe("subscriptions", () => {
     const gone = fakePorts({ missing: "ses_old" })
     for (const [key, value] of store) gone.store.set(key, value)
 
-    expect(await dispatch(gone.ports, { source: "github", name: "push", topics: ["github:o/r", "github:o/r#2"], summary: "s" })).toBe(0)
+    expect(await dispatch(gone.ports, { source: "github", name: "push", topics: ["github:o/r", "github:o/r#2"], summary: "s" })).toEqual({
+      delivered: 0,
+      failed: 0,
+    })
     expect((await subscriptions(gone.ports)).map((item) => item.topic)).toEqual(["deploys"])
     expect(gone.logs[0]).toContain("ses_old no longer exists; dropped its subscriptions to github:o/r, github:o/r#2")
     expect(logs).toEqual([])
@@ -221,7 +228,7 @@ describe("subscriptions", () => {
 
     const count = await dispatch(ports, { source: "github", name: "pull_request", topics: ["github:o/r", "github:o/r#2"], summary: "s" }, "d-1")
 
-    expect(count).toBe(1)
+    expect(count).toEqual({ delivered: 1, failed: 1 })
     expect(delivered).toHaveLength(1)
     expect(delivered[0]).toMatchObject({ sessionID: "ses_a", delivery: "queue", metadata: { from: "github", event: "pull_request", delivery: "d-1" } })
     expect(delivered[0].text).toStartWith('<courier from="github" event="pull_request" delivery="d-1">\ns\n')
@@ -254,6 +261,20 @@ describe("receive", () => {
     expect(delivered).toHaveLength(1)
   })
 
+  test("a delivery that reached nobody because of failures can be retried", async () => {
+    const { ports, delivered } = fakePorts({ failFor: "ses_busy" })
+    await subscribe(ports, "ses_busy", "Codertocat/Hello-World")
+    const seen = new Seen()
+    const request = githubRequest(review, { "x-hub-signature-256": sign(SECRET, review) })
+
+    expect(await receive(ports, SECRET, request, seen)).toEqual({ status: 202, body: "delivered to 0 session(s)" })
+    expect(seen.has(sign(SECRET, review).slice(7))).toBe(false)
+    await subscribe(ports, "ses_ok", "Codertocat/Hello-World")
+    expect(await receive(ports, SECRET, request, seen)).toEqual({ status: 202, body: "delivered to 1 session(s)" })
+    expect(delivered.map((item) => item.sessionID)).toEqual(["ses_ok"])
+    expect(seen.has(sign(SECRET, review).slice(7))).toBe(true)
+  })
+
   test("a replay with the signature re-cased or padded is not delivered again either", async () => {
     const { ports, delivered } = fakePorts()
     await subscribe(ports, "ses_parent", "Codertocat/Hello-World")
@@ -263,7 +284,7 @@ describe("receive", () => {
 
     expect((await send(`sha256=${hex}`)).status).toBe(202)
     expect(await send(`sha256=${hex.toUpperCase()}`)).toEqual({ status: 200, body: "already delivered" })
-    expect(await send(`SHA256=${hex}`)).toEqual({ status: 200, body: "already delivered" })
+    expect((await send(`SHA256=${hex}`)).status).toBe(401)
     expect((await send(`sha256=${hex}zz`)).status).toBe(401)
     expect((await send(`sha256=${hex}00`)).status).toBe(401)
     expect((await send(`sha256=${hex} `)).status).toBe(401)
@@ -280,7 +301,7 @@ describe("receive", () => {
     expect(delivered).toHaveLength(0)
   })
 
-  test("Seen forgets the oldest signatures past its limit", () => {
+  test("Seen forgets the oldest digests past its limit", () => {
     const seen = new Seen(2)
     for (const item of ["a", "b", "c"]) seen.add(item)
     expect([seen.has("a"), seen.has("b"), seen.has("c")]).toEqual([false, true, true])

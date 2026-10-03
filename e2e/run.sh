@@ -177,10 +177,15 @@ woke=$(reply_time "$parent" "PARENT WOKE" 5)
 check "neither woke the session" "$([ -z "$woke" ] && echo true || echo false)"
 check "a signed delivery is accepted" "$([ "$(hook -H "x-hub-signature-256: $signature")" = 202 ] && echo true || echo false)"
 check "a replay of it is ignored" "$([ "$(hook -H "x-hub-signature-256: $signature")" = 200 ] && echo true || echo false)"
+check "a replay with the signature upper-cased is ignored too" \
+  "$([ "$(hook -H "x-hub-signature-256: sha256=$(tr a-f A-F <<<"${signature#sha256=}")")" = 200 ] && echo true || echo false)"
+check "a replay with junk after the signature is refused" "$([ "$(hook -H "x-hub-signature-256: ${signature}zz")" = 401 ] && echo true || echo false)"
 woke=$(reply_time "$parent" "PARENT WOKE")
 check "it started a new turn after the session's had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
 summary=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] | join("")')
 check "the turn got the event summary" "$([[ $summary == *"changes_requested"* && $summary == *"Hello-World#2"* ]] && echo true || echo false)"
+check "the session got the event exactly once" \
+  "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic")] | length == 1')"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed; rerun with KEEP=1 to keep the server and model logs"

@@ -100,7 +100,7 @@ function hmac(secret: string, body: string | Uint8Array, name?: string) {
   return mac.update(body).digest()
 }
 
-const SIGNATURE = /^sha256=([0-9a-f]{64})$/i
+const SIGNATURE = /^sha256=([0-9a-fA-F]{64})$/
 
 /**
  * Checks an `X-Hub-Signature-256` header (`sha256=` and exactly 64 hex digits) in constant time and
@@ -110,13 +110,9 @@ const SIGNATURE = /^sha256=([0-9a-f]{64})$/i
 export function checkSignature(secret: string, body: Uint8Array, header: string | undefined, name?: string) {
   const hex = header?.match(SIGNATURE)?.[1]
   if (!hex) return undefined
-  const given = Buffer.from(hex, "hex")
+  // SIGNATURE admits exactly 64 hex digits, so both sides are 32 bytes, as timingSafeEqual needs.
   const expected = hmac(secret, body, name)
-  return given.length === expected.length && timingSafeEqual(given, expected) ? expected.toString("hex") : undefined
-}
-
-export function verifySignature(secret: string, body: Uint8Array, header: string | undefined, name?: string) {
-  return checkSignature(secret, body, header, name) !== undefined
+  return timingSafeEqual(Buffer.from(hex, "hex"), expected) ? expected.toString("hex") : undefined
 }
 
 /** The `X-Hub-Signature-256` value for a body; give the topic name for `/hook/<name>`. */
@@ -245,6 +241,7 @@ export async function dispatch(ports: WebhookPorts, event: Event, delivery?: str
   const subscribed = (await Promise.all(event.topics.map((topic) => subscriptions(ports, topic)))).flat()
   const sessions = new Set(subscribed.map((item) => item.sessionID))
   let delivered = 0
+  let failed = 0
   for (const sessionID of sessions) {
     await ports.session
       .synthetic({
@@ -259,13 +256,16 @@ export async function dispatch(ports: WebhookPorts, event: Event, delivery?: str
       })
       .then(() => delivered++)
       .catch(async (error: unknown) => {
-        if (!isNotFound(error)) return ports.log(`courier webhook: ${event.name} not delivered to ${sessionID}: ${String(error)}`)
+        if (!isNotFound(error)) {
+          failed++
+          return ports.log(`courier webhook: ${event.name} not delivered to ${sessionID}: ${String(error)}`)
+        }
         const gone = subscribed.filter((item) => item.sessionID === sessionID)
         for (const item of gone) await ports.storage.remove(keyOf(item.sessionID, item.topic))
         ports.log(`courier webhook: ${sessionID} no longer exists; dropped its subscriptions to ${gone.map((item) => item.topic).join(", ")}`)
       })
   }
-  return delivered
+  return { delivered, failed }
 }
 
 export interface Request {
@@ -289,12 +289,15 @@ const header = (request: Request, name: string) => {
 export class Seen {
   private readonly items = new Set<string>()
   constructor(private readonly limit = REMEMBERED) {}
-  has(signature: string) {
-    return this.items.has(signature)
+  has(digest: string) {
+    return this.items.has(digest)
   }
-  add(signature: string) {
-    this.items.add(signature)
+  add(digest: string) {
+    this.items.add(digest)
     if (this.items.size > this.limit) this.items.delete(this.items.values().next().value!)
+  }
+  delete(digest: string) {
+    this.items.delete(digest)
   }
 }
 
@@ -333,9 +336,15 @@ export async function receive(ports: WebhookPorts, secret: string, request: Requ
     event = githubEvent(name, payload)
     if (!event) return { status: 200, body: `ignored ${name}` }
   }
+  // Marked before dispatching, so a concurrent replay is refused, and unmarked if the delivery
+  // reached nobody it was meant for, so a retry or a GitHub Redeliver can still get through.
   seen.add(digest)
   const delivery = header(request, "x-github-delivery")?.replace(/[^\w-]/g, "").slice(0, 64) || undefined
-  const delivered = await dispatch(ports, event, delivery)
+  const { delivered, failed } = await dispatch(ports, event, delivery).catch((error: unknown) => {
+    seen.delete(digest)
+    throw error
+  })
+  if (failed > 0 && delivered === 0) seen.delete(digest)
   ports.log(`courier webhook: ${event.source} ${event.name}${delivery ? ` ${delivery}` : ""} delivered to ${delivered} session(s)`)
   return { status: 202, body: `delivered to ${delivered} session(s)` }
 }

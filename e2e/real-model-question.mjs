@@ -163,8 +163,9 @@ writeFileSync(join(work, "timeline.txt"), `${timeline}\n`)
 console.log(timeline)
 
 const question = toolsOf(childMessages).find((part) => part.name === "question")
-const afterPerson = parent.filter((message) => message.type === "assistant" && message.time.created >= personAt)
-const passedOn = toolsOf(afterPerson).filter(
+// Over the whole transcript: the parent's own question call starts before the person answers it, and
+// a courier_answer before that already fails "did not answer by itself".
+const passedOn = toolsOf(parent).filter(
   (part) =>
     (part.name === "question" && metadataOf(part).passed === true) ||
     (part.name === "courier_answer" && part.state.status === "completed" && metadataOf(part).answered === true) ||
@@ -187,7 +188,8 @@ const checks = [
 const notes = [`the child asked with: ${route}`, `the parent ${how}`]
 if (route === "question tool") {
   notes.push(`the parent was ${notice ? "" : "not "}told with a question notice`)
-  notes.push(`the child's question call ended ${question?.state.status}: ${short(question?.state.output ?? question?.state.error ?? "", 200)}`)
+  const result = question?.state.content?.map((part) => part.text ?? "").join("") || question?.state.error || ""
+  notes.push(`the child's question call ended ${question?.state.status}: ${short(result, 200)}`)
 }
 notes.push(`passed on with: ${[...new Set(passedOn.map((part) => (part.name === "question" ? "the linked question" : part.name)))].join(", ") || "nothing"}`)
 if (personAt !== Infinity && report) notes.push(`from the person's answer to the child's report: ${Math.round((report.time.created - personAt) / 1000)} s`)

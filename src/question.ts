@@ -321,6 +321,8 @@ async function relay(ports: QuestionPorts, question: Question) {
 
 /** After a relayed call ended: tidies up, and tells the top session if it was settled without it. */
 async function settle(ports: QuestionPorts, question: Question, exit: Exit.Exit<{ by: "child"; result: ToolResult } | { by: "top" }, unknown>) {
+  const outcome = Exit.isSuccess(exit) ? `answered by ${exit.value.by}` : isDismissal(exit.cause) ? "dismissed" : Exit.hasInterrupts(exit) ? "interrupted" : "failed"
+  ports.log(`courier question: ${question.requestID} of ${question.sessionID}: call ended, ${outcome}${question.link ? ", linked" : ""}`)
   // Answered through the top session, which took it off the list, or never relayed at all.
   if (shared.questions.get(question.requestID) !== question) {
     await ports.storage.remove(keyOf(question.requestID))
@@ -444,6 +446,9 @@ function linking(ports: () => QuestionPorts | undefined, ask: Execute): Execute 
           Effect.promise(async () => {
             if (linked.link === settled) linked.link = undefined
             if (Exit.isSuccess(exit)) return
+            current.log(
+              `courier question: ${linked.requestID}: the linked call of ${context.sessionID} ended, ${isDismissal(exit.cause) ? "dismissed" : Exit.hasInterrupts(exit) ? "interrupted" : "failed"}`,
+            )
             try {
               // Dismissed by the person: so is the question they were asked for.
               if (isDismissal(exit.cause)) await deliver(current, linked, { dismissed: true })

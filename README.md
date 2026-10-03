@@ -299,6 +299,24 @@ If staging fails, nothing reached npm and the version is still free. Re-running 
 workflow file at the tag, so after fixing `release.yml` move the tag to the fixed commit instead:
 `git push origin :refs/tags/vX.Y.Z`, then tag and push again.
 
+**npm cannot use trusted publishing for this repository yet.** The registry rejects the immutable
+OIDC subject claims GitHub issues for repositories created after 2026-07-15
+([npm/cli#9969](https://github.com/npm/cli/issues/9969)), so `release.yml` fails at Stage with
+`OIDC token exchange error - package not found` in its verbose log, although the claims it prints
+match the trusted publisher. Until npm fixes this, stage by hand from the tag, still without a
+stored token (npm 11.15.0 or later, Node 22.14 or later):
+
+```bash
+git checkout vX.Y.Z
+npm install && npm run build
+npm login
+npm stage publish --access public   # add --tag next for a prerelease
+```
+
+Approve the staged version with 2FA as above, then create the release:
+`gh release create vX.Y.Z --verify-tag --generate-notes` (add `--prerelease` for a prerelease). A
+version staged by hand has no provenance attestation.
+
 A prerelease version (`1.2.0-beta.1`) is staged for the `next` dist-tag and its release is marked
 as a prerelease.
 

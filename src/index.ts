@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { randomUUID } from "node:crypto"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
 import { cancel, deliverDue, schedule, TICK_MS, type LaterPorts } from "./later.js"
+import { pruneExpired } from "./roster.js"
 
 const SpawnInput = Schema.Struct({
   task: Schema.String.annotate({ description: "What the new session should do. It is told who started it and how to report back." }),
@@ -84,8 +85,9 @@ export default Plugin.define({
         input: SpawnInput,
         execute: async (input, context) => {
           const child = await spawn(ports, context.sessionID, input).catch(rethrow("courier_spawn"))
+          const warning = child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : ""
           return {
-            content: `Started session ${child.sessionID} in ${child.directory}. It will report back with courier_send.`,
+            content: `Started session ${child.sessionID} in ${child.directory}. It will report back with courier_send.${warning}`,
             metadata: child,
           }
         },
@@ -125,7 +127,7 @@ export default Plugin.define({
           "compaction or restart. Like courier_status, for a one-off look, not for waiting.",
         input: ChildrenInput,
         execute: async (input, context) => {
-          const listed = await listChildren(ports, input.sessionID ?? context.sessionID).catch(rethrow("courier_children"))
+          const listed = await listChildren(ports, input.sessionID || context.sessionID).catch(rethrow("courier_children"))
           return {
             content: listed.length ? JSON.stringify(listed, null, 2) : "No sessions started with courier_spawn.",
             metadata: { children: listed },
@@ -165,6 +167,8 @@ export default Plugin.define({
         },
       })
     })
+
+    void pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => console.error(`courier roster prune: ${String(error)}`))
 
     let ticking = false
     const tick = async () => {

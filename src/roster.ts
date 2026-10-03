@@ -1,8 +1,6 @@
-import type { Plugin } from "@opencode-ai/plugin"
+import { scanAll, type Storage } from "./storage.js"
 
-type Context = Plugin.Context
-
-/** Entries older than this are dropped the next time their parent's roster is read. */
+/** Entries older than this are dropped when their parent's roster is read, and on plugin setup. */
 export const RETENTION_MS = 14 * 24 * 60 * 60_000
 
 const PREFIX = "roster/"
@@ -17,7 +15,7 @@ export interface RosterEntry {
   readonly createdAt: number
 }
 
-export type RosterStorage = Pick<Context["storage"], "get" | "set" | "remove" | "scan">
+export type RosterStorage = Storage
 
 export function rosterKey(parentID: string, sessionID: string) {
   return `${PREFIX}${parentID}/${sessionID}`
@@ -37,22 +35,23 @@ export async function forget(storage: RosterStorage, parentID: string, sessionID
 
 /** A parent's children, oldest first. */
 export async function children(storage: RosterStorage, parentID: string) {
-  const entries: RosterEntry[] = []
-  let after: string | undefined
-  do {
-    const page = await storage.scan({ prefix: `${PREFIX}${parentID}/`, ...(after ? { after } : {}) })
-    for (const entry of page.entries) entries.push(entry.value as unknown as RosterEntry)
-    after = page.next
-  } while (after)
+  const entries = await scanAll<RosterEntry>(storage, `${PREFIX}${parentID}/`)
   return entries.sort((a, b) => a.createdAt - b.createdAt)
 }
 
-/** A parent's children after dropping those recorded more than `RETENTION_MS` before `now`. */
+/** Removes the given entries that were recorded more than `RETENTION_MS` before `now`, and returns the rest. */
+async function dropExpired(storage: RosterStorage, entries: RosterEntry[], now: number) {
+  const expired = entries.filter((entry) => now - entry.createdAt > RETENTION_MS)
+  await Promise.all(expired.map((entry) => storage.remove(rosterKey(entry.parentID, entry.sessionID))))
+  return entries.filter((entry) => !expired.includes(entry))
+}
+
+/** A parent's children, oldest first, after dropping the expired ones. */
 export async function current(storage: RosterStorage, parentID: string, now: number) {
-  const kept: RosterEntry[] = []
-  for (const entry of await children(storage, parentID)) {
-    if (now - entry.createdAt > RETENTION_MS) await storage.remove(rosterKey(parentID, entry.sessionID))
-    else kept.push(entry)
-  }
-  return kept
+  return dropExpired(storage, await children(storage, parentID), now)
+}
+
+/** Drops expired entries of every parent, so parents that never list their children don't keep them forever. */
+export async function pruneExpired(storage: RosterStorage, now: number) {
+  await dropExpired(storage, await scanAll<RosterEntry>(storage, PREFIX), now)
 }

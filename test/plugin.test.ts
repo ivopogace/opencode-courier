@@ -85,6 +85,8 @@ test("courier_children lists what courier_spawn started from the calling session
   expect(own.content).toContain("ses_child")
   const other = await tools.get("courier_children").execute({ sessionID: "ses_parent" }, { sessionID: "ses_x" })
   expect(other.metadata.children).toHaveLength(1)
+  const empty = await tools.get("courier_children").execute({ sessionID: "" }, { sessionID: "ses_parent" })
+  expect(empty.metadata.children).toHaveLength(1)
   const none = await tools.get("courier_children").execute({}, { sessionID: "ses_x" })
   expect(none).toEqual({ content: "No sessions started with courier_spawn.", metadata: { children: [] } })
 })

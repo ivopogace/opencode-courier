@@ -73,6 +73,18 @@ describe("spawn", () => {
     })
   })
 
+  test("still prompts the child when the roster cannot be written, and says so", async () => {
+    const { ports, calls } = fakePorts()
+    ;(ports.storage as any).set = async () => {
+      throw new Error("disk full")
+    }
+
+    const child = await spawn(ports, "ses_parent", { task: "t" })
+
+    expect(calls.map((call) => call.method)).toEqual(["session.create", "session.prompt"])
+    expect(child).toEqual({ sessionID: "ses_child", directory: "/repo", rosterError: "roster failed: disk full" })
+  })
+
   test("passes the agent and title through", async () => {
     const { ports, calls } = fakePorts()
 

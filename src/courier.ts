@@ -69,17 +69,25 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
     ...(directory ? { location: { directory } } : {}),
     metadata: { courier: { parentID } },
   })
-  // Recorded before the prompt, so a child that exists is on the roster even if prompting fails.
-  await record(ports.storage, {
+  // Recorded before the prompt, so a child that exists is on the roster even if prompting fails. A
+  // failed write must not keep the child from its task, so it is reported instead of thrown.
+  const rosterError = await record(ports.storage, {
     sessionID: child.id,
     parentID,
     title,
     directory: directory ?? child.location.directory,
     isolated: directory !== undefined,
     createdAt: ports.now(),
-  })
+  }).then(
+    () => undefined,
+    (error: unknown) => describeFailure("roster", error).message,
+  )
   await ports.session.prompt({ sessionID: child.id, text: childBrief(parentID, input.task) })
-  return { sessionID: child.id, directory: directory ?? child.location.directory }
+  return {
+    sessionID: child.id,
+    directory: directory ?? child.location.directory,
+    ...(rosterError ? { rosterError } : {}),
+  }
 }
 
 /** Drops a message into another session's inbox; OpenCode wakes that session if it is idle. */

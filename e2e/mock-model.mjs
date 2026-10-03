@@ -27,7 +27,9 @@ function decide(body) {
     const scheduled = result.match(/Scheduled (later_[\w-]+)/)
     if (call?.function?.name === "courier_later" && prompt.includes("COURIER-LATER-CANCEL") && scheduled)
       return { tool: "courier_cancel", args: { id: scheduled[1] } }
-    if (call?.function?.name === "courier_spawn" && prompt.includes("COURIER-ROSTER")) {
+    // Any user message, not just the last: a child's report may already have been steered in.
+    const roster = messages.some((message) => message.role === "user" && textOf(message.content).includes("COURIER-ROSTER"))
+    if (call?.function?.name === "courier_spawn" && roster) {
       const spawned = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_spawn")
       return spawned.length < 2 ? spawnChild(false) : { tool: "courier_children", args: {} }
     }

@@ -41,8 +41,9 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 `courier_spawn` records each child under its parent in the plugin's storage, so a parent that has
 lost track after a compaction or a server restart can call `courier_children` to find them again.
 A child that can no longer be looked up is still listed, with the error instead of its state.
-Entries are dropped 14 days after the child was started, the next time that parent's roster is
-read.
+Entries are dropped 14 days after the child was started, when that parent's roster is read or
+the plugin is next loaded. If the roster cannot be written, the child still gets its task and
+`courier_spawn` says it is not on the list.
 
 ### Scheduled messages
 

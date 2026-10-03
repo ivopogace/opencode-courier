@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { children, current, forget, record, RETENTION_MS, rosterKey, type RosterEntry, type RosterStorage } from "../src/roster.js"
+import { children, current, forget, pruneExpired, record, RETENTION_MS, rosterKey, type RosterEntry, type RosterStorage } from "../src/roster.js"
 
 function fakeStorage(pageSize?: number) {
   const store = new Map<string, unknown>()
@@ -67,5 +67,18 @@ describe("roster", () => {
 
     expect((await current(storage, "ses_parent", now)).map((child) => child.sessionID)).toEqual(["ses_new"])
     expect(store.has(rosterKey("ses_parent", "ses_old"))).toBe(false)
+  })
+
+  test("prunes expired children of every parent", async () => {
+    const { storage, store } = fakeStorage()
+    const now = 10 * RETENTION_MS
+    await record(storage, entry("ses_a", "ses_one", now - RETENTION_MS - 1))
+    await record(storage, entry("ses_b", "ses_two", now - RETENTION_MS - 1))
+    await record(storage, entry("ses_c", "ses_two", now))
+    store.set("later/x", { id: "x" })
+
+    await pruneExpired(storage, now)
+
+    expect([...store.keys()].sort()).toEqual(["later/x", rosterKey("ses_two", "ses_c")])
   })
 })

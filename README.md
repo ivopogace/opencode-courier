@@ -318,6 +318,10 @@ creating or pushing by hand. Three workflows under `.github/workflows/` take tur
    one), so nothing is announced yet.
 6. A maintainer reviews the staged version and approves it with 2FA: on npmjs.com under Staged
    Packages, or with `npm stage list` and `npm stage approve <id>`. The version is live from then.
+   After a stable release, move `next` up to it as well, logged in to npm and with 2FA:
+   `npm dist-tag add opencode-courier@X.Y.Z next`. A dist-tag only moves when something sets it,
+   so `next` would otherwise stay on the last prerelease, behind `latest`; the workflow cannot do
+   this, since the version is not live until the approval.
 7. Publish the draft release: `gh release edit vX.Y.Z --draft=false`, or Publish release on
    GitHub.
 

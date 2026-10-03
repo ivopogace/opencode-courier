@@ -66,8 +66,7 @@ if [ -n "$KEY_ENV" ]; then
 fi
 
 mkdir -p "$WORK/project" "$HOME"
-echo "building plugin"
-(cd "$ROOT" && npm run build >"$WORK/build.log" 2>&1) || { cat "$WORK/build.log"; exit 1; }
+build_plugin
 
 provider='{}'
 if [ -n "$BASE_URL" ]; then
@@ -86,9 +85,7 @@ jq -n --arg plugin "$ROOT/dist" --arg model "$PROVIDER/$MODEL" --argjson provide
   update: "disable",
   permissions: [{ action: "*", resource: "*", effect: "allow" }]
 }' >"$WORK/project/opencode.json"
-git -C "$WORK/project" init -q
-git -C "$WORK/project" add opencode.json
-git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -q -m "opencode config"
+commit_config
 
 start_server
 echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL"
@@ -98,7 +95,11 @@ echo "parent prompt: $PROMPT"
 status=0
 (cd "$WORK/project" && "$TIMEOUT_BIN" "$COURIER_TIMEOUT" "$OPENCODE" run --server "$SERVER" --auto --format json "$PROMPT" \
   </dev/null >"$WORK/parent-run.jsonl" 2>"$WORK/parent-run.err") || status=$?
-[ "$status" = 124 ] && echo "the parent's first turn did not end within $COURIER_TIMEOUT s"
+case $status in
+  0) ;;
+  124) echo "the parent's first turn did not end within $COURIER_TIMEOUT s" ;;
+  *) echo "opencode run exited with status $status; see $WORK/parent-run.err" ;;
+esac
 parent=$(jq -r 'select(.sessionID != null) | .sessionID' "$WORK/parent-run.jsonl" 2>/dev/null | head -1 || true)
 if [ -z "$parent" ]; then
   echo "no parent session; see $WORK/parent-run.err and $WORK/server.log"

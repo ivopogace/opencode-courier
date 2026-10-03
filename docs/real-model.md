@@ -65,7 +65,7 @@ turn 3 (opened by the report from ses_…):
 
   PASS the parent spawned two children with courier_spawn
   PASS the parent ended its first turn after spawning, with no reports in it
-  PASS the parent never polled (courier_status, courier_children, sleep)
+  PASS the parent did not poll its children (courier_status, courier_children, sleep)
   PASS both children called courier_send to the parent
   PASS both reports woke the parent: each arrived after its first turn and got a reply
   PASS each report holds its child's answer
@@ -77,22 +77,25 @@ result: pass
 `opencode2 v0.0.0-beta-19271` records no marker when a session goes idle, so turns are read from
 the transcript: a delivered message opens a new turn when the session's last step had ended its
 turn (a finish reason other than `tool-calls`, or a failed request) and completed before the
-message arrived; otherwise
-it was steered into the running turn. The work directory keeps `parent.json`, `child-<id>.json`,
+message arrived; otherwise it was steered into the running turn. Polling means any
+`courier_status`, `courier_children` or `sleep` in the first turn, right after spawning, or more
+than one in a later turn; a single look after being woken is what `courier_status` is for, and is
+only noted. A report is a `courier_send` from a child; a `courier_later` check-in does not count.
+The work directory keeps `parent.json`, `child-<id>.json`,
 `timeline.txt`, `summary.json` and the server log. The exit code is 0 when every check passes and
 1 when one fails. It is 2 when checks fail and model requests failed too, usually HTTP 429 from a
 free model, because then the run says more about the provider than the plugin; run it again.
 
 ## What the models did
 
-23 runs on 2026-10-03, all with `opencode2 v0.0.0-beta-19271` and the plugin built from this
+27 runs on 2026-10-03, all with `opencode2 v0.0.0-beta-19271` and the plugin built from this
 branch, against free models on Zen (which publishes no versions beyond the names):
 
 | Model | Runs | Result |
 |---|---|---|
-| `nemotron-3-ultra-free` | 7 | Failed before tuning and through two rounds of it (never ended its turn). On the final wording: passed 3 of 4; the fourth lost a race to a 44-second step (below). |
-| `longcat-2.5-preview-free` | 5 | Before tuning, every check but "never polled"; passed all 3 runs on the tuned wording. One more run failed on a broken first attempt at the `delayMinutes` fix. |
-| `muse-spark-1.3-contributor-free` | 4 | Tried after tuning: passed 3, rate limited once. |
+| `nemotron-3-ultra-free` | 8 | Failed before tuning and through two rounds of it (never ended its turn). On the tuned wording: passed 4 of 5; the fifth lost a race to a 44-second step (below). |
+| `longcat-2.5-preview-free` | 6 | Before tuning, every check but "did not poll"; passed all 4 runs on the tuned wording. One more run failed on a broken first attempt at the `delayMinutes` fix. |
+| `muse-spark-1.3-contributor-free` | 6 | Tried after tuning: passed 3; rate limited 3 times, its parent right each time. |
 | `mimo-v2.6-flash-free` | 5 | Every run that scheduled a check-in had it rejected (string `delayMinutes`); the fix was checked on its own. Full runs after it were rate limited. |
 | `big-pickle` | 2 | Right as a parent both times; rate limited before the end. |
 
@@ -114,9 +117,9 @@ check-ins it never cancelled woke it three more times after it had answered.
 
 Its reasoning, step after step: "Now I need to end my turn and wait for the reports." — followed
 each time by a tool call. Through the tuning below its polling went away and its requests went from
-24 to 14, but it still did not end the turn in two runs. On the final wording it did, in three runs
-of four: two spawns, at most one check-in (which it tends to cancel at once), end of turn, woken by
-each report. In the fourth, the step in which it scheduled its check-in took the provider 44
+24 to 14, but it still did not end the turn in two runs. On the tuned wording it did, in four runs
+of five: two spawns, at most one check-in (which it tends to cancel at once), end of turn, woken by
+each report. In the fifth, the step in which it scheduled its check-in took the provider 44
 seconds, against 2 to 4 in the others, and the first report arrived before that step was over, so
 it went into the running turn.
 
@@ -167,8 +170,8 @@ first two attempts at the `delayMinutes` fix ran into.
 
 ## Cost
 
-Nothing: every run used free models. The 22 runs with a summary made 254 model requests, about
-1,263,000 input, 16,000 output and 15,000 reasoning tokens, plus 963,000 cache reads. A passing run
+Nothing: every run used free models. The 26 runs with a summary made 290 model requests, about
+1,444,000 input, 19,000 output and 17,000 reasoning tokens, plus 1,064,000 cache reads. A passing run
 is 10 to 12 requests, 25,000 to 110,000 input tokens (nemotron reads the most, with little
 caching) and about 1,000 output tokens.
 

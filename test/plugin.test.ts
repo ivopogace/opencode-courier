@@ -99,6 +99,8 @@ test("tool inputs use no schema checks or transformations, which OpenCode's own 
     ...(ast.checks?.length ? [`${path} has a check`] : []),
     ...(ast.encoding?.length ? [`${path} has a transformation`] : []),
     ...(ast.propertySignatures ?? []).flatMap((property: any) => unsupported(property.type, `${path}.${String(property.name)}`)),
+    ...(ast.indexSignatures ?? []).flatMap((index: any) => [...unsupported(index.parameter, `${path}[key]`), ...unsupported(index.type, `${path}[]`)]),
+    ...[...(ast.elements ?? []), ...(ast.rest ?? [])].flatMap((element: any) => unsupported(element, `${path}[]`)),
     ...(ast.types ?? []).flatMap((type: any) => unsupported(type, path)),
   ]
   expect([...tools.values()].flatMap((tool) => unsupported(tool.input.ast, tool.name))).toEqual([])
@@ -180,7 +182,7 @@ test("courier_later tells a session scheduling its own check-in to end its turn,
     .get("courier_later")
     .execute({ message: "check", delayMinutes: 10, sessionID: "ses_child" }, { sessionID: "ses_parent" })
 
-  expect(own.content).toContain("It starts a new turn for you when due, so do not wait for it: once nothing else")
+  expect(own.content).toContain("It arrives when due, after your current turn if one is running, so do not wait for it")
   expect(own.content).toContain("end your turn by replying without calling more tools")
   expect(own.content).toContain("If what it checks on reports first, cancel it then with courier_cancel.")
   expect(other.content).toContain("to ses_child. Cancel it with courier_cancel if it is no longer needed.")

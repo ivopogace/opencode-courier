@@ -55,8 +55,7 @@ reply_time() {
 mkdir -p "$WORK/project" "$HOME"
 WEBHOOK_SECRET=courier-e2e-webhook-secret
 printf '%s\n' "$WEBHOOK_SECRET" >"$WORK/webhook-secret"
-echo "building plugin"
-(cd "$ROOT" && npm run build >"$WORK/build.log" 2>&1) || { cat "$WORK/build.log"; exit 1; }
+build_plugin
 
 cat >"$WORK/project/opencode.json" <<EOF
 {
@@ -73,10 +72,7 @@ cat >"$WORK/project/opencode.json" <<EOF
   "permissions": [{ "action": "*", "resource": "*", "effect": "allow" }]
 }
 EOF
-# Committed, because an isolated child runs in a worktree made from HEAD.
-git -C "$WORK/project" init -q
-git -C "$WORK/project" add opencode.json
-git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -q -m "opencode config"
+commit_config
 
 MOCK_PORT=$MOCK_PORT MOCK_CHILD_DELAY_MS=$CHILD_DELAY_MS MOCK_LOG=$WORK/model.log \
   node "$ROOT/e2e/mock-model.mjs" >"$WORK/model.out" 2>&1 </dev/null &

@@ -1,0 +1,272 @@
+import { describe, expect, test } from "bun:test"
+import { readFileSync, writeFileSync, mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import {
+  dispatch,
+  genericEvent,
+  githubEvent,
+  listen,
+  parseTopic,
+  readConfig,
+  receive,
+  sign,
+  subscribe,
+  subscriptions,
+  unsubscribe,
+  verifySignature,
+  type WebhookPorts,
+} from "../src/webhook.js"
+
+const SECRET = "It's a Secret to Everybody"
+const review = readFileSync(join(import.meta.dir, "../e2e/fixtures/pull_request_review.json"), "utf8")
+
+function fakePorts(options: { failFor?: string } = {}) {
+  const store = new Map<string, unknown>()
+  const delivered: any[] = []
+  const logs: string[] = []
+  const ports: WebhookPorts = {
+    storage: {
+      get: async (key) => store.get(key) as any,
+      set: async (key, value) => void store.set(key, value),
+      remove: async (key) => void store.delete(key),
+      scan: async ({ prefix }) => ({
+        entries: [...store].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value: value as any })),
+      }),
+    },
+    session: {
+      synthetic: (async (input: any) => {
+        if (input.sessionID === options.failFor) throw new Error("session gone")
+        delivered.push(input)
+        return { id: `msg_${delivered.length}` }
+      }) as any,
+    },
+    now: () => 1_000,
+    log: (message) => logs.push(message),
+  }
+  return { ports, store, delivered, logs }
+}
+
+const githubRequest = (body: string, headers: Record<string, string> = {}) => ({
+  method: "POST",
+  path: "/github",
+  headers: { "x-github-event": "pull_request_review", "x-github-delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958", ...headers },
+  body: Buffer.from(body),
+})
+
+describe("verifySignature", () => {
+  // The example from GitHub's "Validating webhook deliveries" documentation.
+  test("accepts GitHub's documented example", () => {
+    const header = "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17"
+    expect(verifySignature(SECRET, Buffer.from("Hello, World!"), header)).toBe(true)
+  })
+
+  test("rejects a missing, malformed, truncated or wrong signature", () => {
+    const body = Buffer.from("Hello, World!")
+    const good = sign(SECRET, body)
+    expect(verifySignature(SECRET, body, undefined)).toBe(false)
+    expect(verifySignature(SECRET, body, "")).toBe(false)
+    expect(verifySignature(SECRET, body, good.replace("sha256=", "sha1="))).toBe(false)
+    expect(verifySignature(SECRET, body, good.slice(0, -2))).toBe(false)
+    expect(verifySignature(SECRET, body, "sha256=not-hex")).toBe(false)
+    expect(verifySignature("another secret", body, good)).toBe(false)
+    expect(verifySignature(SECRET, Buffer.from("Hello, World?"), good)).toBe(false)
+  })
+})
+
+describe("parseTopic", () => {
+  test("normalises GitHub repositories and pull requests", () => {
+    expect(parseTopic("Codertocat/Hello-World")).toBe("github:codertocat/hello-world")
+    expect(parseTopic("github:Codertocat/Hello-World#02")).toBe("github:codertocat/hello-world#2")
+  })
+
+  test("takes a plain name as a generic topic and refuses anything else", () => {
+    expect(parseTopic("deploys")).toBe("deploys")
+    expect(() => parseTopic("a/b#x")).toThrow("Not a topic")
+    expect(() => parseTopic("has space")).toThrow("Not a topic")
+    expect(() => parseTopic("")).toThrow("Not a topic")
+  })
+})
+
+describe("githubEvent", () => {
+  test("summarises a review with its pull request topics", () => {
+    const event = githubEvent("pull_request_review", JSON.parse(review))!
+
+    expect(event.topics).toEqual(["github:codertocat/hello-world", "github:codertocat/hello-world#2"])
+    expect(event.summary).toContain("review submitted on Codertocat/Hello-World#2 by Codertocat: changes_requested")
+    expect(event.summary).toContain("Please rename the helper")
+    expect(event.summary).toContain("https://github.com/Codertocat/Hello-World/pull/2#pullrequestreview-237895671")
+  })
+
+  test("wakes for completed CI runs on their pull requests, not for ones still running", () => {
+    const suite = (action: string) => ({
+      action,
+      check_suite: { conclusion: "failure", app: { name: "GitHub Actions" }, pull_requests: [{ number: 7 }, { number: 9 }] },
+      repository: { full_name: "o/r" },
+    })
+
+    expect(githubEvent("check_suite", suite("requested"))).toBeUndefined()
+    const event = githubEvent("check_suite", suite("completed"))!
+    expect(event.topics).toEqual(["github:o/r", "github:o/r#7", "github:o/r#9"])
+    expect(event.summary).toBe('check suite "GitHub Actions" on o/r#7, o/r#9: failure')
+  })
+
+  test("names merged pull requests and comments on them", () => {
+    const merged = githubEvent("pull_request", {
+      action: "closed",
+      pull_request: { number: 3, merged: true, title: "t" },
+      repository: { full_name: "o/r" },
+      sender: { login: "me" },
+    })!
+    expect(merged.summary.split("\n")[0]).toBe("pull request o/r#3 merged by me")
+
+    const comment = githubEvent("issue_comment", {
+      action: "created",
+      issue: { number: 3, pull_request: {} },
+      comment: { user: { login: "bob" }, body: "x".repeat(2000) },
+      repository: { full_name: "o/r" },
+    })!
+    expect(comment.topics).toContain("github:o/r#3")
+    expect(comment.summary).toStartWith("pull request comment created on o/r#3 by bob")
+    expect(comment.summary).toContain("[500 more characters]")
+  })
+
+  test("ignores pings and payloads without a repository", () => {
+    expect(githubEvent("ping", { zen: "Keep it simple.", repository: { full_name: "o/r" } })).toBeUndefined()
+    expect(githubEvent("push", {})).toBeUndefined()
+    expect(githubEvent("toString", { repository: { full_name: "o/r" } })!.summary).toBe("toString on o/r")
+  })
+})
+
+test("genericEvent takes a JSON text field or the body itself", () => {
+  expect(genericEvent("deploys", '{"text":"prod is live"}').summary).toBe("prod is live")
+  expect(genericEvent("deploys", "plain words").summary).toBe("plain words")
+})
+
+describe("subscriptions", () => {
+  test("subscribe, list and unsubscribe one topic or all", async () => {
+    const { ports } = fakePorts()
+    await subscribe(ports, "ses_a", "o/r#1")
+    await subscribe(ports, "ses_a", "deploys")
+    await subscribe(ports, "ses_b", "o/r")
+
+    expect((await subscriptions(ports)).map((item) => `${item.sessionID} ${item.topic}`).sort()).toEqual([
+      "ses_a deploys",
+      "ses_a github:o/r#1",
+      "ses_b github:o/r",
+    ])
+    expect(await unsubscribe(ports, "ses_a", "O/R#1")).toEqual(["github:o/r#1"])
+    expect(await unsubscribe(ports, "ses_a")).toEqual(["deploys"])
+    expect(await unsubscribe(ports, "ses_a")).toEqual([])
+    expect(await subscriptions(ports)).toHaveLength(1)
+  })
+
+  test("dispatch delivers once per subscribed session, queued, and survives a failing one", async () => {
+    const { ports, delivered, logs } = fakePorts({ failFor: "ses_gone" })
+    await subscribe(ports, "ses_a", "o/r")
+    await subscribe(ports, "ses_a", "o/r#2")
+    await subscribe(ports, "ses_gone", "o/r#2")
+    await subscribe(ports, "ses_other", "o/r#3")
+
+    const count = await dispatch(ports, { source: "github", name: "pull_request", topics: ["github:o/r", "github:o/r#2"], summary: "s" }, "d-1")
+
+    expect(count).toBe(1)
+    expect(delivered).toHaveLength(1)
+    expect(delivered[0]).toMatchObject({ sessionID: "ses_a", delivery: "queue", metadata: { from: "github", event: "pull_request", delivery: "d-1" } })
+    expect(delivered[0].text).toStartWith('<courier from="github" event="pull_request" delivery="d-1">\ns\n')
+    expect(logs[0]).toContain("not delivered to ses_gone")
+  })
+})
+
+describe("receive", () => {
+  test("a signed GitHub delivery reaches the subscribed session", async () => {
+    const { ports, delivered, logs } = fakePorts()
+    await subscribe(ports, "ses_parent", "Codertocat/Hello-World#2")
+
+    const response = await receive(ports, SECRET, githubRequest(review, { "x-hub-signature-256": sign(SECRET, review) }))
+
+    expect(response).toEqual({ status: 202, body: "delivered to 1 session(s)" })
+    expect(delivered[0].text).toContain("changes_requested")
+    // The log names the event, never the payload or the secret.
+    expect(logs.join("\n")).not.toContain("Please rename")
+    expect(logs.join("\n")).not.toContain(SECRET)
+  })
+
+  test("unsigned and wrongly signed deliveries are refused and reach nobody", async () => {
+    const { ports, delivered } = fakePorts()
+    await subscribe(ports, "ses_parent", "Codertocat/Hello-World")
+
+    expect((await receive(ports, SECRET, githubRequest(review))).status).toBe(401)
+    expect((await receive(ports, SECRET, githubRequest(review, { "x-hub-signature-256": sign("wrong", review) }))).status).toBe(401)
+    expect((await receive(ports, SECRET, githubRequest(review, { "x-hub-signature-256": sign(SECRET, `${review} `) }))).status).toBe(401)
+    expect(delivered).toHaveLength(0)
+  })
+
+  test("routes, methods and malformed signed bodies", async () => {
+    const { ports, delivered } = fakePorts()
+    await subscribe(ports, "ses_a", "deploys")
+    const signed = (path: string, body: string, headers: Record<string, string> = {}) => ({
+      method: "POST",
+      path,
+      headers: { "x-hub-signature-256": sign(SECRET, body), ...headers },
+      body: Buffer.from(body),
+    })
+
+    expect((await receive(ports, SECRET, { ...signed("/github", "{}"), method: "GET" })).status).toBe(405)
+    expect((await receive(ports, SECRET, signed("/elsewhere", "{}"))).status).toBe(404)
+    expect((await receive(ports, SECRET, signed("/github", "{}"))).status).toBe(400)
+    expect((await receive(ports, SECRET, signed("/github", "{}", { "x-github-event": 'a"b' }))).status).toBe(400)
+    expect((await receive(ports, SECRET, signed("/github", "not json", { "x-github-event": "push" }))).status).toBe(400)
+    expect(await receive(ports, SECRET, signed("/github", '{"zen":"z"}', { "x-github-event": "ping" }))).toEqual({ status: 200, body: "ignored ping" })
+    expect((await receive(ports, SECRET, signed("/hook/a%2Fb", "x"))).status).toBe(400)
+    expect(await receive(ports, SECRET, signed("/hook/deploys", '{"text":"prod is live"}'))).toEqual({ status: 202, body: "delivered to 1 session(s)" })
+    expect(delivered[0].text).toContain('<courier from="hook" event="deploys">\nprod is live')
+  })
+})
+
+describe("listen", () => {
+  test("serves over HTTP and refuses oversized bodies", async () => {
+    const { ports, delivered } = fakePorts()
+    await subscribe(ports, "ses_parent", "Codertocat/Hello-World#2")
+    const server = await listen({ port: 0, host: "127.0.0.1", secret: SECRET, maxBytes: 4096 }, () => ports)
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+    try {
+      const post = (path: string, body: string, headers: Record<string, string>) => fetch(url + path, { method: "POST", body, headers })
+
+      const ok = await post("/github?x=1", review, { "x-github-event": "pull_request_review", "x-hub-signature-256": sign(SECRET, review) })
+      expect(ok.status).toBe(202)
+      expect(delivered).toHaveLength(1)
+
+      const big = "x".repeat(5000)
+      expect((await post("/hook/deploys", big, { "x-hub-signature-256": sign(SECRET, big) })).status).toBe(413)
+      expect((await post("/github", review, { "x-github-event": "pull_request_review" })).status).toBe(401)
+    } finally {
+      server.closeAllConnections()
+      await new Promise((resolve) => server.close(resolve))
+    }
+  })
+})
+
+describe("readConfig", () => {
+  test("is off without a webhook option", () => {
+    expect(readConfig(undefined)).toBeUndefined()
+    expect(readConfig({})).toBeUndefined()
+  })
+
+  test("reads the secret from a file or the environment, never from the option", () => {
+    const dir = mkdtempSync(join(tmpdir(), "courier-"))
+    writeFileSync(join(dir, "secret"), "from-file\n")
+
+    expect(readConfig({ webhook: { secretFile: join(dir, "secret") } }, {})).toEqual({
+      port: 4097,
+      host: "127.0.0.1",
+      secret: "from-file",
+      maxBytes: 1024 * 1024,
+    })
+    expect(readConfig({ webhook: { port: 5000 } }, { COURIER_WEBHOOK_SECRET: "env" })).toMatchObject({ port: 5000, secret: "env" })
+    expect(readConfig({ webhook: { secretEnv: "MINE" } }, { MINE: "x" })!.secret).toBe("x")
+    expect(() => readConfig({ webhook: { port: 1 } }, {})).toThrow("COURIER_WEBHOOK_SECRET is not set")
+    expect(() => readConfig({ webhook: { secret: "inline" } }, {})).toThrow("webhook.secret is not read")
+    expect(() => readConfig({ webhook: { port: "x" } }, { COURIER_WEBHOOK_SECRET: "s" })).toThrow("not a port")
+  })
+})

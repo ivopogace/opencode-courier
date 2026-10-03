@@ -13,6 +13,17 @@ export interface CourierPorts {
   readonly storage: RosterStorage
   readonly directory: string
   readonly now: () => number
+  /** The permission requests a session waits on, wherever they are pending. */
+  readonly pending: (sessionID: string) => Promise<ReadonlyArray<Pending>>
+}
+
+/** A request a session waits on until someone answers it. */
+export interface Pending {
+  readonly type: "permission"
+  readonly requestID: string
+  readonly action: string
+  readonly resources: ReadonlyArray<string>
+  readonly save?: ReadonlyArray<string>
 }
 
 export interface SpawnInput {
@@ -135,6 +146,7 @@ export async function send(ports: CourierPorts, from: string, input: SendInput) 
 export async function status(ports: CourierPorts, input: StatusInput) {
   const info = await ports.session.get({ sessionID: input.sessionID })
   const messages = await ports.session.context({ sessionID: input.sessionID })
+  const pending = await ports.pending(input.sessionID)
   const last = messages.findLast((message) => message.type === "assistant")
   const lastText =
     last?.type === "assistant"
@@ -148,6 +160,7 @@ export async function status(ports: CourierPorts, input: StatusInput) {
     updated: info.time.updated,
     idle: info.time.idle,
     lastText,
+    pending: pending.length ? pending : undefined,
   })
 }
 

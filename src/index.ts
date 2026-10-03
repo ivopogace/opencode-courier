@@ -5,8 +5,9 @@ import type { Server } from "node:http"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
 import { cleanup, headOf, inspectWorktree, type CleanupPorts, type CleanupResult } from "./cleanup.js"
 import { cancel, deliverDue, schedule, TICK_MS, type LaterPorts } from "./later.js"
+import { answer, pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
 import { pruneExpired } from "./roster.js"
-import { watchFailures } from "./watch.js"
+import { watchChildren, type WatchState } from "./watch.js"
 import { listen, readConfig, subscribe, unsubscribe, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
 const SpawnInput = Schema.Struct({
@@ -56,6 +57,17 @@ const LaterInput = Schema.Struct({
   ),
   at: Schema.optional(Schema.String.annotate({ description: "Deliver at this ISO 8601 time. Give this or delayMinutes." })),
   sessionID: Schema.optional(Schema.String.annotate({ description: "The session to deliver to; defaults to this one." })),
+})
+
+const AnswerInput = Schema.Struct({
+  sessionID: Schema.String.annotate({ description: "The session you started that is waiting, as its notice names it." }),
+  requestID: Schema.String.annotate({ description: "The request id from the notice." }),
+  reply: Schema.Literals(["once", "always", "reject"]).annotate({
+    description: "The choice the person made: once, always (only when the notice offers it) or reject.",
+  }),
+  message: Schema.optional(
+    Schema.String.annotate({ description: "With reject, the person's reason, passed on with the refusal." }),
+  ),
 })
 
 const CancelInput = Schema.Struct({
@@ -149,9 +161,17 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 const claimed: Set<string> = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.claimed")] ??=
   new Set<string>()) as Set<string>
 
-// Likewise one set of handled failure events, since every instance may be sent the same event.
-const reported: Set<string> = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.reported")] ??=
-  new Set<string>()) as Set<string>
+// Likewise one set of handled events, since every instance may be sent the same event, and one set
+// of the permission requests parents were told about and have not answered.
+const watched: WatchState = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.watched")] ??= {
+  seen: new Set<string>(),
+  waiting: new Set<string>(),
+}) as WatchState
+
+// The permission domain of every loaded location. OpenCode keeps a request where its session runs,
+// so a request of an isolated child is answered through the instance loaded in its worktree.
+const permissions: Set<Permissions> = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.permissions")] ??=
+  new Set<Permissions>()) as Set<Permissions>
 
 const rethrow =
   (tool: string) =>
@@ -166,6 +186,18 @@ function describeCleanup(result: CleanupResult) {
   return `Kept the worktree ${result.directory} of ${result.sessionID}: it has ${result.reason}. Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it.`
 }
 
+function describeAnswer(result: Awaited<ReturnType<typeof answer>>) {
+  if (!result.answered)
+    return (
+      `${result.sessionID} no longer waits on request ${result.requestID}: it was answered some other way, or the ` +
+      "session stopped waiting. Nothing was passed on; tell the person their answer is not needed."
+    )
+  return (
+    `Passed on ${result.reply} for request ${result.requestID} of ${result.sessionID}, which carries on and reports ` +
+    "back with courier_send. If nothing else is left to do now, end your turn by replying without calling more tools."
+  )
+}
+
 export default Plugin.define({
   id: "courier",
   setup: async (ctx) => {
@@ -177,8 +209,10 @@ export default Plugin.define({
       directory: ctx.location.directory,
       now: Date.now,
       head: headOf,
+      pending: (sessionID) => pendingOf(permissions, sessionID),
     }
     const cleanupPorts: CleanupPorts = { ...ports, inspect: inspectWorktree }
+    const answerPorts: AnswerPorts = { storage: ctx.storage, permissions: () => permissions }
     const later: LaterPorts = {
       storage: ctx.storage,
       session: ctx.session,
@@ -200,7 +234,8 @@ export default Plugin.define({
         options: { codemode: false },
         description:
           "Start a new OpenCode session on a task and return immediately. It runs on your model. The session reports " +
-          "back with courier_send, which wakes this session, and you are told if its turn fails instead. DO NOT poll it or call courier_status in a loop: once you have started the sessions " +
+          "back with courier_send, which wakes this session, and you are told if its turn fails instead or it waits for a " +
+          "permission. DO NOT poll it or call courier_status in a loop: once you have started the sessions " +
           "you need, end your turn by replying without calling more tools; each report starts a new turn in which you " +
           "carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and " +
           "courier_cancel it when it does.",
@@ -271,6 +306,21 @@ export default Plugin.define({
         execute: async (input, context) => {
           const result = await cleanup(cleanupPorts, context.sessionID, input).catch(rethrow("courier_cleanup"))
           return { content: describeCleanup(result), metadata: result }
+        },
+      })
+
+      tools.add({
+        name: "courier_answer",
+        options: { codemode: false },
+        description:
+          "Pass on the answer to a permission request that a session you started with courier_spawn waits on, after " +
+          "a notice from it named the request. The answer is the person's, not yours: first ask the person you are " +
+          "working with, offering the choices the notice lists, then call this with the one they chose. Never choose " +
+          "for them. The session carries on once it has the answer.",
+        input: AnswerInput,
+        execute: async (input, context) => {
+          const result = await answer(answerPorts, watched.waiting, context.sessionID, input).catch(rethrow("courier_answer"))
+          return { content: describeAnswer(result), metadata: result }
         },
       })
 
@@ -364,11 +414,13 @@ export default Plugin.define({
     void tick()
     const timer = setInterval(tick, TICK_MS)
     const watching = new AbortController()
-    void watchFailures({ storage: ctx.storage, session: ctx.session, event: ctx.event, log: later.log }, reported, watching.signal)
+    void watchChildren({ storage: ctx.storage, session: ctx.session, event: ctx.event, log: later.log }, watched, watching.signal)
+    permissions.add(ctx.permission)
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
       clearInterval(timer)
       watching.abort()
+      permissions.delete(ctx.permission)
       await leave?.()
     }
   },

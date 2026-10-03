@@ -23,7 +23,7 @@ function fakeEvents() {
   }
 }
 
-async function setUp(stored: Record<string, unknown> = {}, options?: Record<string, unknown>) {
+async function setUp(stored: Record<string, unknown> = {}, options?: Record<string, unknown>, permissions: any[] = []) {
   const store = new Map(Object.entries(stored))
   const tools = new Map<string, any>()
   const calls: { method: string; input: any }[] = []
@@ -41,12 +41,27 @@ async function setUp(stored: Record<string, unknown> = {}, options?: Record<stri
       create: record("session.create", { id: "ses_child", location: { directory: "/repo" } }),
       prompt: record("session.prompt", { id: "msg_1" }),
       synthetic: record("session.synthetic", { id: "msg_2" }),
-      get: record("session.get", { id: "ses_parent" }),
+      get: async (input: any) => {
+        calls.push({ method: "session.get", input })
+        return { id: input.sessionID, time: { created: 1, updated: 2 } }
+      },
       context: record("session.context", []),
     },
     worktree: {
       create: record("worktree.create", { directory: "/wt" }),
       remove: record("worktree.remove", undefined),
+    },
+    permission: {
+      list: async ({ sessionID }: { sessionID: string }) => permissions.filter((item) => item.sessionID === sessionID),
+      get: async ({ requestID }: { requestID: string }) => {
+        const found = permissions.find((item) => item.id === requestID)
+        if (!found) throw new Error(`Permission request not found: ${requestID}`)
+        return found
+      },
+      reply: async (input: any) => {
+        calls.push({ method: "permission.reply", input })
+        permissions.splice(permissions.findIndex((item) => item.id === input.requestID), 1)
+      },
     },
     storage: {
       get: async (key: string) => store.get(key),
@@ -77,6 +92,7 @@ test("registers the courier tools", async () => {
     "courier_status",
     "courier_children",
     "courier_cleanup",
+    "courier_answer",
     "courier_later",
     "courier_cancel",
     "courier_subscribe",
@@ -97,6 +113,9 @@ test("tool inputs decode with their schemas", async () => {
   expect(decode("courier_spawn", { task: "t", isolate: true })).toEqual({ task: "t", isolate: true })
   expect(decode("courier_send", { sessionID: "s", message: "m" })).toEqual({ sessionID: "s", message: "m" })
   expect(() => decode("courier_send", { sessionID: "s" })).toThrow()
+  const answer = { sessionID: "s", requestID: "per_1", reply: "reject", message: "no" }
+  expect(decode("courier_answer", answer)).toEqual(answer)
+  expect(() => decode("courier_answer", { ...answer, reply: "yes" })).toThrow()
 })
 
 test("courier_later takes delayMinutes as a number or a string, which some models send instead", async () => {
@@ -149,6 +168,38 @@ test("a spawned child whose turn fails is reported to its parent", async () => {
   expect(notice.sessionID).toBe("ses_parent")
   expect(notice.text).toContain('<courier from="ses_child" failed="provider.auth">')
   expect(notice.text).toContain("failed: blocked (provider.auth, status 403)")
+})
+
+test("a spawned child's permission request reaches its parent, and courier_answer passes the choice back", async () => {
+  const request = { id: "per_1", sessionID: "ses_child", action: "shell", resources: ["git push"] }
+  const { tools, calls, emit } = await setUp({}, undefined, [request])
+  await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
+
+  emit({ id: `evt_${Math.random()}`, type: "permission.asked", data: request })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const notice = calls.find((call) => call.method === "session.synthetic")!.input
+  expect(notice.sessionID).toBe("ses_parent")
+  expect(notice.text).toContain('<courier from="ses_child" asks="permission" request="per_1">')
+  const status = await tools.get("courier_status").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })
+  expect(status.metadata.pending).toEqual([{ type: "permission", requestID: "per_1", action: "shell", resources: ["git push"] }])
+
+  const answered = await tools.get("courier_answer").execute({ sessionID: "ses_child", requestID: "per_1", reply: "once" }, { sessionID: "ses_parent" })
+  expect(answered.metadata).toEqual({ sessionID: "ses_child", requestID: "per_1", reply: "once", answered: true })
+  expect(answered.content).toContain("Passed on once for request per_1 of ses_child")
+  expect(calls.find((call) => call.method === "permission.reply")!.input).toEqual({ sessionID: "ses_child", requestID: "per_1", reply: "once" })
+
+  // The reply event that answer causes is not reported back as a stale notice.
+  emit({ id: `evt_${Math.random()}`, type: "permission.replied", data: { sessionID: "ses_child", requestID: "per_1", reply: "once" } })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(1)
+
+  const late = await tools.get("courier_answer").execute({ sessionID: "ses_child", requestID: "per_1", reply: "once" }, { sessionID: "ses_parent" })
+  expect(late.metadata.answered).toBe(false)
+  expect(late.content).toContain("no longer waits on request per_1")
+  await expect(
+    tools.get("courier_answer").execute({ sessionID: "ses_child", requestID: "per_1", reply: "once" }, { sessionID: "ses_x" }),
+  ).rejects.toThrow("courier_answer failed: ses_child was not started by ses_x with courier_spawn")
 })
 
 test("courier_spawn tells the parent to end its turn rather than wait for the child", async () => {

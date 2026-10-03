@@ -45,6 +45,7 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
       remove: record("worktree.remove", undefined),
     },
     head: async () => "abc123",
+    pending: async () => [],
   } as unknown as CourierPorts
   return { ports, calls, store }
 }
@@ -254,6 +255,15 @@ describe("status", () => {
     const { ports } = fakePorts()
 
     expect(await status(ports, { sessionID: "ses_child" })).not.toHaveProperty("lastText")
+  })
+
+  test("lists the requests the session waits on, and leaves pending out when there are none", async () => {
+    const { ports } = fakePorts()
+    const waiting = { type: "permission" as const, requestID: "per_1", action: "shell", resources: ["git push"] }
+    ;(ports as any).pending = async (sessionID: string) => (sessionID === "ses_child" ? [waiting] : [])
+
+    expect((await status(ports, { sessionID: "ses_child" })).pending).toEqual([waiting])
+    expect(await status(ports, { sessionID: "ses_other" })).not.toHaveProperty("pending")
   })
 
   test("never returns undefined values, which make OpenCode hang the tool call", async () => {

@@ -81,3 +81,7 @@ npm run build      # emits dist/
 
 The plugin API is still beta and pinned to an exact version in `package.json`; bump it
 deliberately and re-run the typecheck.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

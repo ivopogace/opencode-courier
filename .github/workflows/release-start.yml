@@ -37,8 +37,9 @@ jobs:
           node-version: 22
           package-manager-cache: false
       # `npm version` takes a bump keyword or an exact version and refuses an unchanged one, but
-      # accepts a lower one; a release only goes forward. The tag, the branch and npm must all be
-      # free of the version.
+      # accepts a lower one; a release only goes forward (npm's own semver decides). The tag, the
+      # branch and npm must all be free of the version, and the current version must be tagged,
+      # or a release Tag the release missed would be skipped over for good.
       - name: Bump the version
         id: bump
         env:
@@ -53,10 +54,14 @@ jobs:
               fi ;;
           esac
           current="$(node -p "require('./package.json').version")"
+          if ! git ls-remote --exit-code --tags origin "refs/tags/v${current}" >/dev/null; then
+            echo "::error::the current version ${current} has no tag v${current}: release it first (Tag the release on main with dry_run off, or by hand: Releasing in README.md)"
+            exit 1
+          fi
           npm version "${VERSION}" --no-git-tag-version >/dev/null
           version="$(node -p "require('./package.json').version")"
           echo "version: ${current} -> ${version}"
-          if [ -z "$(npx --yes semver@7.8.5 --include-prerelease --range ">${current}" "${version}")" ]; then
+          if ! node -e "process.exit(require('$(npm root -g)/npm/node_modules/semver').gt('${version}', '${current}') ? 0 : 1)"; then
             echo "::error::${version} is not newer than ${current}"
             exit 1
           fi
@@ -68,7 +73,7 @@ jobs:
             echo "::error::branch release-${version} already exists: finish or delete that release first"
             exit 1
           fi
-          if npm view "opencode-courier@${version}" version >/dev/null 2>&1; then
+          if [ "$(.github/scripts/npm-has-version.sh "${version}")" = yes ]; then
             echo "::error::opencode-courier@${version} is already on npm"
             exit 1
           fi
@@ -98,5 +103,10 @@ jobs:
             echo
             echo "Merging this tags main with \`v${VERSION}\` (Tag the release) and stages the version on npm (Release). Then approve it with 2FA on npmjs.com under Staged Packages and publish the draft GitHub release: Releasing in README.md."
           } >"${RUNNER_TEMP}/pull-request.md"
-          url="$(gh pr create --base main --head "release-${VERSION}" --title "Release ${VERSION}" --body-file "${RUNNER_TEMP}/pull-request.md")"
+          # A branch without its pull request would block the next attempt: take it back.
+          if ! url="$(gh pr create --base main --head "release-${VERSION}" --title "Release ${VERSION}" --body-file "${RUNNER_TEMP}/pull-request.md")"; then
+            git push origin --delete "release-${VERSION}"
+            echo "::error::could not open the pull request (is \"Allow GitHub Actions to create and approve pull requests\" on, under Settings → Actions → General?); branch release-${VERSION} is deleted again"
+            exit 1
+          fi
           echo "Opened ${url}: approve its workflows to run, review, and merge it to release ${VERSION}." >>"${GITHUB_STEP_SUMMARY}"

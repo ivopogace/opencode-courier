@@ -298,9 +298,9 @@ pushes a tag by hand. Three workflows under `.github/workflows/` take turns:
 1. **Start a release** (Actions → Start a release → Run workflow, or
    `gh workflow run release-start.yml -f version=patch`). `version` is `patch`, `minor`, `major`
    or an exact version such as `0.2.0-beta.1`. The workflow bumps `version` in `package.json`,
-   checks that the new version is higher than the current one and that neither a `vX.Y.Z` tag, a
-   `release-X.Y.Z` branch nor npm has it, then pushes the branch `release-X.Y.Z` and opens the
-   pull request "Release X.Y.Z".
+   checks that the current version is tagged, that the new one is higher and that neither a
+   `vX.Y.Z` tag, a `release-X.Y.Z` branch nor npm has it, then pushes the branch `release-X.Y.Z`
+   and opens the pull request "Release X.Y.Z".
 2. GitHub holds the checks of a pull request that GitHub Actions opened: select **Approve
    workflows to run** in its merge box, review it, and squash-merge it like any other pull
    request (`main` takes nothing else).
@@ -338,7 +338,8 @@ warning there), the package is packed and nothing is staged or released.
 
 The flow needs the repository setting **Allow GitHub Actions to create and approve pull requests**
 (Settings → Actions → General → Workflow permissions); without it Start a release stops at opening
-the pull request.
+the pull request. Should a release pull request show neither checks nor the approval banner, close
+and reopen it: that is an event a person made, and CI runs on it as on any pull request.
 
 **By hand**, should a step fail. The bump is an ordinary pull request that changes `version` in
 `package.json`; once it is merged, Tag the release tags it. If that run failed, tag the merge

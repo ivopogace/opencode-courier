@@ -144,9 +144,11 @@ export async function send(ports: CourierPorts, from: string, input: SendInput) 
 
 /** A one-off look at a session, for check-ins; not meant to be called in a loop. */
 export async function status(ports: CourierPorts, input: StatusInput) {
-  const info = await ports.session.get({ sessionID: input.sessionID })
-  const messages = await ports.session.context({ sessionID: input.sessionID })
-  const pending = await ports.pending(input.sessionID)
+  const [info, messages, pending] = await Promise.all([
+    ports.session.get({ sessionID: input.sessionID }),
+    ports.session.context({ sessionID: input.sessionID }),
+    ports.pending(input.sessionID),
+  ])
   const last = messages.findLast((message) => message.type === "assistant")
   const lastText =
     last?.type === "assistant"

@@ -1,11 +1,11 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import type { Pending } from "./courier.js"
-import { entriesOf, type RosterStorage } from "./roster.js"
+import { describeFailure, type Pending } from "./courier.js"
+import { lineage, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
 
 /** One location's pending permission requests. OpenCode keeps them per location, so an isolated child's are in its worktree's. */
-export type Permissions = Pick<Context["permission"], "list" | "get" | "reply">
+export type Permissions = Pick<Context["permission"], "list" | "reply">
 
 /** The answers to a permission request, as OpenCode's own prompt offers them. */
 export const REPLIES = ["once", "always", "reject"] as const
@@ -54,11 +54,18 @@ function alwaysChoice(request: PermissionAsked["data"]) {
   return [`- always: allow it, and from now on ${scope} in this project`]
 }
 
-export function permissionNotice(title: string, request: PermissionAsked["data"], startedBySession: boolean) {
+/**
+ * What the session at the top is told. `startedBy` names the session that started the asking one
+ * when that is not the top session itself, but one started from it.
+ */
+export function permissionNotice(title: string, request: PermissionAsked["data"], startedBy?: string) {
   const resources = request.resources.slice(0, MAX_RESOURCES).map((resource) => `- ${clip(resource)}`)
   if (request.resources.length > MAX_RESOURCES) resources.push(`- and ${request.resources.length - MAX_RESOURCES} more`)
+  const origin = startedBy
+    ? `which ${startedBy} started with courier_spawn, a session started from yours,`
+    : "which you started with courier_spawn,"
   return [
-    `This session, "${title}", which you started with courier_spawn, is waiting for permission and does nothing until it is answered.`,
+    `This session, "${title}", ${origin} is waiting for permission and does nothing until it is answered.`,
     `It asks for: ${request.action}`,
     ...(resources.length ? ["On:", ...resources] : []),
     ...(request.message ? [`Note: ${request.message}`] : []),
@@ -68,11 +75,6 @@ export function permissionNotice(title: string, request: PermissionAsked["data"]
     ...alwaysChoice(request),
     "- reject: refuse it, with a reason if they give one; the session's call fails and it carries on",
     `When they have chosen, call courier_answer with sessionID "${request.sessionID}", requestID "${request.id}", reply set to their choice and, with reject, message set to their reason.`,
-    ...(startedBySession
-      ? [
-          "You were started with courier_spawn yourself: if nobody is with you, ask the session that started you with courier_send instead, with the same choices, and answer with what it chose.",
-        ]
-      : []),
   ].join("\n")
 }
 
@@ -101,31 +103,67 @@ export interface AnswerInput {
   readonly message?: string
 }
 
-async function holderOf(ports: AnswerPorts, sessionID: string, requestID: string) {
-  for (const permissions of ports.permissions())
-    if (await permissions.get({ sessionID, requestID }).then(() => true, () => false)) return permissions
+/** A session's pending requests in every location, with the domain holding each; a location that cannot be read gives its error. */
+function listEverywhere(permissions: Iterable<Permissions>, sessionID: string) {
+  return Promise.all(
+    [...permissions].map((domain) =>
+      domain.list({ sessionID }).then(
+        (requests) => ({ domain, requests: requests.filter((request) => request.sessionID === sessionID) }),
+        (error: unknown) => ({ domain, requests: [], error }),
+      ),
+    ),
+  )
+}
+
+/** The location holding a pending request, and the request; undefined when none does, and an error when one could not be read. */
+async function locate(ports: AnswerPorts, sessionID: string, requestID: string) {
+  const listed = await listEverywhere(ports.permissions(), sessionID)
+  for (const { domain, requests } of listed) {
+    const request = requests.find((item) => item.id === requestID)
+    if (request) return { domain, request }
+  }
+  const failed = listed.find((item) => "error" in item)
+  if (failed && "error" in failed) throw failed.error
   return undefined
 }
 
-/** Answers a permission request of one of the caller's children. `answered` is false when nothing was waiting. */
-export async function answer(ports: AnswerPorts, waiting: Waiting, parentID: string, input: AnswerInput) {
+/**
+ * Answers a permission request of a session started, directly or through others, from the
+ * caller, which must be the session at the top: requests go there, to the person, so a session
+ * started with courier_spawn cannot approve what its own children ask. `answered` is false when
+ * nothing was waiting.
+ */
+export async function answer(ports: AnswerPorts, waiting: Waiting, callerID: string, input: AnswerInput) {
   const reply = input.reply as Reply
   if (!REPLIES.includes(reply)) throw new Error(`reply must be once, always or reject, not "${input.reply}".`)
-  const entries = await entriesOf(ports.storage, input.sessionID)
-  if (!entries.some((entry) => entry.parentID === parentID))
-    throw new Error(`${input.sessionID} was not started by ${parentID} with courier_spawn; a session answers its own children's requests.`)
   const { sessionID, requestID } = input
+  const chain = await lineage(ports.storage, sessionID)
+  if (!chain.length) throw new Error(`${sessionID} was not started with courier_spawn, so courier_answer cannot answer for it.`)
+  const top = chain.at(-1)!.parentID
+  if (top !== callerID)
+    throw new Error(
+      `${sessionID}'s permission requests go to ${top}, the session at the top of the sessions started from it with courier_spawn; ${callerID} cannot answer them.`,
+    )
+  const found = await locate(ports, sessionID, requestID)
+  if (!found) {
+    waiting.delete(requestID)
+    return { sessionID, requestID, reply, answered: false }
+  }
+  if (reply === "always" && !found.request.save?.length)
+    throw new Error(`always is not offered for ${requestID}: it has nothing to save. Ask again with once or reject.`)
   // Off the waiting list first, so the reply event this answer causes does not come back as a notice.
   waiting.delete(requestID)
-  const holder = await holderOf(ports, sessionID, requestID)
-  if (!holder) return { sessionID, requestID, reply, answered: false }
   const message = reply === "reject" ? input.message || REJECTED : undefined
   try {
-    await holder.reply({ sessionID, requestID, reply, ...(message ? { message } : {}) })
+    await found.domain.reply({ sessionID, requestID, reply, ...(message ? { message } : {}) })
   } catch (error) {
-    if (!(await holderOf(ports, sessionID, requestID))) return { sessionID, requestID, reply, answered: false }
-    waiting.add(requestID)
-    throw error
+    if (await locate(ports, sessionID, requestID).catch(() => found)) {
+      waiting.add(requestID)
+      throw error
+    }
+    throw new Error(
+      `${describeFailure("permission.reply", error).message}, but ${requestID} no longer waits, so it was answered, possibly by this call.`,
+    )
   }
   return { sessionID, requestID, reply, answered: true }
 }
@@ -133,8 +171,8 @@ export async function answer(ports: AnswerPorts, waiting: Waiting, parentID: str
 /** The requests a session waits on, in whichever location holds them, for courier_status. */
 export async function pendingOf(permissions: Iterable<Permissions>, sessionID: string) {
   const found = new Map<string, Pending>()
-  for (const domain of permissions)
-    for (const request of await domain.list({ sessionID }).catch(() => []))
+  for (const { requests } of await listEverywhere(permissions, sessionID))
+    for (const request of requests)
       found.set(request.id, {
         type: "permission",
         requestID: request.id,

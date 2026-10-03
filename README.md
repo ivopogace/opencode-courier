@@ -36,7 +36,7 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 | `courier_status` | One look at a session: outcome, idle time, last reply and the permission requests it waits on. For check-ins, not for waiting. |
 | `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated and when it was started. |
 | `courier_cleanup` | Removes the git worktree of a child started with `isolate: true` and drops the child from `courier_children`. Keeps a worktree with uncommitted changes or commits on no branch, tag or remote and lists them, unless `force: true` is passed. |
-| `courier_answer` | Passes the person's answer (`once`, `always` or `reject`, with an optional `message`) to a permission request one of this session's children waits on, after the plugin relayed it. See [A child that asks for permission](#a-child-that-asks-for-permission). |
+| `courier_answer` | Passes the person's answer (`once`, `always` or `reject`, with an optional `message`) to a permission request that a session started from this one waits on, after the plugin relayed it here. See [A child that asks for permission](#a-child-that-asks-for-permission). |
 | `courier_later` | Schedules a message for a session (this one by default) in `delayMinutes` or `at` an ISO time, and returns an id. When due it is delivered like `courier_send`, queued behind any running turn and waking the session if idle. |
 | `courier_cancel` | Drops a message scheduled with `courier_later`, e.g. because the child it was waiting for reported first. |
 | `courier_subscribe` | Subscribes a session (this one by default) to webhook deliveries for a `topic`: `owner/repo`, `owner/repo#12` (one pull request or issue) or a generic name. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. Needs the [webhook receiver](#webhooks). |
@@ -81,10 +81,13 @@ decide:
 
 The parent asks you, with its question tool if it has one, and calls
 `courier_answer { sessionID, requestID, reply, message? }` with your choice. The plugin passes it
-on with the plugin API's `permission.reply`, and the child carries on. A session can answer only
-requests of children it started itself. A parent that was itself started with `courier_spawn` is
-also told that, when nobody is with it, it can pass the question to its own parent with
-`courier_send`.
+on with the plugin API's `permission.reply`, and the child carries on.
+
+A request of a child's child goes to the session at the top, the one you started the first child
+from, and so on down any number of levels, since that is where you are; the message names the
+session that started the asking one. Only that top session can answer it. A session started with
+`courier_spawn` cannot answer what its own children ask, so it cannot get around a rule that makes
+it ask by starting a child to do the job and approving it.
 
 OpenCode ends the child's turn when a request is rejected without a message, and the child would
 then never report back. So `courier_answer` always sends a message with a rejection, the person's
@@ -100,9 +103,10 @@ stale question; after a rejection, the message adds that the child may have stop
 says so.
 
 `courier_status` and `courier_children` list the requests a session waits on under `pending`, so a
-parent that has lost the message, after a compaction for example, can still find them. A request
-made while the plugin is not loaded is not relayed. Questions a child asks with its question tool
-are not relayed yet.
+parent that has lost the message, after a compaction for example, can still find them. Whenever
+the plugin starts following OpenCode's events, on loading and after its event stream broke, it
+also relays the requests that spawned sessions already wait on, so one asked in the gap is not
+missed. Questions a child asks with its question tool are not relayed yet.
 
 ### Roster
 

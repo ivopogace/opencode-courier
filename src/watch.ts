@@ -1,32 +1,36 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { envelope } from "./courier.js"
 import { permissionNotice, settledNotice, type PermissionAsked, type PermissionReplied, type Waiting } from "./relay.js"
-import { entriesOf, type RosterStorage } from "./roster.js"
+import { allEntries, entriesOf, lineage, type RosterEntry, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
 
 /** How long to wait before subscribing again after the event stream ended or broke. */
 export const RESUBSCRIBE_MS = 5_000
 
-/** How many handled event ids, and waiting requests, are remembered. */
+/** How many handled event ids, and waiting or answered requests, are remembered. */
 const SEEN_MAX = 1_000
 
 export interface WatchPorts {
   readonly storage: RosterStorage
   readonly session: Pick<Context["session"], "synthetic">
   readonly event: Pick<Context["event"], "subscribe">
+  /** This location's pending permission requests, relayed when the watcher (re)subscribes. */
+  readonly permission: Pick<Context["permission"], "list">
   readonly log: (message: string) => void
 }
 
 /**
  * What every plugin instance in the process shares: OpenCode sets the plugin up once per project
  * location, all in one process, and each instance may see the same event, so an event id is
- * claimed synchronously and handled once. `waiting` holds the permission requests a parent was told
- * about and has not answered.
+ * claimed synchronously and handled once. `waiting` holds the permission requests a session was
+ * told about and has not answered; `answered`, requests answered before anyone was told, so a
+ * notice whose roster lookup was overtaken by the answer is not sent.
  */
 export interface WatchState {
   readonly seen: Set<string>
   readonly waiting: Waiting
+  readonly answered: Set<string>
 }
 
 /** The part of OpenCode's `session.execution.failed` event the notice is made from. */
@@ -74,51 +78,67 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   return entries.map((entry) => entry.parentID)
 }
 
+/** The session at the top of a lineage: where its permission requests go, since that is where the person is. */
+const topOf = (chain: RosterEntry[]) => chain.at(-1)!.parentID
+
 /**
- * Tells the parent of a child that waits for a permission what it asks and which answers there
- * are, waking it. Returns the parents told.
+ * Tells the session at the top, the parent of a child or the session a chain of children started
+ * from, what a waiting child asks and which answers there are, waking it. Returns the sessions told.
  */
 export async function reportAsked(ports: WatchPorts, state: WatchState, event: PermissionAsked) {
   if (!claim(state.seen, event.id)) return []
   const request = event.data
-  const entries = await entriesOf(ports.storage, request.sessionID)
-  if (!entries.length) return []
-  claim(state.waiting, request.id)
-  for (const entry of entries) {
-    const startedBySession = (await entriesOf(ports.storage, entry.parentID)).length > 0
-    await ports.session.synthetic({
-      sessionID: entry.parentID,
-      text: envelope(request.sessionID, permissionNotice(entry.title, request, startedBySession), {
-        asks: "permission",
-        request: request.id,
-      }),
-      description: `Session ${request.sessionID} asks for permission`,
-      metadata: { source: "courier", from: request.sessionID, asks: "permission", requestID: request.id },
-      delivery: "steer",
-    })
-  }
-  return entries.map((entry) => entry.parentID)
+  const chain = await lineage(ports.storage, request.sessionID)
+  // Claimed only now, after the lookup: a request answered meanwhile is in `answered`, and one
+  // already relayed, from the event or from the pending list, is in `waiting`.
+  if (!chain.length || state.answered.has(request.id) || !claim(state.waiting, request.id)) return []
+  const startedBy = chain.length > 1 ? chain[0]!.parentID : undefined
+  await ports.session.synthetic({
+    sessionID: topOf(chain),
+    text: envelope(request.sessionID, permissionNotice(chain[0]!.title, request, startedBy), {
+      asks: "permission",
+      request: request.id,
+    }),
+    description: `Session ${request.sessionID} asks for permission`,
+    metadata: { source: "courier", from: request.sessionID, asks: "permission", requestID: request.id },
+    delivery: "steer",
+  })
+  return [topOf(chain)]
 }
 
 /**
- * Tells the parent that a request it was told about has been answered some other way, in the
+ * Tells the session that was told about a request that it has been answered some other way, in the
  * child's own session or along with another answer, so it does not pass on a stale question.
  * Requests answered through courier_answer are no longer waiting and are skipped.
  */
 export async function reportReplied(ports: WatchPorts, state: WatchState, event: PermissionReplied) {
   if (!claim(state.seen, event.id)) return []
   const { sessionID, requestID, reply } = event.data
-  if (!state.waiting.delete(requestID)) return []
-  const entries = await entriesOf(ports.storage, sessionID)
-  for (const entry of entries)
-    await ports.session.synthetic({
-      sessionID: entry.parentID,
-      text: envelope(sessionID, settledNotice(entry.title, requestID, reply), { answered: reply, request: requestID }),
-      description: `Session ${sessionID} no longer asks for permission`,
-      metadata: { source: "courier", from: sessionID, answered: reply, requestID },
-      delivery: "steer",
-    })
-  return entries.map((entry) => entry.parentID)
+  if (!state.waiting.delete(requestID)) {
+    claim(state.answered, requestID)
+    return []
+  }
+  const chain = await lineage(ports.storage, sessionID)
+  if (!chain.length) return []
+  await ports.session.synthetic({
+    sessionID: topOf(chain),
+    text: envelope(sessionID, settledNotice(chain[0]!.title, requestID, reply), { answered: reply, request: requestID }),
+    description: `Session ${sessionID} no longer asks for permission`,
+    metadata: { source: "courier", from: sessionID, answered: reply, requestID },
+    delivery: "steer",
+  })
+  return [topOf(chain)]
+}
+
+/**
+ * Relays the requests that spawned sessions in this location already wait on, which the event
+ * stream does not repeat: those asked while it was down, before the watcher (re)subscribed.
+ */
+export async function relayPending(ports: WatchPorts, state: WatchState) {
+  const sessions = new Set((await allEntries(ports.storage)).map((entry) => entry.sessionID))
+  for (const sessionID of sessions)
+    for (const request of await ports.permission.list({ sessionID }).catch(() => []))
+      await reportAsked(ports, state, { id: `pending:${request.id}`, data: request })
 }
 
 const pause = (ms: number, signal: AbortSignal) =>
@@ -147,7 +167,10 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
 export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
   while (!signal.aborted) {
     try {
-      for await (const event of ports.event.subscribe({ signal })) {
+      const events = ports.event.subscribe({ signal })
+      // Alongside the new subscription; a request both relays see is relayed once.
+      void relayPending(ports, state).catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`))
+      for await (const event of events) {
         await handle(ports, state, event).catch((error: unknown) => {
           const sessionID = (event.data as { sessionID?: string } | undefined)?.sessionID
           ports.log(`courier watch: could not handle ${event.type} of ${sessionID}: ${String(error)}`)

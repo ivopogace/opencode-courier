@@ -161,17 +161,20 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 const claimed: Set<string> = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.claimed")] ??=
   new Set<string>()) as Set<string>
 
-// Likewise one set of handled events, since every instance may be sent the same event, and one set
-// of the permission requests parents were told about and have not answered.
+// Likewise one set of handled events, since every instance may be sent the same event, and the
+// permission requests sessions were told about and have not answered.
 const watched: WatchState = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.watched")] ??= {
   seen: new Set<string>(),
   waiting: new Set<string>(),
+  answered: new Set<string>(),
 }) as WatchState
 
-// The permission domain of every loaded location. OpenCode keeps a request where its session runs,
-// so a request of an isolated child is answered through the instance loaded in its worktree.
-const permissions: Set<Permissions> = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.permissions")] ??=
-  new Set<Permissions>()) as Set<Permissions>
+// The permission domain of every loaded instance, under a key of its own. OpenCode keeps a request
+// where its session runs, so a request of an isolated child is answered through the instance loaded
+// in its worktree.
+const locations: Map<object, Permissions> = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.locations")] ??=
+  new Map<object, Permissions>()) as Map<object, Permissions>
+const permissions = () => locations.values()
 
 const rethrow =
   (tool: string) =>
@@ -209,10 +212,10 @@ export default Plugin.define({
       directory: ctx.location.directory,
       now: Date.now,
       head: headOf,
-      pending: (sessionID) => pendingOf(permissions, sessionID),
+      pending: (sessionID) => pendingOf(permissions(), sessionID),
     }
     const cleanupPorts: CleanupPorts = { ...ports, inspect: inspectWorktree }
-    const answerPorts: AnswerPorts = { storage: ctx.storage, permissions: () => permissions }
+    const answerPorts: AnswerPorts = { storage: ctx.storage, permissions }
     const later: LaterPorts = {
       storage: ctx.storage,
       session: ctx.session,
@@ -313,8 +316,8 @@ export default Plugin.define({
         name: "courier_answer",
         options: { codemode: false },
         description:
-          "Pass on the answer to a permission request that a session you started with courier_spawn waits on, after " +
-          "a notice from it named the request. The answer is the person's, not yours: first ask the person you are " +
+          "Pass on the answer to a permission request that a session you started with courier_spawn (or one started " +
+          "from it) waits on, after a notice from it named the request. The answer is the person's, not yours: first ask the person you are " +
           "working with, offering the choices the notice lists, then call this with the one they chose. Never choose " +
           "for them. The session carries on once it has the answer.",
         input: AnswerInput,
@@ -414,13 +417,18 @@ export default Plugin.define({
     void tick()
     const timer = setInterval(tick, TICK_MS)
     const watching = new AbortController()
-    void watchChildren({ storage: ctx.storage, session: ctx.session, event: ctx.event, log: later.log }, watched, watching.signal)
-    permissions.add(ctx.permission)
+    const location = {}
+    locations.set(location, ctx.permission)
+    void watchChildren(
+      { storage: ctx.storage, session: ctx.session, event: ctx.event, permission: ctx.permission, log: later.log },
+      watched,
+      watching.signal,
+    )
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
       clearInterval(timer)
       watching.abort()
-      permissions.delete(ctx.permission)
+      locations.delete(location)
       await leave?.()
     }
   },

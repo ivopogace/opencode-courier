@@ -42,7 +42,7 @@ async function setUp(...locations: Permissions[]) {
 
 describe("permissionNotice", () => {
   test("says what is asked, offers OpenCode's choices and tells the parent to ask the person", () => {
-    const notice = permissionNotice("Fix the bug", request, false)
+    const notice = permissionNotice("Fix the bug", request)
 
     expect(notice).toContain('This session, "Fix the bug", which you started with courier_spawn, is waiting for permission')
     expect(notice).toContain("It asks for: shell\nOn:\n- git push\n")
@@ -51,17 +51,22 @@ describe("permissionNotice", () => {
     expect(notice).toContain("- always: allow it, and from now on requests matching git push* in this project")
     expect(notice).toContain("- reject: refuse it")
     expect(notice).toContain('call courier_answer with sessionID "ses_child", requestID "per_1"')
-    expect(notice).not.toContain("the session that started you")
+  })
+
+  test("names the session that started a child's child", () => {
+    expect(permissionNotice("t", request, "ses_mid")).toContain(
+      'This session, "t", which ses_mid started with courier_spawn, a session started from yours, is waiting',
+    )
   })
 
   test("offers always only when the request has something to save, as OpenCode's prompt does", () => {
-    expect(permissionNotice("t", { ...request, save: [] }, false)).not.toContain("- always")
-    expect(permissionNotice("t", { ...request, save: ["*"] }, false)).toContain("from now on every shell request in this project")
+    expect(permissionNotice("t", { ...request, save: [] })).not.toContain("- always")
+    expect(permissionNotice("t", { ...request, save: ["*"] })).toContain("from now on every shell request in this project")
   })
 
   test("shortens long resources, caps how many are listed, and passes on OpenCode's note", () => {
     const resources = ["x".repeat(400), ...Array.from({ length: 24 }, (_, i) => `r${i}`)]
-    const notice = permissionNotice("t", { ...request, resources, message: "Outside the project" }, false)
+    const notice = permissionNotice("t", { ...request, resources, message: "Outside the project" })
 
     expect(notice).toContain(`- ${"x".repeat(297)}...\n`)
     expect(notice).toContain("- r18\n- and 5 more")
@@ -113,7 +118,7 @@ describe("answer", () => {
     expect(waiting.size).toBe(0)
   })
 
-  test("passes nothing on when the request is answered while the reply is on its way", async () => {
+  test("says so when the reply fails but the request no longer waits", async () => {
     const worktree = location([request])
     ;(worktree.domain as any).reply = async () => {
       worktree.pending.clear()
@@ -121,9 +126,28 @@ describe("answer", () => {
     }
     const ports = await setUp(worktree.domain)
 
-    const result = await answer(ports, new Set(), "ses_parent", { sessionID: "ses_child", requestID: "per_1", reply: "once" })
+    await expect(answer(ports, new Set(), "ses_parent", { sessionID: "ses_child", requestID: "per_1", reply: "once" })).rejects.toThrow(
+      "permission.reply failed: Permission request not found: per_1, but per_1 no longer waits, so it was answered, possibly by this call.",
+    )
+  })
 
-    expect(result.answered).toBe(false)
+  test("fails rather than calling a request gone when a location cannot be read", async () => {
+    const broken = { list: async () => Promise.reject(new Error("database is locked")) } as unknown as Permissions
+    const ports = await setUp(location().domain, broken)
+
+    await expect(answer(ports, new Set(), "ses_parent", { sessionID: "ses_child", requestID: "per_1", reply: "once" })).rejects.toThrow(
+      "database is locked",
+    )
+  })
+
+  test("refuses always for a request with nothing to save, which OpenCode does not offer it for", async () => {
+    const worktree = location([{ ...request, save: [] }])
+    const ports = await setUp(worktree.domain)
+
+    await expect(answer(ports, new Set(), "ses_parent", { sessionID: "ses_child", requestID: "per_1", reply: "always" })).rejects.toThrow(
+      "always is not offered for per_1: it has nothing to save.",
+    )
+    expect(worktree.replies).toEqual([])
   })
 
   test("keeps the request waiting when the reply fails for another reason", async () => {
@@ -140,16 +164,44 @@ describe("answer", () => {
     expect(waiting).toEqual(new Set(["per_1"]))
   })
 
-  test("answers only the caller's own children, and only with OpenCode's replies", async () => {
-    const worktree = location([request])
+  test("answers only for sessions started from the caller, and only with OpenCode's replies", async () => {
+    const worktree = location([request, { ...request, id: "per_9", sessionID: "ses_stranger" }])
     const ports = await setUp(worktree.domain)
 
     await expect(answer(ports, new Set(), "ses_other", { sessionID: "ses_child", requestID: "per_1", reply: "once" })).rejects.toThrow(
-      "ses_child was not started by ses_other with courier_spawn",
+      "ses_child's permission requests go to ses_parent, the session at the top of the sessions started from it with courier_spawn; ses_other cannot answer them.",
+    )
+    await expect(answer(ports, new Set(), "ses_parent", { sessionID: "ses_stranger", requestID: "per_9", reply: "once" })).rejects.toThrow(
+      "ses_stranger was not started with courier_spawn",
     )
     await expect(answer(ports, new Set(), "ses_parent", { sessionID: "ses_child", requestID: "per_1", reply: "yes" })).rejects.toThrow(
       'reply must be once, always or reject, not "yes".',
     )
+    expect(worktree.replies).toEqual([])
+  })
+
+  test("answers a request of a child's child from the session at the top, and not from the child", async () => {
+    const grandchild = { ...request, id: "per_g", sessionID: "ses_grand" }
+    const worktree = location([grandchild])
+    const ports = await setUp(worktree.domain)
+    await record(ports.storage, { sessionID: "ses_grand", parentID: "ses_child", title: "Push", directory: "/wt", isolated: true, createdAt: 2 })
+
+    await expect(answer(ports, new Set(), "ses_child", { sessionID: "ses_grand", requestID: "per_g", reply: "always" })).rejects.toThrow(
+      "ses_grand's permission requests go to ses_parent",
+    )
+    expect(worktree.replies).toEqual([])
+    const result = await answer(ports, new Set(), "ses_parent", { sessionID: "ses_grand", requestID: "per_g", reply: "once" })
+    expect(result.answered).toBe(true)
+  })
+
+  test("does not answer a request of another session under the child's id", async () => {
+    const worktree = location([{ ...request, id: "per_9", sessionID: "ses_stranger" }])
+    ;(worktree.domain as any).list = async () => [{ ...request, id: "per_9", sessionID: "ses_stranger" }]
+    const ports = await setUp(worktree.domain)
+
+    const result = await answer(ports, new Set(), "ses_parent", { sessionID: "ses_child", requestID: "per_9", reply: "once" })
+
+    expect(result.answered).toBe(false)
     expect(worktree.replies).toEqual([])
   })
 })

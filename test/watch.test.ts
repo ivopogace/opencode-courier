@@ -7,6 +7,7 @@ import {
   failureNotice,
   reportAsked,
   reportFailure,
+  relayPending,
   reportReplied,
   watchChildren,
   type ExecutionFailed,
@@ -35,9 +36,9 @@ const replied = (id = "evt_r", reply: PermissionReplied["data"]["reply"] = "once
   data: { sessionID: "ses_child", requestID: "per_1", reply },
 })
 
-const fresh = () => ({ seen: new Set<string>(), waiting: new Set<string>() })
+const fresh = () => ({ seen: new Set<string>(), waiting: new Set<string>(), answered: new Set<string>() })
 
-function fakePorts(streams: unknown[][] = []) {
+function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["data"][] = []) {
   const store = new Map<string, unknown>()
   const sent: any[] = []
   const logged: string[] = []
@@ -63,6 +64,9 @@ function fakePorts(streams: unknown[][] = []) {
         if (!events) throw new Error("stream closed")
         yield* events
       },
+    },
+    permission: {
+      list: async ({ sessionID }: { sessionID: string }) => pending.filter((item) => item.sessionID === sessionID),
     },
     log: (message: string) => void logged.push(message),
   } as unknown as WatchPorts
@@ -145,7 +149,7 @@ describe("reportAsked", () => {
     expect(sent).toEqual([
       {
         sessionID: "ses_parent",
-        text: envelope("ses_child", permissionNotice("Fix the bug", request, false), { asks: "permission", request: "per_1" }),
+        text: envelope("ses_child", permissionNotice("Fix the bug", request), { asks: "permission", request: "per_1" }),
         description: "Session ses_child asks for permission",
         metadata: { source: "courier", from: "ses_child", asks: "permission", requestID: "per_1" },
         delivery: "steer",
@@ -154,14 +158,31 @@ describe("reportAsked", () => {
     expect(state.waiting).toEqual(new Set(["per_1"]))
   })
 
-  test("tells a parent that was itself spawned that it may ask its own parent", async () => {
+  test("tells the session at the top, where the person is, about a request of a child's child", async () => {
     const { ports, sent } = fakePorts()
     await record(ports.storage, child())
     await record(ports.storage, { ...child("ses_root"), sessionID: "ses_parent", title: "Lead" })
 
-    await reportAsked(ports, fresh(), asked())
+    expect(await reportAsked(ports, fresh(), asked())).toEqual(["ses_root"])
 
-    expect(sent[0].text).toContain("ask the session that started you with courier_send instead")
+    expect(sent[0].sessionID).toBe("ses_root")
+    expect(sent[0].text).toBe(
+      envelope("ses_child", permissionNotice("Fix the bug", request, "ses_parent"), { asks: "permission", request: "per_1" }),
+    )
+    expect(sent[0].text).toContain('This session, "Fix the bug", which ses_parent started with courier_spawn, a session started from yours,')
+  })
+
+  test("does not tell anyone about a request answered while its roster was looked up", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    const state = fresh()
+
+    const telling = reportAsked(ports, state, asked())
+    await reportReplied(ports, state, replied())
+    await telling
+
+    expect(sent).toEqual([])
+    expect(state.waiting.size).toBe(0)
   })
 
   test("ignores a request of a session that courier_spawn did not start, and a repeated event", async () => {
@@ -201,6 +222,20 @@ describe("reportReplied", () => {
 
     expect(await reportReplied(ports, fresh(), replied())).toEqual([])
     expect(sent).toEqual([])
+  })
+})
+
+describe("relayPending", () => {
+  test("relays the requests spawned sessions already wait on, once, alongside the events", async () => {
+    const other = { ...request, id: "per_2", sessionID: "ses_other" }
+    const { ports, sent } = fakePorts([], [request, other])
+    await record(ports.storage, child())
+    const state = fresh()
+
+    await Promise.all([relayPending(ports, state), reportAsked(ports, state, asked())])
+    await relayPending(ports, state)
+
+    expect(sent.map((notice: any) => notice.metadata.requestID)).toEqual(["per_1"])
   })
 })
 

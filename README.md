@@ -332,7 +332,8 @@ bump and shows the diff, pushing nothing. Tag the release with `dry_run` (the de
 hand, and it runs on any branch) checks the version and the tag, builds and runs
 `npm stage publish --dry-run`, which also refuses a version npm already has; so run it on the
 release branch to rehearse a release: `gh workflow run release-tag.yml --ref release-X.Y.Z`.
-Release itself takes a `dry_run` on an existing tag, `gh workflow run release.yml --ref vX.Y.Z
+Release itself takes a `dry_run` on a tag cut with this flow (v0.1.2 onward; earlier tags carry a
+`release.yml` without the dispatch trigger), `gh workflow run release.yml --ref vX.Y.Z
 -f dry_run=true`: the environment admits the tag, the token is checked (a missing one is a
 warning there), the package is packed and nothing is staged or released.
 

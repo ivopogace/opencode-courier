@@ -32,6 +32,8 @@ trap cleanup EXIT
 
 api() { curl -sf -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/$1"; }
 prompt() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json "$1" </dev/null); }
+# Like prompt, but a new turn in the existing session $1.
+prompt_in() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --session "$1" "$2" </dev/null); }
 now_ms() { node -e 'console.log(Date.now())'; }
 failures=0
 check() {
@@ -158,6 +160,38 @@ out=$(prompt "COURIER-CHILDREN $roster_parent")
 listed=$(tool_state courier_children <<<"$out" | jq -c 'select(.status == "completed") | .metadata.metadata.children')
 check "lists both children" "$(jq -r --arg ids "$spawned" '[.[].sessionID] | sort == ($ids | split("\n") | sort)' <<<"$listed")"
 check "with each child's last reply" "$(jq -r 'all((.lastText // "") | contains("TOOL DONE courier_send"))' <<<"$listed")"
+
+# Spawns an isolated child from a new parent and waits for its report; sets parent, child and directory.
+spawn_isolated() {
+  local out
+  out=$(prompt "COURIER-TEST isolate")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  directory=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.directory')
+  check "the isolated child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
+}
+listed_children() { prompt "COURIER-CHILDREN $1" | tool_state courier_children | jq -r '.metadata.metadata.children[].sessionID'; }
+
+echo "courier_cleanup removes a clean worktree"
+spawn_isolated
+check "its worktree exists" "$([ -d "$directory" ] && echo true || echo false)"
+cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child" | tool_state courier_cleanup)
+check "courier_cleanup removed it" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
+check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
+check "git no longer lists the worktree" "$(git -C "$WORK/project" worktree list | grep -qF "$directory" && echo false || echo true)"
+check "the child is off courier_children" "$(listed_children "$parent" | grep -q "$child" && echo false || echo true)"
+
+echo "courier_cleanup keeps a worktree with uncommitted changes"
+spawn_isolated
+echo "work in progress" >"$directory/notes.txt"
+cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child" | tool_state courier_cleanup)
+check "courier_cleanup kept it and named the file" \
+  "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "kept" and (.output | contains("notes.txt"))' <<<"$cleaned")"
+check "the file is still there" "$([ -f "$directory/notes.txt" ] && echo true || echo false)"
+check "the child is still on courier_children" "$(listed_children "$parent" | grep -q "$child" && echo true || echo false)"
+cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child force" | tool_state courier_cleanup)
+check "with force, courier_cleanup removed it" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
+check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed; rerun with KEEP=1 to keep the server and model logs"

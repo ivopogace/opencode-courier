@@ -46,6 +46,8 @@ function decide(body) {
   if (later) return { tool: "courier_later", args: { message: "CHECK-IN", delayMinutes: Number(later[1]) } }
   const look = recent.match(/COURIER-STATUS (ses_\w+)/)
   if (look) return { tool: "courier_status", args: { sessionID: look[1] } }
+  const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)
+  if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
   const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)

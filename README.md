@@ -1,5 +1,7 @@
 # opencode-courier
 
+[![CI](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml/badge.svg)](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml)
+
 An [OpenCode](https://github.com/anomalyco/opencode) V2 plugin that lets one session start other
 sessions, message them, and be woken by them, without polling.
 
@@ -89,6 +91,9 @@ plugin loaded and `e2e/mock-model.mjs` as the model: an OpenAI-compatible server
 a fixed script, so no API key is needed. It checks that a parent's spawn completes, that the parent
 gets a new turn after its own has ended once the child reports (shared and `isolate: true`), and
 that `courier_status` reports and fails readably. It needs node, bun, git, curl and jq.
+
+CI (`.github/workflows/ci.yml`) runs both on every push to `main` and every pull request, with the
+OpenCode CLI at the same version as the pinned plugin API.
 
 The plugin API is still beta and pinned to an exact version in `package.json`; bump it
 deliberately and re-run both test suites.

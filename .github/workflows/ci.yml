@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run build
+
+  e2e:
+    name: Live test against OpenCode V2
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      # The CLI follows the plugin API version the package is built against, so the two never drift.
+      - name: Install OpenCode V2
+        run: npm install -g "@opencode-ai/cli@$(node -p "require('./package.json').devDependencies['@opencode-ai/plugin']")"
+      - name: Run the live test
+        run: OPENCODE_BIN="$(command -v opencode2)" e2e/run.sh
+        env:
+          E2E_WORK: ${{ runner.temp }}/e2e
+          KEEP: "1"
+      - name: Upload server and model logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-logs
+          path: |
+            ${{ runner.temp }}/e2e/*.log
+            ${{ runner.temp }}/e2e/*.out
+          if-no-files-found: ignore

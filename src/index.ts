@@ -1,9 +1,11 @@
 import { Plugin } from "@opencode-ai/plugin"
 import { Schema } from "effect"
 import { randomUUID } from "node:crypto"
+import type { Server } from "node:http"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
 import { cancel, deliverDue, schedule, TICK_MS, type LaterPorts } from "./later.js"
 import { pruneExpired } from "./roster.js"
+import { listen, readConfig, subscribe, unsubscribe, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
 const SpawnInput = Schema.Struct({
   task: Schema.String.annotate({ description: "What the new session should do. It is told who started it and how to report back." }),
@@ -45,6 +47,88 @@ const CancelInput = Schema.Struct({
   id: Schema.String.annotate({ description: "The id courier_later returned." }),
 })
 
+const SubscribeInput = Schema.Struct({
+  topic: Schema.String.annotate({
+    description:
+      "owner/repo for every event of a GitHub repository, owner/repo#<number> for one pull request or issue " +
+      "(reviews, comments, completed CI runs), or a plain name for deliveries posted to /hook/<name>.",
+  }),
+  sessionID: Schema.optional(Schema.String.annotate({ description: "The session to subscribe; defaults to this one." })),
+})
+
+const UnsubscribeInput = Schema.Struct({
+  topic: Schema.optional(Schema.String.annotate({ description: "The topic to drop; all of this session's when omitted." })),
+  sessionID: Schema.optional(Schema.String.annotate({ description: "The session to unsubscribe; defaults to this one." })),
+})
+
+/**
+ * The webhook receiver, one per process like the claim set: every instance configured with a
+ * `webhook` option joins `instances`, the first one starts the server, and the last one to unload
+ * stops it. Requests are served with any live instance's ports; sessions and storage are shared.
+ * A receiver that could not listen is dropped, so the next instance to load tries again, and a new
+ * one waits for the previous one to finish closing, as on a plugin reload.
+ */
+interface Receiver {
+  readonly config: WebhookConfig
+  readonly instances: Set<WebhookPorts>
+  readonly server: Promise<Server | undefined>
+}
+const receivers = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.receiver")] ??= {}) as {
+  current?: Receiver
+  closing?: Promise<void>
+}
+
+const sameSettings = (a: WebhookConfig, b: WebhookConfig) =>
+  a.port === b.port && a.host === b.host && a.secret === b.secret && a.maxBytes === b.maxBytes
+
+function startReceiver(config: WebhookConfig, log: (message: string) => void) {
+  const instances = new Set<WebhookPorts>()
+  const receiver: Receiver = {
+    config,
+    instances,
+    server: (receivers.closing ?? Promise.resolve())
+      .then(() => listen(config, () => instances.values().next().value))
+      .then(
+        (server) => {
+          log(`courier webhook: listening on http://${config.host}:${(server.address() as { port: number }).port}`)
+          return server
+        },
+        (error: unknown) => {
+          log(`courier webhook: cannot listen on ${config.host}:${config.port}: ${String(error)}`)
+          if (receivers.current === receiver) receivers.current = undefined
+          return undefined
+        },
+      ),
+  }
+  return (receivers.current = receiver)
+}
+
+function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
+  const receiver = receivers.current ?? startReceiver(config, ports.log)
+  if (!sameSettings(receiver.config, config))
+    ports.log(
+      `courier webhook: already running on ${receiver.config.host}:${receiver.config.port} with other settings ` +
+        "(port, host, secret or maxBytes); this location's are ignored. Set the webhook option once, in the global config.",
+    )
+  receiver.instances.add(ports)
+  return async () => {
+    receiver.instances.delete(ports)
+    if (receiver.instances.size > 0 || receivers.current !== receiver) return
+    receivers.current = undefined
+    const closing = receiver.server.then(
+      (server) =>
+        new Promise<void>((resolve) => {
+          if (!server) return resolve()
+          server.closeAllConnections()
+          server.close(() => resolve())
+        }),
+    )
+    receivers.closing = closing
+    await closing
+    if (receivers.closing === closing) receivers.closing = undefined
+  }
+}
+
 // One claim set for every instance in the process: OpenCode sets the plugin up once per project
 // location, and those instances share one storage.
 const claimed: Set<string> = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.claimed")] ??=
@@ -72,6 +156,13 @@ export default Plugin.define({
       now: Date.now,
       newID: () => `later_${randomUUID()}`,
       log: (message) => console.error(message),
+    }
+    const hooks: WebhookPorts = { storage: ctx.storage, session: ctx.session, now: Date.now, log: later.log }
+    let webhook: WebhookConfig | undefined
+    try {
+      webhook = readConfig(ctx.options)
+    } catch (error) {
+      later.log(`courier webhook: not started: ${error instanceof Error ? error.message : String(error)}`)
     }
 
     await ctx.tool.transform((tools) => {
@@ -166,6 +257,43 @@ export default Plugin.define({
           }
         },
       })
+
+      tools.add({
+        name: "courier_subscribe",
+        options: { codemode: false },
+        description:
+          "Wake a session (this one by default) when a webhook arrives for a topic: a GitHub repository, one of its " +
+          "pull requests or issues (reviews, comments, completed CI runs), or a named generic hook. Each matching " +
+          "delivery arrives as a message, queued behind any running turn. End your turn and wait; do not poll.",
+        input: SubscribeInput,
+        execute: async (input, context) => {
+          const sessionID = input.sessionID ?? context.sessionID
+          const subscription = await subscribe(hooks, sessionID, input.topic).catch(rethrow("courier_subscribe"))
+          const receiving = (await receivers.current?.server) !== undefined
+          const note = receiving
+            ? ""
+            : " Note: no webhook receiver runs in this OpenCode server (see the plugin's webhook option), so nothing will arrive yet."
+          return {
+            content: `Subscribed ${sessionID} to ${subscription.topic}.${note}`,
+            metadata: { sessionID, topic: subscription.topic, receiver: receiving },
+          }
+        },
+      })
+
+      tools.add({
+        name: "courier_unsubscribe",
+        options: { codemode: false },
+        description: "Stop webhook deliveries for a topic, or all of a session's topics, e.g. once its pull request is merged.",
+        input: UnsubscribeInput,
+        execute: async (input, context) => {
+          const sessionID = input.sessionID ?? context.sessionID
+          const dropped = await unsubscribe(hooks, sessionID, input.topic).catch(rethrow("courier_unsubscribe"))
+          return {
+            content: dropped.length ? `Unsubscribed ${sessionID} from ${dropped.join(", ")}.` : `${sessionID} had no matching subscription.`,
+            metadata: { sessionID, dropped },
+          }
+        },
+      })
     })
 
     void pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => console.error(`courier roster prune: ${String(error)}`))
@@ -180,6 +308,10 @@ export default Plugin.define({
     }
     void tick()
     const timer = setInterval(tick, TICK_MS)
-    return () => clearInterval(timer)
+    const leave = webhook ? joinReceiver(webhook, hooks) : undefined
+    return async () => {
+      clearInterval(timer)
+      await leave?.()
+    }
   },
 })

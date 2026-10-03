@@ -44,6 +44,8 @@ function decide(body) {
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
   const later = recent.match(/COURIER-LATER(?:-CANCEL)? ([\d.]+)/)
   if (later) return { tool: "courier_later", args: { message: "CHECK-IN", delayMinutes: Number(later[1]) } }
+  const topic = recent.match(/COURIER-SUBSCRIBE ([\w./#-]+)/)
+  if (topic) return { tool: "courier_subscribe", args: { topic: topic[1] } }
   const look = recent.match(/COURIER-STATUS (ses_\w+)/)
   if (look) return { tool: "courier_status", args: { sessionID: look[1] } }
   const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)

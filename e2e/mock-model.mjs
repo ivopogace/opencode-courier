@@ -27,6 +27,12 @@ function decide(body) {
     const scheduled = result.match(/Scheduled (later_[\w-]+)/)
     if (call?.function?.name === "courier_later" && prompt.includes("COURIER-LATER-CANCEL") && scheduled)
       return { tool: "courier_cancel", args: { id: scheduled[1] } }
+    // Any user message, not just the last: a child's report may already have been steered in.
+    const roster = messages.some((message) => message.role === "user" && textOf(message.content).includes("COURIER-ROSTER"))
+    if (call?.function?.name === "courier_spawn" && roster) {
+      const spawned = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_spawn")
+      return spawned.length < 2 ? spawnChild(false) : { tool: "courier_children", args: {} }
+    }
     return { text: `TOOL DONE ${call?.function?.name}: ${result}` }
   }
   const recent = messages
@@ -40,9 +46,16 @@ function decide(body) {
   if (later) return { tool: "courier_later", args: { message: "CHECK-IN", delayMinutes: Number(later[1]) } }
   const look = recent.match(/COURIER-STATUS (ses_\w+)/)
   if (look) return { tool: "courier_status", args: { sessionID: look[1] } }
+  const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
+  if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
+  if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
   const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)
-  if (spawn) return { tool: "courier_spawn", args: { task: "Report back to your parent.", isolate: spawn[1] === "isolate" } }
+  if (spawn) return spawnChild(spawn[1] === "isolate")
   return { text: "ok" }
+}
+
+function spawnChild(isolate) {
+  return { tool: "courier_spawn", args: { task: "Report back to your parent.", isolate } }
 }
 
 function chunk(delta, finish) {

@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { envelope } from "./courier.js"
+import { scanAll, type Storage } from "./storage.js"
 
 type Context = Plugin.Context
 
@@ -18,7 +19,7 @@ export interface LaterEntry {
 }
 
 export interface LaterPorts {
-  readonly storage: Pick<Context["storage"], "get" | "set" | "remove" | "scan">
+  readonly storage: Storage
   readonly session: Pick<Context["session"], "synthetic">
   readonly now: () => number
   readonly newID: () => string
@@ -68,15 +69,8 @@ export async function cancel(ports: LaterPorts, id: string) {
   return true
 }
 
-async function pending(ports: LaterPorts) {
-  const entries: LaterEntry[] = []
-  let after: string | undefined
-  do {
-    const page = await ports.storage.scan({ prefix: PREFIX, ...(after ? { after } : {}) })
-    for (const entry of page.entries) entries.push(entry.value as unknown as LaterEntry)
-    after = page.next
-  } while (after)
-  return entries
+function pending(ports: LaterPorts) {
+  return scanAll<LaterEntry>(ports.storage, PREFIX)
 }
 
 /**

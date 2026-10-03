@@ -1,16 +1,27 @@
 import { describe, expect, test } from "bun:test"
-import { childBrief, describeFailure, envelope, send, spawn, status, type CourierPorts } from "../src/courier.js"
+import { childBrief, describeFailure, envelope, listChildren, send, spawn, status, type CourierPorts } from "../src/courier.js"
+import { record, rosterKey } from "../src/roster.js"
 
 type Call = { method: string; input: any }
 
 function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unknown> } = {}) {
   const calls: Call[] = []
+  const store = new Map<string, unknown>()
   const record = (method: string, result: unknown) => async (input: any) => {
     calls.push({ method, input })
     return result
   }
   const ports = {
     directory: "/repo",
+    now: () => 1_000,
+    storage: {
+      get: async (key: string) => store.get(key),
+      set: async (key: string, value: unknown) => void store.set(key, value),
+      remove: async (key: string) => void store.delete(key),
+      scan: async ({ prefix }: { prefix: string }) => ({
+        entries: [...store].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
+      }),
+    },
     session: {
       create: record("session.create", { id: "ses_child", location: { directory: "/repo" } }),
       prompt: record("session.prompt", { id: "msg_1" }),
@@ -29,7 +40,7 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
       create: record("worktree.create", { directory: "/repo/.worktrees/ses" }),
     },
   } as unknown as CourierPorts
-  return { ports, calls }
+  return { ports, calls, store }
 }
 
 describe("spawn", () => {
@@ -42,6 +53,36 @@ describe("spawn", () => {
     expect(calls.map((call) => call.method)).toEqual(["session.create", "session.prompt"])
     expect(calls[0]!.input).toEqual({ title: "Fix the bug", metadata: { courier: { parentID: "ses_parent" } } })
     expect(calls[1]!.input).toEqual({ sessionID: "ses_child", text: childBrief("ses_parent", "Fix the bug\nin checkout") })
+  })
+
+  test("records the child on its parent's roster before prompting it", async () => {
+    const { ports, store } = fakePorts()
+    ;(ports.session as any).prompt = async () => {
+      throw new Error("prompt failed")
+    }
+
+    await expect(spawn(ports, "ses_parent", { task: "Fix the bug" })).rejects.toThrow("prompt failed")
+
+    expect(store.get(rosterKey("ses_parent", "ses_child"))).toEqual({
+      sessionID: "ses_child",
+      parentID: "ses_parent",
+      title: "Fix the bug",
+      directory: "/repo",
+      isolated: false,
+      createdAt: 1_000,
+    })
+  })
+
+  test("still prompts the child when the roster cannot be written, and says so", async () => {
+    const { ports, calls } = fakePorts()
+    ;(ports.storage as any).set = async () => {
+      throw new Error("disk full")
+    }
+
+    const child = await spawn(ports, "ses_parent", { task: "t" })
+
+    expect(calls.map((call) => call.method)).toEqual(["session.create", "session.prompt"])
+    expect(child).toEqual({ sessionID: "ses_child", directory: "/repo", rosterError: "roster failed: disk full" })
   })
 
   test("passes the agent and title through", async () => {
@@ -60,6 +101,18 @@ describe("spawn", () => {
     expect(calls[0]).toEqual({ method: "worktree.create", input: { location: { directory: "/repo" } } })
     expect(calls[1]!.input).toMatchObject({ location: { directory: "/repo/.worktrees/ses" } })
     expect(child.directory).toBe("/repo/.worktrees/ses")
+  })
+
+  test("records an isolated child with its worktree", async () => {
+    const { ports, store } = fakePorts()
+
+    await spawn(ports, "ses_parent", { task: "t", title: "Custom", isolate: true })
+
+    expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({
+      title: "Custom",
+      directory: "/repo/.worktrees/ses",
+      isolated: true,
+    })
   })
 
   test("shortens a long first line for the title", async () => {
@@ -141,6 +194,48 @@ describe("status", () => {
 
     expect(Object.values(result)).not.toContain(undefined)
     expect(result).toStrictEqual({ sessionID: "ses_child", updated: 2 })
+  })
+})
+
+describe("listChildren", () => {
+  test("lists each child with its status and roster fields, or the error looking it up gave", async () => {
+    const { ports } = fakePorts({ messages: [{ type: "assistant", content: [{ type: "text", text: "Done" }] }] })
+    const get = ports.session.get
+    ;(ports.session as any).get = async (input: { sessionID: string }) => {
+      if (input.sessionID === "ses_gone") throw Object.assign(new Error(""), { _tag: "Session.NotFoundError", sessionID: "ses_gone" })
+      return get(input)
+    }
+    await record(ports.storage, { sessionID: "ses_child", parentID: "ses_parent", title: "Fix the bug", directory: "/repo", isolated: false, createdAt: 900 })
+    await record(ports.storage, { sessionID: "ses_gone", parentID: "ses_parent", title: "Gone", directory: "/wt", isolated: true, createdAt: 950 })
+    await record(ports.storage, { sessionID: "ses_else", parentID: "ses_other", title: "Else", directory: "/repo", isolated: false, createdAt: 900 })
+
+    expect(await listChildren(ports, "ses_parent")).toStrictEqual([
+      {
+        sessionID: "ses_child",
+        title: "Fix the bug",
+        outcome: "succeeded",
+        updated: 5,
+        idle: 5,
+        lastText: "Done",
+        directory: "/repo",
+        isolated: false,
+        created: 900,
+      },
+      {
+        sessionID: "ses_gone",
+        title: "Gone",
+        directory: "/wt",
+        isolated: true,
+        created: 950,
+        error: "courier_status failed: Session.NotFoundError ses_gone",
+      },
+    ])
+  })
+
+  test("is empty for a session that started none", async () => {
+    const { ports } = fakePorts()
+
+    expect(await listChildren(ports, "ses_parent")).toEqual([])
   })
 })
 

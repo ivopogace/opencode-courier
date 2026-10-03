@@ -38,7 +38,9 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
     },
     worktree: {
       create: record("worktree.create", { directory: "/repo/.worktrees/ses" }),
+      remove: record("worktree.remove", undefined),
     },
+    head: async () => "abc123",
   } as unknown as CourierPorts
   return { ports, calls, store }
 }
@@ -103,7 +105,7 @@ describe("spawn", () => {
     expect(child.directory).toBe("/repo/.worktrees/ses")
   })
 
-  test("records an isolated child with its worktree", async () => {
+  test("records an isolated child with its worktree and the directory it was made from", async () => {
     const { ports, store } = fakePorts()
 
     await spawn(ports, "ses_parent", { task: "t", title: "Custom", isolate: true })
@@ -112,7 +114,22 @@ describe("spawn", () => {
       title: "Custom",
       directory: "/repo/.worktrees/ses",
       isolated: true,
+      source: "/repo",
+      base: "abc123",
     })
+  })
+
+  test("removes the fresh worktree when the session cannot be created", async () => {
+    const { ports, calls, store } = fakePorts()
+    ;(ports.session as any).create = async () => {
+      throw new Error("no such agent")
+    }
+
+    await expect(spawn(ports, "ses_parent", { task: "t", isolate: true })).rejects.toThrow("no such agent")
+
+    expect(calls.map((call) => call.method)).toEqual(["worktree.create", "worktree.remove"])
+    expect(calls[1]!.input).toEqual({ location: { directory: "/repo" }, directory: "/repo/.worktrees/ses", force: false })
+    expect(store.size).toBe(0)
   })
 
   test("shortens a long first line for the title", async () => {

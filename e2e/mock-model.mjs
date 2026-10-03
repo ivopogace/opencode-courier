@@ -48,6 +48,8 @@ function decide(body) {
   if (topic) return { tool: "courier_subscribe", args: { topic: topic[1] } }
   const look = recent.match(/COURIER-STATUS (ses_\w+)/)
   if (look) return { tool: "courier_status", args: { sessionID: look[1] } }
+  const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)
+  if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
   const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)

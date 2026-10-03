@@ -6,7 +6,9 @@ type Context = Plugin.Context
 /** The slice of the plugin context the courier tools use; tests pass a fake. */
 export interface CourierPorts {
   readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context">
-  readonly worktree: Pick<Context["worktree"], "create">
+  readonly worktree: Pick<Context["worktree"], "create" | "remove">
+  /** The commit a directory's checkout is on, or undefined; recorded as an isolated child's base. */
+  readonly head: (directory: string) => Promise<string | undefined>
   readonly storage: RosterStorage
   readonly directory: string
   readonly now: () => number
@@ -62,13 +64,23 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
   const directory = input.isolate
     ? (await ports.worktree.create({ location: { directory: ports.directory } })).directory
     : undefined
+  const base = directory ? await ports.head(directory) : undefined
   const title = input.title ?? titleOf(input.task)
-  const child = await ports.session.create({
-    title,
-    ...(input.agent ? { agent: input.agent } : {}),
-    ...(directory ? { location: { directory } } : {}),
-    metadata: { courier: { parentID } },
-  })
+  const child = await ports.session
+    .create({
+      title,
+      ...(input.agent ? { agent: input.agent } : {}),
+      ...(directory ? { location: { directory } } : {}),
+      metadata: { courier: { parentID } },
+    })
+    .catch(async (error: unknown) => {
+      // No session will ever use the fresh worktree, and nothing records it, so it goes now.
+      if (directory)
+        await ports.worktree
+          .remove({ location: { directory: ports.directory }, directory, force: false })
+          .catch(() => undefined)
+      throw error
+    })
   // Recorded before the prompt, so a child that exists is on the roster even if prompting fails. A
   // failed write must not keep the child from its task, so it is reported instead of thrown.
   const rosterError = await record(ports.storage, {
@@ -78,6 +90,8 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
     directory: directory ?? child.location.directory,
     isolated: directory !== undefined,
     createdAt: ports.now(),
+    ...(directory ? { source: ports.directory } : {}),
+    ...(base ? { base } : {}),
   }).then(
     () => undefined,
     (error: unknown) => describeFailure("roster", error).message,

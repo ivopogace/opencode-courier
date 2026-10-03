@@ -1,0 +1,95 @@
+import type { Plugin } from "@opencode-ai/plugin"
+
+type Context = Plugin.Context
+
+/** The slice of the plugin context the courier tools use; tests pass a fake. */
+export interface CourierPorts {
+  readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context">
+  readonly worktree: Pick<Context["worktree"], "create">
+  readonly directory: string
+}
+
+export interface SpawnInput {
+  readonly task: string
+  readonly title?: string
+  readonly agent?: string
+  readonly isolate?: boolean
+}
+
+export interface SendInput {
+  readonly sessionID: string
+  readonly message: string
+  readonly queue?: boolean
+}
+
+export interface StatusInput {
+  readonly sessionID: string
+}
+
+export function childBrief(parentID: string, task: string) {
+  return [
+    `You were started by session ${parentID} through opencode-courier.`,
+    "",
+    `When you finish, or need a decision you cannot make yourself, call courier_send with sessionID "${parentID}" and a short report.`,
+    "That message wakes the parent. It is the only way the parent hears from you, so do not end without sending it.",
+    "",
+    "Task:",
+    task,
+  ].join("\n")
+}
+
+export function envelope(from: string, message: string) {
+  return `<courier from="${from}">\n${message}\n</courier>`
+}
+
+function titleOf(task: string) {
+  const line = task.trim().split("\n")[0] ?? ""
+  return line.length > 60 ? `${line.slice(0, 57)}...` : line
+}
+
+/** Creates a child session, hands it the task and returns at once; the child reports back with courier_send. */
+export async function spawn(ports: CourierPorts, parentID: string, input: SpawnInput) {
+  const directory = input.isolate
+    ? (await ports.worktree.create({ location: { directory: ports.directory } })).directory
+    : undefined
+  const child = await ports.session.create({
+    title: input.title ?? titleOf(input.task),
+    ...(input.agent ? { agent: input.agent } : {}),
+    ...(directory ? { location: { directory } } : {}),
+    metadata: { courier: { parentID } },
+  })
+  await ports.session.prompt({ sessionID: child.id, text: childBrief(parentID, input.task) })
+  return { sessionID: child.id, directory: directory ?? child.location.directory }
+}
+
+/** Drops a message into another session's inbox; OpenCode wakes that session if it is idle. */
+export async function send(ports: CourierPorts, from: string, input: SendInput) {
+  const delivered = await ports.session.synthetic({
+    sessionID: input.sessionID,
+    text: envelope(from, input.message),
+    description: `Message from ${from}`,
+    metadata: { source: "courier", from },
+    delivery: input.queue ? "queue" : "steer",
+  })
+  return { messageID: delivered.id }
+}
+
+/** A one-off look at a session, for check-ins; not meant to be called in a loop. */
+export async function status(ports: CourierPorts, input: StatusInput) {
+  const info = await ports.session.get({ sessionID: input.sessionID })
+  const messages = await ports.session.context({ sessionID: input.sessionID })
+  const last = messages.findLast((message) => message.type === "assistant")
+  const lastText =
+    last?.type === "assistant"
+      ? last.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
+      : undefined
+  return {
+    sessionID: info.id,
+    title: info.title,
+    parentID: info.parentID,
+    outcome: info.outcome,
+    updated: info.time.updated,
+    idle: info.time.idle,
+    lastText,
+  }
+}

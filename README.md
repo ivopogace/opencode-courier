@@ -8,7 +8,9 @@ sessions, message them, and be woken by them, without polling.
 A parent session calls `courier_spawn`, gets a session id back immediately and ends its turn. The
 child works on its own and, when it is done or stuck, calls `courier_send` with the parent's id.
 That message lands in the parent's inbox and OpenCode starts a new turn for the parent if it is
-idle. A child whose turn fails instead, so that it cannot report, is reported by the plugin.
+idle. A child whose turn fails instead, so that it cannot report, is reported by the plugin, and a
+child that waits for a permission has its request passed to the parent, who asks you and passes
+your answer back.
 
 > **Status: early.** Passes an end-to-end test inside a live OpenCode V2 server
 > (`opencode2 v0.0.0-beta-19271`) driven by a scripted stand-in model (`e2e/run.sh`), and a smoke
@@ -31,9 +33,10 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 |---|---|
 | `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`) on the parent's model, sends it the task plus a brief naming the parent and how to report back, and returns at once. |
 | `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. |
-| `courier_status` | One look at a session: outcome, idle time and last reply. For check-ins, not for waiting. |
+| `courier_status` | One look at a session: outcome, idle time, last reply and the permission requests it waits on. For check-ins, not for waiting. |
 | `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated and when it was started. |
 | `courier_cleanup` | Removes the git worktree of a child started with `isolate: true` and drops the child from `courier_children`. Keeps a worktree with uncommitted changes or commits on no branch, tag or remote and lists them, unless `force: true` is passed. |
+| `courier_answer` | Passes the person's answer (`once`, `always` or `reject`, with an optional `message`) to a permission request that a session started from this one waits on, after the plugin relayed it here. See [A child that asks for permission](#a-child-that-asks-for-permission). |
 | `courier_later` | Schedules a message for a session (this one by default) in `delayMinutes` or `at` an ISO time, and returns an id. When due it is delivered like `courier_send`, queued behind any running turn and waking the session if idle. |
 | `courier_cancel` | Drops a message scheduled with `courier_later`, e.g. because the child it was waiting for reported first. |
 | `courier_subscribe` | Subscribes a session (this one by default) to webhook deliveries for a `topic`: `owner/repo`, `owner/repo#12` (one pull request or issue) or a generic name. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. Needs the [webhook receiver](#webhooks). |
@@ -59,6 +62,51 @@ Every failed turn of a child is reported, also one that fails after the child ha
 that was interrupted is not a failure and is not reported, and neither is a failure that happens
 while the OpenCode server is down or the plugin is not loaded; a `courier_later` check-in still
 covers those.
+
+### A child that asks for permission
+
+When a child's tool call needs an approval (a permission rule with `"effect": "ask"`, or no rule
+for it), OpenCode holds the call until someone answers in the child's session, which the person
+working in the parent's session does not see. The plugin follows `permission.asked`, and for a
+session on a roster it sends the parent a message from that child, marked `asks="permission"` and
+`request="<id>"`, waking the parent if it is idle. The message says what the child asks for (the
+action, such as `shell` or `edit`, and its resources, such as the command or the paths), lists
+the choices OpenCode's own prompt offers, and tells the parent to ask the person rather than
+decide:
+
+- `once`: allow this request only;
+- `always`: allow it and save the rule for the project; offered only when the request says what
+  to save, as in OpenCode's prompt;
+- `reject`: refuse it, with a reason if the person gives one.
+
+The parent asks you, with its question tool if it has one, and calls
+`courier_answer { sessionID, requestID, reply, message? }` with your choice. The plugin passes it
+on with the plugin API's `permission.reply`, and the child carries on.
+
+A request of a child's child goes to the session at the top, the one you started the first child
+from, and so on down any number of levels, since that is where you are; the message names the
+session that started the asking one. Only that top session can answer it. A session started with
+`courier_spawn` cannot answer what its own children ask, so it cannot get around a rule that makes
+it ask by starting a child to do the job and approving it.
+
+OpenCode ends the child's turn when a request is rejected without a message, and the child would
+then never report back. So `courier_answer` always sends a message with a rejection, the person's
+reason or a default one; the child's call fails and it carries on, and can report. At
+`0.0.0-beta-19271` the child's model is told that the call could not be run, not the reason.
+
+A request can also be answered without the parent: in the child's own session, or along with
+another answer (an `always` that covers it, or a rejection, which rejects the session's other
+pending requests as well). For a request the parent was told about, the plugin then sends it a
+short message marked `answered="<reply>"` saying the request is settled, so it does not pass on a
+stale question; after a rejection, the message adds that the child may have stopped, and that
+`courier_send` gets it going again. A `courier_answer` that comes later anyway passes nothing on and
+says so.
+
+`courier_status` and `courier_children` list the requests a session waits on under `pending`, so a
+parent that has lost the message, after a compaction for example, can still find them. Whenever
+the plugin starts following OpenCode's events, on loading and after its event stream broke, it
+also relays the requests that spawned sessions already wait on, so one asked in the gap is not
+missed. Questions a child asks with its question tool are not relayed yet.
 
 ### Roster
 
@@ -249,8 +297,12 @@ lists them under Recent Deliveries with a Redeliver button.
 
 1. Keep the background server running so sessions can be woken while you are away
    (`opencode2 service start`; `opencode2 service status` to check).
-2. Give the agents that run children permissions that don't need a human; a child waiting on an
-   approval prompt never reports back.
+2. Give the agents that run children the permissions their work needs. A child that hits an
+   approval prompt has it passed to its parent, which asks you (see
+   [A child that asks for permission](#a-child-that-asks-for-permission)), but the child waits
+   until you answer, so keep prompts for what you want to decide yourself. A question a child
+   asks with its question tool is not passed on yet, and leaves the child waiting in its own
+   session.
 3. Use `isolate: true` whenever children edit files in parallel. The child's worktree is made
    from the last commit, so an uncommitted `opencode.json` is not there and the child falls back
    to your global config: keep providers and models in the global config, or commit the file.
@@ -269,7 +321,13 @@ woke the idle parent. By default it uses a free model on OpenCode Zen, which nee
 ```bash
 OPENCODE_BIN=$(which opencode2) e2e/real-model.sh
 COURIER_MODEL=muse-spark-1.3-contributor-free OPENCODE_BIN=$(which opencode2) e2e/real-model.sh
+COURIER_SCENARIO=permission OPENCODE_BIN=$(which opencode2) e2e/real-model.sh
 ```
+
+With `COURIER_SCENARIO=permission` it runs the permission relay instead: one child whose command
+needs an approval, and the script in the person's place. It checks that the parent asks rather
+than answering by itself, answers its question with `once`, and checks that the parent passes that
+on with `courier_answer` and the child runs its command and reports.
 
 On `opencode2 v0.0.0-beta-19271`, `longcat-2.5-preview-free`, `muse-spark-1.3-contributor-free`
 and `nemotron-3-ultra-free` complete the fan-out with both reports waking the parent, after the
@@ -298,7 +356,12 @@ a fixed script, so no API key is needed. It checks that a parent's spawn complet
 gets a new turn after its own has ended once the child reports (shared and `isolate: true`), that
 `courier_status` reports and fails readably, that a child runs on the model its parent was started
 with rather than the default one, that a child whose model request is refused is reported to its
-idle parent, once and with the error, that a `courier_later` message wakes an idle parent
+idle parent, once and with the error, that a child's permission request (a project rule makes it
+ask before one command) wakes its idle parent once, with what it asks for and the choices, that
+`courier_status` shows it pending and `courier_answer` passes the answer back, `once` to a shared
+child and `reject` to an isolated one, after which the child carries on and reports, that a request
+answered in the child's own session gets the parent a message that it is settled and a later
+`courier_answer` passes nothing on, that a `courier_later` message wakes an idle parent
 (with its delay sent as a string, as some models send it),
 that a cancelled one never arrives, that a pending one is delivered after a server restart, that
 `courier_children` lists the two children a parent spawned, before and after that restart, that
@@ -471,6 +534,14 @@ Found while testing against `0.0.0-beta-19271`:
   the number `2` ("Expected a finite number"), and `Schema.FiniteFromString` fails with "Cannot
   convert a symbol to a number". Tool inputs use plain schemas and the tools validate the values
   themselves; a unit test keeps it that way.
+- `permission.asked` and `permission.replied` reach a plugin's `event.subscribe()`, as
+  `session.execution.failed` does. OpenCode keeps pending permission requests per location, and a
+  plugin instance's `permission` domain answers from its own location's, so a request of an
+  isolated child is answered through the instance loaded in the child's worktree. The plugin keeps
+  the domain of every loaded instance and answers through the one that holds the request.
+- A permission request rejected without a message ends the asking session's turn ("The user
+  declined this tool call"); with a message, only the tool call fails, and its model is told that
+  the call could not be run, not the message.
 - `Schema.Number` advertises the strings `"Infinity"`, `"-Infinity"` and `"NaN"` in its JSON
   Schema, so models are offered a string where a number is meant. Some send numbers as strings
   regardless, so `courier_later` takes `delayMinutes` as either.

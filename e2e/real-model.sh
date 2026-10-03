@@ -7,6 +7,10 @@
 #
 #   OPENCODE_BIN=/path/to/opencode2 e2e/real-model.sh
 #
+# COURIER_SCENARIO=permission runs the permission relay instead: one child whose command needs an
+# approval, a parent that should ask the person rather than answer by itself, and this script as
+# the person, answering "once" (e2e/real-model-permission.mjs).
+#
 # The default model is a free one on OpenCode Zen, which needs no key. To pick another:
 #
 #   COURIER_PROVIDER, COURIER_MODEL  the model, as OpenCode names it (default opencode,
@@ -42,10 +46,25 @@ else
 fi
 KEY_ENV=${COURIER_API_KEY_ENV:-}
 export COURIER_TIMEOUT=${COURIER_TIMEOUT:-300}
-# The sleeps stand in for real work: they keep the children busy until the parent's turn has ended,
-# and apart, so each report finds it idle.
-PROMPT=${COURIER_PROMPT:-'Have two helper sessions work in parallel and report back to you. One runs the shell command `sleep 20; echo $((17 * 23))`, the other runs `sleep 40; echo $((2 ** 10))`, and each reports the number it printed. Start them with courier_spawn and do not run the commands yourself. When both have reported back, reply with one line: RESULTS <first> <second>'}
-export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024"}
+SCENARIO=${COURIER_SCENARIO:-fanout}
+# Every action is allowed; the permission scenario adds a rule that makes its one command ask.
+PERMISSIONS='[{ "action": "*", "resource": "*", "effect": "allow" }]'
+case $SCENARIO in
+  fanout)
+    # The sleeps stand in for real work: they keep the children busy until the parent's turn has
+    # ended, and apart, so each report finds it idle.
+    PROMPT=${COURIER_PROMPT:-'Have two helper sessions work in parallel and report back to you. One runs the shell command `sleep 20; echo $((17 * 23))`, the other runs `sleep 40; echo $((2 ** 10))`, and each reports the number it printed. Start them with courier_spawn and do not run the commands yourself. When both have reported back, reply with one line: RESULTS <first> <second>'}
+    export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024"}
+    CHECKER=real-model.mjs
+    ;;
+  permission)
+    PROMPT=${COURIER_PROMPT:-'Have a helper session run the shell command `echo courier-permission-$((6 * 7))` and report back what it printed. Start it with courier_spawn and do not run the command yourself. When it has reported back, reply with one line: RESULT <what it printed>'}
+    export COURIER_EXPECT=${COURIER_EXPECT:-"courier-permission-42"}
+    PERMISSIONS='[{ "action": "*", "resource": "*", "effect": "allow" }, { "action": "shell", "resource": "*courier-permission*", "effect": "ask" }]'
+    CHECKER=real-model-permission.mjs
+    ;;
+  *) echo "COURIER_SCENARIO must be fanout or permission"; exit 1 ;;
+esac
 WORK=${E2E_WORK:-$(mktemp -d)}
 export WORK
 # shellcheck source=e2e/lib.sh
@@ -78,12 +97,12 @@ if [ -n "$BASE_URL" ]; then
     }
   }')
 fi
-jq -n --arg plugin "$ROOT/dist" --arg model "$PROVIDER/$MODEL" --argjson providers "$provider" '{
+jq -n --arg plugin "$ROOT/dist" --arg model "$PROVIDER/$MODEL" --argjson providers "$provider" --argjson permissions "$PERMISSIONS" '{
   plugins: [$plugin],
   providers: $providers,
   model: $model,
   update: "disable",
-  permissions: [{ action: "*", resource: "*", effect: "allow" }]
+  permissions: $permissions
 }' >"$WORK/project/opencode.json"
 commit_config
 
@@ -91,19 +110,28 @@ start_server
 echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL"
 echo "parent prompt: $PROMPT"
 
-# The parent's first turn; run returns when it ends.
-status=0
-(cd "$WORK/project" && "$TIMEOUT_BIN" "$COURIER_TIMEOUT" "$OPENCODE" run --server "$SERVER" --auto --format json "$PROMPT" \
-  </dev/null >"$WORK/parent-run.jsonl" 2>"$WORK/parent-run.err") || status=$?
-case $status in
-  0) ;;
-  124) echo "the parent's first turn did not end within $COURIER_TIMEOUT s" ;;
-  *) echo "opencode run exited with status $status; see $WORK/parent-run.err" ;;
-esac
-parent=$(jq -r 'select(.sessionID != null) | .sessionID' "$WORK/parent-run.jsonl" 2>/dev/null | head -1 || true)
+post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
+if [ "$SCENARIO" = permission ]; then
+  # Started through the API, as a session in the TUI would be, not with opencode run: run cancels
+  # any question form opened in its session while it is attached, and the child's request can wake
+  # the parent before run has let go. The checker waits for the turns.
+  parent=$(post session "$(jq -n --arg directory "$WORK/project" '{ location: { directory: $directory } }')" | jq -r '.data.id // empty' || true)
+  [ -z "$parent" ] || post "session/$parent/prompt" "$(jq -n --arg text "$PROMPT" '{ text: $text }')" >/dev/null || parent=
+else
+  # The parent's first turn; run returns when it ends.
+  status=0
+  (cd "$WORK/project" && "$TIMEOUT_BIN" "$COURIER_TIMEOUT" "$OPENCODE" run --server "$SERVER" --auto --format json "$PROMPT" \
+    </dev/null >"$WORK/parent-run.jsonl" 2>"$WORK/parent-run.err") || status=$?
+  case $status in
+    0) ;;
+    124) echo "the parent's first turn did not end within $COURIER_TIMEOUT s" ;;
+    *) echo "opencode run exited with status $status; see $WORK/parent-run.err" ;;
+  esac
+  parent=$(jq -r 'select(.sessionID != null) | .sessionID' "$WORK/parent-run.jsonl" 2>/dev/null | head -1 || true)
+fi
 if [ -z "$parent" ]; then
   echo "no parent session; see $WORK/parent-run.err and $WORK/server.log"
   exit 1
 fi
 echo "parent $parent; waiting for its children"
-node "$ROOT/e2e/real-model.mjs" "$parent"
+node "$ROOT/e2e/$CHECKER" "$parent"

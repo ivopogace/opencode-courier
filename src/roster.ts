@@ -47,9 +47,26 @@ export async function children(storage: RosterStorage, parentID: string) {
   return entries.sort((a, b) => a.createdAt - b.createdAt)
 }
 
+/** Every parent's children. */
+export async function allEntries(storage: RosterStorage) {
+  return scanAll<RosterEntry>(storage, PREFIX)
+}
+
 /** A session's roster entries: one for the parent that started it, none if courier_spawn did not. */
 export async function entriesOf(storage: RosterStorage, sessionID: string) {
   return (await scanAll<RosterEntry>(storage, PREFIX)).filter((entry) => entry.sessionID === sessionID)
+}
+
+/**
+ * The roster entries from a session up to the top, its own first: the session's, its parent's, and
+ * so on, ending with the entry whose parent courier_spawn did not start. Empty when courier_spawn
+ * did not start the session.
+ */
+export async function lineage(storage: RosterStorage, sessionID: string) {
+  const bySession = new Map((await allEntries(storage)).map((entry) => [entry.sessionID, entry]))
+  const chain: RosterEntry[] = []
+  for (let entry = bySession.get(sessionID); entry && !chain.includes(entry); entry = bySession.get(entry.parentID)) chain.push(entry)
+  return chain
 }
 
 /** Whether a directory still exists; tests pass a fake. */

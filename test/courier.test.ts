@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { childBrief, envelope, send, spawn, status, type CourierPorts } from "../src/courier.js"
+import { childBrief, describeFailure, envelope, send, spawn, status, type CourierPorts } from "../src/courier.js"
 
 type Call = { method: string; input: any }
 
@@ -118,10 +118,9 @@ describe("status", () => {
       ],
     })
 
-    expect(await status(ports, { sessionID: "ses_child" })).toEqual({
+    expect(await status(ports, { sessionID: "ses_child" })).toStrictEqual({
       sessionID: "ses_child",
       title: "Fix the bug",
-      parentID: undefined,
       outcome: "succeeded",
       updated: 5,
       idle: 5,
@@ -129,9 +128,30 @@ describe("status", () => {
     })
   })
 
-  test("leaves lastText empty when the session has not replied", async () => {
+  test("leaves lastText out when the session has not replied", async () => {
     const { ports } = fakePorts()
 
-    expect((await status(ports, { sessionID: "ses_child" })).lastText).toBeUndefined()
+    expect(await status(ports, { sessionID: "ses_child" })).not.toHaveProperty("lastText")
+  })
+
+  test("never returns undefined values, which make OpenCode hang the tool call", async () => {
+    const { ports } = fakePorts({ info: { title: undefined, outcome: undefined, time: { created: 1, updated: 2 } } })
+
+    const result = await status(ports, { sessionID: "ses_child" })
+
+    expect(Object.values(result)).not.toContain(undefined)
+    expect(result).toStrictEqual({ sessionID: "ses_child", updated: 2 })
+  })
+})
+
+describe("describeFailure", () => {
+  test("keeps an error's message", () => {
+    expect(describeFailure("courier_send", new Error("boom")).message).toBe("courier_send failed: boom")
+  })
+
+  test("falls back to the tag and session of an OpenCode error with an empty message", () => {
+    const error = Object.assign(new Error(""), { _tag: "Session.NotFoundError", sessionID: "ses_x" })
+
+    expect(describeFailure("courier_status", error).message).toBe("courier_status failed: Session.NotFoundError ses_x")
   })
 })

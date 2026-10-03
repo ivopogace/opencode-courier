@@ -1,6 +1,6 @@
 import { Plugin } from "@opencode-ai/plugin"
 import { Schema } from "effect"
-import { send, spawn, status, type CourierPorts } from "./courier.js"
+import { describeFailure, send, spawn, status, type CourierPorts } from "./courier.js"
 
 const SpawnInput = Schema.Struct({
   task: Schema.String.annotate({ description: "What the new session should do. It is told who started it and how to report back." }),
@@ -23,6 +23,12 @@ const StatusInput = Schema.Struct({
   sessionID: Schema.String.annotate({ description: "The session to look at." }),
 })
 
+const rethrow =
+  (tool: string) =>
+  (error: unknown): never => {
+    throw describeFailure(tool, error)
+  }
+
 export default Plugin.define({
   id: "courier",
   setup: async (ctx) => {
@@ -31,12 +37,13 @@ export default Plugin.define({
     await ctx.tool.transform((tools) => {
       tools.add({
         name: "courier_spawn",
+        options: { codemode: false },
         description:
           "Start a new OpenCode session on a task and return immediately. The session reports back with courier_send, " +
           "which wakes this session. DO NOT poll it or call courier_status in a loop; end your turn and wait.",
         input: SpawnInput,
         execute: async (input, context) => {
-          const child = await spawn(ports, context.sessionID, input)
+          const child = await spawn(ports, context.sessionID, input).catch(rethrow("courier_spawn"))
           return {
             content: `Started session ${child.sessionID} in ${child.directory}. It will report back with courier_send.`,
             metadata: child,
@@ -46,24 +53,26 @@ export default Plugin.define({
 
       tools.add({
         name: "courier_send",
+        options: { codemode: false },
         description:
           "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. " +
           "Use it to report back to the session that started you, or to steer a session you started.",
         input: SendInput,
         execute: async (input, context) => {
-          const delivered = await send(ports, context.sessionID, input)
+          const delivered = await send(ports, context.sessionID, input).catch(rethrow("courier_send"))
           return { content: `Delivered to ${input.sessionID}.`, metadata: delivered }
         },
       })
 
       tools.add({
         name: "courier_status",
+        options: { codemode: false },
         description:
           "Look once at a session's state and its last reply, e.g. on a scheduled check-in. Not for waiting: " +
           "sessions you started report back on their own.",
         input: StatusInput,
         execute: async (input) => {
-          const result = await status(ports, input)
+          const result = await status(ports, input).catch(rethrow("courier_status"))
           return { content: JSON.stringify(result, null, 2), metadata: result }
         },
       })

@@ -252,8 +252,10 @@ that a cancelled one never arrives, that a pending one is delivered after a serv
 a recorded GitHub review delivery (`e2e/fixtures/pull_request_review.json`), signed, wakes an idle
 session subscribed with `courier_subscribe`, once, while unsigned and wrongly signed ones are
 refused, and that `courier_cleanup` removes an isolated child's clean worktree but keeps one with an
-uncommitted file until asked with `force`. It takes about two minutes and needs node, bun, git,
-curl, jq and openssl.
+uncommitted file until asked with `force`. Last, it packs the package with `npm pack`, serves the
+tarball from a stand-in registry (`e2e/registry.mjs`), installs it with `opencode2 plugin add
+opencode-courier` and checks that its tools load from the installed copy. It takes about two
+minutes and needs node, npm, bun, git, curl, jq and openssl.
 
 CI (`.github/workflows/ci.yml`) runs both on every push to `main` and every pull request, with the
 OpenCode CLI at the same version as the pinned plugin API.

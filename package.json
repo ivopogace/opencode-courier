@@ -36,6 +36,7 @@
   "devDependencies": {
     "@opencode-ai/plugin": "0.0.0-beta-19271",
     "@types/bun": "1.3.14",
+    "@types/node": "26.6.4",
     "typescript": "5.9.3"
   }
 }

@@ -32,6 +32,20 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 | `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`), sends it the task plus a brief naming the parent and how to report back, and returns at once. |
 | `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. |
 | `courier_status` | One look at a session: outcome, idle time and last reply. For check-ins, not for waiting. |
+| `courier_later` | Schedules a message for a session (this one by default) in `delayMinutes` or `at` an ISO time, and returns an id. When due it is delivered like `courier_send`, queued behind any running turn and waking the session if idle. |
+| `courier_cancel` | Drops a message scheduled with `courier_later`, e.g. because the child it was waiting for reported first. |
+
+### Scheduled messages
+
+Pending `courier_later` messages are kept in the plugin's storage, and every loaded copy of the
+plugin checks for due ones every 15 seconds, so a message can arrive up to about 15 seconds late.
+OpenCode loads the plugin once per project location; the copies share one claim set, so each
+message is delivered once.
+
+They survive a server restart. After a start, OpenCode loads plugins for a project the first time
+that project is used, so messages that fell due while it was down are delivered then, not at the
+moment the server comes back. A crash between delivering a message and forgetting it can deliver
+it twice after the restart; a lost check-in would be worse.
 
 ## Install
 
@@ -63,18 +77,22 @@ global configuration.
 3. Use `isolate: true` whenever children edit files in parallel. The child's worktree is made
    from the last commit, so an uncommitted `opencode.json` is not there and the child falls back
    to your global config: keep providers and models in the global config, or commit the file.
-4. A child that crashes before calling `courier_send` never wakes the parent. Until the scheduler
-   below exists, pair long runs with a scheduled check-in (for example the `opencode-cron` plugin)
-   that calls `courier_status`.
+4. A child that crashes before calling `courier_send` never wakes the parent. When you spawn a
+   long-running child, also `courier_later` a check-in for yourself, and `courier_cancel` it when
+   the child reports.
 
 ## Roadmap
 
-- **Scheduled self-messages**: a `courier_later` tool (deliver a message to a session at a time),
-  stored with the plugin `storage` API so it survives restarts. The safety net for silent children.
-- **Webhook receiver**: a small service that turns GitHub (or any) webhooks into `courier_send`s.
-- **Roster**: record spawned children per parent in plugin storage, so a parent can list them
-  after a compaction or restart.
-- **Worktree cleanup** when an isolated child finishes.
+Tracked as [issues](https://github.com/ivopogace/opencode-courier/issues):
+
+- [#2](https://github.com/ivopogace/opencode-courier/issues/2) **Webhook receiver**: turn GitHub
+  (or any) webhooks into `courier_send`s.
+- [#3](https://github.com/ivopogace/opencode-courier/issues/3) **Roster**: let a parent list the
+  sessions it spawned, after a compaction or restart.
+- [#4](https://github.com/ivopogace/opencode-courier/issues/4) **Worktree cleanup** when an
+  isolated child finishes.
+- [#5](https://github.com/ivopogace/opencode-courier/issues/5) **Smoke test with a real model.**
+- [#6](https://github.com/ivopogace/opencode-courier/issues/6) **Publish to npm.**
 
 ## Development
 
@@ -89,8 +107,10 @@ OPENCODE_BIN=$(which opencode2) npm run test:e2e   # live test, see below
 `e2e/run.sh` starts a real OpenCode V2 server in a throwaway project and home directory, with this
 plugin loaded and `e2e/mock-model.mjs` as the model: an OpenAI-compatible server that replies from
 a fixed script, so no API key is needed. It checks that a parent's spawn completes, that the parent
-gets a new turn after its own has ended once the child reports (shared and `isolate: true`), and
-that `courier_status` reports and fails readably. It needs node, bun, git, curl and jq.
+gets a new turn after its own has ended once the child reports (shared and `isolate: true`), that
+`courier_status` reports and fails readably, that a `courier_later` message wakes an idle parent,
+that a cancelled one never arrives, and that a pending one is delivered after a server restart. It
+takes about two minutes and needs node, bun, git, curl and jq.
 
 CI (`.github/workflows/ci.yml`) runs both on every push to `main` and every pull request, with the
 OpenCode CLI at the same version as the pinned plugin API.

@@ -16,14 +16,16 @@ SERVER_PORT=${SERVER_PORT:-4600}
 CHILD_DELAY_MS=${CHILD_DELAY_MS:-5000}
 WORK=${E2E_WORK:-$(mktemp -d)}
 SERVER="http://127.0.0.1:$SERVER_PORT"
-PIDS=()
+MOCK_PID=
+SERVER_PID=
 
 export HOME=$WORK/home XDG_CONFIG_HOME=$WORK/home/.config XDG_DATA_HOME=$WORK/home/.local/share
 export XDG_STATE_HOME=$WORK/home/.local/state XDG_CACHE_HOME=$WORK/home/.cache
 export OPENCODE_PASSWORD=courier-e2e
 
 cleanup() {
-  for pid in "${PIDS[@]}"; do kill "$pid" 2>/dev/null || true; done
+  stop_server
+  [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null
   if [ "${KEEP:-}" = 1 ]; then echo "kept $WORK"; else rm -rf "$WORK"; fi
 }
 trap cleanup EXIT
@@ -35,9 +37,22 @@ failures=0
 check() {
   if [ "$2" = true ]; then echo "  PASS $1"; else echo "  FAIL $1"; failures=$((failures + 1)); fi
 }
-# The time a session's assistant message containing $2 was created, waiting up to 30 s for it.
+start_server() {
+  (cd "$WORK/project" && exec "$OPENCODE" serve --hostname 127.0.0.1 --port "$SERVER_PORT" --print-logs >>"$WORK/server.log" 2>&1 </dev/null) &
+  SERVER_PID=$!
+  for _ in $(seq 1 30); do api health >/dev/null 2>&1 && return; sleep 1; done
+  echo "OpenCode server did not start; see $WORK/server.log"
+  exit 1
+}
+stop_server() {
+  [ -n "$SERVER_PID" ] || return 0
+  kill "$SERVER_PID" 2>/dev/null || true
+  wait "$SERVER_PID" 2>/dev/null || true
+  SERVER_PID=
+}
+# The time a session's assistant message containing $2 was created, waiting up to $3 (default 30) s.
 reply_time() {
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 "${3:-30}"); do
     local found
     found=$(api "session/$1/message" | jq -r --arg text "$2" \
       '[.data[] | select(.type == "assistant") | select([.content[]? | select(.type == "text") | .text] | join("") | contains($text)) | .time.created] | first // empty')
@@ -46,10 +61,10 @@ reply_time() {
   done
 }
 
-echo "building plugin"
-(cd "$ROOT" && npm run build >/dev/null)
-
 mkdir -p "$WORK/project" "$HOME"
+echo "building plugin"
+(cd "$ROOT" && npm run build >"$WORK/build.log" 2>&1) || { cat "$WORK/build.log"; exit 1; }
+
 cat >"$WORK/project/opencode.json" <<EOF
 {
   "plugins": ["$ROOT/dist"],
@@ -72,10 +87,8 @@ git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -q 
 
 MOCK_PORT=$MOCK_PORT MOCK_CHILD_DELAY_MS=$CHILD_DELAY_MS MOCK_LOG=$WORK/model.log \
   node "$ROOT/e2e/mock-model.mjs" >"$WORK/model.out" 2>&1 </dev/null &
-PIDS+=($!)
-(cd "$WORK/project" && exec "$OPENCODE" serve --hostname 127.0.0.1 --port "$SERVER_PORT" --print-logs >"$WORK/server.log" 2>&1 </dev/null) &
-PIDS+=($!)
-for _ in $(seq 1 30); do grep -q "server listening" "$WORK/server.log" 2>/dev/null && break; sleep 1; done
+MOCK_PID=$!
+start_server
 echo "OpenCode $("$OPENCODE" --version) on $SERVER"
 
 for mode in shared isolate; do
@@ -100,6 +113,36 @@ out=$(prompt "COURIER-STATUS $parent")
 check "reports the parent's last reply" "$(jq -r 'select(.type == "tool_use") | .part.state | .status == "completed" and (.output | contains("PARENT WOKE"))' <<<"$out")"
 out=$(prompt "COURIER-STATUS ses_missing")
 check "names the error for an unknown session" "$(jq -r 'select(.type == "tool_use") | .part.state.error | contains("NotFoundError")' <<<"$out")"
+
+tool_state() { jq -c --arg tool "$1" 'select(.type == "tool_use" and .part.tool == $tool) | .part.state'; }
+
+echo "courier_later wakes the idle parent"
+out=$(prompt "COURIER-LATER 0.05")
+turn_ended=$(now_ms)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+check "courier_later completed" "$(tool_state courier_later <<<"$out" | jq -r '.status == "completed"')"
+woke=$(reply_time "$parent" "PARENT WOKE" 45)
+check "the scheduled message started a new turn after the parent's had ended" \
+  "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+
+echo "courier_cancel stops a scheduled message"
+out=$(prompt "COURIER-LATER-CANCEL 0.05")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+check "courier_cancel cancelled it" "$(tool_state courier_cancel <<<"$out" | jq -r '.status == "completed" and (.output | startswith("Cancelled"))')"
+woke=$(reply_time "$parent" "PARENT WOKE" 25)
+check "the cancelled message never arrived" "$([ -z "$woke" ] && echo true || echo false)"
+
+echo "a scheduled message survives a server restart"
+out=$(prompt "COURIER-LATER 0.25")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+check "courier_later completed" "$(tool_state courier_later <<<"$out" | jq -r '.status == "completed"')"
+stop_server
+start_server
+restarted=$(now_ms)
+# Plugins load per project location, on its first use after a start.
+api "plugin?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" >/dev/null
+woke=$(reply_time "$parent" "PARENT WOKE" 60)
+check "it was delivered after the restart" "$([ -n "$woke" ] && [ "$woke" -gt "$restarted" ] && echo true || echo false)"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed; rerun with KEEP=1 to keep the server and model logs"

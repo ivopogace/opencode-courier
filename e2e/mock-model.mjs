@@ -20,9 +20,14 @@ function decide(body) {
   if (!body.tools?.length) return { text: "Courier test" }
   const lastAssistant = messages.findLastIndex((message) => message.role === "assistant")
   const last = messages.at(-1)
+  const prompt = textOf(messages.findLast((message) => message.role === "user")?.content)
   if (last?.role === "tool") {
     const call = messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)
-    return { text: `TOOL DONE ${call?.function?.name}: ${textOf(last.content)}` }
+    const result = textOf(last.content)
+    const scheduled = result.match(/Scheduled (later_[\w-]+)/)
+    if (call?.function?.name === "courier_later" && prompt.includes("COURIER-LATER-CANCEL") && scheduled)
+      return { tool: "courier_cancel", args: { id: scheduled[1] } }
+    return { text: `TOOL DONE ${call?.function?.name}: ${result}` }
   }
   const recent = messages
     .slice(lastAssistant + 1)
@@ -31,6 +36,8 @@ function decide(body) {
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
   if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE" } }
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
+  const later = recent.match(/COURIER-LATER(?:-CANCEL)? ([\d.]+)/)
+  if (later) return { tool: "courier_later", args: { message: "CHECK-IN", delayMinutes: Number(later[1]) } }
   const look = recent.match(/COURIER-STATUS (ses_\w+)/)
   if (look) return { tool: "courier_status", args: { sessionID: look[1] } }
   const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)

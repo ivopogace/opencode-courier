@@ -38,8 +38,11 @@ export function childBrief(parentID: string, task: string) {
   ].join("\n")
 }
 
-export function envelope(from: string, message: string) {
-  return `<courier from="${from}">\n${message}\n</courier>`
+export function envelope(from: string, message: string, attributes: Record<string, string> = {}) {
+  const extra = Object.entries(attributes)
+    .map(([name, value]) => ` ${name}="${value}"`)
+    .join("")
+  return `<courier from="${from}"${extra}>\n${message}\n</courier>`
 }
 
 function titleOf(task: string) {

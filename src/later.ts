@@ -8,6 +8,10 @@ type Context = Plugin.Context
 export const TICK_MS = 15_000
 
 const PREFIX = "later/"
+/** The latest time a Date can hold; a message due after it could never be shown or delivered. */
+const LATEST = 8.64e15
+/** A plain decimal number of minutes, the only string form of delayMinutes taken ("0x10" is not). */
+const DECIMAL = /^\s*(\d+\.?\d*|\.\d+)\s*$/
 
 export interface LaterEntry {
   readonly id: string
@@ -28,7 +32,8 @@ export interface LaterPorts {
 
 export interface LaterInput {
   readonly message: string
-  readonly delayMinutes?: number
+  /** A number, or a string holding one, which some models send instead. */
+  readonly delayMinutes?: number | string
   readonly at?: string
   readonly sessionID?: string
 }
@@ -37,9 +42,12 @@ function fireTime(now: number, input: LaterInput) {
   if ((input.delayMinutes === undefined) === (input.at === undefined))
     throw new Error("Give exactly one of delayMinutes or at.")
   if (input.delayMinutes !== undefined) {
-    if (!Number.isFinite(input.delayMinutes) || input.delayMinutes < 0)
-      throw new Error("delayMinutes must be a number of minutes, zero or more.")
-    return now + Math.round(input.delayMinutes * 60_000)
+    const given = input.delayMinutes
+    const minutes = typeof given === "string" ? (DECIMAL.test(given) ? Number(given) : Number.NaN) : given
+    if (!Number.isFinite(minutes) || minutes < 0) throw new Error("delayMinutes must be a number of minutes, zero or more.")
+    const fireAt = now + Math.round(minutes * 60_000)
+    if (fireAt > LATEST) throw new Error(`delayMinutes is too far away: ${given}`)
+    return fireAt
   }
   const at = Date.parse(input.at!)
   if (Number.isNaN(at)) throw new Error(`at is not a date: ${input.at}`)

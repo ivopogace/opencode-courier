@@ -3,6 +3,15 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Dispatched on the tag by release-tag.yml, since a tag it pushes with GITHUB_TOKEN starts no
+  # workflow by itself; or by hand: gh workflow run release.yml --ref vX.Y.Z [-f dry_run=true].
+  # On the tag ref the npm environment's `v*` rule and the tag check below hold as for a push.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and `npm stage publish --dry-run`; stage nothing, create no release"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -30,6 +39,8 @@ jobs:
       NPM_AUTH: ${{ vars.NPM_AUTH || 'token' }}
       # In token mode, `false` stages without provenance, should npm refuse the attestation.
       NPM_PROVENANCE: ${{ vars.NPM_PROVENANCE }}
+      # Set by a dispatch with dry_run; a pushed tag has no inputs.
+      DRY_RUN: ${{ inputs.dry_run == true }}
     steps:
       - name: Check the release settings
         run: |
@@ -73,6 +84,10 @@ jobs:
         if: env.NPM_AUTH == 'token'
         run: |
           if [ "${HAS_TOKEN}" != true ]; then
+            if [ "${DRY_RUN}" = true ]; then
+              echo "::warning::no NPM_TOKEN secret in the npm environment yet: a release needs one (see Releasing in README.md); the dry run goes on without it"
+              exit 0
+            fi
             echo "::error::no NPM_TOKEN secret in the npm environment: add a granular access token (see Releasing in README.md)"
             exit 1
           fi
@@ -92,6 +107,7 @@ jobs:
             echo "::error::no OIDC token available: the job needs 'permissions: id-token: write'"
             exit 1
           fi
+          # shellcheck disable=SC2016 # the quotes keep ${...} for node, not the shell
           node --input-type=module -e '
             const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL)
             url.searchParams.set("audience", "npm:registry.npmjs.org")
@@ -111,9 +127,11 @@ jobs:
       # oidc: NPM_TOKEN is not exported, so a failed exchange cannot fall back to it: npm falls back
       # to setup-node's placeholder token and fails with E401, as above. Verbose logging shows why
       # the exchange failed; npm redacts credentials in its logs.
+      # A dry run packs, checks the version against the registry and stops short of staging.
       - name: Stage
         run: |
           flags=(--access public)
+          if [ "${DRY_RUN}" = true ]; then flags+=(--dry-run); fi
           if [ "${NPM_AUTH}" = token ]; then
             export NODE_AUTH_TOKEN="${NPM_TOKEN}"
             if [ "${NPM_PROVENANCE,,}" != false ]; then flags+=(--provenance); fi
@@ -129,6 +147,7 @@ jobs:
   github-release:
     name: Draft GitHub release
     needs: publish
+    if: inputs.dry_run != true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

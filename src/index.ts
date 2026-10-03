@@ -489,7 +489,6 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
       watching.abort()
       locations.delete(location)
       if (relay.ports === questionPorts) relay.ports = undefined
-      questionPorts.log(`courier: DEBUG unloading ${ctx.location.directory}`)
       await leave?.()
     }
   },

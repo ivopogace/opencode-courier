@@ -319,20 +319,29 @@ async function relay(ports: QuestionPorts, question: Question) {
   }
 }
 
-/** After a relayed call ended: tidies up, and tells the top session if it was settled without it. */
-async function settle(ports: QuestionPorts, question: Question, exit: Exit.Exit<{ by: "child"; result: ToolResult } | { by: "top" }, unknown>) {
-  const outcome = Exit.isSuccess(exit) ? `answered by ${exit.value.by}` : isDismissal(exit.cause) ? "dismissed" : Exit.hasInterrupts(exit) ? "interrupted" : "failed"
-  ports.log(`courier question: ${question.requestID} of ${question.sessionID}: call ended, ${outcome}${question.link ? ", linked" : ""}`)
+/**
+ * After a relayed call ended: tidies up, and tells the top session if it was settled without it.
+ * `unloaded` when the plugin instance that ran the call had been unloaded by then.
+ */
+async function settle(
+  ports: QuestionPorts,
+  question: Question,
+  exit: Exit.Exit<{ by: "child"; result: ToolResult } | { by: "top" }, unknown>,
+  unloaded: boolean,
+) {
   // Answered through the top session, which took it off the list, or never relayed at all.
   if (shared.questions.get(question.requestID) !== question) {
     await ports.storage.remove(keyOf(question.requestID))
     return
   }
-  if (Exit.isFailure(exit) && !isDismissal(exit.cause) && Exit.hasInterrupts(exit)) {
-    // Cut off: the turn was stopped. The question stays, answered by message from now on; a top
-    // session already asking the person passes their answer on that way.
+  // Cut off: the turn was stopped, or OpenCode is closing the location, which unloads the plugin
+  // and then withdraws every open form there as if the person had dismissed it (on a server
+  // shutdown, say). The question stays, answered by message from now on; a top session already
+  // asking the person passes their answer on that way. A closing location is not told now: the
+  // next load tells it, as after a restart.
+  if (Exit.isFailure(exit) && (unloaded || (!isDismissal(exit.cause) && Exit.hasInterrupts(exit)))) {
     question.call = undefined
-    if (!question.link) await tellCutOff(ports, question, "stopped")
+    if (!unloaded && !question.link) await tellCutOff(ports, question, "stopped")
     return
   }
   shared.questions.delete(question.requestID)
@@ -391,7 +400,7 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
         Effect.onExit((exit) =>
           Effect.promise(async () => {
             shared.shown.delete(key)
-            await settle(current, question, exit).catch((error: unknown) =>
+            await settle(current, question, exit, ports() !== current).catch((error: unknown) =>
               current.log(`courier question: could not settle ${question.requestID}: ${String(error)}`),
             )
           }),
@@ -445,10 +454,8 @@ function linking(ports: () => QuestionPorts | undefined, ask: Execute): Execute 
         Effect.onExit((exit) =>
           Effect.promise(async () => {
             if (linked.link === settled) linked.link = undefined
-            if (Exit.isSuccess(exit)) return
-            current.log(
-              `courier question: ${linked.requestID}: the linked call of ${context.sessionID} ended, ${isDismissal(exit.cause) ? "dismissed" : Exit.hasInterrupts(exit) ? "interrupted" : "failed"}`,
-            )
+            // Unloaded: OpenCode is closing the location, which withdraws the form; nobody dismissed it.
+            if (Exit.isSuccess(exit) || ports() !== current) return
             try {
               // Dismissed by the person: so is the question they were asked for.
               if (isDismissal(exit.cause)) await deliver(current, linked, { dismissed: true })

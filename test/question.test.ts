@@ -94,12 +94,13 @@ async function setUp() {
         }),
     },
   }
-  await Effect.runPromise(relayQuestions(host as any, () => ports) as any)
+  let loaded = true
+  await Effect.runPromise(relayQuestions(host as any, () => (loaded ? ports : undefined)) as any)
   const ask = (sessionID: string, questions: unknown = greeting) =>
     Effect.runFork(
       wrapped.execute({ questions }, { sessionID, agent: "build", messageID: "msg", id: `call_${++calls}`, progress: () => Effect.void }),
     ) as Fiber.Fiber<any, any>
-  return { ports, store, told, tool, ask }
+  return { ports, store, told, tool, ask, unload: () => void (loaded = false) }
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
@@ -387,6 +388,28 @@ describe("the question tool of a spawned session", () => {
     await settle()
 
     expect(notices(told, "stopped")).toHaveLength(1)
+  })
+
+  test("a location closing withdraws both forms as if dismissed: the question is kept, and the next load tells the parent", async () => {
+    const { ports, store, told, tool, ask, unload } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    const parent = ask("ses_parent")
+    await settle()
+
+    // What a server shutdown does at 0.0.0-beta-19271: the plugin unloads, then every open form goes.
+    unload()
+    formOf(tool, "ses_child").dismiss()
+    formOf(tool, "ses_parent").dismiss()
+    await exitOf(child)
+    await exitOf(parent)
+    await settle()
+
+    expect(told).toHaveLength(1)
+    expect(store.has("question/question_1")).toBe(true)
+    forgetQuestions()
+    await noticeCutOff(ports)
+    expect(told.at(-1).text).toContain('asks="question" request="question_1" restarted="true"')
   })
 
   test("a question of a child's child goes to the session at the top, which alone answers it", async () => {

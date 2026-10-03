@@ -627,7 +627,10 @@ Found while testing against `0.0.0-beta-19271`:
   form is created only after the call's permission check has passed. A person dismissing a form
   makes the tool die with `QuestionTool.CancelledError`, which ends the asking session's turn
   ("The user dismissed this question"). Forms live in memory: a restart drops them, and the call
-  that asked stays `running` until the session's next turn marks it aborted.
+  that asked stays `running` until the session's next turn marks it aborted. When OpenCode closes
+  a location, as on a graceful server shutdown, it unloads the plugin there first and then
+  withdraws every open form, which looks to the tool exactly like the person dismissing it; the
+  relay treats a call that ends after its plugin instance unloaded as cut off, not dismissed.
 - OpenCode stops every turn in a project location after 60 minutes without a stored session event
   there (`packages/core/src/location-activity.ts`), which withdraws any question still open. A
   tool call has no timeout of its own.

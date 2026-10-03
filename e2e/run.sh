@@ -4,6 +4,8 @@
 #
 #   OPENCODE_BIN=/path/to/opencode2 e2e/run.sh      # KEEP=1 keeps the temp dir and logs
 #
+# E2E_WORK picks the working directory (CI points it somewhere it can upload the logs from).
+#
 # Needs node, bun (for the build), git, curl and jq.
 set -euo pipefail
 
@@ -12,7 +14,7 @@ OPENCODE=${OPENCODE_BIN:-opencode2}
 MOCK_PORT=${MOCK_PORT:-4599}
 SERVER_PORT=${SERVER_PORT:-4600}
 CHILD_DELAY_MS=${CHILD_DELAY_MS:-5000}
-WORK=$(mktemp -d)
+WORK=${E2E_WORK:-$(mktemp -d)}
 SERVER="http://127.0.0.1:$SERVER_PORT"
 PIDS=()
 
@@ -59,6 +61,7 @@ cat >"$WORK/project/opencode.json" <<EOF
     }
   },
   "model": "mock/chat",
+  "update": "disable",
   "permissions": [{ "action": "*", "resource": "*", "effect": "allow" }]
 }
 EOF

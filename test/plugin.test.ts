@@ -48,7 +48,7 @@ async function setUp(stored: Record<string, unknown> = {}) {
 test("registers the courier tools", async () => {
   const { tools } = await setUp()
 
-  expect([...tools.keys()]).toEqual(["courier_spawn", "courier_send", "courier_status", "courier_later", "courier_cancel"])
+  expect([...tools.keys()]).toEqual(["courier_spawn", "courier_send", "courier_status", "courier_children", "courier_later", "courier_cancel"])
 })
 
 test("registers them as direct tools, not code-mode ones only reachable through execute", async () => {
@@ -73,6 +73,22 @@ test("courier_spawn uses the calling session as the parent", async () => {
 
   expect(calls[0]!.input.metadata).toEqual({ courier: { parentID: "ses_parent" } })
   expect(result.content).toContain("ses_child")
+})
+
+test("courier_children lists what courier_spawn started from the calling session, or another", async () => {
+  const { tools } = await setUp()
+
+  await tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_parent" })
+
+  const own = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
+  expect(own.metadata.children.map((child: any) => child.sessionID)).toEqual(["ses_child"])
+  expect(own.content).toContain("ses_child")
+  const other = await tools.get("courier_children").execute({ sessionID: "ses_parent" }, { sessionID: "ses_x" })
+  expect(other.metadata.children).toHaveLength(1)
+  const empty = await tools.get("courier_children").execute({ sessionID: "" }, { sessionID: "ses_parent" })
+  expect(empty.metadata.children).toHaveLength(1)
+  const none = await tools.get("courier_children").execute({}, { sessionID: "ses_x" })
+  expect(none).toEqual({ content: "No sessions started with courier_spawn.", metadata: { children: [] } })
 })
 
 test("courier_send signs the message with the calling session", async () => {

@@ -132,6 +132,15 @@ check "courier_cancel cancelled it" "$(tool_state courier_cancel <<<"$out" | jq 
 woke=$(reply_time "$parent" "PARENT WOKE" 25)
 check "the cancelled message never arrived" "$([ -z "$woke" ] && echo true || echo false)"
 
+echo "courier_children lists the sessions a parent spawned"
+out=$(prompt "COURIER-ROSTER")
+roster_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+spawned=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
+check "spawned two children" "$([ "$(wc -w <<<"$spawned")" -eq 2 ] && echo true || echo false)"
+listed=$(tool_state courier_children <<<"$out" | jq -r 'select(.status == "completed") | .output')
+check "courier_children lists both" "$(for id in $spawned; do grep -q "$id" <<<"$listed" || { echo false; exit; }; done; echo true)"
+check "the parent was woken by its children" "$([ -n "$(reply_time "$roster_parent" "PARENT WOKE")" ] && echo true || echo false)"
+
 echo "a scheduled message survives a server restart"
 out=$(prompt "COURIER-LATER 0.25")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
@@ -143,6 +152,12 @@ restarted=$(now_ms)
 api "plugin?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" >/dev/null
 woke=$(reply_time "$parent" "PARENT WOKE" 60)
 check "it was delivered after the restart" "$([ -n "$woke" ] && [ "$woke" -gt "$restarted" ] && echo true || echo false)"
+
+echo "the roster survives a restart and can be read from another session"
+out=$(prompt "COURIER-CHILDREN $roster_parent")
+listed=$(tool_state courier_children <<<"$out" | jq -c 'select(.status == "completed") | .metadata.metadata.children')
+check "lists both children" "$(jq -r --arg ids "$spawned" '[.[].sessionID] | sort == ($ids | split("\n") | sort)' <<<"$listed")"
+check "with each child's last reply" "$(jq -r 'all((.lastText // "") | contains("TOOL DONE courier_send"))' <<<"$listed")"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed; rerun with KEEP=1 to keep the server and model logs"

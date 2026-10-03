@@ -58,43 +58,67 @@ const UnsubscribeInput = Schema.Struct({
  * The webhook receiver, one per process like the claim set: every instance configured with a
  * `webhook` option joins `instances`, the first one starts the server, and the last one to unload
  * stops it. Requests are served with any live instance's ports; sessions and storage are shared.
+ * A receiver that could not listen is dropped, so the next instance to load tries again, and a new
+ * one waits for the previous one to finish closing, as on a plugin reload.
  */
 interface Receiver {
   readonly config: WebhookConfig
   readonly instances: Set<WebhookPorts>
-  server?: Promise<Server | undefined>
+  readonly server: Promise<Server | undefined>
 }
-const receivers = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.receiver")] ??= {
-  current: undefined,
-}) as { current?: Receiver }
+const receivers = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.receiver")] ??= {}) as {
+  current?: Receiver
+  closing?: Promise<void>
+}
+
+const sameSettings = (a: WebhookConfig, b: WebhookConfig) =>
+  a.port === b.port && a.host === b.host && a.secret === b.secret && a.maxBytes === b.maxBytes
+
+function startReceiver(config: WebhookConfig, log: (message: string) => void) {
+  const instances = new Set<WebhookPorts>()
+  const receiver: Receiver = {
+    config,
+    instances,
+    server: (receivers.closing ?? Promise.resolve())
+      .then(() => listen(config, () => instances.values().next().value))
+      .then(
+        (server) => {
+          log(`courier webhook: listening on http://${config.host}:${(server.address() as { port: number }).port}`)
+          return server
+        },
+        (error: unknown) => {
+          log(`courier webhook: cannot listen on ${config.host}:${config.port}: ${String(error)}`)
+          if (receivers.current === receiver) receivers.current = undefined
+          return undefined
+        },
+      ),
+  }
+  return (receivers.current = receiver)
+}
 
 function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
-  let receiver = receivers.current
-  if (!receiver) {
-    const created: Receiver = { config, instances: new Set() }
-    created.server = listen(config, () => created.instances.values().next().value).then(
-      (server) => {
-        ports.log(`courier webhook: listening on http://${config.host}:${(server.address() as { port: number }).port}`)
-        return server
-      },
-      (error: unknown) => {
-        ports.log(`courier webhook: cannot listen on ${config.host}:${config.port}: ${String(error)}`)
-        return undefined
-      },
+  const receiver = receivers.current ?? startReceiver(config, ports.log)
+  if (!sameSettings(receiver.config, config))
+    ports.log(
+      `courier webhook: already running on ${receiver.config.host}:${receiver.config.port} with other settings ` +
+        "(port, host, secret or maxBytes); this location's are ignored. Set the webhook option once, in the global config.",
     )
-    receiver = receivers.current = created
-  } else if (receiver.config.port !== config.port || receiver.config.host !== config.host) {
-    ports.log(`courier webhook: already listening on ${receiver.config.host}:${receiver.config.port}; ignoring this location's settings`)
-  }
   receiver.instances.add(ports)
-  const joined = receiver
   return async () => {
-    joined.instances.delete(ports)
-    if (joined.instances.size > 0 || receivers.current !== joined) return
+    receiver.instances.delete(ports)
+    if (receiver.instances.size > 0 || receivers.current !== receiver) return
     receivers.current = undefined
-    const server = await joined.server
-    server?.closeAllConnections()
-    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()))
+    const closing = receiver.server.then(
+      (server) =>
+        new Promise<void>((resolve) => {
+          if (!server) return resolve()
+          server.closeAllConnections()
+          server.close(() => resolve())
+        }),
+    )
+    receivers.closing = closing
+    await closing
+    if (receivers.closing === closing) receivers.closing = undefined
   }
 }
 
@@ -215,7 +239,7 @@ export default Plugin.define({
         execute: async (input, context) => {
           const sessionID = input.sessionID ?? context.sessionID
           const subscription = await subscribe(hooks, sessionID, input.topic).catch(rethrow("courier_subscribe"))
-          const receiving = receivers.current !== undefined
+          const receiving = (await receivers.current?.server) !== undefined
           const note = receiving
             ? ""
             : " Note: no webhook receiver runs in this OpenCode server (see the plugin's webhook option), so nothing will arrive yet."

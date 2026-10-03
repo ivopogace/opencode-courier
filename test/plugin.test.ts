@@ -22,7 +22,7 @@ async function setUp(stored: Record<string, unknown> = {}, options?: Record<stri
       create: record("session.create", { id: "ses_child", location: { directory: "/repo" } }),
       prompt: record("session.prompt", { id: "msg_1" }),
       synthetic: record("session.synthetic", { id: "msg_2" }),
-      get: record("session.get", {}),
+      get: record("session.get", { id: "ses_parent" }),
       context: record("session.context", []),
     },
     worktree: { create: record("worktree.create", { directory: "/wt" }) },
@@ -132,7 +132,7 @@ test("courier_subscribe subscribes the calling session and says when no receiver
 
   expect(result.metadata).toEqual({ sessionID: "ses_parent", topic: "github:octo/repo#5", receiver: false })
   expect(result.content).toContain("no webhook receiver runs")
-  expect([...store.keys()]).toEqual(["webhook/ses_parent/github%3Aocto%2Frepo%235"])
+  expect([...store.keys()]).toEqual(["webhook/github%3Aocto%2Frepo%235/ses_parent"])
   const dropped = await tools.get("courier_unsubscribe").execute({}, { sessionID: "ses_parent" })
   expect(dropped.metadata).toEqual({ sessionID: "ses_parent", dropped: ["github:octo/repo#5"] })
 })
@@ -153,4 +153,35 @@ test("with a webhook option, the receiver is shared by instances and stops when 
   expect(await ping()).toBe(401)
   await cleanups.shift()!()
   expect(await ping()).toBe("down")
+})
+
+test("a receiver that cannot listen is dropped, and the next instance to load tries again", async () => {
+  const blocker = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("busy") })
+  const port = blocker.port
+  process.env.COURIER_TEST_SECRET = "s"
+  const options = { webhook: { port, secretEnv: "COURIER_TEST_SECRET" } }
+  const first = await setUp({}, options)
+  const subscribed = await first.tools.get("courier_subscribe").execute({ topic: "o/r" }, { sessionID: "ses_parent" })
+  expect(subscribed.metadata.receiver).toBe(false)
+
+  blocker.stop(true)
+  const second = await setUp({}, options)
+  const again = await second.tools.get("courier_subscribe").execute({ topic: "o/r" }, { sessionID: "ses_parent" })
+  expect(again.metadata.receiver).toBe(true)
+  const status = await fetch(`http://127.0.0.1:${port}/github`, { method: "POST", body: "{}" }).then((response) => response.status)
+  expect(status).toBe(401)
+})
+
+test("a reload's new instance listens once the old one has closed", async () => {
+  const port = 20000 + Math.floor(Math.random() * 20000)
+  process.env.COURIER_TEST_SECRET = "s"
+  const options = { webhook: { port, secretEnv: "COURIER_TEST_SECRET" } }
+  const old = await setUp({}, options)
+  await (await old.tools.get("courier_subscribe").execute({ topic: "o/r" }, { sessionID: "ses_parent" }))
+  const closing = cleanups.shift()!()
+  const fresh = await setUp({}, options)
+  await closing
+
+  const result = await fresh.tools.get("courier_subscribe").execute({ topic: "o/r" }, { sessionID: "ses_parent" })
+  expect(result.metadata.receiver).toBe(true)
 })

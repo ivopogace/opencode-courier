@@ -55,18 +55,35 @@ With the `webhook` option set (see [Receiving webhooks](#receiving-webhooks)), t
 for HTTP deliveries and turns them into messages for subscribed sessions:
 
 - `POST /github` takes GitHub webhook deliveries. A pull request review, a review comment, a
-  comment, a pull request or issue being opened, closed or merged, or a completed check run, check
-  suite or workflow run on a pull request goes to the sessions subscribed to `owner/repo#N` and to
-  `owner/repo`; anything else with a repository (a push, a release) goes to `owner/repo` only.
-  Pings and CI runs that have not completed wake nobody.
+  comment, a pull request or issue being opened, reopened, closed (or merged) or marked ready for
+  review, or a completed check run, check suite or workflow run on a pull request goes to the
+  sessions subscribed to `owner/repo#N` and to `owner/repo`; anything else with a repository (a
+  push, a release) goes to `owner/repo` only. Pings, CI runs that have not completed, and other
+  pull request and issue actions (pushes to the branch, edits, labels, assignments, review
+  requests) wake nobody.
 - `POST /hook/<name>` takes anything else, for sessions subscribed to `<name>`. A JSON body's
   `text`, `summary` or `message` field is delivered, otherwise the body itself.
 
-Every delivery must carry GitHub's `X-Hub-Signature-256` header, `sha256=` followed by the hex
-HMAC-SHA256 of the raw body under the shared secret; for `/hook/<name>` compute it yourself, e.g.
-`openssl dgst -sha256 -hmac "$SECRET"`. A missing or wrong signature gets `401` and is not
-parsed. The check is constant-time. Bodies over 1 MiB (`maxBytes`) get `413`. A delivered event
-gets `202`; one nobody is subscribed to still gets `202`, with a count of 0.
+Every delivery must carry an `X-Hub-Signature-256` header: `sha256=` followed by the hex
+HMAC-SHA256 under the shared secret. For GitHub that is of the raw body, as GitHub sends it. For
+`/hook/<name>` it is of the name, a newline and the body, so a captured delivery cannot be sent to
+another topic:
+
+```bash
+sig=$(printf '%s\n%s' deploys "$body" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)
+curl -X POST -H "x-hub-signature-256: sha256=$sig" --data-binary "$body" http://127.0.0.1:4097/hook/deploys
+```
+
+A missing or wrong signature gets `401`, and the body is not parsed. The check is constant-time.
+Bodies over 1 MiB (`maxBytes`) get `413`. A delivered event gets `202`, with the number of
+sessions it reached, which can be 0. The last 1000 accepted signatures are remembered in memory, and
+a delivery whose signature was already accepted gets `200 already delivered`. That stops replays of
+a captured delivery, and it also means a GitHub Redeliver of a delivery that already arrived is
+ignored. Redelivering one that failed works. Generic senders that post the same text twice should
+add something unique, such as a timestamp, to the body.
+
+A session that OpenCode no longer knows loses its subscriptions the next time a delivery for it
+fails, and `courier_subscribe` refuses a session id that does not exist.
 
 A session sees a short summary (event, repository and number, who, state or conclusion, link, and
 at most 1500 characters of a review or comment body), wrapped in `<courier from="github"
@@ -117,6 +134,10 @@ The receiver is off unless the plugin has a `webhook` option. Put it in the **gl
   ]
 }
 ```
+
+`"webhook": true` takes every default. If the option is given more than once, for example in a
+project's config as well, the first location to load wins, and the others log that their settings
+are ignored.
 
 | Option | Default | |
 |---|---|---|
@@ -186,7 +207,7 @@ gets a new turn after its own has ended once the child reports (shared and `isol
 `courier_status` reports and fails readably, that a `courier_later` message wakes an idle parent,
 that a cancelled one never arrives, that a pending one is delivered after a server restart, and that
 a recorded GitHub review delivery (`e2e/fixtures/pull_request_review.json`), signed, wakes an idle
-session subscribed with `courier_subscribe` while unsigned and wrongly signed ones are refused. It
+session subscribed with `courier_subscribe`, once, while unsigned and wrongly signed ones are refused. It
 takes about two minutes and needs node, bun, git, curl, jq and openssl.
 
 CI (`.github/workflows/ci.yml`) runs both on every push to `main` and every pull request, with the
@@ -207,7 +228,8 @@ Found while testing against `0.0.0-beta-19271`:
   is reached through the authenticated `/api/rpc` endpoint with a JSON envelope, so neither
   GitHub's headers nor the raw body its signature covers would get through. The webhook receiver
   is therefore its own small listener inside the OpenCode process, shared by the plugin's
-  per-location instances. A plugin's options come from a `{ "package", "options" }` entry in
+  per-location instances. It waits for the previous listener to finish closing before it binds,
+  as after a plugin reload, and if binding fails, the next instance to load tries again. A plugin's options come from a `{ "package", "options" }` entry in
   `plugins`, which takes a local directory as `package` too.
 - OpenCode errors such as `Session.NotFoundError` can arrive with an empty message, so the tools
   rethrow them with the tag and session id.

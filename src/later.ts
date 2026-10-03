@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { envelope } from "./courier.js"
+import { scanAll } from "./storage.js"
 
 type Context = Plugin.Context
 
@@ -68,17 +69,6 @@ export async function cancel(ports: LaterPorts, id: string) {
   return true
 }
 
-async function pending(ports: LaterPorts) {
-  const entries: LaterEntry[] = []
-  let after: string | undefined
-  do {
-    const page = await ports.storage.scan({ prefix: PREFIX, ...(after ? { after } : {}) })
-    for (const entry of page.entries) entries.push(entry.value as unknown as LaterEntry)
-    after = page.next
-  } while (after)
-  return entries
-}
-
 /**
  * Delivers every due message once. OpenCode sets the plugin up once per project location, all in
  * one process and over one storage, so the instances share `claimed`: an id is claimed
@@ -88,7 +78,7 @@ async function pending(ports: LaterPorts) {
  */
 export async function deliverDue(ports: LaterPorts, claimed: Set<string>) {
   const now = ports.now()
-  for (const due of (await pending(ports)).filter((entry) => entry.fireAt <= now)) {
+  for (const due of (await scanAll<LaterEntry>(ports.storage, PREFIX)).filter((entry) => entry.fireAt <= now)) {
     if (claimed.has(due.id)) continue
     claimed.add(due.id)
     try {

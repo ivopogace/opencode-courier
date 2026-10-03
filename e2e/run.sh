@@ -161,6 +161,7 @@ check "a wrongly signed delivery is refused" "$([ "$(hook -H "x-hub-signature-25
 woke=$(reply_time "$parent" "PARENT WOKE" 5)
 check "neither woke the session" "$([ -z "$woke" ] && echo true || echo false)"
 check "a signed delivery is accepted" "$([ "$(hook -H "x-hub-signature-256: $signature")" = 202 ] && echo true || echo false)"
+check "a replay of it is ignored" "$([ "$(hook -H "x-hub-signature-256: $signature")" = 200 ] && echo true || echo false)"
 woke=$(reply_time "$parent" "PARENT WOKE")
 check "it started a new turn after the session's had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
 summary=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] | join("")')

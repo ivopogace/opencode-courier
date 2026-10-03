@@ -1,6 +1,10 @@
+import { existsSync } from "node:fs"
 import { scanAll, type Storage } from "./storage.js"
 
-/** Entries older than this are dropped when their parent's roster is read, and on plugin setup. */
+/**
+ * Entries older than this are dropped when their parent's roster is read, and on plugin setup,
+ * except isolated children whose worktree is still there: those stay until courier_cleanup.
+ */
 export const RETENTION_MS = 14 * 24 * 60 * 60_000
 
 const PREFIX = "roster/"
@@ -13,6 +17,8 @@ export interface RosterEntry {
   readonly directory: string
   readonly isolated: boolean
   readonly createdAt: number
+  /** For an isolated child, the directory its worktree was made from; courier_cleanup removes it through there. */
+  readonly source?: string
 }
 
 export type RosterStorage = Storage
@@ -39,19 +45,27 @@ export async function children(storage: RosterStorage, parentID: string) {
   return entries.sort((a, b) => a.createdAt - b.createdAt)
 }
 
-/** Removes the given entries that were recorded more than `RETENTION_MS` before `now`, and returns the rest. */
-async function dropExpired(storage: RosterStorage, entries: RosterEntry[], now: number) {
-  const expired = entries.filter((entry) => now - entry.createdAt > RETENTION_MS)
+/** Whether a directory still exists; tests pass a fake. */
+export type Exists = (directory: string) => boolean
+
+/**
+ * Removes the given entries that were recorded more than `RETENTION_MS` before `now`, and returns
+ * the rest. An isolated child is kept while its worktree exists, so it can still be cleaned up.
+ */
+async function dropExpired(storage: RosterStorage, entries: RosterEntry[], now: number, exists: Exists) {
+  const expired = entries.filter(
+    (entry) => now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory)),
+  )
   await Promise.all(expired.map((entry) => storage.remove(rosterKey(entry.parentID, entry.sessionID))))
   return entries.filter((entry) => !expired.includes(entry))
 }
 
 /** A parent's children, oldest first, after dropping the expired ones. */
-export async function current(storage: RosterStorage, parentID: string, now: number) {
-  return dropExpired(storage, await children(storage, parentID), now)
+export async function current(storage: RosterStorage, parentID: string, now: number, exists: Exists = existsSync) {
+  return dropExpired(storage, await children(storage, parentID), now, exists)
 }
 
 /** Drops expired entries of every parent, so parents that never list their children don't keep them forever. */
-export async function pruneExpired(storage: RosterStorage, now: number) {
-  await dropExpired(storage, await scanAll<RosterEntry>(storage, PREFIX), now)
+export async function pruneExpired(storage: RosterStorage, now: number, exists: Exists = existsSync) {
+  await dropExpired(storage, await scanAll<RosterEntry>(storage, PREFIX), now, exists)
 }

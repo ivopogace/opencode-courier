@@ -103,7 +103,7 @@ describe("spawn", () => {
     expect(child.directory).toBe("/repo/.worktrees/ses")
   })
 
-  test("records an isolated child with its worktree", async () => {
+  test("records an isolated child with its worktree and the directory it was made from", async () => {
     const { ports, store } = fakePorts()
 
     await spawn(ports, "ses_parent", { task: "t", title: "Custom", isolate: true })
@@ -112,6 +112,7 @@ describe("spawn", () => {
       title: "Custom",
       directory: "/repo/.worktrees/ses",
       isolated: true,
+      source: "/repo",
     })
   })
 

@@ -78,6 +78,7 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
     directory: directory ?? child.location.directory,
     isolated: directory !== undefined,
     createdAt: ports.now(),
+    ...(directory ? { source: ports.directory } : {}),
   }).then(
     () => undefined,
     (error: unknown) => describeFailure("roster", error).message,

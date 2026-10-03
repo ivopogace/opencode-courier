@@ -1,9 +1,11 @@
 import type { Plugin } from "@opencode-ai/plugin"
 
-type Storage = Pick<Plugin.Context["storage"], "scan">
+type Context = Plugin.Context
 
-/** Every value stored under a prefix, following the scan's pages. */
-export async function scanAll<T>(storage: Storage, prefix: string) {
+export type Storage = Pick<Context["storage"], "get" | "set" | "remove" | "scan">
+
+/** Every value stored under `prefix`, following the scan's pages. */
+export async function scanAll<T>(storage: Pick<Storage, "scan">, prefix: string) {
   const values: T[] = []
   let after: string | undefined
   do {

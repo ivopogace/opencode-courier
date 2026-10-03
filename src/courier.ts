@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import { current, record, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
 
@@ -6,7 +7,9 @@ type Context = Plugin.Context
 export interface CourierPorts {
   readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context">
   readonly worktree: Pick<Context["worktree"], "create">
+  readonly storage: RosterStorage
   readonly directory: string
+  readonly now: () => number
 }
 
 export interface SpawnInput {
@@ -24,6 +27,10 @@ export interface SendInput {
 
 export interface StatusInput {
   readonly sessionID: string
+}
+
+export interface ChildrenInput {
+  readonly sessionID?: string
 }
 
 export function childBrief(parentID: string, task: string) {
@@ -55,14 +62,32 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
   const directory = input.isolate
     ? (await ports.worktree.create({ location: { directory: ports.directory } })).directory
     : undefined
+  const title = input.title ?? titleOf(input.task)
   const child = await ports.session.create({
-    title: input.title ?? titleOf(input.task),
+    title,
     ...(input.agent ? { agent: input.agent } : {}),
     ...(directory ? { location: { directory } } : {}),
     metadata: { courier: { parentID } },
   })
+  // Recorded before the prompt, so a child that exists is on the roster even if prompting fails. A
+  // failed write must not keep the child from its task, so it is reported instead of thrown.
+  const rosterError = await record(ports.storage, {
+    sessionID: child.id,
+    parentID,
+    title,
+    directory: directory ?? child.location.directory,
+    isolated: directory !== undefined,
+    createdAt: ports.now(),
+  }).then(
+    () => undefined,
+    (error: unknown) => describeFailure("roster", error).message,
+  )
   await ports.session.prompt({ sessionID: child.id, text: childBrief(parentID, input.task) })
-  return { sessionID: child.id, directory: directory ?? child.location.directory }
+  return {
+    sessionID: child.id,
+    directory: directory ?? child.location.directory,
+    ...(rosterError ? { rosterError } : {}),
+  }
 }
 
 /** Drops a message into another session's inbox; OpenCode wakes that session if it is idle. */
@@ -95,6 +120,26 @@ export async function status(ports: CourierPorts, input: StatusInput) {
     idle: info.time.idle,
     lastText,
   })
+}
+
+/** The sessions a parent started, each with what courier_status reports, or the error it gave. */
+export async function listChildren(ports: CourierPorts, parentID: string) {
+  const entries = await current(ports.storage, parentID, ports.now())
+  return Promise.all(
+    entries.map(async (entry) => {
+      const roster = { directory: entry.directory, isolated: entry.isolated, created: entry.createdAt }
+      try {
+        return { ...(await status(ports, { sessionID: entry.sessionID })), ...roster }
+      } catch (error) {
+        return {
+          sessionID: entry.sessionID,
+          title: entry.title,
+          ...roster,
+          error: describeFailure("courier_status", error).message,
+        }
+      }
+    }),
+  )
 }
 
 /** OpenCode leaves a tool call hanging when its metadata holds `undefined`, so results drop those keys. */

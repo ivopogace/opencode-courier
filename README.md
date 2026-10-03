@@ -32,10 +32,20 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 | `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`), sends it the task plus a brief naming the parent and how to report back, and returns at once. |
 | `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. |
 | `courier_status` | One look at a session: outcome, idle time and last reply. For check-ins, not for waiting. |
+| `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated and when it was started. |
 | `courier_later` | Schedules a message for a session (this one by default) in `delayMinutes` or `at` an ISO time, and returns an id. When due it is delivered like `courier_send`, queued behind any running turn and waking the session if idle. |
 | `courier_cancel` | Drops a message scheduled with `courier_later`, e.g. because the child it was waiting for reported first. |
 | `courier_subscribe` | Subscribes a session (this one by default) to webhook deliveries for a `topic`: `owner/repo`, `owner/repo#12` (one pull request or issue) or a generic name. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. Needs the [webhook receiver](#webhooks). |
 | `courier_unsubscribe` | Drops one topic, or all of a session's, e.g. once its pull request is merged. |
+
+### Roster
+
+`courier_spawn` records each child under its parent in the plugin's storage, so a parent that has
+lost track after a compaction or a server restart can call `courier_children` to find them again.
+A child that can no longer be looked up is still listed, with the error instead of its state.
+Entries are dropped 14 days after the child was started, when that parent's roster is read or
+the plugin is next loaded. If the roster cannot be written, the child still gets its task and
+`courier_spawn` says it is not on the list.
 
 ### Scheduled messages
 
@@ -183,8 +193,6 @@ lists them under Recent Deliveries with a Redeliver button.
 
 Tracked as [issues](https://github.com/ivopogace/opencode-courier/issues):
 
-- [#3](https://github.com/ivopogace/opencode-courier/issues/3) **Roster**: let a parent list the
-  sessions it spawned, after a compaction or restart.
 - [#4](https://github.com/ivopogace/opencode-courier/issues/4) **Worktree cleanup** when an
   isolated child finishes.
 - [#5](https://github.com/ivopogace/opencode-courier/issues/5) **Smoke test with a real model.**
@@ -205,10 +213,11 @@ plugin loaded and `e2e/mock-model.mjs` as the model: an OpenAI-compatible server
 a fixed script, so no API key is needed. It checks that a parent's spawn completes, that the parent
 gets a new turn after its own has ended once the child reports (shared and `isolate: true`), that
 `courier_status` reports and fails readably, that a `courier_later` message wakes an idle parent,
-that a cancelled one never arrives, that a pending one is delivered after a server restart, and that
+that a cancelled one never arrives, that a pending one is delivered after a server restart, that
+`courier_children` lists the two children a parent spawned, before and after that restart, and that
 a recorded GitHub review delivery (`e2e/fixtures/pull_request_review.json`), signed, wakes an idle
-session subscribed with `courier_subscribe`, once, while unsigned and wrongly signed ones are refused. It
-takes about two minutes and needs node, bun, git, curl, jq and openssl.
+session subscribed with `courier_subscribe`, once, while unsigned and wrongly signed ones are
+refused. It takes about two minutes and needs node, bun, git, curl, jq and openssl.
 
 CI (`.github/workflows/ci.yml`) runs both on every push to `main` and every pull request, with the
 OpenCode CLI at the same version as the pinned plugin API.

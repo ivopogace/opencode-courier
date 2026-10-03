@@ -2,8 +2,9 @@ import { Plugin } from "@opencode-ai/plugin"
 import { Schema } from "effect"
 import { randomUUID } from "node:crypto"
 import type { Server } from "node:http"
-import { describeFailure, send, spawn, status, type CourierPorts } from "./courier.js"
+import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
 import { cancel, deliverDue, schedule, TICK_MS, type LaterPorts } from "./later.js"
+import { pruneExpired } from "./roster.js"
 import { listen, readConfig, subscribe, unsubscribe, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
 const SpawnInput = Schema.Struct({
@@ -25,6 +26,12 @@ const SendInput = Schema.Struct({
 
 const StatusInput = Schema.Struct({
   sessionID: Schema.String.annotate({ description: "The session to look at." }),
+})
+
+const ChildrenInput = Schema.Struct({
+  sessionID: Schema.optional(
+    Schema.String.annotate({ description: "The session whose children to list; defaults to this one." }),
+  ),
 })
 
 const LaterInput = Schema.Struct({
@@ -136,7 +143,13 @@ const rethrow =
 export default Plugin.define({
   id: "courier",
   setup: async (ctx) => {
-    const ports: CourierPorts = { session: ctx.session, worktree: ctx.worktree, directory: ctx.location.directory }
+    const ports: CourierPorts = {
+      session: ctx.session,
+      worktree: ctx.worktree,
+      storage: ctx.storage,
+      directory: ctx.location.directory,
+      now: Date.now,
+    }
     const later: LaterPorts = {
       storage: ctx.storage,
       session: ctx.session,
@@ -163,8 +176,9 @@ export default Plugin.define({
         input: SpawnInput,
         execute: async (input, context) => {
           const child = await spawn(ports, context.sessionID, input).catch(rethrow("courier_spawn"))
+          const warning = child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : ""
           return {
-            content: `Started session ${child.sessionID} in ${child.directory}. It will report back with courier_send.`,
+            content: `Started session ${child.sessionID} in ${child.directory}. It will report back with courier_send.${warning}`,
             metadata: child,
           }
         },
@@ -193,6 +207,22 @@ export default Plugin.define({
         execute: async (input) => {
           const result = await status(ports, input).catch(rethrow("courier_status"))
           return { content: JSON.stringify(result, null, 2), metadata: result }
+        },
+      })
+
+      tools.add({
+        name: "courier_children",
+        options: { codemode: false },
+        description:
+          "List the sessions this one started with courier_spawn, with each one's state and last reply, e.g. after a " +
+          "compaction or restart. Like courier_status, for a one-off look, not for waiting.",
+        input: ChildrenInput,
+        execute: async (input, context) => {
+          const listed = await listChildren(ports, input.sessionID || context.sessionID).catch(rethrow("courier_children"))
+          return {
+            content: listed.length ? JSON.stringify(listed, null, 2) : "No sessions started with courier_spawn.",
+            metadata: { children: listed },
+          }
         },
       })
 
@@ -265,6 +295,8 @@ export default Plugin.define({
         },
       })
     })
+
+    void pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => console.error(`courier roster prune: ${String(error)}`))
 
     let ticking = false
     const tick = async () => {

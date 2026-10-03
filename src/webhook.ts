@@ -100,12 +100,23 @@ function hmac(secret: string, body: string | Uint8Array, name?: string) {
   return mac.update(body).digest()
 }
 
-/** Checks an `X-Hub-Signature-256` header (`sha256=<hex HMAC>`) in constant time. */
-export function verifySignature(secret: string, body: Uint8Array, header: string | undefined, name?: string) {
-  if (!header?.startsWith("sha256=")) return false
-  const given = Buffer.from(header.slice("sha256=".length), "hex")
+const SIGNATURE = /^sha256=([0-9a-f]{64})$/i
+
+/**
+ * Checks an `X-Hub-Signature-256` header (`sha256=` and exactly 64 hex digits) in constant time and
+ * returns the digest in canonical lowercase hex, or undefined when it does not match. Replays are
+ * keyed by that digest, never by the header text, which could be re-cased or padded.
+ */
+export function checkSignature(secret: string, body: Uint8Array, header: string | undefined, name?: string) {
+  const hex = header?.match(SIGNATURE)?.[1]
+  if (!hex) return undefined
+  const given = Buffer.from(hex, "hex")
   const expected = hmac(secret, body, name)
-  return given.length === expected.length && timingSafeEqual(given, expected)
+  return given.length === expected.length && timingSafeEqual(given, expected) ? expected.toString("hex") : undefined
+}
+
+export function verifySignature(secret: string, body: Uint8Array, header: string | undefined, name?: string) {
+  return checkSignature(secret, body, header, name) !== undefined
 }
 
 /** The `X-Hub-Signature-256` value for a body; give the topic name for `/hook/<name>`. */
@@ -274,7 +285,7 @@ const header = (request: Request, name: string) => {
   return Array.isArray(value) ? value[0] : value
 }
 
-/** Signatures of accepted deliveries, newest last; shared by every receiver in the process. */
+/** Digests of accepted deliveries, newest last; shared by every receiver in the process. */
 export class Seen {
   private readonly items = new Set<string>()
   constructor(private readonly limit = REMEMBERED) {}
@@ -303,9 +314,9 @@ export async function receive(ports: WebhookPorts, secret: string, request: Requ
     } catch {}
     if (!topic || !GENERIC_NAME.test(topic)) return { status: 400, body: "bad topic" }
   }
-  const signature = header(request, "x-hub-signature-256")
-  if (!verifySignature(secret, request.body, signature, topic)) return { status: 401, body: "bad or missing X-Hub-Signature-256" }
-  if (seen.has(signature!)) return { status: 200, body: "already delivered" }
+  const digest = checkSignature(secret, request.body, header(request, "x-hub-signature-256"), topic)
+  if (!digest) return { status: 401, body: "bad or missing X-Hub-Signature-256" }
+  if (seen.has(digest)) return { status: 200, body: "already delivered" }
 
   let event: Event | undefined
   if (topic !== undefined) {
@@ -322,7 +333,7 @@ export async function receive(ports: WebhookPorts, secret: string, request: Requ
     event = githubEvent(name, payload)
     if (!event) return { status: 200, body: `ignored ${name}` }
   }
-  seen.add(signature!)
+  seen.add(digest)
   const delivery = header(request, "x-github-delivery")?.replace(/[^\w-]/g, "").slice(0, 64) || undefined
   const delivered = await dispatch(ports, event, delivery)
   ports.log(`courier webhook: ${event.source} ${event.name}${delivery ? ` ${delivery}` : ""} delivered to ${delivered} session(s)`)

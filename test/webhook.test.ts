@@ -76,6 +76,10 @@ describe("verifySignature", () => {
     expect(verifySignature(SECRET, body, good.replace("sha256=", "sha1="))).toBe(false)
     expect(verifySignature(SECRET, body, good.slice(0, -2))).toBe(false)
     expect(verifySignature(SECRET, body, "sha256=not-hex")).toBe(false)
+    expect(verifySignature(SECRET, body, `${good}zz`)).toBe(false)
+    expect(verifySignature(SECRET, body, `${good}0`)).toBe(false)
+    expect(verifySignature(SECRET, body, ` ${good}`)).toBe(false)
+    expect(verifySignature(SECRET, body, good.toUpperCase().replace("SHA256=", "sha256="))).toBe(true)
     expect(verifySignature("another secret", body, good)).toBe(false)
     expect(verifySignature(SECRET, Buffer.from("Hello, World?"), good)).toBe(false)
   })
@@ -247,6 +251,22 @@ describe("receive", () => {
 
     expect((await receive(ports, SECRET, request, seen)).status).toBe(202)
     expect(await receive(ports, SECRET, request, seen)).toEqual({ status: 200, body: "already delivered" })
+    expect(delivered).toHaveLength(1)
+  })
+
+  test("a replay with the signature re-cased or padded is not delivered again either", async () => {
+    const { ports, delivered } = fakePorts()
+    await subscribe(ports, "ses_parent", "Codertocat/Hello-World")
+    const seen = new Seen()
+    const hex = sign(SECRET, review).slice("sha256=".length)
+    const send = (signature: string) => receive(ports, SECRET, githubRequest(review, { "x-hub-signature-256": signature }), seen)
+
+    expect((await send(`sha256=${hex}`)).status).toBe(202)
+    expect(await send(`sha256=${hex.toUpperCase()}`)).toEqual({ status: 200, body: "already delivered" })
+    expect(await send(`SHA256=${hex}`)).toEqual({ status: 200, body: "already delivered" })
+    expect((await send(`sha256=${hex}zz`)).status).toBe(401)
+    expect((await send(`sha256=${hex}00`)).status).toBe(401)
+    expect((await send(`sha256=${hex} `)).status).toBe(401)
     expect(delivered).toHaveLength(1)
   })
 

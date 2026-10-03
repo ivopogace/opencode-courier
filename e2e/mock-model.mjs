@@ -5,7 +5,7 @@ import { createServer } from "node:http"
 
 const port = Number(process.env.MOCK_PORT ?? 4599)
 const log = process.env.MOCK_LOG
-// Holds the child's report back, so the parent's turn has ended and it is idle when the report lands.
+// Holds the child's report (or its failure) back, so the parent's turn has ended and it is idle when it lands.
 const childDelay = Number(process.env.MOCK_CHILD_DELAY_MS ?? 0)
 
 const textOf = (content) =>
@@ -40,6 +40,8 @@ function decide(body) {
     .map((message) => textOf(message.content))
     .join("\n")
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
+  // The child of COURIER-FAIL cannot reach its model, as with a model blocked for the account.
+  if (parent && recent.includes("CHILD-FAILS")) return { status: 403, error: "This model is not available in your country" }
   if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE" } }
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
   // COURIER-LATER-STRING sends the delay as a string, as some models do.
@@ -55,6 +57,7 @@ function decide(body) {
   const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
+  if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
   const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)
   if (spawn) return spawnChild(spawn[1] === "isolate")
   return { text: "ok" }
@@ -81,8 +84,13 @@ createServer((request, response) => {
   request.on("end", async () => {
     const body = raw ? JSON.parse(raw) : {}
     const reply = decide(body)
-    if (reply.tool === "courier_send" && childDelay) await new Promise((resolve) => setTimeout(resolve, childDelay))
+    if ((reply.tool === "courier_send" || reply.status) && childDelay) await new Promise((resolve) => setTimeout(resolve, childDelay))
     if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, tools: (body.tools ?? []).map((tool) => tool.function?.name), reply })}\n`)
+    if (reply.status) {
+      response.writeHead(reply.status, { "content-type": "application/json" })
+      response.end(JSON.stringify({ error: { message: reply.error, type: "forbidden" } }))
+      return
+    }
     const call = reply.tool && { id: `call_${Date.now()}`, type: "function", function: { name: reply.tool, arguments: JSON.stringify(reply.args) } }
     if (!body.stream) {
       response.writeHead(200, { "content-type": "application/json" })

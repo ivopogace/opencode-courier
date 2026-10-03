@@ -4,7 +4,10 @@ import { record, rosterKey } from "../src/roster.js"
 
 type Call = { method: string; input: any }
 
-function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unknown> } = {}) {
+/** What spawn did after looking up the model to give the child. */
+const afterLookups = (calls: Call[]) => calls.filter((call) => call.method !== "session.get" && call.method !== "agent.get")
+
+function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unknown>; agent?: Record<string, unknown> } = {}) {
   const calls: Call[] = []
   const store = new Map<string, unknown>()
   const record = (method: string, result: unknown) => async (input: any) => {
@@ -36,6 +39,7 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
       }),
       context: record("session.context", overrides.messages ?? []),
     },
+    agent: { get: record("agent.get", { data: { id: "build", ...overrides.agent } }) },
     worktree: {
       create: record("worktree.create", { directory: "/repo/.worktrees/ses" }),
       remove: record("worktree.remove", undefined),
@@ -47,9 +51,10 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
 
 describe("spawn", () => {
   test("creates the child, then prompts it with a brief naming the parent", async () => {
-    const { ports, calls } = fakePorts()
+    const { ports, calls: all } = fakePorts()
 
     const child = await spawn(ports, "ses_parent", { task: "Fix the bug\nin checkout" })
+    const calls = afterLookups(all)
 
     expect(child).toEqual({ sessionID: "ses_child", directory: "/repo" })
     expect(calls.map((call) => call.method)).toEqual(["session.create", "session.prompt"])
@@ -76,29 +81,32 @@ describe("spawn", () => {
   })
 
   test("still prompts the child when the roster cannot be written, and says so", async () => {
-    const { ports, calls } = fakePorts()
+    const { ports, calls: all } = fakePorts()
     ;(ports.storage as any).set = async () => {
       throw new Error("disk full")
     }
 
     const child = await spawn(ports, "ses_parent", { task: "t" })
+    const calls = afterLookups(all)
 
     expect(calls.map((call) => call.method)).toEqual(["session.create", "session.prompt"])
     expect(child).toEqual({ sessionID: "ses_child", directory: "/repo", rosterError: "roster failed: disk full" })
   })
 
   test("passes the agent and title through", async () => {
-    const { ports, calls } = fakePorts()
+    const { ports, calls: all } = fakePorts()
 
     await spawn(ports, "ses_parent", { task: "t", title: "Custom", agent: "build" })
+    const calls = afterLookups(all)
 
     expect(calls[0]!.input).toMatchObject({ title: "Custom", agent: "build" })
   })
 
   test("with isolate, creates a worktree and runs the child there", async () => {
-    const { ports, calls } = fakePorts()
+    const { ports, calls: all } = fakePorts()
 
     const child = await spawn(ports, "ses_parent", { task: "t", isolate: true })
+    const calls = afterLookups(all)
 
     expect(calls[0]).toEqual({ method: "worktree.create", input: { location: { directory: "/repo" } } })
     expect(calls[1]!.input).toMatchObject({ location: { directory: "/repo/.worktrees/ses" } })
@@ -120,12 +128,13 @@ describe("spawn", () => {
   })
 
   test("removes the fresh worktree when the session cannot be created", async () => {
-    const { ports, calls, store } = fakePorts()
+    const { ports, calls: all, store } = fakePorts()
     ;(ports.session as any).create = async () => {
       throw new Error("no such agent")
     }
 
     await expect(spawn(ports, "ses_parent", { task: "t", isolate: true })).rejects.toThrow("no such agent")
+    const calls = afterLookups(all)
 
     expect(calls.map((call) => call.method)).toEqual(["worktree.create", "worktree.remove"])
     expect(calls[1]!.input).toEqual({ location: { directory: "/repo" }, directory: "/repo/.worktrees/ses", force: false })
@@ -133,14 +142,57 @@ describe("spawn", () => {
   })
 
   test("shortens a long first line for the title", async () => {
-    const { ports, calls } = fakePorts()
+    const { ports, calls: all } = fakePorts()
 
     await spawn(ports, "ses_parent", { task: "x".repeat(100) })
+    const calls = afterLookups(all)
 
     expect(calls[0]!.input.title).toBe(`${"x".repeat(57)}...`)
   })
-})
 
+  test("gives the child its parent's model", async () => {
+    const model = { id: "chat", providerID: "mock", variant: "default" }
+    const { ports, calls } = fakePorts({ info: { model } })
+
+    await spawn(ports, "ses_parent", { task: "t" })
+
+    expect(calls[0]).toEqual({ method: "session.get", input: { sessionID: "ses_parent" } })
+    expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ model })
+  })
+
+  test("gives it the parent's model with an agent that names none", async () => {
+    const model = { id: "chat", providerID: "mock" }
+    const { ports, calls } = fakePorts({ info: { model } })
+
+    await spawn(ports, "ses_parent", { task: "t", agent: "build" })
+
+    expect(calls.find((call) => call.method === "agent.get")!.input).toEqual({ agentID: "build", location: { directory: "/repo" } })
+    expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ agent: "build", model })
+  })
+
+  test("leaves the model to an agent that names its own", async () => {
+    const { ports, calls } = fakePorts({
+      info: { model: { id: "chat", providerID: "mock" } },
+      agent: { model: { id: "small", providerID: "mock" } },
+    })
+
+    await spawn(ports, "ses_parent", { task: "t", agent: "build" })
+
+    expect(calls.find((call) => call.method === "session.create")!.input).not.toHaveProperty("model")
+  })
+
+  test("starts the child on OpenCode's default when the parent's model cannot be looked up", async () => {
+    const { ports, calls } = fakePorts()
+    ;(ports.session as any).get = async () => {
+      throw new Error("lookup failed")
+    }
+
+    const child = await spawn(ports, "ses_parent", { task: "t" })
+
+    expect(child.sessionID).toBe("ses_child")
+    expect(calls[0]!.input).not.toHaveProperty("model")
+  })
+})
 describe("send", () => {
   test("delivers a synthetic message that steers by default and leaves resume on", async () => {
     const { ports, calls } = fakePorts()

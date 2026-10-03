@@ -9,8 +9,9 @@ plugin API", before changing the plugin.
 - `src/courier.ts`: spawn, send, status, children. `src/later.ts`: scheduled messages and their
   scheduler. `src/roster.ts`: the children each parent spawned. `src/cleanup.ts`: removing an
   isolated child's worktree. `src/webhook.ts`: the webhook receiver and subscriptions.
-  `src/watch.ts`: telling a parent that a child's turn failed. `src/storage.ts`: shared storage
-  helpers. `src/index.ts`: the plugin, tool schemas and wiring.
+  `src/watch.ts`: following OpenCode's events to tell a parent that a child's turn failed or that it
+  waits for a permission. `src/relay.ts`: the permission notices and passing the answer back.
+  `src/storage.ts`: shared storage helpers. `src/index.ts`: the plugin, tool schemas and wiring.
 - `test/`: unit tests against a fake plugin context (`bun test`).
 - `e2e/run.sh`: live test against a real OpenCode V2 server, driven by `e2e/mock-model.mjs`, a
   scripted OpenAI-compatible stand-in model. New behaviour gets a scenario there.

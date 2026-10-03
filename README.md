@@ -8,8 +8,9 @@ child works on its own and, when it is done or stuck, calls `courier_send` with 
 That message lands in the parent's inbox and OpenCode starts a new turn for the parent if it is
 idle.
 
-> **Status: early scaffold.** Typechecked and unit-tested against
-> `@opencode-ai/plugin@0.0.0-beta-19271`; not yet run inside a live OpenCode V2 server.
+> **Status: early.** Passes an end-to-end test inside a live OpenCode V2 server
+> (`opencode2 v0.0.0-beta-19271`) driven by a scripted stand-in model (`e2e/run.sh`); not yet
+> tried with a real model.
 
 ## How the wake works
 
@@ -39,11 +40,12 @@ git clone <this repo> && cd opencode-courier
 bun install && npm run build
 ```
 
-Then list it in `opencode.json` (V2 uses `plugins`, plural):
+Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path must be a
+**directory**; OpenCode loads its `index.js`, and ignores a path to a file with a warning:
 
 ```jsonc
 {
-  "plugins": ["/absolute/path/to/opencode-courier/dist/index.js"]
+  "plugins": ["/absolute/path/to/opencode-courier/dist"]
 }
 ```
 
@@ -56,7 +58,9 @@ global configuration.
    (`opencode2 service start`; `opencode2 service status` to check).
 2. Give the agents that run children permissions that don't need a human; a child waiting on an
    approval prompt never reports back.
-3. Use `isolate: true` whenever children edit files in parallel.
+3. Use `isolate: true` whenever children edit files in parallel. The child's worktree is made
+   from the last commit, so an uncommitted `opencode.json` is not there and the child falls back
+   to your global config: keep providers and models in the global config, or commit the file.
 4. A child that crashes before calling `courier_send` never wakes the parent. Until the scheduler
    below exists, pair long runs with a scheduled check-in (for example the `opencode-cron` plugin)
    that calls `courier_status`.
@@ -77,10 +81,28 @@ bun install
 bun test           # unit tests, with a fake plugin context
 npm run typecheck
 npm run build      # emits dist/
+OPENCODE_BIN=$(which opencode2) npm run test:e2e   # live test, see below
 ```
 
+`e2e/run.sh` starts a real OpenCode V2 server in a throwaway project and home directory, with this
+plugin loaded and `e2e/mock-model.mjs` as the model: an OpenAI-compatible server that replies from
+a fixed script, so no API key is needed. It checks that a parent's spawn completes, that the parent
+gets a new turn after its own has ended once the child reports (shared and `isolate: true`), and
+that `courier_status` reports and fails readably. It needs node, bun, git, curl and jq.
+
 The plugin API is still beta and pinned to an exact version in `package.json`; bump it
-deliberately and re-run the typecheck.
+deliberately and re-run both test suites.
+
+### Notes on the V2 plugin API
+
+Found while testing against `0.0.0-beta-19271`:
+
+- A plugin tool is only reachable through code mode's `execute` tool unless it is registered with
+  `options: { codemode: false }`. The courier tools are direct tools.
+- A tool whose result `metadata` holds an `undefined` value never completes: the call stays
+  `running` and no error is reported. Results here drop `undefined` keys.
+- OpenCode errors such as `Session.NotFoundError` can arrive with an empty message, so the tools
+  rethrow them with the tag and session id.
 
 ## License
 

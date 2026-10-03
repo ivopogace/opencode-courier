@@ -24,7 +24,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "test:e2e": "e2e/run.sh"
   },
   "dependencies": {
     "effect": "4.0.0-rc.112"

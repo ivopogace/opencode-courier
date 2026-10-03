@@ -1,0 +1,91 @@
+// A scripted OpenAI-compatible chat model for the end-to-end test. It decides each reply from the
+// conversation so far, so the parent, the child and the woken parent each get a predictable turn.
+import { appendFileSync } from "node:fs"
+import { createServer } from "node:http"
+
+const port = Number(process.env.MOCK_PORT ?? 4599)
+const log = process.env.MOCK_LOG
+// Holds the child's report back, so the parent's turn has ended and it is idle when the report lands.
+const childDelay = Number(process.env.MOCK_CHILD_DELAY_MS ?? 0)
+
+const textOf = (content) =>
+  typeof content === "string"
+    ? content
+    : Array.isArray(content)
+      ? content.map((part) => (typeof part === "string" ? part : (part.text ?? ""))).join("")
+      : ""
+
+function decide(body) {
+  const messages = body.messages ?? []
+  if (!body.tools?.length) return { text: "Courier test" }
+  const lastAssistant = messages.findLastIndex((message) => message.role === "assistant")
+  const last = messages.at(-1)
+  if (last?.role === "tool") {
+    const call = messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)
+    return { text: `TOOL DONE ${call?.function?.name}: ${textOf(last.content)}` }
+  }
+  const recent = messages
+    .slice(lastAssistant + 1)
+    .map((message) => textOf(message.content))
+    .join("\n")
+  const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
+  if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE" } }
+  if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
+  const look = recent.match(/COURIER-STATUS (ses_\w+)/)
+  if (look) return { tool: "courier_status", args: { sessionID: look[1] } }
+  const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)
+  if (spawn) return { tool: "courier_spawn", args: { task: "Report back to your parent.", isolate: spawn[1] === "isolate" } }
+  return { text: "ok" }
+}
+
+function chunk(delta, finish) {
+  return `data: ${JSON.stringify({
+    id: "chatcmpl-mock",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: "chat",
+    choices: [{ index: 0, delta, finish_reason: finish }],
+    ...(finish ? { usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } } : {}),
+  })}\n\n`
+}
+
+createServer((request, response) => {
+  let raw = ""
+  request.on("data", (data) => (raw += data))
+  request.on("end", async () => {
+    const body = raw ? JSON.parse(raw) : {}
+    const reply = decide(body)
+    if (reply.tool === "courier_send" && childDelay) await new Promise((resolve) => setTimeout(resolve, childDelay))
+    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, tools: (body.tools ?? []).map((tool) => tool.function?.name), reply })}\n`)
+    const call = reply.tool && { id: `call_${Date.now()}`, type: "function", function: { name: reply.tool, arguments: JSON.stringify(reply.args) } }
+    if (!body.stream) {
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(
+        JSON.stringify({
+          id: "chatcmpl-mock",
+          object: "chat.completion",
+          created: 0,
+          model: "chat",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: reply.text ?? null, ...(call ? { tool_calls: [call] } : {}) },
+              finish_reason: call ? "tool_calls" : "stop",
+            },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+      )
+      return
+    }
+    response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
+    if (call) {
+      response.write(chunk({ role: "assistant", tool_calls: [{ index: 0, ...call }] }, null))
+      response.write(chunk({}, "tool_calls"))
+    } else {
+      response.write(chunk({ role: "assistant", content: reply.text }, null))
+      response.write(chunk({}, "stop"))
+    }
+    response.end("data: [DONE]\n\n")
+  })
+}).listen(port, "127.0.0.1", () => console.log(`mock model on http://127.0.0.1:${port}/v1`))

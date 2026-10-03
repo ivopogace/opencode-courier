@@ -317,7 +317,13 @@ woke the idle parent. By default it uses a free model on OpenCode Zen, which nee
 ```bash
 OPENCODE_BIN=$(which opencode2) e2e/real-model.sh
 COURIER_MODEL=muse-spark-1.3-contributor-free OPENCODE_BIN=$(which opencode2) e2e/real-model.sh
+COURIER_SCENARIO=permission OPENCODE_BIN=$(which opencode2) e2e/real-model.sh
 ```
+
+With `COURIER_SCENARIO=permission` it runs the permission relay instead: one child whose command
+needs an approval, and the script in the person's place. It checks that the parent asks rather
+than answering by itself, answers its question with `once`, and checks that the parent passes that
+on with `courier_answer` and the child runs its command and reports.
 
 On `opencode2 v0.0.0-beta-19271`, `longcat-2.5-preview-free`, `muse-spark-1.3-contributor-free`
 and `nemotron-3-ultra-free` complete the fan-out with both reports waking the parent, after the

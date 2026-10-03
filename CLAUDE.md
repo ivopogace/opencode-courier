@@ -15,8 +15,9 @@ plugin API", before changing the plugin.
 - `test/`: unit tests against a fake plugin context (`bun test`).
 - `e2e/run.sh`: live test against a real OpenCode V2 server, driven by `e2e/mock-model.mjs`, a
   scripted OpenAI-compatible stand-in model. New behaviour gets a scenario there.
-- `e2e/real-model.sh` (with `e2e/real-model.mjs`): smoke test with a real model, free on OpenCode
-  Zen by default; not in CI. Re-run it after changing tool descriptions, results or the child brief;
+- `e2e/real-model.sh` (with `e2e/real-model.mjs`, and `e2e/real-model-permission.mjs` for
+  `COURIER_SCENARIO=permission`): smoke test with a real model, free on OpenCode Zen by default; not
+  in CI. Re-run it after changing tool descriptions, results or the child brief;
   `docs/real-model.md` has the results.
 - `.github/workflows/ci.yml`: both suites on every push to `main` and every pull request.
   `release-start.yml`, `release-tag.yml` and `release.yml`: the release flow, Releasing in README.md.

@@ -258,6 +258,18 @@ curl, jq and openssl.
 CI (`.github/workflows/ci.yml`) runs both on every push to `main` and every pull request, with the
 OpenCode CLI at the same version as the pinned plugin API.
 
+### Releasing
+
+`.github/workflows/release.yml` publishes to npm on a `v*` tag. It runs the CI workflow first,
+checks that the tag matches the `version` in `package.json`, builds, and publishes with
+provenance. It needs an npm automation or granular access token in the repository secret
+`NPM_TOKEN`.
+
+```bash
+npm version patch   # bumps package.json, commits, tags vX.Y.Z
+git push --follow-tags
+```
+
 The plugin API is still beta and pinned to an exact version in `package.json`; bump it
 deliberately and re-run both test suites.
 

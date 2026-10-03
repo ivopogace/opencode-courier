@@ -16,13 +16,23 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Holds the NPM_TOKEN secret. Approval happens on npm (staged publishing), so the environment
-    # needs no required reviewer.
+    # Holds the NPM_TOKEN secret, and is the environment npm's trusted publisher names. Approval
+    # happens on npm (staged publishing), so the environment needs no required reviewer.
     environment: npm
     permissions:
       contents: read
-      id-token: write # provenance: a Sigstore signature tying the package to this workflow run
+      id-token: write # trusted publishing, and provenance either way
+    env:
+      # How the job authenticates to npm: `token` (NPM_TOKEN, the default) or `oidc` (trusted
+      # publishing). Set the repository variable NPM_AUTH to switch; see Releasing in README.md.
+      NPM_AUTH: ${{ vars.NPM_AUTH || 'token' }}
     steps:
+      - name: Check NPM_AUTH
+        run: |
+          case "${NPM_AUTH}" in
+            token | oidc) echo "authenticating to npm with: ${NPM_AUTH}" ;;
+            *) echo "::error::NPM_AUTH must be token or oidc, not ${NPM_AUTH}"; exit 1 ;;
+          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -45,12 +55,14 @@ jobs:
           fi
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run build
-      # NPM_TOKEN is a granular access token without 2FA bypass, with read and write on this
-      # package only. Such a token can stage but not publish: the version goes live once a
-      # maintainer approves it with 2FA on npmjs.com (Staged Packages) or with
-      # `npm stage approve <id>`. Not trusted publishing (OIDC): npm rejects the OIDC subject
-      # claims GitHub issues for this repository (npm/cli#9969).
+      # Either way the job can only stage: the version goes live once a maintainer approves it with
+      # 2FA on npmjs.com (Staged Packages) or with `npm stage approve <id>`.
+      #
+      # token: NPM_TOKEN is a granular access token without 2FA bypass, with read and write on this
+      # package only; such a token can stage but not publish. It stands in for trusted publishing
+      # while npm rejects the OIDC subject claims GitHub issues for this repository (npm/cli#9969).
       - name: Check the npm token
+        if: env.NPM_AUTH == 'token'
         run: |
           if [ -z "${NODE_AUTH_TOKEN}" ]; then
             echo "::error::no NPM_TOKEN secret in the npm environment: add a granular access token (see Releasing in README.md)"
@@ -59,20 +71,54 @@ jobs:
           npm whoami || { echo "::error::npm does not accept NPM_TOKEN: it may have expired or been revoked"; exit 1; }
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      # Prereleases (1.2.0-beta.1) go to the `next` dist-tag; npm 11 refuses them without one. The
-      # repository variable NPM_PROVENANCE=false stages without provenance, should npm refuse it;
-      # a re-run picks the variable up without moving the tag.
-      - name: Stage
+      # oidc: the trusted publisher on npmjs.com (this repository, workflow release.yml, environment
+      # npm) allows staging only; trusted publishing authenticates and adds provenance.
+      # npm skips a failed OIDC exchange silently and falls back to the .npmrc setup-node wrote,
+      # which ends in a bare E401. So check the OIDC token first and log the claims npm's trusted
+      # publisher matches on (repository, workflow file, environment), never the token itself.
+      - name: Check the OIDC token for npm
+        if: env.NPM_AUTH == 'oidc'
         run: |
-          provenance=--provenance
-          if [ "${NPM_PROVENANCE}" = false ]; then provenance=; fi
-          case "${GITHUB_REF_NAME}" in
-            *-*) npm stage publish --access public ${provenance:+"$provenance"} --tag next ;;
-            *)   npm stage publish --access public ${provenance:+"$provenance"} ;;
-          esac
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" ]; then
+            echo "::error::no OIDC token available: the job needs 'permissions: id-token: write'"
+            exit 1
+          fi
+          node --input-type=module -e '
+            const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL)
+            url.searchParams.set("audience", "npm:registry.npmjs.org")
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` } })
+            if (!res.ok) {
+              console.log(`::error::GitHub refused the OIDC token request: HTTP ${res.status}`)
+              process.exit(1)
+            }
+            const { value } = await res.json()
+            const claims = JSON.parse(Buffer.from(value.split(".")[1], "base64url").toString())
+            for (const key of ["aud", "sub", "repository", "repository_owner", "repository_visibility", "workflow_ref", "job_workflow_ref", "environment", "ref", "event_name"]) {
+              console.log(`${key}: ${claims[key] ?? "(missing)"}`)
+            }
+          '
+      # Prereleases (1.2.0-beta.1) go to the `next` dist-tag; npm 11 refuses them without one.
+      # The repository variable NPM_PROVENANCE=false stages without provenance, should npm refuse
+      # it; a re-run picks the variable up without moving the tag.
+      - name: Stage with the token
+        if: env.NPM_AUTH == 'token'
+        run: |
+          flags=(--access public)
+          if [ "${NPM_PROVENANCE}" != false ]; then flags+=(--provenance); fi
+          case "${GITHUB_REF_NAME}" in *-*) flags+=(--tag next) ;; esac
+          npm stage publish "${flags[@]}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_PROVENANCE: ${{ vars.NPM_PROVENANCE }}
+      # No token here, so a failed exchange cannot fall back to one.
+      # Verbose logging shows why an OIDC exchange failed; npm redacts credentials in its logs.
+      - name: Stage through trusted publishing
+        if: env.NPM_AUTH == 'oidc'
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            *-*) npm stage publish --access public --tag next --loglevel verbose ;;
+            *)   npm stage publish --access public --loglevel verbose ;;
+          esac
 
   # A draft, because the version is not live until it is approved: publish the draft afterwards.
   github-release:

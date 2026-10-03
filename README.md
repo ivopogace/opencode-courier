@@ -261,14 +261,21 @@ OpenCode CLI at the same version as the pinned plugin API.
 ### Releasing
 
 `.github/workflows/release.yml` publishes to npm on a `v*` tag. It runs the CI workflow first,
-checks that the tag matches the `version` in `package.json`, builds, and publishes with
-provenance. It needs an npm automation or granular access token in the repository secret
-`NPM_TOKEN`.
+checks that the tag matches the `version` in `package.json`, builds, publishes from the `npm`
+environment with provenance, and then creates a GitHub release with generated notes. A
+prerelease version (`1.2.0-beta.1`) goes to the `next` dist-tag and is marked as a prerelease.
 
 ```bash
 npm version patch   # bumps package.json, commits, tags vX.Y.Z
 git push --follow-tags
 ```
+
+It authenticates with npm trusted publishing (OIDC), which needs no stored token: on npmjs.com,
+the package's trusted publisher is this repository, workflow `release.yml`, environment `npm`.
+Until that is set up, npm falls back to an access token in the repository secret `NPM_TOKEN`.
+
+CI also checks the package as published: `publint` for `package.json` and `exports`, and
+`@arethetypeswrong/cli` for the type declarations.
 
 The plugin API is still beta and pinned to an exact version in `package.json`; bump it
 deliberately and re-run both test suites.

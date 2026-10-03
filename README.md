@@ -143,7 +143,20 @@ conflict.
 
 ## Install
 
-Requires OpenCode V2 (`npm install -g @opencode-ai/cli@beta`, command `opencode2`).
+Requires OpenCode V2 (`npm install -g @opencode-ai/cli@beta`, command `opencode2`). Each release
+is built and tested against one version of its beta plugin API, the `@opencode-ai/plugin` peer
+dependency in `package.json` (`0.0.0-beta-19271` today); the CLI of the same version is the one
+known to work.
+
+```bash
+opencode2 plugin add opencode-courier
+```
+
+This installs the package from npm and adds it to the global configuration
+(`~/.config/opencode/opencode.json`). To receive webhooks, give that entry a `webhook` option (see
+below).
+
+### From a local clone
 
 ```bash
 git clone <this repo> && cd opencode-courier
@@ -159,11 +172,6 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
 }
 ```
 
-To receive webhooks, give the plugin a `webhook` option instead (see below).
-
-Once published to npm, `opencode2 plugin add opencode-courier` installs it and adds it to the
-global configuration.
-
 ## Receiving webhooks
 
 The receiver is off unless the plugin has a `webhook` option. Put it in the **global** config
@@ -173,16 +181,16 @@ The receiver is off unless the plugin has a `webhook` option. Put it in the **gl
 {
   "plugins": [
     {
-      "package": "/absolute/path/to/opencode-courier/dist",
+      "package": "opencode-courier",
       "options": { "webhook": { "port": 4097, "secretFile": "~/.config/opencode/courier-webhook-secret" } }
     }
   ]
 }
 ```
 
-`"webhook": true` takes every default. If the option is given more than once, for example in a
-project's config as well, the first location to load wins, and the others log that their settings
-are ignored.
+From a local clone, `package` is the path to its `dist` directory instead. `"webhook": true`
+takes every default. If the option is given more than once, for example in a project's config as
+well, the first location to load wins, and the others log that their settings are ignored.
 
 | Option | Default | |
 |---|---|---|
@@ -230,7 +238,6 @@ lists them under Recent Deliveries with a Redeliver button.
 Tracked as [issues](https://github.com/ivopogace/opencode-courier/issues):
 
 - [#5](https://github.com/ivopogace/opencode-courier/issues/5) **Smoke test with a real model.**
-- [#6](https://github.com/ivopogace/opencode-courier/issues/6) **Publish to npm.**
 
 ## Development
 
@@ -264,17 +271,19 @@ OpenCode CLI at the same version as the pinned plugin API.
 
 `.github/workflows/release.yml` publishes to npm on a `v*` tag. It runs the CI workflow first,
 checks that the tag matches the `version` in `package.json`, builds, publishes from the `npm`
-environment with provenance, and then creates a GitHub release with generated notes. A
-prerelease version (`1.2.0-beta.1`) goes to the `next` dist-tag and is marked as a prerelease.
+environment, and then creates a GitHub release with generated notes. A prerelease version
+(`1.2.0-beta.1`) goes to the `next` dist-tag and is marked as a prerelease.
 
 ```bash
 npm version patch   # bumps package.json, commits, tags vX.Y.Z
 git push --follow-tags
 ```
 
-It authenticates with npm trusted publishing (OIDC), which needs no stored token: on npmjs.com,
-the package's trusted publisher is this repository, workflow `release.yml`, environment `npm`.
-Until that is set up, npm falls back to an access token in the repository secret `NPM_TOKEN`.
+It authenticates with npm trusted publishing (OIDC), which needs no stored token and adds a
+provenance attestation on its own: on npmjs.com, the package's trusted publisher is this
+repository, workflow `release.yml`, environment `npm`. The package's publishing access requires
+two-factor authentication and disallows tokens, so a release comes from that workflow or from a
+maintainer publishing by hand with 2FA.
 
 CI also checks the package as published: `publint` for `package.json` and `exports`, and
 `@arethetypeswrong/cli` for the type declarations.

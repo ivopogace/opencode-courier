@@ -21,7 +21,7 @@ jobs:
     environment: npm
     permissions:
       contents: read
-      id-token: write # trusted publishing and provenance
+      id-token: write # trusted publishing, which also adds provenance
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,17 +45,14 @@ jobs:
           fi
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run build
+      # Trusted publishing (OIDC) authenticates and adds provenance; no token is involved.
       # Prereleases (1.2.0-beta.1) go to the `next` dist-tag; npm 11 refuses them without one.
       - name: Publish
         run: |
           case "${GITHUB_REF_NAME}" in
-            *-*) npm publish --provenance --access public --tag next ;;
-            *)   npm publish --provenance --access public ;;
+            *-*) npm publish --access public --tag next ;;
+            *)   npm publish --access public ;;
           esac
-        env:
-          # Used only until npm trusted publishing is configured for the package; npm prefers OIDC
-          # when it is. Delete the NPM_TOKEN secret once a trusted-publishing release has gone out.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   github-release:
     name: GitHub release

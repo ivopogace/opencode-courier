@@ -157,9 +157,9 @@ Then install the plugin:
 opencode2 plugin add opencode-courier
 ```
 
-This installs the package from npm and adds it to the global configuration
-(`~/.config/opencode/opencode.json`). To receive webhooks, give that entry a `webhook` option (see
-below).
+This installs the package from npm and adds `"opencode-courier"` to `plugins` in the global
+configuration (`~/.config/opencode/opencode.json`). To receive webhooks, replace that entry with the
+object form shown below, which carries a `webhook` option.
 
 ### From a local clone
 

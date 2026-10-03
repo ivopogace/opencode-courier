@@ -16,8 +16,8 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # The npm trusted publisher names this environment; add a required reviewer to it in the repo
-    # settings to approve each release.
+    # The npm trusted publisher names this environment. Approval happens on npm (staged publishing),
+    # so the environment needs no required reviewer.
     environment: npm
     permissions:
       contents: read

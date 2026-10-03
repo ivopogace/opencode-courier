@@ -33,6 +33,7 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 | `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. |
 | `courier_status` | One look at a session: outcome, idle time and last reply. For check-ins, not for waiting. |
 | `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated and when it was started. |
+| `courier_cleanup` | Removes the git worktree of a child started with `isolate: true` and drops the child from `courier_children`. Keeps a worktree with uncommitted changes or commits on no branch, tag or remote and lists them, unless `force: true` is passed. |
 | `courier_later` | Schedules a message for a session (this one by default) in `delayMinutes` or `at` an ISO time, and returns an id. When due it is delivered like `courier_send`, queued behind any running turn and waking the session if idle. |
 | `courier_cancel` | Drops a message scheduled with `courier_later`, e.g. because the child it was waiting for reported first. |
 | `courier_subscribe` | Subscribes a session (this one by default) to webhook deliveries for a `topic`: `owner/repo`, `owner/repo#12` (one pull request or issue) or a generic name. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. Needs the [webhook receiver](#webhooks). |
@@ -44,8 +45,40 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 lost track after a compaction or a server restart can call `courier_children` to find them again.
 A child that can no longer be looked up is still listed, with the error instead of its state.
 Entries are dropped 14 days after the child was started, when that parent's roster is read or
-the plugin is next loaded. If the roster cannot be written, the child still gets its task and
+the plugin is next loaded, except isolated children whose worktree is still there (see
+[Worktree cleanup](#worktree-cleanup)). If the roster cannot be written, the child still gets its task and
 `courier_spawn` says it is not on the list.
+
+### Worktree cleanup
+
+An isolated child works in a git worktree under OpenCode's data directory
+(`…/opencode/worktree/<project>/<name>`, on a detached HEAD), and nothing removes it on its own.
+When the parent has what it needs from the child, it calls `courier_cleanup { sessionID }`, which
+removes the worktree through the plugin API's `worktree.remove` and drops the child from
+`courier_children`.
+
+The worktree is kept, and the result says why, when it holds work that would otherwise be lost:
+
+- uncommitted changes, untracked files included (ignored files, such as `node_modules`, are not
+  work and go with the worktree);
+- commits that are on no branch, tag or remote-tracking ref, which is where a child's commits on
+  its detached HEAD end up. A commit on a branch survives the removal, so it does not count, and
+  neither do commits the worktree was made from (`courier_spawn` records that commit), such as a
+  parent's own unbranched work when an isolated child spawns isolated children of its own.
+
+The result lists up to 50 changed paths (an untracked directory counts once) and 50 commits. Commit
+or branch what you want to keep (`git -C <worktree> branch <name>` keeps its commits), or call
+`courier_cleanup` again with `force: true` to discard it; `force` also removes a worktree git can
+no longer read. A worktree whose directory is already gone is just dropped from the list; git
+forgets its registration on its next `git worktree prune` or `git gc`.
+
+Cleanup is explicit only. A child reporting back does not mean the parent has merged, reviewed or
+even read its work, and the parent may still send it more to do in the same worktree, so the
+plugin never removes one on its own. Isolated children whose worktree still exists are kept on
+`courier_children` past the 14 days, so they can still be found and cleaned up.
+
+`courier_cleanup` cannot tell whether the child is still running, so call it after the child has
+reported. It works on the calling session's own children.
 
 ### Scheduled messages
 
@@ -187,6 +220,7 @@ lists them under Recent Deliveries with a Redeliver button.
 3. Use `isolate: true` whenever children edit files in parallel. The child's worktree is made
    from the last commit, so an uncommitted `opencode.json` is not there and the child falls back
    to your global config: keep providers and models in the global config, or commit the file.
+   When you are done with an isolated child, `courier_cleanup` it so its worktree does not linger.
 4. A child that crashes before calling `courier_send` never wakes the parent. When you spawn a
    long-running child, also `courier_later` a check-in for yourself, and `courier_cancel` it when
    the child reports.
@@ -195,8 +229,6 @@ lists them under Recent Deliveries with a Redeliver button.
 
 Tracked as [issues](https://github.com/ivopogace/opencode-courier/issues):
 
-- [#4](https://github.com/ivopogace/opencode-courier/issues/4) **Worktree cleanup** when an
-  isolated child finishes.
 - [#5](https://github.com/ivopogace/opencode-courier/issues/5) **Smoke test with a real model.**
 - [#6](https://github.com/ivopogace/opencode-courier/issues/6) **Publish to npm.**
 
@@ -216,10 +248,12 @@ a fixed script, so no API key is needed. It checks that a parent's spawn complet
 gets a new turn after its own has ended once the child reports (shared and `isolate: true`), that
 `courier_status` reports and fails readably, that a `courier_later` message wakes an idle parent,
 that a cancelled one never arrives, that a pending one is delivered after a server restart, that
-`courier_children` lists the two children a parent spawned, before and after that restart, and that
+`courier_children` lists the two children a parent spawned, before and after that restart, that
 a recorded GitHub review delivery (`e2e/fixtures/pull_request_review.json`), signed, wakes an idle
 session subscribed with `courier_subscribe`, once, while unsigned and wrongly signed ones are
-refused. It takes about two minutes and needs node, bun, git, curl, jq and openssl.
+refused, and that `courier_cleanup` removes an isolated child's clean worktree but keeps one with an
+uncommitted file until asked with `force`. It takes about two minutes and needs node, bun, git,
+curl, jq and openssl.
 
 CI (`.github/workflows/ci.yml`) runs both on every push to `main` and every pull request, with the
 OpenCode CLI at the same version as the pinned plugin API.

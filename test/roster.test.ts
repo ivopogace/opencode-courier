@@ -81,4 +81,17 @@ describe("roster", () => {
 
     expect([...store.keys()].sort()).toEqual(["later/x", rosterKey("ses_two", "ses_c")])
   })
+
+  test("keeps an expired isolated child while its worktree exists, so it can still be cleaned up", async () => {
+    const { storage, store } = fakeStorage()
+    const now = 10 * RETENTION_MS
+    const old = now - RETENTION_MS - 1
+    await record(storage, { ...entry("ses_kept", "ses_parent", old), isolated: true, directory: "/wt/kept" })
+    await record(storage, { ...entry("ses_gone", "ses_parent", old), isolated: true, directory: "/wt/gone" })
+    const exists = (directory: string) => directory === "/wt/kept"
+
+    expect((await current(storage, "ses_parent", now, exists)).map((child) => child.sessionID)).toEqual(["ses_kept"])
+    await pruneExpired(storage, now, exists)
+    expect([...store.keys()]).toEqual([rosterKey("ses_parent", "ses_kept")])
+  })
 })

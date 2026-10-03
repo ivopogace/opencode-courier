@@ -26,7 +26,8 @@
 # Transcripts (parent.json, child-*.json), timeline.txt, summary.json and the server log stay in
 # the work directory (E2E_WORK, default a new temp dir), which is printed at the end.
 #
-# Needs node, npm, bun (for the build), git, curl and jq.
+# Needs node, npm, bun (for the build), git, curl, jq and GNU timeout (gtimeout on macOS, from
+# coreutils).
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -57,6 +58,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+TIMEOUT_BIN=$(command -v timeout || command -v gtimeout || true)
+[ -n "$TIMEOUT_BIN" ] || { echo "needs timeout from GNU coreutils (on macOS: brew install coreutils)"; exit 1; }
 if [ -n "$KEY_ENV" ]; then
   [[ $KEY_ENV =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "COURIER_API_KEY_ENV must be a variable name"; exit 1; }
   [ -n "${!KEY_ENV:-}" ] || { echo "$KEY_ENV is not set"; exit 1; }
@@ -93,7 +96,7 @@ echo "parent prompt: $PROMPT"
 
 # The parent's first turn; run returns when it ends.
 status=0
-(cd "$WORK/project" && timeout "$COURIER_TIMEOUT" "$OPENCODE" run --server "$SERVER" --auto --format json "$PROMPT" \
+(cd "$WORK/project" && "$TIMEOUT_BIN" "$COURIER_TIMEOUT" "$OPENCODE" run --server "$SERVER" --auto --format json "$PROMPT" \
   </dev/null >"$WORK/parent-run.jsonl" 2>"$WORK/parent-run.err") || status=$?
 [ "$status" = 124 ] && echo "the parent's first turn did not end within $COURIER_TIMEOUT s"
 parent=$(jq -r 'select(.sessionID != null) | .sessionID' "$WORK/parent-run.jsonl" 2>/dev/null | head -1 || true)

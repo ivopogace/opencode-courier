@@ -34,7 +34,8 @@ async function messages(sessionID) {
     const page = await response.json()
     all.push(...page.data)
     if (page.data.length < 50 || !page.cursor?.next) return all
-    query = `cursor=${page.cursor.next}`
+    // The cursor carries the order; OpenCode refuses both together.
+    query = `cursor=${encodeURIComponent(page.cursor.next)}`
   }
 }
 
@@ -46,8 +47,9 @@ const textOf = (message) =>
     : (message.text ?? "")
 const contentText = (state) =>
   (state.content ?? []).flatMap((item) => (typeof item?.text === "string" ? [item.text] : [])).join("")
-// A step that ended its turn rather than handing tool results back to the model.
-const ended = (message) => message?.type === "assistant" && message.finish !== undefined && message.finish !== "tool-calls"
+// A step that ended its turn rather than handing tool results back to the model, or that failed.
+const ended = (message) =>
+  message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined)
 // Whether a session has finished its turn and nothing has arrived since.
 const settled = (list) => ended(list.at(-1)) && list.at(-1).time.completed !== undefined
 const short = (value, max = 160) => {
@@ -93,7 +95,11 @@ function deliveryOf(message) {
   return children.has(from) ? `the report from ${from}` : `a message from ${from}`
 }
 
+// How long everything must have been quiet, with a report missing, before giving up on it: a
+// report can reach the parent's transcript a little after its child has finished.
+const GRACE_MS = 15_000
 const started = Date.now()
+let quietSince
 let parent = []
 let children = new Map()
 for (;;) {
@@ -101,7 +107,9 @@ for (;;) {
   const ids = toolsOf(parent).map(childOf).filter(Boolean)
   children = new Map(await Promise.all(ids.map(async (id) => [id, await messages(id)])))
   const reported = new Set(parent.map(senderOf).filter((id) => children.has(id)))
-  if (saved || (settled(parent) && (reported.size === children.size || [...children.values()].every(settled)))) break
+  const quiet = settled(parent) && [...children.values()].every(settled)
+  quietSince = quiet ? (quietSince ?? Date.now()) : undefined
+  if (saved || (settled(parent) && reported.size === children.size) || (quiet && Date.now() - quietSince >= GRACE_MS)) break
   if (Date.now() - started > timeout) {
     console.log(`  (gave up waiting after ${timeout / 1000} s)`)
     break
@@ -179,7 +187,13 @@ const checks = [
   ["the parent never polled (courier_status, courier_children, sleep)", polling.length === 0],
   ["both children called courier_send to the parent", spawned.length >= 2 && spawned.every((id) => sends.get(id).length > 0)],
   ["both reports woke the parent: each arrived after its first turn and got a reply", spawned.length >= 2 && spawned.every((id) => reportOf(id)?.turn > 1 && reportOf(id)?.answered)],
-  ["each report holds its child's answer", spawned.length >= 2 && expected.length > 0 && spawned.every((id) => expected.some((value) => reportOf(id)?.text.includes(value)))],
+  [
+    "each report holds its child's answer",
+    spawned.length >= 2 &&
+      expected.length > 0 &&
+      spawned.every((id) => expected.some((value) => reportOf(id)?.text.includes(value))) &&
+      expected.every((value) => spawned.some((id) => reportOf(id)?.text.includes(value))),
+  ],
   ["the parent's final reply holds both answers", expected.length > 0 && expected.every((value) => finalText.includes(value))],
 ]
 

@@ -8,6 +8,8 @@ type Context = Plugin.Context
 export const TICK_MS = 15_000
 
 const PREFIX = "later/"
+/** The latest time a Date can hold; a message due after it could never be shown or delivered. */
+const LATEST = 8.64e15
 
 export interface LaterEntry {
   readonly id: string
@@ -38,11 +40,12 @@ function fireTime(now: number, input: LaterInput) {
   if ((input.delayMinutes === undefined) === (input.at === undefined))
     throw new Error("Give exactly one of delayMinutes or at.")
   if (input.delayMinutes !== undefined) {
-    const minutes =
-      typeof input.delayMinutes === "string" && input.delayMinutes.trim() !== "" ? Number(input.delayMinutes) : input.delayMinutes
-    if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes < 0)
-      throw new Error("delayMinutes must be a number of minutes, zero or more.")
-    return now + Math.round(minutes * 60_000)
+    const given = input.delayMinutes
+    const minutes = typeof given === "string" ? (given.trim() ? Number(given) : Number.NaN) : given
+    if (!Number.isFinite(minutes) || minutes < 0) throw new Error("delayMinutes must be a number of minutes, zero or more.")
+    const fireAt = now + Math.round(minutes * 60_000)
+    if (fireAt > LATEST) throw new Error(`delayMinutes is too far away: ${given}`)
+    return fireAt
   }
   const at = Date.parse(input.at!)
   if (Number.isNaN(at)) throw new Error(`at is not a date: ${input.at}`)

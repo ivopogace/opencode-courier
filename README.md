@@ -275,7 +275,8 @@ OPENCODE_BIN=$(which opencode2) e2e/real-model.sh  # with a real model, see Real
 plugin loaded and `e2e/mock-model.mjs` as the model: an OpenAI-compatible server that replies from
 a fixed script, so no API key is needed. It checks that a parent's spawn completes, that the parent
 gets a new turn after its own has ended once the child reports (shared and `isolate: true`), that
-`courier_status` reports and fails readably, that a `courier_later` message wakes an idle parent,
+`courier_status` reports and fails readably, that a `courier_later` message wakes an idle parent
+(with its delay sent as a string, as some models send it),
 that a cancelled one never arrives, that a pending one is delivered after a server restart, that
 `courier_children` lists the two children a parent spawned, before and after that restart, that
 a recorded GitHub review delivery (`e2e/fixtures/pull_request_review.json`), signed, wakes an idle

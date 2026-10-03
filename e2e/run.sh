@@ -109,8 +109,8 @@ check "names the error for an unknown session" "$(jq -r 'select(.type == "tool_u
 
 tool_state() { jq -c --arg tool "$1" 'select(.type == "tool_use" and .part.tool == $tool) | .part.state'; }
 
-echo "courier_later wakes the idle parent"
-out=$(prompt "COURIER-LATER 0.05")
+echo "courier_later wakes the idle parent, with the delay sent as a string as some models do"
+out=$(prompt "COURIER-LATER-STRING 0.05")
 turn_ended=$(now_ms)
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 check "courier_later completed" "$(tool_state courier_later <<<"$out" | jq -r '.status == "completed"')"

@@ -82,6 +82,7 @@ describe("schedule", () => {
     [{ message: "m", delayMinutes: "soon" }, "zero or more"],
     [{ message: "m", delayMinutes: "" }, "zero or more"],
     [{ message: "m", delayMinutes: "Infinity" }, "zero or more"],
+    [{ message: "m", delayMinutes: "1e12" }, "too far away"],
     [{ message: "m", at: "tomorrow-ish" }, "not a date"],
     [{ message: "m", at: "1970-01-01T00:00:00Z" }, "in the past"],
   ])("rejects %o", async (input, error) => {

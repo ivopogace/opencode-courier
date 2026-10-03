@@ -180,7 +180,8 @@ test("courier_later tells a session scheduling its own check-in to end its turn,
     .get("courier_later")
     .execute({ message: "check", delayMinutes: 10, sessionID: "ses_child" }, { sessionID: "ses_parent" })
 
-  expect(own.content).toContain("It starts a new turn for you when due, so do not wait for it: end your turn")
+  expect(own.content).toContain("It starts a new turn for you when due, so do not wait for it: once nothing else")
+  expect(own.content).toContain("end your turn by replying without calling more tools")
   expect(own.content).toContain("If what it checks on reports first, cancel it then with courier_cancel.")
   expect(other.content).toContain("to ses_child. Cancel it with courier_cancel if it is no longer needed.")
   expect(other.content).not.toContain("end your turn")

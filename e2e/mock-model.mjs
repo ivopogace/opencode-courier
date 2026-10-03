@@ -42,8 +42,10 @@ function decide(body) {
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
   if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE" } }
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
-  const later = recent.match(/COURIER-LATER(?:-CANCEL)? ([\d.]+)/)
-  if (later) return { tool: "courier_later", args: { message: "CHECK-IN", delayMinutes: Number(later[1]) } }
+  // COURIER-LATER-STRING sends the delay as a string, as some models do.
+  const later = recent.match(/COURIER-LATER(-CANCEL|-STRING)? ([\d.]+)/)
+  if (later)
+    return { tool: "courier_later", args: { message: "CHECK-IN", delayMinutes: later[1] === "-STRING" ? later[2] : Number(later[2]) } }
   const topic = recent.match(/COURIER-SUBSCRIBE ([\w./#-]+)/)
   if (topic) return { tool: "courier_subscribe", args: { topic: topic[1] } }
   const look = recent.match(/COURIER-STATUS (ses_\w+)/)

@@ -76,7 +76,8 @@ result: pass
 
 `opencode2 v0.0.0-beta-19271` records no marker when a session goes idle, so turns are read from
 the transcript: a delivered message opens a new turn when the session's last step had ended its
-turn (finish reason other than `tool-calls`) and completed before the message arrived; otherwise
+turn (a finish reason other than `tool-calls`, or a failed request) and completed before the
+message arrived; otherwise
 it was steered into the running turn. The work directory keeps `parent.json`, `child-<id>.json`,
 `timeline.txt`, `summary.json` and the server log. The exit code is 0 when every check passes and
 1 when one fails. It is 2 when checks fail and model requests failed too, usually HTTP 429 from a
@@ -84,14 +85,14 @@ free model, because then the run says more about the provider than the plugin; r
 
 ## What the models did
 
-19 runs on 2026-10-03, all with `opencode2 v0.0.0-beta-19271` and the plugin built from this
+23 runs on 2026-10-03, all with `opencode2 v0.0.0-beta-19271` and the plugin built from this
 branch, against free models on Zen (which publishes no versions beyond the names):
 
 | Model | Runs | Result |
 |---|---|---|
-| `nemotron-3-ultra-free` | 5 | Failed before tuning and through two rounds of it (never ended its turn); passed both runs on the final build. |
-| `longcat-2.5-preview-free` | 4 | Before tuning, every check but "never polled"; passed both runs on the tuned wording. One more run failed on a broken first attempt at the `delayMinutes` fix. |
-| `muse-spark-1.3-contributor-free` | 3 | Tried after tuning: passed twice, rate limited once. |
+| `nemotron-3-ultra-free` | 7 | Failed before tuning and through two rounds of it (never ended its turn). On the final wording: passed 3 of 4; the fourth lost a race to a 44-second step (below). |
+| `longcat-2.5-preview-free` | 5 | Before tuning, every check but "never polled"; passed all 3 runs on the tuned wording. One more run failed on a broken first attempt at the `delayMinutes` fix. |
+| `muse-spark-1.3-contributor-free` | 4 | Tried after tuning: passed 3, rate limited once. |
 | `mimo-v2.6-flash-free` | 5 | Every run that scheduled a check-in had it rejected (string `delayMinutes`); the fix was checked on its own. Full runs after it were rate limited. |
 | `big-pickle` | 2 | Right as a parent both times; rate limited before the end. |
 
@@ -113,8 +114,11 @@ check-ins it never cancelled woke it three more times after it had answered.
 
 Its reasoning, step after step: "Now I need to end my turn and wait for the reports." — followed
 each time by a tool call. Through the tuning below its polling went away and its requests went from
-24 to 14, but it still did not end the turn in two runs; on the final build it did, in both runs:
-two spawns, at most one check-in, end of turn, woken by each report.
+24 to 14, but it still did not end the turn in two runs. On the final wording it did, in three runs
+of four: two spawns, at most one check-in (which it tends to cancel at once), end of turn, woken by
+each report. In the fourth, the step in which it scheduled its check-in took the provider 44
+seconds, against 2 to 4 in the others, and the first report arrived before that step was over, so
+it went into the running turn.
 
 **longcat-2.5-preview-free** completed the fan-out before any tuning, both reports waking it, but
 looked at both children with `courier_status` twice right after spawning and once more after the
@@ -122,8 +126,8 @@ first report, five calls, while its reasoning said "Let me end my turn now". It 
 safety-net check-ins as redundant before either child had reported. After tuning: two spawns, at
 most one check-in, end of turn.
 
-**muse-spark-1.3-contributor-free** (tried after tuning only) passed both complete runs: two spawns,
-one check-in, end of turn, a new turn per report, and the check-in cancelled at the end.
+**muse-spark-1.3-contributor-free** (tried after tuning only) passed every run that was not rate
+limited: two spawns, one check-in, end of turn, a new turn per report.
 
 **mimo-v2.6-flash-free** spawned correctly and ended its turn, but always sent `delayMinutes` as a
 string (`"3"`, `"3.0"`), got `Expected number`, and sent the same string again, two or three times
@@ -141,16 +145,20 @@ that dies like this is what the `courier_later` check-in is for.
   used to say only "It will report back with courier_send". Now it says the report starts a new
   turn, to end the turn by replying without calling more tools once every session is started, and
   that this does not drop the task. The `courier_later` result for a session's own check-in says
-  the same. Both descriptions spell out "end your turn by replying without calling more tools".
+  to end the turn once nothing else is left to do now, so a session that sets itself a reminder in
+  the middle of its work is not told to stop. Both descriptions spell out "end your turn by
+  replying without calling more tools".
   The models that misbehaved meant to end their turn and kept calling tools; nemotron also did not
   stop until it thought the task was finished.
 - **Not inviting a cancel.** The `courier_later` result said "Cancel it with courier_cancel." In
   one tuning run nemotron did, at once, to the check-in it had just made. For a session's own
-  check-in it now says to cancel it if what it checks on reports first.
+  check-in it now says to cancel it if what it checks on reports first. nemotron still cancels
+  early at times; it costs it the safety net, not the fan-out.
 - **`delayMinutes` accepts a string.** mimo sent strings whatever the schema said, and Muse Spark
   did too once (`"2"`, accepted). `courier_later` now takes a number or a string and reads the
   string as a number; anything that is not a finite number of minutes, zero or more, is still
-  refused.
+  refused, and so is a delay too far away for a date to hold. The scripted e2e now sends one delay
+  as a string.
 
 Two things learned on the way: `Schema.Number` advertises the strings `"Infinity"`, `"-Infinity"`
 and `"NaN"` in its JSON Schema, and the plugin's schema checks and transformations do not work in
@@ -159,8 +167,8 @@ first two attempts at the `delayMinutes` fix ran into.
 
 ## Cost
 
-Nothing: every run used free models. The 18 runs with a summary made 209 model requests, about
-990,000 input, 13,000 output and 12,000 reasoning tokens, plus 815,000 cache reads. A passing run
+Nothing: every run used free models. The 22 runs with a summary made 254 model requests, about
+1,263,000 input, 16,000 output and 15,000 reasoning tokens, plus 963,000 cache reads. A passing run
 is 10 to 12 requests, 25,000 to 110,000 input tokens (nemotron reads the most, with little
 caching) and about 1,000 output tokens.
 

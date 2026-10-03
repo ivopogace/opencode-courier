@@ -208,9 +208,10 @@ session in the TUI would be: a non-interactive `opencode run` cancels any questi
 its session while it is attached, and the child's request can reach the parent before `run` has let
 go of it. The first run hit exactly that, and the parent's form was cancelled under it.
 
-On 2026-10-03, with `opencode2 v0.0.0-beta-19271`, `longcat-2.5-preview-free` (2 runs),
-`nemotron-3-ultra-free` and `muse-spark-1.3-contributor-free` (1 run each) passed every check, after
-the two harness fixes (the `opencode run` above, and reading the form list's `data`). Every parent
+On 2026-10-03 and 04, with `opencode2 v0.0.0-beta-19271`, `longcat-2.5-preview-free` (3 runs, the
+last after the review changes to `courier_answer`), `nemotron-3-ultra-free` and
+`muse-spark-1.3-contributor-free` (1 run each) passed every check, after the two harness fixes (the
+`opencode run` above, and reading the form list's `data`). Every parent
 asked with its question tool, offering exactly the choices in the notice (`once`, `always`,
 `reject`, with the notice's descriptions), and none answered by itself. A fan-out run on
 `longcat-2.5-preview-free` with the new `courier_spawn` description, which also mentions the

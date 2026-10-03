@@ -303,8 +303,8 @@ git push --follow-tags
 1. The workflow runs the CI workflow, checks that the tag matches the `version` in `package.json`,
    builds, and runs `npm stage publish` from the `npm` environment, authenticated as the
    repository variable `NPM_AUTH` says: with the `NPM_TOKEN` secret (`token`, the default) or
-   through npm trusted publishing (`oidc`), both below. Either way it adds a provenance
-   attestation, which links the package to the workflow run that built it.
+   through npm trusted publishing (`oidc`), both below. It adds a provenance attestation, which
+   links the package to the workflow run that built it, unless `NPM_PROVENANCE` turns it off.
 2. It then creates a **draft** GitHub release with generated notes, so nothing is announced yet.
 3. A maintainer reviews the staged version and approves it with 2FA: on npmjs.com under Staged
    Packages, or with `npm stage list` and `npm stage approve <id>`. The version is live from then.
@@ -318,9 +318,10 @@ workflow file at the tag, so after fixing `release.yml` move the tag to the fixe
 Repository variables are set under Settings → Secrets and variables → Actions → Variables, and a
 re-run of the job picks a change up without moving the tag.
 
-**The token** (`NPM_AUTH` unset or `token`). `NPM_TOKEN` is a secret of the `npm` environment (repository Settings →
-Environments → `npm` → Environment secrets). It holds an npm granular access token, made on
-npmjs.com under Access Tokens → Generate New Token → Granular Access Token, with:
+**The token** (`NPM_AUTH` unset or `token`). `NPM_TOKEN` is a secret of the `npm` environment
+(repository Settings → Environments → `npm` → Environment secrets). It holds an npm granular
+access token, made on npmjs.com under Access Tokens → Generate New Token → Granular Access Token,
+with:
 
 - Packages and scopes: Read and write, for `opencode-courier` only;
 - **Bypass two-factor authentication left off.** Such a token can stage a version but not publish
@@ -328,9 +329,18 @@ npmjs.com under Access Tokens → Generate New Token → Granular Access Token, 
 - an expiry date. npm caps how long a token with write access lives; when it has expired or been
   revoked, the job stops at "Check the npm token", and a new token replaces the secret.
 
+Limit the `npm` environment to version tags: under its Deployment branches and tags, choose
+Selected branches and tags and add the tag pattern `v*`. Otherwise a workflow on any branch that
+names the environment can read the secret. A tag ruleset that lets only maintainers create `v*`
+tags closes the remaining gap.
+
+If "Check the npm token" passes but staging fails with E403, look at the package's Publishing
+access on npmjs.com (the package's Settings): the option that disallows tokens refuses this one
+too.
+
 The job stages with `--provenance`, signed through GitHub's OIDC token and Sigstore. Should npm
 refuse the attestation, set the repository variable `NPM_PROVENANCE` to `false` and re-run the job,
-which then stages without one.
+which then stages without one; any value other than `true` or `false` (in any case) stops the job.
 
 **Trusted publishing** (`NPM_AUTH` set to `oidc`) needs no stored token, but does not work for this
 repository yet: npm rejects the immutable OIDC subject claims GitHub issues for repositories
@@ -339,11 +349,12 @@ exchange error - package not found`. Once npm fixes that:
 
 1. On npmjs.com, give the package a trusted publisher: this repository, workflow `release.yml`,
    environment `npm`, allowed to stage only.
-2. Set the repository variable `NPM_AUTH` to `oidc` and release. In this mode the job passes no
-   token, so a failed exchange fails the job instead of falling back to one; before staging it logs
-   the claims of its OIDC token (repository, workflow, environment, ref), so a mismatch with the
-   trusted publisher shows, and it stages with `--loglevel verbose`, because npm reports a failed
-   exchange only there. Trusted publishing adds the provenance attestation itself.
+2. Set the repository variable `NPM_AUTH` to `oidc` and release. In this mode the job does not pass
+   `NPM_TOKEN`, so a failed exchange cannot fall back to it: npm falls back to the placeholder
+   token setup-node configures and the job fails with E401. Before staging it logs the claims of
+   its OIDC token (repository, workflow, environment, ref), so a mismatch with the trusted
+   publisher shows, and it stages with `--loglevel verbose`, because npm reports a failed exchange
+   only there. Trusted publishing adds the provenance attestation itself.
 3. Once a release has been staged that way, revoke the token on npmjs.com and delete the
    `NPM_TOKEN` secret. To go back, set `NPM_AUTH` to `token` or delete the variable.
 

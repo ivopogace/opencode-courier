@@ -16,8 +16,10 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Holds the NPM_TOKEN secret, and is the environment npm's trusted publisher names. Approval
-    # happens on npm (staged publishing), so the environment needs no required reviewer.
+    # Holds the NPM_TOKEN secret, and is the environment npm's trusted publisher names. Limit it to
+    # `v*` tags (Settings → Environments → npm → Deployment branches and tags), so that only a run
+    # on a version tag can read the secret. Approval happens on npm (staged publishing), so the
+    # environment needs no required reviewer.
     environment: npm
     permissions:
       contents: read
@@ -26,12 +28,18 @@ jobs:
       # How the job authenticates to npm: `token` (NPM_TOKEN, the default) or `oidc` (trusted
       # publishing). Set the repository variable NPM_AUTH to switch; see Releasing in README.md.
       NPM_AUTH: ${{ vars.NPM_AUTH || 'token' }}
+      # In token mode, `false` stages without provenance, should npm refuse the attestation.
+      NPM_PROVENANCE: ${{ vars.NPM_PROVENANCE }}
     steps:
-      - name: Check NPM_AUTH
+      - name: Check the release settings
         run: |
           case "${NPM_AUTH}" in
             token | oidc) echo "authenticating to npm with: ${NPM_AUTH}" ;;
             *) echo "::error::NPM_AUTH must be token or oidc, not ${NPM_AUTH}"; exit 1 ;;
+          esac
+          case "${NPM_PROVENANCE,,}" in
+            "" | true | false) ;;
+            *) echo "::error::NPM_PROVENANCE must be true or false, not ${NPM_PROVENANCE}"; exit 1 ;;
           esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,12 +72,13 @@ jobs:
       - name: Check the npm token
         if: env.NPM_AUTH == 'token'
         run: |
-          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+          if [ "${HAS_TOKEN}" != true ]; then
             echo "::error::no NPM_TOKEN secret in the npm environment: add a granular access token (see Releasing in README.md)"
             exit 1
           fi
           npm whoami || { echo "::error::npm does not accept NPM_TOKEN: it may have expired or been revoked"; exit 1; }
         env:
+          HAS_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       # oidc: the trusted publisher on npmjs.com (this repository, workflow release.yml, environment
       # npm) allows staging only; trusted publishing authenticates and adds provenance.
@@ -98,27 +107,23 @@ jobs:
             }
           '
       # Prereleases (1.2.0-beta.1) go to the `next` dist-tag; npm 11 refuses them without one.
-      # The repository variable NPM_PROVENANCE=false stages without provenance, should npm refuse
-      # it; a re-run picks the variable up without moving the tag.
-      - name: Stage with the token
-        if: env.NPM_AUTH == 'token'
+      # token: the token is exported for npm, and provenance added unless NPM_PROVENANCE is false.
+      # oidc: NPM_TOKEN is not exported, so a failed exchange cannot fall back to it: npm falls back
+      # to setup-node's placeholder token and fails with E401, as above. Verbose logging shows why
+      # the exchange failed; npm redacts credentials in its logs.
+      - name: Stage
         run: |
           flags=(--access public)
-          if [ "${NPM_PROVENANCE}" != false ]; then flags+=(--provenance); fi
+          if [ "${NPM_AUTH}" = token ]; then
+            export NODE_AUTH_TOKEN="${NPM_TOKEN}"
+            if [ "${NPM_PROVENANCE,,}" != false ]; then flags+=(--provenance); fi
+          else
+            flags+=(--loglevel verbose)
+          fi
           case "${GITHUB_REF_NAME}" in *-*) flags+=(--tag next) ;; esac
           npm stage publish "${flags[@]}"
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_PROVENANCE: ${{ vars.NPM_PROVENANCE }}
-      # No token here, so a failed exchange cannot fall back to one.
-      # Verbose logging shows why an OIDC exchange failed; npm redacts credentials in its logs.
-      - name: Stage through trusted publishing
-        if: env.NPM_AUTH == 'oidc'
-        run: |
-          case "${GITHUB_REF_NAME}" in
-            *-*) npm stage publish --access public --tag next --loglevel verbose ;;
-            *)   npm stage publish --access public --loglevel verbose ;;
-          esac
+          NPM_TOKEN: ${{ env.NPM_AUTH == 'token' && secrets.NPM_TOKEN || '' }}
 
   # A draft, because the version is not live until it is approved: publish the draft afterwards.
   github-release:

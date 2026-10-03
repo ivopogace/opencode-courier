@@ -143,7 +143,25 @@ conflict.
 
 ## Install
 
-Requires OpenCode V2 (`npm install -g @opencode-ai/cli@beta`, command `opencode2`).
+Requires OpenCode V2, command `opencode2`. Its plugin API is still beta, and each release is built
+and tested against one version of it: the `@opencode-ai/plugin` peer dependency in `package.json`.
+The CLI of that version is the one known to work:
+
+```bash
+npm install -g @opencode-ai/cli@0.0.0-beta-19271
+```
+
+Then install the plugin:
+
+```bash
+opencode2 plugin add opencode-courier
+```
+
+This installs the package from npm and adds `"opencode-courier"` to `plugins` in the global
+configuration (`~/.config/opencode/opencode.json`). To receive webhooks, replace that entry with the
+object form shown below, which carries a `webhook` option.
+
+### From a local clone
 
 ```bash
 git clone <this repo> && cd opencode-courier
@@ -159,11 +177,6 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
 }
 ```
 
-To receive webhooks, give the plugin a `webhook` option instead (see below).
-
-Once published to npm, `opencode2 plugin add opencode-courier` installs it and adds it to the
-global configuration.
-
 ## Receiving webhooks
 
 The receiver is off unless the plugin has a `webhook` option. Put it in the **global** config
@@ -173,16 +186,16 @@ The receiver is off unless the plugin has a `webhook` option. Put it in the **gl
 {
   "plugins": [
     {
-      "package": "/absolute/path/to/opencode-courier/dist",
+      "package": "opencode-courier",
       "options": { "webhook": { "port": 4097, "secretFile": "~/.config/opencode/courier-webhook-secret" } }
     }
   ]
 }
 ```
 
-`"webhook": true` takes every default. If the option is given more than once, for example in a
-project's config as well, the first location to load wins, and the others log that their settings
-are ignored.
+From a local clone, `package` is the path to its `dist` directory instead. `"webhook": true`
+takes every default. If the option is given more than once, for example in a project's config as
+well, the first location to load wins, and the others log that their settings are ignored.
 
 | Option | Default | |
 |---|---|---|
@@ -230,7 +243,6 @@ lists them under Recent Deliveries with a Redeliver button.
 Tracked as [issues](https://github.com/ivopogace/opencode-courier/issues):
 
 - [#5](https://github.com/ivopogace/opencode-courier/issues/5) **Smoke test with a real model.**
-- [#6](https://github.com/ivopogace/opencode-courier/issues/6) **Publish to npm.**
 
 ## Development
 
@@ -252,27 +264,37 @@ that a cancelled one never arrives, that a pending one is delivered after a serv
 a recorded GitHub review delivery (`e2e/fixtures/pull_request_review.json`), signed, wakes an idle
 session subscribed with `courier_subscribe`, once, while unsigned and wrongly signed ones are
 refused, and that `courier_cleanup` removes an isolated child's clean worktree but keeps one with an
-uncommitted file until asked with `force`. It takes about two minutes and needs node, bun, git,
-curl, jq and openssl.
+uncommitted file until asked with `force`. Last, it packs the package with `npm pack`, serves the
+tarball from a stand-in registry (`e2e/registry.mjs`), installs it with `opencode2 plugin add
+opencode-courier` and checks that its tools load from the installed copy. It takes about two
+minutes and needs node, npm, bun, git, curl, jq and openssl.
 
 CI (`.github/workflows/ci.yml`) runs both on every push to `main` and every pull request, with the
 OpenCode CLI at the same version as the pinned plugin API.
 
 ### Releasing
 
-`.github/workflows/release.yml` publishes to npm on a `v*` tag. It runs the CI workflow first,
-checks that the tag matches the `version` in `package.json`, builds, publishes from the `npm`
-environment with provenance, and then creates a GitHub release with generated notes. A
-prerelease version (`1.2.0-beta.1`) goes to the `next` dist-tag and is marked as a prerelease.
+`.github/workflows/release.yml` stages a release on npm when a `v*` tag is pushed; a maintainer
+then approves it. No token is involved anywhere.
 
 ```bash
 npm version patch   # bumps package.json, commits, tags vX.Y.Z
 git push --follow-tags
 ```
 
-It authenticates with npm trusted publishing (OIDC), which needs no stored token: on npmjs.com,
-the package's trusted publisher is this repository, workflow `release.yml`, environment `npm`.
-Until that is set up, npm falls back to an access token in the repository secret `NPM_TOKEN`.
+1. The workflow runs the CI workflow, checks that the tag matches the `version` in `package.json`,
+   builds, and runs `npm stage publish` from the `npm` environment. It authenticates with npm
+   trusted publishing (OIDC), which also adds a provenance attestation. On npmjs.com, the
+   package's trusted publisher is this repository, workflow `release.yml`, environment `npm`, and
+   it may only stage.
+2. It then creates a **draft** GitHub release with generated notes, so nothing is announced yet.
+3. A maintainer reviews the staged version and approves it with 2FA: on npmjs.com under Staged
+   Packages, or with `npm stage list` and `npm stage approve <id>`. The version is live from then.
+4. Publish the draft release: `gh release edit vX.Y.Z --draft=false`, or Publish release on
+   GitHub.
+
+A prerelease version (`1.2.0-beta.1`) is staged for the `next` dist-tag and its release is marked
+as a prerelease.
 
 CI also checks the package as published: `publint` for `package.json` and `exports`, and
 `@arethetypeswrong/cli` for the type declarations.

@@ -293,7 +293,7 @@ OpenCode CLI at the same version as the pinned plugin API.
 ### Releasing
 
 `.github/workflows/release.yml` stages a release on npm when a `v*` tag is pushed; a maintainer
-then approves it. No token is involved anywhere.
+then approves it with 2FA.
 
 ```bash
 npm version patch   # bumps package.json, commits, tags vX.Y.Z
@@ -301,12 +301,9 @@ git push --follow-tags
 ```
 
 1. The workflow runs the CI workflow, checks that the tag matches the `version` in `package.json`,
-   builds, and runs `npm stage publish` from the `npm` environment. It authenticates with npm
-   trusted publishing (OIDC), which also adds a provenance attestation. On npmjs.com, the
-   package's trusted publisher is this repository, workflow `release.yml`, environment `npm`, and
-   it may only stage. Before staging, the job logs the claims of its OIDC token (repository,
-   workflow, environment, ref) so a mismatch with the trusted publisher shows in the log, and it
-   stages with `--loglevel verbose` because npm reports a failed OIDC exchange only there.
+   builds, and runs `npm stage publish --provenance` from the `npm` environment, authenticated
+   with the `NPM_TOKEN` secret (below). The provenance attestation, signed through GitHub's OIDC
+   token, links the package to the workflow run that built it.
 2. It then creates a **draft** GitHub release with generated notes, so nothing is announced yet.
 3. A maintainer reviews the staged version and approves it with 2FA: on npmjs.com under Staged
    Packages, or with `npm stage list` and `npm stage approve <id>`. The version is live from then.
@@ -317,12 +314,28 @@ If staging fails, nothing reached npm and the version is still free. Re-running 
 workflow file at the tag, so after fixing `release.yml` move the tag to the fixed commit instead:
 `git push origin :refs/tags/vX.Y.Z`, then tag and push again.
 
-**npm cannot use trusted publishing for this repository yet.** The registry rejects the immutable
-OIDC subject claims GitHub issues for repositories created after 2026-07-15
-([npm/cli#9969](https://github.com/npm/cli/issues/9969)), so `release.yml` fails at Stage with
-`OIDC token exchange error - package not found` in its verbose log, although the claims it prints
-match the trusted publisher. Until npm fixes this, stage by hand from the tag, still without a
-stored token (npm 11.15.0 or later, Node 22.14 or later):
+**The token.** `NPM_TOKEN` is a secret of the `npm` environment (repository Settings →
+Environments → `npm` → Environment secrets). It holds an npm granular access token, made on
+npmjs.com under Access Tokens → Generate New Token → Granular Access Token, with:
+
+- Packages and scopes: Read and write, for `opencode-courier` only;
+- **Bypass two-factor authentication left off.** Such a token can stage a version but not publish
+  one, so nothing goes live without a maintainer's 2FA approval, even if the token leaks;
+- an expiry date. npm caps how long a token with write access lives; when it has expired or been
+  revoked, the job stops at "Check the npm token", and a new token replaces the secret.
+
+The job does not use npm trusted publishing (OIDC), which needs no stored token: npm rejects the
+immutable OIDC subject claims GitHub issues for repositories created after 2026-07-15
+([npm/cli#9969](https://github.com/npm/cli/issues/9969)), with `OIDC token exchange error -
+package not found`. npm still tries that exchange first whenever the job can request an OIDC token,
+as it can for provenance, and falls back to the token when it fails; once npm fixes the bug, a
+trusted publisher on npmjs.com (this repository, workflow `release.yml`, environment `npm`,
+allowed to stage only) can replace the token. Provenance is signed with GitHub's OIDC token too, but
+through Sigstore rather than that exchange; should npm refuse it all the same, set the repository
+variable `NPM_PROVENANCE` to `false` (Settings → Secrets and variables → Actions → Variables) and
+re-run the job, which then stages without an attestation.
+
+To stage by hand instead (npm 11.15.0 or later, Node 22.14 or later):
 
 ```bash
 git checkout vX.Y.Z

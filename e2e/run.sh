@@ -6,13 +6,14 @@
 #
 # E2E_WORK picks the working directory (CI points it somewhere it can upload the logs from).
 #
-# Needs node, bun (for the build), git, curl and jq.
+# Needs node, bun (for the build), git, curl, jq and openssl.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OPENCODE=${OPENCODE_BIN:-opencode2}
 MOCK_PORT=${MOCK_PORT:-4599}
 SERVER_PORT=${SERVER_PORT:-4600}
+WEBHOOK_PORT=${WEBHOOK_PORT:-4601}
 CHILD_DELAY_MS=${CHILD_DELAY_MS:-5000}
 WORK=${E2E_WORK:-$(mktemp -d)}
 SERVER="http://127.0.0.1:$SERVER_PORT"
@@ -62,12 +63,14 @@ reply_time() {
 }
 
 mkdir -p "$WORK/project" "$HOME"
+WEBHOOK_SECRET=courier-e2e-webhook-secret
+printf '%s\n' "$WEBHOOK_SECRET" >"$WORK/webhook-secret"
 echo "building plugin"
 (cd "$ROOT" && npm run build >"$WORK/build.log" 2>&1) || { cat "$WORK/build.log"; exit 1; }
 
 cat >"$WORK/project/opencode.json" <<EOF
 {
-  "plugins": ["$ROOT/dist"],
+  "plugins": [{ "package": "$ROOT/dist", "options": { "webhook": { "port": $WEBHOOK_PORT, "secretFile": "$WORK/webhook-secret" } } }],
   "providers": {
     "mock": {
       "package": "aisdk:@ai-sdk/openai-compatible",
@@ -143,6 +146,25 @@ restarted=$(now_ms)
 api "plugin?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" >/dev/null
 woke=$(reply_time "$parent" "PARENT WOKE" 60)
 check "it was delivered after the restart" "$([ -n "$woke" ] && [ "$woke" -gt "$restarted" ] && echo true || echo false)"
+
+echo "a signed GitHub webhook wakes a subscribed idle session"
+out=$(prompt "COURIER-SUBSCRIBE Codertocat/Hello-World#2")
+turn_ended=$(now_ms)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+check "courier_subscribe completed" "$(tool_state courier_subscribe <<<"$out" | jq -r '.status == "completed" and (.metadata.metadata.receiver == true)')"
+payload=$ROOT/e2e/fixtures/pull_request_review.json
+signature="sha256=$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -r "$payload" | cut -d' ' -f1)"
+hook() { curl -s -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -H 'x-github-event: pull_request_review' \
+  -H 'x-github-delivery: 72d3162e-cc78-11e3-81ab-4c9367dc0958' "$@" --data-binary "@$payload" "http://127.0.0.1:$WEBHOOK_PORT/github"; }
+check "an unsigned delivery is refused" "$([ "$(hook)" = 401 ] && echo true || echo false)"
+check "a wrongly signed delivery is refused" "$([ "$(hook -H "x-hub-signature-256: sha256=$(printf '0%.0s' $(seq 64))")" = 401 ] && echo true || echo false)"
+woke=$(reply_time "$parent" "PARENT WOKE" 5)
+check "neither woke the session" "$([ -z "$woke" ] && echo true || echo false)"
+check "a signed delivery is accepted" "$([ "$(hook -H "x-hub-signature-256: $signature")" = 202 ] && echo true || echo false)"
+woke=$(reply_time "$parent" "PARENT WOKE")
+check "it started a new turn after the session's had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+summary=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] | join("")')
+check "the turn got the event summary" "$([[ $summary == *"changes_requested"* && $summary == *"Hello-World#2"* ]] && echo true || echo false)"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed; rerun with KEEP=1 to keep the server and model logs"

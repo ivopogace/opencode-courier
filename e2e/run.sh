@@ -64,7 +64,7 @@ cat >"$WORK/project/opencode.json" <<EOF
     "mock": {
       "package": "aisdk:@ai-sdk/openai-compatible",
       "settings": { "baseURL": "http://127.0.0.1:$MOCK_PORT/v1", "apiKey": "mock" },
-      "models": { "chat": {} }
+      "models": { "chat": {}, "other": {} }
     }
   },
   "model": "mock/chat",
@@ -104,6 +104,25 @@ out=$(prompt "COURIER-STATUS ses_missing")
 check "names the error for an unknown session" "$(jq -r 'select(.type == "tool_use") | .part.state.error | contains("NotFoundError")' <<<"$out")"
 
 tool_state() { jq -c --arg tool "$1" 'select(.type == "tool_use" and .part.tool == $tool) | .part.state'; }
+
+echo "a child runs on its parent's model, not the default one"
+out=$(cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --model mock/other "COURIER-TEST" </dev/null)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
+check "every reply of the child came from the parent's model"   "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .model.id] | length > 0 and all(. == "other")')"
+
+echo "a child whose turn fails is reported to its idle parent"
+out=$(prompt "COURIER-FAIL")
+turn_ended=$(now_ms)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "courier_spawn completed" "$(tool_state courier_spawn <<<"$out" | jq -r '.status == "completed"')"
+woke=$(reply_time "$parent" "PARENT WOKE")
+check "the failure started a new turn after the parent's had ended"   "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+notices=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "synthetic") | .text]')
+check "the parent was told once" "$(jq -r 'length == 1' <<<"$notices")"
+check "which child failed, and with what error"   "$(jq -r --arg child "$child" 'join("") | contains("<courier from=\"" + $child + "\" failed=") and contains("not available in your country")' <<<"$notices")"
 
 echo "courier_later wakes the idle parent, with the delay sent as a string as some models do"
 out=$(prompt "COURIER-LATER-STRING 0.05")

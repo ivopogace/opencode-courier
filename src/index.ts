@@ -6,6 +6,7 @@ import { describeFailure, listChildren, send, spawn, status, type CourierPorts }
 import { cleanup, headOf, inspectWorktree, type CleanupPorts, type CleanupResult } from "./cleanup.js"
 import { cancel, deliverDue, schedule, TICK_MS, type LaterPorts } from "./later.js"
 import { pruneExpired } from "./roster.js"
+import { watchFailures } from "./watch.js"
 import { listen, readConfig, subscribe, unsubscribe, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
 const SpawnInput = Schema.Struct({
@@ -148,6 +149,10 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 const claimed: Set<string> = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.claimed")] ??=
   new Set<string>()) as Set<string>
 
+// Likewise one set of handled failure events, since every instance may be sent the same event.
+const reported: Set<string> = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.reported")] ??=
+  new Set<string>()) as Set<string>
+
 const rethrow =
   (tool: string) =>
   (error: unknown): never => {
@@ -166,6 +171,7 @@ export default Plugin.define({
   setup: async (ctx) => {
     const ports: CourierPorts = {
       session: ctx.session,
+      agent: ctx.agent,
       worktree: ctx.worktree,
       storage: ctx.storage,
       directory: ctx.location.directory,
@@ -193,8 +199,8 @@ export default Plugin.define({
         name: "courier_spawn",
         options: { codemode: false },
         description:
-          "Start a new OpenCode session on a task and return immediately. The session reports back with courier_send, " +
-          "which wakes this session. DO NOT poll it or call courier_status in a loop: once you have started the sessions " +
+          "Start a new OpenCode session on a task and return immediately. It runs on your model. The session reports " +
+          "back with courier_send, which wakes this session, and you are told if its turn fails instead. DO NOT poll it or call courier_status in a loop: once you have started the sessions " +
           "you need, end your turn by replying without calling more tools; each report starts a new turn in which you " +
           "carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and " +
           "courier_cancel it when it does.",
@@ -357,9 +363,12 @@ export default Plugin.define({
     }
     void tick()
     const timer = setInterval(tick, TICK_MS)
+    const watching = new AbortController()
+    void watchFailures({ storage: ctx.storage, session: ctx.session, event: ctx.event, log: later.log }, reported, watching.signal)
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
       clearInterval(timer)
+      watching.abort()
       await leave?.()
     }
   },

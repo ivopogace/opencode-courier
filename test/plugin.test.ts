@@ -7,6 +7,22 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
 
+/** An event stream the test feeds; it ends when the plugin stops watching. */
+function fakeEvents() {
+  const waiting: Array<(event: unknown) => void> = []
+  const queued: unknown[] = []
+  return {
+    emit: (event: unknown) => (waiting.length ? waiting.shift()!(event) : void queued.push(event)),
+    subscribe: async function* ({ signal }: { signal: AbortSignal }) {
+      const stopped = new Promise<undefined>((resolve) => signal.addEventListener("abort", () => resolve(undefined)))
+      while (!signal.aborted) {
+        const event = queued.length ? queued.shift() : await Promise.race([new Promise((resolve) => waiting.push(resolve)), stopped])
+        if (event !== undefined) yield event
+      }
+    },
+  }
+}
+
 async function setUp(stored: Record<string, unknown> = {}, options?: Record<string, unknown>) {
   const store = new Map(Object.entries(stored))
   const tools = new Map<string, any>()
@@ -15,8 +31,11 @@ async function setUp(stored: Record<string, unknown> = {}, options?: Record<stri
     calls.push({ method, input })
     return result
   }
+  const events = fakeEvents()
   const ctx = {
     options,
+    event: { subscribe: events.subscribe },
+    agent: { get: record("agent.get", { data: { id: "build" } }) },
     location: { directory: "/repo" },
     session: {
       create: record("session.create", { id: "ses_child", location: { directory: "/repo" } }),
@@ -46,7 +65,7 @@ async function setUp(stored: Record<string, unknown> = {}, options?: Record<stri
   }
   const cleanup = await plugin.setup(ctx as any)
   if (cleanup) cleanups.push(cleanup)
-  return { tools, calls, store }
+  return { tools, calls, store, emit: events.emit }
 }
 
 test("registers the courier tools", async () => {
@@ -111,8 +130,25 @@ test("courier_spawn uses the calling session as the parent", async () => {
 
   const result = await tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_parent" })
 
-  expect(calls[0]!.input.metadata).toEqual({ courier: { parentID: "ses_parent" } })
+  expect(calls.find((call) => call.method === "session.create")!.input.metadata).toEqual({ courier: { parentID: "ses_parent" } })
   expect(result.content).toContain("ses_child")
+})
+
+test("a spawned child whose turn fails is reported to its parent", async () => {
+  const { tools, calls, emit } = await setUp()
+  await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
+
+  emit({
+    id: `evt_${Math.random()}`,
+    type: "session.execution.failed",
+    data: { sessionID: "ses_child", error: { type: "provider.auth", message: "blocked", status: 403 } },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  const notice = calls.find((call) => call.method === "session.synthetic")!.input
+  expect(notice.sessionID).toBe("ses_parent")
+  expect(notice.text).toContain('<courier from="ses_child" failed="provider.auth">')
+  expect(notice.text).toContain("failed: blocked (provider.auth, status 403)")
 })
 
 test("courier_spawn tells the parent to end its turn rather than wait for the child", async () => {

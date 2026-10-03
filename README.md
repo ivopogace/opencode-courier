@@ -286,12 +286,18 @@ git push --follow-tags
    builds, and runs `npm stage publish` from the `npm` environment. It authenticates with npm
    trusted publishing (OIDC), which also adds a provenance attestation. On npmjs.com, the
    package's trusted publisher is this repository, workflow `release.yml`, environment `npm`, and
-   it may only stage.
+   it may only stage. Before staging, the job logs the claims of its OIDC token (repository,
+   workflow, environment, ref) so a mismatch with the trusted publisher shows in the log, and it
+   stages with `--loglevel verbose` because npm reports a failed OIDC exchange only there.
 2. It then creates a **draft** GitHub release with generated notes, so nothing is announced yet.
 3. A maintainer reviews the staged version and approves it with 2FA: on npmjs.com under Staged
    Packages, or with `npm stage list` and `npm stage approve <id>`. The version is live from then.
 4. Publish the draft release: `gh release edit vX.Y.Z --draft=false`, or Publish release on
    GitHub.
+
+If staging fails, nothing reached npm and the version is still free. Re-running the job reuses the
+workflow file at the tag, so after fixing `release.yml` move the tag to the fixed commit instead:
+`git push origin :refs/tags/vX.Y.Z`, then tag and push again.
 
 A prerelease version (`1.2.0-beta.1`) is staged for the `next` dist-tag and its release is marked
 as a prerelease.

@@ -48,12 +48,36 @@ jobs:
       # The trusted publisher allows staging only: the version goes live once a maintainer approves
       # it with 2FA on npmjs.com (Staged Packages) or with `npm stage approve <id>`. Trusted
       # publishing (OIDC) authenticates and adds provenance; no token is involved.
+      # npm skips a failed OIDC exchange silently and falls back to the .npmrc setup-node wrote,
+      # which ends in a bare E401. So check the OIDC token first and log the claims npm's trusted
+      # publisher matches on (repository, workflow file, environment), never the token itself.
+      - name: Check the OIDC token for npm
+        run: |
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" ]; then
+            echo "::error::no OIDC token available: the job needs 'permissions: id-token: write'"
+            exit 1
+          fi
+          node --input-type=module -e '
+            const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL)
+            url.searchParams.set("audience", "npm:registry.npmjs.org")
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` } })
+            if (!res.ok) {
+              console.log(`::error::GitHub refused the OIDC token request: HTTP ${res.status}`)
+              process.exit(1)
+            }
+            const { value } = await res.json()
+            const claims = JSON.parse(Buffer.from(value.split(".")[1], "base64url").toString())
+            for (const key of ["aud", "repository", "repository_owner", "repository_visibility", "workflow_ref", "job_workflow_ref", "environment", "ref", "event_name"]) {
+              console.log(`${key}: ${claims[key] ?? "(missing)"}`)
+            }
+          '
       # Prereleases (1.2.0-beta.1) go to the `next` dist-tag; npm 11 refuses them without one.
+      # Verbose logging shows why an OIDC exchange failed; npm redacts credentials in its logs.
       - name: Stage
         run: |
           case "${GITHUB_REF_NAME}" in
-            *-*) npm stage publish --access public --tag next ;;
-            *)   npm stage publish --access public ;;
+            *-*) npm stage publish --access public --tag next --loglevel verbose ;;
+            *)   npm stage publish --access public --loglevel verbose ;;
           esac
 
   # A draft, because the version is not live until it is approved: publish the draft afterwards.

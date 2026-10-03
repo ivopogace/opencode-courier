@@ -83,7 +83,7 @@ export async function status(ports: CourierPorts, input: StatusInput) {
     last?.type === "assistant"
       ? last.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
       : undefined
-  return {
+  return withoutUndefined({
     sessionID: info.id,
     title: info.title,
     parentID: info.parentID,
@@ -91,5 +91,20 @@ export async function status(ports: CourierPorts, input: StatusInput) {
     updated: info.time.updated,
     idle: info.time.idle,
     lastText,
-  }
+  })
+}
+
+/** OpenCode leaves a tool call hanging when its metadata holds `undefined`, so results drop those keys. */
+function withoutUndefined<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>
+}
+
+/** A readable message for a failed courier call; OpenCode's own errors can carry an empty message. */
+export function describeFailure(tool: string, error: unknown) {
+  const tagged = error as { message?: unknown; _tag?: unknown; sessionID?: unknown }
+  const message =
+    (typeof tagged?.message === "string" && tagged.message) ||
+    [tagged?._tag, tagged?.sessionID].filter((item) => typeof item === "string").join(" ") ||
+    String(error)
+  return new Error(`${tool} failed: ${message}`)
 }

@@ -36,6 +36,12 @@ test("registers the three courier tools", async () => {
   expect([...tools.keys()]).toEqual(["courier_spawn", "courier_send", "courier_status"])
 })
 
+test("registers them as direct tools, not code-mode ones only reachable through execute", async () => {
+  const { tools } = await setUp()
+
+  for (const tool of tools.values()) expect(tool.options).toEqual({ codemode: false })
+})
+
 test("tool inputs decode with their schemas", async () => {
   const { tools } = await setUp()
 

@@ -19,6 +19,8 @@ export interface RosterEntry {
   readonly createdAt: number
   /** For an isolated child, the directory its worktree was made from; courier_cleanup removes it through there. */
   readonly source?: string
+  /** For an isolated child, the commit its worktree was made from; its own work is what came after. */
+  readonly base?: string
 }
 
 export type RosterStorage = Storage
@@ -53,11 +55,11 @@ export type Exists = (directory: string) => boolean
  * the rest. An isolated child is kept while its worktree exists, so it can still be cleaned up.
  */
 async function dropExpired(storage: RosterStorage, entries: RosterEntry[], now: number, exists: Exists) {
-  const expired = entries.filter(
-    (entry) => now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory)),
+  const expired = new Set(
+    entries.filter((entry) => now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory))),
   )
-  await Promise.all(expired.map((entry) => storage.remove(rosterKey(entry.parentID, entry.sessionID))))
-  return entries.filter((entry) => !expired.includes(entry))
+  await Promise.all([...expired].map((entry) => storage.remove(rosterKey(entry.parentID, entry.sessionID))))
+  return entries.filter((entry) => !expired.has(entry))
 }
 
 /** A parent's children, oldest first, after dropping the expired ones. */

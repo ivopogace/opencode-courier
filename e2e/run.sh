@@ -170,7 +170,11 @@ spawn_isolated() {
   directory=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.directory')
   check "the isolated child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
 }
-listed_children() { prompt "COURIER-CHILDREN $1" | tool_state courier_children | jq -r '.metadata.metadata.children[].sessionID'; }
+# "listed", "unlisted", or "error" when courier_children did not complete, so a broken listing never passes as unlisted.
+child_listing() {
+  prompt "COURIER-CHILDREN $1" | tool_state courier_children |
+    jq -r --arg child "$2" 'if .status != "completed" then "error" elif any(.metadata.metadata.children[]; .sessionID == $child) then "listed" else "unlisted" end'
+}
 
 echo "courier_cleanup removes a clean worktree"
 spawn_isolated
@@ -179,7 +183,7 @@ cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child" | tool_state courier_clea
 check "courier_cleanup removed it" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
 check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
 check "git no longer lists the worktree" "$(git -C "$WORK/project" worktree list | grep -qF "$directory" && echo false || echo true)"
-check "the child is off courier_children" "$(listed_children "$parent" | grep -q "$child" && echo false || echo true)"
+check "the child is off courier_children" "$([ "$(child_listing "$parent" "$child")" = unlisted ] && echo true || echo false)"
 
 echo "courier_cleanup keeps a worktree with uncommitted changes"
 spawn_isolated
@@ -188,7 +192,7 @@ cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child" | tool_state courier_clea
 check "courier_cleanup kept it and named the file" \
   "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "kept" and (.output | contains("notes.txt"))' <<<"$cleaned")"
 check "the file is still there" "$([ -f "$directory/notes.txt" ] && echo true || echo false)"
-check "the child is still on courier_children" "$(listed_children "$parent" | grep -q "$child" && echo true || echo false)"
+check "the child is still on courier_children" "$([ "$(child_listing "$parent" "$child")" = listed ] && echo true || echo false)"
 cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child force" | tool_state courier_cleanup)
 check "with force, courier_cleanup removed it" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
 check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"

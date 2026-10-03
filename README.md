@@ -60,11 +60,15 @@ The worktree is kept, and the result says why, when it holds work that would oth
 - uncommitted changes, untracked files included (ignored files, such as `node_modules`, are not
   work and go with the worktree);
 - commits that are on no branch, tag or remote-tracking ref, which is where a child's commits on
-  its detached HEAD end up. A commit on a branch survives the removal, so it does not count.
+  its detached HEAD end up. A commit on a branch survives the removal, so it does not count, and
+  neither do commits the worktree was made from (`courier_spawn` records that commit), such as a
+  parent's own unbranched work when an isolated child spawns isolated children of its own.
 
-Commit or branch what you want to keep (`git -C <worktree> branch <name>` keeps its commits), or
-call `courier_cleanup` again with `force: true` to discard it. A worktree that is already gone is
-just dropped from the list.
+The result lists up to 50 changed paths (an untracked directory counts once) and 50 commits. Commit
+or branch what you want to keep (`git -C <worktree> branch <name>` keeps its commits), or call
+`courier_cleanup` again with `force: true` to discard it; `force` also removes a worktree git can
+no longer read. A worktree whose directory is already gone is just dropped from the list; git
+forgets its registration on its next `git worktree prune` or `git gc`.
 
 Cleanup is explicit only. A child reporting back does not mean the parent has merged, reviewed or
 even read its work, and the parent may still send it more to do in the same worktree, so the

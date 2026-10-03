@@ -2,7 +2,7 @@ import { Plugin } from "@opencode-ai/plugin"
 import { Schema } from "effect"
 import { randomUUID } from "node:crypto"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
-import { cleanup, inspectWorktree, type CleanupPorts, type CleanupResult } from "./cleanup.js"
+import { cleanup, headOf, inspectWorktree, type CleanupPorts, type CleanupResult } from "./cleanup.js"
 import { cancel, deliverDue, schedule, TICK_MS, type LaterPorts } from "./later.js"
 import { pruneExpired } from "./roster.js"
 
@@ -82,13 +82,9 @@ export default Plugin.define({
       storage: ctx.storage,
       directory: ctx.location.directory,
       now: Date.now,
+      head: headOf,
     }
-    const cleanupPorts: CleanupPorts = {
-      storage: ctx.storage,
-      worktree: ctx.worktree,
-      directory: ctx.location.directory,
-      inspect: inspectWorktree,
-    }
+    const cleanupPorts: CleanupPorts = { ...ports, inspect: inspectWorktree }
     const later: LaterPorts = {
       storage: ctx.storage,
       session: ctx.session,

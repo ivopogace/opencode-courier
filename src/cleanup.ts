@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
-import { forget, rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
+import { rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
 
@@ -9,7 +9,10 @@ type Context = Plugin.Context
 export interface WorktreeState {
   /** Paths with uncommitted changes, untracked files included, as `git status --porcelain` lists them. */
   readonly changes: readonly string[]
-  /** Commits reachable from the worktree's HEAD but from no branch, tag or remote-tracking ref, newest first. */
+  /**
+   * Commits reachable from the worktree's HEAD but from no branch, tag or remote-tracking ref, nor
+   * from the commit the worktree was made from, newest first.
+   */
   readonly commits: readonly string[]
 }
 
@@ -18,8 +21,8 @@ export interface CleanupPorts {
   readonly worktree: Pick<Context["worktree"], "remove">
   /** The plugin's own location, for roster entries recorded before they carried their source. */
   readonly directory: string
-  /** The worktree's state, or undefined when its directory no longer exists. */
-  readonly inspect: (directory: string) => Promise<WorktreeState | undefined>
+  /** The worktree's state, or undefined when its directory no longer exists; `base` is the commit it was made from. */
+  readonly inspect: (directory: string, base?: string) => Promise<WorktreeState | undefined>
 }
 
 export interface CleanupInput {
@@ -54,6 +57,9 @@ function count(n: number, noun: string) {
   return `${n} ${noun}${n === 1 ? "" : "s"}`
 }
 
+/** At most this many changes and commits are returned; the reason still counts them all. */
+export const MAX_LISTED = 50
+
 function preview(items: readonly string[]) {
   return items.length > 5 ? `${items.slice(0, 5).join(", ")}, ...` : items.join(", ")
 }
@@ -69,20 +75,32 @@ export async function cleanup(ports: CleanupPorts, parentID: string, input: Clea
   if (!entry.isolated)
     throw new Error(`${input.sessionID} ran in ${entry.directory}, not in a worktree of its own; there is nothing to remove.`)
   const { directory } = entry
-  const state = await ports.inspect(directory)
+  const forget = () => ports.storage.remove(rosterKey(parentID, input.sessionID))
+  // With force the state only decides whether there is anything left to remove, so a worktree git
+  // can no longer read is still removed.
+  const state = await ports
+    .inspect(directory, entry.base)
+    .catch((error: unknown) => (input.force ? { changes: [], commits: [] } : Promise.reject(error)))
   if (!state) {
-    await forget(ports.storage, parentID, input.sessionID)
+    await forget()
     return { sessionID: input.sessionID, directory, outcome: "gone" }
   }
   const reason = keepReason(state)
   if (reason && !input.force)
-    return { sessionID: input.sessionID, directory, outcome: "kept", reason, changes: state.changes, commits: state.commits }
+    return {
+      sessionID: input.sessionID,
+      directory,
+      outcome: "kept",
+      reason,
+      changes: state.changes.slice(0, MAX_LISTED),
+      commits: state.commits.slice(0, MAX_LISTED),
+    }
   await ports.worktree.remove({
     location: { directory: entry.source ?? ports.directory },
     directory,
     force: input.force === true,
   })
-  await forget(ports.storage, parentID, input.sessionID)
+  await forget()
   return { sessionID: input.sessionID, directory, outcome: "removed" }
 }
 
@@ -94,18 +112,39 @@ function git(directory: string, args: string[]) {
   )
 }
 
-/** Reads a worktree's state with git; undefined when the directory is gone. */
-export async function inspectWorktree(directory: string): Promise<WorktreeState | undefined> {
+/** The commit a worktree is on, or undefined when git cannot tell. */
+export function headOf(directory: string) {
+  return git(directory, ["rev-parse", "HEAD"]).then(
+    (out) => out.trim() || undefined,
+    () => undefined,
+  )
+}
+
+/**
+ * Reads a worktree's state with git; undefined when the directory is gone. Commits reachable from
+ * `base`, the commit the worktree was made from, are not its own work and are not listed.
+ */
+export async function inspectWorktree(directory: string, base?: string): Promise<WorktreeState | undefined> {
   if (!existsSync(directory)) return undefined
-  const status = await git(directory, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
+  // An untracked directory is one entry, not every file in it.
+  const status = await git(directory, ["status", "--porcelain=v1", "-z", "--untracked-files=normal"])
   const changes: string[] = []
   const records = status.split("\0").filter(Boolean)
   for (let i = 0; i < records.length; i++) {
     const record = records[i]!
     changes.push(record.slice(3))
     // A rename or copy is followed by its source path in a record of its own.
-    if (record[0] === "R" || record[0] === "C") i++
+    if ("RC".includes(record[0]!) || "RC".includes(record[1]!)) i++
   }
-  const log = await git(directory, ["log", "--format=%h %s", "HEAD", "--not", "--branches", "--tags", "--remotes"])
+  const log = await git(directory, [
+    "log",
+    "--format=%h %s",
+    "HEAD",
+    "--not",
+    "--branches",
+    "--tags",
+    "--remotes",
+    ...(base ? [base] : []),
+  ])
   return { changes, commits: log.split("\n").filter(Boolean) }
 }

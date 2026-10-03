@@ -33,6 +33,10 @@ function decide(body) {
       const spawned = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_spawn")
       return spawned.length < 2 ? spawnChild(false) : { tool: "courier_children", args: {} }
     }
+    // The child of COURIER-ASK reports what its shell call gave, run or refused, once it has the answer.
+    const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
+    if (call?.function?.name === "shell" && startedBy)
+      return { tool: "courier_send", args: { sessionID: startedBy[1], message: `CHILD DONE shell: ${result}` } }
     return { text: `TOOL DONE ${call?.function?.name}: ${result}` }
   }
   const recent = messages
@@ -42,8 +46,21 @@ function decide(body) {
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
   // The child of COURIER-FAIL cannot reach its model, as with a model blocked for the account.
   if (parent && recent.includes("CHILD-FAILS")) return { status: 403, error: "This model is not available in your country" }
+  // The child of COURIER-ASK runs a command the test's permission rules make it ask for.
+  if (parent && recent.includes("CHILD-ASKS")) return { tool: "shell", args: { command: "echo courier-asks" } }
   if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE" } }
+  // A parent told that its child waits for permission ends its turn, as if it had asked the person;
+  // the test then answers for the person with COURIER-ANSWER.
+  const asks = recent.match(/<courier from="ses_\w+" asks="permission" request="([^"]+)">/)
+  if (asks) return { text: `PARENT ASKS ${asks[1]}` }
+  if (/<courier from="ses_\w+" answered=/.test(recent)) return { text: "PARENT SETTLED" }
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
+  const answer = recent.match(/COURIER-ANSWER (once|always|reject)(?: (.+))?/)
+  if (answer) {
+    const notices = messages.flatMap((message) => [...textOf(message.content).matchAll(/<courier from="(ses_\w+)" asks="permission" request="([^"]+)">/g)])
+    const [, sessionID, requestID] = notices.at(-1) ?? []
+    return { tool: "courier_answer", args: { sessionID, requestID, reply: answer[1], ...(answer[2] ? { message: answer[2] } : {}) } }
+  }
   // COURIER-LATER-STRING sends the delay as a string, as some models do.
   const later = recent.match(/COURIER-LATER(-CANCEL|-STRING)? ([\d.]+)/)
   if (later)
@@ -58,6 +75,8 @@ function decide(body) {
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
+  const ask = recent.match(/COURIER-ASK(?: (isolate))?/)
+  if (ask) return { tool: "courier_spawn", args: { task: "CHILD-ASKS", isolate: ask[1] === "isolate" } }
   const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)
   if (spawn) return spawnChild(spawn[1] === "isolate")
   return { text: "ok" }
@@ -84,7 +103,8 @@ createServer((request, response) => {
   request.on("end", async () => {
     const body = raw ? JSON.parse(raw) : {}
     const reply = decide(body)
-    if ((reply.tool === "courier_send" || reply.status) && childDelay) await new Promise((resolve) => setTimeout(resolve, childDelay))
+    if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status) && childDelay)
+      await new Promise((resolve) => setTimeout(resolve, childDelay))
     if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, tools: (body.tools ?? []).map((tool) => tool.function?.name), reply })}\n`)
     if (reply.status) {
       response.writeHead(reply.status, { "content-type": "application/json" })

@@ -69,7 +69,10 @@ cat >"$WORK/project/opencode.json" <<EOF
   },
   "model": "mock/chat",
   "update": "disable",
-  "permissions": [{ "action": "*", "resource": "*", "effect": "allow" }]
+  "permissions": [
+    { "action": "*", "resource": "*", "effect": "allow" },
+    { "action": "shell", "resource": "echo courier-asks*", "effect": "ask" }
+  ]
 }
 EOF
 commit_config
@@ -123,6 +126,59 @@ check "the failure started a new turn after the parent's had ended"   "$([ -n "$
 notices=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "synthetic") | .text]')
 check "the parent was told once" "$(jq -r 'length == 1' <<<"$notices")"
 check "which child failed, and with what error"   "$(jq -r --arg child "$child" 'join("") | contains("<courier from=\"" + $child + "\" failed=") and contains("not available in your country")' <<<"$notices")"
+
+# The parent's synthetic messages whose envelope carries attribute $2, from session $1.
+notices_with() { api "session/$1/message" | jq -c --arg attribute " $2=" '[.data[] | select(.type == "synthetic") | .text | select(contains($attribute))]'; }
+# Starts a parent with COURIER-ASK ($1 is "isolate" or empty) and waits until it has been told that its
+# child asks for permission; sets parent, child, request and notice.
+ask_permission() {
+  local out turn_ended woke
+  out=$(prompt "COURIER-ASK $1")
+  turn_ended=$(now_ms)
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  woke=$(reply_time "$parent" "PARENT ASKS" 45)
+  check "the request started a new turn after the parent's had ended" \
+    "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+  notice=$(notices_with "$parent" asks)
+  check "the parent was told once" "$(jq -r 'length == 1' <<<"$notice")"
+  request=$(jq -r '.[0] // "" | capture("request=\"(?<id>[^\"]+)\"").id // empty' <<<"$notice")
+}
+
+for mode in shared isolate; do
+  echo "a child's permission request reaches its idle parent, and the answer goes back ($mode)"
+  ask_permission "$([ "$mode" = isolate ] && echo isolate)"
+  check "with what it asks for and the choices" "$(jq -r --arg child "$child" '.[0] // "" |
+    contains("<courier from=\"" + $child + "\" asks=\"permission\"") and contains("It asks for: shell") and
+    contains("echo courier-asks") and contains("- once:") and contains("- reject:") and contains("Do not decide this yourself")' <<<"$notice")"
+  check "courier_status shows the child waiting on it" \
+    "$(prompt "COURIER-STATUS $child" | tool_state courier_status | jq -r --arg request "$request" '.status == "completed" and (.output | contains($request))')"
+  choice=$([ "$mode" = isolate ] && echo reject || echo once)
+  answered=$(prompt_in "$parent" "COURIER-ANSWER $choice" | tool_state courier_answer)
+  check "courier_answer passed on $choice" "$(jq -r '.status == "completed" and .metadata.metadata.answered == true' <<<"$answered")"
+  check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  report=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD DONE shell"))] | join("")')
+  if [ "$mode" = isolate ]; then
+    # Rejected with a message, the call fails and the child carries on; a bare rejection would end its turn.
+    check "the child's command was refused" "$([[ $report == *'"error"'* && $report != *"exited with code"* ]] && echo true || echo false)"
+  else
+    check "the child's command ran" "$([[ $report == *"courier-asks"* && $report != *"Refused"* ]] && echo true || echo false)"
+  fi
+  check "the parent got no stale notice" "$(notices_with "$parent" answered | jq -r 'length == 0')"
+done
+
+echo "a request answered in the child's own session leaves no stale question with the parent"
+ask_permission ""
+code=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
+  --data '{"reply":"once"}' "$SERVER/api/session/$child/permission/$request/reply")
+check "answered in the child's session" "$([ "$code" = 204 ] && echo true || echo false)"
+check "the parent was told it is settled" "$([ -n "$(reply_time "$parent" "PARENT SETTLED")" ] && echo true || echo false)"
+check "the notice names the request and the answer" \
+  "$(notices_with "$parent" answered | jq -r --arg request "$request" 'length == 1 and (.[0] | contains("request=\"" + $request + "\"") and contains("answered=\"once\""))')"
+answered=$(prompt_in "$parent" "COURIER-ANSWER once" | tool_state courier_answer)
+check "a late courier_answer passes nothing on" \
+  "$(jq -r '.status == "completed" and .metadata.metadata.answered == false and (.output | contains("no longer waits"))' <<<"$answered")"
+check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
 
 echo "courier_later wakes the idle parent, with the delay sent as a string as some models do"
 out=$(prompt "COURIER-LATER-STRING 0.05")

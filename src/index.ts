@@ -47,7 +47,11 @@ const CleanupInput = Schema.Struct({
 const LaterInput = Schema.Struct({
   message: Schema.String.annotate({ description: "The message to deliver." }),
   delayMinutes: Schema.optional(
-    Schema.Number.annotate({ description: "Deliver this many minutes from now. Give this or at." }),
+    // Some models send the number as a string ("3", "3.0") whatever the schema says, and resend it
+    // unchanged after the error, so a string is accepted and schedule reads it as a number.
+    Schema.Union([Schema.Number, Schema.String]).annotate({
+      description: "Deliver this many minutes from now. Give this or at.",
+    }),
   ),
   at: Schema.optional(Schema.String.annotate({ description: "Deliver at this ISO 8601 time. Give this or delayMinutes." })),
   sessionID: Schema.optional(Schema.String.annotate({ description: "The session to deliver to; defaults to this one." })),
@@ -190,14 +194,19 @@ export default Plugin.define({
         options: { codemode: false },
         description:
           "Start a new OpenCode session on a task and return immediately. The session reports back with courier_send, " +
-          "which wakes this session. DO NOT poll it or call courier_status in a loop; end your turn and wait. For long " +
-          "tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
+          "which wakes this session. DO NOT poll it or call courier_status in a loop: once you have started the sessions " +
+          "you need, end your turn by replying without calling more tools; each report starts a new turn in which you " +
+          "carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and " +
+          "courier_cancel it when it does.",
         input: SpawnInput,
         execute: async (input, context) => {
           const child = await spawn(ports, context.sessionID, input).catch(rethrow("courier_spawn"))
           const warning = child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : ""
           return {
-            content: `Started session ${child.sessionID} in ${child.directory}. It will report back with courier_send.${warning}`,
+            content:
+              `Started session ${child.sessionID} in ${child.directory}. It will report back with courier_send, which ` +
+              "starts a new turn for you. Once you have started every session you need, end your turn: reply without " +
+              `calling more tools. That does not drop the task; you carry on with it when the reports arrive.${warning}`,
             metadata: child,
           }
         },
@@ -264,14 +273,20 @@ export default Plugin.define({
         options: { codemode: false },
         description:
           "Schedule a message for a session (this one by default), delivered when due and waking it if idle. " +
-          "Use it as a safety net when you start sessions: schedule a check-in, end your turn, and cancel it with " +
-          "courier_cancel if the child reports first. Survives server restarts; may arrive up to ~15 seconds late.",
+          "Use it as a safety net when you start sessions: schedule one check-in, end your turn by replying without " +
+          "calling more tools, and cancel it with courier_cancel if the child reports first. Survives server restarts; " +
+          "may arrive up to ~15 seconds late.",
         input: LaterInput,
         execute: async (input, context) => {
           const entry = await schedule(later, context.sessionID, input).catch(rethrow("courier_later"))
           const fireAt = new Date(entry.fireAt).toISOString()
+          const next =
+            entry.sessionID === context.sessionID
+              ? "It starts a new turn for you when due, so do not wait for it: end your turn by replying without calling " +
+                "more tools. If what it checks on reports first, cancel it then with courier_cancel."
+              : "Cancel it with courier_cancel if it is no longer needed."
           return {
-            content: `Scheduled ${entry.id} for ${fireAt}, to ${entry.sessionID}. Cancel it with courier_cancel.`,
+            content: `Scheduled ${entry.id} for ${fireAt}, to ${entry.sessionID}. ${next}`,
             metadata: { id: entry.id, fireAt, sessionID: entry.sessionID },
           }
         },

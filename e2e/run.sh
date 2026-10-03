@@ -17,14 +17,10 @@ WEBHOOK_PORT=${WEBHOOK_PORT:-4601}
 REGISTRY_PORT=${REGISTRY_PORT:-4602}
 CHILD_DELAY_MS=${CHILD_DELAY_MS:-5000}
 WORK=${E2E_WORK:-$(mktemp -d)}
-SERVER="http://127.0.0.1:$SERVER_PORT"
 MOCK_PID=
-SERVER_PID=
 REGISTRY_PID=
-
-export HOME=$WORK/home XDG_CONFIG_HOME=$WORK/home/.config XDG_DATA_HOME=$WORK/home/.local/share
-export XDG_STATE_HOME=$WORK/home/.local/state XDG_CACHE_HOME=$WORK/home/.cache
-export OPENCODE_PASSWORD=courier-e2e
+# shellcheck source=e2e/lib.sh
+source "$ROOT/e2e/lib.sh"
 
 cleanup() {
   stop_server
@@ -37,7 +33,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-api() { curl -sf -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/$1"; }
 prompt() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json "$1" </dev/null); }
 # Like prompt, but a new turn in the existing session $1.
 prompt_in() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --session "$1" "$2" </dev/null); }
@@ -45,19 +40,6 @@ now_ms() { node -e 'console.log(Date.now())'; }
 failures=0
 check() {
   if [ "$2" = true ]; then echo "  PASS $1"; else echo "  FAIL $1"; failures=$((failures + 1)); fi
-}
-start_server() {
-  (cd "$WORK/project" && exec "$OPENCODE" serve --hostname 127.0.0.1 --port "$SERVER_PORT" --print-logs >>"$WORK/server.log" 2>&1 </dev/null) &
-  SERVER_PID=$!
-  for _ in $(seq 1 30); do api health >/dev/null 2>&1 && return; sleep 1; done
-  echo "OpenCode server did not start; see $WORK/server.log"
-  exit 1
-}
-stop_server() {
-  [ -n "$SERVER_PID" ] || return 0
-  kill "$SERVER_PID" 2>/dev/null || true
-  wait "$SERVER_PID" 2>/dev/null || true
-  SERVER_PID=
 }
 # The time a session's assistant message containing $2 was created, waiting up to $3 (default 30) s.
 reply_time() {

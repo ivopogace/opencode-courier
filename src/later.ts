@@ -28,7 +28,8 @@ export interface LaterPorts {
 
 export interface LaterInput {
   readonly message: string
-  readonly delayMinutes?: number
+  /** A number, or a string holding one, which some models send instead. */
+  readonly delayMinutes?: number | string
   readonly at?: string
   readonly sessionID?: string
 }
@@ -37,9 +38,11 @@ function fireTime(now: number, input: LaterInput) {
   if ((input.delayMinutes === undefined) === (input.at === undefined))
     throw new Error("Give exactly one of delayMinutes or at.")
   if (input.delayMinutes !== undefined) {
-    if (!Number.isFinite(input.delayMinutes) || input.delayMinutes < 0)
+    const minutes =
+      typeof input.delayMinutes === "string" && input.delayMinutes.trim() !== "" ? Number(input.delayMinutes) : input.delayMinutes
+    if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes < 0)
       throw new Error("delayMinutes must be a number of minutes, zero or more.")
-    return now + Math.round(input.delayMinutes * 60_000)
+    return now + Math.round(minutes * 60_000)
   }
   const at = Date.parse(input.at!)
   if (Number.isNaN(at)) throw new Error(`at is not a date: ${input.at}`)

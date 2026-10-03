@@ -11,8 +11,8 @@ That message lands in the parent's inbox and OpenCode starts a new turn for the 
 idle.
 
 > **Status: early.** Passes an end-to-end test inside a live OpenCode V2 server
-> (`opencode2 v0.0.0-beta-19271`) driven by a scripted stand-in model (`e2e/run.sh`); not yet
-> tried with a real model.
+> (`opencode2 v0.0.0-beta-19271`) driven by a scripted stand-in model (`e2e/run.sh`), and a smoke
+> test with real (free) models: see [Real models](#real-models).
 
 ## How the wake works
 
@@ -238,11 +238,27 @@ lists them under Recent Deliveries with a Redeliver button.
    long-running child, also `courier_later` a check-in for yourself, and `courier_cancel` it when
    the child reports.
 
+## Real models
+
+`e2e/real-model.sh` runs the same live server with a real model and asks the parent to fan a small
+task out to two children. It reports which tools the parent called and in what order, whether it
+ended its turn instead of polling, whether each child called `courier_send`, and whether each report
+woke the idle parent. By default it uses a free model on OpenCode Zen, which needs no key:
+
+```bash
+OPENCODE_BIN=$(which opencode2) e2e/real-model.sh
+COURIER_MODEL=muse-spark-1.3-contributor-free OPENCODE_BIN=$(which opencode2) e2e/real-model.sh
+```
+
+On `opencode2 v0.0.0-beta-19271`, `longcat-2.5-preview-free`, `muse-spark-1.3-contributor-free`
+and `nemotron-3-ultra-free` complete the fan-out with both reports waking the parent, after the
+tool results were tuned to say plainly that the parent should end its turn. How to run it, what
+each model did, what was tuned and why: [docs/real-model.md](docs/real-model.md). It costs nothing
+on the free models, and it is not part of CI.
+
 ## Roadmap
 
-Tracked as [issues](https://github.com/ivopogace/opencode-courier/issues):
-
-- [#5](https://github.com/ivopogace/opencode-courier/issues/5) **Smoke test with a real model.**
+Tracked as [issues](https://github.com/ivopogace/opencode-courier/issues).
 
 ## Development
 
@@ -252,6 +268,7 @@ bun test           # unit tests, with a fake plugin context
 npm run typecheck
 npm run build      # emits dist/
 OPENCODE_BIN=$(which opencode2) npm run test:e2e   # live test, see below
+OPENCODE_BIN=$(which opencode2) e2e/real-model.sh  # with a real model, see Real models
 ```
 
 `e2e/run.sh` starts a real OpenCode V2 server in a throwaway project and home directory, with this
@@ -343,6 +360,14 @@ Found while testing against `0.0.0-beta-19271`:
   `plugins`, which takes a local directory as `package` too.
 - OpenCode errors such as `Session.NotFoundError` can arrive with an empty message, so the tools
   rethrow them with the tag and session id.
+- OpenCode decodes a tool's input with its own copy of `effect`, not the plugin's, and schema
+  checks and transformations from the plugin's copy do not survive that: `Schema.Finite` refuses
+  the number `2` ("Expected a finite number"), and `Schema.FiniteFromString` fails with "Cannot
+  convert a symbol to a number". Tool inputs use plain schemas and the tools validate the values
+  themselves; a unit test keeps it that way.
+- `Schema.Number` advertises the strings `"Infinity"`, `"-Infinity"` and `"NaN"` in its JSON
+  Schema, so models are offered a string where a number is meant. Some send numbers as strings
+  regardless, so `courier_later` takes `delayMinutes` as either.
 
 ## License
 

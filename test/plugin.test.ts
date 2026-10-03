@@ -80,6 +80,30 @@ test("tool inputs decode with their schemas", async () => {
   expect(() => decode("courier_send", { sessionID: "s" })).toThrow()
 })
 
+test("courier_later takes delayMinutes as a number or a string, which some models send instead", async () => {
+  const { tools } = await setUp()
+
+  const input = tools.get("courier_later").input
+  const decode = (delayMinutes: unknown) => Schema.decodeUnknownSync(input)({ message: "m", delayMinutes })
+  expect(decode(3)).toEqual({ message: "m", delayMinutes: 3 })
+  expect(decode("3")).toEqual({ message: "m", delayMinutes: "3" })
+  expect(() => decode(true)).toThrow()
+  const scheduled = await tools.get("courier_later").execute({ message: "m", delayMinutes: "3" }, { sessionID: "ses_parent" })
+  expect(Date.parse(scheduled.metadata.fireAt) - Date.now()).toBeGreaterThan(170_000)
+})
+
+test("tool inputs use no schema checks or transformations, which OpenCode's own copy of effect cannot run", async () => {
+  const { tools } = await setUp()
+
+  const unsupported = (ast: any, path: string): string[] => [
+    ...(ast.checks?.length ? [`${path} has a check`] : []),
+    ...(ast.encoding?.length ? [`${path} has a transformation`] : []),
+    ...(ast.propertySignatures ?? []).flatMap((property: any) => unsupported(property.type, `${path}.${String(property.name)}`)),
+    ...(ast.types ?? []).flatMap((type: any) => unsupported(type, path)),
+  ]
+  expect([...tools.values()].flatMap((tool) => unsupported(tool.input.ast, tool.name))).toEqual([])
+})
+
 test("courier_spawn uses the calling session as the parent", async () => {
   const { tools, calls } = await setUp()
 
@@ -87,6 +111,15 @@ test("courier_spawn uses the calling session as the parent", async () => {
 
   expect(calls[0]!.input.metadata).toEqual({ courier: { parentID: "ses_parent" } })
   expect(result.content).toContain("ses_child")
+})
+
+test("courier_spawn tells the parent to end its turn rather than wait for the child", async () => {
+  const { tools } = await setUp()
+
+  const result = await tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_parent" })
+
+  expect(result.content).toContain("starts a new turn for you")
+  expect(result.content).toContain("end your turn: reply without calling more tools. That does not drop the task")
 })
 
 test("courier_children lists what courier_spawn started from the calling session, or another", async () => {
@@ -137,6 +170,20 @@ test("courier_later schedules for the calling session and courier_cancel drops i
   const cancelled = await tools.get("courier_cancel").execute({ id: scheduled.metadata.id }, { sessionID: "ses_parent" })
   expect(cancelled.metadata).toEqual({ id: scheduled.metadata.id, cancelled: true })
   expect(store.size).toBe(0)
+})
+
+test("courier_later tells a session scheduling its own check-in to end its turn, and no one else", async () => {
+  const { tools } = await setUp()
+
+  const own = await tools.get("courier_later").execute({ message: "check", delayMinutes: 10 }, { sessionID: "ses_parent" })
+  const other = await tools
+    .get("courier_later")
+    .execute({ message: "check", delayMinutes: 10, sessionID: "ses_child" }, { sessionID: "ses_parent" })
+
+  expect(own.content).toContain("It starts a new turn for you when due, so do not wait for it: end your turn")
+  expect(own.content).toContain("If what it checks on reports first, cancel it then with courier_cancel.")
+  expect(other.content).toContain("to ses_child. Cancel it with courier_cancel if it is no longer needed.")
+  expect(other.content).not.toContain("end your turn")
 })
 
 test("courier_later names what was wrong with its input", async () => {

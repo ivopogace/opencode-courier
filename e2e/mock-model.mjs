@@ -15,6 +15,11 @@ const textOf = (content) =>
       ? content.map((part) => (typeof part === "string" ? part : (part.text ?? ""))).join("")
       : ""
 
+// A notice that a child asks a question, or that its question was cut off: the session and the request.
+const QUESTION_NOTICE = /<courier from="(ses_\w+)" asks="question" request="(question_[\w-]+)"[^>]*>/
+// The answers in the question tool's result text: "Which greeting?"="Hello, Hey" gives [["Hello", "Hey"]].
+const answersIn = (text) => [...text.matchAll(/"[^"]*"="([^"]*)"/g)].map((match) => match[1].split(", "))
+
 function decide(body) {
   const messages = body.messages ?? []
   if (!body.tools?.length) return { text: "Courier test" }
@@ -37,6 +42,19 @@ function decide(body) {
     const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
     if (call?.function?.name === "shell" && startedBy)
       return { tool: "courier_send", args: { sessionID: startedBy[1], message: `CHILD DONE shell: ${result}` } }
+    if (call?.function?.name === "question") {
+      // The child of COURIER-QUESTION reports what its question call gave.
+      if (startedBy)
+        return {
+          tool: "courier_send",
+          args: { sessionID: startedBy[1], message: /dismissed this question/.test(result) ? "CHILD DISMISSED" : `CHILD GOT ${JSON.stringify(answersIn(result))}` },
+        }
+      // A parent whose question was linked to its child's has nothing left to do.
+      if (/do not call courier_answer|nothing to pass on/i.test(result)) return { text: `PARENT RELAYED: ${result}` }
+      // Otherwise it passes on what the person chose with courier_answer.
+      const notice = [...messages.flatMap((message) => [...textOf(message.content).matchAll(new RegExp(QUESTION_NOTICE, "g"))])].at(-1)
+      if (notice) return { tool: "courier_answer", args: { sessionID: notice[1], requestID: notice[2], answers: answersIn(result) } }
+    }
     return { text: `TOOL DONE ${call?.function?.name}: ${result}` }
   }
   const recent = messages
@@ -48,7 +66,39 @@ function decide(body) {
   if (parent && recent.includes("CHILD-FAILS")) return { status: 403, error: "This model is not available in your country" }
   // The child of COURIER-ASK runs a command the test's permission rules make it ask for.
   if (parent && recent.includes("CHILD-ASKS")) return { tool: "shell", args: { command: "echo courier-asks" } }
+  // The child of COURIER-QUESTION asks the person which greeting to use, with the question tool.
+  const question = recent.match(/CHILD-QUESTION(-MULTI|-RELABEL)?/)
+  if (parent && question) {
+    const options = ["Hello", "Hi", "Hey"].map((label) => ({ label, description: `Say ${label}` }))
+    const header = question[1] === "-RELABEL" ? "Relabel" : "Greeting"
+    // Held back like a report, so the parent's first turn has ended (and opencode run, which would
+    // dismiss a question asked in it, has let go) when the notice lands.
+    return {
+      tool: "question",
+      args: { questions: [{ header, question: "Which greeting?", options, multiple: question[1] === "-MULTI" }] },
+      delayed: true,
+    }
+  }
+  // The middle session of COURIER-QUESTION nested starts a child that asks.
+  if (parent && recent.includes("CHILD-NESTS")) return { tool: "courier_spawn", args: { task: "CHILD-QUESTION" } }
+  // A child whose question was cut off gets the answer as a message, and reports it.
+  const answered = recent.match(/<courier from="ses_\w+" answers="question_[\w-]+"( dismissed="true")?>/)
+  const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
+  if (answered && startedBy)
+    return {
+      tool: "courier_send",
+      args: { sessionID: startedBy[1], message: answered[1] ? "CHILD DISMISSED" : `CHILD GOT ${JSON.stringify(answersIn(recent))}` },
+    }
   if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE" } }
+  // A parent told that its child asks a question asks the person the same, with its own question
+  // tool; the test answers its form. A parent of COURIER-QUESTION-RELABEL rewords the options, so
+  // its question is not linked to the child's and it passes the answer on with courier_answer.
+  if (QUESTION_NOTICE.test(recent)) {
+    const args = JSON.parse(recent.split("\n").find((line) => line.startsWith('{"questions"')))
+    for (const item of args.questions)
+      if (item.header === "Relabel") item.options = item.options.map((option) => ({ ...option, label: option.label.toLowerCase() }))
+    return { tool: "question", args }
+  }
   // A parent told that its child waits for permission ends its turn, as if it had asked the person;
   // the test then answers for the person with COURIER-ANSWER.
   const asks = recent.match(/<courier from="ses_\w+" asks="permission" request="([^"]+)">/)
@@ -75,6 +125,12 @@ function decide(body) {
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
+  const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL)?(?: (isolate|nested))?/)
+  if (questions)
+    return {
+      tool: "courier_spawn",
+      args: { task: questions[2] === "nested" ? "CHILD-NESTS" : `CHILD-QUESTION${questions[1] ?? ""}`, isolate: questions[2] === "isolate" },
+    }
   const ask = recent.match(/COURIER-ASK(?: (isolate))?/)
   if (ask) return { tool: "courier_spawn", args: { task: "CHILD-ASKS", isolate: ask[1] === "isolate" } }
   const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)
@@ -103,7 +159,7 @@ createServer((request, response) => {
   request.on("end", async () => {
     const body = raw ? JSON.parse(raw) : {}
     const reply = decide(body)
-    if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status) && childDelay)
+    if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status || reply.delayed) && childDelay)
       await new Promise((resolve) => setTimeout(resolve, childDelay))
     if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, tools: (body.tools ?? []).map((tool) => tool.function?.name), reply })}\n`)
     if (reply.status) {

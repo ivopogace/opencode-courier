@@ -180,6 +180,143 @@ check "a late courier_answer passes nothing on" \
   "$(jq -r '.status == "completed" and .metadata.metadata.answered == false and (.output | contains("no longer waits"))' <<<"$answered")"
 check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
 
+# The texts of session $1: what it was sent, what it replied and what its tools returned.
+texts() {
+  api "session/$1/message" |
+    jq -r '.data[] | (.text // empty), (.content[]? | .text // (.state.output? // empty | if type == "string" then . else tojson end))'
+}
+# Whether session $1 has a text containing $2, waiting up to $3 (default 30) s.
+has_text() {
+  for _ in $(seq 1 "${3:-30}"); do
+    if texts "$1" | grep -qF -- "$2"; then echo true; return; fi
+    sleep 1
+  done
+  echo false
+}
+# The id of the pending form of session $1 that is not $2, waiting up to $3 (default 30) s.
+form_of() {
+  for _ in $(seq 1 "${3:-30}"); do
+    local id
+    id=$(api "session/$1/form" | jq -r --arg old "$2" '[.data[] | select(.id != $old) | .id] | first // empty')
+    if [ -n "$id" ]; then echo "$id"; return; fi
+    sleep 1
+  done
+}
+forms_of() { api "session/$1/form" | jq -r '.data | length'; }
+fields_of() { api "session/$1/form" | jq -c '.data[0].fields'; }
+# POSTs to the server's API as the person would, from the TUI; prints the HTTP status.
+person() {
+  local body=${2:-'{}'}
+  curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$body" "$SERVER/api/$1"
+}
+# The person answers form $2 of session $1 with $3, a JSON value.
+answer_form() { [ "$(person "session/$1/form/$2/reply" "{\"answer\":{\"q0\":$3}}")" = 204 ] && echo true || echo false; }
+# Starts a parent with $1 and waits until its child's question is shown in the child and, asked by
+# the parent, in the parent; sets parent, child, child_form and parent_form.
+ask_question() {
+  local out
+  out=$(prompt "$1")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  child_form=$(form_of "$child" "" 45)
+  parent_form=$(form_of "$parent" "" 45)
+  check "the child asks, and the parent asks the person in its own session" \
+    "$([ -n "$child_form" ] && [ -n "$parent_form" ] && echo true || echo false)"
+}
+
+echo "a child's question reaches its idle parent, which asks the person; their choice goes back"
+ask_question COURIER-QUESTION
+notice=$(notices_with "$parent" asks)
+check "the parent was told once, with the question and its options" "$(jq -r --arg child "$child" 'length == 1 and (.[0] |
+  contains("<courier from=\"" + $child + "\" asks=\"question\" request=\"question_") and contains("Which greeting?") and
+  contains("{\"questions\":[{\"question\":\"Which greeting?\",\"header\":\"Greeting\"") and contains("Do not answer it yourself"))' <<<"$notice")"
+check "the parent asks exactly what the child asks" "$([ "$(fields_of "$parent")" = "$(fields_of "$child")" ] && echo true || echo false)"
+request=$(jq -r '.[0] | capture("request=\"(?<id>[^\"]+)\"").id' <<<"$notice")
+check "courier_status shows the child waiting on it" "$(prompt "COURIER-STATUS $child" | tool_state courier_status |
+  jq -r --arg request "$request" '.status == "completed" and (.output | contains($request) and contains("\"type\": \"question\""))')"
+check "the person answers in the parent's session" "$(answer_form "$parent" "$parent_form" '"Hi"')"
+check "the parent's question passed the answer on, without courier_answer" "$(has_text "$parent" "do not call courier_answer")"
+check "the child carried on with it and reported back" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
+check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
+
+echo "a multi-select question"
+ask_question COURIER-QUESTION-MULTI
+check "the parent asks it as one too" "$(fields_of "$parent" | jq -r '.[0].type == "multiselect"')"
+check "the person picks two in the parent's session" "$(answer_form "$parent" "$parent_form" '["Hello","Hey"]')"
+check "the child got both" "$(has_text "$parent" 'CHILD GOT [["Hello","Hey"]]' 45)"
+
+echo "an isolated child's question, answered with the person's own text"
+ask_question "COURIER-QUESTION isolate"
+check "the person types an answer in the parent's session" "$(answer_form "$parent" "$parent_form" '"Something else"')"
+check "the child got it" "$(has_text "$parent" 'CHILD GOT [["Something else"]]' 45)"
+check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
+
+echo "a parent that rewords the options passes the answer on with courier_answer"
+ask_question COURIER-QUESTION-RELABEL
+check "the person answers the parent's reworded question" "$(answer_form "$parent" "$parent_form" '"hi"')"
+check "courier_answer passed it on" "$(has_text "$parent" "Passed the answers to question")"
+check "the child got it" "$(has_text "$parent" 'CHILD GOT [["hi"]]' 45)"
+check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
+
+echo "the person answers in the child's session instead"
+ask_question COURIER-QUESTION
+check "the person answers in the child's session" "$(answer_form "$child" "$child_form" '"Hey"')"
+check "the parent's question is withdrawn" "$(has_text "$parent" "Session $child no longer waits on this question: it was answered in its own session")"
+check "and no longer shown" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
+check "the child carried on with the answer" "$(has_text "$parent" 'CHILD GOT [["Hey"]]' 45)"
+
+echo "the person dismisses the question in the child's session"
+ask_question COURIER-QUESTION
+check "dismissed in the child's session" "$([ "$(person "session/$child/form/$child_form/cancel")" = 204 ] && echo true || echo false)"
+check "the parent's question is withdrawn, saying so" "$(has_text "$parent" "dismissed in its own session, which ends its turn")"
+check "and no longer shown" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
+
+echo "the person dismisses the question in the parent's session"
+ask_question COURIER-QUESTION
+check "dismissed in the parent's session" "$([ "$(person "session/$parent/form/$parent_form/cancel")" = 204 ] && echo true || echo false)"
+check "the child was told, carried on and reported" "$(has_text "$parent" "CHILD DISMISSED" 45)"
+check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
+
+echo "the child's turn is stopped while the parent asks the person; their answer reaches it as a message"
+ask_question COURIER-QUESTION
+check "the child's turn is interrupted" "$([[ $(person "session/$child/interrupt") == 20* ]] && echo true || echo false)"
+check "the child's question is no longer shown" "$(for _ in $(seq 1 15); do [ "$(forms_of "$child")" = 0 ] && { echo true; exit; }; sleep 1; done; echo false)"
+check "the person answers in the parent's session" "$(answer_form "$parent" "$parent_form" '"Hello"')"
+check "the parent's question passed it on as a message" "$(has_text "$parent" "as a message, since its question had been cut off")"
+check "which woke the child, and it carried on" "$(has_text "$parent" 'CHILD GOT [["Hello"]]' 45)"
+
+# What OpenCode's inactivity sweep does to a location after an hour: it interrupts every turn there.
+echo "both turns are stopped while the question is open; the parent is told and asks again"
+ask_question COURIER-QUESTION
+person "session/$child/interrupt" >/dev/null
+person "session/$parent/interrupt" >/dev/null
+check "the parent was told the question was cut off" "$(has_text "$parent" 'stopped="true"' 45)"
+again=$(form_of "$parent" "$parent_form" 45)
+check "and asks the person again" "$([ -n "$again" ] && echo true || echo false)"
+check "the person answers" "$(answer_form "$parent" "$again" '"Hi"')"
+check "the child woke with the answer and carried on" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
+
+echo "a question of a child's child goes to the session at the top"
+out=$(prompt "COURIER-QUESTION nested")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+parent_form=$(form_of "$parent" "" 60)
+check "the parent at the top asks the person" "$([ -n "$parent_form" ] && echo true || echo false)"
+check "its notice names the session in between" "$(notices_with "$parent" asks | jq -r --arg middle "$middle" '.[0] // "" | contains("which " + $middle + " started with courier_spawn")')"
+check "the person answers in the top session" "$(answer_form "$parent" "$parent_form" '"Hey"')"
+check "the child's child got it and reported to the session in between" "$(has_text "$middle" 'CHILD GOT [["Hey"]]' 45)"
+
+echo "a question open across a server restart"
+ask_question COURIER-QUESTION
+stop_server
+start_server
+api "plugin?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" >/dev/null
+check "the parent was told the question was cut off" "$(has_text "$parent" 'restarted="true"' 60)"
+again=$(form_of "$parent" "$parent_form" 45)
+check "and asks the person again" "$([ -n "$again" ] && echo true || echo false)"
+check "the person answers" "$(answer_form "$parent" "$again" '"Hello"')"
+check "the child woke with the answer and carried on" "$(has_text "$parent" 'CHILD GOT [["Hello"]]' 45)"
+
 echo "courier_later wakes the idle parent, with the delay sent as a string as some models do"
 out=$(prompt "COURIER-LATER-STRING 0.05")
 turn_ended=$(now_ms)

@@ -6,6 +6,7 @@ type Context = Plugin.Context
 /** The slice of the plugin context the courier tools use; tests pass a fake. */
 export interface CourierPorts {
   readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context">
+  readonly agent: Pick<Context["agent"], "get">
   readonly worktree: Pick<Context["worktree"], "create" | "remove">
   /** The commit a directory's checkout is on, or undefined; recorded as an isolated child's base. */
   readonly head: (directory: string) => Promise<string | undefined>
@@ -59,8 +60,21 @@ function titleOf(task: string) {
   return line.length > 60 ? `${line.slice(0, 57)}...` : line
 }
 
+/**
+ * The model a child runs on: its parent's, so it does not fall back to OpenCode's default, which
+ * the parent may have been moved off for a reason. An agent that names its own model keeps it.
+ */
+async function inheritedModel(ports: CourierPorts, parentID: string, agent: string | undefined) {
+  const parent = await ports.session.get({ sessionID: parentID })
+  if (!parent.model || !agent) return parent.model
+  const named = await ports.agent.get({ agentID: agent, location: { directory: ports.directory } })
+  return named.data.model ? undefined : parent.model
+}
+
 /** Creates a child session, hands it the task and returns at once; the child reports back with courier_send. */
 export async function spawn(ports: CourierPorts, parentID: string, input: SpawnInput) {
+  // A failed lookup must not keep the child from starting; it then runs on OpenCode's default.
+  const model = await inheritedModel(ports, parentID, input.agent).catch(() => undefined)
   const directory = input.isolate
     ? (await ports.worktree.create({ location: { directory: ports.directory } })).directory
     : undefined
@@ -70,6 +84,7 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
     .create({
       title,
       ...(input.agent ? { agent: input.agent } : {}),
+      ...(model ? { model } : {}),
       ...(directory ? { location: { directory } } : {}),
       metadata: { courier: { parentID } },
     })

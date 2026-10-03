@@ -8,7 +8,7 @@ sessions, message them, and be woken by them, without polling.
 A parent session calls `courier_spawn`, gets a session id back immediately and ends its turn. The
 child works on its own and, when it is done or stuck, calls `courier_send` with the parent's id.
 That message lands in the parent's inbox and OpenCode starts a new turn for the parent if it is
-idle.
+idle. A child whose turn fails instead, so that it cannot report, is reported by the plugin.
 
 > **Status: early.** Passes an end-to-end test inside a live OpenCode V2 server
 > (`opencode2 v0.0.0-beta-19271`) driven by a scripted stand-in model (`e2e/run.sh`), and a smoke
@@ -29,7 +29,7 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 
 | Tool | Does |
 |---|---|
-| `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`), sends it the task plus a brief naming the parent and how to report back, and returns at once. |
+| `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`) on the parent's model, sends it the task plus a brief naming the parent and how to report back, and returns at once. |
 | `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. |
 | `courier_status` | One look at a session: outcome, idle time and last reply. For check-ins, not for waiting. |
 | `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated and when it was started. |
@@ -38,6 +38,27 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 | `courier_cancel` | Drops a message scheduled with `courier_later`, e.g. because the child it was waiting for reported first. |
 | `courier_subscribe` | Subscribes a session (this one by default) to webhook deliveries for a `topic`: `owner/repo`, `owner/repo#12` (one pull request or issue) or a generic name. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. Needs the [webhook receiver](#webhooks). |
 | `courier_unsubscribe` | Drops one topic, or all of a session's, e.g. once its pull request is merged. |
+
+### The child's model
+
+A child runs on the model its parent is using, not on OpenCode's default, so a parent you moved to
+another model starts children that can reach theirs too. The exception is a child given an `agent`
+that names a model of its own: that agent's model is kept. If the parent's model cannot be looked
+up, the child is started anyway, on OpenCode's default.
+
+### A child that fails
+
+A child reports with `courier_send`, which it cannot do when its turn fails: the model is not
+available to the account, the credentials are missing, the provider is down. The plugin follows
+OpenCode's events, and for every `session.execution.failed` of a session on a roster it sends the
+parent a message from that child, marked `failed="<error type>"`, with the child's title and the
+error, waking the parent if it is idle. The parent then decides: message the child to have it try
+again, start a replacement, or carry on without it.
+
+Every failed turn of a child is reported, also one that fails after the child has reported. A turn
+that was interrupted is not a failure and is not reported, and neither is a failure that happens
+while the OpenCode server is down or the plugin is not loaded; a `courier_later` check-in still
+covers those.
 
 ### Roster
 
@@ -275,7 +296,9 @@ OPENCODE_BIN=$(which opencode2) e2e/real-model.sh  # with a real model, see Real
 plugin loaded and `e2e/mock-model.mjs` as the model: an OpenAI-compatible server that replies from
 a fixed script, so no API key is needed. It checks that a parent's spawn completes, that the parent
 gets a new turn after its own has ended once the child reports (shared and `isolate: true`), that
-`courier_status` reports and fails readably, that a `courier_later` message wakes an idle parent
+`courier_status` reports and fails readably, that a child runs on the model its parent was started
+with rather than the default one, that a child whose model request is refused is reported to its
+idle parent, once and with the error, that a `courier_later` message wakes an idle parent
 (with its delay sent as a string, as some models send it),
 that a cancelled one never arrives, that a pending one is delivered after a server restart, that
 `courier_children` lists the two children a parent spawned, before and after that restart, that

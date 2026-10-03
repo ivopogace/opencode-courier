@@ -47,6 +47,11 @@ export async function children(storage: RosterStorage, parentID: string) {
   return entries.sort((a, b) => a.createdAt - b.createdAt)
 }
 
+/** A session's roster entries: one for the parent that started it, none if courier_spawn did not. */
+export async function entriesOf(storage: RosterStorage, sessionID: string) {
+  return (await scanAll<RosterEntry>(storage, PREFIX)).filter((entry) => entry.sessionID === sessionID)
+}
+
 /** Whether a directory still exists; tests pass a fake. */
 export type Exists = (directory: string) => boolean
 

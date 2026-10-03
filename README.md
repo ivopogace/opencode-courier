@@ -274,21 +274,27 @@ OpenCode CLI at the same version as the pinned plugin API.
 
 ### Releasing
 
-`.github/workflows/release.yml` publishes to npm on a `v*` tag. It runs the CI workflow first,
-checks that the tag matches the `version` in `package.json`, builds, publishes from the `npm`
-environment, and then creates a GitHub release with generated notes. A prerelease version
-(`1.2.0-beta.1`) goes to the `next` dist-tag and is marked as a prerelease.
+`.github/workflows/release.yml` stages a release on npm when a `v*` tag is pushed; a maintainer
+then approves it. No token is involved anywhere.
 
 ```bash
 npm version patch   # bumps package.json, commits, tags vX.Y.Z
 git push --follow-tags
 ```
 
-It authenticates with npm trusted publishing (OIDC), which needs no stored token and adds a
-provenance attestation on its own: on npmjs.com, the package's trusted publisher is this
-repository, workflow `release.yml`, environment `npm`. The package's publishing access requires
-two-factor authentication and disallows tokens, so a release comes from that workflow or from a
-maintainer publishing by hand with 2FA.
+1. The workflow runs the CI workflow, checks that the tag matches the `version` in `package.json`,
+   builds, and runs `npm stage publish` from the `npm` environment. It authenticates with npm
+   trusted publishing (OIDC), which also adds a provenance attestation. On npmjs.com, the
+   package's trusted publisher is this repository, workflow `release.yml`, environment `npm`, and
+   it may only stage.
+2. It then creates a **draft** GitHub release with generated notes, so nothing is announced yet.
+3. A maintainer reviews the staged version and approves it with 2FA: on npmjs.com under Staged
+   Packages, or with `npm stage list` and `npm stage approve <id>`. The version is live from then.
+4. Publish the draft release: `gh release edit vX.Y.Z --draft=false`, or Publish release on
+   GitHub.
+
+A prerelease version (`1.2.0-beta.1`) is staged for the `next` dist-tag and its release is marked
+as a prerelease.
 
 CI also checks the package as published: `publint` for `package.json` and `exports`, and
 `@arethetypeswrong/cli` for the type declarations.

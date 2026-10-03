@@ -17,6 +17,7 @@ plugin API", before changing the plugin.
   Zen by default; not in CI. Re-run it after changing tool descriptions, results or the child brief;
   `docs/real-model.md` has the results.
 - `.github/workflows/ci.yml`: both suites on every push to `main` and every pull request.
+  `release-start.yml`, `release-tag.yml` and `release.yml`: the release flow, Releasing in README.md.
 
 ## Commands
 

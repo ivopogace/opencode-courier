@@ -1,0 +1,105 @@
+name: Tag the release
+
+# Step two of a release (Releasing in README.md): when a push to main leaves package.json at a
+# version without a tag, tags it vX.Y.Z and starts the Release workflow on that tag. A version
+# whose tag exists is left alone, so a push that does not bump the version does nothing.
+#
+# The tag is pushed with the job's GITHUB_TOKEN, and GitHub starts no workflow for an event made
+# with that token except workflow_dispatch, so release.yml's `on: push: tags` never sees it.
+# Instead the Release workflow is dispatched on the tag: there GITHUB_REF is the tag, which is
+# what the npm environment's `v*` rule and the tag check in release.yml look at.
+
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Check the version, build and `npm stage publish --dry-run`; create no tag, stage nothing. Works on any branch, e.g. a release branch."
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Two pushes to main in a row would both find the version untagged; one at a time. Dry runs queue
+# apart, so one never displaces a pending release (a group holds one pending run).
+concurrency:
+  group: release-tag-${{ inputs.dry_run == true && 'dry-run' || 'release' }}
+
+jobs:
+  tag:
+    name: Tag and start the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # push the tag
+      actions: write # dispatch the Release workflow
+    env:
+      DRY_RUN: ${{ inputs.dry_run == true }}
+    steps:
+      # No token on disk while the dry run builds branch code; the tag step passes it itself.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Find the version to tag
+        id: version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          tag="v${version}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null; then
+            echo "${tag} already exists: nothing to release." | tee -a "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          if [ "${DRY_RUN}" != true ] && [ "${GITHUB_REF}" != refs/heads/main ]; then
+            echo "::error::only main is tagged; on ${GITHUB_REF_NAME} run this workflow with dry_run"
+            exit 1
+          fi
+          published="$(.github/scripts/npm-has-version.sh "${version}")"
+          if [ "${published}" = yes ]; then
+            echo "::error::opencode-courier@${version} is already on npm; bump the version instead"
+            exit 1
+          fi
+          echo "releasing ${tag}"
+          echo "tag=${tag}" >>"${GITHUB_OUTPUT}"
+
+      # Dry run: release.yml's build and `npm stage publish --dry-run`, which also refuses a
+      # version npm already has. No token: a dry run needs none.
+      - uses: ./.github/actions/build
+        if: steps.version.outputs.tag != '' && env.DRY_RUN == 'true'
+      - name: Stage as a dry run
+        if: steps.version.outputs.tag != '' && env.DRY_RUN == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          flags=(--access public --dry-run)
+          case "${TAG}" in *-*) flags+=(--tag next) ;; esac
+          npm stage publish "${flags[@]}"
+          echo "Dry run: would tag main with ${TAG} and start the Release workflow on it." >>"${GITHUB_STEP_SUMMARY}"
+
+      - name: Tag and start the Release workflow
+        if: steps.version.outputs.tag != '' && env.DRY_RUN != 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --annotate "${TAG}" --message "${TAG}"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}"
+          # The new tag can take a moment to be dispatchable.
+          for attempt in 1 2 3; do
+            if gh workflow run release.yml --ref "${TAG}"; then
+              break
+            fi
+            if [ "${attempt}" = 3 ]; then
+              echo "::error::${TAG} is pushed but the Release workflow did not start; run it by hand: gh workflow run release.yml --ref ${TAG}"
+              exit 1
+            fi
+            sleep 10
+          done
+          {
+            echo "Tagged ${TAG} and started the Release workflow on it:"
+            echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/release.yml?query=branch%3A${TAG}"
+          } >>"${GITHUB_STEP_SUMMARY}"

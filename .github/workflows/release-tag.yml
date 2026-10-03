@@ -23,9 +23,10 @@ on:
 permissions:
   contents: read
 
-# Two pushes to main in a row would both find the version untagged; one at a time.
+# Two pushes to main in a row would both find the version untagged; one at a time. Dry runs queue
+# apart, so one never displaces a pending release (a group holds one pending run).
 concurrency:
-  group: release-tag
+  group: release-tag-${{ inputs.dry_run == true && 'dry-run' || 'release' }}
 
 jobs:
   tag:
@@ -38,8 +39,10 @@ jobs:
     env:
       DRY_RUN: ${{ inputs.dry_run == true }}
     steps:
-      # Keeps the token in the checkout: the tag is pushed with it.
+      # No token on disk while the dry run builds branch code; the tag step passes it itself.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Find the version to tag
         id: version
         run: |
@@ -53,7 +56,8 @@ jobs:
             echo "::error::only main is tagged; on ${GITHUB_REF_NAME} run this workflow with dry_run"
             exit 1
           fi
-          if [ "$(.github/scripts/npm-has-version.sh "${version}")" = yes ]; then
+          published="$(.github/scripts/npm-has-version.sh "${version}")"
+          if [ "${published}" = yes ]; then
             echo "::error::opencode-courier@${version} is already on npm; bump the version instead"
             exit 1
           fi
@@ -83,7 +87,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag --annotate "${TAG}" --message "${TAG}"
-          git push origin "refs/tags/${TAG}"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}"
           # The new tag can take a moment to be dispatchable.
           for attempt in 1 2 3; do
             if gh workflow run release.yml --ref "${TAG}"; then

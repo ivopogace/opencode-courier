@@ -14,7 +14,7 @@ on:
         required: true
         default: patch
       dry_run:
-        description: "Compute the bump and show the change; push no branch, open no pull request"
+        description: "Compute the bump and show the change; push no branch, open no pull request. Works on any branch."
         type: boolean
         default: false
 
@@ -29,22 +29,31 @@ jobs:
     permissions:
       contents: write # push the release branch
       pull-requests: write # open the pull request
+    env:
+      DRY_RUN: ${{ inputs.dry_run == true }}
     steps:
-      # Keeps the token in the checkout: the release branch is pushed with it.
+      # No token on disk while `npm version` and the checks run; the push step passes it itself.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           package-manager-cache: false
-      # `npm version` takes a bump keyword or an exact version and refuses an unchanged one, but
-      # accepts a lower one; a release only goes forward (npm's own semver decides). The tag, the
-      # branch and npm must all be free of the version, and the current version must be tagged,
-      # or a release Tag the release missed would be skipped over for good.
+      # A release starts from main: a pull request from any other ref would carry that ref's
+      # commits. `npm version` takes a bump keyword or an exact version and refuses an unchanged
+      # one, but accepts a lower one; a release only goes forward (npm's own semver decides). The
+      # tag, the branch and npm must all be free of the version, and the current version must be
+      # tagged, or a release Tag the release missed would be skipped over for good.
       - name: Bump the version
         id: bump
         env:
           VERSION: ${{ inputs.version }}
         run: |
+          if [ "${DRY_RUN}" != true ] && [ "${GITHUB_REF}" != refs/heads/main ]; then
+            echo "::error::a release starts from main, not ${GITHUB_REF_NAME}; on another branch run this workflow with dry_run"
+            exit 1
+          fi
           case "${VERSION}" in
             patch | minor | major) ;;
             *)
@@ -73,7 +82,8 @@ jobs:
             echo "::error::branch release-${version} already exists: finish or delete that release first"
             exit 1
           fi
-          if [ "$(.github/scripts/npm-has-version.sh "${version}")" = yes ]; then
+          published="$(.github/scripts/npm-has-version.sh "${version}")"
+          if [ "${published}" = yes ]; then
             echo "::error::opencode-courier@${version} is already on npm"
             exit 1
           fi
@@ -95,7 +105,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "release-${VERSION}"
           git commit --all --message "Release ${VERSION}"
-          git push origin "release-${VERSION}"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push "${remote}" "release-${VERSION}"
           {
             echo "Bumps \`package.json\` to ${VERSION}. Started by @${GITHUB_ACTOR} with the Start a release workflow (run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
             echo
@@ -105,7 +116,7 @@ jobs:
           } >"${RUNNER_TEMP}/pull-request.md"
           # A branch without its pull request would block the next attempt: take it back.
           if ! url="$(gh pr create --base main --head "release-${VERSION}" --title "Release ${VERSION}" --body-file "${RUNNER_TEMP}/pull-request.md")"; then
-            git push origin --delete "release-${VERSION}"
+            git push "${remote}" --delete "release-${VERSION}"
             echo "::error::could not open the pull request (is \"Allow GitHub Actions to create and approve pull requests\" on, under Settings → Actions → General?); branch release-${VERSION} is deleted again"
             exit 1
           fi

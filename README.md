@@ -292,10 +292,10 @@ OpenCode CLI at the same version as the pinned plugin API.
 
 ### Releasing
 
-A release starts from GitHub and ends with a maintainer's 2FA approval on npm; nobody creates or
-pushes a tag by hand. Three workflows under `.github/workflows/` take turns:
+A release starts from GitHub and ends with a maintainer's 2FA approval on npm; no tag needs
+creating or pushing by hand. Three workflows under `.github/workflows/` take turns:
 
-1. **Start a release** (Actions → Start a release → Run workflow, or
+1. **Start a release** (Actions → Start a release → Run workflow, from `main`, or
    `gh workflow run release-start.yml -f version=patch`). `version` is `patch`, `minor`, `major`
    or an exact version such as `0.2.0-beta.1`. The workflow bumps `version` in `package.json`,
    checks that the current version is tagged, that the new one is higher and that neither a
@@ -334,8 +334,8 @@ hand, and it runs on any branch) checks the version and the tag, builds and runs
 release branch to rehearse a release: `gh workflow run release-tag.yml --ref release-X.Y.Z`.
 Release itself takes a `dry_run` on a tag cut with this flow (v0.1.2 onward; earlier tags carry a
 `release.yml` without the dispatch trigger), `gh workflow run release.yml --ref vX.Y.Z
--f dry_run=true`: the environment admits the tag, the token is checked (a missing one is a
-warning there), the package is packed and nothing is staged or released.
+-f dry_run=true`: the environment admits the tag, the token is checked in token mode (a missing
+one is a warning there), the package is packed and nothing is staged or released.
 
 The flow needs the repository setting **Allow GitHub Actions to create and approve pull requests**
 (Settings → Actions → General → Workflow permissions); without it Start a release stops at opening
@@ -372,9 +372,11 @@ with:
 
 Limit the `npm` environment to version tags: under its Deployment branches and tags, choose
 Selected branches and tags and add the tag pattern `v*`. Otherwise a workflow on any branch that
-names the environment can read the secret. A tag ruleset that restricts who creates `v*` tags
-closes the remaining gap, but Tag the release creates them with the workflow's token, so such a
-ruleset must let GitHub Actions bypass it or the release stops there.
+names the environment can read the secret. A tag ruleset on `v*` closes the remaining gap, with
+two things to know: Tag the release creates the tags with the workflow's token, so a rule that
+restricts creation needs the GitHub Actions app in the ruleset's bypass list or the tag push fails;
+and a rule against deletion also blocks the move-the-tag recovery above for anyone not in that
+list.
 
 If "Check the npm token" passes but staging fails with E403, look at the package's Publishing
 access on npmjs.com (the package's Settings): the option that disallows tokens refuses this one

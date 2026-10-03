@@ -143,10 +143,15 @@ conflict.
 
 ## Install
 
-Requires OpenCode V2 (`npm install -g @opencode-ai/cli@beta`, command `opencode2`). Each release
-is built and tested against one version of its beta plugin API, the `@opencode-ai/plugin` peer
-dependency in `package.json` (`0.0.0-beta-19271` today); the CLI of the same version is the one
-known to work.
+Requires OpenCode V2, command `opencode2`. Its plugin API is still beta, and each release is built
+and tested against one version of it: the `@opencode-ai/plugin` peer dependency in `package.json`.
+The CLI of that version is the one known to work:
+
+```bash
+npm install -g @opencode-ai/cli@0.0.0-beta-19271
+```
+
+Then install the plugin:
 
 ```bash
 opencode2 plugin add opencode-courier

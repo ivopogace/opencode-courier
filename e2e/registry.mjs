@@ -27,6 +27,8 @@ function manifestOf(tgz) {
 const manifest = manifestOf(tarball)
 const file = `${manifest.name}-${manifest.version}.tgz`
 const tarballPath = `/${manifest.name}/-/${file}`
+const shasum = createHash("sha1").update(tarball).digest("hex")
+const integrity = `sha512-${createHash("sha512").update(tarball).digest("base64")}`
 const packument = (host) => ({
   name: manifest.name,
   "dist-tags": { latest: manifest.version },
@@ -36,15 +38,15 @@ const packument = (host) => ({
       _id: `${manifest.name}@${manifest.version}`,
       dist: {
         tarball: `http://${host}${tarballPath}`,
-        shasum: createHash("sha1").update(tarball).digest("hex"),
-        integrity: `sha512-${createHash("sha512").update(tarball).digest("base64")}`,
+        shasum,
+        integrity,
       },
     },
   },
 })
 
 createServer((req, res) => {
-  const path = decodeURIComponent(new URL(req.url, "http://registry").pathname)
+  const path = new URL(req.url, "http://registry").pathname
   if (path === `/${manifest.name}`) {
     res.writeHead(200, { "content-type": "application/json" })
     return res.end(JSON.stringify(packument(req.headers.host)))

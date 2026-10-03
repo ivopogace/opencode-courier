@@ -234,25 +234,36 @@ check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || 
 # Last, because it swaps the local plugin for the installed one.
 echo "opencode2 plugin add installs the packed package and its tools load"
 stop_server
+rm -rf "$WORK/pack"
 mkdir -p "$WORK/pack"
 (cd "$ROOT" && npm pack --pack-destination "$WORK/pack" >"$WORK/pack.log" 2>&1) || { cat "$WORK/pack.log"; exit 1; }
 REGISTRY_PORT=$REGISTRY_PORT REGISTRY_TARBALL=$(ls "$WORK"/pack/*.tgz) node "$ROOT/e2e/registry.mjs" >"$WORK/registry.out" 2>&1 </dev/null &
 REGISTRY_PID=$!
 for _ in $(seq 1 10); do curl -sf "http://127.0.0.1:$REGISTRY_PORT/opencode-courier" >/dev/null && break; sleep 1; done
+curl -sf "http://127.0.0.1:$REGISTRY_PORT/opencode-courier" >/dev/null || { echo "stand-in registry did not start"; cat "$WORK/registry.out"; exit 1; }
 export npm_config_registry="http://127.0.0.1:$REGISTRY_PORT/"
-added=$( (cd "$WORK/project" && "$OPENCODE" plugin add opencode-courier </dev/null 2>&1) && echo ok || echo failed)
+added=$( (cd "$WORK/project" && "$OPENCODE" plugin add opencode-courier </dev/null >"$WORK/plugin-add.log" 2>&1) && echo ok || echo failed)
 # plugin add starts the background server; this test runs its own.
 "$OPENCODE" service stop >/dev/null 2>&1 </dev/null || true
-check "plugin add installed it" "$([[ $added == *ok ]] && echo true || echo false)"
+check "plugin add installed it" "$([ "$added" = ok ] && echo true || echo false)"
+# The published version can equal this one, so prove the install is this build's tarball: npm
+# verifies the integrity, and may take the tarball from its cache, where npm pack left it.
+tarball=$(ls "$WORK"/pack/*.tgz)
+integrity="sha512-$(openssl dgst -sha512 -binary "$tarball" | base64 | tr -d '\n')"
+locked=$(cat "$XDG_CACHE_HOME"/opencode/npm/opencode-courier@latest/*/package-lock.json 2>/dev/null |
+  jq -r '.packages["node_modules/opencode-courier"] | "\(.resolved) \(.integrity)"' 2>/dev/null || true)
+check "from the packed tarball" \
+  "$([ "$locked" = "http://127.0.0.1:$REGISTRY_PORT/opencode-courier/-/$(basename "$tarball") $integrity" ] && echo true || echo false)"
 check "and added it to the global config" \
   "$(jq -r '.plugins | index("opencode-courier") != null' "$XDG_CONFIG_HOME/opencode/opencode.json" 2>/dev/null || echo false)"
 jq 'del(.plugins)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
 mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+log_start=$(($(wc -l <"$WORK/server.log") + 1))
 start_server
 out=$(prompt "COURIER-STATUS ses_missing")
 check "its courier_status tool runs" "$(tool_state courier_status <<<"$out" | jq -r '.error // "" | contains("NotFoundError")')"
 check "loaded from the installed package" \
-  "$(grep -q 'msg="loading plugin" id=opencode-courier entrypoint=.*/node_modules/opencode-courier/dist/index.js' "$WORK/server.log" && echo true || echo false)"
+  "$(tail -n +"$log_start" "$WORK/server.log" | grep -q 'msg="loading plugin" id=opencode-courier entrypoint=.*/node_modules/opencode-courier/dist/index.js' && echo true || echo false)"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed; rerun with KEEP=1 to keep the server and model logs"

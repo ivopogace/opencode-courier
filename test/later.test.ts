@@ -66,11 +66,27 @@ describe("schedule", () => {
     expect(entry).toMatchObject({ sessionID: "ses_other", from: "ses_parent", fireAt: 1_000_000 + 5 * MINUTE })
   })
 
+  test("reads a delay sent as a string, as some models send it", async () => {
+    const { ports } = fakePorts()
+
+    const entry = await schedule(ports, "ses_parent", { message: "m", delayMinutes: " 2.5 " })
+
+    expect(entry.fireAt).toBe(1_000_000 + 2.5 * MINUTE)
+  })
+
   test.each([
     [{ message: "m" }, "exactly one"],
     [{ message: "m", delayMinutes: 1, at: "2030-01-01T00:00:00Z" }, "exactly one"],
     [{ message: "m", delayMinutes: -1 }, "zero or more"],
     [{ message: "m", delayMinutes: Number.NaN }, "zero or more"],
+    [{ message: "m", delayMinutes: "soon" }, "zero or more"],
+    [{ message: "m", delayMinutes: "" }, "zero or more"],
+    [{ message: "m", delayMinutes: "Infinity" }, "zero or more"],
+    [{ message: "m", delayMinutes: "0x10" }, "zero or more"],
+    [{ message: "m", delayMinutes: "1e3" }, "zero or more"],
+    [{ message: "m", delayMinutes: "-2" }, "zero or more"],
+    [{ message: "m", delayMinutes: 1e12 }, "too far away"],
+    [{ message: "m", delayMinutes: "1000000000000" }, "too far away"],
     [{ message: "m", at: "tomorrow-ish" }, "not a date"],
     [{ message: "m", at: "1970-01-01T00:00:00Z" }, "in the past"],
   ])("rejects %o", async (input, error) => {

@@ -17,14 +17,10 @@ WEBHOOK_PORT=${WEBHOOK_PORT:-4601}
 REGISTRY_PORT=${REGISTRY_PORT:-4602}
 CHILD_DELAY_MS=${CHILD_DELAY_MS:-5000}
 WORK=${E2E_WORK:-$(mktemp -d)}
-SERVER="http://127.0.0.1:$SERVER_PORT"
 MOCK_PID=
-SERVER_PID=
 REGISTRY_PID=
-
-export HOME=$WORK/home XDG_CONFIG_HOME=$WORK/home/.config XDG_DATA_HOME=$WORK/home/.local/share
-export XDG_STATE_HOME=$WORK/home/.local/state XDG_CACHE_HOME=$WORK/home/.cache
-export OPENCODE_PASSWORD=courier-e2e
+# shellcheck source=e2e/lib.sh
+source "$ROOT/e2e/lib.sh"
 
 cleanup() {
   stop_server
@@ -37,7 +33,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-api() { curl -sf -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/$1"; }
 prompt() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json "$1" </dev/null); }
 # Like prompt, but a new turn in the existing session $1.
 prompt_in() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --session "$1" "$2" </dev/null); }
@@ -45,19 +40,6 @@ now_ms() { node -e 'console.log(Date.now())'; }
 failures=0
 check() {
   if [ "$2" = true ]; then echo "  PASS $1"; else echo "  FAIL $1"; failures=$((failures + 1)); fi
-}
-start_server() {
-  (cd "$WORK/project" && exec "$OPENCODE" serve --hostname 127.0.0.1 --port "$SERVER_PORT" --print-logs >>"$WORK/server.log" 2>&1 </dev/null) &
-  SERVER_PID=$!
-  for _ in $(seq 1 30); do api health >/dev/null 2>&1 && return; sleep 1; done
-  echo "OpenCode server did not start; see $WORK/server.log"
-  exit 1
-}
-stop_server() {
-  [ -n "$SERVER_PID" ] || return 0
-  kill "$SERVER_PID" 2>/dev/null || true
-  wait "$SERVER_PID" 2>/dev/null || true
-  SERVER_PID=
 }
 # The time a session's assistant message containing $2 was created, waiting up to $3 (default 30) s.
 reply_time() {
@@ -73,8 +55,7 @@ reply_time() {
 mkdir -p "$WORK/project" "$HOME"
 WEBHOOK_SECRET=courier-e2e-webhook-secret
 printf '%s\n' "$WEBHOOK_SECRET" >"$WORK/webhook-secret"
-echo "building plugin"
-(cd "$ROOT" && npm run build >"$WORK/build.log" 2>&1) || { cat "$WORK/build.log"; exit 1; }
+build_plugin
 
 cat >"$WORK/project/opencode.json" <<EOF
 {
@@ -91,10 +72,7 @@ cat >"$WORK/project/opencode.json" <<EOF
   "permissions": [{ "action": "*", "resource": "*", "effect": "allow" }]
 }
 EOF
-# Committed, because an isolated child runs in a worktree made from HEAD.
-git -C "$WORK/project" init -q
-git -C "$WORK/project" add opencode.json
-git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -q -m "opencode config"
+commit_config
 
 MOCK_PORT=$MOCK_PORT MOCK_CHILD_DELAY_MS=$CHILD_DELAY_MS MOCK_LOG=$WORK/model.log \
   node "$ROOT/e2e/mock-model.mjs" >"$WORK/model.out" 2>&1 </dev/null &
@@ -127,8 +105,8 @@ check "names the error for an unknown session" "$(jq -r 'select(.type == "tool_u
 
 tool_state() { jq -c --arg tool "$1" 'select(.type == "tool_use" and .part.tool == $tool) | .part.state'; }
 
-echo "courier_later wakes the idle parent"
-out=$(prompt "COURIER-LATER 0.05")
+echo "courier_later wakes the idle parent, with the delay sent as a string as some models do"
+out=$(prompt "COURIER-LATER-STRING 0.05")
 turn_ended=$(now_ms)
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 check "courier_later completed" "$(tool_state courier_later <<<"$out" | jq -r '.status == "completed"')"

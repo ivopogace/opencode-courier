@@ -94,10 +94,7 @@ async function setUp() {
         entries: [...store].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
       }),
     } as unknown as QuestionPorts["storage"],
-    session: {
-      synthetic: async (input: any) => (told.push(input), { id: `msg_${told.length}` }),
-      get: async () => ({ location: { directory: "/repo" } }),
-    } as unknown as QuestionPorts["session"],
+    session: { synthetic: async (input: any) => (told.push(input), { id: `msg_${told.length}` }) } as unknown as QuestionPorts["session"],
     directory: "/repo",
     now: () => 1_000_000,
     newID: () => `question_${++ids}`,
@@ -107,6 +104,7 @@ async function setUp() {
   const tool = questionTool()
   const wrapped: { execute: any } = { execute: tool.execute }
   const host = {
+    location: { directory: "/repo" },
     tool: {
       transform: (callback: (editor: any) => void) =>
         Effect.sync(() => {
@@ -528,7 +526,6 @@ describe("the question tool of a spawned session", () => {
     const { ports, store, told, tool, ask } = await setUp()
     timing.dismissalGraceMs = 100
     locationClosing("/repo")
-    locationClosing()
     const leave = joinRelay(ports)
     const child = ask("ses_child")
     await settle()

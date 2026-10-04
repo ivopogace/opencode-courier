@@ -48,7 +48,7 @@ const textOf = (message) =>
 const contentText = (state) =>
   (state.content ?? []).flatMap((item) => (typeof item?.text === "string" ? [item.text] : [])).join("")
 // A step whose model request failed, as on a rate limit.
-const failed = (message) => message.error !== undefined || message.finish === "error"
+const failed = (message) => message.error !== undefined || message.finish === "error" || message.outcome === "failed"
 // A step that ended its turn rather than handing tool results back to the model, or that failed.
 // Since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
 const ended = (message) =>

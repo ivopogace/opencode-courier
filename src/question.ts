@@ -61,7 +61,7 @@ type Stored = Asked & { readonly answered?: true }
  * which is answered by message. `link` is the top session's question call passing its answer on.
  */
 interface Question extends Asked {
-  /** The directory of the asking session's location, whose shutdown withdraws its form. */
+  /** The directory of the location the call runs in, whose shutdown withdraws its form. */
   directory?: string
   /** Hands the waiting call the top session's outcome; true once the call has ended with it. */
   call?: (outcome: Outcome) => Promise<boolean>
@@ -166,13 +166,6 @@ function closingSoon(loaded: () => boolean, directory: string | undefined, ms: n
   })
 }
 
-/** The directory of a session's location, or undefined when it cannot be read. */
-const directoryOf = (ports: QuestionPorts, sessionID: string) =>
-  ports.session.get({ sessionID }).then(
-    (session) => session.location.directory as string,
-    () => undefined,
-  )
-
 /** The promise's value, or undefined once `ms` have passed or it failed. */
 function within<T>(promise: Promise<T> | undefined, ms: number): Promise<T | undefined> {
   if (!promise) return Promise.resolve(undefined)
@@ -188,7 +181,7 @@ function within<T>(promise: Promise<T> | undefined, ms: number): Promise<T | und
 
 export interface QuestionPorts {
   readonly storage: RosterStorage
-  readonly session: Pick<Context["session"], "synthetic" | "get">
+  readonly session: Pick<Context["session"], "synthetic">
   /** The directory of the instance's location. */
   readonly directory: string
   readonly now: () => number
@@ -476,13 +469,12 @@ export async function noticeCutOff(ports: QuestionPorts) {
 
 /**
  * A plugin instance whose ports the relay may use, until the returned function is called. A
- * location loading again forgets the shutdown recorded for it, and the one recorded for every
- * location, so a dismissal there is not mistaken for that shutdown.
+ * location loading again forgets the shutdown recorded for it, so a dismissal there is not
+ * mistaken for that shutdown; one recorded for every location ages out with the grace.
  */
 export function joinRelay(ports: QuestionPorts) {
   shared.loaded.add(ports)
   shared.shutdowns.delete(ports.directory)
-  shared.shutdowns.delete(ANYWHERE)
   return () => {
     shared.loaded.delete(ports)
     for (const wake of shared.closingWaiters) wake()
@@ -575,6 +567,9 @@ async function settle(
   loaded: () => boolean,
 ) {
   const unloaded = !loaded()
+  // A dismissal is held from now, alongside the wait below, so the grace is not spent waiting.
+  const dismissed = Exit.isFailure(exit) && isDismissal(exit.cause)
+  const held = dismissed && !unloaded ? closingSoon(loaded, question.directory, timing.dismissalGraceMs) : undefined
   // Telling the top session first, so what follows does not overtake the notice or come before it
   // is stored; for a while only, so a notice that never returns does not hold everything else up.
   // `told` is false when the top session was not told, or not yet.
@@ -598,8 +593,7 @@ async function settle(
   // on that way. A closing location is not told now: the next load tells it, in this process or
   // after a restart, or an instance still loaded does, a little later, when the process is still
   // running then.
-  const dismissed = Exit.isFailure(exit) && isDismissal(exit.cause)
-  const closing = unloaded || (dismissed && (await closingSoon(loaded, question.directory, timing.dismissalGraceMs)))
+  const closing = unloaded || (held !== undefined && (await held))
   if (Exit.isFailure(exit) && (closing || (!dismissed && Exit.hasInterrupts(exit)))) {
     if (closing) tellLater(question)
     else if (!question.link) await tellCutOff(ports, question, "stopped")
@@ -631,7 +625,7 @@ async function settle(
  * the top is told, and whichever answer comes first ends the call, the other side's question being
  * withdrawn. Other sessions' calls run unchanged.
  */
-function asking(ports: () => QuestionPorts | undefined, original: Execute): Execute {
+function asking(ports: () => QuestionPorts | undefined, directory: string, original: Execute): Execute {
   return (input, context) =>
     Effect.gen(function* () {
       const current = ports()
@@ -651,7 +645,7 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
         ...(chain.length > 1 ? { startedBy: chain[0]!.parentID } : {}),
         questions: promptsOf(input),
         askedAt: current.now(),
-        directory: chain[0]!.directory,
+        directory,
         call: (outcome) => {
           if (handed) return accepted.then(() => false)
           handed = true
@@ -734,7 +728,7 @@ function linkFor(sessionID: string, questions: ReadonlyArray<Prompt>) {
  * The question call of a session that a waiting question was relayed to, asking the person the
  * same: what they choose is passed on, and the call is withdrawn if the question is settled first.
  */
-function linking(ports: () => QuestionPorts | undefined, ask: Execute): Execute {
+function linking(ports: () => QuestionPorts | undefined, directory: string, ask: Execute): Execute {
   return (input, context) =>
     Effect.gen(function* () {
       const current = ports()
@@ -773,7 +767,7 @@ function linking(ports: () => QuestionPorts | undefined, ask: Execute): Execute 
             void (async () => {
               // Dismissed by the person, unless the location is closing (see settle): so is the question they were asked for.
               if (isDismissal(exit.cause)) {
-                if (await closingSoon(() => ports() === current, await directoryOf(current, context.sessionID), timing.dismissalGraceMs)) return
+                if (await closingSoon(() => ports() === current, directory, timing.dismissalGraceMs)) return
                 await deliver(current, linked, { dismissed: true })
               }
               // Stopped while the asking call was cut off as well: nobody has been told yet.
@@ -825,10 +819,12 @@ function linking(ports: () => QuestionPorts | undefined, ask: Execute): Execute 
 }
 
 /** Wraps OpenCode's question tool for the relay. A tool by that id that is missing is left alone. */
-export function relayQuestions(host: Pick<EffectPlugin.Context, "tool">, ports: () => QuestionPorts | undefined) {
+export function relayQuestions(host: Pick<EffectPlugin.Context, "tool" | "location">, ports: () => QuestionPorts | undefined) {
+  // The wrapped tool runs the calls of the host's location: its shutdown is what withdraws their forms.
+  const { directory } = host.location
   return host.tool.transform((editor) => {
     editor.update(QUESTION_TOOL, (tool) => {
-      tool.execute = linking(ports, asking(ports, tool.execute))
+      tool.execute = linking(ports, directory, asking(ports, directory, tool.execute))
     })
   })
 }

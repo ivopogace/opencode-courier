@@ -49,6 +49,8 @@ const ended = (message) =>
   message?.type === "idle" ||
   (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
 const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
+// The last message that is not the idle marker.
+const lastStep = (list) => list.findLast((message) => message.type !== "idle") ?? {}
 const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
@@ -128,7 +130,7 @@ if (asked && !answeredItself) {
     console.log(`  the person answers the parent's form with ${JSON.stringify(answer)}`)
     await api(`session/${parentID}/form/${asked.form.id}/reply`, { method: "POST", body: JSON.stringify({ answer }) })
   } else {
-    how = `asked in its reply: ${short(textOf(asked.list.at(-1)).trim(), 300)}`
+    how = `asked in its reply: ${short(textOf(lastStep(asked.list)).trim(), 300)}`
     console.log(`  the person replies "${ANSWER}"`)
     await api(`session/${parentID}/prompt`, { method: "POST", body: JSON.stringify({ text: ANSWER }) })
   }
@@ -181,7 +183,7 @@ const checks = [
   [
     "the parent asked with the child's options",
     (Boolean(asked?.form) && (route !== "question tool" || (childForm !== undefined && labels(asked.form) === labels(childForm)))) ||
-      (Boolean(asked) && !asked.form && ["Hello", "Hi", "Hey"].every((option) => textOf(asked.list.at(-1)).includes(option))),
+      (Boolean(asked) && !asked.form && ["Hello", "Hi", "Hey"].every((option) => textOf(lastStep(asked.list)).includes(option))),
   ],
   ["the parent passed on the person's answer", passedOn.length > 0],
   ["the child got the answer and reported it", Boolean(report)],

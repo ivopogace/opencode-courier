@@ -120,7 +120,7 @@ if (told && !answeredItself) {
     console.log(`  the person answers the form with ${JSON.stringify(answer)}`)
     await api(`session/${parentID}/form/${told.form.id}/reply`, { method: "POST", body: JSON.stringify({ answer }) })
   } else {
-    how = `asked in its reply: ${short(textOf(told.list.at(-1)).trim(), 300)}`
+    how = `asked in its reply: ${short(textOf(last).trim(), 300)}`
     console.log(`  the person replies "${ANSWER}"`)
     await api(`session/${parentID}/prompt`, { method: "POST", body: JSON.stringify({ text: ANSWER }) })
   }

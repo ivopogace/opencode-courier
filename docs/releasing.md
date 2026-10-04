@@ -132,6 +132,7 @@ than `latest`; that only matters to someone installing `opencode-courier@next`, 
 CI also checks the package as published: `publint` for `package.json` and `exports`, and
 `@arethetypeswrong/cli` for the type declarations.
 
-The plugin API is still beta and pinned to an exact version in `package.json`; bump it
-deliberately, re-run both test suites, and add the new plugin version and OpenCode version as a row
-to the README's Supported OpenCode version table.
+The plugin API is pinned to an exact version in `package.json`, and CI installs the OpenCode CLI
+at that version; bump it deliberately, re-run both test suites, add the new plugin version and
+OpenCode version as a row to the README's Supported OpenCode version table, and record what changed
+in `docs/plugin-api-notes.md`.

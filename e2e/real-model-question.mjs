@@ -44,9 +44,13 @@ const forms = async (sessionID) => (await api(`session/${sessionID}/form`)).data
 const toolsOf = (list) => list.flatMap((message) => (message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : []))
 const textOf = (message) =>
   message.type === "assistant" ? message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") : (message.text ?? "")
+// Since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
 const ended = (message) =>
-  message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined)
-const settled = (list) => ended(list.at(-1)) && list.at(-1).time.completed !== undefined
+  message?.type === "idle" ||
+  (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
+const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
+// The last message that is not the idle marker.
+const lastStep = (list) => list.findLast((message) => message.type !== "idle") ?? {}
 const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
@@ -126,7 +130,7 @@ if (asked && !answeredItself) {
     console.log(`  the person answers the parent's form with ${JSON.stringify(answer)}`)
     await api(`session/${parentID}/form/${asked.form.id}/reply`, { method: "POST", body: JSON.stringify({ answer }) })
   } else {
-    how = `asked in its reply: ${short(textOf(asked.list.at(-1)).trim(), 300)}`
+    how = `asked in its reply: ${short(textOf(lastStep(asked.list)).trim(), 300)}`
     console.log(`  the person replies "${ANSWER}"`)
     await api(`session/${parentID}/prompt`, { method: "POST", body: JSON.stringify({ text: ANSWER }) })
   }
@@ -155,7 +159,7 @@ for (const [name, list] of [["parent", parent], [`child ${child}`, childMessages
       if (part.type === "text" && part.text.trim()) lines.push(`  says: ${short(part.text.trim(), 300)}`)
     }
     if (message.error) lines.push(`  error: ${short(message.error)}`)
-    if (ended(message)) lines.push(`  -- turn ended (${message.finish})`)
+    if (ended(message)) lines.push(`  -- turn ended (${message.finish ?? message.outcome})`)
   }
 }
 const timeline = lines.join("\n")
@@ -179,7 +183,7 @@ const checks = [
   [
     "the parent asked with the child's options",
     (Boolean(asked?.form) && (route !== "question tool" || (childForm !== undefined && labels(asked.form) === labels(childForm)))) ||
-      (Boolean(asked) && !asked.form && ["Hello", "Hi", "Hey"].every((option) => textOf(asked.list.at(-1)).includes(option))),
+      (Boolean(asked) && !asked.form && ["Hello", "Hi", "Hey"].every((option) => textOf(lastStep(asked.list)).includes(option))),
   ],
   ["the parent passed on the person's answer", passedOn.length > 0],
   ["the child got the answer and reported it", Boolean(report)],
@@ -193,11 +197,15 @@ if (route === "question tool") {
 }
 notes.push(`passed on with: ${[...new Set(passedOn.map((part) => (part.name === "question" ? "the linked question" : part.name)))].join(", ") || "nothing"}`)
 if (personAt !== Infinity && report) notes.push(`from the person's answer to the child's report: ${Math.round((report.time.created - personAt) / 1000)} s`)
-const providerErrors = [...parent, ...childMessages].filter((message) => message.type === "assistant" && message.error)
+// Failed model requests, or a turn whose idle marker (2.0.22) says it failed: a run that fails its
+// checks with any is inconclusive rather than failed. The two are counted apart.
+const providerErrors = [...parent, ...childMessages].filter((message) => message.type === "assistant" && message.error !== undefined)
+const failedTurns = [...parent, ...childMessages].filter((message) => message.type === "idle" && message.outcome === "failed").length
 if (providerErrors.length) notes.push(`${providerErrors.length} model request(s) failed: ${[...new Set(providerErrors.map((message) => message.error.type ?? "error"))].join(", ")}`)
+if (failedTurns) notes.push(`${failedTurns} turn(s) ended as failed`)
 
 const passed = checks.every(([, ok]) => ok)
-const verdict = passed ? "pass" : providerErrors.length ? "inconclusive" : "fail"
+const verdict = passed ? "pass" : providerErrors.length || failedTurns ? "inconclusive" : "fail"
 console.log("")
 for (const [name, ok] of checks) console.log(`  ${ok ? "PASS" : "FAIL"} ${name}`)
 for (const note of notes) console.log(`  note: ${note}`)

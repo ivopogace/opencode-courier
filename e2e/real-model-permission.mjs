@@ -43,9 +43,11 @@ async function messages(sessionID) {
 const toolsOf = (list) => list.flatMap((message) => (message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : []))
 const textOf = (message) =>
   message.type === "assistant" ? message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") : (message.text ?? "")
+// Since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
 const ended = (message) =>
-  message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined)
-const settled = (list) => ended(list.at(-1)) && list.at(-1).time.completed !== undefined
+  message?.type === "idle" ||
+  (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
+const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
 const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
@@ -103,7 +105,7 @@ const told = await until("the parent to be told of the request, and to ask", asy
 
 const before = told ? told.list.slice(told.notice + 1) : []
 const answeredItself = toolsOf(before).some((part) => part.name === "courier_answer")
-const last = told?.list.at(-1)
+const last = told?.list.findLast((message) => message.type !== "idle")
 const asked =
   Boolean(told) && !answeredItself && (told.form !== undefined || (ended(last) && !last.error && textOf(last).trim() !== ""))
 let how = "did not ask"
@@ -118,7 +120,7 @@ if (told && !answeredItself) {
     console.log(`  the person answers the form with ${JSON.stringify(answer)}`)
     await api(`session/${parentID}/form/${told.form.id}/reply`, { method: "POST", body: JSON.stringify({ answer }) })
   } else {
-    how = `asked in its reply: ${short(textOf(told.list.at(-1)).trim(), 300)}`
+    how = `asked in its reply: ${short(textOf(last).trim(), 300)}`
     console.log(`  the person replies "${ANSWER}"`)
     await api(`session/${parentID}/prompt`, { method: "POST", body: JSON.stringify({ text: ANSWER }) })
   }
@@ -146,7 +148,7 @@ for (const message of parent) {
     if (part.type === "text" && part.text.trim()) lines.push(`  says: ${short(part.text.trim(), 300)}`)
   }
   if (message.error) lines.push(`  error: ${short(message.error)}`)
-  if (ended(message)) lines.push(`  -- turn ended (${message.finish})`)
+  if (ended(message)) lines.push(`  -- turn ended (${message.finish ?? message.outcome})`)
 }
 lines.push(`child ${child}:`)
 for (const part of toolsOf(childMessages)) lines.push(`  ${part.name}(${short(part.state.input, 120)}) -> ${part.state.status}`)
@@ -176,11 +178,15 @@ const checks = [
 ]
 const notes = [`the parent ${how}`]
 if (answers.length > passedOn.length) notes.push(`courier_answer was called ${answers.length} time(s), ${passedOn.length} of them as checked`)
-const providerErrors = [...parent, ...childMessages].filter((message) => message.type === "assistant" && message.error)
+// Failed model requests, or a turn whose idle marker (2.0.22) says it failed: a run that fails its
+// checks with any is inconclusive rather than failed. The two are counted apart.
+const providerErrors = [...parent, ...childMessages].filter((message) => message.type === "assistant" && message.error !== undefined)
+const failedTurns = [...parent, ...childMessages].filter((message) => message.type === "idle" && message.outcome === "failed").length
 if (providerErrors.length) notes.push(`${providerErrors.length} model request(s) failed: ${[...new Set(providerErrors.map((message) => message.error.type ?? "error"))].join(", ")}`)
+if (failedTurns) notes.push(`${failedTurns} turn(s) ended as failed`)
 
 const passed = checks.every(([, ok]) => ok)
-const verdict = passed ? "pass" : providerErrors.length ? "inconclusive" : "fail"
+const verdict = passed ? "pass" : providerErrors.length || failedTurns ? "inconclusive" : "fail"
 console.log("")
 for (const [name, ok] of checks) console.log(`  ${ok ? "PASS" : "FAIL"} ${name}`)
 for (const note of notes) console.log(`  note: ${note}`)

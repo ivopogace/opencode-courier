@@ -36,7 +36,7 @@ async function setUp(stored: Record<string, unknown> = {}, options?: Record<stri
     options,
     event: { subscribe: events.subscribe },
     agent: { get: record("agent.get", { data: { id: "build" } }) },
-    location: { directory: "/repo" },
+    location: { directory: "/repo", project: { id: "proj_1" } },
     session: {
       create: record("session.create", { id: "ses_child", location: { directory: "/repo" } }),
       prompt: record("session.prompt", { id: "msg_1" }),
@@ -246,7 +246,7 @@ test("a spawned child's permission request reaches its parent, and courier_answe
   const answered = await tools.get("courier_answer").execute({ sessionID: "ses_child", requestID: "per_1", reply: "once" }, { sessionID: "ses_parent" })
   expect(answered.metadata).toEqual({ sessionID: "ses_child", requestID: "per_1", reply: "once", answered: true })
   expect(answered.content).toContain("Passed on once for request per_1 of ses_child")
-  expect(calls.find((call) => call.method === "permission.reply")!.input).toEqual({ sessionID: "ses_child", requestID: "per_1", reply: "once" })
+  expect(calls.find((call) => call.method === "permission.reply")!.input).toEqual({ sessionID: "ses_child", requestID: "per_1", decision: "once" })
 
   // The reply event that answer causes is not reported back as a stale notice.
   emit({ id: `evt_${Math.random()}`, type: "permission.replied", data: { sessionID: "ses_child", requestID: "per_1", reply: "once" } })

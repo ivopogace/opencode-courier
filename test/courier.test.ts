@@ -16,6 +16,7 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
   }
   const ports = {
     directory: "/repo",
+    projectID: "proj_1",
     now: () => 1_000,
     storage: {
       get: async (key: string) => store.get(key),
@@ -109,7 +110,7 @@ describe("spawn", () => {
     const child = await spawn(ports, "ses_parent", { task: "t", isolate: true })
     const calls = afterLookups(all)
 
-    expect(calls[0]).toEqual({ method: "worktree.create", input: { location: { directory: "/repo" } } })
+    expect(calls[0]).toEqual({ method: "worktree.create", input: { projectID: "proj_1" } })
     expect(calls[1]!.input).toMatchObject({ location: { directory: "/repo/.worktrees/ses" } })
     expect(child.directory).toBe("/repo/.worktrees/ses")
   })
@@ -124,6 +125,7 @@ describe("spawn", () => {
       directory: "/repo/.worktrees/ses",
       isolated: true,
       source: "/repo",
+      project: "proj_1",
       base: "abc123",
     })
   })
@@ -138,7 +140,7 @@ describe("spawn", () => {
     const calls = afterLookups(all)
 
     expect(calls.map((call) => call.method)).toEqual(["worktree.create", "worktree.remove"])
-    expect(calls[1]!.input).toEqual({ location: { directory: "/repo" }, directory: "/repo/.worktrees/ses", force: false })
+    expect(calls[1]!.input).toEqual({ projectID: "proj_1", directory: "/repo/.worktrees/ses", force: false })
     expect(store.size).toBe(0)
   })
 

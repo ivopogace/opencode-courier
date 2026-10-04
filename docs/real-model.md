@@ -9,8 +9,8 @@ each report wakes the idle parent. It is not part of CI.
 
 ```bash
 bun install
-npm install --prefix <scratch>/oc2 @opencode-ai/cli@0.0.0-beta-19271
-OPENCODE_BIN=<scratch>/oc2/node_modules/.bin/opencode2 e2e/real-model.sh
+npm install --prefix <scratch>/oc @opencode/cli@2.0.22
+OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
 ```
 
 It sets up the same throwaway home directory, project and OpenCode server as `run.sh`, with the
@@ -77,7 +77,9 @@ result: pass
 `opencode2 v0.0.0-beta-19271` records no marker when a session goes idle, so turns are read from
 the transcript: a delivered message opens a new turn when the session's last step had ended its
 turn (a finish reason other than `tool-calls`, or a failed request) and completed before the
-message arrived; otherwise it was steered into the running turn. Polling means any
+message arrived; otherwise it was steered into the running turn. Since `opencode v2.0.22` the
+transcript records an `idle` message when a turn ends (with its `outcome`), which the checkers
+take as the end of a turn too. Polling means any
 `courier_status`, `courier_children` or `sleep` in the first turn, right after spawning, or more
 than one in a later turn; a single look after being woken is what `courier_status` is for, and is
 only noted. A report is a `courier_send` from a child; a `courier_later` check-in does not count.
@@ -302,6 +304,28 @@ greetings, instead of answering by itself. On 2026-10-04, with `opencode2 v0.0.0
   the question relay. Fan-out, `longcat-2.5-preview-free`, on the final code, with the brief's new
   line and the `courier_spawn` description that mentions questions: all seven checks passed (two
   spawns, end of turn, each report woke the idle parent; 10 requests).
+
+## On OpenCode 2.0.22
+
+On 2026-10-04, after the move from the beta to `@opencode/plugin@2.0.22` (#41), with
+`opencode v2.0.22` and `longcat-2.5-preview-free`, nothing in the tool descriptions or the child
+brief changed, and:
+
+- Fan-out passed every check in both runs (10 requests each; two spawns, end of turn, each report
+  woke the idle parent). In the first, the checkers read the parent's first turn as never ended and
+  the children as still running, because 2.0.22 records an `idle` message after each turn, which
+  they did not know; replayed with `--saved` after the fix, all seven checks passed, and the second
+  run passed outright.
+- The permission relay passed all six checks: the parent asked with a form offering `once`,
+  `always` and `reject`, and passed `once` on with `courier_answer`.
+- The question relay passed all six checks, linked (the parent's form held the child's three
+  greetings), 7 seconds from the person's answer to the child's report.
+- The checkers changed once more after these runs, in the review of #41: the question and
+  permission checkers read the parent's reply from its last step rather than from the `idle`
+  marker, and a turn whose marker says it failed counts as a failed request, which makes a run
+  inconclusive rather than failed. Only the fan-out checker replays a saved run (`--saved`); both
+  saved fan-out runs pass all seven checks with it. The permission and question runs above asked
+  by form, a path those lines do not touch, and were not re-run.
 
 ## Cost
 

@@ -47,33 +47,41 @@ const textOf = (message) =>
     : (message.text ?? "")
 const contentText = (state) =>
   (state.content ?? []).flatMap((item) => (typeof item?.text === "string" ? [item.text] : [])).join("")
-// A step whose model request failed, as on a rate limit.
-const failed = (message) => message.error !== undefined || message.finish === "error"
+// Whether the message at the end of a turn says it failed: a step whose model request failed, as
+// on a rate limit, or the idle marker 2.0.22 records after each turn, with its outcome. Feeds the
+// per-turn checks.
+const failed = (message) => message.error !== undefined || message.finish === "error" || message.outcome === "failed"
+// The two kinds of failure that make a failing run inconclusive, counted apart in the note: a step
+// whose model request failed, and a turn whose idle marker says it failed (for whatever reason).
+const failedRequest = (message) => message.type === "assistant" && message.error !== undefined
+const failedTurn = (message) => message.type === "idle" && message.outcome === "failed"
 // A step that ended its turn rather than handing tool results back to the model, or that failed.
+// Since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
 const ended = (message) =>
-  message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined)
+  message?.type === "idle" ||
+  (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
 // Whether a session has finished its turn and nothing has arrived since.
-const settled = (list) => ended(list.at(-1)) && list.at(-1).time.completed !== undefined
+const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
 const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
 }
-// Splits a transcript into turns. This OpenCode version records no idle marker, so a prompt or a
-// delivered message opens a turn when the session's last step had ended its turn, and completed,
-// before it arrived; otherwise it was steered into the running turn.
+// Splits a transcript into turns. A prompt or a delivered message opens a turn when the session's
+// last step had ended its turn, and completed, before it arrived (or an idle marker had been
+// recorded, since OpenCode 2.0.22); otherwise it was steered into the running turn.
 function turnsOf(list) {
   const turns = []
   let busy = false
   let last
   for (const message of list) {
     const incoming = message.type === "user" || message.type === "synthetic"
-    if (incoming && !busy && (!last || (last.time.completed ?? Infinity) <= message.time.created)) {
+    if (incoming && !busy && (!last || last.type === "idle" || (last.time.completed ?? Infinity) <= message.time.created)) {
       turns.push([])
       busy = true
     }
     if (!turns.length) turns.push([])
     turns.at(-1).push(message)
-    if (message.type === "assistant") {
+    if (message.type === "assistant" || message.type === "idle") {
       busy = !ended(message)
       last = message
     }
@@ -149,14 +157,14 @@ for (const [number, turn] of turns.entries()) {
     }
     if (message.error) lines.push(`  error: ${short(message.error)}`)
   }
-  if (ended(turn.at(-1))) lines.push(`  -- turn ended (${turn.at(-1).finish})`)
+  if (ended(turn.at(-1))) lines.push(`  -- turn ended (${turn.at(-1).finish ?? turn.at(-1).outcome})`)
 }
 for (const [id, list] of children) {
   lines.push(`child ${id}:`)
   for (const part of toolsOf(list)) lines.push(`  ${part.name}(${short(part.state.input, 120)}) -> ${part.state.status}`)
   const last = list.findLast((message) => message.type === "assistant" && textOf(message).trim())
   if (last) lines.push(`  says: ${short(textOf(last).trim())}`)
-  lines.push(settled(list) ? `  -- turn ended (${list.at(-1).finish})` : "  -- still running")
+  lines.push(settled(list) ? `  -- turn ended (${list.at(-1).finish ?? list.at(-1).outcome})` : "  -- still running")
 }
 const timeline = lines.join("\n")
 writeFileSync(join(work, "timeline.txt"), `${timeline}\n`)
@@ -229,12 +237,13 @@ if (laterLooks) notes.push(`the parent looked at its children ${laterLooks} time
 for (const id of spawned)
   if (sends.get(id).length > 1) notes.push(`child ${id} called courier_send ${sends.get(id).length} times`)
 
-// Failed model requests (rate limits, mostly, on free tiers): a run with any is not the plugin's verdict.
-const providerErrors = [parent, ...children.values()]
-  .flat()
-  .filter((message) => message.type === "assistant" && message.error)
-  .map((message) => message.error.type ?? "error")
+// Failed model requests (rate limits, mostly, on free tiers), or a turn whose idle marker says it
+// failed: a run that fails its checks with any is not the plugin's verdict.
+const transcript = [parent, ...children.values()].flat()
+const providerErrors = transcript.filter(failedRequest).map((message) => message.error.type ?? "error")
+const failedTurns = transcript.filter(failedTurn).length
 if (providerErrors.length) notes.push(`${providerErrors.length} model request(s) failed: ${[...new Set(providerErrors)].join(", ")}`)
+if (failedTurns) notes.push(`${failedTurns} turn(s) ended as failed`)
 
 const usage = { requests: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }
 for (const message of [parent, ...children.values()].flat()) {
@@ -249,7 +258,7 @@ for (const message of [parent, ...children.values()].flat()) {
 }
 
 const passed = checks.every(([, ok]) => ok)
-const verdict = passed ? "pass" : providerErrors.length ? "inconclusive" : "fail"
+const verdict = passed ? "pass" : providerErrors.length || failedTurns ? "inconclusive" : "fail"
 console.log("")
 for (const [name, ok] of checks) console.log(`  ${ok ? "PASS" : "FAIL"} ${name}`)
 for (const note of notes) console.log(`  note: ${note}`)

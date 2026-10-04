@@ -1,6 +1,6 @@
-import type { Plugin } from "@opencode-ai/plugin"
+import type { Plugin } from "@opencode/plugin"
 import { envelope } from "./courier.js"
-import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed } from "./question.js"
+import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing } from "./question.js"
 import { permissionNotice, settledNotice, type PermissionAsked, type PermissionReplied, type Waiting } from "./relay.js"
 import { allEntries, entriesOf, lineage, type RosterEntry, type RosterStorage } from "./roster.js"
 
@@ -153,20 +153,30 @@ const pause = (ms: number, signal: AbortSignal) =>
     signal.addEventListener("abort", done)
   })
 
-/** Handles one event of OpenCode's stream; those that cannot concern a spawned child are ignored. */
+/**
+ * Handles one event of OpenCode's stream; those that cannot concern a spawned child, or a question
+ * relayed for one, are ignored.
+ */
 async function handle(ports: WatchPorts, state: WatchState, event: { readonly type: string }) {
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "permission.asked") return reportAsked(ports, state, event as unknown as PermissionAsked)
   if (event.type === "permission.replied") return reportReplied(ports, state, event as unknown as PermissionReplied)
   // Not claimed: every instance may resolve the same waiting call, which is harmless.
   if (event.type === "form.created") formShown(event as unknown as Parameters<typeof formShown>[0])
+  // Not claimed either: a location closing withdraws its forms, which must not pass for dismissals.
+  // The event's location is optional; without one, the shutdown counts for every location.
+  if (event.type === "location.shutdown") {
+    const directory = (event as { location?: { directory?: unknown } }).location?.directory
+    locationClosing(typeof directory === "string" ? directory : undefined)
+  }
   return []
 }
 
 /**
  * Follows OpenCode's events until `signal` aborts, telling parents when a spawned child's turn
  * fails, when it waits for a permission and when that request is answered without them, and
- * noting the question forms shown, which the question relay waits for.
+ * noting for the question relay the question forms shown, which it waits for, and the locations
+ * shutting down, whose withdrawn forms must not pass for dismissals.
  */
 export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
   while (!signal.aborted) {

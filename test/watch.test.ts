@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { envelope } from "../src/courier.js"
 import { permissionNotice, settledNotice, type PermissionAsked, type PermissionReplied } from "../src/relay.js"
+import { forgetQuestions, shutdownReportedAt } from "../src/question.js"
 import { record } from "../src/roster.js"
 import {
   claim,
@@ -269,6 +270,31 @@ describe("watchChildren", () => {
       "Session ses_child asks for permission",
       "Session ses_child no longer asks for permission",
     ])
+  })
+
+  test("notes a location's shutdown for the question relay, and one reported without a location for every location", async () => {
+    const watching = new AbortController()
+    const { ports } = fakePorts([
+      [{ id: "evt_s", type: "location.shutdown", location: { directory: "/repo", workspaceID: "ws" } }, failed()],
+    ])
+    await record(ports.storage, child())
+    ;(ports.session as any).synthetic = async () => (watching.abort(), { id: "msg_1" })
+
+    await watchChildren(ports, fresh(), watching.signal, 1)
+
+    expect(shutdownReportedAt("/repo")).toBeDefined()
+    expect(shutdownReportedAt("/elsewhere")).toBeUndefined()
+    forgetQuestions()
+
+    const again = new AbortController()
+    const second = fakePorts([[{ id: "evt_t", type: "location.shutdown" }, failed()]])
+    await record(second.ports.storage, child())
+    ;(second.ports.session as any).synthetic = async () => (again.abort(), { id: "msg_1" })
+
+    await watchChildren(second.ports, fresh(), again.signal, 1)
+
+    expect(shutdownReportedAt("/elsewhere")).toBeDefined()
+    forgetQuestions()
   })
 
   test("subscribes again after the stream ends or breaks, and logs the break", async () => {

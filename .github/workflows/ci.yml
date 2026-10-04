@@ -51,9 +51,9 @@ jobs:
       - run: bun install --frozen-lockfile
       # The CLI follows the plugin API version the package is built against, so the two never drift.
       - name: Install OpenCode V2
-        run: npm install -g "@opencode-ai/cli@$(node -p "require('./package.json').devDependencies['@opencode-ai/plugin']")"
+        run: npm install -g "@opencode/cli@$(node -p "require('./package.json').peerDependencies['@opencode/plugin']")"
       - name: Run the live test
-        run: OPENCODE_BIN="$(command -v opencode2)" e2e/run.sh
+        run: OPENCODE_BIN="$(command -v opencode)" e2e/run.sh
         env:
           E2E_WORK: ${{ runner.temp }}/e2e
           KEEP: "1"

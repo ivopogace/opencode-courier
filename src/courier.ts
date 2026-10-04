@@ -1,4 +1,4 @@
-import type { Plugin } from "@opencode-ai/plugin"
+import type { Plugin } from "@opencode/plugin"
 import type { Prompt } from "./question.js"
 import { current, record, type RosterStorage } from "./roster.js"
 
@@ -9,6 +9,8 @@ export interface CourierPorts {
   readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context">
   readonly agent: Pick<Context["agent"], "get">
   readonly worktree: Pick<Context["worktree"], "create" | "remove">
+  /** The project of the plugin's location; an isolated child's worktree is made in it, and removed from it. */
+  readonly projectID: string
   /** The commit a directory's checkout is on, or undefined; recorded as an isolated child's base. */
   readonly head: (directory: string) => Promise<string | undefined>
   readonly storage: RosterStorage
@@ -100,7 +102,7 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
   // A failed lookup must not keep the child from starting; it then runs on OpenCode's default.
   const model = await inheritedModel(ports, parentID, input.agent).catch(() => undefined)
   const directory = input.isolate
-    ? (await ports.worktree.create({ location: { directory: ports.directory } })).directory
+    ? (await ports.worktree.create({ projectID: ports.projectID })).directory
     : undefined
   const base = directory ? await ports.head(directory) : undefined
   const title = input.title ?? titleOf(input.task)
@@ -116,7 +118,7 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
       // No session will ever use the fresh worktree, and nothing records it, so it goes now.
       if (directory)
         await ports.worktree
-          .remove({ location: { directory: ports.directory }, directory, force: false })
+          .remove({ projectID: ports.projectID, directory, force: false })
           .catch(() => undefined)
       throw error
     })
@@ -129,7 +131,7 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
     directory: directory ?? child.location.directory,
     isolated: directory !== undefined,
     createdAt: ports.now(),
-    ...(directory ? { source: ports.directory } : {}),
+    ...(directory ? { source: ports.directory, project: ports.projectID } : {}),
     ...(base ? { base } : {}),
   }).then(
     () => undefined,

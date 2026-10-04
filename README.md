@@ -3,7 +3,7 @@
 [![CI](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml/badge.svg)](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/opencode-courier)](https://www.npmjs.com/package/opencode-courier)
 [![License: MIT](https://img.shields.io/npm/l/opencode-courier)](LICENSE)
-[![Supported OpenCode V2 version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fivopogace%2Fopencode-courier%2Fmain%2Fpackage.json&query=%24.peerDependencies%5B%27%40opencode-ai%2Fplugin%27%5D&label=opencode2&color=blue)](#supported-opencode-version)
+[![Supported OpenCode V2 version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fivopogace%2Fopencode-courier%2Fmain%2Fpackage.json&query=%24.peerDependencies%5B%27%40opencode%2Fplugin%27%5D&label=opencode&color=blue)](#supported-opencode-version)
 
 An [OpenCode](https://github.com/anomalyco/opencode) V2 plugin that lets one session start other
 sessions, message them, and be woken by them, without polling.
@@ -55,7 +55,7 @@ Zen](https://opencode.ai/zen) (Muse Spark 1.3).
 
 There is no polling anywhere. `courier_send` calls the plugin API's `session.synthetic`, which
 admits a message into the target session's inbox and, unless `resume: false` is passed, calls
-`execution.wake` on it (`packages/core/src/session/session.ts` on OpenCode's `beta` branch).
+`execution.wake` on it (`packages/core/src/session/session.ts` on OpenCode's `v2` branch).
 OpenCode's own background subagents report to their parent the same way
 (`packages/core/src/session/subagent-completion.ts`).
 
@@ -66,23 +66,25 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 
 ### Supported OpenCode version
 
-Requires OpenCode V2, command `opencode2`, which is under heavy development: its plugin API is
-beta and changes without notice. Each release of this plugin is therefore built and tested against
-exactly one OpenCode V2 version, the `@opencode-ai/plugin` version pinned in `package.json` (the
-CLI and the plugin API share a version). That is the version the end-to-end suite runs on and the
-recordings above were made with, and the only one the release is known to work with. A newer
-OpenCode may work, or may break tools silently; [docs/plugin-api-notes.md](docs/plugin-api-notes.md)
-lists what the pinned version already needed working around. A release that moves the pin adds a
+Requires OpenCode V2: the `opencode` command from `@opencode/cli` (the same binary is also installed
+as `opencode2`, the name of the beta line, so a shell that still calls that keeps working). Each
+release of this plugin is built and tested against exactly one OpenCode V2 version, the
+`@opencode/plugin` version pinned in `package.json` (the CLI and the plugin API share a version).
+That is the version the end-to-end suite runs on, and the only one the release is known to work
+with. A newer OpenCode may work, or may break tools silently;
+[docs/plugin-api-notes.md](docs/plugin-api-notes.md) lists what the pinned version already needed
+working around, and what changed the last time the pin moved. A release that moves the pin adds a
 row here.
 
-| opencode-courier | OpenCode V2 (`opencode2` and `@opencode-ai/plugin`) |
+| opencode-courier | OpenCode V2 (`opencode` and `@opencode/plugin`) |
 |---|---|
-| 0.1.6 | 0.0.0-beta-19271 |
+| 0.2.0 | 2.0.22 |
+| 0.1.6 | 0.0.0-beta-19271 (the beta line: `opencode2` from `@opencode-ai/cli`, and `@opencode-ai/plugin`) |
 
-Check yours with `opencode2 --version`, and install the matching CLI with:
+Check yours with `opencode --version`, and install the matching CLI with:
 
 ```bash
-npm install -g @opencode-ai/cli@0.0.0-beta-19271
+npm install -g @opencode/cli@2.0.22
 ```
 
 ### The plugin
@@ -90,7 +92,7 @@ npm install -g @opencode-ai/cli@0.0.0-beta-19271
 Then install the plugin:
 
 ```bash
-opencode2 plugin add opencode-courier
+opencode plugin add opencode-courier
 ```
 
 This installs the package from npm and adds `"opencode-courier"` to `plugins` in the global
@@ -115,8 +117,8 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
 
 ## Using it
 
-1. Keep the background server running so sessions can be woken while you are away (`opencode2
-   service start`; `opencode2 service status` to check).
+1. Keep the background server running so sessions can be woken while you are away (`opencode
+   service start`; `opencode service status` to check).
 2. Give the agents that run children the permissions their work needs. A child that hits an approval
    prompt has it passed to its parent, which asks you (see [A child that asks for
    permission](docs/reference.md#a-child-that-asks-for-permission)), but the child waits until you
@@ -202,7 +204,7 @@ first location to load wins, and the others log that their settings are ignored.
 
 The secret is never read from `opencode.json` itself (a `secret` key is refused), so the config can
 be committed. Make one with `openssl rand -hex 32 > ~/.config/opencode/courier-webhook-secret` and
-`chmod 600` it. A file is the safer choice with `opencode2 service start`, whose environment may not
+`chmod 600` it. A file is the safer choice with `opencode service start`, whose environment may not
 be your shell's. Without a usable secret the receiver does not start, and the server log says why.
 
 On GitHub, add a webhook to the repository (Settings → Webhooks) with content type
@@ -239,8 +241,8 @@ bun install
 bun test           # unit tests, with a fake plugin context
 npm run typecheck
 npm run build      # emits dist/
-OPENCODE_BIN=$(which opencode2) npm run test:e2e   # live test, about two minutes, no API key
-OPENCODE_BIN=$(which opencode2) e2e/real-model.sh  # smoke test with a real model, not in CI
+OPENCODE_BIN=$(which opencode) npm run test:e2e   # live test, about two minutes, no API key
+OPENCODE_BIN=$(which opencode) e2e/real-model.sh  # smoke test with a real model, not in CI
 ```
 
 `e2e/run.sh` starts a real OpenCode V2 server in a throwaway project and home directory, with this
@@ -259,8 +261,8 @@ them: [docs/real-model.md](docs/real-model.md).
 
 CI (`.github/workflows/ci.yml`) runs both suites on every push to `main` and every pull request,
 with the OpenCode CLI at the same version as the pinned plugin API. Releases start from GitHub and
-end with a maintainer's 2FA approval on npm: [docs/releasing.md](docs/releasing.md). What the beta
-plugin API does that the plugin had to work around:
+end with a maintainer's 2FA approval on npm: [docs/releasing.md](docs/releasing.md). What the plugin
+API does that the plugin had to work around, and what changed when the pin last moved:
 [docs/plugin-api-notes.md](docs/plugin-api-notes.md).
 
 ## Contributing

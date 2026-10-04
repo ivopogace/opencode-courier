@@ -43,7 +43,7 @@ async function setUp(stored: Record<string, unknown> = {}, options?: Record<stri
       synthetic: record("session.synthetic", { id: "msg_2" }),
       get: async (input: any) => {
         calls.push({ method: "session.get", input })
-        return { id: input.sessionID, time: { created: 1, updated: 2 } }
+        return { id: input.sessionID, time: { created: 1, updated: 2 }, location: { directory: "/repo" } }
       },
       context: record("session.context", []),
     },

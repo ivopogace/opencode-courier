@@ -61,6 +61,8 @@ type Stored = Asked & { readonly answered?: true }
  * which is answered by message. `link` is the top session's question call passing its answer on.
  */
 interface Question extends Asked {
+  /** The directory of the asking session's location, whose shutdown withdraws its form. */
+  directory?: string
   /** Hands the waiting call the top session's outcome; true once the call has ended with it. */
   call?: (outcome: Outcome) => Promise<boolean>
   link?: (how: Elsewhere) => void
@@ -70,7 +72,8 @@ interface Question extends Asked {
   settling?: Promise<void>
 }
 
-const storedOf = ({ call: _call, link: _link, relaying: _relaying, settling: _settling, ...asked }: Question): Asked => asked
+const storedOf = ({ directory: _directory, call: _call, link: _link, relaying: _relaying, settling: _settling, ...asked }: Question): Asked =>
+  asked
 const isPassing = (requestID: string) => shared.passing.has(requestID) || shared.answered.has(requestID)
 
 /**
@@ -90,8 +93,8 @@ interface Shared {
   /** How many instances follow OpenCode's events now, and whether any has since the process started. */
   following: number
   followed: boolean
-  /** When OpenCode last reported a location shutting down (`location.shutdown`), by the wall clock; 0 for never. */
-  shutdownAt: number
+  /** When OpenCode last reported each location shutting down (`location.shutdown`), by directory and the wall clock. */
+  readonly shutdowns: Map<string, number>
   /** Woken when a location shuts down or an instance unloads: dismissals held to see whether one follows. */
   readonly closingWaiters: Set<() => void>
 }
@@ -107,7 +110,7 @@ sharedState.answered ??= new Set()
 sharedState.loaded ??= new Set()
 sharedState.following ??= 0
 sharedState.followed ??= false
-sharedState.shutdownAt ??= 0
+sharedState.shutdowns ??= new Map()
 sharedState.closingWaiters ??= new Set()
 const shared = sharedState as Shared
 
@@ -120,20 +123,24 @@ const shared = sharedState as Shared
 export const timing = { closingGraceMs: 30_000, passingWaitMs: 30_000, relayWaitMs: 30_000, dismissalGraceMs: 2_000 }
 
 /**
- * Called for OpenCode's `location.shutdown`: a location is closing, which withdraws its open forms
- * as if the person had dismissed them (before unloading the plugin there, since OpenCode 2.0.22).
+ * Called for OpenCode's `location.shutdown`: the location at `directory` is closing, which
+ * withdraws its open forms as if the person had dismissed them (before unloading the plugin
+ * there, since OpenCode 2.0.22).
  */
-export function locationClosing() {
-  shared.shutdownAt = Date.now()
+export function locationClosing(directory: string) {
+  shared.shutdowns.set(directory, Date.now())
   for (const wake of shared.closingWaiters) wake()
 }
 
 /**
- * Whether a dismissal just seen was a location closing rather than the person: true when a location
- * shut down within `ms` before, or does so, or this instance unloads, within `ms` from now.
+ * Whether a dismissal just seen in the location at `directory` was that location closing rather
+ * than the person: true when it shut down within `ms` before, or does so, or this instance
+ * unloads, within `ms` from now. With the directory unknown, any location's shutdown counts.
  */
-function closingSoon(loaded: () => boolean, ms: number): Promise<boolean> {
-  const closing = () => !loaded() || Date.now() - shared.shutdownAt <= ms
+function closingSoon(loaded: () => boolean, directory: string | undefined, ms: number): Promise<boolean> {
+  const shutdownAt = () =>
+    directory === undefined ? Math.max(0, ...shared.shutdowns.values()) : (shared.shutdowns.get(directory) ?? 0)
+  const closing = () => !loaded() || Date.now() - shutdownAt() <= ms
   if (closing()) return Promise.resolve(true)
   return new Promise((resolve) => {
     const done = (result: boolean) => {
@@ -141,12 +148,20 @@ function closingSoon(loaded: () => boolean, ms: number): Promise<boolean> {
       shared.closingWaiters.delete(wake)
       resolve(result)
     }
-    const wake = () => done(closing())
+    // Woken by any shutdown or unload: only one that answers the question ends the wait.
+    const wake = () => void (closing() && done(true))
     const timer = setTimeout(() => done(false), ms)
     timer.unref?.()
     shared.closingWaiters.add(wake)
   })
 }
+
+/** The directory of a session's location, or undefined when it cannot be read. */
+const directoryOf = (ports: QuestionPorts, sessionID: string) =>
+  ports.session.get({ sessionID }).then(
+    (session) => session.location.directory as string,
+    () => undefined,
+  )
 
 /** The promise's value, or undefined once `ms` have passed or it failed. */
 function within<T>(promise: Promise<T> | undefined, ms: number): Promise<T | undefined> {
@@ -163,7 +178,7 @@ function within<T>(promise: Promise<T> | undefined, ms: number): Promise<T | und
 
 export interface QuestionPorts {
   readonly storage: RosterStorage
-  readonly session: Pick<Context["session"], "synthetic">
+  readonly session: Pick<Context["session"], "synthetic" | "get">
   readonly now: () => number
   readonly newID: () => string
   readonly log: (message: string) => void
@@ -566,7 +581,7 @@ async function settle(
   // after a restart, or an instance still loaded does, a little later, when the process is still
   // running then.
   const dismissed = Exit.isFailure(exit) && isDismissal(exit.cause)
-  const closing = unloaded || (dismissed && (await closingSoon(loaded, timing.dismissalGraceMs)))
+  const closing = unloaded || (dismissed && (await closingSoon(loaded, question.directory, timing.dismissalGraceMs)))
   if (Exit.isFailure(exit) && (closing || (!dismissed && Exit.hasInterrupts(exit)))) {
     if (closing) tellLater(question)
     else if (!question.link) await tellCutOff(ports, question, "stopped")
@@ -618,6 +633,7 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
         ...(chain.length > 1 ? { startedBy: chain[0]!.parentID } : {}),
         questions: promptsOf(input),
         askedAt: current.now(),
+        directory: chain[0]!.directory,
         call: (outcome) => {
           if (handed) return accepted.then(() => false)
           handed = true
@@ -739,7 +755,7 @@ function linking(ports: () => QuestionPorts | undefined, ask: Execute): Execute 
             void (async () => {
               // Dismissed by the person, unless the location is closing (see settle): so is the question they were asked for.
               if (isDismissal(exit.cause)) {
-                if (await closingSoon(() => ports() === current, timing.dismissalGraceMs)) return
+                if (await closingSoon(() => ports() === current, await directoryOf(current, context.sessionID), timing.dismissalGraceMs)) return
                 await deliver(current, linked, { dismissed: true })
               }
               // Stopped while the asking call was cut off as well: nobody has been told yet.
@@ -809,6 +825,6 @@ export function forgetQuestions() {
   shared.loaded.clear()
   shared.following = 0
   shared.followed = false
-  shared.shutdownAt = 0
+  shared.shutdowns.clear()
   shared.closingWaiters.clear()
 }

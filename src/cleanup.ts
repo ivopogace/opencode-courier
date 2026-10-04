@@ -19,7 +19,6 @@ export interface WorktreeState {
 export interface CleanupPorts {
   readonly storage: RosterStorage
   readonly worktree: Pick<Context["worktree"], "remove">
-  readonly directory: string
   /** The project of the plugin's location, for roster entries recorded before they carried their project. */
   readonly projectID: string
   /** The worktree's state, or undefined when its directory no longer exists; `base` is the commit it was made from. */

@@ -161,7 +161,10 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
   // Not claimed: every instance may resolve the same waiting call, which is harmless.
   if (event.type === "form.created") formShown(event as unknown as Parameters<typeof formShown>[0])
   // Not claimed either: a location closing withdraws its forms, which must not pass for dismissals.
-  if (event.type === "location.shutdown") locationClosing()
+  if (event.type === "location.shutdown") {
+    const directory = (event as { location?: { directory?: unknown } }).location?.directory
+    if (typeof directory === "string") locationClosing(directory)
+  }
   return []
 }
 

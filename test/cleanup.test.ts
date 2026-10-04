@@ -13,7 +13,6 @@ function fakePorts(state: WorktreeState | "gone" = clean) {
   const removed: unknown[] = []
   const inspected: unknown[] = []
   const ports: CleanupPorts = {
-    directory: "/plugin",
     projectID: "proj_plugin",
     storage: {
       get: async (key) => store.get(key) as any,

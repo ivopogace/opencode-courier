@@ -94,7 +94,10 @@ async function setUp() {
         entries: [...store].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
       }),
     } as unknown as QuestionPorts["storage"],
-    session: { synthetic: async (input: any) => (told.push(input), { id: `msg_${told.length}` }) } as unknown as QuestionPorts["session"],
+    session: {
+      synthetic: async (input: any) => (told.push(input), { id: `msg_${told.length}` }),
+      get: async () => ({ location: { directory: "/repo" } }),
+    } as unknown as QuestionPorts["session"],
     now: () => 1_000_000,
     newID: () => `question_${++ids}`,
     log: () => undefined,
@@ -443,7 +446,7 @@ describe("the question tool of a spawned session", () => {
     formOf(tool, "ses_child").dismiss()
     formOf(tool, "ses_parent").dismiss()
     await settle()
-    locationClosing()
+    locationClosing("/repo")
     unload()
     expect(Exit.isFailure(await exitOf(child))).toBe(true)
     expect(Exit.isFailure(await exitOf(parent))).toBe(true)
@@ -453,6 +456,40 @@ describe("the question tool of a spawned session", () => {
     expect(store.has("question/question_1")).toBe(true)
     await noticeCutOff(ports)
     expect(told.at(-1).text).toContain('asks="question" request="question_1" restarted="true"')
+  })
+
+  test("a location's shutdown reported within the grace, before or after the dismissal, makes it a cut-off; another location's does not", async () => {
+    const { store, told, tool, ask } = await setUp()
+    timing.dismissalGraceMs = 100
+    const first = ask("ses_child")
+    await settle()
+    locationClosing("/repo")
+    formOf(tool, "ses_child").dismiss()
+    await exitOf(first)
+    await settle()
+    expect(notices(told, "answered")).toEqual([])
+    expect(store.has("question/question_1")).toBe(true)
+
+    forgetQuestions()
+    const second = ask("ses_child")
+    await settle()
+    formOf(tool, "ses_child").dismiss()
+    await exitOf(second)
+    await settle()
+    locationClosing("/elsewhere")
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(notices(told, "answered")[0].text).toContain('answered="dismissed" request="question_2"')
+    expect(store.has("question/question_2")).toBe(false)
+
+    const third = ask("ses_child")
+    await settle()
+    formOf(tool, "ses_child").dismiss()
+    await exitOf(third)
+    await settle()
+    locationClosing("/repo")
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(notices(told, "answered")).toHaveLength(1)
+    expect(store.has("question/question_3")).toBe(true)
   })
 
   test("a dismissal that no shutdown follows within the grace is the person's", async () => {

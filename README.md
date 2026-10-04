@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml/badge.svg)](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/opencode-courier)](https://www.npmjs.com/package/opencode-courier)
+[![License: MIT](https://img.shields.io/npm/l/opencode-courier)](LICENSE)
 
 An [OpenCode](https://github.com/anomalyco/opencode) V2 plugin that lets one session start other
 sessions, message them, and be woken by them, without polling.
@@ -38,9 +39,11 @@ Watch the child's question open in the parent's session as OpenCode's own questi
 `times` is picked. The parent passes it back, and the child adds `times` to math.js and reports.
 
 <details>
-<summary>The same, in OpenCode's web UI</summary>
+<summary>The same two runs in OpenCode's web UI</summary>
 
-![The child's question in the web UI: it appears in the parent, is answered there, and the child carries on](docs/demo-question.gif)
+![The async demo in the web UI: the parent writes its README, ends its turn, and is woken by each report](docs/demo-async.gif)
+
+![The question demo in the web UI: the child's question appears in the parent, is answered there, and the child carries on](docs/demo-question.gif)
 
 </details>
 

@@ -469,6 +469,14 @@ locked=$(jq -r '.packages["node_modules/opencode-courier"] | "\(.resolved) \(.in
 check "built from the packed tarball" \
   "$([ "$locked" = "http://127.0.0.1:$REGISTRY_PORT/opencode-courier/-/$(basename "$tarball") $integrity" ] && echo true || echo false)"
 
+# This suite runs on the OpenCode the plugin is pinned to, so no load above, from dist/ or from the
+# installed package, may have warned about the version. The webhook line proves the plugin's log
+# lines reach the server log at all.
+echo "the server log names no version mismatch on the pinned OpenCode"
+check "the plugin's log lines reach the server log" "$(grep -qF "courier webhook: listening on" "$WORK/server.log" && echo true || echo false)"
+check "none of them says the version differs" "$(grep -qF "was built and tested against OpenCode" "$WORK/server.log" && echo false || echo true)"
+check "or that it could not be compared" "$(grep -qF "cannot compare the OpenCode version" "$WORK/server.log" && echo false || echo true)"
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed; rerun with KEEP=1 to keep the server and model logs"
   exit 1

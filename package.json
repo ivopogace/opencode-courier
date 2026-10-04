@@ -1,6 +1,6 @@
 {
   "name": "opencode-courier",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "OpenCode V2 plugin: spawn sessions, message them, and wake idle sessions without polling.",
   "license": "MIT",
   "repository": {

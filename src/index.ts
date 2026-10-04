@@ -229,6 +229,7 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     const questionPorts: QuestionPorts = {
       storage: ctx.storage,
       session: ctx.session,
+      directory: ctx.location.directory,
       now: Date.now,
       newID: () => `question_${randomUUID()}`,
       log: (message) => console.error(message),

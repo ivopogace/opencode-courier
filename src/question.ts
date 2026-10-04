@@ -93,7 +93,10 @@ interface Shared {
   /** How many instances follow OpenCode's events now, and whether any has since the process started. */
   following: number
   followed: boolean
-  /** When OpenCode last reported each location shutting down (`location.shutdown`), by directory and the wall clock. */
+  /**
+   * When OpenCode last reported each location shutting down (`location.shutdown`), by directory
+   * and the wall clock; under `ANYWHERE` when the event named no location.
+   */
   readonly shutdowns: Map<string, number>
   /** Woken when a location shuts down or an instance unloads: dismissals held to see whether one follows. */
   readonly closingWaiters: Set<() => void>
@@ -122,24 +125,31 @@ const shared = sharedState as Shared
  */
 export const timing = { closingGraceMs: 30_000, passingWaitMs: 30_000, relayWaitMs: 30_000, dismissalGraceMs: 2_000 }
 
+/** The key of a shutdown reported without a location: it counts for every location. */
+const ANYWHERE = ""
+
 /**
  * Called for OpenCode's `location.shutdown`: the location at `directory` is closing, which
  * withdraws its open forms as if the person had dismissed them (before unloading the plugin
- * there, since OpenCode 2.0.22).
+ * there, since OpenCode 2.0.22). The event's location is optional in the schema; without it,
+ * the shutdown counts for every location.
  */
-export function locationClosing(directory: string) {
-  shared.shutdowns.set(directory, Date.now())
+export function locationClosing(directory?: string) {
+  shared.shutdowns.set(directory ?? ANYWHERE, Date.now())
   for (const wake of shared.closingWaiters) wake()
 }
 
 /**
  * Whether a dismissal just seen in the location at `directory` was that location closing rather
  * than the person: true when it shut down within `ms` before, or does so, or this instance
- * unloads, within `ms` from now. With the directory unknown, any location's shutdown counts.
+ * unloads, within `ms` from now. A shutdown reported without a location counts for every
+ * location, and with the directory unknown, any location's shutdown counts.
  */
 function closingSoon(loaded: () => boolean, directory: string | undefined, ms: number): Promise<boolean> {
   const shutdownAt = () =>
-    directory === undefined ? Math.max(0, ...shared.shutdowns.values()) : (shared.shutdowns.get(directory) ?? 0)
+    directory === undefined
+      ? Math.max(0, ...shared.shutdowns.values())
+      : Math.max(shared.shutdowns.get(directory) ?? 0, shared.shutdowns.get(ANYWHERE) ?? 0)
   const closing = () => !loaded() || Date.now() - shutdownAt() <= ms
   if (closing()) return Promise.resolve(true)
   return new Promise((resolve) => {
@@ -179,6 +189,8 @@ function within<T>(promise: Promise<T> | undefined, ms: number): Promise<T | und
 export interface QuestionPorts {
   readonly storage: RosterStorage
   readonly session: Pick<Context["session"], "synthetic" | "get">
+  /** The directory of the instance's location. */
+  readonly directory: string
   readonly now: () => number
   readonly newID: () => string
   readonly log: (message: string) => void
@@ -462,9 +474,15 @@ export async function noticeCutOff(ports: QuestionPorts) {
   }
 }
 
-/** A plugin instance whose ports the relay may use, until the returned function is called. */
+/**
+ * A plugin instance whose ports the relay may use, until the returned function is called. A
+ * location loading again forgets the shutdown recorded for it, and the one recorded for every
+ * location, so a dismissal there is not mistaken for that shutdown.
+ */
 export function joinRelay(ports: QuestionPorts) {
   shared.loaded.add(ports)
+  shared.shutdowns.delete(ports.directory)
+  shared.shutdowns.delete(ANYWHERE)
   return () => {
     shared.loaded.delete(ports)
     for (const wake of shared.closingWaiters) wake()

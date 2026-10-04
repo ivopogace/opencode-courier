@@ -98,6 +98,7 @@ async function setUp() {
       synthetic: async (input: any) => (told.push(input), { id: `msg_${told.length}` }),
       get: async () => ({ location: { directory: "/repo" } }),
     } as unknown as QuestionPorts["session"],
+    directory: "/repo",
     now: () => 1_000_000,
     newID: () => `question_${++ids}`,
     log: () => undefined,
@@ -506,6 +507,38 @@ describe("the question tool of a spawned session", () => {
 
     expect(notices(told, "answered")[0].text).toContain('answered="dismissed" request="question_1"')
     expect(store.has("question/question_1")).toBe(false)
+  })
+
+  test("a shutdown reported without a location counts for every location", async () => {
+    const { store, told, tool, ask } = await setUp()
+    timing.dismissalGraceMs = 100
+    const child = ask("ses_child")
+    await settle()
+    formOf(tool, "ses_child").dismiss()
+    await exitOf(child)
+    await settle()
+    locationClosing()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(notices(told, "answered")).toEqual([])
+    expect(store.has("question/question_1")).toBe(true)
+  })
+
+  test("a location loading again within the grace forgets its shutdown: a dismissal there is the person's", async () => {
+    const { ports, store, told, tool, ask } = await setUp()
+    timing.dismissalGraceMs = 100
+    locationClosing("/repo")
+    locationClosing()
+    const leave = joinRelay(ports)
+    const child = ask("ses_child")
+    await settle()
+    formOf(tool, "ses_child").dismiss()
+    await exitOf(child)
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    expect(notices(told, "answered")[0].text).toContain('answered="dismissed" request="question_1"')
+    expect(store.has("question/question_1")).toBe(false)
+    leave()
   })
 
   test("a location closing while OpenCode keeps running: an instance still loaded tells the parent a little later", async () => {

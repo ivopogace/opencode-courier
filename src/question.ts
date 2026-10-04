@@ -90,6 +90,10 @@ interface Shared {
   /** How many instances follow OpenCode's events now, and whether any has since the process started. */
   following: number
   followed: boolean
+  /** When OpenCode last reported a location shutting down (`location.shutdown`), by the wall clock; 0 for never. */
+  shutdownAt: number
+  /** Woken when a location shuts down or an instance unloads: dismissals held to see whether one follows. */
+  readonly closingWaiters: Set<() => void>
 }
 // Field by field, so a copy of the plugin loaded later in the process gets what an older copy lacks.
 const sharedState = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.questions")] ??= {}) as {
@@ -103,15 +107,46 @@ sharedState.answered ??= new Set()
 sharedState.loaded ??= new Set()
 sharedState.following ??= 0
 sharedState.followed ??= false
+sharedState.shutdownAt ??= 0
+sharedState.closingWaiters ??= new Set()
 const shared = sharedState as Shared
 
 /**
  * Timings, changed by the tests: how long a question cut off by a closing location waits before an
  * instance still loaded tells its top session, how long an answer waits for another one to it that
- * is still being passed on, and how long what follows a call's end waits for the notice of the
- * question to go out.
+ * is still being passed on, how long what follows a call's end waits for the notice of the
+ * question to go out, and how long a dismissal is held to see whether the location is shutting down.
  */
-export const timing = { closingGraceMs: 30_000, passingWaitMs: 30_000, relayWaitMs: 30_000 }
+export const timing = { closingGraceMs: 30_000, passingWaitMs: 30_000, relayWaitMs: 30_000, dismissalGraceMs: 2_000 }
+
+/**
+ * Called for OpenCode's `location.shutdown`: a location is closing, which withdraws its open forms
+ * as if the person had dismissed them (before unloading the plugin there, since OpenCode 2.0.22).
+ */
+export function locationClosing() {
+  shared.shutdownAt = Date.now()
+  for (const wake of shared.closingWaiters) wake()
+}
+
+/**
+ * Whether a dismissal just seen was a location closing rather than the person: true when a location
+ * shut down within `ms` before, or does so, or this instance unloads, within `ms` from now.
+ */
+function closingSoon(loaded: () => boolean, ms: number): Promise<boolean> {
+  const closing = () => !loaded() || Date.now() - shared.shutdownAt <= ms
+  if (closing()) return Promise.resolve(true)
+  return new Promise((resolve) => {
+    const done = (result: boolean) => {
+      clearTimeout(timer)
+      shared.closingWaiters.delete(wake)
+      resolve(result)
+    }
+    const wake = () => done(closing())
+    const timer = setTimeout(() => done(false), ms)
+    timer.unref?.()
+    shared.closingWaiters.add(wake)
+  })
+}
 
 /** The promise's value, or undefined once `ms` have passed or it failed. */
 function within<T>(promise: Promise<T> | undefined, ms: number): Promise<T | undefined> {
@@ -415,7 +450,10 @@ export async function noticeCutOff(ports: QuestionPorts) {
 /** A plugin instance whose ports the relay may use, until the returned function is called. */
 export function joinRelay(ports: QuestionPorts) {
   shared.loaded.add(ports)
-  return () => void shared.loaded.delete(ports)
+  return () => {
+    shared.loaded.delete(ports)
+    for (const wake of shared.closingWaiters) wake()
+  }
 }
 
 /**
@@ -495,14 +533,15 @@ async function relay(ports: QuestionPorts, question: Question) {
 
 /**
  * After a relayed call ended: tidies up, and tells the top session if it was settled without it.
- * `unloaded` when the plugin instance that ran the call had been unloaded by then.
+ * `loaded` says whether the plugin instance that ran the call is still loaded.
  */
 async function settle(
   ports: QuestionPorts,
   question: Question,
   exit: Exit.Exit<{ by: "child"; result: ToolResult } | { by: "top" }, unknown>,
-  unloaded: boolean,
+  loaded: () => boolean,
 ) {
+  const unloaded = !loaded()
   // Telling the top session first, so what follows does not overtake the notice or come before it
   // is stored; for a while only, so a notice that never returns does not hold everything else up.
   // `told` is false when the top session was not told, or not yet.
@@ -518,14 +557,18 @@ async function settle(
     await forget(ports, question)
     return
   }
-  // Cut off: the turn was stopped, or OpenCode is closing the location, which unloads the plugin
-  // and then withdraws every open form there as if the person had dismissed it (on a server
-  // shutdown, say). The question stays, answered by message from now on; a top session already
-  // asking the person passes their answer on that way. A closing location is not told now: the
-  // next load tells it, in this process or after a restart, or an instance still loaded does, a
-  // little later, when the process is still running then.
-  if (Exit.isFailure(exit) && (unloaded || (!isDismissal(exit.cause) && Exit.hasInterrupts(exit)))) {
-    if (unloaded) tellLater(question)
+  // Cut off: the turn was stopped, or OpenCode is closing the location, which withdraws every open
+  // form there as if the person had dismissed it (on a server shutdown, say), before unloading the
+  // plugin there (since 2.0.22) or after (the beta). So a dismissal is held for a moment, to see
+  // whether the location's shutdown or this instance's unload follows it. The question stays,
+  // answered by message from now on; a top session already asking the person passes their answer
+  // on that way. A closing location is not told now: the next load tells it, in this process or
+  // after a restart, or an instance still loaded does, a little later, when the process is still
+  // running then.
+  const dismissed = Exit.isFailure(exit) && isDismissal(exit.cause)
+  const closing = unloaded || (dismissed && (await closingSoon(loaded, timing.dismissalGraceMs)))
+  if (Exit.isFailure(exit) && (closing || (!dismissed && Exit.hasInterrupts(exit)))) {
+    if (closing) tellLater(question)
     else if (!question.link) await tellCutOff(ports, question, "stopped")
     return
   }
@@ -604,7 +647,7 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
             // The call no longer waits, whatever settle makes of it: an answer from now on waits for settle.
             const byTopSession = Exit.isSuccess(exit) && exit.value.by === "top"
             if (!byTopSession) question.call = undefined
-            question.settling = settle(current, question, exit, ports() !== current)
+            question.settling = settle(current, question, exit, () => ports() === current)
               .catch((error: unknown) => current.log(`courier question: could not settle ${question.requestID}: ${String(error)}`))
               .finally(() => (question.settling = undefined))
             // After settling is set, which an answer the call did not take then waits for.
@@ -694,8 +737,11 @@ function linking(ports: () => QuestionPorts | undefined, ask: Execute): Execute 
             if (Exit.isSuccess(exit) || ports() !== current) return
             // Not waited for, as in asking.
             void (async () => {
-              // Dismissed by the person: so is the question they were asked for.
-              if (isDismissal(exit.cause)) await deliver(current, linked, { dismissed: true })
+              // Dismissed by the person, unless the location is closing (see settle): so is the question they were asked for.
+              if (isDismissal(exit.cause)) {
+                if (await closingSoon(() => ports() === current, timing.dismissalGraceMs)) return
+                await deliver(current, linked, { dismissed: true })
+              }
               // Stopped while the asking call was cut off as well: nobody has been told yet.
               else if (!linked.call && shared.questions.get(linked.requestID) === linked) await tellCutOff(current, linked, "stopped")
             })().catch((error: unknown) =>
@@ -763,4 +809,6 @@ export function forgetQuestions() {
   shared.loaded.clear()
   shared.following = 0
   shared.followed = false
+  shared.shutdownAt = 0
+  shared.closingWaiters.clear()
 }

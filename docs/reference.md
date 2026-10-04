@@ -107,6 +107,9 @@ answer comes first counts, and the other side's question is withdrawn:
   child's call returns that you dismissed the question, so the child carries on without the answer
   and can report.
 
+A dismissal on either side reaches the other about two seconds later: OpenCode withdraws open
+questions the same way when it shuts down, and the plugin waits that long to tell the two apart.
+
 A question whose call is cut off stays answerable. When the child's turn is stopped (interrupted,
 or by OpenCode itself, which stops every turn in a project location after 60 minutes without
 activity there), or the server restarts or closes the project, the question is gone from the

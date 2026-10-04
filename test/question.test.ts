@@ -6,6 +6,7 @@ import {
   forgetQuestions,
   joinRelay,
   formShown,
+  locationClosing,
   eventsFollowed,
   eventsLeft,
   MAX_STORED,
@@ -30,6 +31,7 @@ afterEach(() => {
   timing.closingGraceMs = 30_000
   timing.passingWaitMs = 30_000
   timing.relayWaitMs = 30_000
+  timing.dismissalGraceMs = 2_000
   showForms = true
 })
 
@@ -110,6 +112,8 @@ async function setUp() {
     },
   }
   let loaded = true
+  // A dismissal is taken at once, unless a test holds it to see a location close.
+  timing.dismissalGraceMs = 0
   await Effect.runPromise(relayQuestions(host as any, () => (loaded ? ports : undefined)) as any)
   const ask = (sessionID: string, questions: unknown = greeting) =>
     Effect.runFork(
@@ -425,6 +429,46 @@ describe("the question tool of a spawned session", () => {
     // The location loads again in the same process, or after a restart.
     await noticeCutOff(ports)
     expect(told.at(-1).text).toContain('asks="question" request="question_1" restarted="true"')
+  })
+
+  test("a location closing withdraws both forms first and reports its shutdown right after: the question is kept, and the next load tells the parent", async () => {
+    const { ports, store, told, tool, ask, unload } = await setUp()
+    timing.dismissalGraceMs = 200
+    const child = ask("ses_child")
+    await settle()
+    const parent = ask("ses_parent")
+    await settle()
+
+    // What a server shutdown does at 2.0.22: every open form goes, then `location.shutdown`, then the plugin unloads.
+    formOf(tool, "ses_child").dismiss()
+    formOf(tool, "ses_parent").dismiss()
+    await settle()
+    locationClosing()
+    unload()
+    expect(Exit.isFailure(await exitOf(child))).toBe(true)
+    expect(Exit.isFailure(await exitOf(parent))).toBe(true)
+    await settle()
+
+    expect(told).toHaveLength(1)
+    expect(store.has("question/question_1")).toBe(true)
+    await noticeCutOff(ports)
+    expect(told.at(-1).text).toContain('asks="question" request="question_1" restarted="true"')
+  })
+
+  test("a dismissal that no shutdown follows within the grace is the person's", async () => {
+    const { told, tool, ask, store } = await setUp()
+    timing.dismissalGraceMs = 50
+    const child = ask("ses_child")
+    await settle()
+
+    formOf(tool, "ses_child").dismiss()
+    await exitOf(child)
+    await settle()
+    expect(notices(told, "answered")).toEqual([])
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    expect(notices(told, "answered")[0].text).toContain('answered="dismissed" request="question_1"')
+    expect(store.has("question/question_1")).toBe(false)
   })
 
   test("a location closing while OpenCode keeps running: an instance still loaded tells the parent a little later", async () => {

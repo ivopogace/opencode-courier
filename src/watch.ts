@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 import { envelope } from "./courier.js"
-import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed } from "./question.js"
+import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing } from "./question.js"
 import { permissionNotice, settledNotice, type PermissionAsked, type PermissionReplied, type Waiting } from "./relay.js"
 import { allEntries, entriesOf, lineage, type RosterEntry, type RosterStorage } from "./roster.js"
 
@@ -160,6 +160,8 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
   if (event.type === "permission.replied") return reportReplied(ports, state, event as unknown as PermissionReplied)
   // Not claimed: every instance may resolve the same waiting call, which is harmless.
   if (event.type === "form.created") formShown(event as unknown as Parameters<typeof formShown>[0])
+  // Not claimed either: a location closing withdraws its forms, which must not pass for dismissals.
+  if (event.type === "location.shutdown") locationClosing()
   return []
 }
 

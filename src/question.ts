@@ -2,7 +2,8 @@ import type { Plugin } from "@opencode-ai/plugin"
 import type { Plugin as EffectPlugin } from "@opencode-ai/plugin/effect"
 import { Cause, Effect, Exit, Result } from "effect"
 import { envelope } from "./courier.js"
-import { lineage, RETENTION_MS, type RosterStorage } from "./roster.js"
+import { origin, STAYS_QUIET } from "./relay.js"
+import { allEntries, answeringTop, lineage, lineageIn, RETENTION_MS, type RosterStorage } from "./roster.js"
 import { scanAll } from "./storage.js"
 
 type Context = Plugin.Context
@@ -59,7 +60,19 @@ type Outcome = { readonly answers: Answers } | { readonly dismissed: true }
 interface Question extends Asked {
   call?: (outcome: Outcome) => void
   link?: (how: Elsewhere) => void
+  /** Storing the question and telling the top session, while that is under way. */
+  relaying?: Promise<boolean>
 }
+
+const storedOf = (question: Asked): Asked => ({
+  requestID: question.requestID,
+  sessionID: question.sessionID,
+  top: question.top,
+  title: question.title,
+  ...(question.startedBy ? { startedBy: question.startedBy } : {}),
+  questions: question.questions,
+  askedAt: question.askedAt,
+})
 
 /**
  * Shared by every plugin instance in the process, since a child and the session it asks can be in
@@ -70,11 +83,14 @@ interface Shared {
   readonly questions: Map<string, Question>
   readonly noticed: Set<string>
   readonly shown: Map<string, () => void>
+  /** Cut-off questions whose answer is being passed on as a message. */
+  readonly answering: Set<string>
 }
 const shared = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.questions")] ??= {
   questions: new Map(),
   noticed: new Set(),
   shown: new Map(),
+  answering: new Set(),
 }) as Shared
 
 export interface QuestionPorts {
@@ -115,20 +131,17 @@ const describeQuestions = (questions: ReadonlyArray<Prompt>) =>
     ...prompt.options.map((option) => `   - ${option.label}${option.description ? `: ${option.description}` : ""}`),
   ])
 
-const origin = (asked: Asked) =>
-  asked.startedBy ? `which ${asked.startedBy} started with courier_spawn, a session started from yours,` : "which you started with courier_spawn,"
-
 const CUT_OFF = {
   stopped: "its turn was stopped (interrupted, or ended by OpenCode after an hour without activity)",
-  restarted: "the OpenCode server restarted",
+  restarted: "OpenCode restarted, or closed the session's project",
 }
 
 /** What the top session is told about a question, when it is asked or after its call was cut off. */
 export function questionNotice(asked: Asked, cutOff?: keyof typeof CUT_OFF) {
   return [
     cutOff
-      ? `This session, "${asked.title}", ${origin(asked)} was asking the question below when ${CUT_OFF[cutOff]}. The question is no longer shown anywhere, and the session does nothing until it gets the answer.`
-      : `This session, "${asked.title}", ${origin(asked)} asks the question below and waits for the answer.`,
+      ? `This session, "${asked.title}", ${origin(asked.startedBy)} was asking the question below when ${CUT_OFF[cutOff]}. The question is no longer shown anywhere, and the session does nothing until it gets the answer.`
+      : `This session, "${asked.title}", ${origin(asked.startedBy)} asks the question below and waits for the answer.`,
     ...describeQuestions(asked.questions),
     "",
     "Do not answer it yourself. Ask the person you are working with, using your question tool with exactly these questions:",
@@ -150,7 +163,7 @@ export function settledNotice(asked: Asked, how: Elsewhere) {
     "If you asked someone about it, tell them it is settled; there is nothing to pass on.",
     ...(how.by === "child"
       ? []
-      : ["That ends the session's turn, and then it does not report back on its own: if it stays quiet, message it with courier_send to have it carry on."]),
+      : [`That ends the session's turn, ${STAYS_QUIET}`]),
   ].join("\n")
 }
 
@@ -207,6 +220,17 @@ async function deliver(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
     known.call(outcome)
     return "result" as const
   }
+  // A cut-off question is in storage only, which cannot be claimed atomically: this process claims it.
+  if (shared.answering.has(asked.requestID)) return undefined
+  shared.answering.add(asked.requestID)
+  try {
+    return await deliverByMessage(ports, asked, outcome)
+  } finally {
+    shared.answering.delete(asked.requestID)
+  }
+}
+
+async function deliverByMessage(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   if ((await ports.storage.get(keyOf(asked.requestID))) === undefined) return undefined
   await ports.storage.remove(keyOf(asked.requestID))
   const text =
@@ -229,13 +253,7 @@ async function deliver(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
  */
 export async function answerQuestion(ports: QuestionPorts, callerID: string, input: QuestionAnswerInput) {
   const { sessionID, requestID } = input
-  const chain = await lineage(ports.storage, sessionID)
-  if (!chain.length) throw new Error(`${sessionID} was not started with courier_spawn, so courier_answer cannot answer for it.`)
-  const top = chain.at(-1)!.parentID
-  if (top !== callerID)
-    throw new Error(
-      `${sessionID}'s questions go to ${top}, the session at the top of the sessions started from it with courier_spawn; ${callerID} cannot answer them.`,
-    )
+  await answeringTop(ports.storage, sessionID, callerID, "questions")
   const asked = shared.questions.get(requestID) ?? ((await ports.storage.get(keyOf(requestID))) as Asked | undefined)
   if (!asked || asked.sessionID !== sessionID) return { sessionID, requestID, answered: false }
   const answers = normalize(asked, input.answers)
@@ -265,6 +283,8 @@ export async function pendingQuestions(storage: RosterStorage, sessionID: string
  */
 export async function noticeCutOff(ports: QuestionPorts) {
   const stored = (await scanAll<Asked>(ports.storage, PREFIX)).sort((a, b) => b.askedAt - a.askedAt)
+  if (!stored.length) return
+  const roster = await allEntries(ports.storage)
   const now = ports.now()
   let kept = 0
   for (const asked of stored) {
@@ -272,8 +292,7 @@ export async function noticeCutOff(ports: QuestionPorts) {
       kept++
       continue
     }
-    const current =
-      kept < MAX_STORED && now - asked.askedAt <= RETENTION_MS && (await lineage(ports.storage, asked.sessionID)).length > 0
+    const current = kept < MAX_STORED && now - asked.askedAt <= RETENTION_MS && lineageIn(roster, asked.sessionID).length > 0
     if (!current) {
       await ports.storage.remove(keyOf(asked.requestID))
       continue
@@ -296,6 +315,16 @@ export function formShown(event: { readonly data: { readonly form: { readonly se
   shared.shown.delete(key)
 }
 
+/**
+ * Called when an event stream was subscribed again after it broke: a form shown meanwhile was not
+ * seen, so every call still waiting for its form is taken as shown. One still waiting for its
+ * permission check is relayed early, which is the lesser harm.
+ */
+export function formsMayHaveBeenMissed() {
+  for (const shown of shared.shown.values()) shown()
+  shared.shown.clear()
+}
+
 const defectTag = (cause: Cause.Cause<unknown>) => {
   const defect = Cause.findDefect(cause)
   return Result.isSuccess(defect) ? (defect.success as { _tag?: unknown } | undefined)?._tag : undefined
@@ -307,8 +336,7 @@ const isDismissal = (cause: Cause.Cause<unknown>) => defectTag(cause) === "Quest
 async function relay(ports: QuestionPorts, question: Question) {
   shared.questions.set(question.requestID, question)
   try {
-    const { call: _call, link: _link, ...asked } = question
-    await ports.storage.set(keyOf(question.requestID), asked as never)
+    await ports.storage.set(keyOf(question.requestID), storedOf(question) as never)
     await tell(ports, question, questionNotice(question), { asks: "question", request: question.requestID })
     return true
   } catch (error) {
@@ -329,6 +357,8 @@ async function settle(
   exit: Exit.Exit<{ by: "child"; result: ToolResult } | { by: "top" }, unknown>,
   unloaded: boolean,
 ) {
+  // Telling the top session first, so what follows does not overtake the notice or come before it is stored.
+  await question.relaying
   // Answered through the top session, which took it off the list, or never relayed at all.
   if (shared.questions.get(question.requestID) !== question) {
     await ports.storage.remove(keyOf(question.requestID))
@@ -337,11 +367,12 @@ async function settle(
   // Cut off: the turn was stopped, or OpenCode is closing the location, which unloads the plugin
   // and then withdraws every open form there as if the person had dismissed it (on a server
   // shutdown, say). The question stays, answered by message from now on; a top session already
-  // asking the person passes their answer on that way. A closing location is not told now: the
-  // next load tells it, as after a restart.
+  // asking the person passes their answer on that way. A closing location is not told now: it
+  // leaves the stored question to the next load, in this process or after a restart, to tell.
   if (Exit.isFailure(exit) && (unloaded || (!isDismissal(exit.cause) && Exit.hasInterrupts(exit)))) {
     question.call = undefined
-    if (!unloaded && !question.link) await tellCutOff(ports, question, "stopped")
+    if (unloaded) shared.questions.delete(question.requestID)
+    else if (!question.link) await tellCutOff(ports, question, "stopped")
     return
   }
   shared.questions.delete(question.requestID)
@@ -390,7 +421,8 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
       const shown = new Promise<void>((resolve) => shared.shown.set(key, resolve))
       const fromTop = Effect.gen(function* () {
         yield* Effect.promise(() => shown)
-        if (!(yield* Effect.promise(() => relay(current, question)))) return yield* Effect.never
+        // Kept on the question, so settle can wait for it should this race end while it runs.
+        if (!(yield* Effect.promise(() => (question.relaying = relay(current, question))))) return yield* Effect.never
         return { by: "top" as const, outcome: yield* Effect.promise(() => byTop) }
       })
       const ended = yield* Effect.raceFirst(
@@ -424,14 +456,24 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
 
 const choices = (questions: ReadonlyArray<Prompt>) =>
   JSON.stringify(questions.map((prompt) => [!!prompt.multiple, prompt.options.map((option) => option.label)]))
-const wording = (questions: ReadonlyArray<Prompt>) => JSON.stringify(questions.map((prompt) => prompt.question))
+const wording = (questions: ReadonlyArray<Prompt>) =>
+  JSON.stringify(questions.map((prompt) => prompt.question.trim().replace(/\s+/g, " ").toLowerCase()))
 
-/** The waiting question a top session's call asks again: the same choices, preferably the same words, oldest first. */
+/**
+ * The waiting question a top session's call asks again, the oldest if several: the same questions
+ * with the same choices. Matching choices alone are not enough, or an unrelated yes-or-no question
+ * of the top session would answer a child's.
+ */
 function linkFor(sessionID: string, questions: ReadonlyArray<Prompt>) {
-  const candidates = [...shared.questions.values()].filter(
-    (question) => question.top === sessionID && !question.link && choices(question.questions) === choices(questions),
-  )
-  return candidates.find((question) => wording(question.questions) === wording(questions)) ?? candidates[0]
+  return [...shared.questions.values()]
+    .filter(
+      (question) =>
+        question.top === sessionID &&
+        !question.link &&
+        choices(question.questions) === choices(questions) &&
+        wording(question.questions) === wording(questions),
+    )
+    .sort((a, b) => a.askedAt - b.askedAt)[0]
 }
 
 /**
@@ -521,4 +563,5 @@ export function forgetQuestions() {
   shared.questions.clear()
   shared.noticed.clear()
   shared.shown.clear()
+  shared.answering.clear()
 }

@@ -118,10 +118,12 @@ questions and their options, gives them again as one line of JSON in the questio
 shape, and tells the parent to ask the person, with its question tool and exactly those questions,
 rather than answer.
 
-When the parent asks you with the same options, the two questions are linked: what you pick in the
-parent's session is passed to the child's waiting call, which returns it as if you had answered
-there, and the child carries on in the same turn. The parent's tool result says so. A parent that
-asked you some other way, in text or with reworded options, calls
+When the parent asks you the same questions with the same options, the two are linked: what you
+pick in the parent's session is passed to the child's waiting call, which returns it as if you had
+answered there, and the child carries on in the same turn. The parent's tool result says so. Only
+the same wording links (spacing and case aside), so a question of the parent's own with the same
+yes-or-no choices never answers a child's. A parent that asked you some other way, in text or
+reworded, calls
 `courier_answer { sessionID, requestID, answers }`: one entry per question, in order, each the
 label you chose or the text you gave, or a list of labels where a question allows several. As with
 permission requests, only the session at the top can answer.
@@ -140,11 +142,11 @@ answer comes first counts, and the other side's question is withdrawn:
 
 A question whose call is cut off stays answerable. When the child's turn is stopped (interrupted,
 or by OpenCode itself, which stops every turn in a project location after 60 minutes without
-activity there) or the server restarts, the question is gone from the screen. The plugin keeps it
-in its storage, sends the parent a message marked `stopped="true"` or `restarted="true"` with the
-questions, and passes the answer on as a message to the child, which wakes it. If the parent is
-asking you at that moment, your answer goes that way without a new message. A question cut off
-while the server was down is noticed when the plugin is next loaded for a project. Stored
+activity there), or the server restarts or closes the project, the question is gone from the
+screen. The plugin keeps it in its storage, sends the parent a message marked `stopped="true"`, or
+`restarted="true"` when the plugin is next loaded for the project, with the questions, and passes
+the answer on as a message to the child, which wakes it. If the parent is asking you at that
+moment, your answer goes that way without a new message. Stored
 questions are dropped after 14 days, once the child is off its parent's roster, or beyond the 100
 newest.
 
@@ -153,7 +155,9 @@ newest.
 
 A question is relayed only once OpenCode's permission check for it has passed: a child whose agent
 may not ask questions (OpenCode's `general` agent, or a `question` rule with `"effect": "deny"`)
-is refused as before, and the parent hears nothing. The child brief tells children to use the
+is refused as before, and the parent hears nothing. The plugin learns that a question is on screen
+from OpenCode's events; when its event stream broke and comes back, it relays every question still
+waiting for that, since one shown meanwhile was not seen. The child brief tells children to use the
 question tool when the person must decide; a child can still send its question with
 `courier_send` instead, and the parent then passes your answer back with `courier_send`.
 

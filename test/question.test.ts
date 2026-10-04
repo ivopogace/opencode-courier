@@ -5,6 +5,7 @@ import {
   answerQuestion,
   forgetQuestions,
   formShown,
+  formsMayHaveBeenMissed,
   MAX_STORED,
   noticeCutOff,
   pendingQuestions,
@@ -16,7 +17,15 @@ import {
 } from "../src/question.js"
 import { record, RETENTION_MS } from "../src/roster.js"
 
-afterEach(() => forgetQuestions())
+let showForms = true
+const formShownOff = () => {
+  showForms = false
+  return { restore: () => void (showForms = true) }
+}
+afterEach(() => {
+  forgetQuestions()
+  showForms = true
+})
 
 const greeting = [
   {
@@ -47,7 +56,7 @@ function questionTool() {
           answer: (answers) => resume(Effect.succeed({ answers })),
           dismiss: () => resume(Effect.succeed({ dismissed: true as const })),
         })
-        formShown({ data: { form: { sessionID: context.sessionID, metadata: { kind: "question", tool: { messageID: "msg", id: context.id } } } } })
+        if (showForms) formShown({ data: { form: { sessionID: context.sessionID, metadata: { kind: "question", tool: { messageID: "msg", id: context.id } } } } })
       })
       forms.delete(context.id)
       if ("dismissed" in state)
@@ -407,9 +416,83 @@ describe("the question tool of a spawned session", () => {
 
     expect(told).toHaveLength(1)
     expect(store.has("question/question_1")).toBe(true)
-    forgetQuestions()
+    // The location loads again in the same process, or after a restart.
     await noticeCutOff(ports)
     expect(told.at(-1).text).toContain('asks="question" request="question_1" restarted="true"')
+  })
+
+  test("the parent's own question with the same choices but other words is not linked", async () => {
+    const { tool, ask } = await setUp()
+    const yesNo = (question: string) => [{ question, header: "Confirm", options: [{ label: "Yes", description: "" }, { label: "No", description: "" }] }]
+    const child = ask("ses_child", yesNo("Delete the old branch?"))
+    await settle()
+
+    const parent = ask("ses_parent", yesNo("Push to main now?"))
+    await settle()
+    formOf(tool, "ses_parent").answer([["Yes"]])
+
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value.content).not.toContain("passed on")
+    expect(formOf(tool, "ses_child")).toBeDefined()
+    // Asked again with the same words, differently spaced and cased, it is.
+    const again = ask("ses_parent", yesNo("delete  the old branch?"))
+    await settle()
+    formOf(tool, "ses_parent").answer([["No"]])
+    const childExit = await exitOf(child)
+    expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [["No"]] })
+    await exitOf(again)
+  })
+
+  test("answered in the child's session while the parent is being told: the notices keep their order and nothing is left stored", async () => {
+    const { ports, store, told, tool, ask } = await setUp()
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const synthetic = ports.session.synthetic
+    ;(ports.session as any).synthetic = async (input: any) => {
+      if (input.text.includes(' asks="question"')) await held
+      return synthetic(input)
+    }
+    const child = ask("ses_child")
+    await settle()
+
+    formOf(tool, "ses_child").answer([["Hi"]])
+    await settle()
+    expect(told).toEqual([])
+    release()
+    await exitOf(child)
+    await settle()
+
+    expect(told.map((item) => (item.text.includes(' asks="question"') ? "asks" : "answered"))).toEqual(["asks", "answered"])
+    expect(store.has("question/question_1")).toBe(false)
+  })
+
+  test("a cut-off question answered twice at once is passed on once", async () => {
+    const { ports, told, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    const input = { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }
+
+    const both = await Promise.all([answerQuestion(ports, "ses_parent", input), answerQuestion(ports, "ses_parent", input)])
+
+    expect(both.map((result) => result.answered).sort()).toEqual([false, true])
+    expect(told.filter((item) => item.sessionID === "ses_child")).toHaveLength(1)
+  })
+
+  test("a call whose form.created was missed while the event stream was down is relayed once it is back", async () => {
+    const { told, ask } = await setUp()
+    const shown = formShownOff()
+    const child = ask("ses_child")
+    await settle()
+    expect(told).toEqual([])
+
+    shown.restore()
+    formsMayHaveBeenMissed()
+    await settle()
+
+    expect(told[0].text).toContain('asks="question"')
+    await Effect.runPromise(Fiber.interrupt(child))
   })
 
   test("a question of a child's child goes to the session at the top, which alone answers it", async () => {
@@ -460,7 +543,7 @@ describe("noticeCutOff", () => {
     expect(told).toHaveLength(1)
     expect(told[0].sessionID).toBe("ses_parent")
     expect(told[0].text).toContain('<courier from="ses_child" asks="question" request="question_a" restarted="true">')
-    expect(told[0].text).toContain("when the OpenCode server restarted")
+    expect(told[0].text).toContain("when OpenCode restarted, or closed the session's project")
     expect([...store.keys()].filter((key) => key.startsWith("question/"))).toEqual(["question/question_a"])
     const answered = await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_a", answers: [["Hi"]] })
     expect(answered).toMatchObject({ answered: true, by: "message" })

@@ -1,6 +1,7 @@
-import { afterEach, expect, test } from "bun:test"
+import { afterEach, expect, spyOn, test } from "bun:test"
 import { Schema } from "effect"
 import plugin, { courier, type RelaySlot } from "../src/index.js"
+import { builtVersions } from "../src/version.js"
 
 const cleanups: Array<() => unknown> = []
 afterEach(async () => {
@@ -23,7 +24,15 @@ function fakeEvents() {
   }
 }
 
-async function setUp(stored: Record<string, unknown> = {}, options?: Record<string, unknown>, permissions: any[] = []) {
+/** The pinned OpenCode, as the fake context reports it unless a test says otherwise. */
+const pinned = { name: "opencode", version: builtVersions().opencode, channel: "latest" }
+
+async function setUp(
+  stored: Record<string, unknown> = {},
+  options?: Record<string, unknown>,
+  permissions: any[] = [],
+  app: { name: string; version: string; channel: string } = pinned,
+) {
   const store = new Map(Object.entries(stored))
   const tools = new Map<string, any>()
   const calls: { method: string; input: any }[] = []
@@ -33,6 +42,7 @@ async function setUp(stored: Record<string, unknown> = {}, options?: Record<stri
   }
   const events = fakeEvents()
   const ctx = {
+    app,
     options,
     event: { subscribe: events.subscribe },
     agent: { get: record("agent.get", { data: { id: "build" } }) },
@@ -96,6 +106,37 @@ test("a loaded instance hands the question relay its ports, and takes them back 
   expect(relay.ports).toBeDefined()
   await cleanups.shift()!()
   expect(relay.ports).toBeUndefined()
+})
+
+test("on the pinned OpenCode, loading logs nothing about the version", async () => {
+  const logged = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    const { tools } = await setUp()
+    await tools.get("courier_status").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })
+
+    expect(logged.mock.calls.map(([line]) => line).filter((line) => String(line).includes("built and tested against"))).toEqual([])
+  } finally {
+    logged.mockRestore()
+  }
+})
+
+test("on another OpenCode, loading logs one line naming both versions, and tool calls add nothing", async () => {
+  const logged = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    const { tools } = await setUp({}, undefined, [], { name: "opencode", version: "2.0.30", channel: "beta" })
+    await tools.get("courier_status").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })
+    const result = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
+
+    const { plugin, opencode } = builtVersions()
+    expect(logged.mock.calls.map(([line]) => line)).toEqual([
+      `opencode-courier ${plugin} was built and tested against OpenCode ${opencode}; this server is 2.0.30 (channel beta). ` +
+        "Its tools may fail: see the Supported OpenCode version table in the README, " +
+        "https://github.com/ivopogace/opencode-courier#supported-opencode-version",
+    ])
+    expect(result.content).not.toContain("built and tested against")
+  } finally {
+    logged.mockRestore()
+  }
 })
 
 test("registers the courier tools", async () => {

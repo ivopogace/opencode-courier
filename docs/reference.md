@@ -4,6 +4,26 @@ How the plugin behaves beyond the happy path: what a child runs on, how its fail
 requests and questions reach the session that started it, what is kept where and for how long, and
 what the webhook receiver does with a delivery. The [README](../README.md) has the short version.
 
+## The OpenCode version
+
+Each build of the plugin is tested against one OpenCode version, the exact `@opencode/plugin`
+version under `devDependencies` in its `package.json`, which the plugin reads from its own
+package when it loads, along with its own `version`. When the running OpenCode reports another
+version (`app.version` in the plugin context), the plugin writes one line to the server log, as
+`opencode serve --print-logs` shows it:
+
+```
+opencode-courier 0.2.0 was built and tested against OpenCode 2.0.22; this server is 2.0.30 (channel beta). Its tools may fail: see the Supported OpenCode version table in the README, https://github.com/ivopogace/opencode-courier#supported-opencode-version
+```
+
+That is all it does: the plugin loads and registers its tools as usual, since the other version
+may well be compatible, and no tool result mentions it, so the models never see it. The line is
+written once per load, so once per project location OpenCode sets the plugin up for, never per
+tool call. An older server is named the same way as a newer one, and so is a development build
+of OpenCode, whose version is not a release's; one whose plugin context reports no version at all
+gets the line too, saying so, since that is the mismatch the line is for. If the plugin cannot
+read its own `package.json`, it logs that instead and carries on.
+
 ## The child's model
 
 A child runs on the model its parent is using, not on OpenCode's default, so a parent you moved to

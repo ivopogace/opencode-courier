@@ -53,13 +53,13 @@ export type Elsewhere =
 /** What the top session's answer does to a call that waits: answers it, or dismisses it. */
 type Outcome = { readonly answers: Answers } | { readonly dismissed: true }
 
+/** A question as stored; `answered` marks one whose answer went out but that could not be dropped. */
+type Stored = Asked & { readonly answered?: true }
+
 /**
  * A question this process knows: one whose call waits (`call`), or one whose call was cut off,
  * which is answered by message. `link` is the top session's question call passing its answer on.
  */
-/** A question as stored; `answered` marks one whose answer went out but that could not be dropped. */
-type Stored = Asked & { readonly answered?: true }
-
 interface Question extends Asked {
   /** Hands the waiting call the top session's outcome; true once the call has ended with it. */
   call?: (outcome: Outcome) => Promise<boolean>
@@ -71,6 +71,7 @@ interface Question extends Asked {
 }
 
 const storedOf = ({ call: _call, link: _link, relaying: _relaying, settling: _settling, ...asked }: Question): Asked => asked
+const isPassing = (requestID: string) => shared.passing.has(requestID) || shared.answered.has(requestID)
 
 /**
  * Shared by every plugin instance in the process, since a child and the session it asks can be in
@@ -81,8 +82,8 @@ interface Shared {
   readonly questions: Map<string, Question>
   readonly noticed: Set<string>
   readonly shown: Map<string, () => void>
-  /** Cut-off questions whose answer is being passed on as a message, and those whose answer went out. */
-  readonly answering: Set<string>
+  /** The questions whose answer is being passed on, each until that is done, and those whose answer went out. */
+  readonly passing: Map<string, Promise<unknown>>
   readonly answered: Set<string>
   /** The ports of the loaded instances. */
   readonly loaded: Set<QuestionPorts>
@@ -97,7 +98,7 @@ const sharedState = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencod
 sharedState.questions ??= new Map()
 sharedState.noticed ??= new Set()
 sharedState.shown ??= new Map()
-sharedState.answering ??= new Set()
+sharedState.passing ??= new Map()
 sharedState.answered ??= new Set()
 sharedState.loaded ??= new Set()
 sharedState.following ??= 0
@@ -197,7 +198,7 @@ async function tell(ports: QuestionPorts, asked: Asked, text: string, attributes
 /** Tells the top session that a question's call was cut off, once per question and process. */
 async function tellCutOff(ports: QuestionPorts, asked: Asked, cutOff: keyof typeof CUT_OFF) {
   // Not while an answer to it is being passed on, which makes the notice moot.
-  if (shared.noticed.has(asked.requestID) || shared.answering.has(asked.requestID)) return
+  if (shared.noticed.has(asked.requestID) || isPassing(asked.requestID)) return
   claim(shared.noticed, asked.requestID)
   await tell(ports, asked, questionNotice(asked, cutOff), { asks: "question", request: asked.requestID, [cutOff]: "true" })
 }
@@ -229,37 +230,41 @@ function normalize(asked: Asked, answers: QuestionAnswerInput["answers"]): Answe
 async function deliver(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   const id = asked.requestID
   // One answer at a time, and once, per question in this process: storage cannot be claimed
-  // atomically. While it is claimed, nobody is told that the question was cut off.
-  if (shared.answering.has(id) || shared.answered.has(id)) return undefined
-  shared.answering.add(id)
+  // atomically. A second answer waits for the first, and is passed on if the first was not.
+  // While one is under way, nobody is told that the question was cut off, nor links to it.
+  for (let under = shared.passing.get(id); under; under = shared.passing.get(id)) await under.catch(() => undefined)
+  if (shared.answered.has(id)) return undefined
+  const passing = passOn(ports, asked, outcome)
+  shared.passing.set(id, passing)
   try {
-    const known = shared.questions.get(id)
-    const call = known?.call
-    if (known && call) {
-      known.call = undefined
-      // Taken only if the call ends with it: one already ending some other way, its turn being
-      // stopped or the person answering in its session, does not.
-      if (await call(outcome)) {
-        claim(shared.answered, id)
-        return "result" as const
-      }
-    }
-    // Its call has just ended: whether it was cut off or settled is known once settle is through.
-    await shared.questions.get(id)?.settling
-    const stored = (await ports.storage.get(keyOf(id))) as Stored | undefined
-    if (!stored || stored.answered) {
-      shared.questions.delete(id)
-      return undefined
-    }
-    await sendAnswer(ports, asked, outcome)
-    // Dropped only once the message is out, so a failed send leaves it to be answered again.
-    claim(shared.answered, id)
-    shared.questions.delete(id)
-    await forget(ports, asked)
-    return "message" as const
+    return await passing
   } finally {
-    shared.answering.delete(id)
+    shared.passing.delete(id)
   }
+}
+
+async function passOn(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
+  const id = asked.requestID
+  const call = shared.questions.get(id)?.call
+  // Taken only if the call ends with it: one already ending some other way, its turn being
+  // stopped or the person answering in its session, does not.
+  if (call && (await call(outcome))) {
+    claim(shared.answered, id)
+    return "result" as const
+  }
+  // Its call has just ended: whether it was cut off or settled is known once settle is through.
+  await shared.questions.get(id)?.settling
+  const stored = (await ports.storage.get(keyOf(id))) as Stored | undefined
+  if (!stored || stored.answered) {
+    shared.questions.delete(id)
+    return undefined
+  }
+  await sendAnswer(ports, asked, outcome)
+  // Dropped only once the message is out, so a failed send leaves it to be answered again.
+  claim(shared.answered, id)
+  shared.questions.delete(id)
+  await forget(ports, asked)
+  return "message" as const
 }
 
 /**
@@ -271,7 +276,8 @@ async function forget(ports: QuestionPorts, asked: Asked) {
     await ports.storage.remove(keyOf(asked.requestID))
   } catch (error) {
     ports.log(`courier question: could not forget ${asked.requestID}: ${String(error)}`)
-    await ports.storage.set(keyOf(asked.requestID), { ...asked, answered: true } as never).catch(() => undefined)
+    const marked: Stored = { ...storedOf(asked), answered: true }
+    await ports.storage.set(keyOf(asked.requestID), marked as never).catch(() => undefined)
   }
 }
 
@@ -338,7 +344,7 @@ export async function noticeCutOff(ports: QuestionPorts) {
   for (const asked of stored) {
     const known = shared.questions.get(asked.requestID)
     // Its call waits, or its top session is asking the person: nothing to tell.
-    if (known?.call || known?.link || known?.settling) {
+    if (known?.call || known?.link || known?.settling || isPassing(asked.requestID)) {
       kept++
       continue
     }
@@ -346,7 +352,9 @@ export async function noticeCutOff(ports: QuestionPorts) {
       !asked.answered && kept < MAX_STORED && now - asked.askedAt <= RETENTION_MS && lineageIn(roster, asked.sessionID).length > 0
     if (!current) {
       shared.questions.delete(asked.requestID)
-      await ports.storage.remove(keyOf(asked.requestID))
+      await ports.storage
+        .remove(keyOf(asked.requestID))
+        .catch((error: unknown) => ports.log(`courier question: could not drop ${asked.requestID}: ${String(error)}`))
       continue
     }
     if (!known) shared.questions.set(asked.requestID, { ...asked })
@@ -451,8 +459,12 @@ async function settle(
   // Telling the top session first, so what follows does not overtake the notice or come before it is stored.
   await question.relaying
   // Answered by the top session, or never relayed, or dropped meanwhile.
-  if ((Exit.isSuccess(exit) && exit.value.by === "top") || shared.questions.get(question.requestID) !== question) {
+  if (Exit.isSuccess(exit) && exit.value.by === "top") {
     if (shared.questions.get(question.requestID) === question) shared.questions.delete(question.requestID)
+    await forget(ports, question)
+    return
+  }
+  if (shared.questions.get(question.requestID) !== question) {
     await ports.storage.remove(keyOf(question.requestID))
     return
   }
@@ -519,7 +531,8 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
       const fromTop = Effect.gen(function* () {
         yield* Effect.promise(() => shown)
         // Kept on the question, so settle can wait for it should this race end while it runs.
-        if (!(yield* Effect.promise(() => (question.relaying = relay(current, question))))) return yield* Effect.never
+        // Kept waiting even when telling the top session failed: it may have linked to it meanwhile.
+        yield* Effect.promise(() => (question.relaying = relay(current, question)))
         return { by: "top" as const, outcome: yield* Effect.promise(() => byTop) }
       })
       const ended = yield* Effect.raceFirst(
@@ -574,6 +587,7 @@ function linkFor(sessionID: string, questions: ReadonlyArray<Prompt>) {
       (question) =>
         question.top === sessionID &&
         !question.link &&
+        !isPassing(question.requestID) &&
         choices(question.questions) === asked.choices &&
         wording(question.questions) === asked.wording,
     )
@@ -597,7 +611,8 @@ function linking(ports: () => QuestionPorts | undefined, ask: Execute): Execute 
         // asked: say how to pass it on.
         const asked = choices(questions)
         const similar = [...shared.questions.values()].filter(
-          (question) => question.top === context.sessionID && !question.link && choices(question.questions) === asked,
+          (question) =>
+            question.top === context.sessionID && !question.link && !isPassing(question.requestID) && choices(question.questions) === asked,
         )
         if (!similar.length) return result
         const which = similar.map((question) => `session ${question.sessionID} (requestID "${question.requestID}")`).join(", ")
@@ -684,7 +699,7 @@ export function forgetQuestions() {
   shared.questions.clear()
   shared.noticed.clear()
   shared.shown.clear()
-  shared.answering.clear()
+  shared.passing.clear()
   shared.answered.clear()
   shared.loaded.clear()
   shared.following = 0

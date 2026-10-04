@@ -499,6 +499,22 @@ describe("the question tool of a spawned session", () => {
     expect(told.filter((item) => item.sessionID === "ses_child")).toHaveLength(1)
   })
 
+  test("a child asking the same while the parent's question is already open: the parent is told how to pass the answer on", async () => {
+    const { tool, ask } = await setUp()
+    const parent = ask("ses_parent")
+    await settle()
+    const child = ask("ses_child")
+    await settle()
+
+    formOf(tool, "ses_parent").answer([["Hi"]])
+
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value.content).toContain(
+      'If you asked this for session ses_child (requestID "question_1"), these answers were not passed on by themselves',
+    )
+    await Effect.runPromise(Fiber.interrupt(child))
+  })
+
   test("the parent's own question with the same choices but other words is not linked", async () => {
     const { tool, ask } = await setUp()
     const yesNo = (question: string) => [{ question, header: "Confirm", options: [{ label: "Yes", description: "" }, { label: "No", description: "" }] }]

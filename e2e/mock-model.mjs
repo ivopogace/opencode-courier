@@ -67,10 +67,10 @@ function decide(body) {
   // The child of COURIER-ASK runs a command the test's permission rules make it ask for.
   if (parent && recent.includes("CHILD-ASKS")) return { tool: "shell", args: { command: "echo courier-asks" } }
   // The child of COURIER-QUESTION asks the person which greeting to use, with the question tool.
-  const question = recent.match(/CHILD-QUESTION(-MULTI|-RELABEL)?/)
+  const question = recent.match(/CHILD-QUESTION(-MULTI|-RELABEL|-REWORD)?/)
   if (parent && question) {
     const options = ["Hello", "Hi", "Hey"].map((label) => ({ label, description: `Say ${label}` }))
-    const header = question[1] === "-RELABEL" ? "Relabel" : "Greeting"
+    const header = question[1] === "-RELABEL" ? "Relabel" : question[1] === "-REWORD" ? "Reword" : "Greeting"
     // Held back like a report, so the parent's first turn has ended (and opencode run, which would
     // dismiss a question asked in it, has let go) when the notice lands.
     return {
@@ -91,12 +91,14 @@ function decide(body) {
     }
   if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE" } }
   // A parent told that its child asks a question asks the person the same, with its own question
-  // tool; the test answers its form. A parent of COURIER-QUESTION-RELABEL rewords the options, so
-  // its question is not linked to the child's and it passes the answer on with courier_answer.
+  // tool; the test answers its form. A parent of COURIER-QUESTION-RELABEL relabels the options, and
+  // one of COURIER-QUESTION-REWORD rewords the question, so its question is not linked to the
+  // child's and it passes the answer on with courier_answer.
   if (QUESTION_NOTICE.test(recent)) {
     const args = JSON.parse(recent.split("\n").find((line) => line.startsWith('{"questions"')))
     for (const item of args.questions)
       if (item.header === "Relabel") item.options = item.options.map((option) => ({ ...option, label: option.label.toLowerCase() }))
+      else if (item.header === "Reword") item.question = "Which greeting would you like?"
     return { tool: "question", args }
   }
   // A parent told that its child waits for permission ends its turn, as if it had asked the person;
@@ -125,7 +127,7 @@ function decide(body) {
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
-  const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL)?(?: (isolate|nested))?/)
+  const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL|-REWORD)?(?: (isolate|nested))?/)
   if (questions)
     return {
       tool: "courier_spawn",

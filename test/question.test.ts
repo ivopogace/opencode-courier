@@ -5,7 +5,8 @@ import {
   answerQuestion,
   forgetQuestions,
   formShown,
-  formsMayHaveBeenMissed,
+  eventsFollowed,
+  eventsLeft,
   MAX_STORED,
   noticeCutOff,
   pendingQuestions,
@@ -432,7 +433,11 @@ describe("the question tool of a spawned session", () => {
     formOf(tool, "ses_parent").answer([["Yes"]])
 
     const parentExit = await exitOf(parent)
-    expect(Exit.isSuccess(parentExit) && parentExit.value.content).not.toContain("passed on")
+    // Not linked, but told how to pass the answers on, should it have asked for the child after all.
+    expect(Exit.isSuccess(parentExit) && parentExit.value.content).toContain(
+      'If you asked this for session ses_child (requestID "question_1"), these answers were not passed on, since the questions are worded differently: pass them on with courier_answer.',
+    )
+    expect(Exit.isSuccess(parentExit) && parentExit.value.metadata.passed).toBeUndefined()
     expect(formOf(tool, "ses_child")).toBeDefined()
     // Asked again with the same words, differently spaced and cased, it is.
     const again = ask("ses_parent", yesNo("delete  the old branch?"))
@@ -480,19 +485,45 @@ describe("the question tool of a spawned session", () => {
     expect(told.filter((item) => item.sessionID === "ses_child")).toHaveLength(1)
   })
 
-  test("a call whose form.created was missed while the event stream was down is relayed once it is back", async () => {
+  test("a call whose form.created was missed while no event stream was up is relayed once one is back", async () => {
     const { told, ask } = await setUp()
-    const shown = formShownOff()
+    expect(eventsFollowed()).toBe(false)
+    const other = eventsFollowed()
+    eventsLeft()
+    formShownOff()
     const child = ask("ses_child")
     await settle()
+    // Another instance still follows the events, so nothing was missed.
+    expect(eventsFollowed()).toBe(false)
+    eventsLeft()
+    eventsLeft()
     expect(told).toEqual([])
 
-    shown.restore()
-    formsMayHaveBeenMissed()
+    expect(eventsFollowed()).toBe(true)
     await settle()
 
+    expect(other).toBe(false)
     expect(told[0].text).toContain('asks="question"')
     await Effect.runPromise(Fiber.interrupt(child))
+  })
+
+  test("an answer to a cut-off question that could not be sent can be passed on again", async () => {
+    const { ports, store, told, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    const synthetic = ports.session.synthetic
+    ;(ports.session as any).synthetic = async () => {
+      throw new Error("server busy")
+    }
+    const input = { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }
+
+    await expect(answerQuestion(ports, "ses_parent", input)).rejects.toThrow("server busy")
+    expect(store.has("question/question_1")).toBe(true)
+    ;(ports.session as any).synthetic = synthetic
+    expect(await answerQuestion(ports, "ses_parent", input)).toMatchObject({ answered: true, by: "message" })
+    expect(told.at(-1).sessionID).toBe("ses_child")
   })
 
   test("a question of a child's child goes to the session at the top, which alone answers it", async () => {

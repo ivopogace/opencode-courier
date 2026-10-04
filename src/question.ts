@@ -64,15 +64,7 @@ interface Question extends Asked {
   relaying?: Promise<boolean>
 }
 
-const storedOf = (question: Asked): Asked => ({
-  requestID: question.requestID,
-  sessionID: question.sessionID,
-  top: question.top,
-  title: question.title,
-  ...(question.startedBy ? { startedBy: question.startedBy } : {}),
-  questions: question.questions,
-  askedAt: question.askedAt,
-})
+const storedOf = ({ call: _call, link: _link, relaying: _relaying, ...asked }: Question): Asked => asked
 
 /**
  * Shared by every plugin instance in the process, since a child and the session it asks can be in
@@ -85,13 +77,24 @@ interface Shared {
   readonly shown: Map<string, () => void>
   /** Cut-off questions whose answer is being passed on as a message. */
   readonly answering: Set<string>
+  /** The ports of the loaded instances. */
+  readonly loaded: Set<QuestionPorts>
+  /** How many instances follow OpenCode's events now, and whether any has since the process started. */
+  following: number
+  followed: boolean
 }
 const shared = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.questions")] ??= {
   questions: new Map(),
   noticed: new Set(),
   shown: new Map(),
   answering: new Set(),
+  loaded: new Set(),
+  following: 0,
+  followed: false,
 }) as Shared
+
+/** How long a question cut off by a closing location waits before an instance still loaded tells its top session. */
+const CLOSING_GRACE_MS = 30_000
 
 export interface QuestionPorts {
   readonly storage: RosterStorage
@@ -214,25 +217,32 @@ function normalize(asked: Asked, answers: QuestionAnswerInput["answers"]): Answe
  */
 async function deliver(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   const known = shared.questions.get(asked.requestID)
-  // Off the list first, synchronously, so a second answer finds nothing to pass on.
-  if (known) shared.questions.delete(asked.requestID)
   if (known?.call) {
+    // Off the list synchronously, so a second answer finds nothing to pass on.
+    shared.questions.delete(asked.requestID)
     known.call(outcome)
     return "result" as const
   }
-  // A cut-off question is in storage only, which cannot be claimed atomically: this process claims it.
+  // Cut off: storage cannot be claimed atomically, so this process claims the question while the
+  // message goes out.
   if (shared.answering.has(asked.requestID)) return undefined
   shared.answering.add(asked.requestID)
   try {
-    return await deliverByMessage(ports, asked, outcome)
+    if ((await ports.storage.get(keyOf(asked.requestID))) === undefined) {
+      shared.questions.delete(asked.requestID)
+      return undefined
+    }
+    await sendAnswer(ports, asked, outcome)
+    // Dropped only once the message is out, so a failed send leaves it to be answered again.
+    shared.questions.delete(asked.requestID)
+    await ports.storage.remove(keyOf(asked.requestID))
+    return "message" as const
   } finally {
     shared.answering.delete(asked.requestID)
   }
 }
 
-async function deliverByMessage(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
-  if ((await ports.storage.get(keyOf(asked.requestID))) === undefined) return undefined
-  await ports.storage.remove(keyOf(asked.requestID))
+async function sendAnswer(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   const text =
     "answers" in outcome
       ? `Your question ${asked.requestID} was cut off before it was answered; here is the answer. ${answeredText(asked.questions, outcome.answers)}`
@@ -244,7 +254,6 @@ async function deliverByMessage(ports: QuestionPorts, asked: Asked, outcome: Out
     metadata: { source: "courier", from: asked.top, answers: asked.requestID },
     delivery: "steer",
   })
-  return "message" as const
 }
 
 /**
@@ -288,22 +297,43 @@ export async function noticeCutOff(ports: QuestionPorts) {
   const now = ports.now()
   let kept = 0
   for (const asked of stored) {
-    if (shared.questions.has(asked.requestID)) {
+    const known = shared.questions.get(asked.requestID)
+    // Its call waits, or its top session is asking the person: nothing to tell.
+    if (known?.call || known?.link) {
       kept++
       continue
     }
-    const current = kept < MAX_STORED && now - asked.askedAt <= RETENTION_MS && lineageIn(roster, asked.sessionID).length > 0
-    if (!current) {
-      await ports.storage.remove(keyOf(asked.requestID))
-      continue
+    if (!known) {
+      const current = kept < MAX_STORED && now - asked.askedAt <= RETENTION_MS && lineageIn(roster, asked.sessionID).length > 0
+      if (!current) {
+        await ports.storage.remove(keyOf(asked.requestID))
+        continue
+      }
+      shared.questions.set(asked.requestID, { ...asked })
     }
     kept++
-    if (shared.noticed.has(asked.requestID)) continue
-    shared.questions.set(asked.requestID, { ...asked })
-    await tellCutOff(ports, asked, "restarted").catch((error: unknown) =>
+    await tellCutOff(ports, known ?? asked, "restarted").catch((error: unknown) =>
       ports.log(`courier question: could not tell ${asked.top} about ${asked.requestID}: ${String(error)}`),
     )
   }
+}
+
+/** A plugin instance whose ports the relay may use, until the returned function is called. */
+export function joinRelay(ports: QuestionPorts) {
+  shared.loaded.add(ports)
+  return () => void shared.loaded.delete(ports)
+}
+
+/** Tells the top session about a question its closing location cut off, through an instance still loaded, if any. */
+function tellLater(question: Question) {
+  const timer = setTimeout(() => {
+    const ports = shared.loaded.values().next().value
+    if (!ports || question.call || question.link || shared.questions.get(question.requestID) !== question) return
+    void tellCutOff(ports, question, "restarted").catch((error: unknown) =>
+      ports.log(`courier question: could not tell ${question.top} about ${question.requestID}: ${String(error)}`),
+    )
+  }, CLOSING_GRACE_MS)
+  timer.unref?.()
 }
 
 /** Called for OpenCode's `form.created`: a question call's form is shown, so its question can be relayed. */
@@ -316,13 +346,31 @@ export function formShown(event: { readonly data: { readonly form: { readonly se
 }
 
 /**
- * Called when an event stream was subscribed again after it broke: a form shown meanwhile was not
- * seen, so every call still waiting for its form is taken as shown. One still waiting for its
- * permission check is relayed early, which is the lesser harm.
+ * Called when an event stream may have missed forms being shown: every call still waiting for its
+ * form is taken as shown. One still waiting for its permission check is relayed early, which is the
+ * lesser harm.
  */
 export function formsMayHaveBeenMissed() {
   for (const shown of shared.shown.values()) shown()
   shared.shown.clear()
+}
+
+/**
+ * Called when an instance starts following OpenCode's events. Every instance is sent every event,
+ * so a form shown is missed only while none follows them; then the calls waiting are released, and
+ * true is returned, for the caller to release them again on its first event, once it is connected.
+ */
+export function eventsFollowed() {
+  const missed = shared.following === 0 && shared.followed
+  shared.following++
+  shared.followed = true
+  if (missed) formsMayHaveBeenMissed()
+  return missed
+}
+
+/** Called when an instance's event stream ended or broke. */
+export function eventsLeft() {
+  shared.following = Math.max(0, shared.following - 1)
 }
 
 const defectTag = (cause: Cause.Cause<unknown>) => {
@@ -367,11 +415,12 @@ async function settle(
   // Cut off: the turn was stopped, or OpenCode is closing the location, which unloads the plugin
   // and then withdraws every open form there as if the person had dismissed it (on a server
   // shutdown, say). The question stays, answered by message from now on; a top session already
-  // asking the person passes their answer on that way. A closing location is not told now: it
-  // leaves the stored question to the next load, in this process or after a restart, to tell.
+  // asking the person passes their answer on that way. A closing location is not told now: the
+  // next load tells it, in this process or after a restart, or an instance still loaded does, a
+  // little later, when the process is still running then.
   if (Exit.isFailure(exit) && (unloaded || (!isDismissal(exit.cause) && Exit.hasInterrupts(exit)))) {
     question.call = undefined
-    if (unloaded) shared.questions.delete(question.requestID)
+    if (unloaded) tellLater(question)
     else if (!question.link) await tellCutOff(ports, question, "stopped")
     return
   }
@@ -429,10 +478,11 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
         original(input, context).pipe(Effect.map((result) => ({ by: "child" as const, result }))),
         fromTop,
       ).pipe(
+        // Not waited for, so storing or a notice that hangs cannot hold the call up.
         Effect.onExit((exit) =>
-          Effect.promise(async () => {
+          Effect.sync(() => {
             shared.shown.delete(key)
-            await settle(current, question, exit, ports() !== current).catch((error: unknown) =>
+            void settle(current, question, exit, ports() !== current).catch((error: unknown) =>
               current.log(`courier question: could not settle ${question.requestID}: ${String(error)}`),
             )
           }),
@@ -484,8 +534,21 @@ function linking(ports: () => QuestionPorts | undefined, ask: Execute): Execute 
   return (input, context) =>
     Effect.gen(function* () {
       const current = ports()
-      const linked = current ? linkFor(context.sessionID, promptsOf(input)) : undefined
-      if (!current || !linked) return yield* ask(input, context)
+      const questions = promptsOf(input)
+      const linked = current ? linkFor(context.sessionID, questions) : undefined
+      if (!current || !linked) {
+        const result = yield* ask(input, context)
+        // Not linked, but perhaps a reworded question of a waiting session: say how to pass it on.
+        const similar = [...shared.questions.values()].filter(
+          (question) => question.top === context.sessionID && choices(question.questions) === choices(questions),
+        )
+        if (!current || !similar.length || typeof result.content !== "string") return result
+        const which = similar.map((question) => `session ${question.sessionID} (requestID "${question.requestID}")`).join(", ")
+        return {
+          ...result,
+          content: `${result.content}\nIf you asked this for ${which}, these answers were not passed on, since the questions are worded differently: pass them on with courier_answer.`,
+        }
+      }
       let settled!: (how: Elsewhere) => void
       const elsewhere = new Promise<Elsewhere>((resolve) => (settled = resolve))
       linked.link = settled
@@ -494,18 +557,19 @@ function linking(ports: () => QuestionPorts | undefined, ask: Execute): Execute 
         Effect.promise(() => elsewhere).pipe(Effect.map((how) => ({ by: "elsewhere" as const, how }))),
       ).pipe(
         Effect.onExit((exit) =>
-          Effect.promise(async () => {
+          Effect.sync(() => {
             if (linked.link === settled) linked.link = undefined
             // Unloaded: OpenCode is closing the location, which withdraws the form; nobody dismissed it.
             if (Exit.isSuccess(exit) || ports() !== current) return
-            try {
+            // Not waited for, as in asking.
+            void (async () => {
               // Dismissed by the person: so is the question they were asked for.
               if (isDismissal(exit.cause)) await deliver(current, linked, { dismissed: true })
               // Stopped while the asking call was cut off as well: nobody has been told yet.
               else if (!linked.call && shared.questions.get(linked.requestID) === linked) await tellCutOff(current, linked, "stopped")
-            } catch (error) {
-              current.log(`courier question: could not pass on what happened to ${linked.requestID}: ${String(error)}`)
-            }
+            })().catch((error: unknown) =>
+              current.log(`courier question: could not pass on what happened to ${linked.requestID}: ${String(error)}`),
+            )
           }),
         ),
       )
@@ -564,4 +628,6 @@ export function forgetQuestions() {
   shared.noticed.clear()
   shared.shown.clear()
   shared.answering.clear()
+  shared.following = 0
+  shared.followed = false
 }

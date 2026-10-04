@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { envelope } from "./courier.js"
-import { formShown, formsMayHaveBeenMissed } from "./question.js"
+import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed } from "./question.js"
 import { permissionNotice, settledNotice, type PermissionAsked, type PermissionReplied, type Waiting } from "./relay.js"
 import { allEntries, entriesOf, lineage, type RosterEntry, type RosterStorage } from "./roster.js"
 
@@ -169,13 +169,19 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
  * noting the question forms shown, which the question relay waits for.
  */
 export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
-  for (let again = false; !signal.aborted; again = true) {
+  while (!signal.aborted) {
+    let following = false
     try {
       const events = ports.event.subscribe({ signal })
-      if (again) formsMayHaveBeenMissed()
+      // Question forms shown while no instance followed the events were not seen: released now,
+      // and again on the first event, by when the stream is surely connected.
+      let missed = eventsFollowed()
+      following = true
       // Alongside the new subscription; a request both relays see is relayed once.
       void relayPending(ports, state).catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`))
       for await (const event of events) {
+        if (missed) formsMayHaveBeenMissed()
+        missed = false
         await handle(ports, state, event).catch((error: unknown) => {
           const sessionID = (event.data as { sessionID?: string } | undefined)?.sessionID
           ports.log(`courier watch: could not handle ${event.type} of ${sessionID}: ${String(error)}`)
@@ -183,6 +189,8 @@ export async function watchChildren(ports: WatchPorts, state: WatchState, signal
       }
     } catch (error) {
       if (!signal.aborted) ports.log(`courier watch: event stream broke: ${String(error)}`)
+    } finally {
+      if (following) eventsLeft()
     }
     if (!signal.aborted) await pause(retryMs, signal)
   }

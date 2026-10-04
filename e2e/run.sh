@@ -183,7 +183,8 @@ check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "
 # The texts of session $1: what it was sent, what it replied and what its tools returned.
 texts() {
   api "session/$1/message" |
-    jq -r '.data[] | (.text // empty), (.content[]? | .text // (.state.output? // empty | if type == "string" then . else tojson end))'
+    jq -r '.data[] | (.text // empty), (.content[]? | (.text // empty), (.state.content[]?.text // empty),
+      (.state.output? // empty | if type == "string" then . else tojson end))'
 }
 # Whether session $1 has a text containing $2, waiting up to $3 (default 30) s.
 has_text() {
@@ -257,6 +258,13 @@ check "the person answers the parent's reworded question" "$(answer_form "$paren
 check "courier_answer passed it on" "$(has_text "$parent" "Passed the answers to question")"
 check "the child got it" "$(has_text "$parent" 'CHILD GOT [["hi"]]' 45)"
 check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
+
+echo "a parent that rewords the question is not linked, is told so, and passes the answer on with courier_answer"
+ask_question COURIER-QUESTION-REWORD
+check "the person answers the parent's reworded question" "$(answer_form "$parent" "$parent_form" '"Hey"')"
+check "the parent's question said it was not passed on" "$(has_text "$parent" "these answers were not passed on, since the questions are worded differently")"
+check "courier_answer passed it on" "$(has_text "$parent" "Passed the answers to question")"
+check "the child got it" "$(has_text "$parent" 'CHILD GOT [["Hey"]]' 45)"
 
 echo "the person answers in the child's session instead"
 ask_question COURIER-QUESTION

@@ -54,11 +54,7 @@ function alwaysChoice(request: PermissionAsked["data"]) {
   return [`- always: allow it, and from now on ${scope} in this project`]
 }
 
-/**
- * What the session at the top is told. `startedBy` names the session that started the asking one
- * when that is not the top session itself, but one started from it.
- */
-/** How a notice names where the asking session came from, for a session at the top of its lineage. */
+/** How a notice names where the asking session came from, to the session at the top of its lineage. */
 export const origin = (startedBy?: string) =>
   startedBy ? `which ${startedBy} started with courier_spawn, a session started from yours,` : "which you started with courier_spawn,"
 
@@ -66,6 +62,10 @@ export const origin = (startedBy?: string) =>
 export const STAYS_QUIET =
   "and then it does not report back on its own: if it stays quiet, message it with courier_send to have it carry on."
 
+/**
+ * What the session at the top is told. `startedBy` names the session that started the asking one
+ * when that is not the top session itself, but one started from it.
+ */
 export function permissionNotice(title: string, request: PermissionAsked["data"], startedBy?: string) {
   const resources = request.resources.slice(0, MAX_RESOURCES).map((resource) => `- ${clip(resource)}`)
   if (request.resources.length > MAX_RESOURCES) resources.push(`- and ${request.resources.length - MAX_RESOURCES} more`)

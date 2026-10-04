@@ -122,8 +122,9 @@ When the parent asks you the same questions with the same options, the two are l
 pick in the parent's session is passed to the child's waiting call, which returns it as if you had
 answered there, and the child carries on in the same turn. The parent's tool result says so. Only
 the same wording links (spacing and case aside), so a question of the parent's own with the same
-yes-or-no choices never answers a child's. A parent that asked you some other way, in text or
-reworded, calls
+yes-or-no choices never answers a child's; when the wording is all that differs, the parent's tool
+result says the answers were not passed on and names the request. A parent that asked you some
+other way, in text or reworded, calls
 `courier_answer { sessionID, requestID, answers }`: one entry per question, in order, each the
 label you chose or the text you gave, or a list of labels where a question allows several. As with
 permission requests, only the session at the top can answer.
@@ -144,7 +145,8 @@ A question whose call is cut off stays answerable. When the child's turn is stop
 or by OpenCode itself, which stops every turn in a project location after 60 minutes without
 activity there), or the server restarts or closes the project, the question is gone from the
 screen. The plugin keeps it in its storage, sends the parent a message marked `stopped="true"`, or
-`restarted="true"` when the plugin is next loaded for the project, with the questions, and passes
+`restarted="true"` when the plugin is next loaded for the project (or half a minute later, when
+OpenCode closed only that project and keeps running), with the questions, and passes
 the answer on as a message to the child, which wakes it. If the parent is asking you at that
 moment, your answer goes that way without a new message. Stored
 questions are dropped after 14 days, once the child is off its parent's roster, or beyond the 100
@@ -427,7 +429,8 @@ answered in the child's own session gets the parent a message that it is settled
 question tool) wakes its idle parent once, with the questions, which the parent asks the person in
 its own session, that `courier_status` shows it pending, and that the person's answer there reaches
 the child: single choice, multi-select, a typed answer (from an isolated child), and through
-`courier_answer` from a parent that reworded the options; that answering in the child's session
+`courier_answer` from a parent that relabelled the options or reworded the question, which is then
+told its answers were not passed on; that answering in the child's session
 withdraws the parent's question, that a dismissal on either side is passed to the other, that a
 question whose child's turn was interrupted, or both turns, or that was open across a server
 restart, still reaches the child with the answer, as a message, and that a question of a child's

@@ -8,7 +8,7 @@ import { describeFailure, listChildren, send, spawn, status, type CourierPorts }
 import { cleanup, headOf, inspectWorktree, type CleanupPorts, type CleanupResult } from "./cleanup.js"
 import { cancel, deliverDue, schedule, TICK_MS, type LaterPorts } from "./later.js"
 import { answer, pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
-import { answerQuestion, isQuestion, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
+import { answerQuestion, isQuestion, joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
 import { pruneExpired } from "./roster.js"
 import { watchChildren, type WatchState } from "./watch.js"
 import { listen, readConfig, subscribe, unsubscribe, type WebhookConfig, type WebhookPorts } from "./webhook.js"
@@ -463,6 +463,7 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
 
     void pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => console.error(`courier roster prune: ${String(error)}`))
     relay.ports = questionPorts
+    const leaveRelay = joinRelay(questionPorts)
     void noticeCutOff(questionPorts).catch((error: unknown) => questionPorts.log(`courier question: stored questions: ${String(error)}`))
 
     let ticking = false
@@ -489,6 +490,7 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
       watching.abort()
       locations.delete(location)
       if (relay.ports === questionPorts) relay.ports = undefined
+      leaveRelay()
       await leave?.()
     }
   },

@@ -70,8 +70,9 @@ Requires OpenCode V2: the `opencode` command from `@opencode/cli` (the same bina
 as `opencode2`, the name of the beta line, so a shell that still calls that keeps working). Each
 release of this plugin is built and tested against exactly one OpenCode V2 version, the
 `@opencode/plugin` version pinned in `package.json` (the CLI and the plugin API share a version).
-That is the version the end-to-end suite runs on, and the only one the release is known to work
-with. A newer OpenCode may work, or may break tools silently;
+The end-to-end suite runs on that version with every change, and once more on the newest
+`@opencode/cli` release, where a failure is a warning rather than a red build, so a host release
+that breaks the plugin shows up in CI first. A newer OpenCode may still break tools;
 [docs/plugin-api-notes.md](docs/plugin-api-notes.md) lists what the pinned version already needed
 working around, and what changed the last time the pin moved. A release that moves the pin adds a
 row here. When the plugin loads on an OpenCode whose version is not the pinned one, it writes one
@@ -82,7 +83,18 @@ line to the server log naming both versions, so a mismatch is named before a too
 | 0.2.0 | 2.0.22 |
 | 0.1.6 | 0.0.0-beta-19271 (the beta line: `opencode2` from `@opencode-ai/cli`, and `@opencode-ai/plugin`) |
 
-Check yours with `opencode --version`, and install the matching CLI with:
+0.2.0 was tested on 2.0.22 and on the `dev` build 0.0.0-dev-20534 of 2026-10-04, the newest build
+then (no 2.x release above 2.0.22 existed), where the suite passed too. Of the older hosts tried, it
+loads on 2.0.4 and 2.0.21 (nothing in between was run, and the suite was not), and fails to load on
+2.0.0 and 2.0.3, which lack the `model` domain the plugin API gained in 2.0.4. The version in
+`package.json` protects nobody on its own: OpenCode says nothing about it, since
+`opencode plugin add` installs the plugin whatever your OpenCode version and its loader warns about
+nothing either (a recorded experiment, in
+[docs/plugin-api-notes.md](docs/plugin-api-notes.md#what-plugin-add-and-loading-do-with-the-peer-dependency-2026-10-04),
+which also says why the peer dependency stays exact rather than a range: it picks the copy of the
+plugin API the plugin runs on). The plugin's own log line above is the only runtime signal, apart
+from the load failure on those hosts before 2.0.4. Check yours with `opencode --version`, and
+install the matching CLI with:
 
 ```bash
 npm install -g @opencode/cli@2.0.22
@@ -261,7 +273,9 @@ its turn instead of polling, and that each report wakes it. Which models pass an
 them: [docs/real-model.md](docs/real-model.md).
 
 CI (`.github/workflows/ci.yml`) runs both suites on every push to `main` and every pull request,
-with the OpenCode CLI at the same version as the pinned plugin API. Releases start from GitHub and
+with the OpenCode CLI at the same version as the pinned plugin API, and the live suite once more
+with the CLI at its `latest` dist-tag: that job may fail, and its step summary names the version it
+ran on, so a host release that breaks the plugin is seen without blocking the build. Releases start from GitHub and
 end with a maintainer's 2FA approval on npm: [docs/releasing.md](docs/releasing.md). What the plugin
 API does that the plugin had to work around, and what changed when the pin last moved:
 [docs/plugin-api-notes.md](docs/plugin-api-notes.md).

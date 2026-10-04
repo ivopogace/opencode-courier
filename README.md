@@ -12,6 +12,26 @@ idle. A child whose turn fails instead, so that it cannot report, is reported by
 child that waits for a permission or asks a question has it passed to the parent, who asks you and
 passes your answer back.
 
+The parent does not wait. Prompt: *"Spawn two children: one runs `sleep 30` then lists the exports
+of math.js, the other runs `sleep 45` then lists the exports of text.js. Don't wait for them:
+meanwhile write a short README.md for this folder yourself, and add their reports to it when they
+arrive."*
+
+![A parent spawns two slow children, writes a README itself, and is woken by each report](docs/demo-async.gif)
+
+Watch the parent write its README and finish its turn 13 seconds in, while both children still
+sleep. Each report then starts a new turn on its own (the `Details` line is the child's message):
+the first after about 30 seconds, the second after about 45, and the parent folds each into the
+README.
+
+A child's question reaches you. Prompt: *"Spawn a child session to add a multiply function to
+math.js. It must ask me first whether to name it multiply, times or product."*
+
+![A child's question appears in the parent, is answered there, and the child carries on](docs/demo-question.gif)
+
+Watch the child's question open in the parent's session, where the answer `times` is picked. The
+parent passes it back, and the child adds `times` to math.js and reports.
+
 > **Status: early.** Passes an end-to-end test inside a live OpenCode V2 server
 > (`opencode2 v0.0.0-beta-19271`) driven by a scripted stand-in model (`e2e/run.sh`), and a smoke
 > test with real (free) models: see [Real models](#real-models).

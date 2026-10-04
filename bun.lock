@@ -14,7 +14,7 @@
         "typescript": "5.9.3",
       },
       "peerDependencies": {
-        "@opencode/plugin": "2.0.22",
+        "@opencode/plugin": "^2.0.22",
       },
     },
   },

@@ -1,4 +1,4 @@
-import type { Plugin } from "@opencode-ai/plugin"
+import type { Plugin } from "@opencode/plugin"
 import { envelope } from "./courier.js"
 import { scanAll, type Storage } from "./storage.js"
 

@@ -1,4 +1,4 @@
-import type { Plugin } from "@opencode-ai/plugin"
+import type { Plugin } from "@opencode/plugin"
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
@@ -19,8 +19,9 @@ export interface WorktreeState {
 export interface CleanupPorts {
   readonly storage: RosterStorage
   readonly worktree: Pick<Context["worktree"], "remove">
-  /** The plugin's own location, for roster entries recorded before they carried their source. */
   readonly directory: string
+  /** The project of the plugin's location, for roster entries recorded before they carried their project. */
+  readonly projectID: string
   /** The worktree's state, or undefined when its directory no longer exists; `base` is the commit it was made from. */
   readonly inspect: (directory: string, base?: string) => Promise<WorktreeState | undefined>
 }
@@ -96,7 +97,7 @@ export async function cleanup(ports: CleanupPorts, parentID: string, input: Clea
       commits: state.commits.slice(0, MAX_LISTED),
     }
   await ports.worktree.remove({
-    location: { directory: entry.source ?? ports.directory },
+    projectID: entry.project ?? ports.projectID,
     directory,
     force: input.force === true,
   })

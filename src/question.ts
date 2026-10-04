@@ -1,5 +1,5 @@
-import type { Plugin } from "@opencode-ai/plugin"
-import type { Plugin as EffectPlugin } from "@opencode-ai/plugin/effect"
+import type { Plugin } from "@opencode/plugin"
+import type { Plugin as EffectPlugin } from "@opencode/plugin/effect"
 import { Cause, Effect, Exit, Result } from "effect"
 import { END_TURN, envelope } from "./courier.js"
 import { origin, STAYS_QUIET } from "./relay.js"

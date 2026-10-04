@@ -14,6 +14,7 @@ function fakePorts(state: WorktreeState | "gone" = clean) {
   const inspected: unknown[] = []
   const ports: CleanupPorts = {
     directory: "/plugin",
+    projectID: "proj_plugin",
     storage: {
       get: async (key) => store.get(key) as any,
       set: async (key, value) => void store.set(key, value),
@@ -41,6 +42,7 @@ const child = (overrides: Partial<RosterEntry> = {}): RosterEntry => ({
   isolated: true,
   createdAt: 1,
   source: "/repo",
+  project: "proj_1",
   base: "abc000",
   ...overrides,
 })
@@ -69,7 +71,7 @@ describe("cleanup", () => {
     const result = await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
 
     expect(result).toEqual({ sessionID: "ses_child", directory: "/data/worktree/p/child", outcome: "removed" })
-    expect(removed).toEqual([{ location: { directory: "/repo" }, directory: "/data/worktree/p/child", force: false }])
+    expect(removed).toEqual([{ projectID: "proj_1", directory: "/data/worktree/p/child", force: false }])
     expect(store.has(rosterKey("ses_parent", "ses_child"))).toBe(false)
   })
 
@@ -93,13 +95,13 @@ describe("cleanup", () => {
     expect(result.reason).toStartWith(`${MAX_LISTED + 10} uncommitted changes`)
   })
 
-  test("falls back to the plugin's directory for an entry recorded without its source", async () => {
+  test("falls back to the plugin's project for an entry recorded without its project", async () => {
     const { ports, removed } = fakePorts()
-    await record(ports.storage, child({ source: undefined }))
+    await record(ports.storage, child({ source: undefined, project: undefined }))
 
     await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
 
-    expect(removed).toEqual([{ location: { directory: "/plugin" }, directory: "/data/worktree/p/child", force: false }])
+    expect(removed).toEqual([{ projectID: "proj_plugin", directory: "/data/worktree/p/child", force: false }])
   })
 
   test("keeps a worktree with uncommitted changes, says why, and keeps the child listed", async () => {
@@ -137,7 +139,7 @@ describe("cleanup", () => {
     const result = await cleanup(ports, "ses_parent", { sessionID: "ses_child", force: true })
 
     expect(result.outcome).toBe("removed")
-    expect(removed).toEqual([{ location: { directory: "/repo" }, directory: "/data/worktree/p/child", force: true }])
+    expect(removed).toEqual([{ projectID: "proj_1", directory: "/data/worktree/p/child", force: true }])
     expect(store.size).toBe(0)
   })
 

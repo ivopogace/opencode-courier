@@ -1,6 +1,6 @@
-import { Plugin } from "@opencode-ai/plugin"
-import { Plugin as EffectPlugin } from "@opencode-ai/plugin/effect"
-import { fromPromise } from "@opencode-ai/plugin/promise/adapter"
+import { Plugin } from "@opencode/plugin"
+import { Plugin as EffectPlugin } from "@opencode/plugin/effect"
+import { fromPromise } from "@opencode/plugin/promise/adapter"
 import { Effect, Schema } from "effect"
 import { randomUUID } from "node:crypto"
 import type { Server } from "node:http"
@@ -239,6 +239,7 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
       worktree: ctx.worktree,
       storage: ctx.storage,
       directory: ctx.location.directory,
+      projectID: ctx.location.project.id,
       now: Date.now,
       head: headOf,
       pending: async (sessionID) => {

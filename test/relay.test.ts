@@ -93,7 +93,7 @@ describe("answer", () => {
     const result = await answer(ports, waiting, "ses_parent", { sessionID: "ses_child", requestID: "per_1", reply: "always" })
 
     expect(result).toEqual({ sessionID: "ses_child", requestID: "per_1", reply: "always", answered: true })
-    expect(worktree.replies).toEqual([{ sessionID: "ses_child", requestID: "per_1", reply: "always" }])
+    expect(worktree.replies).toEqual([{ sessionID: "ses_child", requestID: "per_1", decision: "always" }])
     expect(own.replies).toEqual([])
     expect(waiting.size).toBe(0)
   })

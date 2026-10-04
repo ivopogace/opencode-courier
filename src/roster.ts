@@ -17,8 +17,10 @@ export interface RosterEntry {
   readonly directory: string
   readonly isolated: boolean
   readonly createdAt: number
-  /** For an isolated child, the directory its worktree was made from; courier_cleanup removes it through there. */
+  /** For an isolated child, the directory its worktree was made from. */
   readonly source?: string
+  /** For an isolated child, the project its worktree belongs to; courier_cleanup removes it from there. */
+  readonly project?: string
   /** For an isolated child, the commit its worktree was made from; its own work is what came after. */
   readonly base?: string
 }

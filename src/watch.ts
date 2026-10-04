@@ -1,4 +1,4 @@
-import type { Plugin } from "@opencode-ai/plugin"
+import type { Plugin } from "@opencode/plugin"
 import { envelope } from "./courier.js"
 import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed } from "./question.js"
 import { permissionNotice, settledNotice, type PermissionAsked, type PermissionReplied, type Waiting } from "./relay.js"

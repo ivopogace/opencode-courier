@@ -1,4 +1,4 @@
-import type { Plugin } from "@opencode-ai/plugin"
+import type { Plugin } from "@opencode/plugin"
 import { describeFailure, type Pending } from "./courier.js"
 import { answeringTop, type RosterStorage } from "./roster.js"
 
@@ -152,7 +152,7 @@ export async function answer(ports: AnswerPorts, waiting: Waiting, callerID: str
   waiting.delete(requestID)
   const message = reply === "reject" ? input.message || REJECTED : undefined
   try {
-    await found.domain.reply({ sessionID, requestID, reply, ...(message ? { message } : {}) })
+    await found.domain.reply({ sessionID, requestID, decision: reply, ...(message ? { message } : {}) })
   } catch (error) {
     if (await locate(ports, sessionID, requestID).catch(() => found)) {
       waiting.add(requestID)

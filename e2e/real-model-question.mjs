@@ -197,17 +197,15 @@ if (route === "question tool") {
 }
 notes.push(`passed on with: ${[...new Set(passedOn.map((part) => (part.name === "question" ? "the linked question" : part.name)))].join(", ") || "nothing"}`)
 if (personAt !== Infinity && report) notes.push(`from the person's answer to the child's report: ${Math.round((report.time.created - personAt) / 1000)} s`)
-// Failed model requests, or a turn whose idle marker says it failed (2.0.22): either makes the run inconclusive.
-const providerErrors = [...parent, ...childMessages].filter(
-  (message) => (message.type === "assistant" && message.error !== undefined) || (message.type === "idle" && message.outcome === "failed"),
-)
-if (providerErrors.length)
-  notes.push(
-    `${providerErrors.length} model request(s) failed: ${[...new Set(providerErrors.map((message) => (message.type === "idle" ? "turn failed" : (message.error.type ?? "error"))))].join(", ")}`,
-  )
+// Failed model requests, or a turn whose idle marker (2.0.22) says it failed: a run that fails its
+// checks with any is inconclusive rather than failed. The two are counted apart.
+const providerErrors = [...parent, ...childMessages].filter((message) => message.type === "assistant" && message.error !== undefined)
+const failedTurns = [...parent, ...childMessages].filter((message) => message.type === "idle" && message.outcome === "failed").length
+if (providerErrors.length) notes.push(`${providerErrors.length} model request(s) failed: ${[...new Set(providerErrors.map((message) => message.error.type ?? "error"))].join(", ")}`)
+if (failedTurns) notes.push(`${failedTurns} turn(s) ended as failed`)
 
 const passed = checks.every(([, ok]) => ok)
-const verdict = passed ? "pass" : providerErrors.length ? "inconclusive" : "fail"
+const verdict = passed ? "pass" : providerErrors.length || failedTurns ? "inconclusive" : "fail"
 console.log("")
 for (const [name, ok] of checks) console.log(`  ${ok ? "PASS" : "FAIL"} ${name}`)
 for (const note of notes) console.log(`  note: ${note}`)

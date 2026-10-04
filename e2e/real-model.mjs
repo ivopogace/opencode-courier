@@ -47,13 +47,14 @@ const textOf = (message) =>
     : (message.text ?? "")
 const contentText = (state) =>
   (state.content ?? []).flatMap((item) => (typeof item?.text === "string" ? [item.text] : [])).join("")
-// A step whose model request failed, as on a rate limit, or the idle marker of a turn that failed
-// (2.0.22 records one after each turn, with its outcome).
+// Whether the message at the end of a turn says it failed: a step whose model request failed, as
+// on a rate limit, or the idle marker 2.0.22 records after each turn, with its outcome. Feeds the
+// per-turn checks.
 const failed = (message) => message.error !== undefined || message.finish === "error" || message.outcome === "failed"
-// A failed model request, or the idle marker of a turn that failed; and what to call it in a note.
-const failedRequest = (message) =>
-  (message.type === "assistant" && message.error !== undefined) || (message.type === "idle" && message.outcome === "failed")
-const failureKind = (message) => (message.type === "idle" ? "turn failed" : (message.error.type ?? "error"))
+// The two kinds of failure that make a failing run inconclusive, counted apart in the note: a step
+// whose model request failed, and a turn whose idle marker says it failed (for whatever reason).
+const failedRequest = (message) => message.type === "assistant" && message.error !== undefined
+const failedTurn = (message) => message.type === "idle" && message.outcome === "failed"
 // A step that ended its turn rather than handing tool results back to the model, or that failed.
 // Since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
 const ended = (message) =>
@@ -237,12 +238,12 @@ for (const id of spawned)
   if (sends.get(id).length > 1) notes.push(`child ${id} called courier_send ${sends.get(id).length} times`)
 
 // Failed model requests (rate limits, mostly, on free tiers), or a turn whose idle marker says it
-// failed: a run with any is not the plugin's verdict.
-const providerErrors = [parent, ...children.values()]
-  .flat()
-  .filter(failedRequest)
-  .map(failureKind)
+// failed: a run that fails its checks with any is not the plugin's verdict.
+const transcript = [parent, ...children.values()].flat()
+const providerErrors = transcript.filter(failedRequest).map((message) => message.error.type ?? "error")
+const failedTurns = transcript.filter(failedTurn).length
 if (providerErrors.length) notes.push(`${providerErrors.length} model request(s) failed: ${[...new Set(providerErrors)].join(", ")}`)
+if (failedTurns) notes.push(`${failedTurns} turn(s) ended as failed`)
 
 const usage = { requests: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }
 for (const message of [parent, ...children.values()].flat()) {
@@ -257,7 +258,7 @@ for (const message of [parent, ...children.values()].flat()) {
 }
 
 const passed = checks.every(([, ok]) => ok)
-const verdict = passed ? "pass" : providerErrors.length ? "inconclusive" : "fail"
+const verdict = passed ? "pass" : providerErrors.length || failedTurns ? "inconclusive" : "fail"
 console.log("")
 for (const [name, ok] of checks) console.log(`  ${ok ? "PASS" : "FAIL"} ${name}`)
 for (const note of notes) console.log(`  note: ${note}`)

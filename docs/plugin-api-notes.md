@@ -123,11 +123,13 @@ Observed at `2.0.22`, differently from the beta (the live suite found each of th
   location shut down". The relay now holds a dismissal for `timing.dismissalGraceMs` (2 s) to see
   whether `location.shutdown` or its instance's unload follows, and treats it as cut off then
   (`src/question.ts`: `closingSoon`, `locationClosing`, which `src/watch.ts` calls for the
-  event). A dismissal by the person reaches the other side that much later. The schema marks the
+  event); an unload that comes later, while `settle` still waits for the notice to the top
+  session, counts too. A dismissal by the person reaches the other side that much later. The schema marks the
   event's `location` as optional (it was present in every live run): a shutdown reported without
   one counts for every location. The shutdown times are kept per location, and a location whose
   plugin instance loads again forgets its own, so a form dismissed there right after is not taken
-  for that shutdown.
+  for that shutdown; one recorded for every location is left to age out, since a dismissal held
+  in another location may still need it.
 - The permission reply route, `POST /api/session/:id/permission/:request/reply`, takes
   `decision` (above); the form dismissal route is `DELETE /api/session/:id/form/:form` (was
   `POST .../cancel`). `GET /api/form` lists every open form (was `/api/form/request`).

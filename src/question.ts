@@ -134,7 +134,10 @@ const shutdownAt = (directory: string | undefined) =>
     ? Math.max(0, ...shared.shutdowns.values())
     : Math.max(shared.shutdowns.get(directory) ?? 0, shared.shutdowns.get(ANYWHERE) ?? 0)
 
-/** For tests: when the location at `directory` was last reported shutting down, if at all. */
+/**
+ * For tests: when the location at `directory` was last reported shutting down, if at all; a shutdown
+ * reported without a location counts for every directory, and with none given, any location's counts.
+ */
 export const shutdownReportedAt = (directory?: string) => shutdownAt(directory) || undefined
 
 /**

@@ -13,9 +13,9 @@ const README_TABLE = "https://github.com/ivopogace/opencode-courier#supported-op
  * Reads the versions from the package's own package.json, which sits next to `dist/` in the
  * published package as it does next to `src/` in the repository: `version`, and the exact
  * `@opencode/plugin` version under devDependencies, the one installed for the build and both test
- * suites. The peer dependency is what `opencode plugin add` accepts; it names the same version
- * today and may become a range, which is not what was tested. Throws when the file cannot be read
- * or does not hold both.
+ * suites; the peer dependency names the same exact version, as the copy of the plugin API that
+ * `opencode plugin add` installs next to the plugin. Throws when the file cannot be read or does
+ * not hold both.
  */
 export function builtVersions(): BuiltVersions {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {

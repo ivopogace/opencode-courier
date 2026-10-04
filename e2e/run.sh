@@ -469,13 +469,40 @@ locked=$(jq -r '.packages["node_modules/opencode-courier"] | "\(.resolved) \(.in
 check "built from the packed tarball" \
   "$([ "$locked" = "http://127.0.0.1:$REGISTRY_PORT/opencode-courier/-/$(basename "$tarball") $integrity" ] && echo true || echo false)"
 
-# This suite runs on the OpenCode the plugin is pinned to, so no load above, from dist/ or from the
-# installed package, may have warned about the version. The webhook line proves the plugin's log
-# lines reach the server log at all.
-echo "the server log names no version mismatch on the pinned OpenCode"
+# The version of the OpenCode under test: the installed @opencode/cli package's, found next to the
+# binary, or failing that the one `opencode --version` prints, without its prefix.
+host_version() {
+  local bin
+  bin=$(command -v "$OPENCODE") || return 1
+  node -e '
+    const fs = require("node:fs"), path = require("node:path")
+    const dir = path.dirname(fs.realpathSync(process.argv[1]))
+    for (const file of [path.join(dir, "..", "package.json"), path.join(dir, "package.json")]) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(file, "utf8"))
+        if (pkg.name === "@opencode/cli" && pkg.version) { console.log(pkg.version); process.exit(0) }
+      } catch {}
+    }
+    process.exit(1)
+  ' "$bin" 2>/dev/null || "$OPENCODE" --version | sed 's/^[^0-9]*//'
+}
+
+# Every load above, from dist/ and from the installed package, compared this OpenCode with the pin
+# the plugin reads from package.json. On the pinned version the server log carries no warning; on
+# any other, as on a CI leg that runs this suite against a newer release, it carries the line, naming
+# the host's version. The webhook line proves the plugin's log lines reach the server log at all.
+pin=$(jq -r '.devDependencies["@opencode/plugin"]' "$ROOT/package.json")
+host=$(host_version)
 check "the plugin's log lines reach the server log" "$(grep -qF "courier webhook: listening on" "$WORK/server.log" && echo true || echo false)"
-check "none of them says the version differs" "$(grep -qF "was built and tested against OpenCode" "$WORK/server.log" && echo false || echo true)"
-check "or that it could not be compared" "$(grep -qF "cannot compare the OpenCode version" "$WORK/server.log" && echo false || echo true)"
+if [ "$host" = "$pin" ]; then
+  echo "the server log names no version mismatch: OpenCode $host is the pinned version"
+  check "no line says the version differs" "$(grep -qF "was built and tested against OpenCode" "$WORK/server.log" && echo false || echo true)"
+else
+  echo "the server log names the version mismatch: OpenCode $host is not the pinned $pin"
+  check "a line names the pin and this server's version" \
+    "$(grep -qF "was built and tested against OpenCode $pin; this server is $host (" "$WORK/server.log" && echo true || echo false)"
+fi
+check "no line says the versions could not be compared" "$(grep -qF "cannot compare the OpenCode version" "$WORK/server.log" && echo false || echo true)"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed; rerun with KEEP=1 to keep the server and model logs"

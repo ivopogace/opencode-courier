@@ -35,7 +35,7 @@ jobs:
       id-token: write # trusted publishing, and provenance either way
     env:
       # How the job authenticates to npm: `token` (NPM_TOKEN, the default) or `oidc` (trusted
-      # publishing). Set the repository variable NPM_AUTH to switch; see Releasing in README.md.
+      # publishing). Set the repository variable NPM_AUTH to switch; see docs/releasing.md.
       NPM_AUTH: ${{ vars.NPM_AUTH || 'token' }}
       # In token mode, `false` stages without provenance, should npm refuse the attestation.
       NPM_PROVENANCE: ${{ vars.NPM_PROVENANCE }}
@@ -74,10 +74,10 @@ jobs:
         run: |
           if [ "${HAS_TOKEN}" != true ]; then
             if [ "${DRY_RUN}" = true ]; then
-              echo "::warning::no NPM_TOKEN secret in the npm environment yet: a release needs one (see Releasing in README.md); the dry run goes on without it"
+              echo "::warning::no NPM_TOKEN secret in the npm environment yet: a release needs one (see docs/releasing.md); the dry run goes on without it"
               exit 0
             fi
-            echo "::error::no NPM_TOKEN secret in the npm environment: add a granular access token (see Releasing in README.md)"
+            echo "::error::no NPM_TOKEN secret in the npm environment: add a granular access token (see docs/releasing.md)"
             exit 1
           fi
           npm whoami || { echo "::error::npm does not accept NPM_TOKEN: it may have expired or been revoked"; exit 1; }

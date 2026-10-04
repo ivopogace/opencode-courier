@@ -20,7 +20,7 @@ first; its "Done when" is your acceptance bar.
   both sides; never rebase or force-push.
 
 ## How to work
-- Follow CLAUDE.md: read README.md (with "Notes on the V2 plugin API") first, read the pinned
+- Follow CLAUDE.md: read README.md, docs/reference.md and docs/plugin-api-notes.md first, read the pinned
   plugin API's types instead of guessing, and run typecheck, unit tests, build and the live e2e
   test before every push. Add an e2e scenario for the new behaviour.
 - Work on branch <issue-N-slug> in small, well-described commits. Open a PR to main whose body

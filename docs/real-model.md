@@ -165,7 +165,7 @@ that dies like this is what the `courier_later` check-in is for.
 
 Two things learned on the way: `Schema.Number` advertises the strings `"Infinity"`, `"-Infinity"`
 and `"NaN"` in its JSON Schema, and the plugin's schema checks and transformations do not work in
-OpenCode (see [Notes on the V2 plugin API](../README.md#notes-on-the-v2-plugin-api)), which the
+OpenCode (see [Notes on the V2 plugin API](plugin-api-notes.md)), which the
 first two attempts at the `delayMinutes` fix ran into.
 
 ## The permission relay

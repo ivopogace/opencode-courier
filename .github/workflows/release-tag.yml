@@ -1,6 +1,6 @@
 name: Tag the release
 
-# Step two of a release (Releasing in README.md): when a push to main leaves package.json at a
+# Step two of a release (docs/releasing.md): when a push to main leaves package.json at a
 # version without a tag, tags it vX.Y.Z and starts the Release workflow on that tag. A version
 # whose tag exists is left alone, so a push that does not bump the version does nothing.
 #

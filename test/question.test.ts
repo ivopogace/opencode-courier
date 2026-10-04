@@ -4,6 +4,7 @@ import {
   answeredText,
   answerQuestion,
   forgetQuestions,
+  joinRelay,
   formShown,
   eventsFollowed,
   eventsLeft,
@@ -13,6 +14,7 @@ import {
   questionNotice,
   relayQuestions,
   settledNotice,
+  timing,
   type Asked,
   type QuestionPorts,
 } from "../src/question.js"
@@ -25,6 +27,7 @@ const formShownOff = () => {
 }
 afterEach(() => {
   forgetQuestions()
+  timing.closingGraceMs = 30_000
   showForms = true
 })
 
@@ -420,6 +423,58 @@ describe("the question tool of a spawned session", () => {
     // The location loads again in the same process, or after a restart.
     await noticeCutOff(ports)
     expect(told.at(-1).text).toContain('asks="question" request="question_1" restarted="true"')
+  })
+
+  test("a location closing while OpenCode keeps running: an instance still loaded tells the parent a little later", async () => {
+    const { ports, told, tool, ask, unload } = await setUp()
+    timing.closingGraceMs = 30
+    const elsewhere: any[] = []
+    const leave = joinRelay({ ...ports, session: { synthetic: async (input: any) => (elsewhere.push(input), { id: "msg" }) } as any })
+    const child = ask("ses_child")
+    await settle()
+
+    unload()
+    formOf(tool, "ses_child").dismiss()
+    await exitOf(child)
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    expect(told).toHaveLength(1)
+    expect(elsewhere).toHaveLength(1)
+    expect(elsewhere[0]).toMatchObject({ sessionID: "ses_parent" })
+    expect(elsewhere[0].text).toContain('request="question_1" restarted="true"')
+    leave()
+  })
+
+  test("the top session's answer that arrives as the child's turn is stopped reaches it, as a message", async () => {
+    const { ports, told, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+
+    const stopping = Effect.runPromise(Fiber.interrupt(child))
+    const answered = await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
+    await stopping
+
+    expect(answered).toMatchObject({ answered: true })
+    await settle()
+    if (answered.answered && answered.by === "message") expect(told.at(-1)).toMatchObject({ sessionID: "ses_child" })
+    else expect(answered).toMatchObject({ by: "result" })
+  })
+
+  test("an answer sent whose stored question could not be dropped is not sent again", async () => {
+    const { ports, store, told, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    ;(ports.storage as any).remove = async () => {
+      throw new Error("disk full")
+    }
+    const input = { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }
+
+    expect(await answerQuestion(ports, "ses_parent", input)).toMatchObject({ answered: true, by: "message" })
+    expect(store.has("question/question_1")).toBe(true)
+    expect(await answerQuestion(ports, "ses_parent", input)).toMatchObject({ answered: false })
+    expect(told.filter((item) => item.sessionID === "ses_child")).toHaveLength(1)
   })
 
   test("the parent's own question with the same choices but other words is not linked", async () => {

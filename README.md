@@ -146,7 +146,8 @@ or by OpenCode itself, which stops every turn in a project location after 60 min
 activity there), or the server restarts or closes the project, the question is gone from the
 screen. The plugin keeps it in its storage, sends the parent a message marked `stopped="true"`, or
 `restarted="true"` when the plugin is next loaded for the project (or half a minute later, when
-OpenCode closed only that project and keeps running), with the questions, and passes
+OpenCode closed only that project, keeps running, and has the plugin loaded for another), with the
+questions, and passes
 the answer on as a message to the child, which wakes it. If the parent is asking you at that
 moment, your answer goes that way without a new message. Stored
 questions are dropped after 14 days, once the child is off its parent's roster, or beyond the 100
@@ -630,7 +631,8 @@ Found while testing against `0.0.0-beta-19271`:
   (`4.0.0-rc.112` at the pinned version), and Effects of the two copies compose. A plugin loaded
   after this one that replaces `question` as well would drop the relay.
 - OpenCode's question tool asks through a form. `form.created` reaches `event.subscribe()` (form
-  events are ephemeral, never stored) with the form's `metadata.tool.id`, the id of the call; the
+  events are ephemeral, never stored), of every location's plugin instance whichever location the
+  form is in, with the form's `metadata.tool.id`, the id of the call; the
   form is created only after the call's permission check has passed. A person dismissing a form
   makes the tool die with `QuestionTool.CancelledError`, which ends the asking session's turn
   ("The user dismissed this question"). Forms live in memory: a restart drops them, and the call

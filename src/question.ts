@@ -105,8 +105,12 @@ sharedState.following ??= 0
 sharedState.followed ??= false
 const shared = sharedState as Shared
 
-/** Timings, changed by the tests: how long a question cut off by a closing location waits before an instance still loaded tells its top session. */
-export const timing = { closingGraceMs: 30_000 }
+/**
+ * Timings, changed by the tests: how long a question cut off by a closing location waits before an
+ * instance still loaded tells its top session, and how long an answer waits for another one to it
+ * that is still being passed on.
+ */
+export const timing = { closingGraceMs: 30_000, passingWaitMs: 30_000 }
 
 export interface QuestionPorts {
   readonly storage: RosterStorage
@@ -232,14 +236,19 @@ async function deliver(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   // One answer at a time, and once, per question in this process: storage cannot be claimed
   // atomically. A second answer waits for the first, and is passed on if the first was not.
   // While one is under way, nobody is told that the question was cut off, nor links to it.
-  for (let under = shared.passing.get(id); under; under = shared.passing.get(id)) await under.catch(() => undefined)
+  const since = Date.now()
+  for (let under = shared.passing.get(id); under; under = shared.passing.get(id)) {
+    const left = timing.passingWaitMs - (Date.now() - since)
+    if (left <= 0) throw new Error(`another answer to ${id} is still being passed on; try again in a while.`)
+    await Promise.race([under.catch(() => undefined), new Promise((resolve) => setTimeout(resolve, left).unref?.())])
+  }
   if (shared.answered.has(id)) return undefined
   const passing = passOn(ports, asked, outcome)
   shared.passing.set(id, passing)
   try {
     return await passing
   } finally {
-    shared.passing.delete(id)
+    if (shared.passing.get(id) === passing) shared.passing.delete(id)
   }
 }
 
@@ -250,6 +259,7 @@ async function passOn(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   // stopped or the person answering in its session, does not.
   if (call && (await call(outcome))) {
     claim(shared.answered, id)
+    shared.questions.delete(id)
     return "result" as const
   }
   // Its call has just ended: whether it was cut off or settled is known once settle is through.
@@ -344,12 +354,16 @@ export async function noticeCutOff(ports: QuestionPorts) {
   for (const asked of stored) {
     const known = shared.questions.get(asked.requestID)
     // Its call waits, or its top session is asking the person: nothing to tell.
-    if (known?.call || known?.link || known?.settling || isPassing(asked.requestID)) {
+    if (known?.call || known?.link || known?.settling || shared.passing.has(asked.requestID)) {
       kept++
       continue
     }
     const current =
-      !asked.answered && kept < MAX_STORED && now - asked.askedAt <= RETENTION_MS && lineageIn(roster, asked.sessionID).length > 0
+      !asked.answered &&
+      !shared.answered.has(asked.requestID) &&
+      kept < MAX_STORED &&
+      now - asked.askedAt <= RETENTION_MS &&
+      lineageIn(roster, asked.sessionID).length > 0
     if (!current) {
       shared.questions.delete(asked.requestID)
       await ports.storage
@@ -440,6 +454,8 @@ async function relay(ports: QuestionPorts, question: Question) {
     return true
   } catch (error) {
     shared.questions.delete(question.requestID)
+    // A question of the top session that linked to it meanwhile is withdrawn: nothing reaches the call now.
+    question.link?.({ by: "failed", error: `the plugin could not relay it: ${String(error)}` })
     await ports.storage.remove(keyOf(question.requestID)).catch(() => undefined)
     ports.log(`courier question: could not tell ${question.top} about ${question.requestID}: ${String(error)}`)
     return false
@@ -531,8 +547,7 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
       const fromTop = Effect.gen(function* () {
         yield* Effect.promise(() => shown)
         // Kept on the question, so settle can wait for it should this race end while it runs.
-        // Kept waiting even when telling the top session failed: it may have linked to it meanwhile.
-        yield* Effect.promise(() => (question.relaying = relay(current, question)))
+        if (!(yield* Effect.promise(() => (question.relaying = relay(current, question))))) return yield* Effect.never
         return { by: "top" as const, outcome: yield* Effect.promise(() => byTop) }
       })
       const ended = yield* Effect.raceFirst(

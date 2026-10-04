@@ -28,6 +28,7 @@ const formShownOff = () => {
 afterEach(() => {
   forgetQuestions()
   timing.closingGraceMs = 30_000
+  timing.passingWaitMs = 30_000
   showForms = true
 })
 
@@ -576,6 +577,63 @@ describe("the question tool of a spawned session", () => {
 
     expect(both.map((result) => result.answered).sort()).toEqual([false, true])
     expect(told.filter((item) => item.sessionID === "ses_child")).toHaveLength(1)
+  })
+
+  test("a second answer to a cut-off question waits for the first, and goes on when the first could not be sent", async () => {
+    const { ports, told, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    const synthetic = ports.session.synthetic
+    let fail!: () => void
+    ;(ports.session as any).synthetic = (input: any) =>
+      new Promise((_, reject) => (fail = () => reject(new Error("server busy")))).finally(() => ((ports.session as any).synthetic = synthetic)) as any
+    const input = { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }
+
+    const first = answerQuestion(ports, "ses_parent", input)
+    await settle()
+    const second = answerQuestion(ports, "ses_parent", { ...input, answers: ["Hey"] })
+    await settle()
+    fail()
+
+    await expect(first).rejects.toThrow("server busy")
+    expect(await second).toMatchObject({ answered: true, by: "message" })
+    expect(told.filter((item) => item.sessionID === "ses_child").map((item) => item.text)).toEqual([expect.stringContaining('"Which greeting?"="Hey"')])
+  })
+
+  test("an answer does not wait for ever behind one that hangs", async () => {
+    const { ports, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    timing.passingWaitMs = 30
+    ;(ports.session as any).synthetic = () => new Promise(() => undefined)
+    const input = { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }
+
+    void answerQuestion(ports, "ses_parent", input)
+    await settle()
+
+    await expect(answerQuestion(ports, "ses_parent", input)).rejects.toThrow(
+      "another answer to question_1 is still being passed on; try again in a while.",
+    )
+  })
+
+  test("a question whose parent could not be told stays in the child's session only, as before", async () => {
+    const { ports, store, told, tool, ask } = await setUp()
+    ;(ports.session as any).synthetic = async () => {
+      throw new Error("server busy")
+    }
+    const child = ask("ses_child")
+    await settle()
+
+    expect(store.has("question/question_1")).toBe(false)
+    expect(await pendingQuestions(ports.storage, "ses_child")).toEqual([])
+    formOf(tool, "ses_child").answer([["Hi"]])
+    const exit = await exitOf(child)
+    expect(Exit.isSuccess(exit) && exit.value.output).toEqual({ answers: [["Hi"]] })
+    expect(told).toEqual([])
   })
 
   test("a call whose form.created was missed while no event stream was up is relayed once one is back", async () => {

@@ -603,37 +603,70 @@ describe("the question tool of a spawned session", () => {
   })
 
   test("an answer does not wait for ever behind one that hangs", async () => {
-    const { ports, ask } = await setUp()
+    const { ports, told, ask } = await setUp()
     const child = ask("ses_child")
     await settle()
     await Effect.runPromise(Fiber.interrupt(child))
     await settle()
     timing.passingWaitMs = 30
-    ;(ports.session as any).synthetic = () => new Promise(() => undefined)
+    const synthetic = ports.session.synthetic
+    ;(ports.session as any).synthetic = () => {
+      ;(ports.session as any).synthetic = synthetic
+      return new Promise(() => undefined)
+    }
     const input = { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }
 
     void answerQuestion(ports, "ses_parent", input)
-    await settle()
-
-    await expect(answerQuestion(ports, "ses_parent", input)).rejects.toThrow(
-      "another answer to question_1 is still being passed on; try again in a while.",
-    )
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    // Behind it, an answer waits until the hung one gives way, and then goes through.
+    expect(await answerQuestion(ports, "ses_parent", { ...input, answers: ["Hey"] })).toMatchObject({ answered: true, by: "message" })
+    expect(told.at(-1).text).toContain('"Which greeting?"="Hey"')
   })
 
-  test("a question whose parent could not be told stays in the child's session only, as before", async () => {
-    const { ports, store, told, tool, ask } = await setUp()
+  test("a question whose parent could not be told is still listed, and an answer still reaches it", async () => {
+    const { ports, store, told, ask } = await setUp()
+    const synthetic = ports.session.synthetic
     ;(ports.session as any).synthetic = async () => {
       throw new Error("server busy")
     }
     const child = ask("ses_child")
     await settle()
+    ;(ports.session as any).synthetic = synthetic
 
-    expect(store.has("question/question_1")).toBe(false)
-    expect(await pendingQuestions(ports.storage, "ses_child")).toEqual([])
-    formOf(tool, "ses_child").answer([["Hi"]])
+    expect(told).toEqual([])
+    expect(store.has("question/question_1")).toBe(true)
+    expect(await pendingQuestions(ports.storage, "ses_child")).toEqual([{ type: "question", requestID: "question_1", questions: greeting }])
+    expect(await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })).toMatchObject({
+      answered: true,
+      by: "result",
+    })
     const exit = await exitOf(child)
     expect(Exit.isSuccess(exit) && exit.value.output).toEqual({ answers: [["Hi"]] })
-    expect(told).toEqual([])
+  })
+
+  test("on load, a stored question whose answer already went out in this process is dropped, not told about", async () => {
+    const { ports, store, told, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    const remove = ports.storage.remove
+    ;(ports.storage as any).remove = async () => {
+      throw new Error("disk full")
+    }
+    const set = ports.storage.set
+    ;(ports.storage as any).set = async () => {
+      throw new Error("disk full")
+    }
+    await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
+    ;(ports.storage as any).remove = remove
+    ;(ports.storage as any).set = set
+    const before = told.length
+
+    await noticeCutOff(ports)
+
+    expect(store.has("question/question_1")).toBe(false)
+    expect(told).toHaveLength(before)
   })
 
   test("a call whose form.created was missed while no event stream was up is relayed once one is back", async () => {

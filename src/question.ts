@@ -240,14 +240,21 @@ async function deliver(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   for (let under = shared.passing.get(id); under; under = shared.passing.get(id)) {
     const left = timing.passingWaitMs - (Date.now() - since)
     if (left <= 0) throw new Error(`another answer to ${id} is still being passed on; try again in a while.`)
-    await Promise.race([under.catch(() => undefined), new Promise((resolve) => setTimeout(resolve, left).unref?.())])
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([under.catch(() => undefined), new Promise((resolve) => (timer = setTimeout(resolve, left)))])
+    clearTimeout(timer)
   }
   if (shared.answered.has(id)) return undefined
   const passing = passOn(ports, asked, outcome)
   shared.passing.set(id, passing)
+  // One that hangs, on a notice that never returns, gives way after a while, so the question can be
+  // answered again; should it still go through, the child is told twice.
+  const release = setTimeout(() => shared.passing.get(id) === passing && shared.passing.delete(id), timing.passingWaitMs)
+  release.unref?.()
   try {
     return await passing
   } finally {
+    clearTimeout(release)
     if (shared.passing.get(id) === passing) shared.passing.delete(id)
   }
 }
@@ -337,7 +344,8 @@ export async function pendingQuestions(storage: RosterStorage, sessionID: string
     })
   for (const question of shared.questions.values()) if (question.sessionID === sessionID) add(question, !question.call)
   for (const asked of await scanAll<Stored>(storage, PREFIX))
-    if (asked.sessionID === sessionID && !asked.answered && !found.has(asked.requestID)) add(asked, true)
+    if (asked.sessionID === sessionID && !asked.answered && !isPassing(asked.requestID) && !found.has(asked.requestID))
+      add(asked, true)
   return [...found.values()]
 }
 
@@ -445,7 +453,7 @@ const defectTag = (cause: Cause.Cause<unknown>) => {
 /** OpenCode's question tool dies with this when the person dismisses the question. */
 const isDismissal = (cause: Cause.Cause<unknown>) => defectTag(cause) === "QuestionTool.CancelledError"
 
-/** Registers a told question, stores it and tells the top session; false when that failed. */
+/** Registers a question, stores it and tells the top session; false when storing or telling failed. */
 async function relay(ports: QuestionPorts, question: Question) {
   shared.questions.set(question.requestID, question)
   try {
@@ -453,10 +461,8 @@ async function relay(ports: QuestionPorts, question: Question) {
     await tell(ports, question, questionNotice(question), { asks: "question", request: question.requestID })
     return true
   } catch (error) {
-    shared.questions.delete(question.requestID)
-    // A question of the top session that linked to it meanwhile is withdrawn: nothing reaches the call now.
-    question.link?.({ by: "failed", error: `the plugin could not relay it: ${String(error)}` })
-    await ports.storage.remove(keyOf(question.requestID)).catch(() => undefined)
+    // The question stays registered and the call waits on: courier_status lists it, and an answer
+    // that comes anyway, through a link or courier_answer, still reaches the call.
     ports.log(`courier question: could not tell ${question.top} about ${question.requestID}: ${String(error)}`)
     return false
   }
@@ -547,7 +553,7 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
       const fromTop = Effect.gen(function* () {
         yield* Effect.promise(() => shown)
         // Kept on the question, so settle can wait for it should this race end while it runs.
-        if (!(yield* Effect.promise(() => (question.relaying = relay(current, question))))) return yield* Effect.never
+        yield* Effect.promise(() => (question.relaying = relay(current, question)))
         return { by: "top" as const, outcome: yield* Effect.promise(() => byTop) }
       })
       const ended = yield* Effect.raceFirst(

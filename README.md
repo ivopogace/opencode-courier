@@ -127,7 +127,9 @@ parent's tool result says the answers were not passed on and names the request. 
 other way, in text or reworded, calls
 `courier_answer { sessionID, requestID, answers }`: one entry per question, in order, each the
 label you chose or the text you gave, or a list of labels where a question allows several. As with
-permission requests, only the session at the top can answer.
+permission requests, only the session at the top can answer. Answers to one question are passed on
+one at a time: a second waits for the first, for up to 30 seconds, and goes on if the first did not
+get through.
 
 The question stays in the child's session too, and you can answer it there instead. Whichever
 answer comes first counts, and the other side's question is withdrawn:
@@ -154,7 +156,8 @@ questions are dropped after 14 days, once the child is off its parent's roster, 
 newest.
 
 `courier_status` and `courier_children` list a session's questions under `pending`, with
-`type: "question"`, the questions, and `stopped: true` for one that was cut off.
+`type: "question"`, the questions, and `stopped: true` for one that was cut off. A question whose
+message to the parent could not be sent is listed there too, and can be answered all the same.
 
 A question is relayed only once OpenCode's permission check for it has passed: a child whose agent
 may not ask questions (OpenCode's `general` agent, or a `question` rule with `"effect": "deny"`)

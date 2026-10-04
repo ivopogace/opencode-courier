@@ -146,3 +146,80 @@ Follow-up material, out of scope of the migration: the promise API's tool contex
 `signal`, which is aborted when the call is interrupted. The question relay wraps `question` through
 the Effect API because the beta's promise `execute` ran without a signal; with the signal, a
 promise plugin could race the original `execute` against it. Nothing uses it yet.
+
+## What `plugin add` and loading do with the peer dependency (2026-10-04)
+
+The peer dependency on `@opencode/plugin` is the range of OpenCode versions a release claims to
+work on. Whether anything enforces it was tested on six hosts, for #40, each an `@opencode/cli`
+installed into its own npm prefix and run with a fresh home directory (`HOME` and the XDG
+directories under a scratch path, as `e2e/lib.sh` does):
+
+| Host (`opencode --version`) | Where it stands | Published |
+|---|---|---|
+| 2.0.0 | the oldest 2.x release | 2026-09-11 |
+| 2.0.3, 2.0.4 | either side of the change that matters below | 2026-09-12, 2026-09-16 |
+| 2.0.21 | the release below the pin | 2026-09-30 |
+| 2.0.22 | the pin; also the `latest` dist-tag that day | 2026-10-02 |
+| 0.0.0-dev-20534 | the `dev` dist-tag: the newest build, two days after 2.0.22, under a version number that sorts below 2.x | 2026-10-04 |
+
+No 2.x release above 2.0.22 existed on npm, so the `dev` build stands in for a newer host. The
+package under test was this tree built and packed as `opencode-courier@0.2.0`, with
+`"peerDependencies": { "@opencode/plugin": "2.0.22" }`, exact, and served by the stand-in registry
+of the live suite (`e2e/registry.mjs`, with `npm_config_registry` pointing at it); the version on
+npm at the time, 0.1.6, still named the beta's `@opencode-ai/plugin`, so it could not stand in. On
+each host: `opencode plugin add opencode-courier` in a scratch project, its output and exit code
+recorded, then the cache directory it installed into inspected, then `opencode serve` started in
+that project and `GET /api/plugin?directory=…` called, which makes the location load its plugins
+and lists them with their state; the server's log was read with `--print-logs`.
+
+What happened, the same on every host unless said otherwise:
+
+- `plugin add` exited 0 and printed only `Plugin "opencode-courier" installed and added to
+  …/opencode.json`. No host warned, asked or refused, below the pin or above it.
+- It installed into `~/.cache/opencode/npm/opencode-courier@latest/<timestamp>/`, with a root
+  `package.json` of `{ "dependencies": { "opencode-courier": "0.2.0" } }`, and next to the plugin
+  `node_modules/@opencode/plugin@2.0.22`: the lockfile marks it `"peer": true`. npm's resolver
+  installs a package's peer dependencies by default (npm 7 onwards), and the install root is an
+  empty directory, so the host's own version takes no part in the resolution: the peer is
+  fetched from the registry at whatever version satisfies the range, 2.0.22 here, whatever
+  `opencode --version` says.
+- Loading on 2.0.4, 2.0.21, 2.0.22 and 0.0.0-dev-20534: one log line, `msg="loading plugin"
+  id=opencode-courier entrypoint=file://…/dist/index.js`, and the plugin listed as
+  `{"status":"active"}`. No warning about the version anywhere.
+- Loading on 2.0.0 and 2.0.3: `level=WARN message="failed to load plugin" plugin.id=courier
+  cause="Cause([Die(TypeError: undefined is not an object (evaluating 'host.model.list'))])"`
+  a second after the loading line, and the plugin listed as `{"status":"failed","error":…}` with
+  that error and a stack trace into `node_modules/@opencode/plugin/dist/promise/adapter.js`. The
+  `model` domain appeared in `@opencode/plugin@2.0.4`, where it replaced `catalog`; the adapter of
+  the 2.0.22 copy installed next to the plugin reads it from the host's context when it builds the
+  promise API, and dies on a host that has not got it. Nothing about the version is said: the
+  failure is reported as any other plugin failure would be.
+
+Why, from the source at `v2.0.22`:
+
+- `opencode plugin add` (`packages/cli/src/commands/handlers/plugin/add.ts`) checks that the
+  argument is an npm or Git package specifier, installs it through `Npm.add`
+  (`packages/util/src/npm.ts`), resolves the installed package's entrypoints and writes the name
+  into `plugins` in the global config. `Npm.add` runs `@npmcli/arborist`'s `reify` with
+  `add: [pkg]` and `save: true` in a staging directory under the cache, with npm's own
+  configuration (`.npmrc`, `npm_config_*`), which is where `npm_config_registry` comes in; so
+  `legacy-peer-deps` or `omit=peer` in a user's npm configuration would leave the peer out, and
+  nothing would notice until the import failed. Neither `plugin add` nor `Npm.add` reads
+  `peerDependencies` or `engines`, and `OPENCODE_VERSION` is not part of any install. The only
+  version comparison in the plugin manager is `Npm.check`, which asks the registry whether a newer
+  version of the plugin exists, for `opencode plugin check` and `plugin update`.
+- Loading (`packages/core/src/plugin/module.ts`) resolves the installed package's entrypoint and
+  imports it (`Host.load`, a plain dynamic import). The plugin's own imports of `@opencode/plugin`
+  resolve from its directory, so a package plugin runs on the copy of the plugin API that arborist
+  put next to it, never on the host's copy, and the host's copy need not match it. Nothing on the
+  load path compares versions either; a failure in the import or the plugin's setup is logged as
+  "failed to load plugin" and shown in the plugin's state, as above.
+
+So the peer range is a statement, not a check: a mismatched host installs and loads the plugin
+without a word, and what breaks does so on use, or on load when the host lacks a domain the
+plugin API copy expects. The runtime signals are that load failure, and the log line #38 adds for
+a host whose `app.version` differs from the version the plugin was built against. The range in
+`package.json` is therefore set from the evidence rather than relied on: `^2.0.22`, the version the
+live suite ran on (the pinned leg of CI, and `latest` that day) and the `dev` build it also passed
+on, 0.0.0-dev-20534 (2026-10-04); below the pin the plugin loads on 2.0.4 to 2.0.21 but was not
+tested there, and does not load before 2.0.4. A pin bump still adds a row to the README's table.

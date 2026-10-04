@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { describeFailure, type Pending } from "./courier.js"
-import { lineage, type RosterStorage } from "./roster.js"
+import { answeringTop, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
 
@@ -54,6 +54,14 @@ function alwaysChoice(request: PermissionAsked["data"]) {
   return [`- always: allow it, and from now on ${scope} in this project`]
 }
 
+/** How a notice names where the asking session came from, to the session at the top of its lineage. */
+export const origin = (startedBy?: string) =>
+  startedBy ? `which ${startedBy} started with courier_spawn, a session started from yours,` : "which you started with courier_spawn,"
+
+/** For a notice that a session's turn ended without it finishing. */
+export const STAYS_QUIET =
+  "and then it does not report back on its own: if it stays quiet, message it with courier_send to have it carry on."
+
 /**
  * What the session at the top is told. `startedBy` names the session that started the asking one
  * when that is not the top session itself, but one started from it.
@@ -61,11 +69,8 @@ function alwaysChoice(request: PermissionAsked["data"]) {
 export function permissionNotice(title: string, request: PermissionAsked["data"], startedBy?: string) {
   const resources = request.resources.slice(0, MAX_RESOURCES).map((resource) => `- ${clip(resource)}`)
   if (request.resources.length > MAX_RESOURCES) resources.push(`- and ${request.resources.length - MAX_RESOURCES} more`)
-  const origin = startedBy
-    ? `which ${startedBy} started with courier_spawn, a session started from yours,`
-    : "which you started with courier_spawn,"
   return [
-    `This session, "${title}", ${origin} is waiting for permission and does nothing until it is answered.`,
+    `This session, "${title}", ${origin(startedBy)} is waiting for permission and does nothing until it is answered.`,
     `It asks for: ${request.action}`,
     ...(resources.length ? ["On:", ...resources] : []),
     ...(request.message ? [`Note: ${request.message}`] : []),
@@ -83,9 +88,7 @@ export function settledNotice(title: string, requestID: string, reply: Reply) {
     `The permission request ${requestID} of this session, "${title}", has been answered (${reply}) without courier_answer, so it no longer waits on you.`,
     "If you asked someone about it, tell them it is settled; there is nothing to pass on.",
     ...(reply === "reject"
-      ? [
-          "A refusal without a reason ends the session's turn, and then it does not report back on its own: if it stays quiet, message it with courier_send to have it carry on.",
-        ]
+      ? [`A refusal without a reason ends the session's turn, ${STAYS_QUIET}`]
       : []),
   ].join("\n")
 }
@@ -137,13 +140,7 @@ export async function answer(ports: AnswerPorts, waiting: Waiting, callerID: str
   const reply = input.reply as Reply
   if (!REPLIES.includes(reply)) throw new Error(`reply must be once, always or reject, not "${input.reply}".`)
   const { sessionID, requestID } = input
-  const chain = await lineage(ports.storage, sessionID)
-  if (!chain.length) throw new Error(`${sessionID} was not started with courier_spawn, so courier_answer cannot answer for it.`)
-  const top = chain.at(-1)!.parentID
-  if (top !== callerID)
-    throw new Error(
-      `${sessionID}'s permission requests go to ${top}, the session at the top of the sessions started from it with courier_spawn; ${callerID} cannot answer them.`,
-    )
+  await answeringTop(ports.storage, sessionID, callerID, "permission requests")
   const found = await locate(ports, sessionID, requestID)
   if (!found) {
     waiting.delete(requestID)

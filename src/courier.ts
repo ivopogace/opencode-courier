@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import type { Prompt } from "./question.js"
 import { current, record, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
@@ -13,18 +14,26 @@ export interface CourierPorts {
   readonly storage: RosterStorage
   readonly directory: string
   readonly now: () => number
-  /** The permission requests a session waits on, wherever they are pending. */
+  /** The permission requests and questions a session waits on, wherever they are pending. */
   readonly pending: (sessionID: string) => Promise<ReadonlyArray<Pending>>
 }
 
-/** A request a session waits on until someone answers it. */
-export interface Pending {
-  readonly type: "permission"
-  readonly requestID: string
-  readonly action: string
-  readonly resources: ReadonlyArray<string>
-  readonly save?: ReadonlyArray<string>
-}
+/** A request a session waits on until someone answers it: a permission request, or a question it asked. */
+export type Pending =
+  | {
+      readonly type: "permission"
+      readonly requestID: string
+      readonly action: string
+      readonly resources: ReadonlyArray<string>
+      readonly save?: ReadonlyArray<string>
+    }
+  | {
+      readonly type: "question"
+      readonly requestID: string
+      readonly questions: ReadonlyArray<Prompt>
+      /** Its question call was cut off; the answer reaches it as a message. */
+      readonly stopped?: true
+    }
 
 export interface SpawnInput {
   readonly task: string
@@ -47,12 +56,16 @@ export interface ChildrenInput {
   readonly sessionID?: string
 }
 
+/** Closes a tool result after which the caller most likely has nothing left to do. */
+export const END_TURN = "If nothing else is left to do now, end your turn by replying without calling more tools."
+
 export function childBrief(parentID: string, task: string) {
   return [
     `You were started by session ${parentID} through opencode-courier.`,
     "",
     `When you finish, or need a decision you cannot make yourself, call courier_send with sessionID "${parentID}" and a short report.`,
     "That message wakes the parent. It is the only way the parent hears from you, so do not end without sending it.",
+    "If you need the person to decide something, use your question tool; it reaches them through the session that started you.",
     "",
     "Task:",
     task,

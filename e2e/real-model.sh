@@ -9,7 +9,10 @@
 #
 # COURIER_SCENARIO=permission runs the permission relay instead: one child whose command needs an
 # approval, a parent that should ask the person rather than answer by itself, and this script as
-# the person, answering "once" (e2e/real-model-permission.mjs).
+# the person, answering "once" (e2e/real-model-permission.mjs). COURIER_SCENARIO=question runs the
+# question relay: one child that is to find out from the person which greeting to use, and this
+# script as the person, answering COURIER_ANSWER (default Hi) in the parent's session
+# (e2e/real-model-question.mjs).
 #
 # The default model is a free one on OpenCode Zen, which needs no key. To pick another:
 #
@@ -63,7 +66,13 @@ case $SCENARIO in
     PERMISSIONS='[{ "action": "*", "resource": "*", "effect": "allow" }, { "action": "shell", "resource": "*courier-permission*", "effect": "ask" }]'
     CHECKER=real-model-permission.mjs
     ;;
-  *) echo "COURIER_SCENARIO must be fanout or permission"; exit 1 ;;
+  question)
+    # The child is not told how to ask: the brief's line on the question tool is part of the test.
+    PROMPT=${COURIER_PROMPT:-'Start one helper session with courier_spawn and give it this task, word for word: "Find out from the user which greeting they want to use: Hello, Hi or Hey. Then report the chosen greeting to the session that started you." Do not ask the user anything yourself before the helper does, and do not do the task yourself. When the helper reports back, reply with one line: GREETING <the greeting it reported>'}
+    export COURIER_ANSWER=${COURIER_ANSWER:-Hi}
+    CHECKER=real-model-question.mjs
+    ;;
+  *) echo "COURIER_SCENARIO must be fanout, permission or question"; exit 1 ;;
 esac
 WORK=${E2E_WORK:-$(mktemp -d)}
 export WORK
@@ -111,7 +120,7 @@ echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL"
 echo "parent prompt: $PROMPT"
 
 post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
-if [ "$SCENARIO" = permission ]; then
+if [ "$SCENARIO" != fanout ]; then
   # Started through the API, as a session in the TUI would be, not with opencode run: run cancels
   # any question form opened in its session while it is attached, and the child's request can wake
   # the parent before run has let go. The checker waits for the turns.

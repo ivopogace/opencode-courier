@@ -186,7 +186,7 @@ it twice after the restart; a lost check-in would be worse.
 
 ## Webhooks
 
-With the `webhook` option set (see [Receiving webhooks](../README.md#receiving-webhooks)), the plugin listens
+With the `webhook` option set (see [Receiving webhooks](../README.md#webhooks)), the plugin listens
 for HTTP deliveries and turns them into messages for subscribed sessions:
 
 - `POST /github` takes GitHub webhook deliveries. A pull request review, a review comment, a

@@ -11,6 +11,7 @@ import { answer, pendingOf, type AnswerPorts, type Permissions } from "./relay.j
 import { answerQuestion, isQuestion, joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
 import { pruneExpired } from "./roster.js"
 import { watchChildren, type WatchState } from "./watch.js"
+import { builtVersions, versionNotice } from "./version.js"
 import { listen, readConfig, subscribe, unsubscribe, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
 const SpawnInput = Schema.Struct({
@@ -226,6 +227,14 @@ export interface RelaySlot {
 export const courier = (relay: RelaySlot = {}) => Plugin.define({
   id: "courier",
   setup: async (ctx) => {
+    // One line per load when this OpenCode is not the version the plugin was built against; the
+    // tools are registered all the same, and no tool result says so.
+    try {
+      const notice = versionNotice(builtVersions(), ctx.app)
+      if (notice) console.error(notice)
+    } catch (error) {
+      console.error(`courier: cannot compare the OpenCode version with the one it was built against: ${String(error)}`)
+    }
     const questionPorts: QuestionPorts = {
       storage: ctx.storage,
       session: ctx.session,

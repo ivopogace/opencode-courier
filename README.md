@@ -24,6 +24,11 @@ sleep. Each report then starts a new turn on its own (the `Details` line is the 
 the first after about 30 seconds, the second after about 45, and the parent folds each into the
 README.
 
+The same run in the terminal UI (`opencode2` with no subcommand), where each wake shows as a new turn
+in the same session:
+
+![The same demo in the terminal: the parent ends its turn, then is woken twice by its children's reports](docs/demo-async-tui.gif)
+
 A child's question reaches you. Prompt: *"Spawn a child session to add a multiply function to
 math.js. It must ask me first whether to name it multiply, times or product."*
 
@@ -31,6 +36,10 @@ math.js. It must ask me first whether to name it multiply, times or product."*
 
 Watch the child's question open in the parent's session, where the answer `times` is picked. The
 parent passes it back, and the child adds `times` to math.js and reports.
+
+In the terminal UI the relayed question is the TUI's own question form, answered with the arrow keys:
+
+![The same demo in the terminal: the child's question opens as a form in the parent's session, times is picked, and the child reports](docs/demo-question-tui.gif)
 
 > **Status: early.** Passes an end-to-end test inside a live OpenCode V2 server
 > (`opencode2 v0.0.0-beta-19271`) driven by a scripted stand-in model (`e2e/run.sh`), and a smoke

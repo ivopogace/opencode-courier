@@ -13,6 +13,10 @@ idle. A child whose turn fails instead, so that it cannot report, is reported by
 child that waits for a permission or asks a question has it passed to the parent, who asks you and
 passes your answer back.
 
+> **Status: early.** Passes an end-to-end test inside a live OpenCode V2 server driven by a
+> scripted stand-in model, and a smoke test with real (free) models: see
+> [Development](#development).
+
 **The parent does not wait.** Prompt: *"Spawn two children: one runs `sleep 30` then lists the
 exports of math.js, the other runs `sleep 45` then lists the exports of text.js. Don't wait for
 them: meanwhile write a short README.md for this folder yourself, and add their reports to it when
@@ -42,10 +46,6 @@ Watch the child's question open in the parent's session as OpenCode's own questi
 
 Both recordings are real runs on `opencode2 v0.0.0-beta-19271` with a free model on [OpenCode
 Zen](https://opencode.ai/zen) (Muse Spark 1.3).
-
-> **Status: early.** Passes an end-to-end test inside a live OpenCode V2 server driven by a
-> scripted stand-in model, and a smoke test with real (free) models: see
-> [Development](#development).
 
 ## How the wake works
 
@@ -244,7 +244,12 @@ end with a maintainer's 2FA approval on npm: [docs/releasing.md](docs/releasing.
 plugin API does that the plugin had to work around:
 [docs/plugin-api-notes.md](docs/plugin-api-notes.md).
 
-Bugs and plans are tracked as [issues](https://github.com/ivopogace/opencode-courier/issues).
+## Contributing
+
+Questions and bug reports go to the [issues](https://github.com/ivopogace/opencode-courier/issues).
+Pull requests are welcome: a change in behaviour comes with a unit test, an `e2e/run.sh` scenario and
+its line in this README or [docs/reference.md](docs/reference.md), and CI must be green. Maintainers
+release from GitHub as [docs/releasing.md](docs/releasing.md) describes.
 
 ## License
 

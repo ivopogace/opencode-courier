@@ -63,10 +63,32 @@ export async function entriesOf(storage: RosterStorage, sessionID: string) {
  * did not start the session.
  */
 export async function lineage(storage: RosterStorage, sessionID: string) {
-  const bySession = new Map((await allEntries(storage)).map((entry) => [entry.sessionID, entry]))
+  return lineageIn(await allEntries(storage), sessionID)
+}
+
+/** `lineage` over roster entries already read. */
+export function lineageIn(entries: ReadonlyArray<RosterEntry>, sessionID: string) {
+  const bySession = new Map(entries.map((entry) => [entry.sessionID, entry]))
   const chain: RosterEntry[] = []
   for (let entry = bySession.get(sessionID); entry && !chain.includes(entry); entry = bySession.get(entry.parentID)) chain.push(entry)
   return chain
+}
+
+/**
+ * The session at the top of a spawned session's lineage, where its permission requests and
+ * questions go, since that is where the person is; only it may answer them. Throws when the
+ * session was not started with courier_spawn or `callerID` is another session. `what` names
+ * what is being answered.
+ */
+export async function answeringTop(storage: RosterStorage, sessionID: string, callerID: string, what: string) {
+  const chain = await lineage(storage, sessionID)
+  if (!chain.length) throw new Error(`${sessionID} was not started with courier_spawn, so courier_answer cannot answer for it.`)
+  const top = chain.at(-1)!.parentID
+  if (top !== callerID)
+    throw new Error(
+      `${sessionID}'s ${what} go to ${top}, the session at the top of the sessions started from it with courier_spawn; ${callerID} cannot answer them.`,
+    )
+  return top
 }
 
 /** Whether a directory still exists; tests pass a fake. */

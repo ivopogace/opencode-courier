@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import { Schema } from "effect"
-import plugin from "../src/index.js"
+import plugin, { courier, type RelaySlot } from "../src/index.js"
 
 const cleanups: Array<() => unknown> = []
 afterEach(async () => {
@@ -78,10 +78,25 @@ async function setUp(stored: Record<string, unknown> = {}, options?: Record<stri
       },
     },
   }
-  const cleanup = await plugin.setup(ctx as any)
+  const relay: RelaySlot = {}
+  const cleanup = await courier(relay).setup(ctx as any)
   if (cleanup) cleanups.push(cleanup)
-  return { tools, calls, store, emit: events.emit }
+  return { tools, calls, store, emit: events.emit, relay }
 }
+
+test("OpenCode loads an Effect plugin, which runs the promise one and wraps the question tool", () => {
+  expect(plugin.id).toBe("courier")
+  expect(typeof plugin.effect).toBe("function")
+  expect("setup" in plugin).toBe(false)
+})
+
+test("a loaded instance hands the question relay its ports, and takes them back when it unloads", async () => {
+  const { relay } = await setUp()
+
+  expect(relay.ports).toBeDefined()
+  await cleanups.shift()!()
+  expect(relay.ports).toBeUndefined()
+})
 
 test("registers the courier tools", async () => {
   const { tools } = await setUp()
@@ -116,6 +131,50 @@ test("tool inputs decode with their schemas", async () => {
   const answer = { sessionID: "s", requestID: "per_1", reply: "reject", message: "no" }
   expect(decode("courier_answer", answer)).toEqual(answer)
   expect(() => decode("courier_answer", { ...answer, reply: "yes" })).toThrow()
+  const answers = { sessionID: "s", requestID: "question_1", answers: ["Hi", ["Hello", "Hey"]] }
+  expect(decode("courier_answer", answers)).toEqual(answers)
+  expect(() => decode("courier_answer", { ...answers, answers: [1] })).toThrow()
+})
+
+test("courier_answer tells a question from a permission request by its id, and says what each takes", async () => {
+  const { tools } = await setUp()
+  const call = (input: object) => tools.get("courier_answer").execute({ sessionID: "ses_child", ...input }, { sessionID: "ses_parent" })
+
+  await expect(call({ requestID: "question_1", reply: "once" })).rejects.toThrow(
+    "courier_answer failed: question_1 is a question: pass the person's answers in answers, not reply or message.",
+  )
+  await expect(call({ requestID: "question_1" })).rejects.toThrow("question_1 is a question: answers is required")
+  await expect(call({ requestID: "per_1", answers: ["Hi"] })).rejects.toThrow(
+    "per_1 is a permission request: pass the person's choice in reply (once, always or reject), not answers.",
+  )
+  await expect(call({ requestID: "per_1" })).rejects.toThrow("per_1 is a permission request: reply is required")
+})
+
+test("a spawned child's question shows under pending, and courier_answer passes the answers on", async () => {
+  const { tools, calls, store } = await setUp()
+  await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
+  // A question whose call was cut off, as after a restart: the answer goes to the child as a message.
+  const questions = [{ question: "Which greeting?", header: "Greeting", options: [{ label: "Hi", description: "" }] }]
+  store.set("question/question_p1", { requestID: "question_p1", sessionID: "ses_child", top: "ses_parent", title: "Fix the bug", questions, askedAt: Date.now() })
+
+  const status = await tools.get("courier_status").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })
+  expect(status.metadata.pending).toEqual([{ type: "question", requestID: "question_p1", questions, stopped: true }])
+
+  const answered = await tools
+    .get("courier_answer")
+    .execute({ sessionID: "ses_child", requestID: "question_p1", answers: ["Hi"] }, { sessionID: "ses_parent" })
+  expect(answered.metadata).toEqual({ sessionID: "ses_child", requestID: "question_p1", answered: true, by: "message", answers: [["Hi"]] })
+  expect(answered.content).toContain("Passed the answers to question question_p1 on to ses_child as a message")
+  const message = calls.findLast((call) => call.method === "session.synthetic")!.input
+  expect(message.sessionID).toBe("ses_child")
+  expect(message.text).toContain('<courier from="ses_parent" answers="question_p1">')
+  expect(message.text).toContain('User has answered your questions: "Which greeting?"="Hi".')
+
+  const late = await tools
+    .get("courier_answer")
+    .execute({ sessionID: "ses_child", requestID: "question_p1", answers: ["Hi"] }, { sessionID: "ses_parent" })
+  expect(late.metadata.answered).toBe(false)
+  expect(late.content).toContain("no longer waits on question question_p1")
 })
 
 test("courier_later takes delayMinutes as a number or a string, which some models send instead", async () => {

@@ -3,6 +3,11 @@
   "version": "0.1.6",
   "description": "An OpenCode V2 plugin that lets one session start other sessions, message them, and be woken by them, without polling.",
   "license": "MIT",
+  "author": "Ivo Pogace <71701666+ivopogace@users.noreply.github.com>",
+  "homepage": "https://github.com/ivopogace/opencode-courier#readme",
+  "bugs": {
+    "url": "https://github.com/ivopogace/opencode-courier/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ivopogace/opencode-courier.git"

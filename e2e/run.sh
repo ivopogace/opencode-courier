@@ -2,7 +2,7 @@
 # Live end-to-end test: a real OpenCode V2 server with this plugin loaded, driven by a scripted
 # stand-in model (e2e/mock-model.mjs), so no API key is needed.
 #
-#   OPENCODE_BIN=/path/to/opencode2 e2e/run.sh      # KEEP=1 keeps the temp dir and logs
+#   OPENCODE_BIN=/path/to/opencode e2e/run.sh      # KEEP=1 keeps the temp dir and logs
 #
 # E2E_WORK picks the working directory (CI points it somewhere it can upload the logs from).
 #
@@ -10,7 +10,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-OPENCODE=${OPENCODE_BIN:-opencode2}
+OPENCODE=${OPENCODE_BIN:-opencode}
 MOCK_PORT=${MOCK_PORT:-4599}
 SERVER_PORT=${SERVER_PORT:-4600}
 WEBHOOK_PORT=${WEBHOOK_PORT:-4601}
@@ -170,7 +170,7 @@ done
 echo "a request answered in the child's own session leaves no stale question with the parent"
 ask_permission ""
 code=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
-  --data '{"reply":"once"}' "$SERVER/api/session/$child/permission/$request/reply")
+  --data '{"decision":"once"}' "$SERVER/api/session/$child/permission/$request/reply")
 check "answered in the child's session" "$([ "$code" = 204 ] && echo true || echo false)"
 check "the parent was told it is settled" "$([ -n "$(reply_time "$parent" "PARENT SETTLED")" ] && echo true || echo false)"
 check "the notice names the request and the answer" \
@@ -209,6 +209,10 @@ fields_of() { api "session/$1/form" | jq -c '.data[0].fields'; }
 person() {
   local body=${2:-'{}'}
   curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$body" "$SERVER/api/$1"
+}
+# The person dismisses form $2 of session $1, as the TUI does; prints the HTTP status.
+dismiss_form() {
+  curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$1/form/$2"
 }
 # The person answers form $2 of session $1 with $3, a JSON value.
 answer_form() { [ "$(person "session/$1/form/$2/reply" "{\"answer\":{\"q0\":$3}}")" = 204 ] && echo true || echo false; }
@@ -275,13 +279,13 @@ check "the child carried on with the answer" "$(has_text "$parent" 'CHILD GOT [[
 
 echo "the person dismisses the question in the child's session"
 ask_question COURIER-QUESTION
-check "dismissed in the child's session" "$([ "$(person "session/$child/form/$child_form/cancel")" = 204 ] && echo true || echo false)"
+check "dismissed in the child's session" "$([ "$(dismiss_form "$child" "$child_form")" = 204 ] && echo true || echo false)"
 check "the parent's question is withdrawn, saying so" "$(has_text "$parent" "dismissed in its own session, which ends its turn")"
 check "and no longer shown" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
 
 echo "the person dismisses the question in the parent's session"
 ask_question COURIER-QUESTION
-check "dismissed in the parent's session" "$([ "$(person "session/$parent/form/$parent_form/cancel")" = 204 ] && echo true || echo false)"
+check "dismissed in the parent's session" "$([ "$(dismiss_form "$parent" "$parent_form")" = 204 ] && echo true || echo false)"
 check "the child was told, carried on and reported" "$(has_text "$parent" "CHILD DISMISSED" 45)"
 check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
 
@@ -430,7 +434,7 @@ check "with force, courier_cleanup removed it" "$(jq -r '.status == "completed" 
 check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
 
 # Last, because it swaps the local plugin for the installed one.
-echo "opencode2 plugin add installs the packed package and its tools load"
+echo "opencode plugin add installs the packed package and its tools load"
 stop_server
 rm -rf "$WORK/pack"
 mkdir -p "$WORK/pack"

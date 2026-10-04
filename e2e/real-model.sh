@@ -5,7 +5,7 @@
 # ended its turn instead of polling, whether each child called courier_send, and whether both
 # reports woke the parent. Not run in CI: it needs a model provider.
 #
-#   OPENCODE_BIN=/path/to/opencode2 e2e/real-model.sh
+#   OPENCODE_BIN=/path/to/opencode e2e/real-model.sh
 #
 # COURIER_SCENARIO=permission runs the permission relay instead: one child whose command needs an
 # approval, a parent that should ask the person rather than answer by itself, and this script as
@@ -38,7 +38,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-OPENCODE=${OPENCODE_BIN:-opencode2}
+OPENCODE=${OPENCODE_BIN:-opencode}
 SERVER_PORT=${SERVER_PORT:-4610}
 PROVIDER=${COURIER_PROVIDER:-opencode}
 MODEL=${COURIER_MODEL:-longcat-2.5-preview-free}

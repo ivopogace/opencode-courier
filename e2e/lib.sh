@@ -21,7 +21,7 @@ commit_config() {
 start_server() {
   (cd "$WORK/project" && exec "$OPENCODE" serve --hostname 127.0.0.1 --port "$SERVER_PORT" --print-logs >>"$WORK/server.log" 2>&1 </dev/null) &
   SERVER_PID=$!
-  for _ in $(seq 1 30); do api health >/dev/null 2>&1 && return; sleep 1; done
+  for _ in $(seq 1 30); do api info >/dev/null 2>&1 && return; sleep 1; done
   echo "OpenCode server did not start; see $WORK/server.log"
   exit 1
 }

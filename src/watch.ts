@@ -153,7 +153,10 @@ const pause = (ms: number, signal: AbortSignal) =>
     signal.addEventListener("abort", done)
   })
 
-/** Handles one event of OpenCode's stream; those that cannot concern a spawned child are ignored. */
+/**
+ * Handles one event of OpenCode's stream; those that cannot concern a spawned child, or a question
+ * relayed for one, are ignored.
+ */
 async function handle(ports: WatchPorts, state: WatchState, event: { readonly type: string }) {
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "permission.asked") return reportAsked(ports, state, event as unknown as PermissionAsked)
@@ -171,7 +174,8 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
 /**
  * Follows OpenCode's events until `signal` aborts, telling parents when a spawned child's turn
  * fails, when it waits for a permission and when that request is answered without them, and
- * noting the question forms shown, which the question relay waits for.
+ * noting for the question relay the question forms shown, which it waits for, and the locations
+ * shutting down, whose withdrawn forms must not pass for dismissals.
  */
 export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
   while (!signal.aborted) {

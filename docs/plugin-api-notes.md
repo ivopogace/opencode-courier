@@ -38,7 +38,7 @@ Found while testing against `0.0.0-beta-19271`:
   plugin API can withdraw or answer a form: the context has no form domain. The question relay
   needs to withdraw a child's question once its parent's answer is in, so the plugin's default
   export is an Effect plugin (`{ id, effect }`): it runs the promise plugin through `fromPromise`
-  from `@opencode-ai/plugin/promise/adapter`, which is what OpenCode does with a promise plugin,
+  from `@opencode/plugin/promise/adapter`, which is what OpenCode does with a promise plugin,
   then wraps the question tool with the Effect API, where the original `execute` is an Effect
   that can be raced and interrupted. The plugin's `effect` is the same version as OpenCode's
   (`4.0.0-rc.112` at the pinned version), and Effects of the two copies compose. A plugin loaded
@@ -123,7 +123,11 @@ Observed at `2.0.22`, differently from the beta (the live suite found each of th
   location shut down". The relay now holds a dismissal for `timing.dismissalGraceMs` (2 s) to see
   whether `location.shutdown` or its instance's unload follows, and treats it as cut off then
   (`src/question.ts`: `closingSoon`, `locationClosing`, which `src/watch.ts` calls for the
-  event). A dismissal by the person reaches the other side that much later.
+  event). A dismissal by the person reaches the other side that much later. Two edges: the
+  schema marks the event's `location` as optional, and an event without it is ignored, so the
+  grace then runs out and the dismissal passes for the person's; and the shutdown times are kept
+  per directory and never pruned, which only matters when a location shuts down, loads again and
+  sees a person dismiss a form, all within the grace.
 - The permission reply route, `POST /api/session/:id/permission/:request/reply`, takes
   `decision` (above); the form dismissal route is `DELETE /api/session/:id/form/:form` (was
   `POST .../cancel`). `GET /api/form` lists every open form (was `/api/form/request`).

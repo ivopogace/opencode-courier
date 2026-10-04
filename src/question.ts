@@ -628,15 +628,16 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
     }) as ReturnType<Execute>
 }
 
+// The labels in any order: the answers are labels, so a top session listing them differently still asks the same.
 const choices = (questions: ReadonlyArray<Prompt>) =>
-  JSON.stringify(questions.map((prompt) => [!!prompt.multiple, prompt.options.map((option) => option.label)]))
+  JSON.stringify(questions.map((prompt) => [!!prompt.multiple, prompt.options.map((option) => option.label).sort()]))
 const wording = (questions: ReadonlyArray<Prompt>) =>
   JSON.stringify(questions.map((prompt) => prompt.question.trim().replace(/\s+/g, " ").toLowerCase()))
 
 /**
  * The waiting question a top session's call asks again, the oldest if several: the same questions
- * with the same choices. Matching choices alone are not enough, or an unrelated yes-or-no question
- * of the top session would answer a child's.
+ * with the same choices, in any order. Matching choices alone are not enough, or an unrelated
+ * yes-or-no question of the top session would answer a child's.
  */
 function linkFor(sessionID: string, questions: ReadonlyArray<Prompt>) {
   const asked = { choices: choices(questions), wording: wording(questions) }

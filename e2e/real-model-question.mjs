@@ -53,7 +53,7 @@ const short = (value, max = 160) => {
 }
 const metadataOf = (part) => part.state.metadata?.metadata ?? part.state.metadata ?? {}
 const childOf = (part) => (part.name === "courier_spawn" && part.state.status === "completed" ? metadataOf(part).sessionID : undefined)
-const labels = (form) => JSON.stringify(form.fields.map((field) => (field.options ?? []).map((option) => option.label)))
+const labels = (form) => JSON.stringify(form.fields.map((field) => (field.options ?? []).map((option) => option.label).sort()))
 const isNotice = (message) => message.type === "synthetic" && /^<courier from="ses_\w+" asks="question"/.test(message.text)
 const isReport = (message, child) => message.type === "synthetic" && message.text.startsWith(`<courier from="${child}">`)
 

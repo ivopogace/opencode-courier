@@ -517,6 +517,22 @@ describe("the question tool of a spawned session", () => {
     await Effect.runPromise(Fiber.interrupt(child))
   })
 
+  test("the parent listing the same options in another order is linked all the same", async () => {
+    const { tool, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    const reordered = [{ ...greeting[0]!, options: [...greeting[0]!.options].reverse() }]
+
+    const parent = ask("ses_parent", reordered)
+    await settle()
+    formOf(tool, "ses_parent").answer([["Hey"]])
+
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value.metadata).toMatchObject({ relayed: "question_1", passed: true })
+    const childExit = await exitOf(child)
+    expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [["Hey"]] })
+  })
+
   test("the parent's own question with the same choices but other words is not linked", async () => {
     const { tool, ask } = await setUp()
     const yesNo = (question: string) => [{ question, header: "Confirm", options: [{ label: "Yes", description: "" }, { label: "No", description: "" }] }]

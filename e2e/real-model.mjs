@@ -47,8 +47,13 @@ const textOf = (message) =>
     : (message.text ?? "")
 const contentText = (state) =>
   (state.content ?? []).flatMap((item) => (typeof item?.text === "string" ? [item.text] : [])).join("")
-// A step whose model request failed, as on a rate limit.
+// A step whose model request failed, as on a rate limit, or the idle marker of a turn that failed
+// (2.0.22 records one after each turn, with its outcome).
 const failed = (message) => message.error !== undefined || message.finish === "error" || message.outcome === "failed"
+// A failed model request, or the idle marker of a turn that failed; and what to call it in a note.
+const failedRequest = (message) =>
+  (message.type === "assistant" && message.error !== undefined) || (message.type === "idle" && message.outcome === "failed")
+const failureKind = (message) => (message.type === "idle" ? "turn failed" : (message.error.type ?? "error"))
 // A step that ended its turn rather than handing tool results back to the model, or that failed.
 // Since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
 const ended = (message) =>
@@ -231,11 +236,12 @@ if (laterLooks) notes.push(`the parent looked at its children ${laterLooks} time
 for (const id of spawned)
   if (sends.get(id).length > 1) notes.push(`child ${id} called courier_send ${sends.get(id).length} times`)
 
-// Failed model requests (rate limits, mostly, on free tiers): a run with any is not the plugin's verdict.
+// Failed model requests (rate limits, mostly, on free tiers), or a turn whose idle marker says it
+// failed: a run with any is not the plugin's verdict.
 const providerErrors = [parent, ...children.values()]
   .flat()
-  .filter((message) => message.type === "assistant" && message.error)
-  .map((message) => message.error.type ?? "error")
+  .filter(failedRequest)
+  .map(failureKind)
 if (providerErrors.length) notes.push(`${providerErrors.length} model request(s) failed: ${[...new Set(providerErrors)].join(", ")}`)
 
 const usage = { requests: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }

@@ -486,7 +486,7 @@ describe("the question tool of a spawned session", () => {
     await exitOf(third)
     await settle()
     locationClosing("/repo")
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await new Promise((resolve) => setTimeout(resolve, 150))
     expect(notices(told, "answered")).toHaveLength(1)
     expect(store.has("question/question_3")).toBe(true)
   })
@@ -516,10 +516,56 @@ describe("the question tool of a spawned session", () => {
     await exitOf(child)
     await settle()
     locationClosing()
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await new Promise((resolve) => setTimeout(resolve, 150))
 
     expect(notices(told, "answered")).toEqual([])
     expect(store.has("question/question_1")).toBe(true)
+  })
+
+  test("the location a dismissal is judged by is the one the call runs in, not the one recorded for the session", async () => {
+    const { ports, store, told, tool, ask } = await setUp()
+    timing.dismissalGraceMs = 100
+    await record(ports.storage, { sessionID: "ses_child", parentID: "ses_parent", title: "Fix the bug", directory: "/worktree", isolated: true, createdAt: 1 })
+    const first = ask("ses_child")
+    await settle()
+    formOf(tool, "ses_child").dismiss()
+    await exitOf(first)
+    await settle()
+    locationClosing("/worktree")
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(notices(told, "answered")[0].text).toContain('answered="dismissed" request="question_1"')
+    expect(store.has("question/question_1")).toBe(false)
+
+    const second = ask("ses_child")
+    await settle()
+    formOf(tool, "ses_child").dismiss()
+    await exitOf(second)
+    await settle()
+    locationClosing("/repo")
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(notices(told, "answered")).toHaveLength(1)
+    expect(store.has("question/question_2")).toBe(true)
+  })
+
+  test("an unload after the grace, while the notice to the top session hangs, still makes the dismissal a cut-off", async () => {
+    const { ports, store, told, tool, ask, unload } = await setUp()
+    timing.dismissalGraceMs = 30
+    timing.relayWaitMs = 200
+    const synthetic = ports.session.synthetic
+    ;(ports.session as any).synthetic = () => new Promise(() => undefined)
+    const child = ask("ses_child")
+    await settle()
+    expect(store.has("question/question_1")).toBe(true)
+
+    formOf(tool, "ses_child").dismiss()
+    await exitOf(child)
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    unload()
+    await new Promise((resolve) => setTimeout(resolve, 250))
+
+    expect(told).toEqual([])
+    expect(store.has("question/question_1")).toBe(true)
+    ;(ports.session as any).synthetic = synthetic
   })
 
   test("a location loading again within the grace forgets its shutdown: a dismissal there is the person's", async () => {

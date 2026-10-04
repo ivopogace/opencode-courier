@@ -320,6 +320,12 @@ brief changed, and:
   `always` and `reject`, and passed `once` on with `courier_answer`.
 - The question relay passed all six checks, linked (the parent's form held the child's three
   greetings), 7 seconds from the person's answer to the child's report.
+- The checkers changed once more after these runs, in the review of #41: the question and
+  permission checkers read the parent's reply from its last step rather than from the `idle`
+  marker, and a turn whose marker says it failed counts as a failed request, which makes a run
+  inconclusive rather than failed. Only the fan-out checker replays a saved run (`--saved`); both
+  saved fan-out runs pass all seven checks with it. The permission and question runs above asked
+  by form, a path those lines do not touch, and were not re-run.
 
 ## Cost
 

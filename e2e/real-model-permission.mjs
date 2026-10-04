@@ -178,8 +178,14 @@ const checks = [
 ]
 const notes = [`the parent ${how}`]
 if (answers.length > passedOn.length) notes.push(`courier_answer was called ${answers.length} time(s), ${passedOn.length} of them as checked`)
-const providerErrors = [...parent, ...childMessages].filter((message) => message.type === "assistant" && message.error)
-if (providerErrors.length) notes.push(`${providerErrors.length} model request(s) failed: ${[...new Set(providerErrors.map((message) => message.error.type ?? "error"))].join(", ")}`)
+// Failed model requests, or a turn whose idle marker says it failed (2.0.22): either makes the run inconclusive.
+const providerErrors = [...parent, ...childMessages].filter(
+  (message) => (message.type === "assistant" && message.error !== undefined) || (message.type === "idle" && message.outcome === "failed"),
+)
+if (providerErrors.length)
+  notes.push(
+    `${providerErrors.length} model request(s) failed: ${[...new Set(providerErrors.map((message) => (message.type === "idle" ? "turn failed" : (message.error.type ?? "error"))))].join(", ")}`,
+  )
 
 const passed = checks.every(([, ok]) => ok)
 const verdict = passed ? "pass" : providerErrors.length ? "inconclusive" : "fail"

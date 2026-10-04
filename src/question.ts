@@ -128,6 +128,15 @@ export const timing = { closingGraceMs: 30_000, passingWaitMs: 30_000, relayWait
 /** The key of a shutdown reported without a location: it counts for every location. */
 const ANYWHERE = ""
 
+/** When the location at `directory` (any location, with none) was last reported shutting down; 0 if never. */
+const shutdownAt = (directory: string | undefined) =>
+  directory === undefined
+    ? Math.max(0, ...shared.shutdowns.values())
+    : Math.max(shared.shutdowns.get(directory) ?? 0, shared.shutdowns.get(ANYWHERE) ?? 0)
+
+/** For tests: when the location at `directory` was last reported shutting down, if at all. */
+export const shutdownReportedAt = (directory?: string) => shutdownAt(directory) || undefined
+
 /**
  * Called for OpenCode's `location.shutdown`: the location at `directory` is closing, which
  * withdraws its open forms as if the person had dismissed them (before unloading the plugin
@@ -146,11 +155,7 @@ export function locationClosing(directory?: string) {
  * location, and with the directory unknown, any location's shutdown counts.
  */
 function closingSoon(loaded: () => boolean, directory: string | undefined, ms: number): Promise<boolean> {
-  const shutdownAt = () =>
-    directory === undefined
-      ? Math.max(0, ...shared.shutdowns.values())
-      : Math.max(shared.shutdowns.get(directory) ?? 0, shared.shutdowns.get(ANYWHERE) ?? 0)
-  const closing = () => !loaded() || Date.now() - shutdownAt() <= ms
+  const closing = () => !loaded() || Date.now() - shutdownAt(directory) <= ms
   if (closing()) return Promise.resolve(true)
   return new Promise((resolve) => {
     const done = (result: boolean) => {
@@ -470,7 +475,8 @@ export async function noticeCutOff(ports: QuestionPorts) {
 /**
  * A plugin instance whose ports the relay may use, until the returned function is called. A
  * location loading again forgets the shutdown recorded for it, so a dismissal there is not
- * mistaken for that shutdown; one recorded for every location ages out with the grace.
+ * mistaken for that shutdown. One recorded for every location is left alone, since a dismissal
+ * held in another location may still need it; it ages out with the grace.
  */
 export function joinRelay(ports: QuestionPorts) {
   shared.loaded.add(ports)
@@ -592,8 +598,9 @@ async function settle(
   // answered by message from now on; a top session already asking the person passes their answer
   // on that way. A closing location is not told now: the next load tells it, in this process or
   // after a restart, or an instance still loaded does, a little later, when the process is still
-  // running then.
-  const closing = unloaded || (held !== undefined && (await held))
+  // running then. The unload is looked at again here: it may have come during the wait above, after
+  // a held dismissal had already been taken for the person's.
+  const closing = unloaded || !loaded() || (held !== undefined && (await held))
   if (Exit.isFailure(exit) && (closing || (!dismissed && Exit.hasInterrupts(exit)))) {
     if (closing) tellLater(question)
     else if (!question.link) await tellCutOff(ports, question, "stopped")

@@ -19,8 +19,10 @@ opencode-courier 0.2.0 was built and tested against OpenCode 2.0.22; this server
 That is all it does: the plugin loads and registers its tools as usual, since the other version
 may well be compatible, and no tool result mentions it, so the models never see it. The line is
 written once per load, so once per project location OpenCode sets the plugin up for, never per
-tool call. An older server is named the same way as a newer one. If the plugin cannot read its
-own `package.json`, it logs that instead and carries on.
+tool call. An older server is named the same way as a newer one, and so is a development build
+of OpenCode, whose version is not a release's; one whose plugin context reports no version at all
+gets the line too, saying so, since that is the mismatch the line is for. If the plugin cannot
+read its own `package.json`, it logs that instead and carries on.
 
 ## The child's model
 

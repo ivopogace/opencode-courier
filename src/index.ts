@@ -227,13 +227,14 @@ export interface RelaySlot {
 export const courier = (relay: RelaySlot = {}) => Plugin.define({
   id: "courier",
   setup: async (ctx) => {
+    const log = (message: string) => console.error(message)
     // One line per load when this OpenCode is not the version the plugin was built against; the
     // tools are registered all the same, and no tool result says so.
     try {
       const notice = versionNotice(builtVersions(), ctx.app)
-      if (notice) console.error(notice)
+      if (notice) log(notice)
     } catch (error) {
-      console.error(`courier: cannot compare the OpenCode version with the one it was built against: ${String(error)}`)
+      log(`courier: cannot compare the OpenCode version with the one it was built against: ${String(error)}`)
     }
     const questionPorts: QuestionPorts = {
       storage: ctx.storage,
@@ -241,7 +242,7 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
       directory: ctx.location.directory,
       now: Date.now,
       newID: () => `question_${randomUUID()}`,
-      log: (message) => console.error(message),
+      log,
     }
     const ports: CourierPorts = {
       session: ctx.session,
@@ -286,7 +287,7 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
       session: ctx.session,
       now: Date.now,
       newID: () => `later_${randomUUID()}`,
-      log: (message) => console.error(message),
+      log,
     }
     const hooks: WebhookPorts = { storage: ctx.storage, session: ctx.session, now: Date.now, log: later.log }
     let webhook: WebhookConfig | undefined
@@ -470,7 +471,7 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
       })
     })
 
-    void pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => console.error(`courier roster prune: ${String(error)}`))
+    void pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
     relay.ports = questionPorts
     const leaveRelay = joinRelay(questionPorts)
     void noticeCutOff(questionPorts).catch((error: unknown) => questionPorts.log(`courier question: stored questions: ${String(error)}`))

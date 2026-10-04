@@ -37,3 +37,15 @@ test("one line on another OpenCode, naming the plugin, the pin, the running vers
   // An older server too: the check is for equality, not order.
   expect(versionNotice({ plugin: "0.2.0", opencode: "2.0.22" }, { version: "2.0.21", channel: "latest" })).toContain("this server is 2.0.21")
 })
+
+test("an OpenCode whose plugin context reports no version still gets the line, naming the pin", () => {
+  const built = { plugin: "0.2.0", opencode: "2.0.22" }
+
+  expect(versionNotice(built, undefined)).toBe(
+    "opencode-courier 0.2.0 was built and tested against OpenCode 2.0.22; this server reports no version. " +
+      "Its tools may fail: see the Supported OpenCode version table in the README, " +
+      "https://github.com/ivopogace/opencode-courier#supported-opencode-version",
+  )
+  expect(versionNotice(built, {})).toContain("this server reports no version.")
+  expect(versionNotice(built, { version: 2 as unknown as string, channel: "latest" })).toContain("this server reports no version (channel latest).")
+})

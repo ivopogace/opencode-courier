@@ -13,8 +13,9 @@ const README_TABLE = "https://github.com/ivopogace/opencode-courier#supported-op
  * Reads the versions from the package's own package.json, which sits next to `dist/` in the
  * published package as it does next to `src/` in the repository: `version`, and the exact
  * `@opencode/plugin` version under devDependencies, the one installed for the build and both test
- * suites. The peer range says what `opencode plugin add` accepts, not what was tested. Throws when
- * the file cannot be read or does not hold both.
+ * suites. The peer dependency is what `opencode plugin add` accepts; it names the same version
+ * today and may become a range, which is not what was tested. Throws when the file cannot be read
+ * or does not hold both.
  */
 export function builtVersions(): BuiltVersions {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
@@ -30,13 +31,17 @@ export function builtVersions(): BuiltVersions {
 
 /**
  * The line for the server log when the running OpenCode is not the one the plugin was built
- * against; undefined when it is. Logged once per plugin load, never in a tool result.
+ * against; undefined when it is. Logged once per plugin load, never in a tool result. An OpenCode
+ * whose plugin context does not report a version, as one from before the pinned API or after a
+ * change to it may not, is the case the line is for, so it still names the pin then.
  */
-export function versionNotice(built: BuiltVersions, app: Pick<App, "version" | "channel">): string | undefined {
-  if (app.version === built.opencode) return undefined
+export function versionNotice(built: BuiltVersions, app: Partial<Pick<App, "version" | "channel">> | undefined): string | undefined {
+  const version = typeof app?.version === "string" ? app.version : undefined
+  if (version === built.opencode) return undefined
+  const running = version === undefined ? "this server reports no version" : `this server is ${version}`
+  const channel = typeof app?.channel === "string" ? ` (channel ${app.channel})` : ""
   return (
-    `opencode-courier ${built.plugin} was built and tested against OpenCode ${built.opencode}; this server is ` +
-    `${app.version} (channel ${app.channel}). Its tools may fail: see the Supported OpenCode version table in the ` +
-    `README, ${README_TABLE}`
+    `opencode-courier ${built.plugin} was built and tested against OpenCode ${built.opencode}; ${running}${channel}. ` +
+    `Its tools may fail: see the Supported OpenCode version table in the README, ${README_TABLE}`
   )
 }

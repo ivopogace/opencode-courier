@@ -74,7 +74,8 @@ That is the version the end-to-end suite runs on, and the only one the release i
 with. A newer OpenCode may work, or may break tools silently;
 [docs/plugin-api-notes.md](docs/plugin-api-notes.md) lists what the pinned version already needed
 working around, and what changed the last time the pin moved. A release that moves the pin adds a
-row here.
+row here. When the plugin loads on an OpenCode whose version is not the pinned one, it writes one
+line to the server log naming both versions, so a mismatch is named before a tool fails.
 
 | opencode-courier | OpenCode V2 (`opencode` and `@opencode/plugin`) |
 |---|---|

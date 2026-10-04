@@ -217,12 +217,99 @@ asked with its question tool, offering exactly the choices in the notice (`once`
 `longcat-2.5-preview-free` with the new `courier_spawn` description, which also mentions the
 permission notice, passed all seven checks.
 
+## The question relay
+
+`COURIER_SCENARIO=question` checks a child that must ask the person something. The parent is asked:
+
+> Start one helper session with courier_spawn and give it this task, word for word: "Find out from
+> the user which greeting they want to use: Hello, Hi or Hey. Then report the chosen greeting to the
+> session that started you." Do not ask the user anything yourself before the helper does, and do
+> not do the task yourself. When the helper reports back, reply with one line: GREETING \<the
+> greeting it reported\>
+
+The child is not told how to ask: the brief's line about the question tool is part of the test. The
+script (`e2e/real-model-question.mjs`) waits until the parent asks the person, with a question form
+in its own session or a turn that ends in a question in text, and plays the person: it answers the
+form with the option labelled `COURIER_ANSWER` (default `Hi`), or replies with it. Then it checks
+six things: the parent spawned a child that asked and the parent asked the person; the parent did
+not answer by itself (no `courier_answer`, and no `courier_send` with the answer, before the person
+answered); the parent asked with the child's options (a form with the same labels as the child's,
+or all three greetings in its text); the parent passed the answer on (a question call whose result
+says so, a completed `courier_answer`, or a `courier_send` with the answer); the child got it and
+reported it; and the parent's final reply holds it. Its notes say how the child asked (the question
+tool or `courier_send`) and how the answer was passed on (the linked question, `courier_answer` or
+`courier_send`). As for the permission scenario, the parent is started over the HTTP API, since a
+non-interactive `opencode run` cancels any form opened in its session.
+
+A passing run, `longcat-2.5-preview-free`:
+
+```
+-> prompt: Start one helper session with courier_spawn and give it this task, word for word: "Find out from the user which greeting they want to use: Hello, Hi or Hey. ...
+  courier_spawn({"task":"Find out from the user which greeting they want to use: Hello, Hi or Hey. Then report the chosen greeting to the session that started you.","title":"Greeting helper"}) -> completed
+  says: Helper session started. Waiting for it to ask the user and report back.
+  -- turn ended (stop)
+<- <courier from="ses_…" asks="question" request="question_…"> This session, "Greeting helper", which you started with courier_spawn, asks the question below and waits for the answer. 1. Greeting: Which greeting would you like to use? (one ...
+  question({"questions":[{"question":"Which greeting would you like to use?","header":"Greeting","options":[{"label":"Hello","description":"A classic, friendly greeting"},{"label":"Hi","description":"A short ...) -> completed
+  says: The user chose "Hi" — passed that along to the helper session. Waiting for it to report back.
+  -- turn ended (stop)
+<- <courier from="ses_…"> The user chose the greeting: Hi </courier>
+  says: GREETING Hi
+  -- turn ended (stop)
+child ses_…:
+-> prompt: You were started by session ses_… through opencode-courier. When you finish, or need a decision you cannot make yourself, call couri...
+  question({"questions":[{"question":"Which greeting would you like to use?","header":"Greeting","options":[{"label":"Hello","description":"A classic, friendly greeting"},{"label":"Hi","description":"A short ...) -> completed
+  courier_send({"sessionID":"ses_…","message":"The user chose the greeting: Hi"}) -> completed
+  says: The user chose **"Hi"** as their greeting, and I've reported that choice to the session that started me. Task complete.
+  -- turn ended (stop)
+
+  PASS the parent spawned a child, which asked, and the parent asked the person
+  PASS the parent did not answer by itself
+  PASS the parent asked with the child's options
+  PASS the parent passed on the person's answer
+  PASS the child got the answer and reported it
+  PASS the parent's final reply holds it
+  note: the child asked with: question tool
+  note: the parent asked with a question form: [{"question":"Which greeting would you like to use?","options":["Hello","Hi","Hey"]}]
+  note: the parent was told with a question notice
+  note: the child's question call ended completed: User has answered your questions: "Which greeting would you like to use?"="Hi". You can now continue with the user's answers in mind.
+  note: passed on with: the linked question
+  note: from the person's answer to the child's report: 4 s
+result: pass
+```
+
+Every child, in every run, asked with its question tool rather than by message, on the brief's one
+line about it, and every parent asked the person with a question form holding the child's three
+greetings, instead of answering by itself. On 2026-10-04, with `opencode2 v0.0.0-beta-19271`:
+
+- A first round, on the code before the review rounds: `muse-spark-1.3-contributor-free` and
+  `nemotron-3-ultra-free` passed every check (linked, 7 and 8 seconds from the person's answer to
+  the child's report); `longcat-2.5-preview-free` completed the whole flow (linked, "GREETING Hi")
+  but a bug in the checker failed one check, and its rerun was rate limited.
+- On the final code: `longcat-2.5-preview-free` passed every check, linked, 4 seconds from the
+  person's answer to the child's report (the run above). `nemotron-3-ultra-free` passed every
+  check, but spawned three helpers for the one it was asked for; each asked, the plugin told the
+  parent three times, the parent's one question form was linked to the oldest, it passed the same
+  answer to the second with `courier_answer` (which the result of the linked question had told it
+  not to do for the first, and it did not), and it answered with "GREETING Hi" while the third still
+  waited. That is the model's doing, not the relay's. `muse-spark-1.3-contributor-free` listed
+  the three options in another order (Hello, Hey, Hi) and, with the link still comparing them in
+  order, was not linked; the hint in its tool result sent it to `courier_answer`, which it called,
+  and the child reported "Hi" 3 seconds later. The checker's "asked with the child's options" failed
+  on the order, everything else passed. The link and the checker now take the options in any order.
+  Run again on that code, muse passed every check, linked (its options in the child's order this
+  time), 2 seconds from the person's answer to the child's report.
+- Permission relay, `longcat-2.5-preview-free`, on the final code: all six checks passed, as before
+  the question relay. Fan-out, `longcat-2.5-preview-free`, on the final code, with the brief's new
+  line and the `courier_spawn` description that mentions questions: all seven checks passed (two
+  spawns, end of turn, each report woke the idle parent; 10 requests).
+
 ## Cost
 
-Nothing: every run used free models. The 26 runs with a summary made 290 model requests, about
-1,444,000 input, 19,000 output and 17,000 reasoning tokens, plus 1,064,000 cache reads. A passing run
-is 10 to 12 requests, 25,000 to 110,000 input tokens (nemotron reads the most, with little
-caching) and about 1,000 output tokens.
+Nothing: every run used free models. The 26 fan-out runs with a summary made 290 model requests,
+about 1,444,000 input, 19,000 output and 17,000 reasoning tokens, plus 1,064,000 cache reads. A
+passing run is 10 to 12 requests, 25,000 to 110,000 input tokens (nemotron reads the most, with
+little caching) and about 1,000 output tokens. The permission and question runs (free models too)
+are smaller: one child, and 6 to 10 requests in all; their checkers do not add usage up.
 
 ## Caveats
 

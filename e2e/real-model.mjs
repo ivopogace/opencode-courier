@@ -50,30 +50,32 @@ const contentText = (state) =>
 // A step whose model request failed, as on a rate limit.
 const failed = (message) => message.error !== undefined || message.finish === "error"
 // A step that ended its turn rather than handing tool results back to the model, or that failed.
+// Since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
 const ended = (message) =>
-  message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined)
+  message?.type === "idle" ||
+  (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
 // Whether a session has finished its turn and nothing has arrived since.
-const settled = (list) => ended(list.at(-1)) && list.at(-1).time.completed !== undefined
+const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
 const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
 }
-// Splits a transcript into turns. This OpenCode version records no idle marker, so a prompt or a
-// delivered message opens a turn when the session's last step had ended its turn, and completed,
-// before it arrived; otherwise it was steered into the running turn.
+// Splits a transcript into turns. A prompt or a delivered message opens a turn when the session's
+// last step had ended its turn, and completed, before it arrived (or an idle marker had been
+// recorded, since OpenCode 2.0.22); otherwise it was steered into the running turn.
 function turnsOf(list) {
   const turns = []
   let busy = false
   let last
   for (const message of list) {
     const incoming = message.type === "user" || message.type === "synthetic"
-    if (incoming && !busy && (!last || (last.time.completed ?? Infinity) <= message.time.created)) {
+    if (incoming && !busy && (!last || last.type === "idle" || (last.time.completed ?? Infinity) <= message.time.created)) {
       turns.push([])
       busy = true
     }
     if (!turns.length) turns.push([])
     turns.at(-1).push(message)
-    if (message.type === "assistant") {
+    if (message.type === "assistant" || message.type === "idle") {
       busy = !ended(message)
       last = message
     }
@@ -149,14 +151,14 @@ for (const [number, turn] of turns.entries()) {
     }
     if (message.error) lines.push(`  error: ${short(message.error)}`)
   }
-  if (ended(turn.at(-1))) lines.push(`  -- turn ended (${turn.at(-1).finish})`)
+  if (ended(turn.at(-1))) lines.push(`  -- turn ended (${turn.at(-1).finish ?? turn.at(-1).outcome})`)
 }
 for (const [id, list] of children) {
   lines.push(`child ${id}:`)
   for (const part of toolsOf(list)) lines.push(`  ${part.name}(${short(part.state.input, 120)}) -> ${part.state.status}`)
   const last = list.findLast((message) => message.type === "assistant" && textOf(message).trim())
   if (last) lines.push(`  says: ${short(textOf(last).trim())}`)
-  lines.push(settled(list) ? `  -- turn ended (${list.at(-1).finish})` : "  -- still running")
+  lines.push(settled(list) ? `  -- turn ended (${list.at(-1).finish ?? list.at(-1).outcome})` : "  -- still running")
 }
 const timeline = lines.join("\n")
 writeFileSync(join(work, "timeline.txt"), `${timeline}\n`)

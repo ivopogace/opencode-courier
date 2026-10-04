@@ -127,6 +127,10 @@ Observed at `2.0.22`, differently from the beta (the live suite found each of th
 - The permission reply route, `POST /api/session/:id/permission/:request/reply`, takes
   `decision` (above); the form dismissal route is `DELETE /api/session/:id/form/:form` (was
   `POST .../cancel`). `GET /api/form` lists every open form (was `/api/form/request`).
+- A session's message list records an `idle` message when a turn ends (`SessionMessageIdle`,
+  with `outcome: "succeeded" | "failed" | "interrupted"`); the beta recorded nothing, and the
+  real-model checkers read the end of a turn from the last step's finish reason. They take the
+  marker now.
 - The server's `/api/health` route is gone (404); `/api/info` answers with the version, pid and
   urls, and the test harness waits for the server on it. The session API moved several routes
   under `/api/experimental/` (`wait`, `import`, `export`, `stats`, `skill`, the instructions

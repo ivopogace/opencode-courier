@@ -44,9 +44,11 @@ const forms = async (sessionID) => (await api(`session/${sessionID}/form`)).data
 const toolsOf = (list) => list.flatMap((message) => (message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : []))
 const textOf = (message) =>
   message.type === "assistant" ? message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") : (message.text ?? "")
+// Since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
 const ended = (message) =>
-  message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined)
-const settled = (list) => ended(list.at(-1)) && list.at(-1).time.completed !== undefined
+  message?.type === "idle" ||
+  (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
+const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
 const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
@@ -155,7 +157,7 @@ for (const [name, list] of [["parent", parent], [`child ${child}`, childMessages
       if (part.type === "text" && part.text.trim()) lines.push(`  says: ${short(part.text.trim(), 300)}`)
     }
     if (message.error) lines.push(`  error: ${short(message.error)}`)
-    if (ended(message)) lines.push(`  -- turn ended (${message.finish})`)
+    if (ended(message)) lines.push(`  -- turn ended (${message.finish ?? message.outcome})`)
   }
 }
 const timeline = lines.join("\n")

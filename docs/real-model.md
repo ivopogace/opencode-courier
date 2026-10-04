@@ -77,7 +77,9 @@ result: pass
 `opencode2 v0.0.0-beta-19271` records no marker when a session goes idle, so turns are read from
 the transcript: a delivered message opens a new turn when the session's last step had ended its
 turn (a finish reason other than `tool-calls`, or a failed request) and completed before the
-message arrived; otherwise it was steered into the running turn. Polling means any
+message arrived; otherwise it was steered into the running turn. Since `opencode v2.0.22` the
+transcript records an `idle` message when a turn ends (with its `outcome`), which the checkers
+take as the end of a turn too. Polling means any
 `courier_status`, `courier_children` or `sleep` in the first turn, right after spawning, or more
 than one in a later turn; a single look after being woken is what `courier_status` is for, and is
 only noted. A report is a `courier_send` from a child; a `courier_later` check-in does not count.

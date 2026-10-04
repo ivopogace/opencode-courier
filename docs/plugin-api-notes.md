@@ -215,11 +215,21 @@ Why, from the source at `v2.0.22`:
   load path compares versions either; a failure in the import or the plugin's setup is logged as
   "failed to load plugin" and shown in the plugin's state, as above.
 
-So the peer range is a statement, not a check: a mismatched host installs and loads the plugin
-without a word, and what breaks does so on use, or on load when the host lacks a domain the
-plugin API copy expects. The runtime signals are that load failure, and the log line #38 adds for
-a host whose `app.version` differs from the version the plugin was built against. The range in
-`package.json` is therefore set from the evidence rather than relied on: `^2.0.22`, the version the
-live suite ran on (the pinned leg of CI, and `latest` that day) and the `dev` build it also passed
-on, 0.0.0-dev-20534 (2026-10-04); below the pin the plugin loads on 2.0.4 to 2.0.21 but was not
-tested there, and does not load before 2.0.4. A pin bump still adds a row to the README's table.
+So the peer dependency is a statement, not a check: a mismatched host installs and loads the
+plugin without a word, and what breaks does so on use, or on load when the host lacks a domain the
+plugin API copy expects. The only runtime signals are that load failure and, once #38 is in, the
+log line it adds for a host whose `app.version` differs from the version the plugin was built
+against; until then a mismatch is logged nowhere.
+
+The peer dependency does do one thing, though: it picks the copy of the plugin API that
+`plugin add` installs next to the plugin, and that the plugin then runs on, on every host. With an
+exact `2.0.22` that copy is the one the plugin was built and tested with, whatever the host; with a
+range such as `^2.0.22` it would be the newest version on npm that satisfies it, a copy nothing has
+run the suite with, and the kind of copy that died above on a host short of a domain it expected.
+That is why the peer dependency stays exact, the same version as the devDependency, rather than
+becoming the range #40 set out to write, and why the README's table keeps one version per row with
+the hosts the suite passed on named under it: 2.0.22 (the pinned leg of CI, and `latest` that day)
+and the `dev` build 0.0.0-dev-20534 (2026-10-04); below the pin the plugin loads on 2.0.4 to 2.0.21
+but was not tested there, and does not load before 2.0.4. The `latest` leg of CI covers the next
+host release with this copy of the plugin API, which is exactly what `plugin add` gives a user
+there. A pin bump still adds a row to the README's table.

@@ -132,8 +132,8 @@ than `latest`; that only matters to someone installing `opencode-courier@next`, 
 CI also checks the package as published: `publint` for `package.json` and `exports`, and
 `@arethetypeswrong/cli` for the type declarations.
 
-The plugin API is pinned to an exact version in `package.json` (the devDependency), and CI installs
-the OpenCode CLI at that version; the peer dependency is the range the release claims, set from the
-evidence in `docs/plugin-api-notes.md`. Bump the pin deliberately, re-run both test suites, add the
-new plugin version and OpenCode version as a row to the README's Supported OpenCode version table,
-and record what changed in `docs/plugin-api-notes.md`.
+The plugin API is pinned to an exact version in `package.json`, as devDependency and as peer
+dependency (CI reads the devDependency), and CI installs the OpenCode CLI at that version; bump both
+deliberately, re-run both test suites, add the new plugin version and OpenCode version as a row to
+the README's Supported OpenCode version table, and record what changed in
+`docs/plugin-api-notes.md`.

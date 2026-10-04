@@ -51,8 +51,9 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
-      # The CLI follows the exact plugin API version the package is built against (the devDependency;
-      # the peer dependency is a range), so the two never drift.
+      # The CLI follows the exact plugin API version the package is built against (the devDependency,
+      # which is what the build uses; the peer dependency names the same version), so the two never
+      # drift.
       - name: Install OpenCode V2
         run: npm install -g "@opencode/cli@$(node -p "require('./package.json').devDependencies['@opencode/plugin']")"
       - name: Run the live test
@@ -95,7 +96,10 @@ jobs:
         id: install
         run: |
           npm install -g @opencode/cli@latest
-          version=$(opencode --version | sed 's/^opencode v//')
+          opencode --version
+          # From the installed package, not from `opencode --version`, whose output may carry more
+          # than the version.
+          version=$(node -p "require('$(npm root -g)/@opencode/cli/package.json').version")
           pinned=$(node -p "require('./package.json').devDependencies['@opencode/plugin']")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           {
@@ -105,6 +109,10 @@ jobs:
             echo "|---|---|"
             echo "| \`@opencode/cli@latest\` | $version |"
             echo "| \`@opencode/plugin\` the build uses | $pinned |"
+            if [ "$version" = "$pinned" ]; then
+              echo
+              echo "\`latest\` is the pinned version today, so this run repeats the pinned leg."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::notice title=OpenCode latest::The latest leg runs on @opencode/cli@$version (the plugin is built against @opencode/plugin@$pinned)"
       - name: Run the live test
@@ -115,7 +123,8 @@ jobs:
       - name: Report the outcome
         if: always()
         env:
-          VERSION: ${{ steps.install.outputs.version }}
+          # Empty when the install step itself failed.
+          VERSION: ${{ steps.install.outputs.version || 'unknown' }}
           OUTCOME: ${{ job.status }}
         run: |
           echo "Outcome on @opencode/cli@$VERSION: $OUTCOME" >> "$GITHUB_STEP_SUMMARY"
@@ -126,7 +135,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-logs-latest-${{ steps.install.outputs.version }}
+          name: e2e-logs-latest-${{ steps.install.outputs.version || 'unknown' }}
           path: |
             ${{ runner.temp }}/e2e/*.log
             ${{ runner.temp }}/e2e/*.out

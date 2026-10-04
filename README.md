@@ -69,9 +69,8 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 Requires OpenCode V2: the `opencode` command from `@opencode/cli` (the same binary is also installed
 as `opencode2`, the name of the beta line, so a shell that still calls that keeps working). Each
 release of this plugin is built and tested against exactly one OpenCode V2 version, the
-`@opencode/plugin` version pinned as a devDependency in `package.json` (the CLI and the plugin API
-share a version), and names the range it is expected to work on as its peer dependency. The
-end-to-end suite runs on the pinned version with every change, and once more on the newest
+`@opencode/plugin` version pinned in `package.json` (the CLI and the plugin API share a version).
+The end-to-end suite runs on that version with every change, and once more on the newest
 `@opencode/cli` release, where a failure is a warning rather than a red build, so a host release
 that breaks the plugin shows up in CI first. A newer OpenCode may still break tools silently;
 [docs/plugin-api-notes.md](docs/plugin-api-notes.md) lists what the pinned version already needed
@@ -80,15 +79,19 @@ row here.
 
 | opencode-courier | OpenCode V2 (`opencode` and `@opencode/plugin`) |
 |---|---|
-| 0.2.0 | `^2.0.22` (2.0.22 and later 2.x) |
+| 0.2.0 | 2.0.22 |
 | 0.1.6 | 0.0.0-beta-19271 (the beta line: `opencode2` from `@opencode-ai/cli`, and `@opencode-ai/plugin`) |
 
-0.2.0 is built against 2.0.22, and the suite passed on 2.0.22 and on the `dev` build
-0.0.0-dev-20534 of 2026-10-04, the newest build then; it loads on 2.0.4 to 2.0.21 but was not tested
-there, and fails to load before 2.0.4. The range protects nobody on its own: `opencode plugin add`
-installs the plugin whatever your OpenCode version, without a word, and loading warns about nothing
-either (a recorded experiment, in [docs/plugin-api-notes.md](docs/plugin-api-notes.md#what-plugin-add-and-loading-do-with-the-peer-dependency-2026-10-04)).
-Check yours with `opencode --version`, and install the matching CLI with:
+0.2.0 was tested on 2.0.22 and on the `dev` build 0.0.0-dev-20534 of 2026-10-04, the newest build
+then (no 2.x release above 2.0.22 existed), where the suite passed too; it loads on 2.0.4 to 2.0.21
+but was not tested there, and fails to load before 2.0.4. The version in `package.json` protects
+nobody on its own: `opencode plugin add` installs the plugin whatever your OpenCode version, without
+a word, and loading warns about nothing either, so on a mismatched host nothing says so until a tool
+breaks (a recorded experiment, in
+[docs/plugin-api-notes.md](docs/plugin-api-notes.md#what-plugin-add-and-loading-do-with-the-peer-dependency-2026-10-04),
+which also says why the peer dependency stays exact rather than a range: it picks the copy of the
+plugin API the plugin runs on). Check yours with `opencode --version`, and install the matching CLI
+with:
 
 ```bash
 npm install -g @opencode/cli@2.0.22

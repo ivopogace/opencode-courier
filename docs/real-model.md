@@ -305,6 +305,22 @@ greetings, instead of answering by itself. On 2026-10-04, with `opencode2 v0.0.0
   line and the `courier_spawn` description that mentions questions: all seven checks passed (two
   spawns, end of turn, each report woke the idle parent; 10 requests).
 
+## On OpenCode 2.0.22
+
+On 2026-10-04, after the move from the beta to `@opencode/plugin@2.0.22` (#41), with
+`opencode v2.0.22` and `longcat-2.5-preview-free`, nothing in the tool descriptions or the child
+brief changed, and:
+
+- Fan-out passed every check in both runs (10 requests each; two spawns, end of turn, each report
+  woke the idle parent). In the first, the checkers read the parent's first turn as never ended and
+  the children as still running, because 2.0.22 records an `idle` message after each turn, which
+  they did not know; replayed with `--saved` after the fix, all seven checks passed, and the second
+  run passed outright.
+- The permission relay passed all six checks: the parent asked with a form offering `once`,
+  `always` and `reject`, and passed `once` on with `courier_answer`.
+- The question relay passed all six checks, linked (the parent's form held the child's three
+  greetings), 7 seconds from the person's answer to the child's report.
+
 ## Cost
 
 Nothing: every run used free models. The 26 fan-out runs with a summary made 290 model requests,

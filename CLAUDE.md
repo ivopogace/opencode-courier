@@ -32,16 +32,17 @@ bun run typecheck
 bun test
 bun run build
 # live test: install the CLI once, at the version of the pinned plugin API
-npm install --prefix <scratch>/oc2 @opencode-ai/cli@0.0.0-beta-19271
-OPENCODE_BIN=<scratch>/oc2/node_modules/.bin/opencode2 npm run test:e2e   # ~2 min, no API key
+npm install --prefix <scratch>/oc @opencode/cli@2.0.22
+OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # ~2 min, no API key
 ```
 
 ## Rules
 
-- The V2 plugin API is beta and pinned to `@opencode-ai/plugin@0.0.0-beta-19271`. Read its types
-  in `node_modules` rather than guessing; the OpenCode source is on the `beta` branch of
-  https://github.com/anomalyco/opencode. A pin bump adds a row to README.md's Supported OpenCode
-  version table.
+- The V2 plugin API is pinned to an exact version, `@opencode/plugin@2.0.22`, and the live test
+  installs `@opencode/cli` at that same version. Read the API's types in `node_modules` rather than
+  guessing; the OpenCode V2 source is on the `v2` branch of https://github.com/anomalyco/opencode,
+  with each release tagged (`v2.0.22`). A pin bump adds a row to README.md's Supported OpenCode
+  version table and a section to `docs/plugin-api-notes.md` on what changed.
 - Every tool is registered with `options: { codemode: false }`, returns metadata without
   `undefined` values, and rethrows failures through `describeFailure`.
 - Behaviour changes come with unit tests and an e2e scenario, and update README.md and

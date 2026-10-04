@@ -9,8 +9,8 @@ each report wakes the idle parent. It is not part of CI.
 
 ```bash
 bun install
-npm install --prefix <scratch>/oc2 @opencode-ai/cli@0.0.0-beta-19271
-OPENCODE_BIN=<scratch>/oc2/node_modules/.bin/opencode2 e2e/real-model.sh
+npm install --prefix <scratch>/oc @opencode/cli@2.0.22
+OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
 ```
 
 It sets up the same throwaway home directory, project and OpenCode server as `run.sh`, with the

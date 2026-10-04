@@ -22,8 +22,9 @@ PR itself and merges.
 - **Parallel** is fine when issues only share files textually. Name the shared files to each
   child, down to the part each one edits. Usual collisions here: the end of the
   `tool.transform` callback in `src/index.ts`, the expected tool list in `test/plugin.test.ts`,
-  README's Tools table, Roadmap and e2e paragraph, the scenario blocks before the summary in
-  `e2e/run.sh`, and the branches of `decide()` in `e2e/mock-model.mjs`.
+  README's Tools table and "How children reach you" list, `docs/reference.md`, the scenario
+  blocks before the summary in `e2e/run.sh`, and the branches of `decide()` in
+  `e2e/mock-model.mjs`.
 - **Hold** an issue that needs something only the owner has: an API key, an account, a decision
   to publish or spend. Say what is needed instead of spawning.
 - Keep a roster in the scratchpad (issue, session id, branch, PR, state, the owner's decisions

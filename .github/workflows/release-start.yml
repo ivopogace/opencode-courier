@@ -1,6 +1,6 @@
 name: Start a release
 
-# Step one of a release (Releasing in README.md): bumps `version` in package.json on a branch
+# Step one of a release (docs/releasing.md): bumps `version` in package.json on a branch
 # and opens the "Release X.Y.Z" pull request. Merging it tags main (release-tag.yml), and the tag
 # is staged on npm (release.yml). Everything here uses the job's GITHUB_TOKEN; GitHub holds the
 # pull request's CI runs until a maintainer selects "Approve workflows to run" on it.
@@ -64,7 +64,7 @@ jobs:
           esac
           current="$(node -p "require('./package.json').version")"
           if ! git ls-remote --exit-code --tags origin "refs/tags/v${current}" >/dev/null; then
-            echo "::error::the current version ${current} has no tag v${current}: release it first (Tag the release on main with dry_run off, or by hand: Releasing in README.md)"
+            echo "::error::the current version ${current} has no tag v${current}: release it first (Tag the release on main with dry_run off, or by hand: docs/releasing.md)"
             exit 1
           fi
           npm version "${VERSION}" --no-git-tag-version >/dev/null
@@ -112,7 +112,7 @@ jobs:
             echo
             echo "GitHub holds the checks of a pull request that GitHub Actions opened: select **Approve workflows to run** in the merge box to start them."
             echo
-            echo "Merging this tags main with \`v${VERSION}\` (Tag the release) and stages the version on npm (Release). Then approve it with 2FA on npmjs.com under Staged Packages and publish the draft GitHub release: Releasing in README.md."
+            echo "Merging this tags main with \`v${VERSION}\` (Tag the release) and stages the version on npm (Release). Then approve it with 2FA on npmjs.com under Staged Packages and publish the draft GitHub release: docs/releasing.md."
           } >"${RUNNER_TEMP}/pull-request.md"
           # A branch without its pull request would block the next attempt: take it back.
           if ! url="$(gh pr create --base main --head "release-${VERSION}" --title "Release ${VERSION}" --body-file "${RUNNER_TEMP}/pull-request.md")"; then

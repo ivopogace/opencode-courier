@@ -262,7 +262,7 @@ check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 
 echo "a parent that rewords the question is not linked, is told so, and passes the answer on with courier_answer"
 ask_question COURIER-QUESTION-REWORD
 check "the person answers the parent's reworded question" "$(answer_form "$parent" "$parent_form" '"Hey"')"
-check "the parent's question said it was not passed on" "$(has_text "$parent" "these answers were not passed on, since the questions are worded differently")"
+check "the parent's question said it was not passed on" "$(has_text "$parent" "these answers were not passed on by themselves")"
 check "courier_answer passed it on" "$(has_text "$parent" "Passed the answers to question")"
 check "the child got it" "$(has_text "$parent" 'CHILD GOT [["Hey"]]' 45)"
 

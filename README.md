@@ -122,8 +122,8 @@ When the parent asks you the same questions with the same options, the two are l
 pick in the parent's session is passed to the child's waiting call, which returns it as if you had
 answered there, and the child carries on in the same turn. The parent's tool result says so. Only
 the same wording links (spacing and case aside), so a question of the parent's own with the same
-yes-or-no choices never answers a child's; when the wording is all that differs, the parent's tool
-result says the answers were not passed on and names the request. A parent that asked you some
+yes-or-no choices never answers a child's; when a waiting question has the same choices, the
+parent's tool result says the answers were not passed on and names the request. A parent that asked you some
 other way, in text or reworded, calls
 `courier_answer { sessionID, requestID, answers }`: one entry per question, in order, each the
 label you chose or the text you gave, or a list of labels where a question allows several. As with

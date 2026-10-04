@@ -445,7 +445,7 @@ describe("the question tool of a spawned session", () => {
     leave()
   })
 
-  test("the top session's answer that arrives as the child's turn is stopped reaches it, as a message", async () => {
+  test("the top session's answer that arrives as the child's turn is stopped still reaches it", async () => {
     const { ports, told, ask } = await setUp()
     const child = ask("ses_child")
     await settle()
@@ -453,11 +453,33 @@ describe("the question tool of a spawned session", () => {
     const stopping = Effect.runPromise(Fiber.interrupt(child))
     const answered = await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
     await stopping
-
-    expect(answered).toMatchObject({ answered: true })
+    const exit = await exitOf(child)
     await settle()
-    if (answered.answered && answered.by === "message") expect(told.at(-1)).toMatchObject({ sessionID: "ses_child" })
-    else expect(answered).toMatchObject({ by: "result" })
+
+    // Whichever way it went, the child has the answer, and the parent was told the truth.
+    expect(answered).toMatchObject({ answered: true })
+    if (answered.answered && answered.by === "result") expect(Exit.isSuccess(exit) && exit.value.output).toEqual({ answers: [["Hi"]] })
+    else {
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(told.filter((item) => item.sessionID === "ses_child").map((item) => item.text)).toEqual([
+        expect.stringContaining('"Which greeting?"="Hi"'),
+      ])
+    }
+  })
+
+  test("on load, a cut-off question this process knows is dropped once its child is off the roster", async () => {
+    const { ports, store, told, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    store.delete("roster/ses_parent/ses_child")
+
+    await noticeCutOff(ports)
+
+    expect(store.has("question/question_1")).toBe(false)
+    expect(await pendingQuestions(ports.storage, "ses_child")).toEqual([])
+    expect(told).toHaveLength(2)
   })
 
   test("an answer sent whose stored question could not be dropped is not sent again", async () => {
@@ -490,7 +512,7 @@ describe("the question tool of a spawned session", () => {
     const parentExit = await exitOf(parent)
     // Not linked, but told how to pass the answers on, should it have asked for the child after all.
     expect(Exit.isSuccess(parentExit) && parentExit.value.content).toContain(
-      'If you asked this for session ses_child (requestID "question_1"), these answers were not passed on, since the questions are worded differently: pass them on with courier_answer.',
+      'If you asked this for session ses_child (requestID "question_1"), these answers were not passed on by themselves: pass them on with courier_answer.',
     )
     expect(Exit.isSuccess(parentExit) && parentExit.value.metadata.passed).toBeUndefined()
     expect(formOf(tool, "ses_child")).toBeDefined()

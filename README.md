@@ -128,15 +128,17 @@ other way, in text or reworded, calls
 `courier_answer { sessionID, requestID, answers }`: one entry per question, in order, each the
 label you chose or the text you gave, or a list of labels where a question allows several. As with
 permission requests, only the session at the top can answer. Answers to one question are passed on
-one at a time: a second waits for the first, for up to 30 seconds, and goes on if the first did not
-get through.
+one at a time, and once: a second waits for the first, and is told the question no longer waits once
+the first got through. A first that has not got through after 30 seconds gives way, and the second
+goes on; should the first still get through, the child is told twice.
 
 The question stays in the child's session too, and you can answer it there instead. Whichever
 answer comes first counts, and the other side's question is withdrawn:
 
 - answered or dismissed in the child's session: the parent's open question disappears and its
   tool result says why, or, with none open, the parent gets a short message marked
-  `answered="elsewhere"` or `answered="dismissed"`. A dismissal there ends the child's turn, as
+  `answered="elsewhere"` or `answered="dismissed"` (or `answered="failed"`, when the child's
+  question call failed, which ends its turn too). A dismissal there ends the child's turn, as
   OpenCode's question tool does, and the message says to `courier_send` it if it should carry on;
 - answered in the parent's session: the child's question disappears;
 - dismissed in the parent's session: the parent's turn ends, as OpenCode's tool does, and the
@@ -147,23 +149,23 @@ A question whose call is cut off stays answerable. When the child's turn is stop
 or by OpenCode itself, which stops every turn in a project location after 60 minutes without
 activity there), or the server restarts or closes the project, the question is gone from the
 screen. The plugin keeps it in its storage, sends the parent a message marked `stopped="true"`, or
-`restarted="true"` when the plugin is next loaded for the project (or half a minute later, when
+`restarted="true"` when the plugin is next loaded (or half a minute later, when
 OpenCode closed only that project, keeps running, and has the plugin loaded for another), with the
 questions, and passes
 the answer on as a message to the child, which wakes it. If the parent is asking you at that
-moment, your answer goes that way without a new message. Stored
-questions are dropped after 14 days, once the child is off its parent's roster, or beyond the 100
-newest.
+moment, your answer goes that way without a new message. When the plugin loads, stored questions
+are dropped after 14 days, once the child is off its parent's roster, or beyond the 100 newest.
 
 `courier_status` and `courier_children` list a session's questions under `pending`, with
 `type: "question"`, the questions, and `stopped: true` for one that was cut off. A question whose
-message to the parent could not be sent is listed there too, and can be answered all the same.
+message to the parent could not be sent, or whose record could not be stored, is listed there too,
+and can be answered all the same.
 
 A question is relayed only once OpenCode's permission check for it has passed: a child whose agent
 may not ask questions (OpenCode's `general` agent, or a `question` rule with `"effect": "deny"`)
 is refused as before, and the parent hears nothing. The plugin learns that a question is on screen
-from OpenCode's events; when its event stream broke and comes back, it relays every question still
-waiting for that, since one shown meanwhile was not seen. The child brief tells children to use the
+from OpenCode's events; when no instance of it followed them for a while and one does again, it
+relays every question still waiting for that, since one shown meanwhile was not seen. The child brief tells children to use the
 question tool when the person must decide; a child can still send its question with
 `courier_send` instead, and the parent then passes your answer back with `courier_send`.
 

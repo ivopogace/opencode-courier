@@ -56,6 +56,9 @@ export interface ChildrenInput {
   readonly sessionID?: string
 }
 
+/** Closes a tool result after which the caller most likely has nothing left to do. */
+export const END_TURN = "If nothing else is left to do now, end your turn by replying without calling more tools."
+
 export function childBrief(parentID: string, task: string) {
   return [
     `You were started by session ${parentID} through opencode-courier.`,

@@ -29,6 +29,7 @@ afterEach(() => {
   forgetQuestions()
   timing.closingGraceMs = 30_000
   timing.passingWaitMs = 30_000
+  timing.relayWaitMs = 30_000
   showForms = true
 })
 
@@ -708,6 +709,122 @@ describe("the question tool of a spawned session", () => {
     ;(ports.session as any).synthetic = synthetic
     expect(await answerQuestion(ports, "ses_parent", input)).toMatchObject({ answered: true, by: "message" })
     expect(told.at(-1).sessionID).toBe("ses_child")
+  })
+
+  test("the top session's answer reaches the call while the notice to the parent hangs, and the record goes once that gives way", async () => {
+    const { ports, store, tool, ask } = await setUp()
+    timing.relayWaitMs = 30
+    const synthetic = ports.session.synthetic
+    ;(ports.session as any).synthetic = () => new Promise(() => undefined)
+    const child = ask("ses_child")
+    await settle()
+    expect(store.has("question/question_1")).toBe(true)
+
+    const answered = await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
+
+    expect(answered).toMatchObject({ answered: true, by: "result" })
+    const exit = await exitOf(child)
+    expect(Exit.isSuccess(exit) && exit.value.output).toEqual({ answers: [["Hi"]] })
+    expect(tool.cancelled).toHaveLength(1)
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(store.has("question/question_1")).toBe(false)
+    ;(ports.session as any).synthetic = synthetic
+  })
+
+  test("a question whose record could not be stored is answered all the same after its call was cut off", async () => {
+    const { ports, store, told, ask } = await setUp()
+    const set = ports.storage.set
+    ;(ports.storage as any).set = async (key: string, value: unknown) => {
+      if (key.startsWith("question/")) throw new Error("disk full")
+      return set.call(ports.storage, key, value as never)
+    }
+    const child = ask("ses_child")
+    await settle()
+    expect(told).toEqual([])
+    expect(store.has("question/question_1")).toBe(false)
+
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+
+    expect(notices(told, "stopped")).toHaveLength(1)
+    expect(await pendingQuestions(ports.storage, "ses_child")).toEqual([{ type: "question", requestID: "question_1", questions: greeting, stopped: true }])
+    const answered = await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
+    expect(answered).toMatchObject({ answered: true, by: "message" })
+    expect(told.filter((item) => item.sessionID === "ses_child").map((item) => item.text)).toEqual([expect.stringContaining('"Which greeting?"="Hi"')])
+    expect(await pendingQuestions(ports.storage, "ses_child")).toEqual([])
+  })
+
+  test("a question the parent could not be told about is not reported settled to it", async () => {
+    const { ports, store, told, tool, ask } = await setUp()
+    const synthetic = ports.session.synthetic
+    ;(ports.session as any).synthetic = async () => {
+      throw new Error("server busy")
+    }
+    const child = ask("ses_child")
+    await settle()
+    ;(ports.session as any).synthetic = synthetic
+
+    formOf(tool, "ses_child").answer([["Hey"]])
+    await exitOf(child)
+    await settle()
+
+    expect(told).toEqual([])
+    expect(store.has("question/question_1")).toBe(false)
+  })
+
+  test("a question whose answer is being passed on is not listed", async () => {
+    const { ports, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    const synthetic = ports.session.synthetic
+    let release!: () => void
+    ;(ports.session as any).synthetic = () => new Promise<void>((resolve) => (release = resolve)).then(() => ({ id: "msg" }))
+
+    const answering = answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
+    await settle()
+
+    expect(await pendingQuestions(ports.storage, "ses_child")).toEqual([])
+    release()
+    expect(await answering).toMatchObject({ answered: true, by: "message" })
+    ;(ports.session as any).synthetic = synthetic
+  })
+
+  test("a cut-off notice that could not be sent is sent on the next load", async () => {
+    const { ports, told, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    const synthetic = ports.session.synthetic
+    ;(ports.session as any).synthetic = async () => {
+      throw new Error("server busy")
+    }
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    ;(ports.session as any).synthetic = synthetic
+    expect(notices(told, "stopped")).toHaveLength(0)
+
+    await noticeCutOff(ports)
+
+    expect(notices(told, "restarted")).toHaveLength(1)
+  })
+
+  test("an answer arriving as the child answers in its own session is not sent on while the record is being dropped", async () => {
+    const { ports, store, told, tool, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    const remove = ports.storage.remove
+    ;(ports.storage as any).remove = (key: string) =>
+      new Promise((resolve) => setTimeout(resolve, 30)).then(() => remove.call(ports.storage, key))
+    formOf(tool, "ses_child").answer([["Hey"]])
+    await exitOf(child)
+
+    const answered = await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
+
+    expect(answered).toMatchObject({ answered: false })
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(store.has("question/question_1")).toBe(false)
+    expect(told.filter((item) => item.sessionID === "ses_child")).toEqual([])
   })
 
   test("a question of a child's child goes to the session at the top, which alone answers it", async () => {

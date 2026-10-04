@@ -252,7 +252,7 @@ check "the person types an answer in the parent's session" "$(answer_form "$pare
 check "the child got it" "$(has_text "$parent" 'CHILD GOT [["Something else"]]' 45)"
 check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
 
-echo "a parent that rewords the options passes the answer on with courier_answer"
+echo "a parent that relabels the options passes the answer on with courier_answer"
 ask_question COURIER-QUESTION-RELABEL
 check "the person answers the parent's reworded question" "$(answer_form "$parent" "$parent_form" '"hi"')"
 check "courier_answer passed it on" "$(has_text "$parent" "Passed the answers to question")"

@@ -4,7 +4,7 @@ import { fromPromise } from "@opencode-ai/plugin/promise/adapter"
 import { Effect, Schema } from "effect"
 import { randomUUID } from "node:crypto"
 import type { Server } from "node:http"
-import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
+import { describeFailure, END_TURN, listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
 import { cleanup, headOf, inspectWorktree, type CleanupPorts, type CleanupResult } from "./cleanup.js"
 import { cancel, deliverDue, schedule, TICK_MS, type LaterPorts } from "./later.js"
 import { answer, pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
@@ -200,8 +200,6 @@ function describeCleanup(result: CleanupResult) {
     return `The worktree ${result.directory} of ${result.sessionID} was already gone; dropped it from courier_children.`
   return `Kept the worktree ${result.directory} of ${result.sessionID}: it has ${result.reason}. Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it.`
 }
-
-const END_TURN = "If nothing else is left to do now, end your turn by replying without calling more tools."
 
 function describeAnswer(result: Awaited<ReturnType<typeof answer>> | Awaited<ReturnType<typeof answerQuestion>>) {
   const kind = isQuestion(result.requestID) ? "question" : "request"

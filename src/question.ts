@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import type { Plugin as EffectPlugin } from "@opencode-ai/plugin/effect"
 import { Cause, Effect, Exit, Result } from "effect"
-import { envelope } from "./courier.js"
+import { END_TURN, envelope } from "./courier.js"
 import { origin, STAYS_QUIET } from "./relay.js"
 import { allEntries, answeringTop, lineage, lineageIn, RETENTION_MS, type RosterStorage } from "./roster.js"
 import { scanAll } from "./storage.js"
@@ -107,10 +107,24 @@ const shared = sharedState as Shared
 
 /**
  * Timings, changed by the tests: how long a question cut off by a closing location waits before an
- * instance still loaded tells its top session, and how long an answer waits for another one to it
- * that is still being passed on.
+ * instance still loaded tells its top session, how long an answer waits for another one to it that
+ * is still being passed on, and how long what follows a call's end waits for the notice of the
+ * question to go out.
  */
-export const timing = { closingGraceMs: 30_000, passingWaitMs: 30_000 }
+export const timing = { closingGraceMs: 30_000, passingWaitMs: 30_000, relayWaitMs: 30_000 }
+
+/** The promise's value, or undefined once `ms` have passed or it failed. */
+function within<T>(promise: Promise<T> | undefined, ms: number): Promise<T | undefined> {
+  if (!promise) return Promise.resolve(undefined)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), ms)
+    timer.unref?.()
+    promise.then(
+      (value) => (clearTimeout(timer), resolve(value)),
+      () => (clearTimeout(timer), resolve(undefined)),
+    )
+  })
+}
 
 export interface QuestionPorts {
   readonly storage: RosterStorage
@@ -203,8 +217,14 @@ async function tell(ports: QuestionPorts, asked: Asked, text: string, attributes
 async function tellCutOff(ports: QuestionPorts, asked: Asked, cutOff: keyof typeof CUT_OFF) {
   // Not while an answer to it is being passed on, which makes the notice moot.
   if (shared.noticed.has(asked.requestID) || isPassing(asked.requestID)) return
+  // Claimed first, so two tellers at once send one notice; given back if it did not go out.
   claim(shared.noticed, asked.requestID)
-  await tell(ports, asked, questionNotice(asked, cutOff), { asks: "question", request: asked.requestID, [cutOff]: "true" })
+  try {
+    await tell(ports, asked, questionNotice(asked, cutOff), { asks: "question", request: asked.requestID, [cutOff]: "true" })
+  } catch (error) {
+    shared.noticed.delete(asked.requestID)
+    throw error
+  }
 }
 
 export interface QuestionAnswerInput {
@@ -240,9 +260,7 @@ async function deliver(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   for (let under = shared.passing.get(id); under; under = shared.passing.get(id)) {
     const left = timing.passingWaitMs - (Date.now() - since)
     if (left <= 0) throw new Error(`another answer to ${id} is still being passed on; try again in a while.`)
-    let timer: ReturnType<typeof setTimeout> | undefined
-    await Promise.race([under.catch(() => undefined), new Promise((resolve) => (timer = setTimeout(resolve, left)))])
-    clearTimeout(timer)
+    await within(under, left)
   }
   if (shared.answered.has(id)) return undefined
   const passing = passOn(ports, asked, outcome)
@@ -261,20 +279,26 @@ async function deliver(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
 
 async function passOn(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   const id = asked.requestID
-  const call = shared.questions.get(id)?.call
+  let known = shared.questions.get(id)
   // Taken only if the call ends with it: one already ending some other way, its turn being
   // stopped or the person answering in its session, does not.
-  if (call && (await call(outcome))) {
+  if (known?.call && (await known.call(outcome))) {
     claim(shared.answered, id)
     shared.questions.delete(id)
     return "result" as const
   }
-  // Its call has just ended: whether it was cut off or settled is known once settle is through.
-  await shared.questions.get(id)?.settling
-  const stored = (await ports.storage.get(keyOf(id))) as Stored | undefined
-  if (!stored || stored.answered) {
-    shared.questions.delete(id)
-    return undefined
+  // Its call has just ended: whether it was cut off, and so stays registered, or was settled, and
+  // so is dropped, is known once settle is through. The registry decides, not storage, which a
+  // question whose record could not be written is missing from.
+  if (known) {
+    await known.settling
+    if (shared.questions.get(id) !== known) return undefined
+  } else {
+    // Not known to this process: stored by one before it, and not yet loaded here.
+    const stored = (await ports.storage.get(keyOf(id))) as Stored | undefined
+    if (!stored || stored.answered) return undefined
+    known = { ...stored }
+    shared.questions.set(id, known)
   }
   await sendAnswer(ports, asked, outcome)
   // Dropped only once the message is out, so a failed send leaves it to be answered again.
@@ -342,7 +366,8 @@ export async function pendingQuestions(storage: RosterStorage, sessionID: string
       questions: [...asked.questions],
       ...(stopped ? { stopped: true as const } : {}),
     })
-  for (const question of shared.questions.values()) if (question.sessionID === sessionID) add(question, !question.call)
+  for (const question of shared.questions.values())
+    if (question.sessionID === sessionID && !isPassing(question.requestID)) add(question, !question.call)
   for (const asked of await scanAll<Stored>(storage, PREFIX))
     if (asked.sessionID === sessionID && !asked.answered && !isPassing(asked.requestID) && !found.has(asked.requestID))
       add(asked, true)
@@ -478,16 +503,19 @@ async function settle(
   exit: Exit.Exit<{ by: "child"; result: ToolResult } | { by: "top" }, unknown>,
   unloaded: boolean,
 ) {
-  // Telling the top session first, so what follows does not overtake the notice or come before it is stored.
-  await question.relaying
-  // Answered by the top session, or never relayed, or dropped meanwhile.
+  // Telling the top session first, so what follows does not overtake the notice or come before it
+  // is stored; for a while only, so a notice that never returns does not hold everything else up.
+  // `told` is false when the top session was not told, or not yet.
+  const told = (await within(question.relaying, timing.relayWaitMs)) === true
+  // Answered by the top session.
   if (Exit.isSuccess(exit) && exit.value.by === "top") {
     if (shared.questions.get(question.requestID) === question) shared.questions.delete(question.requestID)
     await forget(ports, question)
     return
   }
+  // Never relayed, or dropped meanwhile.
   if (shared.questions.get(question.requestID) !== question) {
-    await ports.storage.remove(keyOf(question.requestID))
+    await forget(ports, question)
     return
   }
   // Cut off: the turn was stopped, or OpenCode is closing the location, which unloads the plugin
@@ -501,8 +529,10 @@ async function settle(
     else if (!question.link) await tellCutOff(ports, question, "stopped")
     return
   }
+  // Settled in the asking session. Its record goes before its registration, so an answer that
+  // finds the question gone does not find the record still there and send it on.
+  await forget(ports, question)
   shared.questions.delete(question.requestID)
-  await ports.storage.remove(keyOf(question.requestID))
   const how: Elsewhere = Exit.isSuccess(exit)
     ? {
         by: "child",
@@ -512,6 +542,8 @@ async function settle(
       ? { by: "dismissed" }
       : { by: "failed", error: String(Cause.squash(exit.cause)) }
   if (question.link) return question.link(how)
+  // A top session never told about the question is not told that it is settled either.
+  if (!told) return
   await tell(ports, question, settledNotice(question, how), {
     answered: how.by === "child" ? "elsewhere" : how.by,
     request: question.requestID,
@@ -533,6 +565,8 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
       const byTop = new Promise<Outcome>((resolve) => (answered = resolve))
       let accept!: (taken: boolean) => void
       const accepted = new Promise<boolean>((resolve) => (accept = resolve))
+      // Handed one outcome only: a second, while the first still ends the call, is not taken.
+      let handed = false
       const question: Question = {
         requestID: current.newID(),
         sessionID: context.sessionID,
@@ -542,6 +576,8 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
         questions: promptsOf(input),
         askedAt: current.now(),
         call: (outcome) => {
+          if (handed) return accepted.then(() => false)
+          handed = true
           answered(outcome)
           return accepted
         },
@@ -552,8 +588,9 @@ function asking(ports: () => QuestionPorts | undefined, original: Execute): Exec
       const shown = new Promise<void>((resolve) => shared.shown.set(key, resolve))
       const fromTop = Effect.gen(function* () {
         yield* Effect.promise(() => shown)
-        // Kept on the question, so settle can wait for it should this race end while it runs.
-        yield* Effect.promise(() => (question.relaying = relay(current, question)))
+        // Started, not waited for: a store or a notice that hangs must not keep the top session's
+        // answer from the call. Kept on the question, so settle can wait for it.
+        question.relaying = relay(current, question)
         return { by: "top" as const, outcome: yield* Effect.promise(() => byTop) }
       })
       const ended = yield* Effect.raceFirst(
@@ -692,9 +729,9 @@ function linking(ports: () => QuestionPorts | undefined, ask: Execute): Execute 
       )
       const note =
         passed === "result"
-          ? `These answers were passed on to session ${linked.sessionID}, which carries on with them; do not call courier_answer for ${linked.requestID}.`
+          ? `These answers were passed on to session ${linked.sessionID}, which carries on with them; do not call courier_answer for ${linked.requestID}. ${END_TURN}`
           : passed === "message"
-            ? `These answers were passed on to session ${linked.sessionID} as a message, since its question had been cut off; it carries on with them. Do not call courier_answer for ${linked.requestID}.`
+            ? `These answers were passed on to session ${linked.sessionID} as a message, since its question had been cut off; it carries on with them. Do not call courier_answer for ${linked.requestID}. ${END_TURN}`
             : passed === undefined
               ? `Session ${linked.sessionID} no longer waits on this question; nothing was passed on.`
               : `Passing these answers on to session ${linked.sessionID} failed (${passed.slice(7)}); call courier_answer with requestID "${linked.requestID}" to pass them on.`

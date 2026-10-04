@@ -217,9 +217,10 @@ Why, from the source at `v2.0.22`:
 
 So the peer dependency is a statement, not a check: a mismatched host installs and loads the
 plugin without a word, and what breaks does so on use, or on load when the host lacks a domain the
-plugin API copy expects. The only runtime signals are that load failure and, once #38 is in, the
-log line it adds for a host whose `app.version` differs from the version the plugin was built
-against; until then a mismatch is logged nowhere.
+plugin API copy expects. OpenCode itself, `plugin add` and the loader alike, says nothing; the
+plugin's own load-time log line, written when `app.version` differs from the version it was built
+against (#38, [the reference](reference.md#the-opencode-version)), is the only runtime signal,
+apart from that load failure on 2.0.0 and 2.0.3.
 
 The peer dependency does do one thing, though: it picks the copy of the plugin API that
 `plugin add` installs next to the plugin, and that the plugin then runs on, on every host. With an
@@ -229,7 +230,8 @@ run the suite with, and the kind of copy that died above on a host short of a do
 That is why the peer dependency stays exact, the same version as the devDependency, rather than
 becoming the range #40 set out to write, and why the README's table keeps one version per row with
 the hosts the suite passed on named under it: 2.0.22 (the pinned leg of CI, and `latest` that day)
-and the `dev` build 0.0.0-dev-20534 (2026-10-04); below the pin the plugin loads on 2.0.4 to 2.0.21
-but was not tested there, and does not load before 2.0.4. The `latest` leg of CI covers the next
+and the `dev` build 0.0.0-dev-20534 (2026-10-04); of the older hosts tried, the plugin loads on
+2.0.4 and 2.0.21 (nothing in between was run, and the suite was not run there) and does not load on
+2.0.0 and 2.0.3, where the `model` domain is missing. The `latest` leg of CI covers the next
 host release with this copy of the plugin API, which is exactly what `plugin add` gives a user
 there. A pin bump still adds a row to the README's table.

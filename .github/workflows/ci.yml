@@ -51,11 +51,9 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
-      # The CLI follows the exact plugin API version the package is built against (the devDependency,
-      # which is what the build uses; the peer dependency names the same version), so the two never
-      # drift.
+      # The CLI follows the plugin API version the package is built against, so the two never drift.
       - name: Install OpenCode V2
-        run: npm install -g "@opencode/cli@$(node -p "require('./package.json').devDependencies['@opencode/plugin']")"
+        run: npm install -g "@opencode/cli@$(node -p "require('./package.json').peerDependencies['@opencode/plugin']")"
       - name: Run the live test
         run: OPENCODE_BIN="$(command -v opencode)" e2e/run.sh
         env:
@@ -100,7 +98,7 @@ jobs:
           # From the installed package, not from `opencode --version`, whose output may carry more
           # than the version.
           version=$(node -p "require('$(npm root -g)/@opencode/cli/package.json').version")
-          pinned=$(node -p "require('./package.json').devDependencies['@opencode/plugin']")
+          pinned=$(node -p "require('./package.json').peerDependencies['@opencode/plugin']")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           {
             echo "## Live test against OpenCode V2 latest"

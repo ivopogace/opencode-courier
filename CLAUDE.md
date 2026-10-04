@@ -40,9 +40,11 @@ OPENCODE_BIN=<scratch>/oc2/node_modules/.bin/opencode2 npm run test:e2e   # ~2 m
 
 - The V2 plugin API is beta and pinned to `@opencode-ai/plugin@0.0.0-beta-19271`. Read its types
   in `node_modules` rather than guessing; the OpenCode source is on the `beta` branch of
-  https://github.com/anomalyco/opencode.
+  https://github.com/anomalyco/opencode. A pin bump adds a row to README.md's Supported OpenCode
+  version table.
 - Every tool is registered with `options: { codemode: false }`, returns metadata without
   `undefined` values, and rethrows failures through `describeFailure`.
-- Behaviour changes come with unit tests and an e2e scenario, and update README.md and `docs/reference.md`.
+- Behaviour changes come with unit tests and an e2e scenario, and update README.md and
+  `docs/reference.md`.
 - Feature work goes on a branch and through a PR with green CI; `Closes #N` in the body.
 - Running several issues at once in child sessions: the `courier-wave` skill.

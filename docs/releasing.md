@@ -133,4 +133,5 @@ CI also checks the package as published: `publint` for `package.json` and `expor
 `@arethetypeswrong/cli` for the type declarations.
 
 The plugin API is still beta and pinned to an exact version in `package.json`; bump it
-deliberately and re-run both test suites.
+deliberately, re-run both test suites, and add the new plugin version and OpenCode version as a row
+to the README's Supported OpenCode version table.

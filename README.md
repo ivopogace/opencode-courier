@@ -3,6 +3,7 @@
 [![CI](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml/badge.svg)](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/opencode-courier)](https://www.npmjs.com/package/opencode-courier)
 [![License: MIT](https://img.shields.io/npm/l/opencode-courier)](LICENSE)
+[![Supported OpenCode V2 version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fivopogace%2Fopencode-courier%2Fmain%2Fpackage.json&query=%24.peerDependencies%5B%27%40opencode-ai%2Fplugin%27%5D&label=opencode2&color=blue)](#supported-opencode-version)
 
 An [OpenCode](https://github.com/anomalyco/opencode) V2 plugin that lets one session start other
 sessions, message them, and be woken by them, without polling.
@@ -63,13 +64,28 @@ Delivery is `steer` by default (injected into the target's running turn, or star
 
 ## Install
 
-Requires OpenCode V2, command `opencode2`. Its plugin API is still beta, and each release is built
-and tested against one version of it: the `@opencode-ai/plugin` peer dependency in `package.json`.
-The CLI of that version is the one known to work:
+### Supported OpenCode version
+
+Requires OpenCode V2, command `opencode2`, which is under heavy development: its plugin API is
+beta and changes without notice. Each release of this plugin is therefore built and tested against
+exactly one OpenCode V2 version, the `@opencode-ai/plugin` version pinned in `package.json` (the
+CLI and the plugin API share a version). That is the version the end-to-end suite runs on and the
+recordings above were made with, and the only one the release is known to work with. A newer
+OpenCode may work, or may break tools silently; [docs/plugin-api-notes.md](docs/plugin-api-notes.md)
+lists what the pinned version already needed working around. A release that moves the pin adds a
+row here.
+
+| opencode-courier | OpenCode V2 (`opencode2` and `@opencode-ai/plugin`) |
+|---|---|
+| 0.1.6 | 0.0.0-beta-19271 |
+
+Check yours with `opencode2 --version`, and install the matching CLI with:
 
 ```bash
 npm install -g @opencode-ai/cli@0.0.0-beta-19271
 ```
+
+### The plugin
 
 Then install the plugin:
 
@@ -250,9 +266,9 @@ plugin API does that the plugin had to work around:
 ## Contributing
 
 Questions and bug reports go to the [issues](https://github.com/ivopogace/opencode-courier/issues).
-Pull requests are welcome: a change in behaviour comes with a unit test, an `e2e/run.sh` scenario and
-its line in this README or [docs/reference.md](docs/reference.md), and CI must be green. Maintainers
-release from GitHub as [docs/releasing.md](docs/releasing.md) describes.
+Pull requests are welcome: a change in behaviour comes with a unit test, an `e2e/run.sh` scenario
+and its line in this README or [docs/reference.md](docs/reference.md), and CI must be green.
+Maintainers release from GitHub as [docs/releasing.md](docs/releasing.md) describes.
 
 ## License
 

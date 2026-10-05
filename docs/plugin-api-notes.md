@@ -147,6 +147,32 @@ Follow-up material, out of scope of the migration: the promise API's tool contex
 the Effect API because the beta's promise `execute` ran without a signal; with the signal, a
 promise plugin could race the original `execute` against it. Nothing uses it yet.
 
+## From `2.0.22` to `2.0.23`
+
+`2.0.23` (2026-10-05) is 127 commits on the `v2` branch after `v2.0.22`, mostly the TUI, the
+desktop app, ACP and model providers. Read from the type packages, `@opencode/{plugin,client,
+schema,protocol}@2.0.22` against `@2.0.23`, and from the commits, and checked by the live suite
+(the 0.2.0 build passed it on a 2.0.23 host before the pin moved, and passed it again after):
+
+- Nothing the courier calls changed shape, and the code needed no change: the typecheck, the unit
+  tests and the live suite pass as they were.
+- In the plugin API: a VCS provider may define `init` (both the Effect and the promise API, and
+  the adapter passes it through), and the TUI's select dialog gains `search` and `actions`. The
+  courier registers neither.
+- In the schema: `SessionEvent` no longer re-exports `FileAttachment` (it stays in
+  `@opencode/schema/prompt`), and the unused `QuestionV1`, `SessionV1.WithParts` and IDE event
+  definitions are gone.
+- In the HTTP API: a session whose location's directory no longer exists answers 404 with a
+  `LocationNotFoundError` instead of failing as a defect (anomalyco/opencode#52668), on
+  `GET /api/session/:id/permission`, the session diff and `generate`; inside the server the error is
+  `FileSystem.DirectoryNotFoundError`, and session `diff`, `command`, `revert`/`clear` and a turn
+  of the runner can fail with it. None of the calls the courier makes, `session.synthetic` among
+  them, gained it, so the webhook's test for a session OpenCode no longer knows (an error tag with
+  `NotFound`) still means only that. `POST /api/vcs/init` is new, and `/api/info` may carry
+  `capabilities`. `WorktreeError` gained a `_tag` (anomalyco/opencode#52631); `describeFailure`,
+  which the worktree calls fail through, names an error by its `_tag` when it has no message, so an
+  empty-message worktree failure is now named by it.
+
 ## What `plugin add` and loading do with the peer dependency (2026-10-04)
 
 The peer dependency on `@opencode/plugin` is the range of OpenCode versions a release claims to

@@ -81,10 +81,12 @@ line to the server log naming both versions, so a mismatch is named before a too
 
 | opencode-courier | OpenCode V2 (`opencode` and `@opencode/plugin`) |
 |---|---|
+| 0.2.1 | 2.0.23 |
 | 0.2.0 | 2.0.22 |
 | 0.1.6 | 0.0.0-beta-19271 (the beta line: `opencode2` from `@opencode-ai/cli`, and `@opencode-ai/plugin`) |
 
-0.2.0 was tested on 2.0.22 and on the `dev` build 0.0.0-dev-20534 of 2026-10-04, the newest build
+0.2.1 changes nothing but the pin: 2.0.23 changed nothing the plugin calls, and 0.2.0 passes the
+suite on 2.0.23 as well. 0.2.0 was tested on 2.0.22 and on the `dev` build 0.0.0-dev-20534 of 2026-10-04, the newest build
 then (no 2.x release above 2.0.22 existed), where the suite passed too. Of the older hosts tried, it
 loads on 2.0.4 and 2.0.21 (nothing in between was run, and the suite was not), and fails to load on
 2.0.0 and 2.0.3, which lack the `model` domain the plugin API gained in 2.0.4. The version in
@@ -98,7 +100,7 @@ from the load failure on those hosts before 2.0.4. Check yours with `opencode --
 install the matching CLI with:
 
 ```bash
-npm install -g @opencode/cli@2.0.22
+npm install -g @opencode/cli@2.0.23
 ```
 
 ### The plugin

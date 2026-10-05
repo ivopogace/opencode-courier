@@ -9,7 +9,7 @@ each report wakes the idle parent. It is not part of CI.
 
 ```bash
 bun install
-npm install --prefix <scratch>/oc @opencode/cli@2.0.22
+npm install --prefix <scratch>/oc @opencode/cli@2.0.23
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
 ```
 

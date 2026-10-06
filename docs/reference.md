@@ -125,7 +125,12 @@ answer comes first counts, and the other side's question is withdrawn:
 - answered in the parent's session: the child's question disappears;
 - dismissed in the parent's session: the parent's turn ends, as OpenCode's tool does, and the
   child's call returns that you dismissed the question, so the child carries on without the answer
-  and can report.
+  and can report;
+- answered with `courier_answer` while the parent's question is open (a parent that asks you and
+  calls `courier_answer` in the same step): the parent's question disappears, and its tool result
+  names the answers that went to the child, as a message when its question had been cut off. A
+  pick in the parent's question that lands just as `courier_answer` goes through is not passed on,
+  and the parent's tool result says so; a dismissal that lands then is dropped and logged.
 
 A dismissal on either side reaches the other about two seconds later: OpenCode withdraws open
 questions the same way when it shuts down, and the plugin waits that long to tell the two apart.

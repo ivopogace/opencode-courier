@@ -50,7 +50,7 @@ function decide(body) {
           args: { sessionID: startedBy[1], message: /dismissed this question/.test(result) ? "CHILD DISMISSED" : `CHILD GOT ${JSON.stringify(answersIn(result))}` },
         }
       // A parent whose question was linked to its child's has nothing left to do.
-      if (/do not call courier_answer|nothing to pass on/i.test(result)) return { text: `PARENT RELAYED: ${result}` }
+      if (/do not call courier_answer|nothing to pass on|not passed on; tell the person/i.test(result)) return { text: `PARENT RELAYED: ${result}` }
       // Otherwise it passes on what the person chose with courier_answer.
       const notice = [...messages.flatMap((message) => [...textOf(message.content).matchAll(new RegExp(QUESTION_NOTICE, "g"))])].at(-1)
       if (notice) return { tool: "courier_answer", args: { sessionID: notice[1], requestID: notice[2], answers: answersIn(result) } }
@@ -93,12 +93,16 @@ function decide(body) {
   // A parent told that its child asks a question asks the person the same, with its own question
   // tool; the test answers its form. A parent of COURIER-QUESTION-RELABEL relabels the options, and
   // one of COURIER-QUESTION-REWORD rewords the question, so its question is not linked to the
-  // child's and it passes the answer on with courier_answer.
-  if (QUESTION_NOTICE.test(recent)) {
+  // child's and it passes the answer on with courier_answer. One of COURIER-QUESTION-BOTH slips:
+  // it asks the person and calls courier_answer in one step, two tool calls in parallel.
+  const notice = recent.match(QUESTION_NOTICE)
+  if (notice) {
     const args = JSON.parse(recent.split("\n").find((line) => line.startsWith('{"questions"')))
     for (const item of args.questions)
       if (item.header === "Relabel") item.options = item.options.map((option) => ({ ...option, label: option.label.toLowerCase() }))
       else if (item.header === "Reword") item.question = "Which greeting would you like?"
+    const both = messages.some((message) => message.role === "user" && textOf(message.content).includes("COURIER-QUESTION-BOTH"))
+    if (both) return { calls: [{ tool: "question", args }, { tool: "courier_answer", args: { sessionID: notice[1], requestID: notice[2], answers: [["Hi"]] } }] }
     return { tool: "question", args }
   }
   // A parent told that its child waits for permission ends its turn, as if it had asked the person;
@@ -127,11 +131,14 @@ function decide(body) {
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
-  const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL|-REWORD)?(?: (isolate|nested))?/)
+  const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL|-REWORD|-BOTH)?(?: (isolate|nested))?/)
   if (questions)
     return {
       tool: "courier_spawn",
-      args: { task: questions[2] === "nested" ? "CHILD-NESTS" : `CHILD-QUESTION${questions[1] ?? ""}`, isolate: questions[2] === "isolate" },
+      args: {
+        task: questions[2] === "nested" ? "CHILD-NESTS" : `CHILD-QUESTION${questions[1] === "-BOTH" ? "" : (questions[1] ?? "")}`,
+        isolate: questions[2] === "isolate",
+      },
     }
   const ask = recent.match(/COURIER-ASK(?: (isolate))?/)
   if (ask) return { tool: "courier_spawn", args: { task: "CHILD-ASKS", isolate: ask[1] === "isolate" } }
@@ -169,7 +176,12 @@ createServer((request, response) => {
       response.end(JSON.stringify({ error: { message: reply.error, type: "forbidden" } }))
       return
     }
-    const call = reply.tool && { id: `call_${Date.now()}`, type: "function", function: { name: reply.tool, arguments: JSON.stringify(reply.args) } }
+    // One tool call (`tool`, `args`), or several in one step (`calls`), as a model may emit them.
+    const calls = (reply.calls ?? (reply.tool ? [reply] : [])).map((item, index) => ({
+      id: `call_${Date.now()}_${index}`,
+      type: "function",
+      function: { name: item.tool, arguments: JSON.stringify(item.args) },
+    }))
     if (!body.stream) {
       response.writeHead(200, { "content-type": "application/json" })
       response.end(
@@ -181,8 +193,8 @@ createServer((request, response) => {
           choices: [
             {
               index: 0,
-              message: { role: "assistant", content: reply.text ?? null, ...(call ? { tool_calls: [call] } : {}) },
-              finish_reason: call ? "tool_calls" : "stop",
+              message: { role: "assistant", content: reply.text ?? null, ...(calls.length ? { tool_calls: calls } : {}) },
+              finish_reason: calls.length ? "tool_calls" : "stop",
             },
           ],
           usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
@@ -191,8 +203,8 @@ createServer((request, response) => {
       return
     }
     response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
-    if (call) {
-      response.write(chunk({ role: "assistant", tool_calls: [{ index: 0, ...call }] }, null))
+    if (calls.length) {
+      calls.forEach((call, index) => response.write(chunk({ role: "assistant", tool_calls: [{ index, ...call }] }, null)))
       response.write(chunk({}, "tool_calls"))
     } else {
       response.write(chunk({ role: "assistant", content: reply.text }, null))

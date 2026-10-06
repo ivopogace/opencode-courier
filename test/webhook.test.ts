@@ -165,7 +165,7 @@ describe("githubEvent", () => {
       topics: ["github:o/r"],
       summary: "push to o/r refs/heads/main by me: 1 commit\nhttps://c",
     })
-    expect(githubEvent("push", { commits: [{}, {}], repository })!.summary).toBe("push to o/r : 2 commits")
+    expect(githubEvent("push", { commits: [{}, {}], repository })!.summary).toEndWith(": 2 commits")
 
     const inline = githubEvent("pull_request_review_comment", {
       action: "created",

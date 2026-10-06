@@ -163,11 +163,11 @@ interface Summary {
 
 /** The lines that have any text, in order. */
 const present = (...lines: (string | undefined)[]) => lines.filter((line): line is string => !!line)
-const quoted = (text: string | undefined) => (text ? `"${text}"` : undefined)
+const inQuotes = (text: string | undefined) => (text ? `"${text}"` : undefined)
 const numbered = (n: number | undefined) => (n === undefined ? [] : [n])
 const ref = (repo: string, n: number | undefined) => `${repo}#${n ?? "?"}`
 /** A review's or comment's own text, clipped, after a blank line. */
-const quote = (text: string | undefined) => (text ? ["", clip(text)] : [])
+const clippedBody = (text: string | undefined) => (text ? ["", clip(text)] : [])
 
 function ciSummary({ name, body, repo, action }: Delivery): Summary | undefined {
   if (action !== "completed") return undefined
@@ -180,9 +180,10 @@ function ciSummary({ name, body, repo, action }: Delivery): Summary | undefined 
   const label = str(run.name) ?? str(obj(run.app).name) ?? str(run.head_branch) ?? ""
   const named = label ? ` "${label}"` : ""
   const sha = str(run.head_sha)?.slice(0, 7) ?? "?"
-  const where = numbers.size ? [...numbers].map((n) => `${repo}#${n}`).join(", ") : `${repo} (${sha})`
+  const list = [...numbers]
+  const where = list.length ? list.map((n) => ref(repo, n)).join(", ") : `${repo} (${sha})`
   return {
-    numbers: [...numbers],
+    numbers: list,
     lines: present(`${CI_EVENTS[name]}${named} on ${where}: ${str(run.conclusion) ?? "completed"}`, str(run.html_url) ?? str(run.details_url)),
   }
 }
@@ -195,8 +196,8 @@ function reviewSummary({ body, repo, action, sender }: Delivery): Summary {
   return {
     numbers: numbered(n),
     lines: [
-      ...present(`review ${action ?? ""} on ${ref(repo, n)} by ${by}: ${str(review.state) ?? "?"}`, quoted(str(pr.title)), str(review.html_url)),
-      ...quote(str(review.body)),
+      ...present(`review ${action ?? ""} on ${ref(repo, n)} by ${by}: ${str(review.state) ?? "?"}`, inQuotes(str(pr.title)), str(review.html_url)),
+      ...clippedBody(str(review.body)),
     ],
   }
 }
@@ -213,7 +214,7 @@ function commentSummary({ name, body, repo, action, sender }: Delivery): Summary
     numbers: numbered(n),
     lines: [
       ...present(`${what} ${action ?? ""} on ${ref(repo, n)} by ${by}`, path && `on ${path}${line}`, str(comment.html_url)),
-      ...quote(str(comment.body)),
+      ...clippedBody(str(comment.body)),
     ],
   }
 }
@@ -225,7 +226,7 @@ function itemSummary({ name, body, repo, action, by }: Delivery): Summary | unde
   const n = num(item.number)
   const what = pullRequest ? "pull request" : "issue"
   const done = pullRequest && action === "closed" && item.merged === true ? "merged" : action
-  return { numbers: numbered(n), lines: present(`${what} ${ref(repo, n)} ${done}${by}`, quoted(str(item.title)), str(item.html_url)) }
+  return { numbers: numbered(n), lines: present(`${what} ${ref(repo, n)} ${done}${by}`, inQuotes(str(item.title)), str(item.html_url)) }
 }
 
 function pushSummary({ body, repo, by }: Delivery): Summary {
@@ -240,9 +241,7 @@ function otherSummary({ name, repo, action, by }: Delivery): Summary {
 }
 
 const SUMMARIES: Record<string, (delivery: Delivery) => Summary | undefined> = {
-  check_run: ciSummary,
-  check_suite: ciSummary,
-  workflow_run: ciSummary,
+  ...Object.fromEntries(Object.keys(CI_EVENTS).map((name) => [name, ciSummary])),
   pull_request_review: reviewSummary,
   pull_request_review_comment: commentSummary,
   issue_comment: commentSummary,
@@ -396,14 +395,8 @@ function parseEvent(request: Request, topic: string | undefined): Response | Eve
   return githubEvent(name, payload) ?? { status: 200, body: `ignored ${name}` }
 }
 
-/**
- * Dispatches an accepted delivery. Call it with no `await` since `seen.has(digest)`, so that two
- * concurrent copies of one delivery cannot both get through.
- */
+/** Dispatches a delivery `receive` has marked as seen, and unmarks it if it reached nobody. */
 async function deliver(ports: WebhookPorts, request: Request, event: Event, digest: string, seen: Seen): Promise<Response> {
-  // Marked before dispatching, so a concurrent replay is refused, and unmarked if the delivery
-  // reached nobody it was meant for, so a retry or a GitHub Redeliver can still get through.
-  seen.add(digest)
   const delivery = header(request, "x-github-delivery")?.replace(/[^\w-]/g, "").slice(0, 64) || undefined
   const { delivered, failed } = await dispatch(ports, event, delivery).catch((error: unknown) => {
     seen.delete(digest)
@@ -428,6 +421,9 @@ export async function receive(ports: WebhookPorts, secret: string, request: Requ
   if (seen.has(digest)) return { status: 200, body: "already delivered" }
   const event = parseEvent(request, routed.topic)
   if (isResponse(event)) return event
+  // Marked with no await since the check above, so a concurrent replay is refused, and unmarked if
+  // the delivery reached nobody it was meant for, so a retry or a GitHub Redeliver can still get through.
+  seen.add(digest)
   return deliver(ports, request, event, digest, seen)
 }
 

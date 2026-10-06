@@ -1,6 +1,10 @@
 # opencode-courier
 
 [![CI](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml/badge.svg)](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ivopogace_opencode-courier&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ivopogace_opencode-courier)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=ivopogace_opencode-courier&metric=coverage)](https://sonarcloud.io/summary/new_code?id=ivopogace_opencode-courier)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=ivopogace_opencode-courier&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=ivopogace_opencode-courier)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=ivopogace_opencode-courier&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=ivopogace_opencode-courier)
 [![npm](https://img.shields.io/npm/v/opencode-courier)](https://www.npmjs.com/package/opencode-courier)
 [![Socket Badge](https://badge.socket.dev/npm/package/opencode-courier)](https://socket.dev/npm/package/opencode-courier)
 [![License: MIT](https://img.shields.io/npm/l/opencode-courier)](LICENSE)
@@ -278,9 +282,11 @@ them: [docs/real-model.md](docs/real-model.md).
 CI (`.github/workflows/ci.yml`) runs both suites on every push to `main` and every pull request,
 with the OpenCode CLI at the same version as the pinned plugin API, and the live suite once more
 with the CLI at its `latest` dist-tag: that job may fail, and its step summary names the version it
-ran on, so a host release that breaks the plugin is seen without blocking the build. Releases start from GitHub and
-end with a maintainer's 2FA approval on npm: [docs/releasing.md](docs/releasing.md). What the plugin
-API does that the plugin had to work around, and what changed when the pin last moved:
+ran on, so a host release that breaks the plugin is seen without blocking the build. On `main` and
+on this repository's own pull requests, a SonarCloud job then scans `src/` with the unit suites'
+coverage (`sonar-project.properties`). Releases start from GitHub and end with a maintainer's 2FA
+approval on npm: [docs/releasing.md](docs/releasing.md). What the plugin API does that the plugin
+had to work around, and what changed when the pin last moved:
 [docs/plugin-api-notes.md](docs/plugin-api-notes.md).
 
 ## Contributing

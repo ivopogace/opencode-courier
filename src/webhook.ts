@@ -52,8 +52,10 @@ export function parseTopic(input: string) {
   const raw = input.trim()
   const github = raw.replace(/^github:/i, "")
   const [repo, number, ...rest] = github.split("#")
-  if (repo && GITHUB_REPO.test(repo) && rest.length === 0 && (number === undefined || /^\d+$/.test(number)))
-    return `github:${repo.toLowerCase()}${number === undefined ? "" : `#${Number(number)}`}`
+  if (repo && GITHUB_REPO.test(repo) && rest.length === 0 && (number === undefined || /^\d+$/.test(number))) {
+    const suffix = number === undefined ? "" : `#${Number(number)}`
+    return `github:${repo.toLowerCase()}${suffix}`
+  }
   if (GENERIC_NAME.test(raw)) return raw
   throw new Error(
     `Not a topic: ${JSON.stringify(input)}. Use owner/repo, owner/repo#<number>, or a name of letters, digits, ".", "_" and "-".`,
@@ -231,7 +233,10 @@ export function defuse(text: string) {
   return text.replace(/<(\/?)(courier)/gi, "&lt;$1$2")
 }
 
-const isNotFound = (error: unknown) => /NotFound/.test(String((error as { _tag?: unknown })?._tag ?? ""))
+const isNotFound = (error: unknown) => {
+  const tag = (error as { _tag?: unknown } | undefined)?._tag
+  return typeof tag === "string" && tag.includes("NotFound")
+}
 
 /**
  * Delivers an event to every session subscribed to one of its topics, once per session. A session
@@ -307,7 +312,7 @@ export class Seen {
  * and a signature already accepted is ignored, so a captured delivery cannot be replayed.
  */
 export async function receive(ports: WebhookPorts, secret: string, request: Request, seen = new Seen()): Promise<Response> {
-  const generic = request.path.match(/^\/hook\/([^/]+)$/)
+  const generic = /^\/hook\/([^/]+)$/.exec(request.path)
   if (request.path !== "/github" && !generic) return { status: 404, body: "not found" }
   if (request.method !== "POST") return { status: 405, body: "use POST" }
   let topic: string | undefined
@@ -345,7 +350,8 @@ export async function receive(ports: WebhookPorts, secret: string, request: Requ
     throw error
   })
   if (failed > 0 && delivered === 0) seen.delete(digest)
-  ports.log(`courier webhook: ${event.source} ${event.name}${delivery ? ` ${delivery}` : ""} delivered to ${delivered} session(s)`)
+  const id = delivery ? ` ${delivery}` : ""
+  ports.log(`courier webhook: ${event.source} ${event.name}${id} delivered to ${delivered} session(s)`)
   return { status: 202, body: `delivered to ${delivered} session(s)` }
 }
 

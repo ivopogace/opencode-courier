@@ -173,6 +173,23 @@ schema,protocol}@2.0.22` against `@2.0.23`, and from the commits, and checked by
   which the worktree calls fail through, names an error by its `_tag` when it has no message, so an
   empty-message worktree failure is now named by it.
 
+## From `2.0.23` to `2.0.24`
+
+`2.0.24` (2026-10-06) is 55 commits on the `v2` branch after `v2.0.23`, mostly the desktop app, the
+TUI, model providers (a native Vercel AI Gateway, GitLab Duo, the ChatGPT OAuth labels) and the
+shell scanners. Read from the type packages, `@opencode/{plugin,client,schema,protocol}@2.0.23`
+against `@2.0.24`, and from the commits, and checked by the live suite (the 0.2.1 build passed it on
+a 2.0.24 host before the pin moved, and passed it again after):
+
+- Nothing the courier calls changed, and the code needed no change: the typecheck, the unit tests
+  and the live suite pass as they were.
+- `@opencode/plugin`, `@opencode/schema` and `@opencode/protocol` are identical to 2.0.23 apart from
+  their version and dependency numbers; `effect` stays at `4.0.0-rc.112`.
+- `@opencode/client` moved its startup bookkeeping and health probe into shared modules
+  (`service-probe`, `contenderPool`; anomalyco/opencode#53237, anomalyco/opencode#53240);
+  `headers` is re-exported from there under the same name, and the Solid data store gained
+  `active()` and `sessions()`. The courier uses none of these.
+
 ## What `plugin add` and loading do with the peer dependency (2026-10-04)
 
 The peer dependency on `@opencode/plugin` is the range of OpenCode versions a release claims to

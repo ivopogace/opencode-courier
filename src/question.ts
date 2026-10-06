@@ -167,7 +167,9 @@ function closingSoon(loaded: () => boolean, directory: string | undefined, ms: n
       resolve(result)
     }
     // Woken by any shutdown or unload: only one that answers the question ends the wait.
-    const wake = () => void (closing() && done(true))
+    const wake = () => {
+      if (closing()) done(true)
+    }
     const timer = setTimeout(() => done(false), ms)
     timer.unref?.()
     shared.closingWaiters.add(wake)
@@ -181,8 +183,14 @@ function within<T>(promise: Promise<T> | undefined, ms: number): Promise<T | und
     const timer = setTimeout(() => resolve(undefined), ms)
     timer.unref?.()
     promise.then(
-      (value) => (clearTimeout(timer), resolve(value)),
-      () => (clearTimeout(timer), resolve(undefined)),
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      () => {
+        clearTimeout(timer)
+        resolve(undefined)
+      },
     )
   })
 }
@@ -221,10 +229,13 @@ export function answeredText(questions: ReadonlyArray<Prompt>, answers: Readonly
   return `User has answered your questions: ${formatted}. You can now continue with the user's answers in mind.`
 }
 
+const describeOption = (option: Prompt["options"][number]) =>
+  option.description ? `   - ${option.label}: ${option.description}` : `   - ${option.label}`
+
 const describeQuestions = (questions: ReadonlyArray<Prompt>) =>
   questions.flatMap((prompt, index) => [
     `${index + 1}. ${prompt.header}: ${prompt.question} (${prompt.multiple ? "any of" : "one of"}, or an answer of their own:)`,
-    ...prompt.options.map((option) => `   - ${option.label}${option.description ? `: ${option.description}` : ""}`),
+    ...prompt.options.map(describeOption),
   ])
 
 const CUT_OFF = {
@@ -246,14 +257,16 @@ export function questionNotice(asked: Asked, cutOff?: keyof typeof CUT_OFF) {
   ].join("\n")
 }
 
+/** How a question was settled without the top session, as its settled notice puts it. */
+function settledHow(asked: Asked, how: Elsewhere) {
+  if (how.by === "child") return `answered in its own session (${answeredText(asked.questions, how.answers)})`
+  if (how.by === "dismissed") return "dismissed in its own session, without an answer"
+  return `ended without an answer: its question call failed (${how.error})`
+}
+
 /** What the top session is told about a question settled without it. */
 export function settledNotice(asked: Asked, how: Elsewhere) {
-  const what =
-    how.by === "child"
-      ? `answered in its own session (${answeredText(asked.questions, how.answers)})`
-      : how.by === "dismissed"
-        ? "dismissed in its own session, without an answer"
-        : `ended without an answer: its question call failed (${how.error})`
+  const what = settledHow(asked, how)
   return [
     `The question ${asked.requestID} of this session, "${asked.title}", was ${what}, so it no longer waits on you.`,
     "If you asked someone about it, tell them it is settled; there is nothing to pass on.",
@@ -412,8 +425,8 @@ async function sendAnswer(ports: QuestionPorts, asked: Asked, outcome: Outcome) 
 export async function answerQuestion(ports: QuestionPorts, callerID: string, input: QuestionAnswerInput) {
   const { sessionID, requestID } = input
   await answeringTop(ports.storage, sessionID, callerID, "questions")
-  const asked = shared.questions.get(requestID) ?? ((await ports.storage.get(keyOf(requestID))) as Stored | undefined)
-  if (!asked || asked.sessionID !== sessionID || ("answered" in asked && asked.answered)) return { sessionID, requestID, answered: false }
+  const asked: Stored | undefined = shared.questions.get(requestID) ?? ((await ports.storage.get(keyOf(requestID))) as Stored | undefined)
+  if (asked?.sessionID !== sessionID || asked.answered) return { sessionID, requestID, answered: false }
   const answers = normalize(asked, input.answers)
   const by = await deliver(ports, asked, { answers })
   return by ? { sessionID, requestID, answered: true, by, answers } : { sessionID, requestID, answered: false }
@@ -565,16 +578,25 @@ async function relay(ports: QuestionPorts, question: Question) {
   }
 }
 
+/** How a relayed call ended. */
+type CallExit = Exit.Exit<{ by: "child"; result: ToolResult } | { by: "top" }, unknown>
+
+/** How a relayed call that the top session did not answer was settled in the asking session. */
+function settledIn(exit: CallExit): Elsewhere {
+  if (Exit.isSuccess(exit))
+    return {
+      by: "child",
+      answers: ((exit.value as { result?: ToolResult }).result?.output as { answers?: Answers } | undefined)?.answers ?? [],
+    }
+  if (isDismissal(exit.cause)) return { by: "dismissed" }
+  return { by: "failed", error: String(Cause.squash(exit.cause)) }
+}
+
 /**
  * After a relayed call ended: tidies up, and tells the top session if it was settled without it.
  * `loaded` says whether the plugin instance that ran the call is still loaded.
  */
-async function settle(
-  ports: QuestionPorts,
-  question: Question,
-  exit: Exit.Exit<{ by: "child"; result: ToolResult } | { by: "top" }, unknown>,
-  loaded: () => boolean,
-) {
+async function settle(ports: QuestionPorts, question: Question, exit: CallExit, loaded: () => boolean) {
   const unloaded = !loaded()
   // A dismissal is held from now, alongside the wait below, so the grace is not spent waiting.
   const dismissed = Exit.isFailure(exit) && isDismissal(exit.cause)
@@ -604,23 +626,22 @@ async function settle(
   // running then. The unload is looked at again here: it may have come during the wait above, after
   // a held dismissal had already been taken for the person's.
   const closing = unloaded || !loaded() || (held !== undefined && (await held))
-  if (Exit.isFailure(exit) && (closing || (!dismissed && Exit.hasInterrupts(exit)))) {
-    if (closing) tellLater(question)
-    else if (!question.link) await tellCutOff(ports, question, "stopped")
-    return
-  }
-  // Settled in the asking session. Its record goes before its registration, so an answer that
-  // finds the question gone does not find the record still there and send it on.
+  if (Exit.isFailure(exit) && (closing || (!dismissed && Exit.hasInterrupts(exit)))) return cutOff(ports, question, closing)
+  await settledElsewhere(ports, question, settledIn(exit), told)
+}
+
+/** A relayed call cut off: by its closing location, told later; by its stopped turn, told now, unless the top session asks the person. */
+async function cutOff(ports: QuestionPorts, question: Question, closing: boolean) {
+  if (closing) tellLater(question)
+  else if (!question.link) await tellCutOff(ports, question, "stopped")
+}
+
+/** A relayed call settled in the asking session: `told` says whether the top session was told about it. */
+async function settledElsewhere(ports: QuestionPorts, question: Question, how: Elsewhere, told: boolean) {
+  // Its record goes before its registration, so an answer that finds the question gone does not
+  // find the record still there and send it on.
   await forget(ports, question)
   shared.questions.delete(question.requestID)
-  const how: Elsewhere = Exit.isSuccess(exit)
-    ? {
-        by: "child",
-        answers: ((exit.value as { result?: ToolResult }).result?.output as { answers?: Answers } | undefined)?.answers ?? [],
-      }
-    : isDismissal(exit.cause)
-      ? { by: "dismissed" }
-      : { by: "failed", error: String(Cause.squash(exit.cause)) }
   if (question.link) return question.link(how)
   // A top session never told about the question is not told that it is settled either.
   if (!told) return
@@ -628,6 +649,18 @@ async function settle(
     answered: how.by === "child" ? "elsewhere" : how.by,
     request: question.requestID,
   })
+}
+
+/**
+ * Starts settling a relayed call that ended, kept on the question until it is through: an answer
+ * the call did not take waits for it.
+ */
+function startSettling(ports: QuestionPorts, question: Question, exit: CallExit, loaded: () => boolean) {
+  question.settling = settle(ports, question, exit, loaded)
+    .catch((error: unknown) => ports.log(`courier question: could not settle ${question.requestID}: ${String(error)}`))
+    .finally(() => {
+      question.settling = undefined
+    })
 }
 
 /**
@@ -666,6 +699,7 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
       // The form is shown only once OpenCode's permission check for the call has passed; a call
       // refused there never reaches the top session.
       const key = `${context.sessionID} ${context.id}`
+      const loaded = () => ports() === current
       const shown = new Promise<void>((resolve) => shared.shown.set(key, resolve))
       const fromTop = Effect.gen(function* () {
         yield* Effect.promise(() => shown)
@@ -685,9 +719,7 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
             // The call no longer waits, whatever settle makes of it: an answer from now on waits for settle.
             const byTopSession = Exit.isSuccess(exit) && exit.value.by === "top"
             if (!byTopSession) question.call = undefined
-            question.settling = settle(current, question, exit, () => ports() === current)
-              .catch((error: unknown) => current.log(`courier question: could not settle ${question.requestID}: ${String(error)}`))
-              .finally(() => (question.settling = undefined))
+            startSettling(current, question, exit, loaded)
             // After settling is set, which an answer the call did not take then waits for.
             accept(byTopSession)
           }),
@@ -735,6 +767,70 @@ function linkFor(sessionID: string, questions: ReadonlyArray<Prompt>) {
 }
 
 /**
+ * The result of a top session's question call that no waiting question was linked to: when one
+ * waits with the same choices, reworded or asked before that session asked, it says how to pass
+ * the answers on.
+ */
+function unlinkedResult(result: ToolResult, sessionID: string, questions: ReadonlyArray<Prompt>): ToolResult {
+  if (typeof result.content !== "string") return result
+  const asked = choices(questions)
+  const similar = [...shared.questions.values()].filter(
+    (question) => question.top === sessionID && !question.link && !isPassing(question.requestID) && choices(question.questions) === asked,
+  )
+  if (!similar.length) return result
+  const which = similar.map((question) => `session ${question.sessionID} (requestID "${question.requestID}")`).join(", ")
+  return {
+    ...result,
+    content: `${result.content}\nIf you asked this for ${which}, these answers were not passed on by themselves: pass them on with courier_answer.`,
+  }
+}
+
+/**
+ * After a linked call failed, its location still loaded: a dismissal by the person, unless the
+ * location is closing (see settle), dismisses the question they were asked for too; a call stopped
+ * while the asking call was cut off as well tells the top session, which nobody has told yet.
+ */
+async function linkedCallFailed(
+  ports: QuestionPorts,
+  linked: Question,
+  cause: Cause.Cause<unknown>,
+  loaded: () => boolean,
+  directory: string,
+) {
+  try {
+    if (isDismissal(cause)) {
+      if (await closingSoon(loaded, directory, timing.dismissalGraceMs)) return
+      await deliver(ports, linked, { dismissed: true })
+    } else if (!linked.call && shared.questions.get(linked.requestID) === linked) await tellCutOff(ports, linked, "stopped")
+  } catch (error) {
+    ports.log(`courier question: could not pass on what happened to ${linked.requestID}: ${String(error)}`)
+  }
+}
+
+/** The result of a linked call withdrawn because its question was settled without it. */
+function withdrawnResult(linked: Question, how: Elsewhere) {
+  let what: string
+  if (how.by === "child") what = `answered in its own session (${answeredText(linked.questions, how.answers)})`
+  else if (how.by === "dismissed") what = "dismissed in its own session, which ends its turn; message it with courier_send if it should carry on"
+  else what = `ended: its question call failed (${how.error})`
+  return {
+    output: { answers: how.by === "child" ? how.answers : linked.questions.map(() => []) },
+    content: `Session ${linked.sessionID} no longer waits on this question: it was ${what}. There is nothing to pass on; tell the person it is settled.`,
+    metadata: { relayed: linked.requestID, withdrawn: true },
+  }
+}
+
+/** What a linked call adds to the person's answers about passing them on: `passed` is what deliver gave, or the error. */
+function passedNote(linked: Question, passed: string | undefined) {
+  if (passed === "result")
+    return `These answers were passed on to session ${linked.sessionID}, which carries on with them; do not call courier_answer for ${linked.requestID}. ${END_TURN}`
+  if (passed === "message")
+    return `These answers were passed on to session ${linked.sessionID} as a message, since its question had been cut off; it carries on with them. Do not call courier_answer for ${linked.requestID}. ${END_TURN}`
+  if (passed === undefined) return `Session ${linked.sessionID} no longer waits on this question; nothing was passed on.`
+  return `Passing these answers on to session ${linked.sessionID} failed (${passed.slice(7)}); call courier_answer with requestID "${linked.requestID}" to pass them on.`
+}
+
+/**
  * The question call of a session that a waiting question was relayed to, asking the person the
  * same: what they choose is passed on, and the call is withdrawn if the question is settled first.
  */
@@ -746,21 +842,9 @@ function linking(ports: () => QuestionPorts | undefined, directory: string, ask:
       const linked = current ? linkFor(context.sessionID, questions) : undefined
       if (!current || !linked) {
         const result = yield* ask(input, context)
-        if (!current || typeof result.content !== "string") return result
-        // Not linked, but perhaps asked for a waiting session, reworded or asked before that session
-        // asked: say how to pass it on.
-        const asked = choices(questions)
-        const similar = [...shared.questions.values()].filter(
-          (question) =>
-            question.top === context.sessionID && !question.link && !isPassing(question.requestID) && choices(question.questions) === asked,
-        )
-        if (!similar.length) return result
-        const which = similar.map((question) => `session ${question.sessionID} (requestID "${question.requestID}")`).join(", ")
-        return {
-          ...result,
-          content: `${result.content}\nIf you asked this for ${which}, these answers were not passed on by themselves: pass them on with courier_answer.`,
-        }
+        return current ? unlinkedResult(result, context.sessionID, questions) : result
       }
+      const loaded = () => ports() === current
       let settled!: (how: Elsewhere) => void
       const elsewhere = new Promise<Elsewhere>((resolve) => (settled = resolve))
       linked.link = settled
@@ -772,36 +856,13 @@ function linking(ports: () => QuestionPorts | undefined, directory: string, ask:
           Effect.sync(() => {
             if (linked.link === settled) linked.link = undefined
             // Unloaded: OpenCode is closing the location, which withdraws the form; nobody dismissed it.
-            if (Exit.isSuccess(exit) || ports() !== current) return
+            if (Exit.isSuccess(exit) || !loaded()) return
             // Not waited for, as in asking.
-            void (async () => {
-              // Dismissed by the person, unless the location is closing (see settle): so is the question they were asked for.
-              if (isDismissal(exit.cause)) {
-                if (await closingSoon(() => ports() === current, directory, timing.dismissalGraceMs)) return
-                await deliver(current, linked, { dismissed: true })
-              }
-              // Stopped while the asking call was cut off as well: nobody has been told yet.
-              else if (!linked.call && shared.questions.get(linked.requestID) === linked) await tellCutOff(current, linked, "stopped")
-            })().catch((error: unknown) =>
-              current.log(`courier question: could not pass on what happened to ${linked.requestID}: ${String(error)}`),
-            )
+            void linkedCallFailed(current, linked, exit.cause, loaded, directory)
           }),
         ),
       )
-      if (ended.by === "elsewhere") {
-        const how = ended.how
-        const what =
-          how.by === "child"
-            ? `answered in its own session (${answeredText(linked.questions, how.answers)})`
-            : how.by === "dismissed"
-              ? "dismissed in its own session, which ends its turn; message it with courier_send if it should carry on"
-              : `ended: its question call failed (${how.error})`
-        return {
-          output: { answers: how.by === "child" ? how.answers : linked.questions.map(() => []) },
-          content: `Session ${linked.sessionID} no longer waits on this question: it was ${what}. There is nothing to pass on; tell the person it is settled.`,
-          metadata: { relayed: linked.requestID, withdrawn: true },
-        }
-      }
+      if (ended.by === "elsewhere") return withdrawnResult(linked, ended.how)
       const result = ended.result
       const answers = (result.output as { answers?: Answers } | undefined)?.answers ?? []
       const passed = yield* Effect.promise(() =>
@@ -812,14 +873,7 @@ function linking(ports: () => QuestionPorts | undefined, directory: string, ask:
             return `error: ${error instanceof Error ? error.message : String(error)}`
           }),
       )
-      const note =
-        passed === "result"
-          ? `These answers were passed on to session ${linked.sessionID}, which carries on with them; do not call courier_answer for ${linked.requestID}. ${END_TURN}`
-          : passed === "message"
-            ? `These answers were passed on to session ${linked.sessionID} as a message, since its question had been cut off; it carries on with them. Do not call courier_answer for ${linked.requestID}. ${END_TURN}`
-            : passed === undefined
-              ? `Session ${linked.sessionID} no longer waits on this question; nothing was passed on.`
-              : `Passing these answers on to session ${linked.sessionID} failed (${passed.slice(7)}); call courier_answer with requestID "${linked.requestID}" to pass them on.`
+      const note = passedNote(linked, passed)
       return {
         ...result,
         content: typeof result.content === "string" ? `${result.content}\n${note}` : note,

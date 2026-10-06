@@ -193,6 +193,15 @@ or branch what you want to keep (`git -C <worktree> branch <name>` keeps its com
 no longer read. A worktree whose directory is already gone is just dropped from the list; git
 forgets its registration on its next `git worktree prune` or `git gc`.
 
+The plugin reads a worktree's state, and the commit `courier_spawn` records, by running git itself,
+which it looks for in its usual install locations and never through `PATH`, so a writable
+directory early in `PATH` cannot put another program in its place: `/usr/bin/git`,
+`/usr/local/bin/git`, `/opt/homebrew/bin/git` and `/run/current-system/sw/bin/git` (NixOS and
+nix-darwin), or on Windows `C:\Program Files\Git\cmd\git.exe` and its `(x86)` twin. Git
+installed anywhere else is named by the environment variable `OPENCODE_COURIER_GIT`, an absolute
+path, set for the OpenCode server. Without a git, `courier_cleanup` refuses with a message naming
+the places it looked, unless `force` is set, and `courier_spawn` records no commit.
+
 Cleanup is explicit only. A child reporting back does not mean the parent has merged, reviewed or
 even read its work, and the parent may still send it more to do in the same worktree, so the
 plugin never removes one on its own. Isolated children whose worktree still exists are kept on

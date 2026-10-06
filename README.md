@@ -278,9 +278,11 @@ them: [docs/real-model.md](docs/real-model.md).
 CI (`.github/workflows/ci.yml`) runs both suites on every push to `main` and every pull request,
 with the OpenCode CLI at the same version as the pinned plugin API, and the live suite once more
 with the CLI at its `latest` dist-tag: that job may fail, and its step summary names the version it
-ran on, so a host release that breaks the plugin is seen without blocking the build. Releases start from GitHub and
-end with a maintainer's 2FA approval on npm: [docs/releasing.md](docs/releasing.md). What the plugin
-API does that the plugin had to work around, and what changed when the pin last moved:
+ran on, so a host release that breaks the plugin is seen without blocking the build. On `main` and
+on this repository's own pull requests, a SonarCloud job then scans `src/` with the unit suites'
+coverage (`sonar-project.properties`). Releases start from GitHub and end with a maintainer's 2FA
+approval on npm: [docs/releasing.md](docs/releasing.md). What the plugin API does that the plugin
+had to work around, and what changed when the pin last moved:
 [docs/plugin-api-notes.md](docs/plugin-api-notes.md).
 
 ## Contributing

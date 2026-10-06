@@ -22,6 +22,9 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   smoke test with a real model, free on OpenCode Zen by default; not in CI. Re-run it after changing tool descriptions, results or the child brief;
   `docs/real-model.md` has the results.
 - `.github/workflows/ci.yml`: both suites on every push to `main` and every pull request.
+  Its `sonar` job scans `src/` on SonarCloud (`sonar-project.properties`) with the unit coverage,
+  on `main` and on this repository's pull requests. The PR bar: no new bug, vulnerability or
+  unreviewed hotspot, and at least 80% coverage on new code.
   `release-start.yml`, `release-tag.yml` and `release.yml`: the release flow, `docs/releasing.md`.
 
 ## Commands

@@ -626,14 +626,13 @@ async function settle(ports: QuestionPorts, question: Question, exit: CallExit, 
   // running then. The unload is looked at again here: it may have come during the wait above, after
   // a held dismissal had already been taken for the person's.
   const closing = unloaded || !loaded() || (held !== undefined && (await held))
-  if (Exit.isFailure(exit) && (closing || (!dismissed && Exit.hasInterrupts(exit)))) return cutOff(ports, question, closing)
+  if (Exit.isFailure(exit) && (closing || (!dismissed && Exit.hasInterrupts(exit)))) return closing ? tellLater(question) : stopped(ports, question)
   await settledElsewhere(ports, question, settledIn(exit), told)
 }
 
-/** A relayed call cut off: by its closing location, told later; by its stopped turn, told now, unless the top session asks the person. */
-async function cutOff(ports: QuestionPorts, question: Question, closing: boolean) {
-  if (closing) tellLater(question)
-  else if (!question.link) await tellCutOff(ports, question, "stopped")
+/** A relayed call cut off by its stopped turn: the top session is told now, unless it asks the person. */
+async function stopped(ports: QuestionPorts, question: Question) {
+  if (!question.link) await tellCutOff(ports, question, "stopped")
 }
 
 /** A relayed call settled in the asking session: `told` says whether the top session was told about it. */

@@ -97,12 +97,12 @@ async function inheritedModel(ports: CourierPorts, parentID: string, agent: stri
   return named.data.model ? undefined : parent.model
 }
 
-/** Removes a worktree made for a child that was never created; a failure leaves it behind. */
+/** Removes a worktree made for a child that was never created; one that cannot be removed stays. */
 async function dropWorktree(ports: CourierPorts, directory: string) {
   try {
     await ports.worktree.remove({ projectID: ports.projectID, directory, force: false })
   } catch {
-    // Left for the person to remove; the spawn's own failure is the one to report.
+    // The spawn's own failure is the one to report.
   }
 }
 

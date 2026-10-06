@@ -16,6 +16,7 @@ describe("processWide", () => {
     expect(second).toBe(first)
     expect(made).toBe(1)
     expect((globalThis as Record<symbol, unknown>)[Symbol.for(key)]).toBe(first)
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for(key)]
   })
 
   test("keeps a value an older copy of the plugin put under the key", () => {
@@ -24,6 +25,7 @@ describe("processWide", () => {
     ;(globalThis as Record<symbol, unknown>)[Symbol.for(key)] = older
 
     expect(processWide(key, () => ({ kept: false }))).toBe(older)
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for(key)]
   })
 })
 

@@ -43,7 +43,8 @@ export interface LaterInput {
 
 function minutesOf(given: number | string) {
   if (typeof given !== "string") return given
-  return DECIMAL.test(given.trim()) ? Number(given) : Number.NaN
+  const trimmed = given.trim()
+  return DECIMAL.test(trimmed) ? Number(trimmed) : Number.NaN
 }
 
 function fireTime(now: number, input: LaterInput) {

@@ -52,8 +52,10 @@ export function parseTopic(input: string) {
   const raw = input.trim()
   const github = raw.replace(/^github:/i, "")
   const [repo, number, ...rest] = github.split("#")
-  if (repo && GITHUB_REPO.test(repo) && rest.length === 0 && (number === undefined || /^\d+$/.test(number)))
-    return `github:${repo.toLowerCase()}${number === undefined ? "" : `#${Number(number)}`}`
+  if (repo && GITHUB_REPO.test(repo) && rest.length === 0 && (number === undefined || /^\d+$/.test(number))) {
+    const suffix = number === undefined ? "" : `#${Number(number)}`
+    return `github:${repo.toLowerCase()}${suffix}`
+  }
   if (GENERIC_NAME.test(raw)) return raw
   throw new Error(
     `Not a topic: ${JSON.stringify(input)}. Use owner/repo, owner/repo#<number>, or a name of letters, digits, ".", "_" and "-".`,
@@ -142,6 +144,112 @@ const CI_EVENTS: Record<string, string> = { check_run: "check run", check_suite:
 /** Pull request and issue actions worth a wake-up; edits, labels, assignments and pushes to the branch are not. */
 const ITEM_ACTIONS = new Set(["opened", "reopened", "closed", "ready_for_review"])
 
+/** What every GitHub delivery carries, read once for the summary of its event. */
+interface Delivery {
+  readonly name: string
+  readonly body: Record<string, any>
+  readonly repo: string
+  readonly action: string | undefined
+  readonly sender: string | undefined
+  /** ` by <sender>`, or nothing when the delivery names no sender. */
+  readonly by: string
+}
+
+/** The pull request and issue numbers an event concerns, and the lines of its summary. */
+interface Summary {
+  readonly numbers: readonly number[]
+  readonly lines: readonly string[]
+}
+
+/** The lines that have any text, in order. */
+const present = (...lines: (string | undefined)[]) => lines.filter((line): line is string => !!line)
+const inQuotes = (text: string | undefined) => (text ? `"${text}"` : undefined)
+const numbered = (n: number | undefined) => (n === undefined ? [] : [n])
+const ref = (repo: string, n: number | undefined) => `${repo}#${n ?? "?"}`
+/** A review's or comment's own text, clipped, after a blank line. */
+const clippedBody = (text: string | undefined) => (text ? ["", clip(text)] : [])
+
+function ciSummary({ name, body, repo, action }: Delivery): Summary | undefined {
+  if (action !== "completed") return undefined
+  const run = obj(body[name])
+  const numbers = new Set<number>()
+  for (const item of Array.isArray(run.pull_requests) ? run.pull_requests : []) {
+    const n = num(obj(item).number)
+    if (n !== undefined) numbers.add(n)
+  }
+  const label = str(run.name) ?? str(obj(run.app).name) ?? str(run.head_branch) ?? ""
+  const named = label ? ` "${label}"` : ""
+  const sha = str(run.head_sha)?.slice(0, 7) ?? "?"
+  const list = [...numbers]
+  const where = list.length ? list.map((n) => ref(repo, n)).join(", ") : `${repo} (${sha})`
+  return {
+    numbers: list,
+    lines: present(`${CI_EVENTS[name]}${named} on ${where}: ${str(run.conclusion) ?? "completed"}`, str(run.html_url) ?? str(run.details_url)),
+  }
+}
+
+function reviewSummary({ body, repo, action, sender }: Delivery): Summary {
+  const review = obj(body.review)
+  const pr = obj(body.pull_request)
+  const n = num(pr.number)
+  const by = str(obj(review.user).login) ?? sender ?? "?"
+  return {
+    numbers: numbered(n),
+    lines: [
+      ...present(`review ${action ?? ""} on ${ref(repo, n)} by ${by}: ${str(review.state) ?? "?"}`, inQuotes(str(pr.title)), str(review.html_url)),
+      ...clippedBody(str(review.body)),
+    ],
+  }
+}
+
+function commentSummary({ name, body, repo, action, sender }: Delivery): Summary {
+  const comment = obj(body.comment)
+  const issue = obj(body.issue)
+  const n = num(obj(body.pull_request).number) ?? num(issue.number)
+  const what = name === "issue_comment" && !issue.pull_request ? "issue comment" : "pull request comment"
+  const by = str(obj(comment.user).login) ?? sender ?? "?"
+  const path = str(comment.path)
+  const line = num(comment.line) ? `:${comment.line}` : ""
+  return {
+    numbers: numbered(n),
+    lines: [
+      ...present(`${what} ${action ?? ""} on ${ref(repo, n)} by ${by}`, path && `on ${path}${line}`, str(comment.html_url)),
+      ...clippedBody(str(comment.body)),
+    ],
+  }
+}
+
+function itemSummary({ name, body, repo, action, by }: Delivery): Summary | undefined {
+  if (!action || !ITEM_ACTIONS.has(action)) return undefined
+  const pullRequest = name === "pull_request"
+  const item = obj(pullRequest ? body.pull_request : body.issue)
+  const n = num(item.number)
+  const what = pullRequest ? "pull request" : "issue"
+  const done = pullRequest && action === "closed" && item.merged === true ? "merged" : action
+  return { numbers: numbered(n), lines: present(`${what} ${ref(repo, n)} ${done}${by}`, inQuotes(str(item.title)), str(item.html_url)) }
+}
+
+function pushSummary({ body, repo, by }: Delivery): Summary {
+  const commits = Array.isArray(body.commits) ? body.commits.length : 0
+  const plural = commits === 1 ? "" : "s"
+  return { numbers: [], lines: present(`push to ${repo} ${str(body.ref) ?? ""}${by}: ${commits} commit${plural}`, str(body.compare)) }
+}
+
+function otherSummary({ name, repo, action, by }: Delivery): Summary {
+  const acted = action ? ` ${action}` : ""
+  return { numbers: [], lines: [`${name}${acted} on ${repo}${by}`] }
+}
+
+const SUMMARIES: Record<string, (delivery: Delivery) => Summary | undefined> = {
+  ...Object.fromEntries(Object.keys(CI_EVENTS).map((name) => [name, ciSummary])),
+  pull_request_review: reviewSummary,
+  pull_request_review_comment: commentSummary,
+  issue_comment: commentSummary,
+  pull_request: itemSummary,
+  issues: itemSummary,
+  push: pushSummary,
+}
+
 /**
  * Maps a GitHub delivery to its topics (`github:owner/repo` and, for pull requests and issues,
  * `github:owner/repo#N`) and a summary. Undefined for deliveries nobody should be woken for: pings,
@@ -151,68 +259,17 @@ export function githubEvent(name: string, payload: unknown): Event | undefined {
   const body = obj(payload)
   const repo = str(obj(body.repository).full_name)
   if (name === "ping" || !repo) return undefined
-  const action = str(body.action)
   const sender = str(obj(body.sender).login)
-  const numbers = new Set<number>()
-  const lines: string[] = []
-  const pr = obj(body.pull_request)
-  const issue = obj(body.issue)
-  const by = sender ? ` by ${sender}` : ""
-
-  if (Object.hasOwn(CI_EVENTS, name)) {
-    const run = obj(body[name])
-    if (action !== "completed") return undefined
-    for (const item of Array.isArray(run.pull_requests) ? run.pull_requests : []) {
-      const n = num(obj(item).number)
-      if (n !== undefined) numbers.add(n)
-    }
-    const label = str(run.name) ?? str(obj(run.app).name) ?? str(run.head_branch) ?? ""
-    const where = numbers.size ? [...numbers].map((n) => `${repo}#${n}`).join(", ") : `${repo} (${str(run.head_sha)?.slice(0, 7) ?? "?"})`
-    lines.push(`${CI_EVENTS[name]}${label ? ` "${label}"` : ""} on ${where}: ${str(run.conclusion) ?? "completed"}`)
-    const url = str(run.html_url) ?? str(run.details_url)
-    if (url) lines.push(url)
-  } else if (name === "pull_request_review") {
-    const review = obj(body.review)
-    const n = num(pr.number)
-    if (n !== undefined) numbers.add(n)
-    lines.push(
-      `review ${action ?? ""} on ${repo}#${n ?? "?"} by ${str(obj(review.user).login) ?? sender ?? "?"}: ${str(review.state) ?? "?"}`,
-    )
-    if (str(pr.title)) lines.push(`"${str(pr.title)}"`)
-    if (str(review.html_url)) lines.push(str(review.html_url)!)
-    if (str(review.body)) lines.push("", clip(str(review.body)!))
-  } else if (name === "pull_request_review_comment" || name === "issue_comment") {
-    const comment = obj(body.comment)
-    const n = num(pr.number) ?? num(issue.number)
-    if (n !== undefined) numbers.add(n)
-    const what = name === "issue_comment" && !issue.pull_request ? "issue comment" : "pull request comment"
-    lines.push(`${what} ${action ?? ""} on ${repo}#${n ?? "?"} by ${str(obj(comment.user).login) ?? sender ?? "?"}`)
-    if (str(comment.path)) lines.push(`on ${str(comment.path)}${num(comment.line) ? `:${comment.line}` : ""}`)
-    if (str(comment.html_url)) lines.push(str(comment.html_url)!)
-    if (str(comment.body)) lines.push("", clip(str(comment.body)!))
-  } else if (name === "pull_request" || name === "issues") {
-    if (!action || !ITEM_ACTIONS.has(action)) return undefined
-    const item = name === "pull_request" ? pr : issue
-    const n = num(item.number)
-    if (n !== undefined) numbers.add(n)
-    const merged = name === "pull_request" && action === "closed" && pr.merged === true ? "merged" : action
-    lines.push(`${name === "pull_request" ? "pull request" : "issue"} ${repo}#${n ?? "?"} ${merged ?? "updated"}${by}`)
-    if (str(item.title)) lines.push(`"${str(item.title)}"`)
-    if (str(item.html_url)) lines.push(str(item.html_url)!)
-  } else if (name === "push") {
-    const commits = Array.isArray(body.commits) ? body.commits.length : 0
-    lines.push(`push to ${repo} ${str(body.ref) ?? ""}${by}: ${commits} commit${commits === 1 ? "" : "s"}`)
-    if (str(body.compare)) lines.push(str(body.compare)!)
-  } else {
-    lines.push(`${name}${action ? ` ${action}` : ""} on ${repo}${by}`)
-  }
-
+  // Own keys only: an event named `toString` or `constructor` is not one of ours.
+  const summarise = Object.hasOwn(SUMMARIES, name) ? SUMMARIES[name]! : otherSummary
+  const summary = summarise({ name, body, repo, action: str(body.action), sender, by: sender ? ` by ${sender}` : "" })
+  if (!summary) return undefined
   const lower = repo.toLowerCase()
   return {
     source: "github",
     name,
-    topics: [`github:${lower}`, ...[...numbers].map((n) => `github:${lower}#${n}`)],
-    summary: lines.join("\n"),
+    topics: [`github:${lower}`, ...summary.numbers.map((n) => `github:${lower}#${n}`)],
+    summary: summary.lines.join("\n"),
   }
 }
 
@@ -231,7 +288,10 @@ export function defuse(text: string) {
   return text.replace(/<(\/?)(courier)/gi, "&lt;$1$2")
 }
 
-const isNotFound = (error: unknown) => /NotFound/.test(String((error as { _tag?: unknown })?._tag ?? ""))
+const isNotFound = (error: unknown) => {
+  const tag = (error as { _tag?: unknown } | undefined)?._tag
+  return typeof tag === "string" && tag.includes("NotFound")
+}
 
 /**
  * Delivers an event to every session subscribed to one of its topics, once per session. A session
@@ -301,52 +361,70 @@ export class Seen {
   }
 }
 
-/**
- * Handles one request: `POST /github` with GitHub's headers, or `POST /hook/<name>` signed over
- * the name and the body. Anything not signed with the secret is refused before its body is parsed,
- * and a signature already accepted is ignored, so a captured delivery cannot be replayed.
- */
-export async function receive(ports: WebhookPorts, secret: string, request: Request, seen = new Seen()): Promise<Response> {
-  const generic = request.path.match(/^\/hook\/([^/]+)$/)
+const isResponse = (value: object): value is Response => "status" in value
+
+const decode = (raw: string) => {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return undefined
+  }
+}
+
+/** The topic a request is for: none for `/github`, the name for `/hook/<name>`; else the refusal. */
+function route(request: Request): Response | { readonly topic: string | undefined } {
+  const generic = /^\/hook\/([^/]+)$/.exec(request.path)
   if (request.path !== "/github" && !generic) return { status: 404, body: "not found" }
   if (request.method !== "POST") return { status: 405, body: "use POST" }
-  let topic: string | undefined
-  if (generic) {
-    try {
-      topic = decodeURIComponent(generic[1]!)
-    } catch {}
-    if (!topic || !GENERIC_NAME.test(topic)) return { status: 400, body: "bad topic" }
-  }
-  const digest = checkSignature(secret, request.body, header(request, "x-hub-signature-256"), topic)
-  if (!digest) return { status: 401, body: "bad or missing X-Hub-Signature-256" }
-  if (seen.has(digest)) return { status: 200, body: "already delivered" }
+  if (!generic) return { topic: undefined }
+  const topic = decode(generic[1]!)
+  return topic && GENERIC_NAME.test(topic) ? { topic } : { status: 400, body: "bad topic" }
+}
 
-  let event: Event | undefined
-  if (topic !== undefined) {
-    event = genericEvent(topic, request.body.toString("utf8"))
-  } else {
-    const name = header(request, "x-github-event")
-    if (!name || !/^[\w.-]{1,64}$/.test(name)) return { status: 400, body: "missing or bad X-GitHub-Event" }
-    let payload: unknown
-    try {
-      payload = JSON.parse(request.body.toString("utf8"))
-    } catch {
-      return { status: 400, body: "body is not JSON; set the webhook's content type to application/json" }
-    }
-    event = githubEvent(name, payload)
-    if (!event) return { status: 200, body: `ignored ${name}` }
+/** The event in a signed request's body, or why there is none to deliver. */
+function parseEvent(request: Request, topic: string | undefined): Response | Event {
+  if (topic !== undefined) return genericEvent(topic, request.body.toString("utf8"))
+  const name = header(request, "x-github-event")
+  if (!name || !/^[\w.-]{1,64}$/.test(name)) return { status: 400, body: "missing or bad X-GitHub-Event" }
+  let payload: unknown
+  try {
+    payload = JSON.parse(request.body.toString("utf8"))
+  } catch {
+    return { status: 400, body: "body is not JSON; set the webhook's content type to application/json" }
   }
-  // Marked before dispatching, so a concurrent replay is refused, and unmarked if the delivery
-  // reached nobody it was meant for, so a retry or a GitHub Redeliver can still get through.
-  seen.add(digest)
+  return githubEvent(name, payload) ?? { status: 200, body: `ignored ${name}` }
+}
+
+/** Dispatches a delivery `receive` has marked as seen, and unmarks it if it reached nobody. */
+async function deliver(ports: WebhookPorts, request: Request, event: Event, digest: string, seen: Seen): Promise<Response> {
   const delivery = header(request, "x-github-delivery")?.replace(/[^\w-]/g, "").slice(0, 64) || undefined
   const { delivered, failed } = await dispatch(ports, event, delivery).catch((error: unknown) => {
     seen.delete(digest)
     throw error
   })
   if (failed > 0 && delivered === 0) seen.delete(digest)
-  ports.log(`courier webhook: ${event.source} ${event.name}${delivery ? ` ${delivery}` : ""} delivered to ${delivered} session(s)`)
+  const id = delivery ? ` ${delivery}` : ""
+  ports.log(`courier webhook: ${event.source} ${event.name}${id} delivered to ${delivered} session(s)`)
   return { status: 202, body: `delivered to ${delivered} session(s)` }
+}
+
+/**
+ * Handles one request: `POST /github` with GitHub's headers, or `POST /hook/<name>` signed over
+ * the name and the body. Anything not signed with the secret is refused before its body is parsed,
+ * and a signature already accepted is ignored, so a captured delivery cannot be replayed.
+ */
+export async function receive(ports: WebhookPorts, secret: string, request: Request, seen = new Seen()): Promise<Response> {
+  const routed = route(request)
+  if (isResponse(routed)) return routed
+  const digest = checkSignature(secret, request.body, header(request, "x-hub-signature-256"), routed.topic)
+  if (!digest) return { status: 401, body: "bad or missing X-Hub-Signature-256" }
+  if (seen.has(digest)) return { status: 200, body: "already delivered" }
+  const event = parseEvent(request, routed.topic)
+  if (isResponse(event)) return event
+  // Marked with no await since the check above, so a concurrent replay is refused, and unmarked if
+  // the delivery reached nobody it was meant for, so a retry or a GitHub Redeliver can still get through.
+  seen.add(digest)
+  return deliver(ports, request, event, digest, seen)
 }
 
 class TooLarge extends Error {}

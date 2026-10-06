@@ -282,6 +282,27 @@ describe("subscriptions", () => {
   })
 })
 
+describe("dispatch, concurrency", () => {
+  test("a session slow to take its message does not hold up the others", async () => {
+    const { ports, delivered } = fakePorts()
+    await subscribe(ports, "ses_slow", "o/r")
+    await subscribe(ports, "ses_fast", "o/r")
+    const synthetic = ports.session.synthetic
+    let fastSent: () => void = () => undefined
+    const fast = new Promise<void>((resolve) => (fastSent = resolve))
+    ;(ports.session as any).synthetic = async (input: any) => {
+      // Waits for the other session's message, or gives up after a while when there is none.
+      if (input.sessionID === "ses_slow") await Promise.race([fast, new Promise((resolve) => setTimeout(resolve, 200))])
+      const result = await synthetic(input)
+      if (input.sessionID === "ses_fast") fastSent()
+      return result
+    }
+
+    expect(await dispatch(ports, genericEvent("github:o/r", "s"))).toEqual({ delivered: 2, failed: 0 })
+    expect(delivered.map((item) => item.sessionID)).toEqual(["ses_fast", "ses_slow"])
+  })
+})
+
 describe("receive", () => {
   test("a signed GitHub delivery reaches the subscribed session", async () => {
     const { ports, delivered, logs } = fakePorts()

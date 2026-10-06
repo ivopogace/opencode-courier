@@ -469,6 +469,9 @@ export async function noticeCutOff(ports: QuestionPorts) {
   const roster = await allEntries(ports.storage)
   const now = ports.now()
   let kept = 0
+  // Which to keep is decided here, newest first; the drops and the notices, one per question, then
+  // go out together.
+  const work: Promise<unknown>[] = []
   for (const asked of stored) {
     const known = shared.questions.get(asked.requestID)
     // Its call waits, or its top session is asking the person: nothing to tell.
@@ -484,17 +487,22 @@ export async function noticeCutOff(ports: QuestionPorts) {
       lineageIn(roster, asked.sessionID).length > 0
     if (!current) {
       shared.questions.delete(asked.requestID)
-      await ports.storage
-        .remove(keyOf(asked.requestID))
-        .catch((error: unknown) => ports.log(`courier question: could not drop ${asked.requestID}: ${String(error)}`))
+      work.push(
+        ports.storage
+          .remove(keyOf(asked.requestID))
+          .catch((error: unknown) => ports.log(`courier question: could not drop ${asked.requestID}: ${String(error)}`)),
+      )
       continue
     }
     if (!known) shared.questions.set(asked.requestID, { ...asked })
     kept++
-    await tellCutOff(ports, known ?? asked, "restarted").catch((error: unknown) =>
-      ports.log(`courier question: could not tell ${asked.top} about ${asked.requestID}: ${String(error)}`),
+    work.push(
+      tellCutOff(ports, known ?? asked, "restarted").catch((error: unknown) =>
+        ports.log(`courier question: could not tell ${asked.top} about ${asked.requestID}: ${String(error)}`),
+      ),
     )
   }
+  await Promise.all(work)
 }
 
 /**

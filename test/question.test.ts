@@ -1286,6 +1286,27 @@ describe("noticeCutOff", () => {
     expect(answered).toMatchObject({ answered: true, by: "message" })
   })
 
+  test("a notice slow to go out does not hold up the others", async () => {
+    const { ports, store, told } = await setUp()
+    const stored = (requestID: string, askedAt: number) => ({ requestID, sessionID: "ses_child", top: "ses_parent", title: "t", questions: greeting, askedAt })
+    // Newest first: question_new is told before question_older.
+    store.set("question/question_new", stored("question_new", 1_000_000))
+    store.set("question/question_older", stored("question_older", 999_999))
+    let olderSent: () => void = () => undefined
+    const older = new Promise<void>((resolve) => (olderSent = resolve))
+    ;(ports.session as any).synthetic = async (input: any) => {
+      // Waits for the other notice, or gives up after a while when there is none.
+      if (input.text.includes('request="question_new"')) await Promise.race([older, new Promise((resolve) => setTimeout(resolve, 200))])
+      told.push(input)
+      if (input.text.includes('request="question_older"')) olderSent()
+      return { id: `msg_${told.length}` }
+    }
+
+    await noticeCutOff(ports)
+
+    expect(told.map((item) => /request="(\w+)"/.exec(item.text)?.[1])).toEqual(["question_older", "question_new"])
+  })
+
   test(`keeps at most ${MAX_STORED} questions, the newest`, async () => {
     const { ports, store } = await setUp()
     for (let i = 0; i < MAX_STORED + 5; i++)

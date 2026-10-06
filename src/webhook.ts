@@ -362,41 +362,45 @@ export class Seen {
   }
 }
 
-/**
- * Handles one request: `POST /github` with GitHub's headers, or `POST /hook/<name>` signed over
- * the name and the body. Anything not signed with the secret is refused before its body is parsed,
- * and a signature already accepted is ignored, so a captured delivery cannot be replayed.
- */
-export async function receive(ports: WebhookPorts, secret: string, request: Request, seen = new Seen()): Promise<Response> {
+const isResponse = (value: object): value is Response => "status" in value
+
+const decode = (raw: string) => {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return undefined
+  }
+}
+
+/** The topic a request is for: none for `/github`, the name for `/hook/<name>`; else the refusal. */
+function route(request: Request): Response | { readonly topic: string | undefined } {
   const generic = /^\/hook\/([^/]+)$/.exec(request.path)
   if (request.path !== "/github" && !generic) return { status: 404, body: "not found" }
   if (request.method !== "POST") return { status: 405, body: "use POST" }
-  let topic: string | undefined
-  if (generic) {
-    try {
-      topic = decodeURIComponent(generic[1]!)
-    } catch {}
-    if (!topic || !GENERIC_NAME.test(topic)) return { status: 400, body: "bad topic" }
-  }
-  const digest = checkSignature(secret, request.body, header(request, "x-hub-signature-256"), topic)
-  if (!digest) return { status: 401, body: "bad or missing X-Hub-Signature-256" }
-  if (seen.has(digest)) return { status: 200, body: "already delivered" }
+  if (!generic) return { topic: undefined }
+  const topic = decode(generic[1]!)
+  return topic && GENERIC_NAME.test(topic) ? { topic } : { status: 400, body: "bad topic" }
+}
 
-  let event: Event | undefined
-  if (topic !== undefined) {
-    event = genericEvent(topic, request.body.toString("utf8"))
-  } else {
-    const name = header(request, "x-github-event")
-    if (!name || !/^[\w.-]{1,64}$/.test(name)) return { status: 400, body: "missing or bad X-GitHub-Event" }
-    let payload: unknown
-    try {
-      payload = JSON.parse(request.body.toString("utf8"))
-    } catch {
-      return { status: 400, body: "body is not JSON; set the webhook's content type to application/json" }
-    }
-    event = githubEvent(name, payload)
-    if (!event) return { status: 200, body: `ignored ${name}` }
+/** The event in a signed request's body, or why there is none to deliver. */
+function parseEvent(request: Request, topic: string | undefined): Response | Event {
+  if (topic !== undefined) return genericEvent(topic, request.body.toString("utf8"))
+  const name = header(request, "x-github-event")
+  if (!name || !/^[\w.-]{1,64}$/.test(name)) return { status: 400, body: "missing or bad X-GitHub-Event" }
+  let payload: unknown
+  try {
+    payload = JSON.parse(request.body.toString("utf8"))
+  } catch {
+    return { status: 400, body: "body is not JSON; set the webhook's content type to application/json" }
   }
+  return githubEvent(name, payload) ?? { status: 200, body: `ignored ${name}` }
+}
+
+/**
+ * Dispatches an accepted delivery. Call it with no `await` since `seen.has(digest)`, so that two
+ * concurrent copies of one delivery cannot both get through.
+ */
+async function deliver(ports: WebhookPorts, request: Request, event: Event, digest: string, seen: Seen): Promise<Response> {
   // Marked before dispatching, so a concurrent replay is refused, and unmarked if the delivery
   // reached nobody it was meant for, so a retry or a GitHub Redeliver can still get through.
   seen.add(digest)
@@ -409,6 +413,22 @@ export async function receive(ports: WebhookPorts, secret: string, request: Requ
   const id = delivery ? ` ${delivery}` : ""
   ports.log(`courier webhook: ${event.source} ${event.name}${id} delivered to ${delivered} session(s)`)
   return { status: 202, body: `delivered to ${delivered} session(s)` }
+}
+
+/**
+ * Handles one request: `POST /github` with GitHub's headers, or `POST /hook/<name>` signed over
+ * the name and the body. Anything not signed with the secret is refused before its body is parsed,
+ * and a signature already accepted is ignored, so a captured delivery cannot be replayed.
+ */
+export async function receive(ports: WebhookPorts, secret: string, request: Request, seen = new Seen()): Promise<Response> {
+  const routed = route(request)
+  if (isResponse(routed)) return routed
+  const digest = checkSignature(secret, request.body, header(request, "x-hub-signature-256"), routed.topic)
+  if (!digest) return { status: 401, body: "bad or missing X-Hub-Signature-256" }
+  if (seen.has(digest)) return { status: 200, body: "already delivered" }
+  const event = parseEvent(request, routed.topic)
+  if (isResponse(event)) return event
+  return deliver(ports, request, event, digest, seen)
 }
 
 class TooLarge extends Error {}

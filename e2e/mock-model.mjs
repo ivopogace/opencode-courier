@@ -105,6 +105,11 @@ function decide(body) {
     if (both) return { calls: [{ tool: "question", args }, { tool: "courier_answer", args: { sessionID: notice[1], requestID: notice[2], answers: [["Hi"]] } }] }
     return { tool: "question", args }
   }
+  // COURIER-ASK-AGAIN: the parent asks the person the last question it was told of once more.
+  if (recent.includes("COURIER-ASK-AGAIN")) {
+    const line = messages.flatMap((message) => textOf(message.content).split("\n")).findLast((item) => item.startsWith('{"questions"'))
+    if (line) return { tool: "question", args: JSON.parse(line) }
+  }
   // A parent told that its child waits for permission ends its turn, as if it had asked the person;
   // the test then answers for the person with COURIER-ANSWER.
   const asks = recent.match(/<courier from="ses_\w+" asks="permission" request="([^"]+)">/)

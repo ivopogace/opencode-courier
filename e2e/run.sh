@@ -289,6 +289,17 @@ check "dismissed in the parent's session" "$([ "$(dismiss_form "$parent" "$paren
 check "the child was told, carried on and reported" "$(has_text "$parent" "CHILD DISMISSED" 45)"
 check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
 
+echo "the parent asks again while its dismissal is held: the new question is withdrawn, and the child carries on without the answers"
+ask_question COURIER-QUESTION
+check "dismissed in the parent's session" "$([ "$(dismiss_form "$parent" "$parent_form")" = 204 ] && echo true || echo false)"
+# Within the two seconds the dismissal is held, over the API as a prompt from the TUI would come
+# (opencode run cancels the question form it opens).
+check "the parent is prompted to ask again" "$([[ $(person "session/$parent/prompt" '{"text":"COURIER-ASK-AGAIN"}') == 20* ]] && echo true || echo false)"
+check "the parent's new question was withdrawn, saying the child carries on without the answers" \
+  "$(has_text "$parent" "already dismissed in your session, so it carries on without the answers" 45)"
+check "and no longer shown" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
+check "the child was told, carried on and reported" "$(has_text "$parent" "CHILD DISMISSED" 45)"
+
 # A model slip: the parent asks the person and calls courier_answer in the same step, so its
 # question is linked and answered at once.
 echo "the parent asks the person and calls courier_answer in one step: its question is withdrawn, and the courier_answer pick counts"

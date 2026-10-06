@@ -12,8 +12,8 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   `src/watch.ts`: following OpenCode's events to tell a parent that a child's turn failed or that it
   waits for a permission. `src/relay.ts`: the permission notices and passing the answer back.
   `src/question.ts`: relaying a child's question, by wrapping OpenCode's `question` tool.
-  `src/storage.ts`: shared storage helpers. `src/index.ts`: the plugin (an Effect plugin running
-  the promise one), tool schemas and wiring.
+  `src/storage.ts`: shared storage helpers and `processWide`, the process-wide registry.
+  `src/index.ts`: the plugin (an Effect plugin running the promise one), tool schemas and wiring.
 - `test/`: unit tests against a fake plugin context (`bun test`).
 - `e2e/run.sh`: live test against a real OpenCode V2 server, driven by `e2e/mock-model.mjs`, a
   scripted OpenAI-compatible stand-in model. New behaviour gets a scenario there.
@@ -23,8 +23,8 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   `docs/real-model.md` has the results.
 - `.github/workflows/ci.yml`: both suites on every push to `main` and every pull request.
   Its `sonar` job scans `src/` on SonarCloud (`sonar-project.properties`) with the unit coverage,
-  on `main` and on this repository's pull requests. The PR bar: no new bug, vulnerability or
-  unreviewed hotspot, and at least 80% coverage on new code.
+  on `main` and on this repository's pull requests, and fails when the quality gate does. The PR
+  bar: no new bug, vulnerability or unreviewed hotspot, and at least 80% coverage on new code.
   `release-start.yml`, `release-tag.yml` and `release.yml`: the release flow, `docs/releasing.md`.
 
 ## Commands

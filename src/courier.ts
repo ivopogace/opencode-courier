@@ -97,6 +97,15 @@ async function inheritedModel(ports: CourierPorts, parentID: string, agent: stri
   return named.data.model ? undefined : parent.model
 }
 
+/** Removes a worktree made for a child that was never created; one that cannot be removed stays. */
+async function dropWorktree(ports: CourierPorts, directory: string) {
+  try {
+    await ports.worktree.remove({ projectID: ports.projectID, directory, force: false })
+  } catch {
+    // The spawn's own failure is the one to report.
+  }
+}
+
 /** Creates a child session, hands it the task and returns at once; the child reports back with courier_send. */
 export async function spawn(ports: CourierPorts, parentID: string, input: SpawnInput) {
   // A failed lookup must not keep the child from starting; it then runs on OpenCode's default.
@@ -116,10 +125,7 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
     })
     .catch(async (error: unknown) => {
       // No session will ever use the fresh worktree, and nothing records it, so it goes now.
-      if (directory)
-        await ports.worktree
-          .remove({ projectID: ports.projectID, directory, force: false })
-          .catch(() => undefined)
+      if (directory) await dropWorktree(ports, directory)
       throw error
     })
   // Recorded before the prompt, so a child that exists is on the roster even if prompting fails. A

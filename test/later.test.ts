@@ -75,6 +75,30 @@ describe("schedule", () => {
   })
 
   test.each([
+    ["1.", 1],
+    [".5", 0.5],
+    ["007", 7],
+    ["\t3\n", 3],
+    ["\u00a04\u2028", 4],
+  ])("reads the delay %j", async (delayMinutes, minutes) => {
+    const { ports } = fakePorts()
+
+    const entry = await schedule(ports, "ses_parent", { message: "m", delayMinutes })
+
+    expect(entry.fireAt).toBe(1_000_000 + minutes * MINUTE)
+  })
+
+  test("rejects a long run of digits with a stray character at once", async () => {
+    const { ports } = fakePorts()
+    const started = performance.now()
+
+    await expect(schedule(ports, "ses_parent", { message: "m", delayMinutes: `${"1".repeat(100_000)}x` })).rejects.toThrow(
+      "zero or more",
+    )
+    expect(performance.now() - started).toBeLessThan(1_000)
+  })
+
+  test.each([
     [{ message: "m" }, "exactly one"],
     [{ message: "m", delayMinutes: 1, at: "2030-01-01T00:00:00Z" }, "exactly one"],
     [{ message: "m", delayMinutes: -1 }, "zero or more"],
@@ -85,6 +109,13 @@ describe("schedule", () => {
     [{ message: "m", delayMinutes: "0x10" }, "zero or more"],
     [{ message: "m", delayMinutes: "1e3" }, "zero or more"],
     [{ message: "m", delayMinutes: "-2" }, "zero or more"],
+    [{ message: "m", delayMinutes: "." }, "zero or more"],
+    [{ message: "m", delayMinutes: " " }, "zero or more"],
+    [{ message: "m", delayMinutes: "1.2.3" }, "zero or more"],
+    [{ message: "m", delayMinutes: "1 2" }, "zero or more"],
+    [{ message: "m", delayMinutes: "+1" }, "zero or more"],
+    [{ message: "m", delayMinutes: "1x" }, "zero or more"],
+    [{ message: "m", delayMinutes: "1..2" }, "zero or more"],
     [{ message: "m", delayMinutes: 1e12 }, "too far away"],
     [{ message: "m", delayMinutes: "1000000000000" }, "too far away"],
     [{ message: "m", at: "tomorrow-ish" }, "not a date"],

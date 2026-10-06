@@ -39,7 +39,7 @@ export interface ExecutionFailed {
   readonly id: string
   readonly data: {
     readonly sessionID: string
-    readonly error: { readonly type: string; readonly message: string; readonly status?: number | undefined }
+    readonly error: { readonly type: string; readonly message: string; readonly status?: number }
   }
 }
 

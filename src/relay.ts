@@ -28,8 +28,8 @@ export interface PermissionAsked {
     readonly sessionID: string
     readonly action: string
     readonly resources: ReadonlyArray<string>
-    readonly save?: ReadonlyArray<string> | undefined
-    readonly message?: string | undefined
+    readonly save?: ReadonlyArray<string>
+    readonly message?: string
   }
 }
 

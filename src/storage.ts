@@ -15,3 +15,14 @@ export async function scanAll<T>(storage: Pick<Storage, "scan">, prefix: string)
   } while (after)
   return values
 }
+
+/**
+ * The one value the whole process keeps under `Symbol.for(key)`, made by `create` the first time,
+ * so every instance of the plugin, and every copy of it loaded later, gets the same one.
+ */
+export function processWide<T>(key: string, create: () => T): T {
+  const registry = globalThis as Record<symbol, unknown>
+  const symbol = Symbol.for(key)
+  registry[symbol] ??= create()
+  return registry[symbol] as T
+}

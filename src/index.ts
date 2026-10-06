@@ -10,6 +10,7 @@ import { cancel, deliverDue, schedule, TICK_MS, type LaterPorts } from "./later.
 import { answer, pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
 import { answerQuestion, isQuestion, joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
 import { pruneExpired } from "./roster.js"
+import { processWide } from "./storage.js"
 import { watchChildren, type WatchState } from "./watch.js"
 import { builtVersions, versionNotice } from "./version.js"
 import { listen, readConfig, subscribe, unsubscribe, type WebhookConfig, type WebhookPorts } from "./webhook.js"
@@ -113,10 +114,7 @@ interface Receiver {
   readonly instances: Set<WebhookPorts>
   readonly server: Promise<Server | undefined>
 }
-const receivers = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.receiver")] ??= {}) as {
-  current?: Receiver
-  closing?: Promise<void>
-}
+const receivers = processWide<{ current?: Receiver; closing?: Promise<void> }>("opencode-courier.receiver", () => ({}))
 
 const sameSettings = (a: WebhookConfig, b: WebhookConfig) =>
   a.port === b.port && a.host === b.host && a.secret === b.secret && a.maxBytes === b.maxBytes
@@ -140,7 +138,8 @@ function startReceiver(config: WebhookConfig, log: (message: string) => void) {
         },
       ),
   }
-  return (receivers.current = receiver)
+  receivers.current = receiver
+  return receiver
 }
 
 function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
@@ -171,22 +170,20 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 
 // One claim set for every instance in the process: OpenCode sets the plugin up once per project
 // location, and those instances share one storage.
-const claimed: Set<string> = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.claimed")] ??=
-  new Set<string>()) as Set<string>
+const claimed = processWide("opencode-courier.claimed", () => new Set<string>())
 
 // Likewise one set of handled events, since every instance may be sent the same event, and the
 // permission requests sessions were told about and have not answered.
-const watched: WatchState = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.watched")] ??= {
+const watched = processWide<WatchState>("opencode-courier.watched", () => ({
   seen: new Set<string>(),
   waiting: new Set<string>(),
   answered: new Set<string>(),
-}) as WatchState
+}))
 
 // The permission domain of every loaded instance, under a key of its own. OpenCode keeps a request
 // where its session runs, so a request of an isolated child is answered through the instance loaded
 // in its worktree.
-const locations: Map<object, Permissions> = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.locations")] ??=
-  new Map<object, Permissions>()) as Map<object, Permissions>
+const locations = processWide("opencode-courier.locations", () => new Map<object, Permissions>())
 const permissions = () => locations.values()
 
 const rethrow =

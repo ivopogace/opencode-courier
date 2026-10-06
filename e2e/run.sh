@@ -295,8 +295,8 @@ echo "the parent asks the person and calls courier_answer in one step: its quest
 out=$(prompt "COURIER-QUESTION-BOTH")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
-child_form=$(form_of "$child" "" 45)
-check "the child asks" "$([ -n "$child_form" ] && echo true || echo false)"
+# The child's form goes within a moment of the notice, so the notice, not the form, shows it asked.
+check "the child asks, and the parent is told" "$(has_text "$parent" 'asks="question"' 45)"
 check "the parent's question was withdrawn, naming the answers courier_answer passed on" \
   "$(has_text "$parent" 'already answered with courier_answer (User has answered your questions: "Which greeting?"="Hi"' 45)"
 check "courier_answer passed it on" "$(has_text "$parent" "Passed the answers to question")"

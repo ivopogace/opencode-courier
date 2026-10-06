@@ -4,7 +4,7 @@ import { Cause, Effect, Exit, Result } from "effect"
 import { END_TURN, envelope } from "./courier.js"
 import { origin, STAYS_QUIET } from "./relay.js"
 import { allEntries, answeringTop, lineage, lineageIn, RETENTION_MS, type RosterStorage } from "./roster.js"
-import { scanAll } from "./storage.js"
+import { processWide, scanAll } from "./storage.js"
 
 type Context = Plugin.Context
 type ToolEditor = Parameters<Parameters<EffectPlugin.Context["tool"]["transform"]>[0]>[0]
@@ -102,9 +102,7 @@ interface Shared {
   readonly closingWaiters: Set<() => void>
 }
 // Field by field, so a copy of the plugin loaded later in the process gets what an older copy lacks.
-const sharedState = ((globalThis as Record<symbol, unknown>)[Symbol.for("opencode-courier.questions")] ??= {}) as {
-  -readonly [K in keyof Shared]?: Shared[K]
-}
+const sharedState = processWide<{ -readonly [K in keyof Shared]?: Shared[K] }>("opencode-courier.questions", () => ({}))
 sharedState.questions ??= new Map()
 sharedState.noticed ??= new Set()
 sharedState.shown ??= new Map()

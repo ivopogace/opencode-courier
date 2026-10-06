@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Exit, Fiber } from "effect"
 import {
   answeredText,
+  byCodeUnit,
   answerQuestion,
   forgetQuestions,
   joinRelay,
@@ -920,6 +921,24 @@ describe("the question tool of a spawned session", () => {
     expect(Exit.isSuccess(parentExit) && parentExit.value.metadata).toMatchObject({ relayed: "question_1", passed: true })
     const childExit = await exitOf(child)
     expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [["Hey"]] })
+  })
+
+  test("labels a locale would rank as equal still match in any order", async () => {
+    const { tool, ask } = await setUp()
+    // "é" written as one character and as "e" with a combining accent: localeCompare ranks them equal.
+    const accents = (labels: string[]) => [{ question: "Which spelling?", header: "Spelling", options: labels.map((label) => ({ label, description: "" })) }]
+    const labels = ["Zebra", "apple", "\u00e9", "e\u0301"]
+    const child = ask("ses_child", accents(labels))
+    await settle()
+
+    const parent = ask("ses_parent", accents([...labels].reverse()))
+    await settle()
+    formOf(tool, "ses_parent").answer([["apple"]])
+
+    const childExit = await exitOf(child)
+    expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [["apple"]] })
+    await exitOf(parent)
+    expect([...labels].sort(byCodeUnit)).toEqual(["Zebra", "apple", "e\u0301", "\u00e9"])
   })
 
   test("the parent's own question with the same choices but other words is not linked", async () => {

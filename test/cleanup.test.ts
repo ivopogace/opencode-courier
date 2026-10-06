@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { cleanup, headOf, inspectWorktree, keepReason, MAX_LISTED, type CleanupPorts, type WorktreeState } from "../src/cleanup.js"
+import { cleanup, findGit, GIT_ENV, GIT_LOCATIONS, headOf, inspectWorktree, keepReason, MAX_LISTED, type CleanupPorts, type WorktreeState } from "../src/cleanup.js"
 import { record, rosterKey, type RosterEntry } from "../src/roster.js"
 
 const clean: WorktreeState = { changes: [], commits: [] }
@@ -285,5 +285,37 @@ describe("inspectWorktree", () => {
 
   test("is undefined for a directory that no longer exists", async () => {
     expect(await inspectWorktree(join(tmpdir(), "courier-no-such-worktree"))).toBeUndefined()
+  })
+})
+
+describe("findGit", () => {
+  const only = (...present: string[]) => (path: string) => present.includes(path)
+
+  test("takes the first usual install location that exists, never PATH", () => {
+    expect(findGit({ PATH: "/tmp/evil" }, "linux", only("/usr/bin/git", "/usr/local/bin/git"))).toBe("/usr/bin/git")
+    expect(findGit({}, "darwin", only("/opt/homebrew/bin/git"))).toBe("/opt/homebrew/bin/git")
+    expect(findGit({}, "linux", only("/run/current-system/sw/bin/git"))).toBe("/run/current-system/sw/bin/git")
+    expect(findGit({}, "win32", only(GIT_LOCATIONS.win32[0]!))).toBe(String.raw`C:\Program Files\Git\cmd\git.exe`)
+  })
+
+  test(`takes ${GIT_ENV} when it is an absolute path, and refuses a bare name`, () => {
+    expect(findGit({ [GIT_ENV]: " /nix/store/abc-git/bin/git " }, "linux", only())).toBe("/nix/store/abc-git/bin/git")
+    expect(() => findGit({ [GIT_ENV]: "git" }, "linux", only("/usr/bin/git"))).toThrow(`${GIT_ENV} must be an absolute path, not git.`)
+  })
+
+  test("says where it looked when git is in none of those places", () => {
+    expect(() => findGit({}, "linux", only())).toThrow(`git is in none of ${GIT_LOCATIONS.posix.join(", ")}; set ${GIT_ENV} to its absolute path.`)
+  })
+
+  test("a worktree git cannot be found for is reported, not read as clean", async () => {
+    const saved = process.env[GIT_ENV]
+    process.env[GIT_ENV] = "relative/git"
+    try {
+      await expect(inspectWorktree(tmpdir())).rejects.toThrow(`${GIT_ENV} must be an absolute path`)
+      expect(await headOf(tmpdir())).toBeUndefined()
+    } finally {
+      if (saved === undefined) delete process.env[GIT_ENV]
+      else process.env[GIT_ENV] = saved
+    }
   })
 })

@@ -757,9 +757,19 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
     }) as ReturnType<Execute>
 }
 
+/**
+ * Orders strings by their UTF-16 code units, the default sort's order, stated. The order is never
+ * shown; it only has to come out the same on both sides of a comparison, which a locale-aware
+ * compare would not promise: it can rank two different labels as equal and leave them as listed.
+ */
+export function byCodeUnit(a: string, b: string) {
+  if (a === b) return 0
+  return a < b ? -1 : 1
+}
+
 // The labels in any order: the answers are labels, so a top session listing them differently still asks the same.
 const choices = (questions: ReadonlyArray<Prompt>) =>
-  JSON.stringify(questions.map((prompt) => [!!prompt.multiple, prompt.options.map((option) => option.label).sort()]))
+  JSON.stringify(questions.map((prompt) => [!!prompt.multiple, prompt.options.map((option) => option.label).sort(byCodeUnit)]))
 const wording = (questions: ReadonlyArray<Prompt>) =>
   JSON.stringify(questions.map((prompt) => prompt.question.trim().replace(/\s+/g, " ").toLowerCase()))
 

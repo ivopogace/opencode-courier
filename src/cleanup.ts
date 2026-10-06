@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
+import { isAbsolute } from "node:path"
 import { rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
@@ -104,9 +105,47 @@ export async function cleanup(ports: CleanupPorts, parentID: string, input: Clea
   return { sessionID: input.sessionID, directory, outcome: "removed" }
 }
 
+/** Names the git to run, by absolute path, overriding the places `GIT_LOCATIONS` lists. */
+export const GIT_ENV = "OPENCODE_COURIER_GIT"
+
+/**
+ * Where git is looked for, in order: its usual install locations, never `PATH`, so a writable
+ * directory early in `PATH` cannot put another program in its place.
+ */
+export const GIT_LOCATIONS: Readonly<Record<"posix" | "win32", readonly string[]>> = {
+  posix: [
+    "/usr/bin/git",
+    "/usr/local/bin/git",
+    "/opt/homebrew/bin/git",
+    // NixOS, and nix-darwin.
+    "/run/current-system/sw/bin/git",
+  ],
+  win32: [String.raw`C:\Program Files\Git\cmd\git.exe`, String.raw`C:\Program Files (x86)\Git\cmd\git.exe`],
+}
+
+/**
+ * The git to run: `OPENCODE_COURIER_GIT` when it is an absolute path, otherwise the first of
+ * `GIT_LOCATIONS` that exists. Throws when there is none.
+ */
+export function findGit(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  platform: NodeJS.Platform = process.platform,
+  exists: (path: string) => boolean = existsSync,
+) {
+  const named = env[GIT_ENV]?.trim()
+  if (named) {
+    if (!isAbsolute(named)) throw new Error(`${GIT_ENV} must be an absolute path, not ${named}.`)
+    return named
+  }
+  const locations = GIT_LOCATIONS[platform === "win32" ? "win32" : "posix"]
+  const found = locations.find((path) => exists(path))
+  if (!found) throw new Error(`git is in none of ${locations.join(", ")}; set ${GIT_ENV} to its absolute path.`)
+  return found
+}
+
 function git(directory: string, args: string[]) {
   return new Promise<string>((resolve, reject) =>
-    execFile("git", ["-C", directory, ...args], { maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) =>
+    execFile(findGit(), ["-C", directory, ...args], { maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) =>
       error ? reject(new Error(`git ${args[0]} in ${directory}: ${stderr.trim() || error.message}`)) : resolve(stdout),
     ),
   )

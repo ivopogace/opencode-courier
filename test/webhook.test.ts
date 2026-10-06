@@ -155,6 +155,52 @@ describe("githubEvent", () => {
     expect(githubEvent("issues", { action: "opened", issue: { number: 4 }, repository: { full_name: "o/r" } })!.topics).toContain("github:o/r#4")
   })
 
+  test("summarises pushes, review comments, issue comments, CI off any pull request and other events", () => {
+    const repository = { full_name: "o/r" }
+    const sender = { login: "me" }
+
+    expect(githubEvent("push", { ref: "refs/heads/main", commits: [{}], compare: "https://c", repository, sender })).toEqual({
+      source: "github",
+      name: "push",
+      topics: ["github:o/r"],
+      summary: "push to o/r refs/heads/main by me: 1 commit\nhttps://c",
+    })
+    expect(githubEvent("push", { commits: [{}, {}], repository })!.summary).toBe("push to o/r : 2 commits")
+
+    const inline = githubEvent("pull_request_review_comment", {
+      action: "created",
+      pull_request: { number: 5 },
+      comment: { path: "src/a.ts", line: 12, html_url: "https://h", body: "nit" },
+      repository,
+      sender,
+    })!
+    expect(inline.topics).toEqual(["github:o/r", "github:o/r#5"])
+    expect(inline.summary).toBe("pull request comment created on o/r#5 by me\non src/a.ts:12\nhttps://h\n\nnit")
+    const fileLevel = githubEvent("pull_request_review_comment", { action: "created", comment: { path: "b.ts" }, repository })!
+    expect(fileLevel.summary).toBe("pull request comment created on o/r#? by ?\non b.ts")
+    expect(fileLevel.topics).toEqual(["github:o/r"])
+
+    const onIssue = githubEvent("issue_comment", { action: "created", issue: { number: 4 }, comment: { user: { login: "bob" } }, repository })!
+    expect(onIssue.summary).toBe("issue comment created on o/r#4 by bob")
+
+    const run = githubEvent("workflow_run", {
+      action: "completed",
+      workflow_run: { head_branch: "main", head_sha: "abcdef1234567", pull_requests: [], details_url: "https://d" },
+      repository,
+    })!
+    expect(run.topics).toEqual(["github:o/r"])
+    expect(run.summary).toBe('workflow run "main" on o/r (abcdef1): completed\nhttps://d')
+    expect(githubEvent("check_run", { action: "completed", check_run: {}, repository })!.summary).toBe("check run on o/r (?): completed")
+
+    const review = githubEvent("pull_request_review", { action: "dismissed", review: {}, repository, sender })!
+    expect(review.summary).toBe("review dismissed on o/r#? by me: ?")
+
+    expect(githubEvent("issues", { action: "closed", issue: { number: 4, title: "Bug", html_url: "https://i" }, repository })!.summary).toBe(
+      'issue o/r#4 closed\n"Bug"\nhttps://i',
+    )
+    expect(githubEvent("release", { action: "published", repository, sender })!.summary).toBe("release published on o/r by me")
+  })
+
   test("ignores pings and payloads without a repository", () => {
     expect(githubEvent("ping", { zen: "Keep it simple.", repository: { full_name: "o/r" } })).toBeUndefined()
     expect(githubEvent("push", {})).toBeUndefined()
@@ -275,6 +321,16 @@ describe("receive", () => {
     expect(seen.has(sign(SECRET, review).slice(7))).toBe(true)
   })
 
+  test("a delivery whose dispatch throws is unmarked, so it can be retried, and the failure surfaces", async () => {
+    const { ports } = fakePorts()
+    const broken: WebhookPorts = { ...ports, storage: { ...ports.storage, scan: async () => Promise.reject(new Error("storage down")) } }
+    const seen = new Seen()
+    const request = githubRequest(review, { "x-hub-signature-256": sign(SECRET, review) })
+
+    await expect(receive(broken, SECRET, request, seen)).rejects.toThrow("storage down")
+    expect(seen.has(sign(SECRET, review).slice(7))).toBe(false)
+  })
+
   test("a replay with the signature re-cased or padded is not delivered again either", async () => {
     const { ports, delivered } = fakePorts()
     await subscribe(ports, "ses_parent", "Codertocat/Hello-World")
@@ -334,6 +390,7 @@ describe("receive", () => {
     expect((await receive(ports, SECRET, signed("/github", "not json", { "x-github-event": "push" }))).status).toBe(400)
     expect(await receive(ports, SECRET, signed("/github", '{"zen":"z"}', { "x-github-event": "ping" }))).toEqual({ status: 200, body: "ignored ping" })
     expect((await receive(ports, SECRET, signed("/hook/a%2Fb", "x"))).status).toBe(400)
+    expect(await receive(ports, SECRET, signed("/hook/%E0", "x"))).toEqual({ status: 400, body: "bad topic" })
     expect(await receive(ports, SECRET, signed("/hook/deploys", '{"text":"prod is live"}'))).toEqual({ status: 202, body: "delivered to 1 session(s)" })
     expect(delivered[0].text).toContain('<courier from="hook" event="deploys">\nprod is live')
   })

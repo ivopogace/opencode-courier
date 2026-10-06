@@ -144,6 +144,113 @@ const CI_EVENTS: Record<string, string> = { check_run: "check run", check_suite:
 /** Pull request and issue actions worth a wake-up; edits, labels, assignments and pushes to the branch are not. */
 const ITEM_ACTIONS = new Set(["opened", "reopened", "closed", "ready_for_review"])
 
+/** What every GitHub delivery carries, read once for the summary of its event. */
+interface Delivery {
+  readonly name: string
+  readonly body: Record<string, any>
+  readonly repo: string
+  readonly action: string | undefined
+  readonly sender: string | undefined
+  /** ` by <sender>`, or nothing when the delivery names no sender. */
+  readonly by: string
+}
+
+/** The pull request and issue numbers an event concerns, and the lines of its summary. */
+interface Summary {
+  readonly numbers: readonly number[]
+  readonly lines: readonly string[]
+}
+
+/** The lines that have any text, in order. */
+const present = (...lines: (string | undefined)[]) => lines.filter((line): line is string => !!line)
+const quoted = (text: string | undefined) => (text ? `"${text}"` : undefined)
+const numbered = (n: number | undefined) => (n === undefined ? [] : [n])
+const ref = (repo: string, n: number | undefined) => `${repo}#${n ?? "?"}`
+/** A review's or comment's own text, clipped, after a blank line. */
+const quote = (text: string | undefined) => (text ? ["", clip(text)] : [])
+
+function ciSummary({ name, body, repo, action }: Delivery): Summary | undefined {
+  if (action !== "completed") return undefined
+  const run = obj(body[name])
+  const numbers = new Set<number>()
+  for (const item of Array.isArray(run.pull_requests) ? run.pull_requests : []) {
+    const n = num(obj(item).number)
+    if (n !== undefined) numbers.add(n)
+  }
+  const label = str(run.name) ?? str(obj(run.app).name) ?? str(run.head_branch) ?? ""
+  const named = label ? ` "${label}"` : ""
+  const sha = str(run.head_sha)?.slice(0, 7) ?? "?"
+  const where = numbers.size ? [...numbers].map((n) => `${repo}#${n}`).join(", ") : `${repo} (${sha})`
+  return {
+    numbers: [...numbers],
+    lines: present(`${CI_EVENTS[name]}${named} on ${where}: ${str(run.conclusion) ?? "completed"}`, str(run.html_url) ?? str(run.details_url)),
+  }
+}
+
+function reviewSummary({ body, repo, action, sender }: Delivery): Summary {
+  const review = obj(body.review)
+  const pr = obj(body.pull_request)
+  const n = num(pr.number)
+  const by = str(obj(review.user).login) ?? sender ?? "?"
+  return {
+    numbers: numbered(n),
+    lines: [
+      ...present(`review ${action ?? ""} on ${ref(repo, n)} by ${by}: ${str(review.state) ?? "?"}`, quoted(str(pr.title)), str(review.html_url)),
+      ...quote(str(review.body)),
+    ],
+  }
+}
+
+function commentSummary({ name, body, repo, action, sender }: Delivery): Summary {
+  const comment = obj(body.comment)
+  const issue = obj(body.issue)
+  const n = num(obj(body.pull_request).number) ?? num(issue.number)
+  const what = name === "issue_comment" && !issue.pull_request ? "issue comment" : "pull request comment"
+  const by = str(obj(comment.user).login) ?? sender ?? "?"
+  const path = str(comment.path)
+  const line = num(comment.line) ? `:${comment.line}` : ""
+  return {
+    numbers: numbered(n),
+    lines: [
+      ...present(`${what} ${action ?? ""} on ${ref(repo, n)} by ${by}`, path && `on ${path}${line}`, str(comment.html_url)),
+      ...quote(str(comment.body)),
+    ],
+  }
+}
+
+function itemSummary({ name, body, repo, action, by }: Delivery): Summary | undefined {
+  if (!action || !ITEM_ACTIONS.has(action)) return undefined
+  const pullRequest = name === "pull_request"
+  const item = obj(pullRequest ? body.pull_request : body.issue)
+  const n = num(item.number)
+  const what = pullRequest ? "pull request" : "issue"
+  const done = pullRequest && action === "closed" && item.merged === true ? "merged" : action
+  return { numbers: numbered(n), lines: present(`${what} ${ref(repo, n)} ${done}${by}`, quoted(str(item.title)), str(item.html_url)) }
+}
+
+function pushSummary({ body, repo, by }: Delivery): Summary {
+  const commits = Array.isArray(body.commits) ? body.commits.length : 0
+  const plural = commits === 1 ? "" : "s"
+  return { numbers: [], lines: present(`push to ${repo} ${str(body.ref) ?? ""}${by}: ${commits} commit${plural}`, str(body.compare)) }
+}
+
+function otherSummary({ name, repo, action, by }: Delivery): Summary {
+  const acted = action ? ` ${action}` : ""
+  return { numbers: [], lines: [`${name}${acted} on ${repo}${by}`] }
+}
+
+const SUMMARIES: Record<string, (delivery: Delivery) => Summary | undefined> = {
+  check_run: ciSummary,
+  check_suite: ciSummary,
+  workflow_run: ciSummary,
+  pull_request_review: reviewSummary,
+  pull_request_review_comment: commentSummary,
+  issue_comment: commentSummary,
+  pull_request: itemSummary,
+  issues: itemSummary,
+  push: pushSummary,
+}
+
 /**
  * Maps a GitHub delivery to its topics (`github:owner/repo` and, for pull requests and issues,
  * `github:owner/repo#N`) and a summary. Undefined for deliveries nobody should be woken for: pings,
@@ -153,68 +260,17 @@ export function githubEvent(name: string, payload: unknown): Event | undefined {
   const body = obj(payload)
   const repo = str(obj(body.repository).full_name)
   if (name === "ping" || !repo) return undefined
-  const action = str(body.action)
   const sender = str(obj(body.sender).login)
-  const numbers = new Set<number>()
-  const lines: string[] = []
-  const pr = obj(body.pull_request)
-  const issue = obj(body.issue)
-  const by = sender ? ` by ${sender}` : ""
-
-  if (Object.hasOwn(CI_EVENTS, name)) {
-    const run = obj(body[name])
-    if (action !== "completed") return undefined
-    for (const item of Array.isArray(run.pull_requests) ? run.pull_requests : []) {
-      const n = num(obj(item).number)
-      if (n !== undefined) numbers.add(n)
-    }
-    const label = str(run.name) ?? str(obj(run.app).name) ?? str(run.head_branch) ?? ""
-    const where = numbers.size ? [...numbers].map((n) => `${repo}#${n}`).join(", ") : `${repo} (${str(run.head_sha)?.slice(0, 7) ?? "?"})`
-    lines.push(`${CI_EVENTS[name]}${label ? ` "${label}"` : ""} on ${where}: ${str(run.conclusion) ?? "completed"}`)
-    const url = str(run.html_url) ?? str(run.details_url)
-    if (url) lines.push(url)
-  } else if (name === "pull_request_review") {
-    const review = obj(body.review)
-    const n = num(pr.number)
-    if (n !== undefined) numbers.add(n)
-    lines.push(
-      `review ${action ?? ""} on ${repo}#${n ?? "?"} by ${str(obj(review.user).login) ?? sender ?? "?"}: ${str(review.state) ?? "?"}`,
-    )
-    if (str(pr.title)) lines.push(`"${str(pr.title)}"`)
-    if (str(review.html_url)) lines.push(str(review.html_url)!)
-    if (str(review.body)) lines.push("", clip(str(review.body)!))
-  } else if (name === "pull_request_review_comment" || name === "issue_comment") {
-    const comment = obj(body.comment)
-    const n = num(pr.number) ?? num(issue.number)
-    if (n !== undefined) numbers.add(n)
-    const what = name === "issue_comment" && !issue.pull_request ? "issue comment" : "pull request comment"
-    lines.push(`${what} ${action ?? ""} on ${repo}#${n ?? "?"} by ${str(obj(comment.user).login) ?? sender ?? "?"}`)
-    if (str(comment.path)) lines.push(`on ${str(comment.path)}${num(comment.line) ? `:${comment.line}` : ""}`)
-    if (str(comment.html_url)) lines.push(str(comment.html_url)!)
-    if (str(comment.body)) lines.push("", clip(str(comment.body)!))
-  } else if (name === "pull_request" || name === "issues") {
-    if (!action || !ITEM_ACTIONS.has(action)) return undefined
-    const item = name === "pull_request" ? pr : issue
-    const n = num(item.number)
-    if (n !== undefined) numbers.add(n)
-    const merged = name === "pull_request" && action === "closed" && pr.merged === true ? "merged" : action
-    lines.push(`${name === "pull_request" ? "pull request" : "issue"} ${repo}#${n ?? "?"} ${merged ?? "updated"}${by}`)
-    if (str(item.title)) lines.push(`"${str(item.title)}"`)
-    if (str(item.html_url)) lines.push(str(item.html_url)!)
-  } else if (name === "push") {
-    const commits = Array.isArray(body.commits) ? body.commits.length : 0
-    lines.push(`push to ${repo} ${str(body.ref) ?? ""}${by}: ${commits} commit${commits === 1 ? "" : "s"}`)
-    if (str(body.compare)) lines.push(str(body.compare)!)
-  } else {
-    lines.push(`${name}${action ? ` ${action}` : ""} on ${repo}${by}`)
-  }
-
+  // Own keys only: an event named `toString` or `constructor` is not one of ours.
+  const summarise = Object.hasOwn(SUMMARIES, name) ? SUMMARIES[name]! : otherSummary
+  const summary = summarise({ name, body, repo, action: str(body.action), sender, by: sender ? ` by ${sender}` : "" })
+  if (!summary) return undefined
   const lower = repo.toLowerCase()
   return {
     source: "github",
     name,
-    topics: [`github:${lower}`, ...[...numbers].map((n) => `github:${lower}#${n}`)],
-    summary: lines.join("\n"),
+    topics: [`github:${lower}`, ...summary.numbers.map((n) => `github:${lower}#${n}`)],
+    summary: summary.lines.join("\n"),
   }
 }
 

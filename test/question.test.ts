@@ -52,7 +52,7 @@ const toppings = [
  * dismissed, or is interrupted, which cancels the form.
  */
 function questionTool() {
-  const forms = new Map<string, { sessionID: string; answer: (answers: string[][]) => void; dismiss: () => void }>()
+  const forms = new Map<string, { sessionID: string; answer: (answers: string[][]) => void; dismiss: () => void; fail: (message: string) => void }>()
   const cancelled: string[] = []
   const refused = new Set<string>()
   const execute = (input: any, context: any) =>
@@ -63,6 +63,10 @@ function questionTool() {
           sessionID: context.sessionID,
           answer: (answers) => resume(Effect.succeed({ answers })),
           dismiss: () => resume(Effect.succeed({ dismissed: true as const })),
+          fail: (message) => {
+            forms.delete(context.id)
+            resume(Effect.die(new Error(message)))
+          },
         })
         if (showForms) formShown({ data: { form: { sessionID: context.sessionID, metadata: { kind: "question", tool: { messageID: "msg", id: context.id } } } } })
       })
@@ -348,6 +352,116 @@ describe("the question tool of a spawned session", () => {
     await settle()
     expect(store.size).toBe(1)
     expect(notices(told, "answered")).toEqual([])
+  })
+
+  test("dismissed in the child's own session while the parent asks the person: the parent's linked question is withdrawn", async () => {
+    const { told, tool, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    const parent = ask("ses_parent")
+    await settle()
+
+    formOf(tool, "ses_child").dismiss()
+
+    expect(Exit.isFailure(await exitOf(child))).toBe(true)
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value).toMatchObject({
+      output: { answers: [[]] },
+      content: expect.stringContaining(
+        "Session ses_child no longer waits on this question: it was dismissed in its own session, which ends its turn; message it with courier_send if it should carry on.",
+      ),
+      metadata: { relayed: "question_1", withdrawn: true },
+    })
+    await settle()
+    expect(notices(told, "answered")).toEqual([])
+  })
+
+  test("a child's question call that fails: the parent's linked question is withdrawn, or the parent is told", async () => {
+    const { told, tool, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    const parent = ask("ses_parent")
+    await settle()
+
+    formOf(tool, "ses_child").fail("form lost")
+
+    expect(Exit.isFailure(await exitOf(child))).toBe(true)
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value.content).toContain(
+      "Session ses_child no longer waits on this question: it was ended: its question call failed (Error: form lost).",
+    )
+
+    const again = ask("ses_child")
+    await settle()
+    formOf(tool, "ses_child").fail("form lost")
+    expect(Exit.isFailure(await exitOf(again))).toBe(true)
+    await settle()
+    const settled = notices(told, "answered")
+    expect(settled).toHaveLength(1)
+    expect(settled[0].text).toContain('answered="failed" request="question_2"')
+    expect(settled[0].text).toContain("was ended without an answer: its question call failed (Error: form lost)")
+  })
+
+  test("the parent's linked question answered after courier_answer already did: nothing more is passed on", async () => {
+    const { ports, tool, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    const parent = ask("ses_parent")
+    await settle()
+
+    await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
+    expect(Exit.isSuccess(await exitOf(child))).toBe(true)
+    formOf(tool, "ses_parent").answer([["Hey"]])
+
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value.content).toContain(
+      "Session ses_child no longer waits on this question; nothing was passed on.",
+    )
+    expect(Exit.isSuccess(parentExit) && parentExit.value.metadata).toMatchObject({ relayed: "question_1", passed: false })
+  })
+
+  test("the parent's linked question answered in a way the child's does not take: the parent is told to pass it on itself", async () => {
+    const { tool, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    const parent = ask("ses_parent")
+    await settle()
+
+    formOf(tool, "ses_parent").answer([["Hi", "Hey"]])
+
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value.content).toContain(
+      'Passing these answers on to session ses_child failed (question 1 ("Greeting") takes one answer, not 2.); call courier_answer with requestID "question_1" to pass them on.',
+    )
+    expect(Exit.isSuccess(parentExit) && parentExit.value.metadata).toMatchObject({ relayed: "question_1", passed: false })
+    formOf(tool, "ses_child").answer([["Hi"]])
+    expect(Exit.isSuccess(await exitOf(child))).toBe(true)
+  })
+
+  test("stopped on both sides while the parent cannot be told: that is logged", async () => {
+    const { ports, told, ask } = await setUp()
+    const logged: string[] = []
+    ;(ports as any).log = (message: string) => logged.push(message)
+    const child = ask("ses_child")
+    await settle()
+    const parent = ask("ses_parent")
+    await settle()
+    let attempts = 0
+    ;(ports.session as any).synthetic = async () => {
+      attempts++
+      throw new Error("server busy")
+    }
+
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    // The child's own cut-off is not told while the parent asks the person.
+    expect(attempts).toBe(0)
+    await Effect.runPromise(Fiber.interrupt(parent))
+    await settle()
+
+    expect(attempts).toBe(1)
+    expect(told).toHaveLength(1)
+    expect(logged).toEqual(["courier question: could not pass on what happened to question_1: Error: server busy"])
   })
 
   test("a child whose turn is stopped while it asks: the question stays, the parent is told, and the answer goes as a message", async () => {

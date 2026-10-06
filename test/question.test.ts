@@ -446,16 +446,22 @@ describe("the question tool of a spawned session", () => {
     await settle()
     const parent = ask("ses_parent")
     await settle()
+    let attempts = 0
     ;(ports.session as any).synthetic = async () => {
+      attempts++
       throw new Error("server busy")
     }
 
     await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    // The child's own cut-off is not told while the parent asks the person.
+    expect(attempts).toBe(0)
     await Effect.runPromise(Fiber.interrupt(parent))
     await settle()
 
-    expect(notices(told, "stopped")).toHaveLength(0)
-    expect(logged).toContain("courier question: could not pass on what happened to question_1: Error: server busy")
+    expect(attempts).toBe(1)
+    expect(told).toHaveLength(1)
+    expect(logged).toEqual(["courier question: could not pass on what happened to question_1: Error: server busy"])
   })
 
   test("a child whose turn is stopped while it asks: the question stays, the parent is told, and the answer goes as a message", async () => {

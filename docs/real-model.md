@@ -327,6 +327,15 @@ brief changed, and:
   saved fan-out runs pass all seven checks with it. The permission and question runs above asked
   by form, a path those lines do not touch, and were not re-run.
 
+## On OpenCode 2.0.23, after #55
+
+On 2026-10-06, with `opencode v2.0.23` and `longcat-2.5-preview-free`, after the change that
+withdraws the parent's linked question once `courier_answer` answers it (#55), which reworded the
+results of a withdrawn question and of a pick that was not passed on: the question relay passed
+all six checks, linked (the parent's form held the child's three greetings), 5 seconds from the
+person's answer to the child's report. The parent asked by form and did not call `courier_answer`,
+so the new results were not reached; the linked path's result, unchanged, was.
+
 ## Cost
 
 Nothing: every run used free models. The 26 fan-out runs with a summary made 290 model requests,

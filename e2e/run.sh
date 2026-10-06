@@ -289,6 +289,32 @@ check "dismissed in the parent's session" "$([ "$(dismiss_form "$parent" "$paren
 check "the child was told, carried on and reported" "$(has_text "$parent" "CHILD DISMISSED" 45)"
 check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
 
+echo "the parent asks again while its dismissal is held: the new question is withdrawn, and the child carries on without the answers"
+ask_question COURIER-QUESTION
+check "dismissed in the parent's session" "$([ "$(dismiss_form "$parent" "$parent_form")" = 204 ] && echo true || echo false)"
+# Within the two seconds the dismissal is held, over the API as a prompt from the TUI would come
+# (opencode run cancels the question form it opens).
+check "the parent is prompted to ask again" "$([[ $(person "session/$parent/prompt" '{"text":"COURIER-ASK-AGAIN"}') == 20* ]] && echo true || echo false)"
+check "the parent's new question was withdrawn, saying the child carries on without the answers" \
+  "$(has_text "$parent" "already dismissed in your session, so it carries on without the answers" 45)"
+check "and no longer shown" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
+check "the child was told, carried on and reported" "$(has_text "$parent" "CHILD DISMISSED" 45)"
+
+# A model slip: the parent asks the person and calls courier_answer in the same step, so its
+# question is linked and answered at once.
+echo "the parent asks the person and calls courier_answer in one step: its question is withdrawn, and the courier_answer pick counts"
+out=$(prompt "COURIER-QUESTION-BOTH")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+# The child's form goes within a moment of the notice, so the notice, not the form, shows it asked.
+check "the child asks, and the parent is told" "$(has_text "$parent" 'asks="question"' 45)"
+check "the parent's question was withdrawn, naming the answers courier_answer passed on" \
+  "$(has_text "$parent" 'already answered with courier_answer (User has answered your questions: "Which greeting?"="Hi"' 45)"
+check "courier_answer passed it on" "$(has_text "$parent" "Passed the answers to question")"
+check "the parent's form is gone, unanswered" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
+check "the child carried on with the courier_answer pick" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
+check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
+
 echo "the child's turn is stopped while the parent asks the person; their answer reaches it as a message"
 ask_question COURIER-QUESTION
 check "the child's turn is interrupted" "$([[ $(person "session/$child/interrupt") == 20* ]] && echo true || echo false)"

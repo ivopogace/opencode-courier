@@ -185,8 +185,10 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
   [More](docs/reference.md#a-child-that-asks-for-permission).
 - **A child that asks a question** with OpenCode's question tool has it shown in the top session.
   When that session asks you the same question, your answer goes to the child's waiting call as if
-  you had answered there; a question stays answerable across an interrupted turn or a server
-  restart. [More](docs/reference.md#a-child-that-asks-a-question).
+  you had answered there. Whichever answer reaches the child first counts, in its session, in the
+  parent's or by `courier_answer`, and the other question is withdrawn; a question stays answerable
+  across an interrupted turn or a server restart.
+  [More](docs/reference.md#a-child-that-asks-a-question).
 - **The plugin remembers.** Each parent's children (`courier_children`), pending `courier_later`
   messages and open questions survive a compaction or a restart; entries are dropped after 14 days.
   [Roster](docs/reference.md#roster), [Scheduled messages](docs/reference.md#scheduled-messages).

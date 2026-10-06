@@ -402,22 +402,140 @@ describe("the question tool of a spawned session", () => {
     expect(settled[0].text).toContain("was ended without an answer: its question call failed (Error: form lost)")
   })
 
-  test("the parent's linked question answered after courier_answer already did: nothing more is passed on", async () => {
-    const { ports, tool, ask } = await setUp()
+  test("courier_answer while the parent asks the person: the parent's linked question is withdrawn, naming the answers", async () => {
+    const { ports, store, told, tool, ask } = await setUp()
     const child = ask("ses_child")
     await settle()
     const parent = ask("ses_parent")
     await settle()
 
-    await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
-    expect(Exit.isSuccess(await exitOf(child))).toBe(true)
-    formOf(tool, "ses_parent").answer([["Hey"]])
+    const answered = await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
 
+    expect(answered).toMatchObject({ answered: true, by: "result", answers: [["Hi"]] })
+    const childExit = await exitOf(child)
+    expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [["Hi"]] })
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value).toMatchObject({
+      output: { answers: [["Hi"]] },
+      content:
+        'Session ses_child no longer waits on this question: it was already answered with courier_answer (User has answered your questions: "Which greeting?"="Hi". You can now continue with the user\'s answers in mind.). There is nothing to pass on; tell the person it is settled.',
+      metadata: { relayed: "question_1", withdrawn: true },
+    })
+    // Both forms are gone, and nothing more is said or kept.
+    expect(tool.cancelled).toHaveLength(2)
+    expect(tool.forms.size).toBe(0)
+    await settle()
+    expect(store.has("question/question_1")).toBe(false)
+    expect(told).toHaveLength(1)
+    expect((await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hey"] })).answered).toBe(false)
+  })
+
+  test("courier_answer to a cut-off question while the parent asks the person: the parent's question is withdrawn, and the child gets one message", async () => {
+    const { ports, told, tool, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    const parent = ask("ses_parent")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+
+    const answered = await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hey"] })
+
+    expect(answered).toMatchObject({ answered: true, by: "message" })
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value).toMatchObject({
+      output: { answers: [["Hey"]] },
+      content: expect.stringContaining("it was already answered with courier_answer ("),
+      metadata: { relayed: "question_1", withdrawn: true },
+    })
+    expect(tool.forms.size).toBe(0)
+    await settle()
+    const messages = told.filter((item) => item.sessionID === "ses_child")
+    expect(messages).toHaveLength(1)
+    expect(messages[0].text).toContain('"Which greeting?"="Hey"')
+    expect(notices(told, "stopped")).toEqual([])
+    expect((await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })).answered).toBe(false)
+  })
+
+  test("a pick in the parent's question that lands while courier_answer's answer is still going out is not passed on, and the note says so", async () => {
+    const { ports, told, tool, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    const parent = ask("ses_parent")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    const synthetic = ports.session.synthetic
+    let release!: () => void
+    ;(ports.session as any).synthetic = (input: any) =>
+      new Promise<void>((resolve) => (release = resolve)).then(() => ((ports.session as any).synthetic = synthetic)(input))
+
+    const answering = answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
+    await settle()
+    // The person picks in the parent's session just then: OpenCode takes their pick before the withdrawal.
+    formOf(tool, "ses_parent").answer([["Hey"]])
+    await settle()
+    release()
+
+    expect(await answering).toMatchObject({ answered: true, by: "message" })
     const parentExit = await exitOf(parent)
     expect(Exit.isSuccess(parentExit) && parentExit.value.content).toContain(
-      "Session ses_child no longer waits on this question; nothing was passed on.",
+      "Session ses_child no longer waits on this question: it had already been answered or settled, so these answers were not passed on; tell the person so.",
     )
     expect(Exit.isSuccess(parentExit) && parentExit.value.metadata).toMatchObject({ relayed: "question_1", passed: false })
+    const messages = told.filter((item) => item.sessionID === "ses_child")
+    expect(messages).toHaveLength(1)
+    expect(messages[0].text).toContain('"Which greeting?"="Hi"')
+  })
+
+  test("a dismissal in the parent's question that lands after courier_answer answered it is dropped, and logged", async () => {
+    const { ports, told, tool, ask } = await setUp()
+    timing.dismissalGraceMs = 50
+    const logged: string[] = []
+    ;(ports as any).log = (message: string) => logged.push(message)
+    const child = ask("ses_child")
+    await settle()
+    const parent = ask("ses_parent")
+    await settle()
+
+    formOf(tool, "ses_parent").dismiss()
+    expect(Exit.isFailure(await exitOf(parent))).toBe(true)
+    // Within the grace the dismissal is held for, courier_answer answers the question.
+    const answered = await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    expect(answered).toMatchObject({ answered: true, by: "result" })
+    const childExit = await exitOf(child)
+    expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [["Hi"]] })
+    expect(logged).toEqual(["courier question: the dismissal of question_1 was not passed on: it had already been answered or settled"])
+    expect(told).toHaveLength(1)
+  })
+
+  test("a dismissal held while the parent asks again: the second question is withdrawn, since the child carries on without the answers", async () => {
+    const { tool, ask } = await setUp()
+    timing.dismissalGraceMs = 50
+    const child = ask("ses_child")
+    await settle()
+    const first = ask("ses_parent")
+    await settle()
+
+    formOf(tool, "ses_parent").dismiss()
+    expect(Exit.isFailure(await exitOf(first))).toBe(true)
+    const second = ask("ses_parent")
+    await settle()
+    expect(formOf(tool, "ses_parent")).toBeDefined()
+
+    const childExit = await exitOf(child)
+    expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [[]] })
+    const secondExit = await exitOf(second)
+    expect(Exit.isSuccess(secondExit) && secondExit.value).toMatchObject({
+      output: { answers: [[]] },
+      content: expect.stringContaining(
+        "Session ses_child no longer waits on this question: it was already dismissed in your session, so it carries on without the answers.",
+      ),
+      metadata: { relayed: "question_1", withdrawn: true },
+    })
+    expect(tool.forms.size).toBe(0)
   })
 
   test("the parent's linked question answered in a way the child's does not take: the parent is told to pass it on itself", async () => {

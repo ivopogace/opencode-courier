@@ -53,19 +53,26 @@ export type Elsewhere =
 /** What the top session's answer does to a call that waits: answers it, or dismisses it. */
 type Outcome = { readonly answers: Answers } | { readonly dismissed: true }
 
+/**
+ * Why a linked call is withdrawn: its question was settled elsewhere, or the top session's outcome
+ * reached it another way (courier_answer, or a dismissal through an earlier call linked to it).
+ */
+type Withdrawal = Elsewhere | { readonly by: "top"; readonly outcome: Outcome }
+
 /** A question as stored; `answered` marks one whose answer went out but that could not be dropped. */
 type Stored = Asked & { readonly answered?: true }
 
 /**
  * A question this process knows: one whose call waits (`call`), or one whose call was cut off,
- * which is answered by message. `link` is the top session's question call passing its answer on.
+ * which is answered by message. `link` withdraws the top session's question call that passes its
+ * answer on, once the question is settled without that call.
  */
 interface Question extends Asked {
   /** The directory of the location the call runs in, whose shutdown withdraws its form. */
   directory?: string
   /** Hands the waiting call the top session's outcome; true once the call has ended with it. */
   call?: (outcome: Outcome) => Promise<boolean>
-  link?: (how: Elsewhere) => void
+  link?: (how: Withdrawal) => void
   /** Storing the question and telling the top session, while that is under way. */
   relaying?: Promise<boolean>
   /** Working out what became of it once its call ended without the top session's answer. */
@@ -359,6 +366,8 @@ async function passOn(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   if (known?.call && (await known.call(outcome))) {
     claim(shared.answered, id)
     shared.questions.delete(id)
+    // A call of the top session linked to it, asking the person, is withdrawn: it is settled.
+    known.link?.({ by: "top", outcome })
     return "result" as const
   }
   // Its call has just ended: whether it was cut off, and so stays registered, or was settled, and
@@ -375,9 +384,11 @@ async function passOn(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
     shared.questions.set(id, known)
   }
   await sendAnswer(ports, asked, outcome)
-  // Dropped only once the message is out, so a failed send leaves it to be answered again.
+  // Dropped only once the message is out, so a failed send leaves it to be answered again; the
+  // linked call, if any, goes then too, not before the answer is out.
   claim(shared.answered, id)
   shared.questions.delete(id)
+  known.link?.({ by: "top", outcome })
   await forget(ports, asked)
   return "message" as const
 }
@@ -784,8 +795,9 @@ function unlinkedResult(result: ToolResult, sessionID: string, questions: Readon
 
 /**
  * After a linked call failed, its location still loaded: a dismissal by the person, unless the
- * location is closing (see settle), dismisses the question they were asked for too; a call stopped
- * while the asking call was cut off as well tells the top session, which nobody has told yet.
+ * location is closing (see settle), dismisses the question they were asked for too, or is logged
+ * when the question was answered meanwhile; a call stopped while the asking call was cut off as
+ * well tells the top session, which nobody has told yet.
  */
 async function linkedCallFailed(
   ports: QuestionPorts,
@@ -797,21 +809,36 @@ async function linkedCallFailed(
   try {
     if (isDismissal(cause)) {
       if (await closingSoon(loaded, directory, timing.dismissalGraceMs)) return
-      await deliver(ports, linked, { dismissed: true })
+      if ((await deliver(ports, linked, { dismissed: true })) === undefined)
+        ports.log(`courier question: the dismissal of ${linked.requestID} was not passed on: it had already been answered or settled`)
     } else if (!linked.call && shared.questions.get(linked.requestID) === linked) await tellCutOff(ports, linked, "stopped")
   } catch (error) {
     ports.log(`courier question: could not pass on what happened to ${linked.requestID}: ${String(error)}`)
   }
 }
 
+/** How a linked call's question was settled without it, as its withdrawn result puts it, with the answers that count. */
+function withdrawnHow(linked: Question, how: Withdrawal): { readonly what: string; readonly answers: Answers } {
+  const none = () => linked.questions.map(() => [])
+  switch (how.by) {
+    case "top":
+      return "answers" in how.outcome
+        ? { what: `already answered with courier_answer (${answeredText(linked.questions, how.outcome.answers)})`, answers: how.outcome.answers }
+        : { what: "already dismissed in your session, so it carries on without the answers", answers: none() }
+    case "child":
+      return { what: `answered in its own session (${answeredText(linked.questions, how.answers)})`, answers: how.answers }
+    case "dismissed":
+      return { what: "dismissed in its own session, which ends its turn; message it with courier_send if it should carry on", answers: none() }
+    default:
+      return { what: `ended: its question call failed (${how.error})`, answers: none() }
+  }
+}
+
 /** The result of a linked call withdrawn because its question was settled without it. */
-function withdrawnResult(linked: Question, how: Elsewhere) {
-  let what: string
-  if (how.by === "child") what = `answered in its own session (${answeredText(linked.questions, how.answers)})`
-  else if (how.by === "dismissed") what = "dismissed in its own session, which ends its turn; message it with courier_send if it should carry on"
-  else what = `ended: its question call failed (${how.error})`
+function withdrawnResult(linked: Question, how: Withdrawal) {
+  const { what, answers } = withdrawnHow(linked, how)
   return {
-    output: { answers: how.by === "child" ? how.answers : linked.questions.map(() => []) },
+    output: { answers },
     content: `Session ${linked.sessionID} no longer waits on this question: it was ${what}. There is nothing to pass on; tell the person it is settled.`,
     metadata: { relayed: linked.requestID, withdrawn: true },
   }
@@ -823,7 +850,8 @@ function passedNote(linked: Question, passed: string | undefined) {
     return `These answers were passed on to session ${linked.sessionID}, which carries on with them; do not call courier_answer for ${linked.requestID}. ${END_TURN}`
   if (passed === "message")
     return `These answers were passed on to session ${linked.sessionID} as a message, since its question had been cut off; it carries on with them. Do not call courier_answer for ${linked.requestID}. ${END_TURN}`
-  if (passed === undefined) return `Session ${linked.sessionID} no longer waits on this question; nothing was passed on.`
+  if (passed === undefined)
+    return `Session ${linked.sessionID} no longer waits on this question: it had already been answered or settled, so these answers were not passed on; tell the person so.`
   return `Passing these answers on to session ${linked.sessionID} failed (${passed.slice(7)}); call courier_answer with requestID "${linked.requestID}" to pass them on.`
 }
 
@@ -842,8 +870,8 @@ function linking(ports: () => QuestionPorts | undefined, directory: string, ask:
         return current ? unlinkedResult(result, context.sessionID, questions) : result
       }
       const loaded = () => ports() === current
-      let settled!: (how: Elsewhere) => void
-      const elsewhere = new Promise<Elsewhere>((resolve) => (settled = resolve))
+      let settled!: (how: Withdrawal) => void
+      const elsewhere = new Promise<Withdrawal>((resolve) => (settled = resolve))
       linked.link = settled
       const ended = yield* Effect.raceFirst(
         ask(input, context).pipe(Effect.map((result) => ({ by: "person" as const, result }))),

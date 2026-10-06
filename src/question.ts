@@ -810,7 +810,7 @@ async function linkedCallFailed(
     if (isDismissal(cause)) {
       if (await closingSoon(loaded, directory, timing.dismissalGraceMs)) return
       if ((await deliver(ports, linked, { dismissed: true })) === undefined)
-        ports.log(`courier question: the dismissal of ${linked.requestID} was not passed on: it had already been answered`)
+        ports.log(`courier question: the dismissal of ${linked.requestID} was not passed on: it had already been answered or settled`)
     } else if (!linked.call && shared.questions.get(linked.requestID) === linked) await tellCutOff(ports, linked, "stopped")
   } catch (error) {
     ports.log(`courier question: could not pass on what happened to ${linked.requestID}: ${String(error)}`)
@@ -851,7 +851,7 @@ function passedNote(linked: Question, passed: string | undefined) {
   if (passed === "message")
     return `These answers were passed on to session ${linked.sessionID} as a message, since its question had been cut off; it carries on with them. Do not call courier_answer for ${linked.requestID}. ${END_TURN}`
   if (passed === undefined)
-    return `Session ${linked.sessionID} no longer waits on this question: it had already been answered, so these answers were not passed on; tell the person so.`
+    return `Session ${linked.sessionID} no longer waits on this question: it had already been answered or settled, so these answers were not passed on; tell the person so.`
   return `Passing these answers on to session ${linked.sessionID} failed (${passed.slice(7)}); call courier_answer with requestID "${linked.requestID}" to pass them on.`
 }
 

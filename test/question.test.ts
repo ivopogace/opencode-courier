@@ -480,7 +480,7 @@ describe("the question tool of a spawned session", () => {
     expect(await answering).toMatchObject({ answered: true, by: "message" })
     const parentExit = await exitOf(parent)
     expect(Exit.isSuccess(parentExit) && parentExit.value.content).toContain(
-      "Session ses_child no longer waits on this question: it had already been answered, so these answers were not passed on; tell the person so.",
+      "Session ses_child no longer waits on this question: it had already been answered or settled, so these answers were not passed on; tell the person so.",
     )
     expect(Exit.isSuccess(parentExit) && parentExit.value.metadata).toMatchObject({ relayed: "question_1", passed: false })
     const messages = told.filter((item) => item.sessionID === "ses_child")
@@ -507,7 +507,7 @@ describe("the question tool of a spawned session", () => {
     expect(answered).toMatchObject({ answered: true, by: "result" })
     const childExit = await exitOf(child)
     expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [["Hi"]] })
-    expect(logged).toEqual(["courier question: the dismissal of question_1 was not passed on: it had already been answered"])
+    expect(logged).toEqual(["courier question: the dismissal of question_1 was not passed on: it had already been answered or settled"])
     expect(told).toHaveLength(1)
   })
 

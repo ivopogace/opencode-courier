@@ -41,10 +41,11 @@ jobs:
           if-no-files-found: error
 
   sonar:
-    # SonarCloud reads the unit coverage and records issues and the quality gate on the PR. Runs
-    # only where SONAR_TOKEN exists: on `main` and on pull requests from this repository. It does
-    # not run for a fork's pull request, which gets no secrets, or inside the release's CI run, a
-    # tag that does not need a scan of its own.
+    # SonarCloud reads the unit coverage and records issues and the quality gate on the PR, and the
+    # job fails when the gate does (`sonar.qualitygate.wait` in sonar-project.properties). Runs only
+    # where SONAR_TOKEN exists: on `main` and on pull requests from this repository. It does not run
+    # for a fork's pull request, which gets no secrets, or inside the release's CI run, a tag that
+    # does not need a scan of its own.
     name: SonarCloud
     needs: unit
     if: >-

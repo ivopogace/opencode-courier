@@ -248,8 +248,9 @@ a captured delivery, and it also means a GitHub Redeliver of a delivery that alr
 ignored. Redelivering one that failed works. Generic senders that post the same text twice should
 add something unique, such as a timestamp, to the body.
 
-A session that OpenCode no longer knows loses its subscriptions the next time a delivery for it
-fails, and `courier_subscribe` refuses a session id that does not exist.
+The subscribed sessions are sent their messages at once, so a session slow to take one holds up
+none of the others. A session that OpenCode no longer knows loses its subscriptions the next time a
+delivery for it fails, and `courier_subscribe` refuses a session id that does not exist.
 
 A session sees a short summary (event, repository and number, who, state or conclusion, link, and
 at most 1500 characters of a review or comment body), wrapped in `<courier from="github"

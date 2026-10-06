@@ -240,6 +240,28 @@ describe("relayPending", () => {
   })
 })
 
+describe("relayPending, concurrency", () => {
+  test("a notice slow to go out does not hold up the others", async () => {
+    const second = { ...request, id: "per_2", sessionID: "ses_child2" }
+    const { ports, sent } = fakePorts([], [request, second])
+    await record(ports.storage, child())
+    await record(ports.storage, { ...child(), sessionID: "ses_child2" })
+    let secondSent: () => void = () => undefined
+    const told = new Promise<void>((resolve) => (secondSent = resolve))
+    ;(ports.session as any).synthetic = async (input: any) => {
+      // Waits for the other notice, or gives up after a while when there is none.
+      if (input.metadata.requestID === "per_1") await Promise.race([told, new Promise((resolve) => setTimeout(resolve, 200))])
+      sent.push(input)
+      if (input.metadata.requestID === "per_2") secondSent()
+      return { id: "msg_1" }
+    }
+
+    await relayPending(ports, fresh())
+
+    expect(sent.map((notice: any) => notice.metadata.requestID)).toEqual(["per_2", "per_1"])
+  })
+})
+
 describe("claim", () => {
   test("remembers a bounded number of values, dropping the oldest", () => {
     const set = new Set<string>()

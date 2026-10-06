@@ -68,14 +68,17 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   if (!claim(seen, event.id)) return []
   const { sessionID, error } = event.data
   const entries = await entriesOf(ports.storage, sessionID)
-  for (const entry of entries)
-    await ports.session.synthetic({
-      sessionID: entry.parentID,
-      text: envelope(sessionID, failureNotice(entry.title, error), { failed: error.type }),
-      description: `Session ${sessionID} failed`,
-      metadata: { source: "courier", from: sessionID, failed: true },
-      delivery: "steer",
-    })
+  await Promise.all(
+    entries.map((entry) =>
+      ports.session.synthetic({
+        sessionID: entry.parentID,
+        text: envelope(sessionID, failureNotice(entry.title, error), { failed: error.type }),
+        description: `Session ${sessionID} failed`,
+        metadata: { source: "courier", from: sessionID, failed: true },
+        delivery: "steer",
+      }),
+    ),
+  )
   return entries.map((entry) => entry.parentID)
 }
 
@@ -137,9 +140,12 @@ export async function reportReplied(ports: WatchPorts, state: WatchState, event:
  */
 export async function relayPending(ports: WatchPorts, state: WatchState) {
   const sessions = new Set((await allEntries(ports.storage)).map((entry) => entry.sessionID))
-  for (const sessionID of sessions)
-    for (const request of await ports.permission.list({ sessionID }).catch(() => []))
-      await reportAsked(ports, state, { id: `pending:${request.id}`, data: request })
+  // Each request is claimed before its notice goes out, so relaying them all at once tells each once.
+  const relay = async (sessionID: string) => {
+    const requests = await ports.permission.list({ sessionID }).catch(() => [])
+    await Promise.all(requests.map((request) => reportAsked(ports, state, { id: `pending:${request.id}`, data: request })))
+  }
+  await Promise.all([...sessions].map(relay))
 }
 
 const pause = (ms: number, signal: AbortSignal) =>

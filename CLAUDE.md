@@ -32,7 +32,8 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   scripted OpenAI-compatible stand-in model, with `e2e/search-plugin` as a stand-in web search
   provider, `e2e/probe-plugin` logging the events each location's instance receives, and `e2e/kv.ts`
   to read or remove the plugin's storage keys in OpenCode's database. New behaviour gets a scenario
-  there.
+  there. `e2e/two-servers.sh`, not in CI: two servers on one data directory, with the same stand-in
+  model; its results are in `docs/plugin-api-notes.md`.
 - `e2e/real-model.sh` (with `e2e/real-model.mjs`, `e2e/real-model-permission.mjs` for
   `COURIER_SCENARIO=permission` and `e2e/real-model-question.mjs` for `COURIER_SCENARIO=question`):
   smoke test with a real model, free on OpenCode Zen by default; not in CI. Re-run it after changing tool descriptions, results or the child brief;

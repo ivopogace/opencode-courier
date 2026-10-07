@@ -15,6 +15,9 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   `src/question.ts`: relaying a child's question, by wrapping OpenCode's `question` tool.
   `src/storage.ts`: shared storage helpers and `processWide`, the process-wide registry.
   `src/json.ts`: readers for untyped JSON (webhook payloads, plugin options).
+  `src/bounded.ts`: `addBounded` and `setBounded`, the bounded `Set` and `Map` of remembered ids
+  (claimed events, answered requests, accepted webhook digests), as functions over the plain built-in
+  types with the bound as an argument; it imports nothing of the plugin's.
   `src/tools.ts`: the ten courier tools: input schemas, descriptions and results.
   `src/notices.ts`: every other model-facing string (tool result texts, the child brief, the
   envelope, the failure, permission, form, question and webhook notices), as pure functions that

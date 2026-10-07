@@ -372,7 +372,8 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh   # a fe
 It schedules ten `courier_later` messages at once (`COURIER-LATER 0.5`, ten parallel
 `opencode run`s), so they fall due within a few seconds of each other, first with the plugin loaded
 on both servers at the same moment, so the two schedulers tick some milliseconds apart, then again
-after B is restarted and its plugin loaded half a tick (7.5 s) after A's. In between it starts a
+after B is restarted and its plugin loaded half a tick (7.5 s) after A's ticks, which fall where
+the first round's messages were queued. In between it starts a
 child that asks for a permission (`COURIER-ASK`), has the parent answer it with `courier_answer` in
 a turn on B and then in one on A, and starts a child whose turn fails (`COURIER-FAIL`). The script
 prints the counts and exits 1 when one differs from the results below, except the count with the
@@ -380,16 +381,18 @@ schedulers in step, which varies from run to run (below) and is only printed.
 
 Results at 2.0.24, runs on 2026-10-07. Runs 1 to 3 used earlier drafts of the script: run 1
 scheduled three messages one after another, and none of the three tried `courier_answer` or
-restarted B.
+restarted B. Runs 4 to 6 timed B's restart from when A's plugin load was asked for rather than from
+A's ticks, so the two were between about 6.5 and 7.5 s apart, give or take the difference in setup
+time.
 
-| | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Run 6 |
-|---|---|---|---|---|---|---|
-| `courier_later`, schedulers in step: messages delivered twice | 0 of 3 | 10 of 10 | 6 of 10 | 3 of 10 | 0 of 10 | 3 of 10 |
-| `courier_later`, schedulers half a tick apart: delivered twice | not run | not run | not run | 0 of 10 | 0 of 10 | 0 of 10 |
-| notices of the child's permission request | 1 | 1 | 1 | 1 | 1 | 1 |
-| `courier_answer` in a turn on B reaches the request | not run | not run | not run | no | no | no |
-| `courier_answer` in a turn on A reaches the request | not run | not run | not run | yes | yes | yes |
-| notices of the child's failed turn | 1 | 1 | 1 | 1 | 1 | 1 |
+| | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Run 6 | Run 7 |
+|---|---|---|---|---|---|---|---|
+| `courier_later`, schedulers in step: messages delivered twice | 0 of 3 | 10 of 10 | 6 of 10 | 3 of 10 | 0 of 10 | 3 of 10 | 6 of 10 |
+| `courier_later`, schedulers half a tick apart: delivered twice | not run | not run | not run | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 |
+| notices of the child's permission request | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| `courier_answer` in a turn on B reaches the request | not run | not run | not run | no | no | no | no |
+| `courier_answer` in a turn on A reaches the request | not run | not run | not run | yes | yes | yes | yes |
+| notices of the child's failed turn | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
 
 No message was ever delivered more than twice, and none was lost.
 

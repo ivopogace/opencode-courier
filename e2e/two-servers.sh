@@ -13,7 +13,7 @@
 # same database, and with it the same plugin storage. Prompts go to server A; server B has the
 # plugin loaded for the project, so its scheduler and its watcher run, and is prompted only to try
 # courier_answer there. ROUNDS (default 10) sets how many courier_later messages are scheduled each
-# time. Each server's event stream (/api/event) is recorded in events-a.jsonl and events-b*.jsonl,
+# time. Each server's event stream (/api/event) is recorded in events-a.sse and events-b*.sse,
 # which shows which server queued each message. Results and the setup are in
 # docs/plugin-api-notes.md; the script exits 1 when a result differs from what was seen at the
 # pinned version, so a host where two servers behave differently stands out. The count with the
@@ -30,8 +30,9 @@ SERVER_PORT=${SERVER_PORT:-4610}
 OTHER_PORT=${OTHER_PORT:-4611}
 CHILD_DELAY_MS=${CHILD_DELAY_MS:-5000}
 ROUNDS=${ROUNDS:-10}
-# src/later.ts's TICK_MS: how often each scheduler looks for due messages.
-TICK_MS=15000
+# How often each scheduler looks for due messages: src/later.ts's TICK_MS.
+TICK_MS=$(sed -n 's/^export const TICK_MS = \([0-9_]*\)$/\1/p' "$ROOT/src/later.ts" | tr -d _)
+[ -n "$TICK_MS" ] || { echo "cannot read TICK_MS from src/later.ts"; exit 1; }
 WORK=${E2E_WORK:-$(mktemp -d)}
 MOCK_PID=
 OTHER_PID=
@@ -70,34 +71,42 @@ courier_on() {
   local url state
   url="$1/api/plugin?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")"
   for _ in $(seq 1 30); do
-    state=$(curl -sf -u "opencode:$OPENCODE_PASSWORD" "$url" | jq -r '.data[] | select(.id == "courier") | .state.status')
+    state=$(curl -sf -u "opencode:$OPENCODE_PASSWORD" "$url" | jq -r '.data[] | select(.id == "courier") | .state.status' || true)
     if [ -n "$state" ]; then echo "$state"; return; fi
     sleep 1
   done
   echo missing
 }
 expect_active() { [ "$2" = active ] || { echo "the plugin is not active on server $1: $2"; exit 1; }; }
-# Records server $1's event stream into $2, one JSON event per line.
+# Records server $1's event stream, as it comes (server-sent events), into $2.
 record_events() {
-  curl -sN -u "opencode:$OPENCODE_PASSWORD" "$1/api/event" | sed -un 's/^data: //p' >"$2" &
+  curl -sN -u "opencode:$OPENCODE_PASSWORD" "$1/api/event" >"$2" &
   STREAM_PIDS="$STREAM_PIDS $!"
 }
-# How many courier messages the server whose events are in $1 queued for sessions, by its event
-# stream: synthetic messages whose metadata carries key $2 ("scheduled", "asks", "failed").
+# The events recorded in $1, one JSON event per line.
+events_in() { sed -n 's/^data: //p' "$1"; }
+# How many courier messages the server whose stream is in $1 queued for sessions: synthetic messages
+# whose metadata carries "scheduled", "asks" and "failed", the three counts in that order.
 queued_by() {
-  jq -s --arg key "$2" '[.[] | select(.type == "session.inbox.enqueued") | .data.item.payload.metadata? // {} |
-    select(.source == "courier" and has($key))] | length' "$1"
+  events_in "$1" | jq -rs '[.[] | select(.type == "session.inbox.enqueued") | .data.item.payload.metadata? // {} |
+    select(.source == "courier")] | [(map(select(has("scheduled"))) | length), (map(select(has("asks"))) | length),
+    (map(select(has("failed"))) | length)] | join(", ")'
 }
+# When the schedulers ticked in step: the time, in ms, the first scheduled message was queued.
+first_tick() { cat "$@" | sed -n 's/^data: //p' | jq -s '[.[] | select(.type == "session.inbox.enqueued" and
+  .data.item.payload.metadata.scheduled? != null) | .created] | min'; }
 prompt_on() { (cd "$WORK/project" && "$OPENCODE" run --server "$1" --auto --format json "$2" </dev/null); }
 prompt_in_on() { (cd "$WORK/project" && "$OPENCODE" run --server "$1" --auto --format json --session "$2" "$3" </dev/null); }
 tool_state() { jq -c --arg tool "$1" 'select(.type == "tool_use" and .part.tool == $tool) | .part.state'; }
 parent_of() { jq -r 'select(.type == "tool_use") | .sessionID' | head -1; }
-now_ms() { node -e 'console.log(Date.now())'; }
+now_ms() { date +%s%3N; }
 # How many synthetic messages of session $1 contain $2.
 count() { api "session/$1/message" | jq --arg text "$2" '[.data[] | select(.type == "synthetic") | select(.text | contains($text))] | length'; }
-# Waits until session $1 has a synthetic message containing $2, up to $3 (default 45) s.
+# Waits until session $1 has a synthetic message containing $2, up to $3 (default 45) s; fails if
+# it never comes.
 wait_for() {
   for _ in $(seq 1 "${3:-45}"); do [ "$(count "$1" "$2")" -gt 0 ] && return; sleep 1; done
+  return 1
 }
 # Schedules ROUNDS courier_later messages through server A at once, waits for them and for two
 # more ticks, and prints how many times each was delivered. Scheduled in parallel, they fall due
@@ -114,7 +123,7 @@ later_rounds() {
       { echo "courier_later did not complete; see $WORK/later-$1-$round.json" >&2; exit 1; }
     parents+=("$(parent_of <"$WORK/later-$1-$round.json")")
   done
-  for parent in "${parents[@]}"; do wait_for "$parent" "CHECK-IN" 75; done
+  for parent in "${parents[@]}"; do wait_for "$parent" "CHECK-IN" 75 || true; done
   sleep $((2 * TICK_MS / 1000 + 5))
   for parent in "${parents[@]}"; do count "$parent" "CHECK-IN"; done | paste -sd' '
 }
@@ -127,6 +136,8 @@ result() {
 }
 # How many of the counts in $1 are above one.
 duplicates() { tr ' ' '\n' <<<"$1" | awk '$1 > 1 { d++ } END { print d + 0 }'; }
+# How many of the counts in $1 are zero: messages never delivered.
+lost() { tr ' ' '\n' <<<"$1" | awk '$1 == 0 { d++ } END { print d + 0 }'; }
 
 mkdir -p "$WORK/project" "$HOME"
 build_plugin
@@ -159,10 +170,9 @@ start_other
 version=$("$OPENCODE" --version)
 echo "OpenCode $version: server A on $SERVER, server B on $OTHER, one data directory"
 echo "  database files: $(cd "$XDG_DATA_HOME" && find . -name '*.db' | tr '\n' ' ')"
-record_events "$SERVER" "$WORK/events-a.jsonl"
-record_events "$OTHER" "$WORK/events-b.jsonl"
+record_events "$SERVER" "$WORK/events-a.sse"
+record_events "$OTHER" "$WORK/events-b.sse"
 # Loaded on both at once, so the two schedulers tick in step, some milliseconds apart.
-loaded=$(now_ms)
 courier_on "$SERVER" >"$WORK/courier-a" &
 loading=$!
 courier_on "$OTHER" >"$WORK/courier-b"
@@ -177,7 +187,7 @@ in_step=$(later_rounds in-step)
 echo "a child asks for a permission"
 out=$(prompt_on "$SERVER" "COURIER-ASK")
 parent=$(parent_of <<<"$out")
-wait_for "$parent" 'asks="permission"'
+wait_for "$parent" 'asks="permission"' || true
 sleep 15
 asked=$(count "$parent" 'asks="permission"')
 echo "  the parent answers it with courier_answer in a turn on server B, then on server A"
@@ -187,23 +197,28 @@ answer_a=$(prompt_in_on "$SERVER" "$parent" "COURIER-ANSWER once" | tool_state c
 echo "a child's turn fails"
 out=$(prompt_on "$SERVER" "COURIER-FAIL")
 parent=$(parent_of <<<"$out")
-wait_for "$parent" 'failed='
+wait_for "$parent" 'failed=' || true
 sleep 15
 failed=$(count "$parent" 'failed=')
 
-echo "server B restarted, its plugin loaded half a tick after server A's"
+echo "server B restarted, its plugin loaded half a tick after server A's ticks"
+# A's ticks fall where the first round's deliveries were queued, by either stream (in step, they
+# were milliseconds apart); B's scheduler ticks first when its plugin is set up, a moment after the
+# load is asked for, which is left out.
+tick=$(first_tick "$WORK/events-a.sse" "$WORK/events-b.sse")
+[ "$tick" != null ] || { echo "no scheduled message was delivered in step"; exit 1; }
 stop_other
 start_other
-record_events "$OTHER" "$WORK/events-b-restarted.jsonl"
-sleep $(((TICK_MS + TICK_MS / 2 - ($(now_ms) - loaded) % TICK_MS) % TICK_MS / 1000))
+record_events "$OTHER" "$WORK/events-b-restarted.sse"
+wait_ms=$(((tick + TICK_MS / 2 - $(now_ms)) % TICK_MS))
+[ "$wait_ms" -ge 0 ] || wait_ms=$((wait_ms + TICK_MS))
+sleep "$((wait_ms / 1000)).$(printf '%03d' $((wait_ms % 1000)))"
 expect_active B "$(courier_on "$OTHER")"
 echo "$ROUNDS courier_later messages fall due while the schedulers tick out of step"
 out_of_step=$(later_rounds out-of-step)
 
 echo "which server queued the messages, by its event stream (scheduled, permission, failure)"
-for events in "$WORK"/events-*.jsonl; do
-  echo "  $(basename "$events" .jsonl): $(queued_by "$events" scheduled), $(queued_by "$events" asks), $(queued_by "$events" failed)"
-done
+for events in "$WORK"/events-*.sse; do echo "  $(basename "$events" .sse): $(queued_by "$events")"; done
 
 echo "results (OpenCode $version)"
 # Not compared: how close the two ticks fall varies from run to run (at the pin, from none to every
@@ -211,6 +226,7 @@ echo "results (OpenCode $version)"
 echo "  deliveries of each courier_later message, schedulers in step: $in_step" \
   "($(duplicates "$in_step") of $ROUNDS delivered twice)"
 echo "  deliveries of each courier_later message, schedulers out of step: $out_of_step"
+result "messages never delivered" "$(lost "$in_step $out_of_step")" 0
 result "some delivered twice, out of step" "$([ "$(duplicates "$out_of_step")" -gt 0 ] && echo yes || echo no)" no
 result "notices of the permission request" "$asked" 1
 result "courier_answer in a turn on server B reached the request" "$answer_b" false

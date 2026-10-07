@@ -339,3 +339,43 @@ What a plugin sees of forms:
   tells the session at the top about a form of a spawned session, other than a question, and that
   only the person can answer it; it cannot list the forms a session shows for `courier_status`, nor
   relay one shown while it was not following events.
+
+## Which plugin instances receive an isolated child's events (2026-10-07)
+
+OpenCode sets the plugin up once per location, and an isolated child runs in a location of its own,
+its worktree. Whether every location's instance receives the events the watcher follows, wherever
+they come from, decides whether one event subscription per process could replace one per instance
+(#76). `form.created` was known to reach every instance (above); the rest were not shown. Observed on
+`2.0.24` (`@opencode/cli@2.0.24`, the pin), by the live test's scenario "an isolated child's events
+reach the plugin instance of every location" (#77):
+
+- `e2e/probe-plugin`, loaded next to the courier from the project's `opencode.json` and so in every
+  location, the child's worktree included, follows `event.subscribe()` from its `setup`, as the
+  courier's watcher does from its own, and appends `{ pid, location, type, id, sessionID }` per event
+  to the file named by its `log` option, plus `probe.loaded` and `probe.unloaded` lines. A probe
+  sees what the courier's instances see: the same context, the same domain, the same call.
+- Three locations are loaded: the project (the parent's), the isolated child's worktree, and an
+  earlier child's worktree, opened by a session run there, that has no part in the exchange. The
+  child asks for a permission, answered in its own session; asks a question, answered in its own
+  session; asks again, answered in the parent's, so the question relay withdraws the child's form;
+  and then its model answers 403, which fails its turn.
+
+| Event, from the child's worktree | Parent's instance | Child's instance | Third location's instance |
+|---|---|---|---|
+| `permission.asked` | yes | yes | yes |
+| `permission.replied` | yes | yes | yes |
+| `form.created` (both forms) | yes | yes | yes |
+| `form.replied` | yes | yes | yes |
+| `form.cancelled` | yes | yes | yes |
+| `session.execution.failed` | yes | yes | yes |
+
+So every event type the watcher handles reaches every location's instance, each event once per
+instance, with the same event id; an event's location does not limit who receives it. The scenario
+asserts this for every instance loaded in the server process at the time, not only those three.
+
+Seen in the same runs, not asserted: on a graceful shutdown OpenCode closes the locations one after
+another, and each `location.shutdown` reaches every instance still loaded, its own location's
+included. An instance only receives events published while it is subscribed: one loaded later does
+not see what came before, which is why the watcher relays pending permission requests when it
+(re)subscribes. And `GET /api/plugin?directory=<worktree>` did not boot that worktree's location
+(the server log showed no "location services booted" for it); a session run from the directory did.

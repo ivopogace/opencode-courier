@@ -341,7 +341,8 @@ OPENCODE_BIN=$(which opencode) e2e/real-model.sh  # smoke test with a real model
 plugin loaded and `e2e/mock-model.mjs` as the model: an OpenAI-compatible server that replies from a
 fixed script. It walks every tool through the behaviour above, including a permission request, a
 question answered on either side, a web search's provider form (with `e2e/search-plugin`, a
-stand-in search provider), a server restart with pending work, a signed and an unsigned
+stand-in search provider), which plugin instances receive an isolated child's events (with
+`e2e/probe-plugin`, an event probe), a server restart with pending work, a signed and an unsigned
 GitHub delivery, and the package installed from a stand-in npm registry. It needs node, npm, bun,
 git, curl, jq and openssl. New behaviour gets a scenario there.
 

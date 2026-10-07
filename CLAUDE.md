@@ -27,7 +27,7 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
 - `test/`: unit tests against a fake plugin context (`bun test`).
 - `e2e/run.sh`: live test against a real OpenCode V2 server, driven by `e2e/mock-model.mjs`, a
   scripted OpenAI-compatible stand-in model, with `e2e/search-plugin` as a stand-in web search
-  provider. New behaviour gets a scenario there.
+  provider and `e2e/probe-plugin` logging the events each location's instance receives. New behaviour gets a scenario there.
 - `e2e/real-model.sh` (with `e2e/real-model.mjs`, `e2e/real-model-permission.mjs` for
   `COURIER_SCENARIO=permission` and `e2e/real-model-question.mjs` for `COURIER_SCENARIO=question`):
   smoke test with a real model, free on OpenCode Zen by default; not in CI. Re-run it after changing tool descriptions, results or the child brief;

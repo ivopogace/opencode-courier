@@ -179,3 +179,101 @@ export async function pendingOf(permissions: Iterable<Permissions>, sessionID: s
       })
   return [...found.values()]
 }
+
+/** The `metadata.kind` of the forms OpenCode's web search asks its provider with. */
+export const WEBSEARCH_FORM = "websearch.provider"
+
+/** The `metadata.kind` of the forms OpenCode's question tool asks with; the question relay passes those on. */
+export const QUESTION_FORM = "question"
+
+/** One field of an OpenCode form, as much of it as a notice shows. */
+export interface FormField {
+  readonly key: string
+  readonly type: string
+  readonly title?: string
+  readonly description?: string
+  readonly options?: ReadonlyArray<{ readonly value: string; readonly label: string; readonly description?: string }>
+  readonly url?: string
+  /** Not shown to the person. */
+  readonly hidden?: boolean
+  /** Conditions on earlier answers; the field is shown only when they hold. */
+  readonly when?: ReadonlyArray<unknown>
+}
+
+/** The part of OpenCode's `form.created` event the notice is made from. */
+export interface FormCreated {
+  readonly id: string
+  readonly data: {
+    readonly form: {
+      readonly id: string
+      readonly sessionID: string
+      readonly title: string
+      readonly metadata?: Readonly<Record<string, unknown>>
+      readonly fields: ReadonlyArray<FormField>
+    }
+  }
+}
+
+/** OpenCode's `form.replied` or `form.cancelled` event: the form is no longer shown. */
+export interface FormSettled {
+  readonly id: string
+  readonly type: string
+  readonly data: { readonly id: string; readonly sessionID: string }
+}
+
+/** A form's `metadata.kind`, when it has one that can go in a notice's envelope. */
+export const kindOf = (form: FormCreated["data"]["form"]) => {
+  const kind = form.metadata?.kind
+  return typeof kind === "string" && /^[\w.-]{1,60}$/.test(kind) ? kind : undefined
+}
+
+function fieldLines(field: FormField) {
+  const label = [field.title, field.description].filter(Boolean).join(": ") || field.key
+  const options = (field.options ?? []).slice(0, MAX_RESOURCES).map((option) => `  - ${clip(option.label)}`)
+  if ((field.options?.length ?? 0) > MAX_RESOURCES) options.push(`  - and ${field.options!.length - MAX_RESOURCES} more`)
+  let kind = ` (${field.type})`
+  if (field.type === "external" && field.url) kind = `, opens ${clip(field.url)}`
+  else if (field.options?.length) kind = ""
+  const when = field.when?.length ? " (only for some earlier answers)" : ""
+  return [`- ${clip(label)}${kind}${when}`, ...options]
+}
+
+/** The fields the person sees, as notice lines. */
+function formLines(fields: ReadonlyArray<FormField>) {
+  const shown = fields.filter((field) => !field.hidden)
+  const lines = shown.slice(0, MAX_RESOURCES).flatMap(fieldLines)
+  if (shown.length > MAX_RESOURCES) lines.push(`- and ${shown.length - MAX_RESOURCES} more fields`)
+  return lines
+}
+
+const WEBSEARCH_NOTE = [
+  "This is OpenCode asking whether to search the web, and through which provider.",
+  'It waits at most a minute; then the session\'s search fails with "Web search cancelled" and it carries on without it.',
+  "The choice is kept for every session: once it is made, in any session, no session is asked again.",
+  'Besides answering in that session, the person can make it by running a web search in their own, or under OpenCode\'s "Third-party search" setting.',
+]
+
+/**
+ * What the session at the top is told about a form OpenCode shows in a session started with
+ * courier_spawn, which the plugin cannot pass on or answer: only the person can, in that session.
+ */
+export function formNotice(title: string, form: FormCreated["data"]["form"], startedBy?: string) {
+  return [
+    `This session, "${title}", ${origin(startedBy)} shows a form, "${clip(form.title)}", and waits until it is answered.`,
+    ...formLines(form.fields),
+    ...(kindOf(form) === WEBSEARCH_FORM ? ["", ...WEBSEARCH_NOTE] : []),
+    "",
+    `Neither you nor courier_answer can answer it: only the person you are working with can, in session ${form.sessionID} itself.`,
+    "Do not choose for them. Tell them that session shows this form and waits on them, then carry on.",
+  ].join("\n")
+}
+
+/** What the session told about a form is told once it is answered or withdrawn. */
+export function formSettledNotice(title: string, formID: string, settled: "answered" | "cancelled") {
+  return [
+    settled === "answered"
+      ? `The form ${formID} of this session, "${title}", has been answered in that session, so it no longer waits on it.`
+      : `The form ${formID} of this session, "${title}", has been withdrawn unanswered: dismissed, given up on or cut off, so it no longer waits on it.`,
+    "If you told someone about it, tell them it is settled; there is nothing to pass on.",
+  ].join("\n")
+}

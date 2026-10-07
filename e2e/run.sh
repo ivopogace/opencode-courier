@@ -59,7 +59,10 @@ build_plugin
 
 cat >"$WORK/project/opencode.json" <<EOF
 {
-  "plugins": [{ "package": "$ROOT/dist", "options": { "webhook": { "port": $WEBHOOK_PORT, "secretFile": "$WORK/webhook-secret" } } }],
+  "plugins": [
+    { "package": "$ROOT/dist", "options": { "webhook": { "port": $WEBHOOK_PORT, "secretFile": "$WORK/webhook-secret" } } },
+    "$ROOT/e2e/search-plugin"
+  ],
   "providers": {
     "mock": {
       "package": "aisdk:@ai-sdk/openai-compatible",
@@ -228,6 +231,31 @@ ask_question() {
   check "the child asks, and the parent asks the person in its own session" \
     "$([ -n "$child_form" ] && [ -n "$parent_form" ] && echo true || echo false)"
 }
+
+# The first web search of this run: no provider has been chosen, which OpenCode keeps for every session.
+echo "a child's web search asks for a provider with a form: the parent is told, and told when it is answered"
+out=$(prompt "COURIER-SEARCH")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+first=$(form_of "$child" "" 45)
+check "the child shows OpenCode's web search form" "$([ -n "$first" ] && echo true || echo false)"
+check "the parent was told" "$(has_text "$parent" "PARENT TOLD FORM $first" 45)"
+check "once, with the form's choices, that only the person can answer, and that the choice is for every session" \
+  "$(notices_with "$parent" asks | jq -r --arg child "$child" --arg form "$first" 'length == 1 and (.[0] |
+  contains("<courier from=\"" + $child + "\" asks=\"form\" form=\"" + $form + "\" kind=\"websearch.provider\">") and
+  contains("shows a form, \"Web Search\"") and contains("- Choose another provider") and contains("- Disable web search") and
+  contains("only the person you are working with can, in session " + $child) and contains("no session is asked again"))')"
+check "the person picks another provider in the child's session" \
+  "$([ "$(person "session/$child/form/$first/reply" '{"answer":{"choice":"choose"}}')" = 204 ] && echo true || echo false)"
+second=$(form_of "$child" "$first" 30)
+check "OpenCode asks which provider, in a second form" "$([ -n "$second" ] && echo true || echo false)"
+check "the parent was told the first is answered" "$(has_text "$parent" "settled=\"answered\" form=\"$first\"" 30)"
+check "and about the second" "$(has_text "$parent" "asks=\"form\" form=\"$second\"" 30)"
+check "the person picks the stand-in provider" \
+  "$([ "$(person "session/$child/form/$second/reply" '{"answer":{"provider":"courier-search"}}')" = 204 ] && echo true || echo false)"
+check "the child's search ran on it, and the child reported back" "$(has_text "$parent" "COURIER SEARCH RESULT" 45)"
+check "each form was told once, and settled once" \
+  "$([ "$(notices_with "$parent" asks | jq length)" = 2 ] && [ "$(notices_with "$parent" settled | jq length)" = 2 ] && echo true || echo false)"
 
 echo "a child's question reaches its idle parent, which asks the person; their choice goes back"
 ask_question COURIER-QUESTION

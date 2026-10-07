@@ -90,6 +90,43 @@ the plugin starts following OpenCode's events, on loading and after its event st
 also relays the requests that spawned sessions already wait on, so one asked in the gap is not
 missed.
 
+## A child that shows a form
+
+OpenCode asks some things through forms of its own rather than a permission request or the question
+tool, and shows them in the child's session only. The one a child meets most is web search: the
+first `websearch` call made while no search provider has been chosen shows a "Web Search" form
+(allow search through the providers OpenCode has, choose another provider, or disable web search),
+and a second one, "Choose a web search provider", if the person picks another. The plugin cannot
+pass such a form on or answer it, since the plugin API has no way to answer or withdraw a form; only
+the person can, in the child's session.
+
+So the plugin follows `form.created`, and for a form of a session on a roster it sends the session at
+the top, the one its permission requests go to, a message from that child marked `asks="form"`,
+`form="<id>"` and, when the form says what it is for, `kind="<kind>"` (`kind="websearch.provider"`
+for web search), waking it if it is idle. The message gives the form's title, its fields and their
+choices, and says that neither the parent nor `courier_answer` can answer it, only the person, in
+that child's session: the parent should tell you, not choose for you. A form of a child's child
+goes to the top session, naming the session that started the asking one, as with a permission
+request. Each form is told once, however many plugin instances see it.
+
+For web search the message adds what OpenCode does next. It waits for the choice at most a minute;
+then the child's search fails with "Web search cancelled", and the child carries on without it. The
+choice is kept for every session (OpenCode stores it globally), so once it is made, in any session,
+no session is asked again: you can answer in the child's session, run one web search in your own
+session and answer there, or pick the provider under OpenCode's "Third-party search" setting.
+
+Once a form the parent was told about is answered, or withdrawn unanswered (dismissed, given up on
+after OpenCode's minute, or cut off with the child's turn), the plugin sends a short message marked
+`settled="answered"` or `settled="cancelled"` and `form="<id>"`, so the parent does not send you to a
+form that is gone.
+
+The question tool's forms are not told this way: [the question relay](#a-child-that-asks-a-question)
+passes every question of a spawned session on, and OpenCode marks those forms with the kind
+`question`. Forms of sessions not on a roster are ignored, among them MCP servers' requests for
+input, which OpenCode does not attach to a session. The plugin cannot list the forms a session
+shows, so `courier_status` does not report them; a form shown while the plugin was not following
+OpenCode's events is not told, and one settled then, or across a server restart, is not told settled.
+
 ## A child that asks a question
 
 A child that calls OpenCode's question tool shows its question in its own session only. The plugin

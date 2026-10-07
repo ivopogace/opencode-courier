@@ -11,7 +11,7 @@ import { answer, pendingOf, type AnswerPorts, type Permissions } from "./relay.j
 import { answerQuestion, isQuestion, joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
 import { pruneExpired } from "./roster.js"
 import { processWide } from "./storage.js"
-import { watchChildren, type WatchState } from "./watch.js"
+import { watchChildren, type FormsTold, type WatchState } from "./watch.js"
 import { builtVersions, versionNotice } from "./version.js"
 import { listen, readConfig, subscribe, unsubscribe, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
@@ -174,11 +174,17 @@ const claimed = processWide("opencode-courier.claimed", () => new Set<string>())
 
 // Likewise one set of handled events, since every instance may be sent the same event, and the
 // permission requests sessions were told about and have not answered.
-const watched = processWide<WatchState>("opencode-courier.watched", () => ({
+const watched = processWide<Omit<WatchState, "forms">>("opencode-courier.watched", () => ({
   seen: new Set<string>(),
   waiting: new Set<string>(),
   answered: new Set<string>(),
 }))
+// The forms sessions were told about, under a key of their own, which an instance of an earlier
+// version, loaded before in this process, did not make.
+const watchState: WatchState = {
+  ...watched,
+  forms: processWide<FormsTold>("opencode-courier.forms", () => ({ told: new Map(), settled: new Set() })),
+}
 
 // The permission domain of every loaded instance, under a key of its own. OpenCode keeps a request
 // where its session runs, so a request of an isolated child is answered through the instance loaded
@@ -488,7 +494,7 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     locations.set(location, ctx.permission)
     void watchChildren(
       { storage: ctx.storage, session: ctx.session, event: ctx.event, permission: ctx.permission, log: later.log },
-      watched,
+      watchState,
       watching.signal,
     )
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined

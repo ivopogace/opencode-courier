@@ -59,7 +59,8 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # ~2 min
   allowed to fail. Read the API's types in `node_modules` rather than
   guessing; the OpenCode V2 source is on the `v2` branch of https://github.com/anomalyco/opencode,
   with each release tagged (`v2.0.24`). A pin bump adds a row to README.md's Supported OpenCode
-  version table and a section to `docs/plugin-api-notes.md` on what changed.
+  version table, moves the version README names elsewhere (Quickstart, OpenCode V2 native, the
+  install command; a unit test checks them), and adds a section to `docs/plugin-api-notes.md` on what changed.
 - Every tool is registered with `options: { codemode: false }`, returns metadata without
   `undefined` values, and rethrows failures through `describeFailure`.
 - Behaviour changes come with unit tests and an e2e scenario, and update README.md and

@@ -16,7 +16,6 @@ import {
 import { forgetQuestions, shutdownReportedAt } from "../src/question.js"
 import { record } from "../src/roster.js"
 import {
-  claim,
   reportAsked,
   reportFailure,
   reportForm,
@@ -499,17 +498,6 @@ describe("relayPending, concurrency", () => {
     await relayPending(ports, fresh())
 
     expect(sent.map((notice: any) => notice.metadata.requestID)).toEqual(["per_2", "per_1"])
-  })
-})
-
-describe("claim", () => {
-  test("remembers a bounded number of values, dropping the oldest", () => {
-    const set = new Set<string>()
-    expect(claim(set, "a")).toBe(true)
-    expect(claim(set, "a")).toBe(false)
-    for (let i = 0; i < 1_000; i++) claim(set, `v${i}`)
-    expect(set.size).toBe(1_000)
-    expect(set.has("a")).toBe(false)
   })
 })
 

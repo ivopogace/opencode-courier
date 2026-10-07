@@ -1,0 +1,6 @@
+{
+  "name": "courier-e2e-search",
+  "private": true,
+  "type": "module",
+  "main": "./index.js"
+}

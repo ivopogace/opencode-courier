@@ -40,8 +40,8 @@ function decide(body) {
     }
     // The child of COURIER-ASK reports what its shell call gave, run or refused, once it has the answer.
     const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
-    if (call?.function?.name === "shell" && startedBy)
-      return { tool: "courier_send", args: { sessionID: startedBy[1], message: `CHILD DONE shell: ${result}` } }
+    if ((call?.function?.name === "shell" || call?.function?.name === "websearch") && startedBy)
+      return { tool: "courier_send", args: { sessionID: startedBy[1], message: `CHILD DONE ${call.function.name}: ${result}` } }
     if (call?.function?.name === "question") {
       // The child of COURIER-QUESTION reports what its question call gave.
       if (startedBy)
@@ -66,6 +66,9 @@ function decide(body) {
   if (parent && recent.includes("CHILD-FAILS")) return { status: 403, error: "This model is not available in your country" }
   // The child of COURIER-ASK runs a command the test's permission rules make it ask for.
   if (parent && recent.includes("CHILD-ASKS")) return { tool: "shell", args: { command: "echo courier-asks" } }
+  // The child of COURIER-SEARCH searches the web before any provider was chosen, so OpenCode asks
+  // for one with a form. Held back like a report, so the parent's first turn has ended.
+  if (parent && recent.includes("CHILD-SEARCHES")) return { tool: "websearch", args: { query: "courier" }, delayed: true }
   // The child of COURIER-QUESTION asks the person which greeting to use, with the question tool.
   const question = recent.match(/CHILD-QUESTION(-MULTI|-RELABEL|-REWORD)?/)
   if (parent && question) {
@@ -114,7 +117,10 @@ function decide(body) {
   // the test then answers for the person with COURIER-ANSWER.
   const asks = recent.match(/<courier from="ses_\w+" asks="permission" request="([^"]+)">/)
   if (asks) return { text: `PARENT ASKS ${asks[1]}` }
-  if (/<courier from="ses_\w+" answered=/.test(recent)) return { text: "PARENT SETTLED" }
+  // Told that its child shows a form only the person can answer, it ends its turn, as if it had told them.
+  const form = recent.match(/<courier from="ses_\w+" asks="form" form="([^"]+)"/)
+  if (form) return { text: `PARENT TOLD FORM ${form[1]}` }
+  if (/<courier from="ses_\w+" (answered|settled)=/.test(recent)) return { text: "PARENT SETTLED" }
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
   const answer = recent.match(/COURIER-ANSWER (once|always|reject)(?: (.+))?/)
   if (answer) {
@@ -145,6 +151,7 @@ function decide(body) {
         isolate: questions[2] === "isolate",
       },
     }
+  if (recent.includes("COURIER-SEARCH")) return { tool: "courier_spawn", args: { task: "CHILD-SEARCHES" } }
   const ask = recent.match(/COURIER-ASK(?: (isolate))?/)
   if (ask) return { tool: "courier_spawn", args: { task: "CHILD-ASKS", isolate: ask[1] === "isolate" } }
   const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)

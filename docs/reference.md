@@ -6,6 +6,38 @@ what the webhook receiver does with a delivery. The [README](../README.md) has t
 
 ## The OpenCode version
 
+### How a release is tested
+
+Each release is built and tested against exactly one OpenCode V2 version, the `@opencode/plugin`
+version pinned in `package.json` (the CLI and the plugin API share a version). The end-to-end suite
+runs on that version with every change, and once more on the newest `@opencode/cli` release, where a
+failure is a warning rather than a red build, so a host release that breaks the plugin shows up in
+CI first. A newer OpenCode may still break tools; [plugin-api-notes.md](plugin-api-notes.md) lists
+what the pinned version already needed working around, and what changed the last time the pin moved.
+A release that moves the pin adds a row to the README's [Supported OpenCode
+version](../README.md#supported-opencode-version) table. When the plugin loads on an OpenCode whose
+version is not the pinned one, it writes one line to the server log naming both versions, so a
+mismatch is named before a tool fails.
+
+### Other versions it was tried on
+
+0.2.2 moves the pin to 2.0.24, which changed nothing the plugin calls; 0.2.1 passes the suite on
+2.0.24 as well. 0.2.1 changes nothing but the pin: 2.0.23 changed nothing the plugin calls, and
+0.2.0 passes the suite on 2.0.23 as well. 0.2.0 was tested on 2.0.22 and on the `dev` build
+0.0.0-dev-20534 of 2026-10-04, the newest build then (no 2.x release above 2.0.22 existed), where
+the suite passed too. Of the older hosts tried, it loads on 2.0.4 and 2.0.21 (nothing in between was
+run, and the suite was not), and fails to load on 2.0.0 and 2.0.3, which lack the `model` domain the
+plugin API gained in 2.0.4. The version in `package.json` protects nobody on its own: OpenCode says
+nothing about it, since `opencode plugin add` installs the plugin whatever your OpenCode version and
+its loader warns about nothing either (a recorded experiment, in
+[plugin-api-notes.md](plugin-api-notes.md#what-plugin-add-and-loading-do-with-the-peer-dependency-2026-10-04),
+which also says why the peer dependency stays exact rather than a range: it picks the copy of the
+plugin API the plugin runs on). The plugin's own log line,
+[below](#the-log-line-on-another-version), is the only runtime signal, apart from the load failure
+on those hosts before 2.0.4. Check yours with `opencode --version`.
+
+### The log line on another version
+
 Each build of the plugin is tested against one OpenCode version, the exact `@opencode/plugin`
 version under `devDependencies` in its `package.json`, which the plugin reads from its own
 package when it loads, along with its own `version`. When the running OpenCode reports another
@@ -23,6 +55,27 @@ tool call. An older server is named the same way as a newer one, and so is a dev
 of OpenCode, whose version is not a release's; one whose plugin context reports no version at all
 gets the line too, saying so, since that is the mismatch the line is for. If the plugin cannot
 read its own `package.json`, it logs that instead and carries on.
+
+## Updating the plugin
+
+Install the plugin by name, without a version (`opencode plugin add opencode-courier`). OpenCode
+only checks plugins for updates when their entry is not an exact version: `opencode-courier` (or a
+tag or range such as `opencode-courier@latest` or `opencode-courier@^0.2.0`) is checked against npm,
+but `opencode-courier@0.2.1` counts as fixed. Its check reports it as current without asking npm, so
+`opencode plugin check`, `opencode plugin update` and *check for updates* (ctrl+r) in the TUI's
+`/plugins` dialog never offer a newer release. If your entry carries an exact version, replace it
+with the name and restart OpenCode:
+
+```bash
+opencode plugin remove opencode-courier@0.2.1   # the entry exactly as it appears in plugins
+opencode plugin add opencode-courier
+```
+
+Then `opencode plugin check` lists `courier` with `(update available)` when a newer release exists,
+and `opencode plugin update` installs it. If an unpinned entry still shows no update after a release,
+the check itself may have failed: OpenCode treats a failed check as "no update" and only writes the
+warning `failed to check plugin update` to its log (`~/.local/share/opencode/log/`). The check uses
+your npm configuration, so look at the registry and proxy settings in your `.npmrc`.
 
 ## The child's model
 

@@ -272,12 +272,13 @@ range such as `^2.0.22` it would be the newest version on npm that satisfies it,
 run the suite with, and the kind of copy that died above on a host short of a domain it expected.
 That is why the peer dependency stays exact, the same version as the devDependency, rather than
 becoming the range #40 set out to write, and why the README's table keeps one version per row with
-the hosts the suite passed on named under it: 2.0.22 (the pinned leg of CI, and `latest` that day)
-and the `dev` build 0.0.0-dev-20534 (2026-10-04); of the older hosts tried, the plugin loads on
-2.0.4 and 2.0.21 (nothing in between was run, and the suite was not run there) and does not load on
-2.0.0 and 2.0.3, where the `model` domain is missing. The `latest` leg of CI covers the next
-host release with this copy of the plugin API, which is exactly what `plugin add` gives a user
-there. A pin bump still adds a row to the README's table.
+the hosts the suite passed on named next to it (now in
+[reference.md](reference.md#other-versions-it-was-tried-on)): 2.0.22 (the pinned leg of CI, and
+`latest` that day) and the `dev` build 0.0.0-dev-20534 (2026-10-04); of the older hosts tried, the
+plugin loads on 2.0.4 and 2.0.21 (nothing in between was run, and the suite was not run there) and
+does not load on 2.0.0 and 2.0.3, where the `model` domain is missing. The `latest` leg of CI covers
+the next host release with this copy of the plugin API, which is exactly what `plugin add` gives a
+user there. A pin bump still adds a row to the README's table.
 
 ## Update checks skip a plugin pinned to an exact version (2026-10-07)
 

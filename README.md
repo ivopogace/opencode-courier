@@ -18,7 +18,8 @@ child works on its own and, when it is done or stuck, calls `courier_send` with 
 That message lands in the parent's inbox and OpenCode starts a new turn for the parent if it is
 idle. A child whose turn fails instead, so that it cannot report, is reported by the plugin, and a
 child that waits for a permission or asks a question has it passed to the parent, who asks you and
-passes your answer back.
+passes your answer back. A child that waits on a form only you can answer, such as OpenCode asking
+which web search provider to use, has its parent told so.
 
 > **Status: early.** Passes an end-to-end test inside a live OpenCode V2 server driven by a
 > scripted stand-in model, and a smoke test with real (free) models: see
@@ -166,6 +167,10 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
    parent the same way (see [A child that asks a
    question](docs/reference.md#a-child-that-asks-a-question)), so let the agents that run children
    use the `question` tool if they should be able to ask you; OpenCode's default agent may.
+   Choose a web search provider before children search the web (run one web search in your own
+   session and answer OpenCode's prompt, or use its "Third-party search" setting): otherwise the
+   first child to search shows that prompt in its own session, which only you can answer there (see
+   [A child that shows a form](docs/reference.md#a-child-that-shows-a-form)).
 3. Use `isolate: true` whenever children edit files in parallel. The child's worktree is made from
    the last commit, so an uncommitted `opencode.json` is not there and the child falls back to your
    global config: keep providers and models in the global config, or commit the file. When you are
@@ -209,6 +214,11 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
   parent's or by `courier_answer`, and the other question is withdrawn; a question stays answerable
   across an interrupted turn or a server restart.
   [More](docs/reference.md#a-child-that-asks-a-question).
+- **A child that shows a form** the plugin cannot pass on, such as OpenCode's web search asking
+  for a provider, has the top session told, marked `asks="form"`, with the form's choices: only you
+  can answer it, in the child's session. For web search it adds that OpenCode gives up after a
+  minute and that the choice holds for every session; once the form is answered or withdrawn, the
+  top session is told it is settled. [More](docs/reference.md#a-child-that-shows-a-form).
 - **The plugin remembers.** Each parent's children (`courier_children`), pending `courier_later`
   messages and open questions survive a compaction or a restart; entries are dropped after 14 days.
   [Roster](docs/reference.md#roster), [Scheduled messages](docs/reference.md#scheduled-messages).
@@ -290,7 +300,8 @@ OPENCODE_BIN=$(which opencode) e2e/real-model.sh  # smoke test with a real model
 `e2e/run.sh` starts a real OpenCode V2 server in a throwaway project and home directory, with this
 plugin loaded and `e2e/mock-model.mjs` as the model: an OpenAI-compatible server that replies from a
 fixed script. It walks every tool through the behaviour above, including a permission request, a
-question answered on either side, a server restart with pending work, a signed and an unsigned
+question answered on either side, a web search's provider form (with `e2e/search-plugin`, a
+stand-in search provider), a server restart with pending work, a signed and an unsigned
 GitHub delivery, and the package installed from a stand-in npm registry. It needs node, npm, bun,
 git, curl, jq and openssl. New behaviour gets a scenario there.
 

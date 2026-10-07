@@ -299,3 +299,42 @@ On 2.0.24, in a scratch home directory, with the installed copy marked 0.2.1 and
 `opencode plugin check` printed `courier 0.2.1 (current)` for the entry `opencode-courier@0.2.1` and
 `(update available)` for the entry `opencode-courier`. Hence the README's advice to install by
 name, and to replace an exact-version entry with the name to get update checks back.
+
+## How web search asks for its provider (2026-10-07)
+
+A child calling `websearch` before any search provider was chosen showed OpenCode's "Web Search"
+prompt in its own session, and its parent was never told (#61). From the source at `v2.0.24`:
+
+- The `websearch` tool (`packages/core/src/tool/plugin/websearch.ts`) first asks the ordinary
+  `websearch` permission, which the permission relay passes on. When no provider is selected
+  (`WebSearch.ProviderRequired`), it asks with the form service directly, `forms.ask` with
+  `title: "Web Search"`, `metadata: { kind: "websearch.provider" }` and one string field `choice`
+  (`allow`, labelled "Allow search via" and the providers' names; `choose`; `disable`). On
+  `choose` it asks a second form, "Choose a web search provider", with the same kind and a field
+  `provider` listing each provider. The whole selection is under a one-minute
+  `Effect.timeoutOrElse`; at the timeout the form is withdrawn (`form.cancelled`, since `ask`
+  cancels its form when interrupted) and the call fails with "Web search cancelled", as it does
+  when the person dismisses either form; the tool wraps that error in its failure "Unable to
+  search the web for <query>", which ends the call, not the turn, so the model carries on.
+- The choice is global: `WebSearch.select` stores it in OpenCode's KV under `websearch:provider`,
+  and `disable` drops the tool from every session's tool list. Once made, in any session, no
+  session is asked again. The selection is serialized by one lock, so two children searching at
+  once are asked one after the other.
+- Built in at 2.0.24 are Exa, Firecrawl, Parallel, Tavily and TinyFish. A plugin adds a provider with
+  `ctx.websearch.transform((editor) => editor.add({ id, name, execute }))`; the live test does so
+  with `e2e/search-plugin`, a local plugin directory (a configured local plugin must be a directory,
+  "configured plugin path must be a directory", with a `package.json` naming its entry).
+
+What a plugin sees of forms:
+
+- `form.created` (`data.form`: `id`, `sessionID`, `title`, `metadata`, `fields`, each field with
+  `key`, `type`, an optional `title` and `description`, and `options` of `value` and `label` for a
+  choice), `form.replied` (`id`, `sessionID`, `answer`) and `form.cancelled` (`id`, `sessionID`)
+  reach every instance's `event.subscribe()`. They are ephemeral events, never stored.
+- Besides web search, at 2.0.24 forms come from the question tool (`kind: "question"`, with
+  `tool: { messageID, id }`) and from MCP elicitation (`kind: "mcp-elicitation"`), whose forms belong
+  to the session id `global`, not to a real session.
+- The plugin API has no form domain: a plugin cannot list, answer or withdraw a form. So the plugin
+  tells the session at the top about a form of a spawned session, other than a question, and that
+  only the person can answer it; it cannot list the forms a session shows for `courier_status`, nor
+  relay one shown while it was not following events.

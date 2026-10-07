@@ -348,7 +348,7 @@ describe("the question tool of a spawned session", () => {
       content: expect.stringContaining("The person dismissed this question without answering it. Carry on without the answers"),
     })
     await settle()
-    expect(store.size).toBe(1)
+    expect([...store.keys()].sort()).toEqual(["roster-by-child/ses_child", "roster/ses_parent/ses_child"])
     expect(notices(told, "answered")).toEqual([])
   })
 

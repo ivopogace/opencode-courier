@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs"
-import { scanAll, type Storage } from "./storage.js"
+import { scanAll, scanEntries, type Storage } from "./storage.js"
 
 /**
  * Entries older than this are dropped when their parent's roster is read, and on plugin setup,
@@ -8,6 +8,13 @@ import { scanAll, type Storage } from "./storage.js"
 export const RETENTION_MS = 14 * 24 * 60 * 60_000
 
 const PREFIX = "roster/"
+/**
+ * The reverse index: under `roster-by-child/<sessionID>`, a child's `ReverseEntry`, written with its
+ * roster entry. It is only an index: an entry without one, written by an older copy of the plugin,
+ * is found by scanning `roster/`, and every entry it leads to is read from `roster/` to check that
+ * it is still there.
+ */
+const BY_CHILD = "roster-by-child/"
 
 /** A session started with courier_spawn, recorded under the session that started it. */
 export interface RosterEntry {
@@ -25,21 +32,54 @@ export interface RosterEntry {
   readonly base?: string
 }
 
+/**
+ * What the reverse index holds for a child: the sessions above it, its parent first and the session
+ * at the top, which courier_spawn did not start, last. Its roster entry is under the first, and each
+ * of the others is the parent of the one before it.
+ */
+export interface ReverseEntry {
+  readonly ancestors: ReadonlyArray<string>
+}
+
 export type RosterStorage = Storage
 
 export function rosterKey(parentID: string, sessionID: string) {
   return `${PREFIX}${parentID}/${sessionID}`
 }
 
+export function reverseKey(sessionID: string) {
+  return `${BY_CHILD}${sessionID}`
+}
+
+/**
+ * Records a child under its parent, then indexes it. The entry is what counts: a failed index
+ * write leaves it to be found by a scan, and to be indexed when the plugin is next loaded.
+ */
 export async function record(storage: RosterStorage, entry: RosterEntry) {
   await storage.set(rosterKey(entry.parentID, entry.sessionID), { ...entry })
+  await index(storage, entry).catch(() => undefined)
+}
+
+async function index(storage: RosterStorage, entry: RosterEntry) {
+  const above = await storage.get(reverseKey(entry.parentID))
+  const ancestors = isReverse(above) ? above.ancestors : (await lineage(storage, entry.parentID)).map((parent) => parent.parentID)
+  await storage.set(reverseKey(entry.sessionID), { ancestors: [entry.parentID, ...ancestors] })
+}
+
+function isReverse(value: unknown): value is ReverseEntry {
+  const ancestors = (value as { ancestors?: unknown } | undefined)?.ancestors
+  return Array.isArray(ancestors) && ancestors.length > 0 && ancestors.every((id) => typeof id === "string")
+}
+
+/** Removes a child's roster entry and its reverse key. */
+export async function remove(storage: RosterStorage, parentID: string, sessionID: string) {
+  await Promise.all([storage.remove(rosterKey(parentID, sessionID)), storage.remove(reverseKey(sessionID))])
 }
 
 /** Removes a child from its parent's roster; false when it was not there. */
 export async function forget(storage: RosterStorage, parentID: string, sessionID: string) {
-  const key = rosterKey(parentID, sessionID)
-  if ((await storage.get(key)) === undefined) return false
-  await storage.remove(key)
+  if ((await storage.get(rosterKey(parentID, sessionID))) === undefined) return false
+  await remove(storage, parentID, sessionID)
   return true
 }
 
@@ -56,7 +96,11 @@ export async function allEntries(storage: RosterStorage) {
 
 /** A session's roster entries: one for the parent that started it, none if courier_spawn did not. */
 export async function entriesOf(storage: RosterStorage, sessionID: string) {
-  return (await scanAll<RosterEntry>(storage, PREFIX)).filter((entry) => entry.sessionID === sessionID)
+  const indexed = await storage.get(reverseKey(sessionID))
+  if (!isReverse(indexed))
+    return (await scanAll<RosterEntry>(storage, PREFIX)).filter((entry) => entry.sessionID === sessionID)
+  const entry = await storage.get(rosterKey(indexed.ancestors[0]!, sessionID))
+  return entry === undefined ? [] : [entry as unknown as RosterEntry]
 }
 
 /**
@@ -65,7 +109,28 @@ export async function entriesOf(storage: RosterStorage, sessionID: string) {
  * did not start the session.
  */
 export async function lineage(storage: RosterStorage, sessionID: string) {
-  return lineageIn(await allEntries(storage), sessionID)
+  const first = await storage.get(reverseKey(sessionID))
+  if (!isReverse(first)) return lineageIn(await allEntries(storage), sessionID)
+  let indexed: ReverseEntry = first
+  const chain: RosterEntry[] = []
+  let below = sessionID
+  // One read per level, all at once, and one more for the top's own reverse key, in case it was
+  // recorded after the key that names it; the chain ends where an entry is gone, as a scan's would.
+  for (;;) {
+    const { ancestors }: ReverseEntry = indexed
+    const top = ancestors.at(-1)!
+    const [entries, above]: [unknown[], unknown] = await Promise.all([
+      Promise.all(ancestors.map((parentID, level) => storage.get(rosterKey(parentID, level ? ancestors[level - 1]! : below)))),
+      storage.get(reverseKey(top)),
+    ])
+    for (const entry of entries as Array<RosterEntry | undefined>) {
+      if (!entry || chain.some((known) => known.sessionID === entry.sessionID)) return chain
+      chain.push(entry)
+    }
+    if (!isReverse(above)) return chain
+    below = top
+    indexed = above
+  }
 }
 
 /** `lineage` over roster entries already read. */
@@ -104,7 +169,7 @@ async function dropExpired(storage: RosterStorage, entries: RosterEntry[], now: 
   const expired = new Set(
     entries.filter((entry) => now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory))),
   )
-  await Promise.all([...expired].map((entry) => storage.remove(rosterKey(entry.parentID, entry.sessionID))))
+  await Promise.all([...expired].map((entry) => remove(storage, entry.parentID, entry.sessionID)))
   return entries.filter((entry) => !expired.has(entry))
 }
 
@@ -113,7 +178,40 @@ export async function current(storage: RosterStorage, parentID: string, now: num
   return dropExpired(storage, await children(storage, parentID), now, exists)
 }
 
-/** Drops expired entries of every parent, so parents that never list their children don't keep them forever. */
+/**
+ * On loading: drops expired entries of every parent, so parents that never list their children
+ * don't keep them forever, then brings the reverse index in line with what is left (`backfill`).
+ */
 export async function pruneExpired(storage: RosterStorage, now: number, exists: Exists = existsSync) {
-  await dropExpired(storage, await scanAll<RosterEntry>(storage, PREFIX), now, exists)
+  await backfill(storage, await dropExpired(storage, await scanAll<RosterEntry>(storage, PREFIX), now, exists))
+}
+
+/**
+ * Writes the reverse keys missing for the given entries, all of the roster, such as those an older
+ * copy of the plugin recorded, and drops the reverse keys whose entry is gone, such as those of an
+ * entry an older copy removed. Keys already there are left as they are, so running it again
+ * changes nothing.
+ */
+export async function backfill(storage: RosterStorage, entries: ReadonlyArray<RosterEntry>) {
+  const indexed = new Map((await scanEntries<unknown>(storage, BY_CHILD)).map(({ key, value }) => [key, value]))
+  const sessions = new Set(entries.map((entry) => entry.sessionID))
+  await Promise.all([
+    ...entries
+      .filter((entry) => !isReverse(indexed.get(entry.sessionID)))
+      .map((entry) =>
+        storage.set(reverseKey(entry.sessionID), { ancestors: lineageIn(entries, entry.sessionID).map((above) => above.parentID) }),
+      ),
+    ...[...indexed]
+      .filter(([sessionID]) => !sessions.has(sessionID))
+      .map(([sessionID, value]) => dropDangling(storage, sessionID, value)),
+  ])
+}
+
+/**
+ * Drops a reverse key whose entry was not in the roster read, unless that entry is there now:
+ * another instance may have recorded the child since, and it writes the entry before the key.
+ */
+async function dropDangling(storage: RosterStorage, sessionID: string, value: unknown) {
+  if (isReverse(value) && (await storage.get(rosterKey(value.ancestors[0]!, sessionID))) !== undefined) return
+  await storage.remove(reverseKey(sessionID))
 }

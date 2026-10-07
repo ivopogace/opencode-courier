@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
-import type { Prompt } from "./question.js"
+import { childBrief, envelope, type Prompt } from "./notices.js"
 import { current, record, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
@@ -56,29 +56,6 @@ export interface StatusInput {
 
 export interface ChildrenInput {
   readonly sessionID?: string
-}
-
-/** Closes a tool result after which the caller most likely has nothing left to do. */
-export const END_TURN = "If nothing else is left to do now, end your turn by replying without calling more tools."
-
-export function childBrief(parentID: string, task: string) {
-  return [
-    `You were started by session ${parentID} through opencode-courier.`,
-    "",
-    `When you finish, or need a decision you cannot make yourself, call courier_send with sessionID "${parentID}" and a short report.`,
-    "That message wakes the parent. It is the only way the parent hears from you, so do not end without sending it.",
-    "If you need the person to decide something, use your question tool; it reaches them through the session that started you.",
-    "",
-    "Task:",
-    task,
-  ].join("\n")
-}
-
-export function envelope(from: string, message: string, attributes: Record<string, string> = {}) {
-  const extra = Object.entries(attributes)
-    .map(([name, value]) => ` ${name}="${value}"`)
-    .join("")
-  return `<courier from="${from}"${extra}>\n${message}\n</courier>`
 }
 
 function titleOf(task: string) {

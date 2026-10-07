@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 import { describeFailure, type Pending } from "./courier.js"
+import { REJECTED, type Form, type PermissionRequest, type Reply } from "./notices.js"
 import { answeringTop, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
@@ -8,29 +9,12 @@ type Context = Plugin.Context
 export type Permissions = Pick<Context["permission"], "list" | "reply">
 
 /** The answers to a permission request, as OpenCode's own prompt offers them. */
-export const REPLIES = ["once", "always", "reject"] as const
-export type Reply = (typeof REPLIES)[number]
-
-/**
- * Sent with a rejection that has no reason of its own. OpenCode ends the child's turn on a bare
- * rejection, and the child would never report back; with a message, the call fails and it carries on.
- */
-export const REJECTED = "Refused by the session that started you. Do without it, or report back why you cannot."
-
-const MAX_RESOURCES = 20
-const MAX_RESOURCE_LENGTH = 300
+export const REPLIES: ReadonlyArray<Reply> = ["once", "always", "reject"]
 
 /** The part of OpenCode's `permission.asked` event the notice is made from. */
 export interface PermissionAsked {
   readonly id: string
-  readonly data: {
-    readonly id: string
-    readonly sessionID: string
-    readonly action: string
-    readonly resources: ReadonlyArray<string>
-    readonly save?: ReadonlyArray<string>
-    readonly message?: string
-  }
+  readonly data: PermissionRequest
 }
 
 /** The part of OpenCode's `permission.replied` event. */
@@ -44,54 +28,6 @@ export interface PermissionReplied {
  * notice went to a parent and that courier_answer has not answered yet.
  */
 export type Waiting = Set<string>
-
-const clip = (text: string) => (text.length > MAX_RESOURCE_LENGTH ? `${text.slice(0, MAX_RESOURCE_LENGTH - 3)}...` : text)
-
-function alwaysChoice(request: PermissionAsked["data"]) {
-  const save = request.save ?? []
-  if (!save.length) return []
-  const scope = save.length === 1 && save[0] === "*" ? `every ${request.action} request` : `requests matching ${save.join(", ")}`
-  return [`- always: allow it, and from now on ${scope} in this project`]
-}
-
-/** How a notice names where the asking session came from, to the session at the top of its lineage. */
-export const origin = (startedBy?: string) =>
-  startedBy ? `which ${startedBy} started with courier_spawn, a session started from yours,` : "which you started with courier_spawn,"
-
-/** For a notice that a session's turn ended without it finishing. */
-export const STAYS_QUIET =
-  "and then it does not report back on its own: if it stays quiet, message it with courier_send to have it carry on."
-
-/**
- * What the session at the top is told. `startedBy` names the session that started the asking one
- * when that is not the top session itself, but one started from it.
- */
-export function permissionNotice(title: string, request: PermissionAsked["data"], startedBy?: string) {
-  const resources = request.resources.slice(0, MAX_RESOURCES).map((resource) => `- ${clip(resource)}`)
-  if (request.resources.length > MAX_RESOURCES) resources.push(`- and ${request.resources.length - MAX_RESOURCES} more`)
-  return [
-    `This session, "${title}", ${origin(startedBy)} is waiting for permission and does nothing until it is answered.`,
-    `It asks for: ${request.action}`,
-    ...(resources.length ? ["On:", ...resources] : []),
-    ...(request.message ? [`Note: ${request.message}`] : []),
-    "",
-    "Do not decide this yourself. Ask the person you are working with (with your question tool, if you have one), offering exactly these choices:",
-    "- once: allow this request only",
-    ...alwaysChoice(request),
-    "- reject: refuse it, with a reason if they give one; the session's call fails and it carries on",
-    `When they have chosen, call courier_answer with sessionID "${request.sessionID}", requestID "${request.id}", reply set to their choice and, with reject, message set to their reason.`,
-  ].join("\n")
-}
-
-export function settledNotice(title: string, requestID: string, reply: Reply) {
-  return [
-    `The permission request ${requestID} of this session, "${title}", has been answered (${reply}) without courier_answer, so it no longer waits on you.`,
-    "If you asked someone about it, tell them it is settled; there is nothing to pass on.",
-    ...(reply === "reject"
-      ? [`A refusal without a reason ends the session's turn, ${STAYS_QUIET}`]
-      : []),
-  ].join("\n")
-}
 
 export interface AnswerPorts {
   readonly storage: RosterStorage
@@ -180,38 +116,13 @@ export async function pendingOf(permissions: Iterable<Permissions>, sessionID: s
   return [...found.values()]
 }
 
-/** The `metadata.kind` of the forms OpenCode's web search asks its provider with. */
-export const WEBSEARCH_FORM = "websearch.provider"
-
 /** The `metadata.kind` of the forms OpenCode's question tool asks with; the question relay passes those on. */
 export const QUESTION_FORM = "question"
-
-/** One field of an OpenCode form, as much of it as a notice shows. */
-export interface FormField {
-  readonly key: string
-  readonly type: string
-  readonly title?: string
-  readonly description?: string
-  readonly options?: ReadonlyArray<{ readonly value: string; readonly label: string; readonly description?: string }>
-  readonly url?: string
-  /** Not shown to the person. */
-  readonly hidden?: boolean
-  /** Conditions on earlier answers; the field is shown only when they hold. */
-  readonly when?: ReadonlyArray<unknown>
-}
 
 /** The part of OpenCode's `form.created` event the notice is made from. */
 export interface FormCreated {
   readonly id: string
-  readonly data: {
-    readonly form: {
-      readonly id: string
-      readonly sessionID: string
-      readonly title: string
-      readonly metadata?: Readonly<Record<string, unknown>>
-      readonly fields: ReadonlyArray<FormField>
-    }
-  }
+  readonly data: { readonly form: Form }
 }
 
 /** OpenCode's `form.replied` or `form.cancelled` event: the form is no longer shown. */
@@ -219,61 +130,4 @@ export interface FormSettled {
   readonly id: string
   readonly type: string
   readonly data: { readonly id: string; readonly sessionID: string }
-}
-
-/** A form's `metadata.kind`, when it has one that can go in a notice's envelope. */
-export const kindOf = (form: FormCreated["data"]["form"]) => {
-  const kind = form.metadata?.kind
-  return typeof kind === "string" && /^[\w.-]{1,60}$/.test(kind) ? kind : undefined
-}
-
-function fieldLines(field: FormField) {
-  const label = [field.title, field.description].filter(Boolean).join(": ") || field.key
-  const options = (field.options ?? []).slice(0, MAX_RESOURCES).map((option) => `  - ${clip(option.label)}`)
-  if ((field.options?.length ?? 0) > MAX_RESOURCES) options.push(`  - and ${field.options!.length - MAX_RESOURCES} more`)
-  let kind = ` (${field.type})`
-  if (field.type === "external" && field.url) kind = `, opens ${clip(field.url)}`
-  else if (field.options?.length) kind = ""
-  const when = field.when?.length ? " (only for some earlier answers)" : ""
-  return [`- ${clip(label)}${kind}${when}`, ...options]
-}
-
-/** The fields the person sees, as notice lines. */
-function formLines(fields: ReadonlyArray<FormField>) {
-  const shown = fields.filter((field) => !field.hidden)
-  const lines = shown.slice(0, MAX_RESOURCES).flatMap(fieldLines)
-  if (shown.length > MAX_RESOURCES) lines.push(`- and ${shown.length - MAX_RESOURCES} more fields`)
-  return lines
-}
-
-const WEBSEARCH_NOTE = [
-  "This is OpenCode asking whether to search the web, and through which provider.",
-  'It waits at most a minute; then the session\'s search fails with "Web search cancelled" and it carries on without it.',
-  "The choice is kept for every session: once it is made, in any session, no session is asked again.",
-  'Besides answering in that session, the person can make it by running a web search in their own, or under OpenCode\'s "Third-party search" setting.',
-]
-
-/**
- * What the session at the top is told about a form OpenCode shows in a session started with
- * courier_spawn, which the plugin cannot pass on or answer: only the person can, in that session.
- */
-export function formNotice(title: string, form: FormCreated["data"]["form"], startedBy?: string) {
-  return [
-    `This session, "${title}", ${origin(startedBy)} shows a form, "${clip(form.title)}", and waits until it is answered.`,
-    ...formLines(form.fields),
-    ...(kindOf(form) === WEBSEARCH_FORM ? ["", ...WEBSEARCH_NOTE] : []),
-    "",
-    `Neither you nor courier_answer can answer it: only the person you are working with can, in session ${form.sessionID} itself.`,
-    "Do not choose for them. Tell them that session shows this form and waits on them, then carry on.",
-  ].join("\n")
-}
-
-/** What the session told about a form is told once it is answered or withdrawn. */
-export function formSettledNotice(title: string, formID: string, settled: "answered" | "cancelled") {
-  return [
-    settled === "answered"
-      ? `The form ${formID} of this session, "${title}", has been answered in that session, so it no longer waits on it.`
-      : `The form ${formID} of this session, "${title}", has been withdrawn unanswered: dismissed, given up on or cut off, so it no longer waits on it.`,
-    "If you told someone about it, tell them it is settled; there is nothing to pass on.",
-  ].join("\n")
 }

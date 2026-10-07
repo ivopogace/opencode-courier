@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { childBrief, describeFailure, envelope, listChildren, send, spawn, status, type CourierPorts } from "../src/courier.js"
+import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "../src/courier.js"
+import { childBrief, envelope } from "../src/notices.js"
 import { record, rosterKey } from "../src/roster.js"
 
 type Call = { method: string; input: any }

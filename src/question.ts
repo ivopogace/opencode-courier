@@ -1,8 +1,24 @@
 import type { Plugin } from "@opencode/plugin"
 import type { Plugin as EffectPlugin } from "@opencode/plugin/effect"
 import { Cause, Effect, Exit, Result } from "effect"
-import { END_TURN, envelope } from "./courier.js"
-import { origin, STAYS_QUIET } from "./relay.js"
+import {
+  answeredText,
+  cutOffAnswer,
+  DISMISSED,
+  envelope,
+  passedNote,
+  questionNotice,
+  questionSettledNotice,
+  unlinkedNote,
+  withdrawnText,
+  type Answers,
+  type Asked,
+  type CutOff,
+  type Elsewhere,
+  type Outcome,
+  type Prompt,
+  type Withdrawal,
+} from "./notices.js"
 import { allEntries, answeringTop, lineage, lineageIn, RETENTION_MS, type RosterStorage } from "./roster.js"
 import { processWide, scanAll } from "./storage.js"
 
@@ -19,45 +35,6 @@ const PREFIX = "question/"
 
 /** At most this many questions are kept in storage; the oldest go first. */
 export const MAX_STORED = 100
-
-/** One question of OpenCode's question tool, as the asking model wrote it. */
-export interface Prompt {
-  readonly question: string
-  readonly header: string
-  readonly options: ReadonlyArray<{ readonly label: string; readonly description: string }>
-  readonly multiple?: boolean
-}
-
-/** The answers to a question call, as the question tool returns them: one list per question. */
-export type Answers = string[][]
-
-/** A question a spawned session asked with its question tool, stored until it is answered. */
-export interface Asked {
-  readonly requestID: string
-  readonly sessionID: string
-  /** The session told, at the top of the sessions started with courier_spawn; it alone answers. */
-  readonly top: string
-  readonly title: string
-  /** The session that started the asking one, when that is not the top session itself. */
-  readonly startedBy?: string
-  readonly questions: ReadonlyArray<Prompt>
-  readonly askedAt: number
-}
-
-/** How a question was settled without the top session: in the asking session, or not at all. */
-export type Elsewhere =
-  | { readonly by: "child"; readonly answers: Answers }
-  | { readonly by: "dismissed" }
-  | { readonly by: "failed"; readonly error: string }
-
-/** What the top session's answer does to a call that waits: answers it, or dismisses it. */
-type Outcome = { readonly answers: Answers } | { readonly dismissed: true }
-
-/**
- * Why a linked call is withdrawn: its question was settled elsewhere, or the top session's outcome
- * reached it another way (courier_answer, or a dismissal through an earlier call linked to it).
- */
-type Withdrawal = Elsewhere | { readonly by: "top"; readonly outcome: Outcome }
 
 /** A question as stored; `answered` marks one whose answer went out but that could not be dropped. */
 type Stored = Asked & { readonly answered?: true }
@@ -226,64 +203,6 @@ function promptsOf(input: unknown): Prompt[] {
   }))
 }
 
-/** What OpenCode's question tool tells the asking model once it has the answers. */
-export function answeredText(questions: ReadonlyArray<Prompt>, answers: ReadonlyArray<ReadonlyArray<string>>) {
-  const formatted = questions
-    .map((prompt, index) => `"${prompt.question}"="${answers[index]?.length ? answers[index].join(", ") : "Unanswered"}"`)
-    .join(", ")
-  return `User has answered your questions: ${formatted}. You can now continue with the user's answers in mind.`
-}
-
-const describeOption = (option: Prompt["options"][number]) =>
-  option.description ? `   - ${option.label}: ${option.description}` : `   - ${option.label}`
-
-const describeQuestions = (questions: ReadonlyArray<Prompt>) =>
-  questions.flatMap((prompt, index) => [
-    `${index + 1}. ${prompt.header}: ${prompt.question} (${prompt.multiple ? "any of" : "one of"}, or an answer of their own:)`,
-    ...prompt.options.map(describeOption),
-  ])
-
-const CUT_OFF = {
-  stopped: "its turn was stopped (interrupted, or ended by OpenCode after an hour without activity)",
-  restarted: "OpenCode restarted, or closed the session's project",
-}
-
-/** What the top session is told about a question, when it is asked or after its call was cut off. */
-export function questionNotice(asked: Asked, cutOff?: keyof typeof CUT_OFF) {
-  return [
-    cutOff
-      ? `This session, "${asked.title}", ${origin(asked.startedBy)} was asking the question below when ${CUT_OFF[cutOff]}. The question is no longer shown anywhere, and the session does nothing until it gets the answer.`
-      : `This session, "${asked.title}", ${origin(asked.startedBy)} asks the question below and waits for the answer.`,
-    ...describeQuestions(asked.questions),
-    "",
-    "Do not answer it yourself. Ask the person you are working with, using your question tool with exactly these questions:",
-    JSON.stringify({ questions: asked.questions }),
-    `What they choose there is passed on to the session${cutOff ? " as a message, which wakes it" : ""}. If you cannot use your question tool, or they answer some other way, call courier_answer with sessionID "${asked.sessionID}", requestID "${asked.requestID}" and answers: one entry per question, in order, each the label they chose or the text they gave (a list of labels where a question allows several).`,
-  ].join("\n")
-}
-
-/** How a question was settled without the top session, as its settled notice puts it. */
-function settledHow(asked: Asked, how: Elsewhere) {
-  if (how.by === "child") return `answered in its own session (${answeredText(asked.questions, how.answers)})`
-  if (how.by === "dismissed") return "dismissed in its own session, without an answer"
-  return `ended without an answer: its question call failed (${how.error})`
-}
-
-/** What the top session is told about a question settled without it. */
-export function settledNotice(asked: Asked, how: Elsewhere) {
-  const what = settledHow(asked, how)
-  return [
-    `The question ${asked.requestID} of this session, "${asked.title}", was ${what}, so it no longer waits on you.`,
-    "If you asked someone about it, tell them it is settled; there is nothing to pass on.",
-    ...(how.by === "child"
-      ? []
-      : [`That ends the session's turn, ${STAYS_QUIET}`]),
-  ].join("\n")
-}
-
-const DISMISSED =
-  "The person dismissed this question without answering it. Carry on without the answers, or report back with courier_send to the session that started you why you cannot."
-
 async function tell(ports: QuestionPorts, asked: Asked, text: string, attributes: Record<string, string>) {
   await ports.session.synthetic({
     sessionID: asked.top,
@@ -295,7 +214,7 @@ async function tell(ports: QuestionPorts, asked: Asked, text: string, attributes
 }
 
 /** Tells the top session that a question's call was cut off, once per question and process. */
-async function tellCutOff(ports: QuestionPorts, asked: Asked, cutOff: keyof typeof CUT_OFF) {
+async function tellCutOff(ports: QuestionPorts, asked: Asked, cutOff: CutOff) {
   // Not while an answer to it is being passed on, which makes the notice moot.
   if (shared.noticed.has(asked.requestID) || isPassing(asked.requestID)) return
   // Claimed first, so two tellers at once send one notice; given back if it did not go out.
@@ -414,13 +333,9 @@ function claim(set: Set<string>, value: string) {
 }
 
 async function sendAnswer(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
-  const text =
-    "answers" in outcome
-      ? `Your question ${asked.requestID} was cut off before it was answered; here is the answer. ${answeredText(asked.questions, outcome.answers)}`
-      : `Your question ${asked.requestID} was cut off before it was answered, and then dismissed without an answer. Carry on without the answers, or report back with courier_send why you cannot.`
   await ports.session.synthetic({
     sessionID: asked.sessionID,
-    text: envelope(asked.top, text, { answers: asked.requestID, ...("answers" in outcome ? {} : { dismissed: "true" }) }),
+    text: envelope(asked.top, cutOffAnswer(asked, outcome), { answers: asked.requestID, ...("answers" in outcome ? {} : { dismissed: "true" }) }),
     description: `Answer from ${asked.top}`,
     metadata: { source: "courier", from: asked.top, answers: asked.requestID },
     delivery: "steer",
@@ -661,7 +576,7 @@ async function settledElsewhere(ports: QuestionPorts, question: Question, how: E
   if (question.link) return question.link(how)
   // A top session never told about the question is not told that it is settled either.
   if (!told) return
-  await tell(ports, question, settledNotice(question, how), {
+  await tell(ports, question, questionSettledNotice(question, how), {
     answered: how.by === "child" ? "elsewhere" : how.by,
     request: question.requestID,
   })
@@ -804,11 +719,7 @@ function unlinkedResult(result: ToolResult, sessionID: string, questions: Readon
     (question) => question.top === sessionID && !question.link && !isPassing(question.requestID) && choices(question.questions) === asked,
   )
   if (!similar.length) return result
-  const which = similar.map((question) => `session ${question.sessionID} (requestID "${question.requestID}")`).join(", ")
-  return {
-    ...result,
-    content: `${result.content}\nIf you asked this for ${which}, these answers were not passed on by themselves: pass them on with courier_answer.`,
-  }
+  return { ...result, content: `${result.content}\n${unlinkedNote(similar)}` }
 }
 
 /**
@@ -835,42 +746,20 @@ async function linkedCallFailed(
   }
 }
 
-/** How a linked call's question was settled without it, as its withdrawn result puts it, with the answers that count. */
-function withdrawnHow(linked: Question, how: Withdrawal): { readonly what: string; readonly answers: Answers } {
-  const none = () => linked.questions.map(() => [])
-  switch (how.by) {
-    case "top":
-      return "answers" in how.outcome
-        ? { what: `already answered with courier_answer (${answeredText(linked.questions, how.outcome.answers)})`, answers: how.outcome.answers }
-        : { what: "already dismissed in your session, so it carries on without the answers", answers: none() }
-    case "child":
-      return { what: `answered in its own session (${answeredText(linked.questions, how.answers)})`, answers: how.answers }
-    case "dismissed":
-      return { what: "dismissed in its own session, which ends its turn; message it with courier_send if it should carry on", answers: none() }
-    default:
-      return { what: `ended: its question call failed (${how.error})`, answers: none() }
-  }
+/** The answers that count once a linked call's question was settled without it: none unless it was answered. */
+function withdrawnAnswers(linked: Question, how: Withdrawal): Answers {
+  if (how.by === "top" && "answers" in how.outcome) return how.outcome.answers
+  if (how.by === "child") return how.answers
+  return linked.questions.map(() => [])
 }
 
 /** The result of a linked call withdrawn because its question was settled without it. */
 function withdrawnResult(linked: Question, how: Withdrawal) {
-  const { what, answers } = withdrawnHow(linked, how)
   return {
-    output: { answers },
-    content: `Session ${linked.sessionID} no longer waits on this question: it was ${what}. There is nothing to pass on; tell the person it is settled.`,
+    output: { answers: withdrawnAnswers(linked, how) },
+    content: withdrawnText(linked, how),
     metadata: { relayed: linked.requestID, withdrawn: true },
   }
-}
-
-/** What a linked call adds to the person's answers about passing them on: `passed` is what deliver gave, or the error. */
-function passedNote(linked: Question, passed: string | undefined) {
-  if (passed === "result")
-    return `These answers were passed on to session ${linked.sessionID}, which carries on with them; do not call courier_answer for ${linked.requestID}. ${END_TURN}`
-  if (passed === "message")
-    return `These answers were passed on to session ${linked.sessionID} as a message, since its question had been cut off; it carries on with them. Do not call courier_answer for ${linked.requestID}. ${END_TURN}`
-  if (passed === undefined)
-    return `Session ${linked.sessionID} no longer waits on this question: it had already been answered or settled, so these answers were not passed on; tell the person so.`
-  return `Passing these answers on to session ${linked.sessionID} failed (${passed.slice(7)}); call courier_answer with requestID "${linked.requestID}" to pass them on.`
 }
 
 /**

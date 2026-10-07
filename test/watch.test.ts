@@ -82,6 +82,7 @@ function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["data"][]
     permission: {
       list: async ({ sessionID }: { sessionID: string }) => pending.filter((item) => item.sessionID === sessionID),
     },
+    now: () => 1_000_000,
     log: (message: string) => void logged.push(message),
   } as unknown as WatchPorts
   return { ports, sent, logged, subscriptions: () => subscriptions }

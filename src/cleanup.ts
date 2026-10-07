@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { isAbsolute } from "node:path"
+import { keepReason, type CleanupResult } from "./notices.js"
 import { rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
@@ -31,39 +32,8 @@ export interface CleanupInput {
   readonly force?: boolean
 }
 
-export type CleanupResult =
-  | { readonly sessionID: string; readonly directory: string; readonly outcome: "removed" }
-  | { readonly sessionID: string; readonly directory: string; readonly outcome: "gone" }
-  | {
-      readonly sessionID: string
-      readonly directory: string
-      readonly outcome: "kept"
-      readonly reason: string
-      readonly changes: readonly string[]
-      readonly commits: readonly string[]
-    }
-
-/** Why a worktree in this state must be kept, or undefined when removing it loses nothing. */
-export function keepReason(state: WorktreeState) {
-  const reasons = [
-    state.changes.length ? `${count(state.changes.length, "uncommitted change")} (${preview(state.changes)})` : "",
-    state.commits.length
-      ? `${count(state.commits.length, "commit")} on no branch, tag or remote (${preview(state.commits)})`
-      : "",
-  ].filter(Boolean)
-  return reasons.length ? reasons.join(" and ") : undefined
-}
-
-function count(n: number, noun: string) {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`
-}
-
 /** At most this many changes and commits are returned; the reason still counts them all. */
 export const MAX_LISTED = 50
-
-function preview(items: readonly string[]) {
-  return items.length > 5 ? `${items.slice(0, 5).join(", ")}, ...` : items.join(", ")
-}
 
 /**
  * Removes the worktree of an isolated child the parent started, and forgets the child. A worktree

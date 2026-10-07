@@ -1,13 +1,17 @@
 import type { Plugin } from "@opencode/plugin"
-import { envelope } from "./courier.js"
-import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing } from "./question.js"
 import {
+  envelope,
+  failureNotice,
   formNotice,
   formSettledNotice,
   kindOf,
   permissionNotice,
+  permissionSettledNotice,
+  type ExecutionError,
+} from "./notices.js"
+import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing } from "./question.js"
+import {
   QUESTION_FORM,
-  settledNotice,
   type FormCreated,
   type FormSettled,
   type PermissionAsked,
@@ -61,17 +65,8 @@ export interface ExecutionFailed {
   readonly id: string
   readonly data: {
     readonly sessionID: string
-    readonly error: { readonly type: string; readonly message: string; readonly status?: number }
+    readonly error: ExecutionError
   }
-}
-
-export function failureNotice(title: string, error: ExecutionFailed["data"]["error"]) {
-  const status = error.status === undefined ? "" : `, status ${error.status}`
-  return [
-    `This session, "${title}", which you started with courier_spawn, failed: ${error.message} (${error.type}${status}).`,
-    "Its turn ended without finishing, so it will not report back on its own.",
-    "Message it with courier_send to have it try again, start a replacement, or carry on without it.",
-  ].join("\n")
 }
 
 /** Adds to a bounded set, dropping the oldest entry; false when the value was there already. */
@@ -148,7 +143,7 @@ export async function reportReplied(ports: WatchPorts, state: WatchState, event:
   if (!chain.length) return []
   await ports.session.synthetic({
     sessionID: topOf(chain),
-    text: envelope(sessionID, settledNotice(chain[0]!.title, requestID, reply), { answered: reply, request: requestID }),
+    text: envelope(sessionID, permissionSettledNotice(chain[0]!.title, requestID, reply), { answered: reply, request: requestID }),
     description: `Session ${sessionID} no longer asks for permission`,
     metadata: { source: "courier", from: sessionID, answered: reply, requestID },
     delivery: "steer",

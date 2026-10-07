@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import { envelope } from "../src/courier.js"
 import {
+  envelope,
+  failureNotice,
   formNotice,
   formSettledNotice,
   permissionNotice,
-  settledNotice,
-  type FormCreated,
+  permissionSettledNotice as settledNotice,
   type FormField,
+} from "../src/notices.js"
+import {
+  type FormCreated,
   type PermissionAsked,
   type PermissionReplied,
 } from "../src/relay.js"
@@ -14,7 +17,6 @@ import { forgetQuestions, shutdownReportedAt } from "../src/question.js"
 import { record } from "../src/roster.js"
 import {
   claim,
-  failureNotice,
   reportAsked,
   reportFailure,
   reportForm,

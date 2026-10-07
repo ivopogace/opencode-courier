@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { envelope } from "../src/courier.js"
+import { envelope } from "../src/notices.js"
 import { cancel, deliverDue, schedule, type LaterPorts } from "../src/later.js"
 
 const MINUTE = 60_000

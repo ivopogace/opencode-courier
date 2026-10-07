@@ -4,7 +4,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   checkSignature,
-  defuse,
   dispatch,
   genericEvent,
   githubEvent,
@@ -19,6 +18,7 @@ import {
   unsubscribe,
   type WebhookPorts,
 } from "../src/webhook.js"
+import { defuse } from "../src/notices.js"
 
 const SECRET = "It's a Secret to Everybody"
 const review = readFileSync(join(import.meta.dir, "../e2e/fixtures/pull_request_review.json"), "utf8")

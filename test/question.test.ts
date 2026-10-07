@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Exit, Fiber } from "effect"
 import {
-  answeredText,
   byCodeUnit,
   answerQuestion,
   forgetQuestions,
@@ -13,13 +12,11 @@ import {
   MAX_STORED,
   noticeCutOff,
   pendingQuestions,
-  questionNotice,
   relayQuestions,
-  settledNotice,
   timing,
-  type Asked,
   type QuestionPorts,
 } from "../src/question.js"
+import { answeredText, questionNotice, questionSettledNotice as settledNotice, type Asked } from "../src/notices.js"
 import { record, RETENTION_MS } from "../src/roster.js"
 
 let showForms = true

@@ -3,7 +3,7 @@ import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { isAbsolute } from "node:path"
 import { keepReason, type CleanupResult } from "./notices.js"
-import { rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
+import { remove, rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
 
@@ -46,7 +46,7 @@ export async function cleanup(ports: CleanupPorts, parentID: string, input: Clea
   if (!entry.isolated)
     throw new Error(`${input.sessionID} ran in ${entry.directory}, not in a worktree of its own; there is nothing to remove.`)
   const { directory } = entry
-  const forget = () => ports.storage.remove(rosterKey(parentID, input.sessionID))
+  const forget = () => remove(ports.storage, parentID, input.sessionID)
   // With force the state only decides whether there is anything left to remove, so a worktree git
   // can no longer read is still removed.
   const state = await ports

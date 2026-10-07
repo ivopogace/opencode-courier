@@ -48,7 +48,7 @@ const replied = (id = "evt_r", reply: PermissionReplied["data"]["reply"] = "once
   data: { sessionID: "ses_child", requestID: "per_1", reply },
 })
 
-const fresh = () => ({ seen: new Set<string>(), waiting: new Set<string>(), answered: new Set<string>(), forms: new Set<string>() })
+const fresh = () => ({ seen: new Set<string>(), waiting: new Set<string>(), answered: new Set<string>(), forms: { told: new Map<string, Promise<unknown>>(), settled: new Set<string>() } })
 
 function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["data"][] = []) {
   const store = new Map<string, unknown>()
@@ -281,7 +281,7 @@ describe("reportForm", () => {
     expect(text).toContain('fails with "Web search cancelled"')
     expect(text).toContain("once it is made, in any session, no session is asked again")
     expect(text).toContain("only the person you are working with can, in session ses_child itself")
-    expect(state.forms).toEqual(new Set(["frm_1"]))
+    expect([...state.forms.told.keys()]).toEqual(["frm_1"])
   })
 
   test("tells about another kind of form without the web search note, and shows each kind of field", async () => {
@@ -308,6 +308,28 @@ describe("reportForm", () => {
     expect(text).toContain("- name (string)\n- How many? (integer)\n- link, opens https://example.com/login\n- Pick some\n  - Option 0")
     expect(text).toContain("  - Option 19\n  - and 2 more")
     expect(text).not.toContain("Web search cancelled")
+  })
+
+  test("names a field by its title and description, leaves hidden fields out and says when there are more", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    const extra = Array.from({ length: 21 }, (_, index) => ({ key: `f${index}`, type: "boolean" }))
+    const form = {
+      ...webForm,
+      metadata: {},
+      fields: [
+        { key: "secret", type: "string", title: "Secret", hidden: true },
+        { key: "provider", type: "string", title: "Provider", description: "Pick one.", when: [{ key: "choice", op: "eq", value: "choose" }] },
+        ...extra,
+      ],
+    }
+
+    await reportForm(ports, fresh(), shown("evt_f", form))
+
+    const text = sent[0].text as string
+    expect(text).not.toContain("Secret")
+    expect(text).toContain("- Provider: Pick one. (string) (only for some earlier answers)\n- f0 (boolean)")
+    expect(text).toContain("- f18 (boolean)\n- and 2 more fields")
   })
 
   test("leaves a kind that cannot go in the envelope out of it", async () => {
@@ -343,7 +365,7 @@ describe("reportForm", () => {
     const state = fresh()
 
     expect(await reportForm(ports, state, shown("evt_o", { ...webForm, sessionID: "ses_other" }))).toEqual([])
-    expect(state.forms.size).toBe(0)
+    expect(state.forms.told.size).toBe(0)
     await Promise.all([reportForm(ports, state, shown("evt_f")), reportForm(ports, state, shown("evt_f"))])
     await reportForm(ports, state, shown("evt_g"))
     expect(sent).toHaveLength(1)
@@ -359,7 +381,7 @@ describe("reportForm", () => {
     await telling
 
     expect(sent).toEqual([])
-    expect(state.forms.size).toBe(0)
+    expect(state.forms.told.size).toBe(0)
   })
 })
 
@@ -384,7 +406,7 @@ describe("reportFormSettled", () => {
     expect(sent[2].text).toContain("has been answered in that session")
     expect(sent[3].text).toStartWith('<courier from="ses_child" settled="cancelled" form="frm_2">')
     expect(sent[3].text).toContain("has been withdrawn unanswered")
-    expect(state.forms.size).toBe(0)
+    expect(state.forms.told.size).toBe(0)
   })
 
   test("says nothing about a form no one was told about, or about one event twice", async () => {
@@ -401,10 +423,41 @@ describe("reportFormSettled", () => {
     expect(sent).toHaveLength(2)
   })
 
+  test("waits for the notice that the form is shown, which another instance may still be sending", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    const state = fresh()
+    let deliver: () => void = () => undefined
+    ;(ports.session as any).synthetic = (input: any) =>
+      input.metadata.asks
+        ? new Promise((resolve) => (deliver = () => resolve(sent.push(input))))
+        : Promise.resolve(sent.push(input))
+
+    const telling = reportForm(ports, state, shown())
+    while (!state.forms.told.size) await Bun.sleep(1)
+    const settling = reportFormSettled(ports, state, settled())
+    await Bun.sleep(5)
+    expect(sent).toEqual([])
+    deliver()
+    await Promise.all([telling, settling])
+
+    expect(sent.map((notice: any) => notice.metadata.asks ?? notice.metadata.settled)).toEqual(["form", "answered"])
+  })
+
+  test("says nothing of the settling when the notice that the form is shown did not go out", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    const state = fresh()
+    state.forms.told.set("frm_1", Promise.reject(new Error("parent is gone")))
+
+    expect(await reportFormSettled(ports, state, settled())).toEqual([])
+    expect(sent).toEqual([])
+  })
+
   test("says nothing when the session is no longer on a roster", async () => {
     const { ports, sent } = fakePorts()
     const state = fresh()
-    state.forms.add("frm_1")
+    state.forms.told.set("frm_1", Promise.resolve())
 
     expect(await reportFormSettled(ports, state, settled())).toEqual([])
     expect(sent).toEqual([])

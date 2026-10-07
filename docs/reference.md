@@ -124,8 +124,8 @@ The question tool's forms are not told this way: [the question relay](#a-child-t
 passes every question of a spawned session on, and OpenCode marks those forms with the kind
 `question`. Forms of sessions not on a roster are ignored, among them MCP servers' requests for
 input, which OpenCode does not attach to a session. The plugin cannot list the forms a session
-shows, so `courier_status` does not report them, and a form shown while the plugin was not
-following OpenCode's events is not told.
+shows, so `courier_status` does not report them; a form shown while the plugin was not following
+OpenCode's events is not told, and one settled then, or across a server restart, is not told settled.
 
 ## A child that asks a question
 

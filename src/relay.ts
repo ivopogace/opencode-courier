@@ -194,6 +194,10 @@ export interface FormField {
   readonly description?: string
   readonly options?: ReadonlyArray<{ readonly value: string; readonly label: string; readonly description?: string }>
   readonly url?: string
+  /** Not shown to the person. */
+  readonly hidden?: boolean
+  /** Conditions on earlier answers; the field is shown only when they hold. */
+  readonly when?: ReadonlyArray<unknown>
 }
 
 /** The part of OpenCode's `form.created` event the notice is made from. */
@@ -224,11 +228,20 @@ export const kindOf = (form: FormCreated["data"]["form"]) => {
 }
 
 function fieldLines(field: FormField) {
-  const label = field.description ?? field.title ?? field.key
+  const label = [field.title, field.description].filter(Boolean).join(": ") || field.key
   const options = (field.options ?? []).slice(0, MAX_RESOURCES).map((option) => `  - ${clip(option.label)}`)
   if ((field.options?.length ?? 0) > MAX_RESOURCES) options.push(`  - and ${field.options!.length - MAX_RESOURCES} more`)
   const kind = field.type === "external" && field.url ? `, opens ${clip(field.url)}` : field.options?.length ? "" : ` (${field.type})`
-  return [`- ${clip(label)}${kind}`, ...options]
+  const when = field.when?.length ? " (only for some earlier answers)" : ""
+  return [`- ${clip(label)}${kind}${when}`, ...options]
+}
+
+/** The fields the person sees, as notice lines. */
+function formLines(fields: ReadonlyArray<FormField>) {
+  const shown = fields.filter((field) => !field.hidden)
+  const lines = shown.slice(0, MAX_RESOURCES).flatMap(fieldLines)
+  if (shown.length > MAX_RESOURCES) lines.push(`- and ${shown.length - MAX_RESOURCES} more fields`)
+  return lines
 }
 
 const WEBSEARCH_NOTE = [
@@ -245,7 +258,7 @@ const WEBSEARCH_NOTE = [
 export function formNotice(title: string, form: FormCreated["data"]["form"], startedBy?: string) {
   return [
     `This session, "${title}", ${origin(startedBy)} shows a form, "${clip(form.title)}", and waits until it is answered.`,
-    ...form.fields.slice(0, MAX_RESOURCES).flatMap(fieldLines),
+    ...formLines(form.fields),
     ...(kindOf(form) === WEBSEARCH_FORM ? ["", ...WEBSEARCH_NOTE] : []),
     "",
     `Neither you nor courier_answer can answer it: only the person you are working with can, in session ${form.sessionID} itself.`,

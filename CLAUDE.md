@@ -10,7 +10,8 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   scheduler. `src/roster.ts`: the children each parent spawned. `src/cleanup.ts`: removing an
   isolated child's worktree. `src/webhook.ts`: the webhook receiver and subscriptions.
   `src/watch.ts`: following OpenCode's events to tell a parent that a child's turn failed, that it
-  waits for a permission, or that it shows a form only the person can answer. `src/relay.ts`: the permission notices and passing the answer back.
+  waits for a permission, or that it shows a form only the person can answer. `src/relay.ts`: the
+  permission and form notices, and passing a permission answer back.
   `src/question.ts`: relaying a child's question, by wrapping OpenCode's `question` tool.
   `src/storage.ts`: shared storage helpers and `processWide`, the process-wide registry.
   `src/index.ts`: the plugin (an Effect plugin running the promise one), tool schemas and wiring.

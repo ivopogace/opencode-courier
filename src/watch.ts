@@ -38,15 +38,22 @@ export interface WatchPorts {
  * location, all in one process, and each instance may see the same event, so an event id is
  * claimed synchronously and handled once. `waiting` holds the permission requests a session was
  * told about and has not answered; `answered`, requests answered before anyone was told, so a
- * notice whose roster lookup was overtaken by the answer is not sent. `forms` holds the forms a
- * session was told about that are still shown; a form settled before anyone was told goes in
- * `answered` too.
+ * notice whose roster lookup was overtaken by the answer is not sent. `forms` does the same for
+ * the forms of spawned sessions.
  */
 export interface WatchState {
   readonly seen: Set<string>
   readonly waiting: Waiting
   readonly answered: Set<string>
-  readonly forms: Set<string>
+  readonly forms: FormsTold
+}
+
+/** The forms sessions were told about, kept apart from the permission requests. */
+export interface FormsTold {
+  /** Forms still shown whose notice went out, or is going out: the notice's delivery. */
+  readonly told: Map<string, Promise<unknown>>
+  /** Forms settled before anyone was told, so a notice whose roster lookup was overtaken is not sent. */
+  readonly settled: Set<string>
 }
 
 /** The part of OpenCode's `session.execution.failed` event the notice is made from. */
@@ -149,6 +156,12 @@ export async function reportReplied(ports: WatchPorts, state: WatchState, event:
   return [topOf(chain)]
 }
 
+/** Like `claim`, for a bounded map: adds the entry, dropping the oldest. */
+function remember<V>(map: Map<string, V>, key: string, value: V) {
+  map.set(key, value)
+  if (map.size > SEEN_MAX) map.delete(map.keys().next().value!)
+}
+
 /**
  * Tells the session at the top about a form OpenCode shows in a spawned session, such as web
  * search asking for its provider, which only the person can answer there. Question forms are
@@ -160,10 +173,10 @@ export async function reportForm(ports: WatchPorts, state: WatchState, event: Fo
   if (kindOf(form) === QUESTION_FORM) return []
   const chain = await lineage(ports.storage, form.sessionID)
   // As with a permission request, claimed after the lookup, so a form settled meanwhile is not told.
-  if (!chain.length || state.answered.has(form.id) || !claim(state.forms, form.id)) return []
+  if (!chain.length || state.forms.settled.has(form.id) || state.forms.told.has(form.id)) return []
   const startedBy = chain.length > 1 ? chain[0]!.parentID : undefined
   const kind = kindOf(form)
-  await ports.session.synthetic({
+  const telling = ports.session.synthetic({
     sessionID: topOf(chain),
     text: envelope(form.sessionID, formNotice(chain[0]!.title, form, startedBy), {
       asks: "form",
@@ -174,6 +187,8 @@ export async function reportForm(ports: WatchPorts, state: WatchState, event: Fo
     metadata: { source: "courier", from: form.sessionID, asks: "form", formID: form.id, ...(kind ? { kind } : {}) },
     delivery: "steer",
   })
+  remember(state.forms.told, form.id, telling)
+  await telling
   return [topOf(chain)]
 }
 
@@ -181,13 +196,17 @@ export async function reportForm(ports: WatchPorts, state: WatchState, event: Fo
 export async function reportFormSettled(ports: WatchPorts, state: WatchState, event: FormSettled) {
   if (!claim(state.seen, event.id)) return []
   const { id, sessionID } = event.data
-  if (!state.forms.delete(id)) {
-    claim(state.answered, id)
+  const telling = state.forms.told.get(id)
+  if (!telling) {
+    claim(state.forms.settled, id)
     return []
   }
+  state.forms.told.delete(id)
   const settled = event.type === "form.replied" ? "answered" : "cancelled"
-  const chain = await lineage(ports.storage, sessionID)
-  if (!chain.length) return []
+  // After the notice that the form is shown, which another instance may still be sending, so the
+  // settling never arrives first; and not at all when that notice did not go out.
+  const [chain, told] = await Promise.all([lineage(ports.storage, sessionID), telling.then(() => true, () => false)])
+  if (!chain.length || !told) return []
   await ports.session.synthetic({
     sessionID: topOf(chain),
     text: envelope(sessionID, formSettledNotice(chain[0]!.title, id, settled), { settled, form: id }),

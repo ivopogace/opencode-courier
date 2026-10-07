@@ -300,13 +300,33 @@ reported. It works on the calling session's own children.
 
 Pending `courier_later` messages are kept in the plugin's storage, and every loaded copy of the
 plugin checks for due ones every 15 seconds, so a message can arrive up to about 15 seconds late.
-OpenCode loads the plugin once per project location; the copies share one claim set, so each
-message is delivered once.
+OpenCode loads the plugin once per project location; the copies in one server share one claim set,
+so each message is delivered once. Two servers on one data directory do not share it (see below).
 
 They survive a server restart. After a start, OpenCode loads plugins for a project the first time
 that project is used, so messages that fell due while it was down are delivered then, not at the
 moment the server comes back. A crash between delivering a message and forgetting it can deliver
 it twice after the restart; a lost check-in would be worse.
+
+## Two servers on one data directory
+
+Two OpenCode servers on one data directory, such as `opencode serve` next to the background server
+of `opencode service`, share the plugin's storage but not its memory. Measured at 2.0.24 with
+`e2e/two-servers.sh` ([the notes](plugin-api-notes.md#two-servers-on-one-data-directory-2026-10-07)):
+
+- A `courier_later` message is delivered by whichever server's scheduler finds it due first, and
+  twice when both look within a few milliseconds of each other. With the plugin loaded on both at
+  the same moment, from none to all of ten messages due together were delivered twice, varying
+  from run to run; loaded half a tick apart, none was.
+- A child's permission request and a child's failed turn are told to the parent once, by the
+  server that runs the child's turn: the one that handled the `courier_spawn`, or the latest
+  message, that started it.
+- `courier_answer` passes an answer on only from a turn on that same server. From the other one it
+  finds no request, says the child no longer waits, and passes nothing on, while the child still
+  waits. By the same token, not measured, `courier_status` lists only the requests waiting on its
+  own server.
+
+Run one OpenCode server per data directory, or point a second one at another (`XDG_DATA_HOME`).
 
 ## Webhooks
 

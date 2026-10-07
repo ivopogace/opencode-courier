@@ -339,3 +339,108 @@ What a plugin sees of forms:
   tells the session at the top about a form of a spawned session, other than a question, and that
   only the person can answer it; it cannot list the forms a session shows for `courier_status`, nor
   relay one shown while it was not following events.
+
+## Two servers on one data directory (2026-10-07)
+
+OpenCode keeps everything in one SQLite database under its data directory,
+`$XDG_DATA_HOME/opencode/opencode.db` (`~/.local/share/opencode` by default), and any number of
+servers can open it: `opencode serve` twice, or `opencode serve` next to the background server
+`opencode service start` runs, which opens the same file. Plugin storage is a slice of that
+database's `kv` table (keys `plugin:<the plugin id, hex-encoded>:<key>`), so the plugin instances
+of two servers share the roster, the pending `courier_later` messages and the stored questions.
+What they do not share is anything in process memory: the claim set the scheduler marks a message
+with (`processWide("opencode-courier.claimed")` in `src/index.ts`), the watcher's handled events,
+OpenCode's event bus and its pending permission requests. Whether that delivers anything twice was
+untested until #73; `e2e/two-servers.sh` tests it.
+
+Setup: `@opencode/cli@2.0.24` (the pin), one throwaway project and home directory as in the live
+suite (`e2e/lib.sh`), the plugin from `dist/` without the webhook receiver (both servers would bind
+its port), and `e2e/mock-model.mjs` as the model. Server A on port 4610 and then, once A is up,
+server B on 4611, both `opencode serve` in the project with the same `HOME` and XDG directories.
+Started at the same moment on a new data directory, the two race to create its tables and one exits
+(`SQLiteError: table \`account_state\` already exists`); the script waits for A first. Every prompt
+goes to A through `opencode run --server`; B has the plugin loaded for the project (its first
+`GET /api/plugin?directory=…` loads it), so B's scheduler and watcher run. Each server's
+`/api/event` stream is recorded, which shows which server queued each courier message
+(`session.inbox.enqueued` with `metadata.source == "courier"`). The commands:
+
+```bash
+npm install --prefix <scratch>/oc @opencode/cli@2.0.24
+OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh   # a few minutes, no API key; KEEP=1 keeps the logs
+```
+
+It schedules ten `courier_later` messages at once (`COURIER-LATER 0.5`, ten parallel
+`opencode run`s), so they fall due within a few seconds of each other, first with the plugin loaded
+on both servers at the same moment, so the two schedulers tick some milliseconds apart, then again
+after B is restarted and its plugin loaded half a tick (7.5 s) after A's. In between it starts a
+child that asks for a permission (`COURIER-ASK`), has the parent answer it with `courier_answer` in
+a turn on B and then in one on A, and starts a child whose turn fails (`COURIER-FAIL`). The script
+prints the counts and exits 1 when one differs from the results below, except the count with the
+schedulers in step, which varies from run to run (below) and is only printed.
+
+Results at 2.0.24, runs on 2026-10-07. Runs 1 to 3 used earlier drafts of the script: run 1
+scheduled three messages one after another, and none of the three tried `courier_answer` or
+restarted B.
+
+| | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Run 6 |
+|---|---|---|---|---|---|---|
+| `courier_later`, schedulers in step: messages delivered twice | 0 of 3 | 10 of 10 | 6 of 10 | 3 of 10 | 0 of 10 | 3 of 10 |
+| `courier_later`, schedulers half a tick apart: delivered twice | not run | not run | not run | 0 of 10 | 0 of 10 | 0 of 10 |
+| notices of the child's permission request | 1 | 1 | 1 | 1 | 1 | 1 |
+| `courier_answer` in a turn on B reaches the request | not run | not run | not run | no | no | no |
+| `courier_answer` in a turn on A reaches the request | not run | not run | not run | yes | yes | yes |
+| notices of the child's failed turn | 1 | 1 | 1 | 1 | 1 | 1 |
+
+No message was ever delivered more than twice, and none was lost.
+
+Why:
+
+- **A `courier_later` message can be delivered twice.** Both schedulers scan the same storage
+  every 15 seconds (`TICK_MS`), and each claims a due message only in its own process. Each
+  re-reads the message after claiming it and removes it only after `session.synthetic` returns, so
+  the other server skips it if its tick comes after the removal, and delivers it too if its tick
+  comes in between. One delivery took about 5 to 10 ms (from the `created` times of the
+  `session.inbox.enqueued` events), and due messages are delivered one after the other: in run 2
+  each of B's ten deliveries was queued within 10 ms of A's of the same message. How often it happens therefore depends on how far
+  apart the two servers' ticks are, which is set by when each loaded the plugin for the project and
+  then stays fixed until one of them reloads it: within a few milliseconds, some or all messages due
+  in the same tick are delivered twice; half a tick apart, none was. Loading at the same moment does
+  not pin the gap down: the server logs put the two loads 23 ms apart in run 4 and 27 ms in run 5,
+  yet run 4 delivered three messages twice and run 5 none, with A delivering all twenty, since a
+  scheduler starts only once the plugin's setup has run, which takes a varying time. Two servers started at unrelated
+  times are rarely that close, so in practice a duplicate is rare, but nothing prevents it, and the
+  messages that fall due together while both are up (several check-ins due at once after a restart
+  of one) widen the window.
+- **A permission request or a failed turn is told once.** The watcher acts on OpenCode's events,
+  and a server's event bus, and its `/api/event` stream, carry only what that process does: in run 4
+  A's stream carried 754 session events of 24 sessions and B's 121 of 11, each of them a session B
+  had itself queued a message into (its ten deliveries and the turn it ran for `courier_answer`),
+  none of the sessions only A ran. A turn runs in the server that queued the message starting it (B
+  ran a turn for each message it delivered), so a child's turn runs where its `courier_spawn`, or a
+  later `courier_send` or prompt to it, was handled, only that server's watcher sees its
+  `permission.asked` or `session.execution.failed`, and it tells the parent once. B's watcher also
+  relays, on subscribing, the requests already pending for the sessions on the roster, but it lists
+  them through its own `permission` domain, which holds only B's pending requests.
+- **`courier_answer` reaches a request only from the server where the child waits.** Pending
+  permission requests live in the memory of the process that runs the child's turn. A parent whose
+  turn ran on B (its own prompt, a scheduled message B delivered, a child's report B queued) called
+  `courier_answer`, found no such request among B's, and returned `answered: false`, telling the
+  model the child "no longer waits on request …" and that the answer is not needed, while the child
+  still waited on A; the same call in a turn on A passed the answer on. By the same reasoning, not
+  run here, `courier_status` and `courier_children` list under `pending` only the requests held by
+  the server they run on, and the question relay, which follows a child's question by its form's
+  events, sees only questions asked on its own server.
+
+Not covered: the webhook receiver (the script leaves it off, since its port can be bound by one
+process only) and the question relay.
+
+What would fix the duplicates, not done here (#73 changes no `src/`): a best-effort owner key in
+plugin storage with an expiry, such as `later/owner` holding a process id and a time, which a
+scheduler writes and re-reads before a tick and renews while it runs, so only the server holding a
+fresh key delivers; the storage has no compare-and-set, so two servers could still both believe
+they hold it for the moment between the write and the re-read, which a short random wait before
+the re-read narrows. The same key could pick the one server whose watcher relays pending requests
+on subscribing. Passing an answer to a request held by the other server needs a channel between
+the servers, which the plugin API does not offer; the most a fix could do there is say, when no
+request is found, that it may be pending on another OpenCode server, instead of that it was
+answered.

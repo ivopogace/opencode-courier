@@ -132,6 +132,7 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
       session: ctx.session,
       directory: ctx.location.directory,
       now: Date.now,
+      timing: { closingGraceMs: 30_000, passingWaitMs: 30_000, relayWaitMs: 30_000, dismissalGraceMs: 2_000 },
       newID: () => `question_${randomUUID()}`,
       log,
     }
@@ -200,7 +201,7 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     const location = {}
     locations.set(location, ctx.permission)
     void watchChildren(
-      { storage: ctx.storage, session: ctx.session, event: ctx.event, permission: ctx.permission, log: later.log },
+      { storage: ctx.storage, session: ctx.session, event: ctx.event, permission: ctx.permission, now: questionPorts.now, log: later.log },
       watchState,
       watching.signal,
     )

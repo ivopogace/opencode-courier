@@ -35,6 +35,8 @@ export interface WatchPorts {
   readonly event: Pick<Context["event"], "subscribe">
   /** This location's pending permission requests, relayed when the watcher (re)subscribes. */
   readonly permission: Pick<Context["permission"], "list">
+  /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
+  readonly now: () => number
   readonly log: (message: string) => void
 }
 
@@ -246,7 +248,7 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
   // The event's location is optional; without one, the shutdown counts for every location.
   if (event.type === "location.shutdown") {
     const directory = (event as { location?: { directory?: unknown } }).location?.directory
-    locationClosing(typeof directory === "string" ? directory : undefined)
+    locationClosing(ports.now(), typeof directory === "string" ? directory : undefined)
   }
   return []
 }

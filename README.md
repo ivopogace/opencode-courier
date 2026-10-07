@@ -121,6 +121,24 @@ This installs the package from npm and adds `"opencode-courier"` to `plugins` in
 configuration (`~/.config/opencode/opencode.json`). To receive webhooks, replace that entry with the
 object form shown under [Webhooks](#webhooks), which carries a `webhook` option.
 
+Install it by name, without a version. OpenCode only checks plugins for updates when their entry is
+not an exact version: `opencode-courier` (or a tag or range such as `opencode-courier@latest` or
+`opencode-courier@^0.2.0`) is checked against npm, but `opencode-courier@0.2.1` counts as fixed. Its
+check reports it as current without asking npm, so `opencode plugin check`, `opencode plugin update`
+and *check for updates* (ctrl+r) in the TUI's `/plugins` dialog never offer a newer release. If your
+entry carries an exact version, replace it with the name and restart OpenCode:
+
+```bash
+opencode plugin remove opencode-courier@0.2.1   # the entry exactly as it appears in plugins
+opencode plugin add opencode-courier
+```
+
+Then `opencode plugin check` lists `courier` with `(update available)` when a newer release exists,
+and `opencode plugin update` installs it. If an unpinned entry still shows no update after a release,
+the check itself may have failed: OpenCode treats a failed check as "no update" and only writes the
+warning `failed to check plugin update` to its log (`~/.local/share/opencode/log/`). The check uses
+your npm configuration, so look at the registry and proxy settings in your `.npmrc`.
+
 ### From a local clone
 
 ```bash

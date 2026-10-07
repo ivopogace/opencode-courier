@@ -336,6 +336,28 @@ all six checks, linked (the parent's form held the child's three greetings), 5 s
 person's answer to the child's report. The parent asked by form and did not call `courier_answer`,
 so the new results were not reached; the linked path's result, unchanged, was.
 
+## The README quickstart prompt (#64)
+
+The README's [Quickstart](../README.md#quickstart) has the person paste a shorter wording of the
+fan-out prompt, run here with `COURIER_PROMPT` set to it and the default `COURIER_EXPECT`:
+
+> Start two helper sessions with courier_spawn and have each report back to you. One runs
+> `` `sleep 20; echo $((17 * 23))` ``, the other `` `sleep 40; echo $((2 ** 10))` ``. Do not run the
+> commands yourself. When both have reported, reply with one line: RESULTS \<first\> \<second\>
+
+On 2026-10-07, with `opencode v2.0.24` and `longcat-2.5-preview-free`, two runs:
+
+- The first failed on the model, not on courier: the parent spawned both children, but its next
+  model request never returned, neither answer nor error, so its first turn was still open when the
+  script gave up after 300 seconds. Both children ran their commands and called `courier_send`;
+  with the parent's turn stuck, the reports could not start a turn of their own. The checker says
+  `fail` (four of seven checks) rather than inconclusive, since a request that stalls leaves no
+  failed request behind.
+- The second passed all seven checks: the parent ended its first turn 16 seconds in ("Both helper
+  sessions are running. I'll wait for their reports."), the first report woke it at 45 seconds and
+  the second at 65, each starting a turn of its own, and it replied `RESULTS 391 1024`. 10 model
+  requests, about 43,000 input and 500 output tokens.
+
 ## Cost
 
 Nothing: every run used free models. The 26 fan-out runs with a summary made 290 model requests,

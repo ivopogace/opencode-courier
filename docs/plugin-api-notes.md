@@ -278,3 +278,24 @@ and the `dev` build 0.0.0-dev-20534 (2026-10-04); of the older hosts tried, the 
 2.0.0 and 2.0.3, where the `model` domain is missing. The `latest` leg of CI covers the next
 host release with this copy of the plugin API, which is exactly what `plugin add` gives a user
 there. A pin bump still adds a row to the README's table.
+
+## Update checks skip a plugin pinned to an exact version (2026-10-07)
+
+A user with `opencode-courier@0.2.1` installed found that *check for updates* (ctrl+r) in the TUI's
+`/plugins` dialog offered nothing after 0.2.2 was published as `latest`. From the source at
+`v2.0.24`:
+
+- `Npm.check` (`packages/util/src/npm.ts`), behind `opencode plugin check`, `plugin update` and the
+  TUI's check, parses the configured entry with `npm-package-arg`. A registry spec is `mutable`
+  unless its type is `version`, and for an entry that is not mutable `check` returns `false` without
+  asking the registry. So `opencode-courier@0.2.1` is never reported outdated, while
+  `opencode-courier`, `opencode-courier@latest` and `opencode-courier@^0.2.0` are compared with the
+  version the registry resolves the spec to.
+- The server's update service (`packages/core/src/plugin/update.ts`) logs a failed check as
+  `failed to check plugin update` and keeps the previous answer, `false` the first time, so a failed
+  check also reads as "no update".
+
+On 2.0.24, in a scratch home directory, with the installed copy marked 0.2.1 and 0.2.2 on npm:
+`opencode plugin check` printed `courier 0.2.1 (current)` for the entry `opencode-courier@0.2.1` and
+`(update available)` for the entry `opencode-courier`. Hence the README's advice to install by
+name, and to replace an exact-version entry with the name to get update checks back.

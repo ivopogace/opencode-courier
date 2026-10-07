@@ -231,7 +231,9 @@ function fieldLines(field: FormField) {
   const label = [field.title, field.description].filter(Boolean).join(": ") || field.key
   const options = (field.options ?? []).slice(0, MAX_RESOURCES).map((option) => `  - ${clip(option.label)}`)
   if ((field.options?.length ?? 0) > MAX_RESOURCES) options.push(`  - and ${field.options!.length - MAX_RESOURCES} more`)
-  const kind = field.type === "external" && field.url ? `, opens ${clip(field.url)}` : field.options?.length ? "" : ` (${field.type})`
+  let kind = ` (${field.type})`
+  if (field.type === "external" && field.url) kind = `, opens ${clip(field.url)}`
+  else if (field.options?.length) kind = ""
   const when = field.when?.length ? " (only for some earlier answers)" : ""
   return [`- ${clip(label)}${kind}${when}`, ...options]
 }

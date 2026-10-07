@@ -360,11 +360,12 @@ On 2026-10-07, with `opencode v2.0.24` and `longcat-2.5-preview-free`, two runs:
 
 ## Cost
 
-Nothing: every run used free models. The 26 fan-out runs with a summary made 290 model requests,
-about 1,444,000 input, 19,000 output and 17,000 reasoning tokens, plus 1,064,000 cache reads. A
-passing run is 10 to 12 requests, 25,000 to 110,000 input tokens (nemotron reads the most, with
-little caching) and about 1,000 output tokens. The permission and question runs (free models too)
-are smaller: one child, and 6 to 10 requests in all; their checkers do not add usage up.
+Nothing: every run used free models. The 26 fan-out runs with a summary before the quickstart's two
+(18 requests more, above) made 290 model requests, about 1,444,000 input, 19,000 output and 17,000
+reasoning tokens, plus 1,064,000 cache reads. A passing run is 10 to 12 requests, 25,000 to 110,000
+input tokens (nemotron reads the most, with little caching) and about 1,000 output tokens. The
+permission and question runs (free models too) are smaller: one child, and 6 to 10 requests in all;
+their checkers do not add usage up.
 
 ## Caveats
 

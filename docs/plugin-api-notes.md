@@ -271,8 +271,8 @@ exact `2.0.22` that copy is the one the plugin was built and tested with, whatev
 range such as `^2.0.22` it would be the newest version on npm that satisfies it, a copy nothing has
 run the suite with, and the kind of copy that died above on a host short of a domain it expected.
 That is why the peer dependency stays exact, the same version as the devDependency, rather than
-becoming the range #40 set out to write, and why the README's table keeps one version per row with
-the hosts the suite passed on named next to it (now in
+becoming the range #40 set out to write, and why the README's table keeps one version per row and
+the hosts the suite passed on are named apart from it (under it at first, now in
 [reference.md](reference.md#other-versions-it-was-tried-on)): 2.0.22 (the pinned leg of CI, and
 `latest` that day) and the `dev` build 0.0.0-dev-20534 (2026-10-04); of the older hosts tried, the
 plugin loads on 2.0.4 and 2.0.21 (nothing in between was run, and the suite was not run there) and

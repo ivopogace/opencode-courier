@@ -8,16 +8,12 @@ what the webhook receiver does with a delivery. The [README](../README.md) has t
 
 ### How a release is tested
 
-Each release is built and tested against exactly one OpenCode V2 version, the `@opencode/plugin`
-version pinned in `package.json` (the CLI and the plugin API share a version). The end-to-end suite
-runs on that version with every change, and once more on the newest `@opencode/cli` release, where a
-failure is a warning rather than a red build, so a host release that breaks the plugin shows up in
-CI first. A newer OpenCode may still break tools; [plugin-api-notes.md](plugin-api-notes.md) lists
-what the pinned version already needed working around, and what changed the last time the pin moved.
-A release that moves the pin adds a row to the README's [Supported OpenCode
-version](../README.md#supported-opencode-version) table. When the plugin loads on an OpenCode whose
-version is not the pinned one, it writes one line to the server log naming both versions, so a
-mismatch is named before a tool fails.
+The end-to-end suite runs on the pinned version (the README's [Supported OpenCode
+version](../README.md#supported-opencode-version) table) with every change, and once more on the
+newest `@opencode/cli` release, where a failure is a warning rather than a red build, so a host
+release that breaks the plugin shows up in CI first. A newer OpenCode may still break tools;
+[plugin-api-notes.md](plugin-api-notes.md) lists what the pinned version already needed working
+around, and what changed the last time the pin moved.
 
 ### Other versions it was tried on
 

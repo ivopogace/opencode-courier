@@ -29,13 +29,14 @@ opencode                              # in any folder
 Paste this prompt:
 
 > Start two helper sessions with courier_spawn and have each report back to you. One runs
-> `sleep 20; echo $((17 * 23))`, the other `sleep 40; echo $((2 ** 10))`. Do not run the commands
-> yourself. When both have reported, reply with one line: RESULTS \<first\> \<second\>
+> `` `sleep 20; echo $((17 * 23))` ``, the other `` `sleep 40; echo $((2 ** 10))` ``. Do not run the
+> commands yourself. When both have reported, reply with one line: RESULTS \<first\> \<second\>
 
 The parent spawns both children and ends its turn. Within a minute the first report starts a new
 turn on its own, about 20 seconds later the second does, and the parent replies `RESULTS 391 1024`.
-If OpenCode asks to allow a child's command, the parent passes the question to you. Next: [Using
-it](#using-it).
+If OpenCode asks to allow a child's command, the parent passes the question to you. Free models
+sometimes stall on a request; if nothing moves for a few minutes, send the prompt again. Next:
+[Using it](#using-it).
 
 ## OpenCode 2 native
 
@@ -53,19 +54,21 @@ first. Older releases and their versions: [Supported OpenCode version](#supporte
 
 OpenCode V2 has its own [`subagent` tool](https://opencode.ai/v2/docs/agents): it starts an agent
 with fresh context in a child session, and the parent either waits for its final answer or, with
-`background: true`, carries on and is notified when the child finishes; passing the child's
-`sessionID` back continues that conversation ([source at
+`background: true`, carries on and is notified when the child finishes. Passing the child's
+`sessionID` back sends it another prompt, steering it if it is running and waking it if it is idle
+([source at
 v2.0.24](https://github.com/anomalyco/opencode/blob/v2.0.24/packages/core/src/tool/plugin/subagent.ts)).
 Use it when one result back is all you need: a search, a review, a self-contained task that needs
 nothing from you on the way.
 
-Use courier when the work needs more than one result back. It adds what the built-in tool's docs
-do not cover:
+Use courier when the work needs more than one result back. On top of what the built-in tool does,
+it adds:
 
-- **Messages mid-run:** a child reports progress, or asks its parent something, whenever it likes
-  with `courier_send`, and any session can message any other.
-- **Waking an idle session:** any message, not only a child's final one, starts a new turn in a
-  session that has ended its own.
+- **Messages from the child, mid-run:** with the built-in tool a child's one message to its parent
+  is its final answer. With courier a child reports progress, or asks its parent something,
+  whenever it likes with `courier_send`, and any session can message any other.
+- **Waking an idle session from anywhere:** a message from a child, a schedule or a webhook starts a
+  new turn in a session that has ended its own.
 - **Scheduled messages:** `courier_later` wakes a session at a set time, for check-ins and
   reminders.
 - **Webhooks:** GitHub reviews, comments and CI runs, or any signed POST, wake the
@@ -108,8 +111,9 @@ they arrive."*
 
 The recording at the top is this run. Watch the parent write its README and finish its turn 16
 seconds in, while both children still sleep. Each report then starts a new turn on its own (the
-`Message from ses_…` line is the child's message): the first after about 30 seconds, the second after about 45, and the parent folds each
-into the README and cancels the check-in it had scheduled for itself.
+`Message from ses_…` line is the child's message): the first after about 30 seconds, the second
+after about 45, and the parent folds each into the README and cancels the check-in it had scheduled
+for itself.
 
 **A child's question reaches you.** Prompt: *"Spawn a child session to add a multiply function to
 math.js. It must ask me first whether to name it multiply, times or product."*

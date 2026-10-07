@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { envelope } from "../src/courier.js"
-import { permissionNotice, settledNotice, type PermissionAsked, type PermissionReplied } from "../src/relay.js"
+import {
+  formNotice,
+  formSettledNotice,
+  permissionNotice,
+  settledNotice,
+  type FormCreated,
+  type FormField,
+  type PermissionAsked,
+  type PermissionReplied,
+} from "../src/relay.js"
 import { forgetQuestions, shutdownReportedAt } from "../src/question.js"
 import { record } from "../src/roster.js"
 import {
@@ -8,6 +17,8 @@ import {
   failureNotice,
   reportAsked,
   reportFailure,
+  reportForm,
+  reportFormSettled,
   relayPending,
   reportReplied,
   watchChildren,
@@ -37,7 +48,7 @@ const replied = (id = "evt_r", reply: PermissionReplied["data"]["reply"] = "once
   data: { sessionID: "ses_child", requestID: "per_1", reply },
 })
 
-const fresh = () => ({ seen: new Set<string>(), waiting: new Set<string>(), answered: new Set<string>() })
+const fresh = () => ({ seen: new Set<string>(), waiting: new Set<string>(), answered: new Set<string>(), forms: new Set<string>() })
 
 function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["data"][] = []) {
   const store = new Map<string, unknown>()
@@ -226,6 +237,180 @@ describe("reportReplied", () => {
   })
 })
 
+const choice: FormField = {
+  key: "choice",
+  description: "Allow OpenCode to search the web for up-to-date information?",
+  type: "string",
+  options: [
+    { value: "allow", label: "Allow search via Courier Search" },
+    { value: "choose", label: "Choose another provider" },
+    { value: "disable", label: "Disable web search" },
+  ],
+}
+
+const webForm = { id: "frm_1", sessionID: "ses_child", title: "Web Search", metadata: { kind: "websearch.provider" }, fields: [choice] }
+
+const shown = (id = "evt_f", form: FormCreated["data"]["form"] = webForm): FormCreated & { type: string } => ({
+  id,
+  type: "form.created",
+  data: { form },
+})
+
+const settled = (id = "evt_s", type = "form.replied", formID = "frm_1") => ({ id, type, data: { id: formID, sessionID: "ses_child" } })
+
+describe("reportForm", () => {
+  test("tells the parent which form its child shows and that only the person can answer it, waking it", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    const state = fresh()
+
+    expect(await reportForm(ports, state, shown())).toEqual(["ses_parent"])
+
+    expect(sent).toEqual([
+      {
+        sessionID: "ses_parent",
+        text: envelope("ses_child", formNotice("Fix the bug", webForm), { asks: "form", form: "frm_1", kind: "websearch.provider" }),
+        description: "Session ses_child shows a form",
+        metadata: { source: "courier", from: "ses_child", asks: "form", formID: "frm_1", kind: "websearch.provider" },
+        delivery: "steer",
+      },
+    ])
+    const text = sent[0].text as string
+    expect(text).toContain('shows a form, "Web Search", and waits until it is answered.')
+    expect(text).toContain("- Allow OpenCode to search the web for up-to-date information?\n  - Allow search via Courier Search\n  - Choose another provider\n  - Disable web search")
+    expect(text).toContain('fails with "Web search cancelled"')
+    expect(text).toContain("once it is made, in any session, no session is asked again")
+    expect(text).toContain("only the person you are working with can, in session ses_child itself")
+    expect(state.forms).toEqual(new Set(["frm_1"]))
+  })
+
+  test("tells about another kind of form without the web search note, and shows each kind of field", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    const many = Array.from({ length: 22 }, (_, index) => ({ value: `v${index}`, label: `Option ${index}` }))
+    const form = {
+      id: "frm_2",
+      sessionID: "ses_child",
+      title: "Sign in",
+      fields: [
+        { key: "name", type: "string" },
+        { key: "count", type: "integer", title: "How many?" },
+        { key: "link", type: "external", url: "https://example.com/login" },
+        { key: "pick", type: "multiselect", description: "Pick some", options: many },
+      ],
+    }
+
+    await reportForm(ports, fresh(), shown("evt_f", form))
+
+    expect(sent[0].metadata).toEqual({ source: "courier", from: "ses_child", asks: "form", formID: "frm_2" })
+    const text = sent[0].text as string
+    expect(text).toStartWith('<courier from="ses_child" asks="form" form="frm_2">')
+    expect(text).toContain("- name (string)\n- How many? (integer)\n- link, opens https://example.com/login\n- Pick some\n  - Option 0")
+    expect(text).toContain("  - Option 19\n  - and 2 more")
+    expect(text).not.toContain("Web search cancelled")
+  })
+
+  test("leaves a kind that cannot go in the envelope out of it", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+
+    await reportForm(ports, fresh(), shown("evt_f", { ...webForm, metadata: { kind: 'x" y' } }))
+
+    expect(sent[0].text).toStartWith('<courier from="ses_child" asks="form" form="frm_1">')
+  })
+
+  test("tells the session at the top about a form of a child's child", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    await record(ports.storage, { ...child("ses_root"), sessionID: "ses_parent", title: "Lead" })
+
+    expect(await reportForm(ports, fresh(), shown())).toEqual(["ses_root"])
+    expect(sent[0].text).toContain("which ses_parent started with courier_spawn, a session started from yours,")
+  })
+
+  test("leaves a question's form to the question relay", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    const question = { ...webForm, title: "Questions", metadata: { kind: "question", tool: { messageID: "msg_1", id: "call_1" } } }
+
+    expect(await reportForm(ports, fresh(), shown("evt_f", question))).toEqual([])
+    expect(sent).toEqual([])
+  })
+
+  test("ignores a form of a session courier_spawn did not start, and tells each form once", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    const state = fresh()
+
+    expect(await reportForm(ports, state, shown("evt_o", { ...webForm, sessionID: "ses_other" }))).toEqual([])
+    expect(state.forms.size).toBe(0)
+    await Promise.all([reportForm(ports, state, shown("evt_f")), reportForm(ports, state, shown("evt_f"))])
+    await reportForm(ports, state, shown("evt_g"))
+    expect(sent).toHaveLength(1)
+  })
+
+  test("does not tell anyone about a form settled while its roster was looked up", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    const state = fresh()
+
+    const telling = reportForm(ports, state, shown())
+    await reportFormSettled(ports, state, settled())
+    await telling
+
+    expect(sent).toEqual([])
+    expect(state.forms.size).toBe(0)
+  })
+})
+
+describe("reportFormSettled", () => {
+  test("tells the parent that a form it was told about was answered, or withdrawn", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    const state = fresh()
+    await reportForm(ports, state, shown())
+    await reportForm(ports, state, shown("evt_g", { ...webForm, id: "frm_2" }))
+
+    expect(await reportFormSettled(ports, state, settled())).toEqual(["ses_parent"])
+    expect(await reportFormSettled(ports, state, settled("evt_t", "form.cancelled", "frm_2"))).toEqual(["ses_parent"])
+
+    expect(sent[2]).toEqual({
+      sessionID: "ses_parent",
+      text: envelope("ses_child", formSettledNotice("Fix the bug", "frm_1", "answered"), { settled: "answered", form: "frm_1" }),
+      description: "Session ses_child no longer shows a form",
+      metadata: { source: "courier", from: "ses_child", settled: "answered", formID: "frm_1" },
+      delivery: "steer",
+    })
+    expect(sent[2].text).toContain("has been answered in that session")
+    expect(sent[3].text).toStartWith('<courier from="ses_child" settled="cancelled" form="frm_2">')
+    expect(sent[3].text).toContain("has been withdrawn unanswered")
+    expect(state.forms.size).toBe(0)
+  })
+
+  test("says nothing about a form no one was told about, or about one event twice", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    const state = fresh()
+
+    expect(await reportFormSettled(ports, state, settled())).toEqual([])
+    await reportForm(ports, state, shown("evt_f", { ...webForm, id: "frm_2" }))
+    await Promise.all([
+      reportFormSettled(ports, state, settled("evt_t", "form.cancelled", "frm_2")),
+      reportFormSettled(ports, state, settled("evt_t", "form.cancelled", "frm_2")),
+    ])
+    expect(sent).toHaveLength(2)
+  })
+
+  test("says nothing when the session is no longer on a roster", async () => {
+    const { ports, sent } = fakePorts()
+    const state = fresh()
+    state.forms.add("frm_1")
+
+    expect(await reportFormSettled(ports, state, settled())).toEqual([])
+    expect(sent).toEqual([])
+  })
+})
+
 describe("relayPending", () => {
   test("relays the requests spawned sessions already wait on, once, alongside the events", async () => {
     const other = { ...request, id: "per_2", sessionID: "ses_other" }
@@ -333,22 +518,38 @@ describe("watchChildren", () => {
     expect(logged).toEqual(["courier watch: event stream broke: Error: stream closed"])
   })
 
+  test("tells about a child's form and its settling from the event stream", async () => {
+    const watching = new AbortController()
+    const { ports, sent } = fakePorts([[shown(), settled("evt_s", "form.cancelled")]])
+    await record(ports.storage, child())
+    ;(ports.session as any).synthetic = async (input: any) => {
+      sent.push(input)
+      if (sent.length === 2) watching.abort()
+      return { id: "msg_1" }
+    }
+
+    await watchChildren(ports, fresh(), watching.signal, 1)
+
+    expect(sent.map((notice: any) => notice.metadata.asks ?? notice.metadata.settled)).toEqual(["form", "cancelled"])
+  })
+
   test("logs a notice that cannot be delivered and keeps watching", async () => {
     const watching = new AbortController()
-    const { ports, logged } = fakePorts([[failed("ses_child", "evt_1"), asked("evt_2")]])
+    const { ports, logged } = fakePorts([[failed("ses_child", "evt_1"), asked("evt_2"), shown("evt_3")]])
     await record(ports.storage, child())
     let attempts = 0
     ;(ports.session as any).synthetic = async () => {
-      if (++attempts === 2) watching.abort()
+      if (++attempts === 3) watching.abort()
       throw new Error("parent is gone")
     }
 
     await watchChildren(ports, fresh(), watching.signal, 1)
 
-    expect(attempts).toBe(2)
+    expect(attempts).toBe(3)
     expect(logged).toEqual([
       "courier watch: could not handle session.execution.failed of ses_child: Error: parent is gone",
       "courier watch: could not handle permission.asked of ses_child: Error: parent is gone",
+      "courier watch: could not handle form.created of ses_child: Error: parent is gone",
     ])
   })
 })

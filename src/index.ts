@@ -178,7 +178,10 @@ const watched = processWide<WatchState>("opencode-courier.watched", () => ({
   seen: new Set<string>(),
   waiting: new Set<string>(),
   answered: new Set<string>(),
+  forms: new Set<string>(),
 }))
+// An instance of an earlier version, loaded before in this process, made the state without it.
+;(watched as { forms?: Set<string> }).forms ??= new Set<string>()
 
 // The permission domain of every loaded instance, under a key of its own. OpenCode keeps a request
 // where its session runs, so a request of an isolated child is answered through the instance loaded

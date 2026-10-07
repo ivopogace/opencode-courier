@@ -6,14 +6,19 @@ export type Storage = Pick<Context["storage"], "get" | "set" | "remove" | "scan"
 
 /** Every value stored under `prefix`, following the scan's pages. */
 export async function scanAll<T>(storage: Pick<Storage, "scan">, prefix: string) {
-  const values: T[] = []
+  return (await scanEntries<T>(storage, prefix)).map((entry) => entry.value)
+}
+
+/** Every key under `prefix`, without the prefix, with its value, following the scan's pages. */
+export async function scanEntries<T>(storage: Pick<Storage, "scan">, prefix: string) {
+  const entries: Array<{ key: string; value: T }> = []
   let after: string | undefined
   do {
     const page = await storage.scan({ prefix, ...(after ? { after } : {}) })
-    for (const entry of page.entries) values.push(entry.value as unknown as T)
+    for (const entry of page.entries) entries.push({ key: entry.key.slice(prefix.length), value: entry.value as unknown as T })
     after = page.next
   } while (after)
-  return values
+  return entries
 }
 
 /**

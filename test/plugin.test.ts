@@ -335,7 +335,7 @@ test("courier_cleanup reports the worktree of an isolated child that is already 
 
   expect(result.metadata).toEqual({ sessionID: "ses_child", directory: "/wt", outcome: "gone" })
   expect(result.content).toContain("already gone")
-  expect([...store.keys()].filter((key) => key.startsWith("roster/"))).toEqual([])
+  expect([...store.keys()].filter((key) => key.startsWith("roster"))).toEqual([])
   await expect(tools.get("courier_cleanup").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })).rejects.toThrow(
     "courier_cleanup failed: ses_child is not on the courier_children list of ses_parent.",
   )

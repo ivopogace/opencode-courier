@@ -256,6 +256,16 @@ the plugin is next loaded, except isolated children whose worktree is still ther
 [Worktree cleanup](#worktree-cleanup)). If the roster cannot be written, the child still gets its task and
 `courier_spawn` says it is not on the list.
 
+In the plugin's storage, each child's entry is under `roster/<parentID>/<sessionID>`. Next to it,
+`roster-by-child/<sessionID>` holds `{ "ancestors": [...] }`: the child's parent, that parent's
+parent, and so on up to the session courier_spawn did not start. It is an index, so the plugin finds
+a child's entry, and the sessions above it, with one read per level instead of reading every roster
+whenever a child fails, waits for a permission, shows a form or asks a question. The `roster/`
+entries stay the record: each entry the index leads to is read there, and an entry without an index
+key, such as one an older version of the plugin wrote, is found by reading every roster, as before.
+When the plugin loads, it writes the index keys missing for the entries it keeps and drops those
+whose entry is gone; an older version ignores them, so rosters survive an update and a downgrade.
+
 ## Worktree cleanup
 
 An isolated child works in a git worktree under OpenCode's data directory

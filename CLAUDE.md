@@ -14,7 +14,15 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   permission and form notices, and passing a permission answer back.
   `src/question.ts`: relaying a child's question, by wrapping OpenCode's `question` tool.
   `src/storage.ts`: shared storage helpers and `processWide`, the process-wide registry.
-  `src/index.ts`: the plugin (an Effect plugin running the promise one), tool schemas and wiring.
+  `src/json.ts`: readers for untyped JSON (webhook payloads, plugin options).
+  `src/tools.ts`: the ten courier tools: input schemas, descriptions and results.
+  `src/notices.ts`: every other model-facing string (tool result texts, the child brief, the
+  envelope, the failure, permission, form, question and webhook notices), as pure functions that
+  import nothing of the plugin's but `json.ts`. `test/notices.test.ts` snapshots them and the tool
+  descriptions, so a wording change shows up as a diff in `test/__snapshots__/`; update it with
+  `bun test --update-snapshots` and rerun the real-model smoke test.
+  `src/index.ts`: the plugin (an Effect plugin running the promise one): builds the ports, registers
+  the tools from `tools.ts`, and starts the scheduler, the watcher and the webhook receiver.
 - `test/`: unit tests against a fake plugin context (`bun test`).
 - `e2e/run.sh`: live test against a real OpenCode V2 server, driven by `e2e/mock-model.mjs`, a
   scripted OpenAI-compatible stand-in model, with `e2e/search-plugin` as a stand-in web search

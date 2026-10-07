@@ -407,12 +407,22 @@ check "spawned two children" "$([ "$(wc -w <<<"$spawned")" -eq 2 ] && echo true 
 listed=$(tool_state courier_children <<<"$out" | jq -r 'select(.status == "completed") | .output')
 check "courier_children lists both" "$(for id in $spawned; do grep -q "$id" <<<"$listed" || { echo false; exit; }; done; echo true)"
 check "the parent was woken by its children" "$([ -n "$(reply_time "$roster_parent" "PARENT WOKE")" ] && echo true || echo false)"
+# The roster's reverse index, read straight from OpenCode's database.
+kv() { XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" "$@"; }
+indexed_under() { kv get "roster-by-child/$1" | jq -r '.ancestors[0] // empty'; }
+check "each child is indexed under its parent" \
+  "$(for id in $spawned; do [ "$(indexed_under "$id")" = "$roster_parent" ] || { echo false; exit; }; done; echo true)"
 
 echo "a scheduled message survives a server restart"
 out=$(prompt "COURIER-LATER 0.25")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 check "courier_later completed" "$(tool_state courier_later <<<"$out" | jq -r '.status == "completed"')"
 stop_server
+# As an older version of the plugin writes it: a roster entry with no reverse key.
+unindexed=$(head -1 <<<"$spawned")
+kv remove "roster-by-child/$unindexed"
+check "one child's reverse key is removed, as if an older version had recorded it" \
+  "$([ -z "$(indexed_under "$unindexed")" ] && echo true || echo false)"
 start_server
 restarted=$(now_ms)
 # Plugins load per project location, on its first use after a start.
@@ -425,6 +435,8 @@ out=$(prompt "COURIER-CHILDREN $roster_parent")
 listed=$(tool_state courier_children <<<"$out" | jq -c 'select(.status == "completed") | .metadata.metadata.children')
 check "lists both children" "$(jq -r --arg ids "$spawned" '[.[].sessionID] | sort == ($ids | split("\n") | sort)' <<<"$listed")"
 check "with each child's last reply" "$(jq -r 'all((.lastText // "") | contains("TOOL DONE courier_send"))' <<<"$listed")"
+check "the entry written without a reverse key got one when the plugin loaded" \
+  "$(for _ in $(seq 1 10); do [ "$(indexed_under "$unindexed")" = "$roster_parent" ] && { echo true; exit; }; sleep 1; done; echo false)"
 
 echo "a signed GitHub webhook wakes a subscribed idle session"
 out=$(prompt "COURIER-SUBSCRIBE Codertocat/Hello-World#2")
@@ -469,9 +481,11 @@ child_listing() {
 echo "courier_cleanup removes a clean worktree"
 spawn_isolated
 check "its worktree exists" "$([ -d "$directory" ] && echo true || echo false)"
+check "it is indexed under its parent" "$([ "$(indexed_under "$child")" = "$parent" ] && echo true || echo false)"
 cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child" | tool_state courier_cleanup)
 check "courier_cleanup removed it" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
 check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
+check "its reverse key is gone too" "$([ -z "$(kv get "roster-by-child/$child")" ] && echo true || echo false)"
 check "git no longer lists the worktree" "$(git -C "$WORK/project" worktree list | grep -qF "$directory" && echo false || echo true)"
 check "the child is off courier_children" "$([ "$(child_listing "$parent" "$child")" = unlisted ] && echo true || echo false)"
 

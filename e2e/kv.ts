@@ -1,0 +1,31 @@
+// Reads or removes a key of a plugin's storage straight in the database of the OpenCode under test,
+// found under $XDG_DATA_HOME; the end-to-end test uses it to look at the roster's reverse index and
+// to stand in for an older version of the plugin, which writes entries without one.
+//
+//   bun e2e/kv.ts get roster-by-child/ses_x      # prints the value as JSON, or nothing
+//   bun e2e/kv.ts remove roster-by-child/ses_x   # only while the server is stopped
+import { Database } from "bun:sqlite"
+import { readdirSync } from "node:fs"
+import { join } from "node:path"
+
+const [action, key] = process.argv.slice(2)
+if ((action !== "get" && action !== "remove") || !key) throw new Error("usage: bun e2e/kv.ts get|remove <key>")
+
+const databases = (readdirSync(process.env.XDG_DATA_HOME!, { recursive: true }) as string[])
+  .filter((file) => file.endsWith(".db"))
+  .map((file) => join(process.env.XDG_DATA_HOME!, file))
+const withKv = databases
+  .map((file) => new Database(file, action === "get" ? { readonly: true } : { readwrite: true }))
+  .filter((db) => db.query("select 1 from sqlite_master where type = 'table' and name = 'kv'").get())
+if (withKv.length !== 1) throw new Error(`expected one database with a kv table, found ${withKv.length} in ${databases.join(", ")}`)
+const db = withKv[0]!
+
+// A plugin's keys are stored as `plugin:<its id, hex-encoded>:<key>`.
+const rows = db.query("select key, value from kv where key like 'plugin:%'").all() as Array<{ key: string; value: string }>
+const found = rows.filter((row) => row.key.slice(row.key.indexOf(":", "plugin:".length) + 1) === key)
+if (found.length > 1) throw new Error(`${key} is stored by ${found.length} plugins`)
+if (action === "get") {
+  if (found[0]) console.log(found[0].value)
+} else {
+  for (const row of found) db.query("delete from kv where key = ?").run(row.key)
+}

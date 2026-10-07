@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
 import type { Plugin as EffectPlugin } from "@opencode/plugin/effect"
 import { Cause, Effect, Exit, Result } from "effect"
+import { addBounded } from "./bounded.js"
 import {
   answeredText,
   cutOffAnswer,
@@ -336,11 +337,11 @@ async function forget(ports: QuestionPorts, asked: Asked) {
   }
 }
 
-/** Adds to a bounded set, dropping the oldest entry. */
-function claim(set: Set<string>, value: string) {
-  set.add(value)
-  if (set.size > 1_000) set.delete(set.values().next().value!)
-}
+/** How many noticed and answered questions are remembered. */
+const REMEMBERED = 1_000
+
+/** Adds to one of the shared bounded sets. */
+const claim = (set: Set<string>, value: string) => addBounded(set, value, REMEMBERED)
 
 async function sendAnswer(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   await ports.session.synthetic({

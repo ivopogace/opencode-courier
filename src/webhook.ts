@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type Server } from "node:http"
 import { homedir } from "node:os"
+import { addBounded } from "./bounded.js"
 import { num, obj, str } from "./json.js"
 import { CI_EVENTS, envelope, githubSummary, hookSummary, webhookText } from "./notices.js"
 import { scanAll } from "./storage.js"
@@ -240,22 +241,6 @@ const header = (request: Request, name: string) => {
   return Array.isArray(value) ? value[0] : value
 }
 
-/** Digests of accepted deliveries, newest last; shared by every receiver in the process. */
-export class Seen {
-  private readonly items = new Set<string>()
-  constructor(private readonly limit = REMEMBERED) {}
-  has(digest: string) {
-    return this.items.has(digest)
-  }
-  add(digest: string) {
-    this.items.add(digest)
-    if (this.items.size > this.limit) this.items.delete(this.items.values().next().value!)
-  }
-  delete(digest: string) {
-    this.items.delete(digest)
-  }
-}
-
 const isResponse = (value: object): value is Response => "status" in value
 
 const decode = (raw: string) => {
@@ -291,7 +276,7 @@ function parseEvent(request: Request, topic: string | undefined): Response | Eve
 }
 
 /** Dispatches a delivery `receive` has marked as seen, and unmarks it if it reached nobody. */
-async function deliver(ports: WebhookPorts, request: Request, event: Event, digest: string, seen: Seen): Promise<Response> {
+async function deliver(ports: WebhookPorts, request: Request, event: Event, digest: string, seen: Set<string>): Promise<Response> {
   const delivery = header(request, "x-github-delivery")?.replace(/[^\w-]/g, "").slice(0, 64) || undefined
   const { delivered, failed } = await dispatch(ports, event, delivery).catch((error: unknown) => {
     seen.delete(digest)
@@ -308,7 +293,7 @@ async function deliver(ports: WebhookPorts, request: Request, event: Event, dige
  * the name and the body. Anything not signed with the secret is refused before its body is parsed,
  * and a signature already accepted is ignored, so a captured delivery cannot be replayed.
  */
-export async function receive(ports: WebhookPorts, secret: string, request: Request, seen = new Seen()): Promise<Response> {
+export async function receive(ports: WebhookPorts, secret: string, request: Request, seen = new Set<string>()): Promise<Response> {
   const routed = route(request)
   if (isResponse(routed)) return routed
   const digest = checkSignature(secret, request.body, header(request, "x-hub-signature-256"), routed.topic)
@@ -318,7 +303,7 @@ export async function receive(ports: WebhookPorts, secret: string, request: Requ
   if (isResponse(event)) return event
   // Marked with no await since the check above, so a concurrent replay is refused, and unmarked if
   // the delivery reached nobody it was meant for, so a retry or a GitHub Redeliver can still get through.
-  seen.add(digest)
+  addBounded(seen, digest, REMEMBERED)
   return deliver(ports, request, event, digest, seen)
 }
 
@@ -347,7 +332,8 @@ function readBody(request: IncomingMessage, maxBytes: number) {
 
 /** Starts the HTTP receiver; `ports()` picks a live plugin instance for each request. */
 export function listen(config: WebhookConfig, ports: () => WebhookPorts | undefined) {
-  const seen = new Seen()
+  // Digests of accepted deliveries, newest last; shared by every request this receiver handles.
+  const seen = new Set<string>()
   const server = createServer((request, response) => {
     const reply = ({ status, body }: Response) => {
       response.writeHead(status, { "content-type": "text/plain; charset=utf-8", connection: "close" })

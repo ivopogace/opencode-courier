@@ -30,3 +30,7 @@ test("no module of src/ imports itself through others", () => {
 test("notices.ts imports nothing of the plugin's but json.ts, so any module can use it", () => {
   expect(imports().get("notices")).toEqual(["json"])
 })
+
+test("bounded.ts imports nothing of the plugin's, so any module can hold its collections", () => {
+  expect(imports().get("bounded")).toEqual([])
+})

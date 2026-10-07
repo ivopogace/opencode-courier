@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
+import { addBounded, setBounded } from "./bounded.js"
 import {
   envelope,
   failureNotice,
@@ -34,6 +35,8 @@ export interface WatchPorts {
   readonly event: Pick<Context["event"], "subscribe">
   /** This location's pending permission requests, relayed when the watcher (re)subscribes. */
   readonly permission: Pick<Context["permission"], "list">
+  /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
+  readonly now: () => number
   readonly log: (message: string) => void
 }
 
@@ -69,13 +72,8 @@ export interface ExecutionFailed {
   }
 }
 
-/** Adds to a bounded set, dropping the oldest entry; false when the value was there already. */
-export function claim(set: Set<string>, value: string) {
-  if (set.has(value)) return false
-  set.add(value)
-  if (set.size > SEEN_MAX) set.delete(set.values().next().value!)
-  return true
-}
+/** Claims a value in one of the shared sets; false when it was claimed already. */
+const claim = (set: Set<string>, value: string) => addBounded(set, value, SEEN_MAX)
 
 /**
  * Tells the parent of a child whose turn failed, since a child that cannot reach its model cannot
@@ -151,12 +149,6 @@ export async function reportReplied(ports: WatchPorts, state: WatchState, event:
   return [topOf(chain)]
 }
 
-/** Like `claim`, for a bounded map: adds the entry, dropping the oldest. */
-function remember<V>(map: Map<string, V>, key: string, value: V) {
-  map.set(key, value)
-  if (map.size > SEEN_MAX) map.delete(map.keys().next().value!)
-}
-
 /**
  * Tells the session at the top about a form OpenCode shows in a spawned session, such as web
  * search asking for its provider, which only the person can answer there. Question forms are
@@ -182,7 +174,7 @@ export async function reportForm(ports: WatchPorts, state: WatchState, event: Fo
     metadata: { source: "courier", from: form.sessionID, asks: "form", formID: form.id, ...(kind ? { kind } : {}) },
     delivery: "steer",
   })
-  remember(state.forms.told, form.id, telling)
+  setBounded(state.forms.told, form.id, telling, SEEN_MAX)
   await telling
   return [topOf(chain)]
 }
@@ -256,7 +248,7 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
   // The event's location is optional; without one, the shutdown counts for every location.
   if (event.type === "location.shutdown") {
     const directory = (event as { location?: { directory?: unknown } }).location?.directory
-    locationClosing(typeof directory === "string" ? directory : undefined)
+    locationClosing(ports.now(), typeof directory === "string" ? directory : undefined)
   }
   return []
 }

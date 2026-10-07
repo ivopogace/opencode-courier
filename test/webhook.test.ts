@@ -11,7 +11,6 @@ import {
   parseTopic,
   readConfig,
   receive,
-  Seen,
   sign,
   subscribe,
   subscriptions,
@@ -320,7 +319,7 @@ describe("receive", () => {
   test("a delivery already accepted is not delivered again", async () => {
     const { ports, delivered } = fakePorts()
     await subscribe(ports, "ses_parent", "Codertocat/Hello-World")
-    const seen = new Seen()
+    const seen = new Set<string>()
     const request = githubRequest(review, { "x-hub-signature-256": sign(SECRET, review) })
 
     expect((await receive(ports, SECRET, request, seen)).status).toBe(202)
@@ -331,7 +330,7 @@ describe("receive", () => {
   test("a delivery that reached nobody because of failures can be retried", async () => {
     const { ports, delivered } = fakePorts({ failFor: "ses_busy" })
     await subscribe(ports, "ses_busy", "Codertocat/Hello-World")
-    const seen = new Seen()
+    const seen = new Set<string>()
     const request = githubRequest(review, { "x-hub-signature-256": sign(SECRET, review) })
 
     expect(await receive(ports, SECRET, request, seen)).toEqual({ status: 202, body: "delivered to 0 session(s)" })
@@ -345,7 +344,7 @@ describe("receive", () => {
   test("a delivery whose dispatch throws is unmarked, so it can be retried, and the failure surfaces", async () => {
     const { ports } = fakePorts()
     const broken: WebhookPorts = { ...ports, storage: { ...ports.storage, scan: async () => Promise.reject(new Error("storage down")) } }
-    const seen = new Seen()
+    const seen = new Set<string>()
     const request = githubRequest(review, { "x-hub-signature-256": sign(SECRET, review) })
 
     await expect(receive(broken, SECRET, request, seen)).rejects.toThrow("storage down")
@@ -355,7 +354,7 @@ describe("receive", () => {
   test("a replay with the signature re-cased or padded is not delivered again either", async () => {
     const { ports, delivered } = fakePorts()
     await subscribe(ports, "ses_parent", "Codertocat/Hello-World")
-    const seen = new Seen()
+    const seen = new Set<string>()
     const hex = sign(SECRET, review).slice("sha256=".length)
     const send = (signature: string) => receive(ports, SECRET, githubRequest(review, { "x-hub-signature-256": signature }), seen)
 
@@ -368,6 +367,19 @@ describe("receive", () => {
     expect(delivered).toHaveLength(1)
   })
 
+  test("the accepted digests are bounded at 1000, the oldest forgotten first", async () => {
+    const { ports } = fakePorts()
+    const seen = new Set<string>()
+    const send = (n: number) => {
+      const body = `{"text":"${n}"}`
+      return receive(ports, SECRET, { method: "POST", path: "/hook/a", headers: { "x-hub-signature-256": sign(SECRET, body, "a") }, body: Buffer.from(body) }, seen)
+    }
+    for (let n = 0; n <= 1_000; n++) expect((await send(n)).status).toBe(202)
+    expect(seen.size).toBe(1_000)
+    expect((await send(0)).status).toBe(202)
+    expect(await send(1_000)).toEqual({ status: 200, body: "already delivered" })
+  })
+
   test("a generic delivery is signed over its topic, so it cannot be replayed to another", async () => {
     const { ports, delivered } = fakePorts()
     await subscribe(ports, "ses_b", "b")
@@ -376,12 +388,6 @@ describe("receive", () => {
 
     expect((await receive(ports, SECRET, forA)).status).toBe(401)
     expect(delivered).toHaveLength(0)
-  })
-
-  test("Seen forgets the oldest digests past its limit", () => {
-    const seen = new Seen(2)
-    for (const item of ["a", "b", "c"]) seen.add(item)
-    expect([seen.has("a"), seen.has("b"), seen.has("c")]).toEqual([false, true, true])
   })
 
   test("unsigned and wrongly signed deliveries are refused and reach nobody", async () => {

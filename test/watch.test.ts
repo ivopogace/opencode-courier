@@ -16,7 +16,6 @@ import {
 import { forgetQuestions, shutdownReportedAt } from "../src/question.js"
 import { record } from "../src/roster.js"
 import {
-  claim,
   reportAsked,
   reportFailure,
   reportForm,
@@ -82,6 +81,7 @@ function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["data"][]
     permission: {
       list: async ({ sessionID }: { sessionID: string }) => pending.filter((item) => item.sessionID === sessionID),
     },
+    now: () => 1_000_000,
     log: (message: string) => void logged.push(message),
   } as unknown as WatchPorts
   return { ports, sent, logged, subscriptions: () => subscriptions }
@@ -502,17 +502,6 @@ describe("relayPending, concurrency", () => {
   })
 })
 
-describe("claim", () => {
-  test("remembers a bounded number of values, dropping the oldest", () => {
-    const set = new Set<string>()
-    expect(claim(set, "a")).toBe(true)
-    expect(claim(set, "a")).toBe(false)
-    for (let i = 0; i < 1_000; i++) claim(set, `v${i}`)
-    expect(set.size).toBe(1_000)
-    expect(set.has("a")).toBe(false)
-  })
-})
-
 describe("watchChildren", () => {
   test("reports failed turns and permission requests from the event stream and skips other events", async () => {
     const watching = new AbortController()
@@ -544,7 +533,7 @@ describe("watchChildren", () => {
 
     await watchChildren(ports, fresh(), watching.signal, 1)
 
-    expect(shutdownReportedAt("/repo")).toBeDefined()
+    expect(shutdownReportedAt("/repo")).toBe(1_000_000)
     expect(shutdownReportedAt("/elsewhere")).toBeUndefined()
     forgetQuestions()
 

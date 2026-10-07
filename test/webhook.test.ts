@@ -367,6 +367,19 @@ describe("receive", () => {
     expect(delivered).toHaveLength(1)
   })
 
+  test("the accepted digests are bounded at 1000, the oldest forgotten first", async () => {
+    const { ports } = fakePorts()
+    const seen = new Set<string>()
+    const send = (n: number) => {
+      const body = `{"text":"${n}"}`
+      return receive(ports, SECRET, { method: "POST", path: "/hook/a", headers: { "x-hub-signature-256": sign(SECRET, body, "a") }, body: Buffer.from(body) }, seen)
+    }
+    for (let n = 0; n <= 1_000; n++) expect((await send(n)).status).toBe(202)
+    expect(seen.size).toBe(1_000)
+    expect((await send(0)).status).toBe(202)
+    expect(await send(1_000)).toEqual({ status: 200, body: "already delivered" })
+  })
+
   test("a generic delivery is signed over its topic, so it cannot be replayed to another", async () => {
     const { ports, delivered } = fakePorts()
     await subscribe(ports, "ses_b", "b")

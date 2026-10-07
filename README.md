@@ -1,7 +1,8 @@
 # opencode-courier
 
 **Your OpenCode session hands work to other sessions, ends its turn, and is woken when they
-report.**
+report.** Async multi-session orchestration for OpenCode V2: spawn child sessions and get woken
+when they finish, relay their questions, schedule messages, wake on webhooks. No polling.
 
 [![CI](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml/badge.svg)](https://github.com/ivopogace/opencode-courier/actions/workflows/ci.yml)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ivopogace_opencode-courier&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ivopogace_opencode-courier)
@@ -38,7 +39,7 @@ If OpenCode asks to allow a child's command, the parent passes the question to y
 sometimes stall on a request; if nothing moves for a few minutes, send the prompt again. Next:
 [Using it](#using-it).
 
-## OpenCode 2 native
+## OpenCode V2 native
 
 Courier is built on OpenCode V2's plugin API (`@opencode/plugin`), not the V1 one
 (`@opencode-ai/plugin`), and needs OpenCode V2. Each release is pinned to one V2 version and tested

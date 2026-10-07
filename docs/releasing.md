@@ -136,5 +136,5 @@ The plugin API is pinned to an exact version in `package.json`, as devDependency
 dependency (a unit test keeps the two equal), and CI installs the OpenCode CLI at that version; bump
 both deliberately, re-run both test suites, add the new plugin version and OpenCode version as a
 row to the README's Supported OpenCode version table, move the version the README names in its
-Quickstart, its OpenCode 2 native section and its install command, and record what changed in
+Quickstart, its OpenCode V2 native section and its install command, and record what changed in
 `docs/plugin-api-notes.md`.

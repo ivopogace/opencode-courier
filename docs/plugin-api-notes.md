@@ -419,7 +419,8 @@ Why:
   and a server's event bus, and its `/api/event` stream, carry only what that process does: in run 4
   A's stream carried 754 session events of 24 sessions and B's 121 of 11, each of them a session B
   had itself queued a message into (its ten deliveries and the turn it ran for `courier_answer`),
-  none of the sessions only A ran. A turn runs in the server that queued the message starting it (B
+  none of the sessions only A ran. (Within one server, every location's instance receives them; see
+  the next section.) A turn runs in the server that queued the message starting it (B
   ran a turn for each message it delivered), so a child's turn runs where its `courier_spawn`, or a
   later `courier_send` or prompt to it, was handled, only that server's watcher sees its
   `permission.asked` or `session.execution.failed`, and it tells the parent once. B's watcher also
@@ -448,3 +449,45 @@ on subscribing. Passing an answer to a request held by the other server needs a 
 the servers, which the plugin API does not offer; the most a fix could do there is say, when no
 request is found, that it may be pending on another OpenCode server, instead of that it was
 answered.
+
+## Which plugin instances receive an isolated child's events (2026-10-07)
+
+OpenCode sets the plugin up once per location, and an isolated child runs in a location of its own,
+its worktree. Whether every location's instance receives the events the watcher follows, wherever
+they come from, decides whether one event subscription per process could replace one per instance
+(#76). `form.created` was known to reach every instance (above); the rest were not shown. Observed on
+`2.0.24` (`@opencode/cli@2.0.24`, the pin), by the live test's scenario "an isolated child's events
+reach the plugin instance of every location" (#77):
+
+- `e2e/probe-plugin`, loaded next to the courier from the project's `opencode.json` and so in every
+  location, the child's worktree included, follows `event.subscribe()` from its `setup`, as the
+  courier's watcher does from its own, subscribing again if the stream ends, and appends
+  `{ pid, location, type, id, sessionID }` per event to the file named by its `log` option (the
+  location with symlinks resolved), plus `probe.loaded` and `probe.unloaded` lines. A probe
+  sees what the courier's instances see: the same context, the same domain, the same call.
+- Three locations are loaded: the project (the parent's), the isolated child's worktree, and an
+  earlier child's worktree, opened by a session run there, that has no part in the exchange. The
+  child asks for a permission, answered in its own session; asks a question, answered in its own
+  session; asks again, answered in the parent's, so the question relay withdraws the child's form;
+  and then its model answers 403, which fails its turn.
+
+| Event, from the child's worktree | Parent's instance | Child's instance | Third location's instance |
+|---|---|---|---|
+| `permission.asked` | yes | yes | yes |
+| `permission.replied` | yes | yes | yes |
+| `form.created` (both forms) | yes | yes | yes |
+| `form.replied` | yes | yes | yes |
+| `form.cancelled` | yes | yes | yes |
+| `session.execution.failed` | yes | yes | yes |
+
+So every event type the watcher handles reaches every location's instance, each event once per
+instance, with the same event id; an event's location does not limit who receives it. The scenario
+asserts this, exactly once per instance, for every instance loaded in the server process at the
+time (a location whose last probe line is `probe.loaded`), not only those three.
+
+Seen in the same runs, not asserted: on a graceful shutdown OpenCode closes the locations one after
+another, and each `location.shutdown` reaches every instance still loaded, its own location's
+included. An instance only receives events published while it is subscribed: one loaded later does
+not see what came before, which is why the watcher relays pending permission requests when it
+(re)subscribes. And `GET /api/plugin?directory=<worktree>` did not boot that worktree's location
+(the server log showed no "location services booted" for it); a session run from the directory did.

@@ -61,7 +61,8 @@ cat >"$WORK/project/opencode.json" <<EOF
 {
   "plugins": [
     { "package": "$ROOT/dist", "options": { "webhook": { "port": $WEBHOOK_PORT, "secretFile": "$WORK/webhook-secret" } } },
-    "$ROOT/e2e/search-plugin"
+    "$ROOT/e2e/search-plugin",
+    { "package": "$ROOT/e2e/probe-plugin", "options": { "log": "$WORK/probe.log" } }
   ],
   "providers": {
     "mock": {
@@ -382,6 +383,65 @@ again=$(form_of "$parent" "$parent_form" 45)
 check "and asks the person again" "$([ -n "$again" ] && echo true || echo false)"
 check "the person answers" "$(answer_form "$parent" "$again" '"Hello"')"
 check "the child woke with the answer and carried on" "$(has_text "$parent" 'CHILD GOT [["Hello"]]' 45)"
+
+# Whether every plugin instance follows an isolated child's events, whichever location they come
+# from: e2e/probe-plugin, loaded next to the courier in every location, logs each event its
+# instance sees through event.subscribe(), as the courier's watcher follows them. The child, in
+# its own worktree, asks for a permission, shows two question forms, one answered in its own
+# session and one withdrawn by the relay when the person answers in the parent's, and then fails.
+echo "an isolated child's events reach the plugin instance of every location"
+canonical() { node -p 'require("node:fs").realpathSync(process.argv[1])' "$1"; }
+# A third location, neither the parent's nor the child's: an earlier isolated child's worktree (the
+# first one listed is the project itself), opened by a session of its own, which loads the plugins there.
+bystander=$(git -C "$WORK/project" worktree list --porcelain | sed -n 's/^worktree //p' | sed -n 2p)
+check "a third location is open" "$([ -n "$bystander" ] &&
+  (cd "$bystander" && "$OPENCODE" run --server "$SERVER" --auto --format json "hello" </dev/null >/dev/null) && echo true || echo false)"
+out=$(prompt "COURIER-PROBE")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+worktree=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.directory')
+check "the child runs in its own worktree" "$([[ $worktree == */worktree/* ]] && echo true || echo false)"
+check "the parent was told the child asks for permission" "$([ -n "$(reply_time "$parent" "PARENT ASKS" 45)" ] && echo true || echo false)"
+request=$(notices_with "$parent" asks | jq -r '.[0] // "" | capture("request=\"(?<id>[^\"]+)\"").id // empty')
+check "answered in the child's session" "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"once"}')" = 204 ] && echo true || echo false)"
+child_form=$(form_of "$child" "" 45)
+parent_form=$(form_of "$parent" "" 45)
+check "the child asks a question, and the parent asks the person" "$([ -n "$child_form" ] && [ -n "$parent_form" ] && echo true || echo false)"
+check "the person answers in the child's session" "$(answer_form "$child" "$child_form" '"Hey"')"
+second_child_form=$(form_of "$child" "$child_form" 45)
+second_parent_form=$(form_of "$parent" "$parent_form" 45)
+check "the child asks again, and so does the parent" "$([ -n "$second_child_form" ] && [ -n "$second_parent_form" ] && echo true || echo false)"
+check "the person answers in the parent's session" "$(answer_form "$parent" "$second_parent_form" '"Hi"')"
+check "the child's failure reached the parent" "$(has_text "$parent" "<courier from=\"$child\" failed=" 45)"
+locations=$(for directory in "$WORK/project" "$worktree" ${bystander:+"$bystander"}; do canonical "$directory"; done | jq -Rsc 'split("\n") | map(select(length > 0))')
+probe_types='["permission.asked","permission.replied","form.created","form.replied","form.cancelled","session.execution.failed"]'
+# Reads the probe log of this server process into: instances, the locations whose last probe line
+# says loaded, with the three above; and delivery, for each event type of the child's, the
+# locations that logged each of its events, a location once per time it logged the event.
+read_probe() {
+  local probed
+  probed=$(jq -sc --arg child "$child" '(map(select(.sessionID == $child)) | first | .pid) as $pid | map(select(.pid == $pid))' "$WORK/probe.log")
+  instances=$(jq -c --argjson locations "$locations" '
+    [.[] | select(.type == "probe.loaded" or .type == "probe.unloaded")] | group_by(.location)
+    | map(select(last.type == "probe.loaded") | .[0].location) + $locations | unique' <<<"$probed")
+  delivery=$(jq -c --arg child "$child" '
+    map(select(.sessionID == $child and .id != null)) | group_by(.type)
+    | map({ key: .[0].type, value: (group_by(.id) | map(map(.location) | sort)) }) | from_entries' <<<"$probed")
+}
+# Every type occurred, and every event of it was logged exactly once by each instance.
+delivered() {
+  jq -r --argjson types "$probe_types" --argjson instances "$instances" \
+    '. as $delivery | all($types[]; ($delivery[.] // []) | length > 0 and all(. == $instances))' <<<"$delivery"
+}
+# The other instances follow the events independently of the one that told the parent.
+for _ in $(seq 1 30); do read_probe; [ "$(delivered)" = true ] && break; sleep 1; done
+short() { sed "s|$(canonical "$WORK/project")|parent|g; s|$(canonical "$worktree")|child|g; ${bystander:+s|$(canonical "$bystander")|bystander|g;} s|$(canonical "$WORK")/||g"; }
+echo "  instances: $(short <<<"$instances")"
+for type in $(jq -r '.[]' <<<"$probe_types"); do
+  echo "  $type, each event seen by: $(jq -c --arg type "$type" '.[$type] // []' <<<"$delivery" | short)"
+  check "every instance saw each of the child's $type events once" \
+    "$(jq -r --arg type "$type" --argjson instances "$instances" '(.[$type] // []) | length > 0 and all(. == $instances)' <<<"$delivery")"
+done
 
 echo "courier_later wakes the idle parent, with the delay sent as a string as some models do"
 out=$(prompt "COURIER-LATER-STRING 0.05")

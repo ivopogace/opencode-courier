@@ -38,6 +38,15 @@ function decide(body) {
       const spawned = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_spawn")
       return spawned.length < 2 ? spawnChild(false) : { tool: "courier_children", args: {} }
     }
+    // The child of COURIER-PROBE, once its permission request is answered, asks two questions in
+    // turn, held back like a report, and then cannot reach its model.
+    const probes = textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-PROBES")
+    if (probes && (call?.function?.name === "shell" || call?.function?.name === "question")) {
+      const asked = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "question")
+      if (asked.length >= 2) return { status: 403, error: "This model is not available in your country" }
+      const options = ["Hello", "Hi", "Hey"].map((label) => ({ label, description: `Say ${label}` }))
+      return { tool: "question", args: { questions: [{ header: "Greeting", question: "Which greeting?", options, multiple: false }] }, delayed: true }
+    }
     // The child of COURIER-ASK reports what its shell call gave, run or refused, once it has the answer.
     const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
     if ((call?.function?.name === "shell" || call?.function?.name === "websearch") && startedBy)
@@ -64,6 +73,8 @@ function decide(body) {
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
   // The child of COURIER-FAIL cannot reach its model, as with a model blocked for the account.
   if (parent && recent.includes("CHILD-FAILS")) return { status: 403, error: "This model is not available in your country" }
+  // The child of COURIER-PROBE first runs a command the test's permission rules make it ask for.
+  if (parent && recent.includes("CHILD-PROBES")) return { tool: "shell", args: { command: "echo courier-asks probe" } }
   // The child of COURIER-ASK runs a command the test's permission rules make it ask for.
   if (parent && recent.includes("CHILD-ASKS")) return { tool: "shell", args: { command: "echo courier-asks" } }
   // The child of COURIER-SEARCH searches the web before any provider was chosen, so OpenCode asks
@@ -151,6 +162,7 @@ function decide(body) {
         isolate: questions[2] === "isolate",
       },
     }
+  if (recent.includes("COURIER-PROBE")) return { tool: "courier_spawn", args: { task: "CHILD-PROBES", isolate: true } }
   if (recent.includes("COURIER-SEARCH")) return { tool: "courier_spawn", args: { task: "CHILD-SEARCHES" } }
   const ask = recent.match(/COURIER-ASK(?: (isolate))?/)
   if (ask) return { tool: "courier_spawn", args: { task: "CHILD-ASKS", isolate: ask[1] === "isolate" } }

@@ -1,15 +1,12 @@
 import type { Plugin } from "@opencode/plugin"
 import { describeFailure, type Pending } from "./courier.js"
-import { REJECTED, type Form, type PermissionRequest, type Reply } from "./notices.js"
+import { REJECTED, REPLIES, type Form, type PermissionAnswered, type PermissionRequest, type Reply } from "./notices.js"
 import { answeringTop, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
 
 /** One location's pending permission requests. OpenCode keeps them per location, so an isolated child's are in its worktree's. */
 export type Permissions = Pick<Context["permission"], "list" | "reply">
-
-/** The answers to a permission request, as OpenCode's own prompt offers them. */
-export const REPLIES: ReadonlyArray<Reply> = ["once", "always", "reject"]
 
 /** The part of OpenCode's `permission.asked` event the notice is made from. */
 export interface PermissionAsked {
@@ -72,7 +69,7 @@ async function locate(ports: AnswerPorts, sessionID: string, requestID: string) 
  * started with courier_spawn cannot approve what its own children ask. `answered` is false when
  * nothing was waiting.
  */
-export async function answer(ports: AnswerPorts, waiting: Waiting, callerID: string, input: AnswerInput) {
+export async function answer(ports: AnswerPorts, waiting: Waiting, callerID: string, input: AnswerInput): Promise<PermissionAnswered> {
   const reply = input.reply as Reply
   if (!REPLIES.includes(reply)) throw new Error(`reply must be once, always or reject, not "${input.reply}".`)
   const { sessionID, requestID } = input

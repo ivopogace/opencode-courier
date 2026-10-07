@@ -4,12 +4,12 @@ import { join } from "node:path"
 
 const SRC = join(import.meta.dir, "..", "src")
 
-/** Each module of src/ with the modules of src/ it imports, type-only imports included. */
+/** Each module of src/ with the modules of src/ it imports: static, type-only, side-effect and dynamic imports alike. */
 function imports() {
   const graph = new Map<string, string[]>()
   for (const file of readdirSync(SRC).filter((name) => name.endsWith(".ts"))) {
     const text = readFileSync(join(SRC, file), "utf8")
-    graph.set(file.slice(0, -3), [...text.matchAll(/from "\.\/([\w-]+)\.js"/g)].map((match) => match[1]!))
+    graph.set(file.slice(0, -3), [...text.matchAll(/\b(?:from|import)\s*\(?\s*["']\.\/([\w-]+)\.js["']/g)].map((match) => match[1]!))
   }
   return graph
 }

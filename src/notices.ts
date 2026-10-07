@@ -1,8 +1,9 @@
 /**
- * Every model-facing string the plugin builds, apart from the tool descriptions in `tools.ts`: tool
- * results, the child brief, and the notices sessions are woken with. A model reads all of it, so it
- * is the plugin's real user interface; `test/notices.test.ts` snapshots each piece, so a wording
- * change shows up as a snapshot diff (and calls for the real-model rerun CLAUDE.md asks for).
+ * Every model-facing text the plugin builds: tool results, the child brief, and the notices sessions
+ * are woken with. With the tool descriptions in `tools.ts`, it is the plugin's real user interface;
+ * `test/notices.test.ts` snapshots both, so a wording change shows up as a snapshot diff (and calls
+ * for the real-model rerun CLAUDE.md asks for). Plain error messages, thrown where the check is and
+ * passed on through `describeFailure`, are the exception: they stay with their checks, unsnapshotted.
  *
  * Pure functions on plain data; it imports nothing of the plugin's but `json.ts`, so any module
  * can use it without an import cycle.
@@ -53,14 +54,20 @@ export const statusText = (status: unknown) => JSON.stringify(status, null, 2)
 export const childrenText = (listed: ReadonlyArray<unknown>) =>
   listed.length ? JSON.stringify(listed, null, 2) : "No sessions started with courier_spawn."
 
-/** What courier_cleanup did, for each of its outcomes. */
-export type CleanupDone = { readonly sessionID: string; readonly directory: string } & (
-  | { readonly outcome: "removed" }
-  | { readonly outcome: "gone" }
-  | { readonly outcome: "kept"; readonly reason: string }
-)
+/** What courier_cleanup did: removed the worktree, found it gone, or kept it and why. */
+export type CleanupResult =
+  | { readonly sessionID: string; readonly directory: string; readonly outcome: "removed" }
+  | { readonly sessionID: string; readonly directory: string; readonly outcome: "gone" }
+  | {
+      readonly sessionID: string
+      readonly directory: string
+      readonly outcome: "kept"
+      readonly reason: string
+      readonly changes: readonly string[]
+      readonly commits: readonly string[]
+    }
 
-export function cleanupText(result: CleanupDone) {
+export function cleanupText(result: CleanupResult) {
   if (result.outcome === "removed") return `Removed the worktree ${result.directory} of ${result.sessionID}.`
   if (result.outcome === "gone")
     return `The worktree ${result.directory} of ${result.sessionID} was already gone; dropped it from courier_children.`
@@ -86,14 +93,33 @@ function preview(items: readonly string[]) {
   return items.length > 5 ? `${items.slice(0, 5).join(", ")}, ...` : items.join(", ")
 }
 
-/** What courier_answer did: a permission request's result carries the reply, a question's how its answers went. */
-export type AnswerDone = { readonly sessionID: string; readonly requestID: string; readonly answered: boolean } & (
-  | { readonly reply: string }
-  | { readonly by?: string }
-)
+/**
+ * What courier_answer did: a permission request's result carries the reply, a question's whether its
+ * answers went out as the result of its call or, since that call had been cut off, as a message.
+ */
+export type AnswerResult = PermissionAnswered | QuestionAnswered
 
-/** `kind` names what was answered: a question, or a permission request. */
-export function answerText(result: AnswerDone, kind: "question" | "request") {
+/** What answering a permission request did; `answered` is false when nothing was waiting. */
+export interface PermissionAnswered {
+  readonly sessionID: string
+  readonly requestID: string
+  readonly reply: Reply
+  readonly answered: boolean
+}
+
+/** What answering a question did; `answered` is false when it no longer waited. */
+export type QuestionAnswered =
+  | { readonly sessionID: string; readonly requestID: string; readonly answered: false }
+  | {
+      readonly sessionID: string
+      readonly requestID: string
+      readonly answered: true
+      readonly by: "result" | "message"
+      readonly answers: Answers
+    }
+
+export function answerText(result: AnswerResult) {
+  const kind = "reply" in result ? "request" : "question"
   if (!result.answered)
     return (
       `${result.sessionID} no longer waits on ${kind} ${result.requestID}: it was answered some other way, or the ` +
@@ -101,7 +127,7 @@ export function answerText(result: AnswerDone, kind: "question" | "request") {
     )
   if ("reply" in result)
     return `Passed on ${result.reply} for request ${result.requestID} of ${result.sessionID}, which carries on and reports back with courier_send. ${END_TURN}`
-  const how = "by" in result && result.by === "message" ? " as a message, since its question had been cut off" : ""
+  const how = result.by === "message" ? " as a message, since its question had been cut off" : ""
   return `Passed the answers to question ${result.requestID} on to ${result.sessionID}${how}; it carries on and reports back with courier_send. ${END_TURN}`
 }
 
@@ -150,7 +176,8 @@ export function failureNotice(title: string, error: ExecutionError) {
 // Permission requests.
 
 /** The answers to a permission request, as OpenCode's own prompt offers them. */
-export type Reply = "once" | "always" | "reject"
+export const REPLIES = ["once", "always", "reject"] as const
+export type Reply = (typeof REPLIES)[number]
 
 /** A permission request, as OpenCode's `permission.asked` event carries it. */
 export interface PermissionRequest {
@@ -425,7 +452,7 @@ export function unlinkedNote(waiting: ReadonlyArray<Pick<Asked, "sessionID" | "r
 }
 
 /** How a linked call's question was settled without it, as its withdrawn result puts it. */
-function withdrawnHow(linked: Asked, how: Withdrawal) {
+function withdrawnHow(linked: Asked, how: Withdrawal): string {
   switch (how.by) {
     case "top":
       return "answers" in how.outcome
@@ -435,7 +462,7 @@ function withdrawnHow(linked: Asked, how: Withdrawal) {
       return `answered in its own session (${answeredText(linked.questions, how.answers)})`
     case "dismissed":
       return "dismissed in its own session, which ends its turn; message it with courier_send if it should carry on"
-    default:
+    case "failed":
       return `ended: its question call failed (${how.error})`
   }
 }
@@ -481,92 +508,69 @@ export interface Delivery {
   readonly sender: string | undefined
   /** ` by <sender>`, or nothing when the delivery names no sender. */
   readonly by: string
-}
-
-/** The pull request and issue numbers an event concerns, and the lines of its summary. */
-export interface Summary {
+  /** The pull request and issue numbers it concerns, which `webhook.ts` reads for its topics. */
   readonly numbers: readonly number[]
-  readonly lines: readonly string[]
 }
 
 /** The lines that have any text, in order. */
 const present = (...lines: (string | undefined)[]) => lines.filter((line): line is string => !!line)
 const inQuotes = (text: string | undefined) => (text ? `"${text}"` : undefined)
-const numbered = (n: number | undefined) => (n === undefined ? [] : [n])
 const ref = (repo: string, n: number | undefined) => `${repo}#${n ?? "?"}`
 /** A review's or comment's own text, clipped, after a blank line. */
 const clippedBody = (text: string | undefined) => (text ? ["", clipText(text)] : [])
 
-function ciSummary({ name, body, repo }: Delivery): Summary {
+function ciSummary({ name, body, repo, numbers }: Delivery) {
   const run = obj(body[name])
-  const numbers = new Set<number>()
-  for (const item of Array.isArray(run.pull_requests) ? run.pull_requests : []) {
-    const n = num(obj(item).number)
-    if (n !== undefined) numbers.add(n)
-  }
   const label = str(run.name) ?? str(obj(run.app).name) ?? str(run.head_branch) ?? ""
   const named = label ? ` "${label}"` : ""
   const sha = str(run.head_sha)?.slice(0, 7) ?? "?"
-  const list = [...numbers]
-  const where = list.length ? list.map((n) => ref(repo, n)).join(", ") : `${repo} (${sha})`
-  return {
-    numbers: list,
-    lines: present(`${CI_EVENTS[name]}${named} on ${where}: ${str(run.conclusion) ?? "completed"}`, str(run.html_url) ?? str(run.details_url)),
-  }
+  const where = numbers.length ? numbers.map((n) => ref(repo, n)).join(", ") : `${repo} (${sha})`
+  return present(`${CI_EVENTS[name]}${named} on ${where}: ${str(run.conclusion) ?? "completed"}`, str(run.html_url) ?? str(run.details_url))
 }
 
-function reviewSummary({ body, repo, action, sender }: Delivery): Summary {
+function reviewSummary({ body, repo, action, sender, numbers }: Delivery) {
   const review = obj(body.review)
   const pr = obj(body.pull_request)
-  const n = num(pr.number)
   const by = str(obj(review.user).login) ?? sender ?? "?"
-  return {
-    numbers: numbered(n),
-    lines: [
-      ...present(`review ${action ?? ""} on ${ref(repo, n)} by ${by}: ${str(review.state) ?? "?"}`, inQuotes(str(pr.title)), str(review.html_url)),
-      ...clippedBody(str(review.body)),
-    ],
-  }
+  return [
+    ...present(`review ${action ?? ""} on ${ref(repo, numbers[0])} by ${by}: ${str(review.state) ?? "?"}`, inQuotes(str(pr.title)), str(review.html_url)),
+    ...clippedBody(str(review.body)),
+  ]
 }
 
-function commentSummary({ name, body, repo, action, sender }: Delivery): Summary {
+function commentSummary({ name, body, repo, action, sender, numbers }: Delivery) {
   const comment = obj(body.comment)
   const issue = obj(body.issue)
-  const n = num(obj(body.pull_request).number) ?? num(issue.number)
   const what = name === "issue_comment" && !issue.pull_request ? "issue comment" : "pull request comment"
   const by = str(obj(comment.user).login) ?? sender ?? "?"
   const path = str(comment.path)
   const line = num(comment.line) ? `:${comment.line}` : ""
-  return {
-    numbers: numbered(n),
-    lines: [
-      ...present(`${what} ${action ?? ""} on ${ref(repo, n)} by ${by}`, path && `on ${path}${line}`, str(comment.html_url)),
-      ...clippedBody(str(comment.body)),
-    ],
-  }
+  return [
+    ...present(`${what} ${action ?? ""} on ${ref(repo, numbers[0])} by ${by}`, path && `on ${path}${line}`, str(comment.html_url)),
+    ...clippedBody(str(comment.body)),
+  ]
 }
 
-function itemSummary({ name, body, repo, action, by }: Delivery): Summary {
+function itemSummary({ name, body, repo, action, by, numbers }: Delivery) {
   const pullRequest = name === "pull_request"
   const item = obj(pullRequest ? body.pull_request : body.issue)
-  const n = num(item.number)
   const what = pullRequest ? "pull request" : "issue"
   const done = pullRequest && action === "closed" && item.merged === true ? "merged" : action
-  return { numbers: numbered(n), lines: present(`${what} ${ref(repo, n)} ${done}${by}`, inQuotes(str(item.title)), str(item.html_url)) }
+  return present(`${what} ${ref(repo, numbers[0])} ${done}${by}`, inQuotes(str(item.title)), str(item.html_url))
 }
 
-function pushSummary({ body, repo, by }: Delivery): Summary {
+function pushSummary({ body, repo, by }: Delivery) {
   const commits = Array.isArray(body.commits) ? body.commits.length : 0
   const plural = commits === 1 ? "" : "s"
-  return { numbers: [], lines: present(`push to ${repo} ${str(body.ref) ?? ""}${by}: ${commits} commit${plural}`, str(body.compare)) }
+  return present(`push to ${repo} ${str(body.ref) ?? ""}${by}: ${commits} commit${plural}`, str(body.compare))
 }
 
-function otherSummary({ name, repo, action, by }: Delivery): Summary {
+function otherSummary({ name, repo, action, by }: Delivery) {
   const acted = action ? ` ${action}` : ""
-  return { numbers: [], lines: [`${name}${acted} on ${repo}${by}`] }
+  return [`${name}${acted} on ${repo}${by}`]
 }
 
-const SUMMARIES: Record<string, (delivery: Delivery) => Summary> = {
+const SUMMARIES: Record<string, (delivery: Delivery) => string[]> = {
   ...Object.fromEntries(Object.keys(CI_EVENTS).map((name) => [name, ciSummary])),
   pull_request_review: reviewSummary,
   pull_request_review_comment: commentSummary,
@@ -576,11 +580,11 @@ const SUMMARIES: Record<string, (delivery: Delivery) => Summary> = {
   push: pushSummary,
 }
 
-/** The summary of a GitHub delivery that wakes its subscribers, and the pull requests and issues it concerns. */
-export function githubSummary(delivery: Delivery): Summary {
+/** The summary of a GitHub delivery that wakes its subscribers. */
+export function githubSummary(delivery: Delivery) {
   // Own keys only: an event named `toString` or `constructor` is not one of ours.
   const summarise = Object.hasOwn(SUMMARIES, delivery.name) ? SUMMARIES[delivery.name]! : otherSummary
-  return summarise(delivery)
+  return summarise(delivery).join("\n")
 }
 
 /** The summary of a delivery to `/hook/<name>`: its text, clipped. */

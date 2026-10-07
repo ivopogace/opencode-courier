@@ -801,160 +801,61 @@ exports[`questions passedNote 3`] = `"Session ses_child no longer waits on this 
 exports[`questions passedNote 4`] = `"Passing these answers on to session ses_child failed (storage is down); call courier_answer with requestID "question_1" to pass them on."`;
 
 exports[`webhook deliveries githubSummary 1`] = `
-{
-  "lines": [
-    "check run "CI" on octo/repo#5, octo/repo#7: failure",
-    "https://ci/1",
-  ],
-  "numbers": [
-    5,
-    7,
-  ],
-}
+"check run "CI" on octo/repo#5, octo/repo#7: failure
+https://ci/1"
 `;
 
 exports[`webhook deliveries githubSummary 2`] = `
-{
-  "lines": [
-    "check suite "Actions" on octo/repo (0123456): completed",
-    "https://ci/2",
-  ],
-  "numbers": [],
-}
+"check suite "Actions" on octo/repo (0123456): completed
+https://ci/2"
 `;
 
-exports[`webhook deliveries githubSummary 3`] = `
-{
-  "lines": [
-    "workflow run on octo/repo (?): completed",
-  ],
-  "numbers": [],
-}
-`;
+exports[`webhook deliveries githubSummary 3`] = `"workflow run on octo/repo (?): completed"`;
 
 exports[`webhook deliveries githubSummary 4`] = `
-{
-  "lines": [
-    "review submitted on octo/repo#5 by alice: changes_requested",
-    ""Fix"",
-    "https://gh/r",
-    "",
-    "Please fix",
-  ],
-  "numbers": [
-    5,
-  ],
-}
+"review submitted on octo/repo#5 by alice: changes_requested
+"Fix"
+https://gh/r
+
+Please fix"
 `;
 
-exports[`webhook deliveries githubSummary 5`] = `
-{
-  "lines": [
-    "review  on octo/repo#? by ?: ?",
-  ],
-  "numbers": [],
-}
-`;
+exports[`webhook deliveries githubSummary 5`] = `"review  on octo/repo#? by ?: ?"`;
 
 exports[`webhook deliveries githubSummary 6`] = `
-{
-  "lines": [
-    "pull request comment created on octo/repo#5 by bob",
-    "on src/a.ts:12",
-    "https://gh/c",
-    "",
-    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx… [100 more characters]",
-  ],
-  "numbers": [
-    5,
-  ],
-}
+"pull request comment created on octo/repo#5 by bob
+on src/a.ts:12
+https://gh/c
+
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx… [100 more characters]"
 `;
 
 exports[`webhook deliveries githubSummary 7`] = `
-{
-  "lines": [
-    "issue comment created on octo/repo#3 by carol",
-    "",
-    "Thanks",
-  ],
-  "numbers": [
-    3,
-  ],
-}
+"issue comment created on octo/repo#3 by carol
+
+Thanks"
 `;
 
-exports[`webhook deliveries githubSummary 8`] = `
-{
-  "lines": [
-    "pull request comment edited on octo/repo#4 by ?",
-  ],
-  "numbers": [
-    4,
-  ],
-}
-`;
+exports[`webhook deliveries githubSummary 8`] = `"pull request comment edited on octo/repo#4 by ?"`;
 
 exports[`webhook deliveries githubSummary 9`] = `
-{
-  "lines": [
-    "pull request octo/repo#5 merged by dave",
-    ""Fix"",
-    "https://gh/p",
-  ],
-  "numbers": [
-    5,
-  ],
-}
+"pull request octo/repo#5 merged by dave
+"Fix"
+https://gh/p"
 `;
 
-exports[`webhook deliveries githubSummary 10`] = `
-{
-  "lines": [
-    "issue octo/repo#3 opened",
-  ],
-  "numbers": [
-    3,
-  ],
-}
-`;
+exports[`webhook deliveries githubSummary 10`] = `"issue octo/repo#3 opened"`;
 
 exports[`webhook deliveries githubSummary 11`] = `
-{
-  "lines": [
-    "push to octo/repo refs/heads/main by erin: 1 commit",
-    "https://gh/compare",
-  ],
-  "numbers": [],
-}
+"push to octo/repo refs/heads/main by erin: 1 commit
+https://gh/compare"
 `;
 
-exports[`webhook deliveries githubSummary 12`] = `
-{
-  "lines": [
-    "push to octo/repo : 2 commits",
-  ],
-  "numbers": [],
-}
-`;
+exports[`webhook deliveries githubSummary 12`] = `"push to octo/repo : 2 commits"`;
 
-exports[`webhook deliveries githubSummary 13`] = `
-{
-  "lines": [
-    "release published on octo/repo by frank",
-  ],
-  "numbers": [],
-}
-`;
+exports[`webhook deliveries githubSummary 13`] = `"release published on octo/repo by frank"`;
 
-exports[`webhook deliveries githubSummary 14`] = `
-{
-  "lines": [
-    "toString on octo/repo",
-  ],
-  "numbers": [],
-}
-`;
+exports[`webhook deliveries githubSummary 14`] = `"toString on octo/repo"`;
 
 exports[`webhook deliveries hookSummary 1`] = `"deployed"`;
 

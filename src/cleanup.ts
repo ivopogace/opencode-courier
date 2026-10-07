@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { isAbsolute } from "node:path"
-import { keepReason } from "./notices.js"
+import { keepReason, type CleanupResult } from "./notices.js"
 import { rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
@@ -31,18 +31,6 @@ export interface CleanupInput {
   readonly sessionID: string
   readonly force?: boolean
 }
-
-export type CleanupResult =
-  | { readonly sessionID: string; readonly directory: string; readonly outcome: "removed" }
-  | { readonly sessionID: string; readonly directory: string; readonly outcome: "gone" }
-  | {
-      readonly sessionID: string
-      readonly directory: string
-      readonly outcome: "kept"
-      readonly reason: string
-      readonly changes: readonly string[]
-      readonly commits: readonly string[]
-    }
 
 /** At most this many changes and commits are returned; the reason still counts them all. */
 export const MAX_LISTED = 50

@@ -131,6 +131,24 @@ export interface Event {
 /** Pull request and issue actions worth a wake-up; edits, labels, assignments and pushes to the branch are not. */
 const ITEM_ACTIONS = new Set(["opened", "reopened", "closed", "ready_for_review"])
 
+/** The pull request and issue numbers a GitHub delivery concerns, each with a topic of its own. */
+function numbersOf(name: string, body: Record<string, any>): number[] {
+  if (Object.hasOwn(CI_EVENTS, name)) {
+    const run = obj(body[name])
+    const numbers = new Set<number>()
+    for (const item of Array.isArray(run.pull_requests) ? run.pull_requests : []) {
+      const n = num(obj(item).number)
+      if (n !== undefined) numbers.add(n)
+    }
+    return [...numbers]
+  }
+  let n: number | undefined
+  if (name === "pull_request_review" || name === "pull_request") n = num(obj(body.pull_request).number)
+  else if (name === "pull_request_review_comment" || name === "issue_comment") n = num(obj(body.pull_request).number) ?? num(obj(body.issue).number)
+  else if (name === "issues") n = num(obj(body.issue).number)
+  return n === undefined ? [] : [n]
+}
+
 /**
  * Maps a GitHub delivery to its topics (`github:owner/repo` and, for pull requests and issues,
  * `github:owner/repo#N`) and a summary. Undefined for deliveries nobody should be woken for: pings,
@@ -144,13 +162,13 @@ export function githubEvent(name: string, payload: unknown): Event | undefined {
   if (Object.hasOwn(CI_EVENTS, name) && action !== "completed") return undefined
   if ((name === "pull_request" || name === "issues") && (!action || !ITEM_ACTIONS.has(action))) return undefined
   const sender = str(obj(body.sender).login)
-  const summary = githubSummary({ name, body, repo, action, sender, by: sender ? ` by ${sender}` : "" })
+  const numbers = numbersOf(name, body)
   const lower = repo.toLowerCase()
   return {
     source: "github",
     name,
-    topics: [`github:${lower}`, ...summary.numbers.map((n) => `github:${lower}#${n}`)],
-    summary: summary.lines.join("\n"),
+    topics: [`github:${lower}`, ...numbers.map((n) => `github:${lower}#${n}`)],
+    summary: githubSummary({ name, body, repo, action, sender, by: sender ? ` by ${sender}` : "", numbers }),
   }
 }
 

@@ -17,6 +17,7 @@ import {
   type Elsewhere,
   type Outcome,
   type Prompt,
+  type QuestionAnswered,
   type Withdrawal,
 } from "./notices.js"
 import { allEntries, answeringTop, lineage, lineageIn, RETENTION_MS, type RosterStorage } from "./roster.js"
@@ -346,7 +347,7 @@ async function sendAnswer(ports: QuestionPorts, asked: Asked, outcome: Outcome) 
  * Answers a question of a session started, directly or through others, from the caller, which must
  * be the session at the top, as for permission requests. `answered` is false when it no longer waits.
  */
-export async function answerQuestion(ports: QuestionPorts, callerID: string, input: QuestionAnswerInput) {
+export async function answerQuestion(ports: QuestionPorts, callerID: string, input: QuestionAnswerInput): Promise<QuestionAnswered> {
   const { sessionID, requestID } = input
   await answeringTop(ports.storage, sessionID, callerID, "questions")
   const asked: Stored | undefined = shared.questions.get(requestID) ?? ((await ports.storage.get(keyOf(requestID))) as Stored | undefined)
@@ -748,9 +749,16 @@ async function linkedCallFailed(
 
 /** The answers that count once a linked call's question was settled without it: none unless it was answered. */
 function withdrawnAnswers(linked: Question, how: Withdrawal): Answers {
-  if (how.by === "top" && "answers" in how.outcome) return how.outcome.answers
-  if (how.by === "child") return how.answers
-  return linked.questions.map(() => [])
+  const none = () => linked.questions.map(() => [])
+  switch (how.by) {
+    case "top":
+      return "answers" in how.outcome ? how.outcome.answers : none()
+    case "child":
+      return how.answers
+    case "dismissed":
+    case "failed":
+      return none()
+  }
 }
 
 /** The result of a linked call withdrawn because its question was settled without it. */

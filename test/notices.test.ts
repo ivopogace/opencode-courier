@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import * as notices from "../src/notices.js"
 import { addTools, type ToolEditor, type ToolPorts } from "../src/tools.js"
+import { githubEvent } from "../src/webhook.js"
 
 // Every model-facing string, built from fixed inputs and kept in __snapshots__/notices.test.ts.snap.
 // A wording change shows up there as a snapshot diff; after one, rerun e2e/real-model.sh (CLAUDE.md).
@@ -43,7 +44,7 @@ describe("tool results", () => {
   test("cleanupText", () => {
     expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "removed" })).toMatchSnapshot()
     expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "gone" })).toMatchSnapshot()
-    expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "kept", reason: "1 uncommitted change (a.ts)" })).toMatchSnapshot()
+    expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "kept", reason: "1 uncommitted change (a.ts)", changes: ["a.ts"], commits: [] })).toMatchSnapshot()
   })
   test("keepReason", () => {
     expect(notices.keepReason({ changes: [], commits: [] })).toBeUndefined()
@@ -52,12 +53,12 @@ describe("tool results", () => {
   })
   test("answerText", () => {
     const base = { sessionID: "ses_child", requestID: "per_1" }
-    expect(notices.answerText({ ...base, reply: "once", answered: false }, "request")).toMatchSnapshot()
-    expect(notices.answerText({ ...base, reply: "always", answered: true }, "request")).toMatchSnapshot()
+    expect(notices.answerText({ ...base, reply: "once" as const, answered: false })).toMatchSnapshot()
+    expect(notices.answerText({ ...base, reply: "always" as const, answered: true })).toMatchSnapshot()
     const question = { sessionID: "ses_child", requestID: "question_1" }
-    expect(notices.answerText({ ...question, answered: false }, "question")).toMatchSnapshot()
-    expect(notices.answerText({ ...question, answered: true, by: "result" }, "question")).toMatchSnapshot()
-    expect(notices.answerText({ ...question, answered: true, by: "message" }, "question")).toMatchSnapshot()
+    expect(notices.answerText({ ...question, answered: false })).toMatchSnapshot()
+    expect(notices.answerText({ ...question, answered: true, by: "result", answers: [["Hi"]] })).toMatchSnapshot()
+    expect(notices.answerText({ ...question, answered: true, by: "message", answers: [["Hi"]] })).toMatchSnapshot()
   })
   test("laterText", () => {
     const entry = { id: "later_1", sessionID: "ses_parent" }
@@ -209,33 +210,29 @@ describe("questions", () => {
 })
 
 describe("webhook deliveries", () => {
-  const delivery = (name: string, body: Record<string, any>, action?: string, sender?: string) => ({
-    name,
-    body,
-    repo: "octo/repo",
-    action,
-    sender,
-    by: sender ? ` by ${sender}` : "",
-  })
+  /** The summary a subscribed session gets for a GitHub delivery, as the receiver makes it. */
+  const summary = (name: string, body: Record<string, any>, action?: string, sender?: string) =>
+    githubEvent(name, { ...body, repository: { full_name: "octo/repo" }, ...(action ? { action } : {}), ...(sender ? { sender: { login: sender } } : {}) })
+      ?.summary
 
   test("githubSummary", () => {
     const run = { name: "CI", head_sha: "0123456789abcdef", conclusion: "failure", html_url: "https://ci/1", pull_requests: [{ number: 5 }, { number: 5 }, { number: 7 }] }
-    expect(notices.githubSummary(delivery("check_run", { check_run: run }, "completed"))).toMatchSnapshot()
-    expect(notices.githubSummary(delivery("check_suite", { check_suite: { app: { name: "Actions" }, head_sha: "0123456789", details_url: "https://ci/2" } }, "completed"))).toMatchSnapshot()
-    expect(notices.githubSummary(delivery("workflow_run", { workflow_run: {} }, "completed"))).toMatchSnapshot()
+    expect(summary("check_run", { check_run: run }, "completed")).toMatchSnapshot()
+    expect(summary("check_suite", { check_suite: { app: { name: "Actions" }, head_sha: "0123456789", details_url: "https://ci/2" } }, "completed")).toMatchSnapshot()
+    expect(summary("workflow_run", { workflow_run: {} }, "completed")).toMatchSnapshot()
     const review = { user: { login: "alice" }, state: "changes_requested", html_url: "https://gh/r", body: "Please fix" }
-    expect(notices.githubSummary(delivery("pull_request_review", { review, pull_request: { number: 5, title: "Fix" } }, "submitted", "alice"))).toMatchSnapshot()
-    expect(notices.githubSummary(delivery("pull_request_review", {}, undefined))).toMatchSnapshot()
+    expect(summary("pull_request_review", { review, pull_request: { number: 5, title: "Fix" } }, "submitted", "alice")).toMatchSnapshot()
+    expect(summary("pull_request_review", {}, undefined)).toMatchSnapshot()
     const comment = { user: { login: "bob" }, path: "src/a.ts", line: 12, html_url: "https://gh/c", body: "x".repeat(1600) }
-    expect(notices.githubSummary(delivery("pull_request_review_comment", { comment, pull_request: { number: 5 } }, "created"))).toMatchSnapshot()
-    expect(notices.githubSummary(delivery("issue_comment", { comment: { body: "Thanks" }, issue: { number: 3 } }, "created", "carol"))).toMatchSnapshot()
-    expect(notices.githubSummary(delivery("issue_comment", { comment: {}, issue: { number: 4, pull_request: {} } }, "edited"))).toMatchSnapshot()
-    expect(notices.githubSummary(delivery("pull_request", { pull_request: { number: 5, title: "Fix", merged: true, html_url: "https://gh/p" } }, "closed", "dave"))).toMatchSnapshot()
-    expect(notices.githubSummary(delivery("issues", { issue: { number: 3 } }, "opened"))).toMatchSnapshot()
-    expect(notices.githubSummary(delivery("push", { ref: "refs/heads/main", commits: [{}], compare: "https://gh/compare" }, undefined, "erin"))).toMatchSnapshot()
-    expect(notices.githubSummary(delivery("push", { commits: [{}, {}] }))).toMatchSnapshot()
-    expect(notices.githubSummary(delivery("release", {}, "published", "frank"))).toMatchSnapshot()
-    expect(notices.githubSummary(delivery("toString", {}))).toMatchSnapshot()
+    expect(summary("pull_request_review_comment", { comment, pull_request: { number: 5 } }, "created")).toMatchSnapshot()
+    expect(summary("issue_comment", { comment: { body: "Thanks" }, issue: { number: 3 } }, "created", "carol")).toMatchSnapshot()
+    expect(summary("issue_comment", { comment: {}, issue: { number: 4, pull_request: {} } }, "edited")).toMatchSnapshot()
+    expect(summary("pull_request", { pull_request: { number: 5, title: "Fix", merged: true, html_url: "https://gh/p" } }, "closed", "dave")).toMatchSnapshot()
+    expect(summary("issues", { issue: { number: 3 } }, "opened")).toMatchSnapshot()
+    expect(summary("push", { ref: "refs/heads/main", commits: [{}], compare: "https://gh/compare" }, undefined, "erin")).toMatchSnapshot()
+    expect(summary("push", { commits: [{}, {}] })).toMatchSnapshot()
+    expect(summary("release", {}, "published", "frank")).toMatchSnapshot()
+    expect(summary("toString", {})).toMatchSnapshot()
   })
   test("hookSummary", () => {
     expect(notices.hookSummary("  deployed  ")).toMatchSnapshot()

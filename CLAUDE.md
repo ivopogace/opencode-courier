@@ -18,7 +18,8 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   `src/tools.ts`: the ten courier tools: input schemas, descriptions and results.
   `src/notices.ts`: every other model-facing string (tool result texts, the child brief, the
   envelope, the failure, permission, form, question and webhook notices), as pure functions that
-  import nothing of the plugin's but `json.ts`. `test/notices.test.ts` snapshots them and the tool
+  import nothing of the plugin's but `json.ts`; plain errors passed through `describeFailure` stay
+  with their checks. `test/notices.test.ts` snapshots them and the tool
   descriptions, so a wording change shows up as a diff in `test/__snapshots__/`; update it with
   `bun test --update-snapshots` and rerun the real-model smoke test.
   `src/index.ts`: the plugin (an Effect plugin running the promise one): builds the ports, registers

@@ -9,6 +9,7 @@ import {
   childrenText,
   cleanupText,
   laterText,
+  REPLIES,
   sendText,
   spawnText,
   statusText,
@@ -77,7 +78,7 @@ export const AnswerInput = Schema.Struct({
   sessionID: Schema.String.annotate({ description: "The session you started that is waiting, as its notice names it." }),
   requestID: Schema.String.annotate({ description: "The request id from the notice." }),
   reply: Schema.optional(
-    Schema.Literals(["once", "always", "reject"]).annotate({
+    Schema.Literals(REPLIES).annotate({
       description: "For a permission request: the choice the person made, once, always (only when the notice offers it) or reject.",
     }),
   ),
@@ -238,7 +239,7 @@ export function addTools(tools: ToolEditor, ports: ToolPorts) {
     input: AnswerInput,
     execute: async (input, context) => {
       const result = await answerRequest(ports, context.sessionID, input).catch(rethrow("courier_answer"))
-      return { content: answerText(result, isQuestion(result.requestID) ? "question" : "request"), metadata: result }
+      return { content: answerText(result), metadata: result }
     },
   })
 

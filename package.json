@@ -1,7 +1,7 @@
 {
   "name": "opencode-courier",
   "version": "0.2.2",
-  "description": "An OpenCode V2 plugin that lets one session start other sessions, message them, and be woken by them, without polling.",
+  "description": "Async multi-session orchestration for OpenCode 2: spawn child sessions, get woken when they finish, relay their questions, wake on GitHub webhooks.",
   "license": "MIT",
   "author": "Ivo Pogace <71701666+ivopogace@users.noreply.github.com>",
   "homepage": "https://github.com/ivopogace/opencode-courier#readme",
@@ -28,7 +28,18 @@
     "opencode",
     "opencode-plugin",
     "agents",
-    "orchestration"
+    "orchestration",
+    "opencode2",
+    "opencode-v2",
+    "multi-agent",
+    "subagent",
+    "subagents",
+    "background-agents",
+    "parallel",
+    "worktree",
+    "webhook",
+    "scheduler",
+    "ai-agents"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

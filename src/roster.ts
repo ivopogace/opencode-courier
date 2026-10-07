@@ -71,9 +71,12 @@ function isReverse(value: unknown): value is ReverseEntry {
   return Array.isArray(ancestors) && ancestors.length > 0 && ancestors.every((id) => typeof id === "string")
 }
 
-/** Removes a child's roster entry and its reverse key. */
+/**
+ * Removes a child's roster entry and its reverse key. Only the entry's removal can fail it: a
+ * reverse key left behind leads nowhere, and the next load drops it.
+ */
 export async function remove(storage: RosterStorage, parentID: string, sessionID: string) {
-  await Promise.all([storage.remove(rosterKey(parentID, sessionID)), storage.remove(reverseKey(sessionID))])
+  await Promise.all([storage.remove(rosterKey(parentID, sessionID)), storage.remove(reverseKey(sessionID)).catch(() => undefined)])
 }
 
 /** Removes a child from its parent's roster; false when it was not there. */
@@ -186,18 +189,23 @@ export async function pruneExpired(storage: RosterStorage, now: number, exists: 
   await backfill(storage, await dropExpired(storage, await scanAll<RosterEntry>(storage, PREFIX), now, exists))
 }
 
+/** Whether a reverse key's value leads to this entry. */
+function indexes(value: unknown, entry: RosterEntry) {
+  return isReverse(value) && value.ancestors[0] === entry.parentID
+}
+
 /**
- * Writes the reverse keys missing for the given entries, all of the roster, such as those an older
+ * Writes the reverse keys missing for the given entries, or naming another parent, all of the roster, such as those an older
  * copy of the plugin recorded, and drops the reverse keys whose entry is gone, such as those of an
- * entry an older copy removed. Keys already there are left as they are, so running it again
- * changes nothing.
+ * entry an older copy removed. Keys that lead to their entry are left as they are, so running it
+ * again changes nothing.
  */
 export async function backfill(storage: RosterStorage, entries: ReadonlyArray<RosterEntry>) {
   const indexed = new Map((await scanEntries<unknown>(storage, BY_CHILD)).map(({ key, value }) => [key, value]))
   const sessions = new Set(entries.map((entry) => entry.sessionID))
   await Promise.all([
     ...entries
-      .filter((entry) => !isReverse(indexed.get(entry.sessionID)))
+      .filter((entry) => !indexes(indexed.get(entry.sessionID), entry))
       .map((entry) =>
         storage.set(reverseKey(entry.sessionID), { ancestors: lineageIn(entries, entry.sessionID).map((above) => above.parentID) }),
       ),

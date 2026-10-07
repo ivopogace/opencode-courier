@@ -216,7 +216,14 @@ describe("roster", () => {
       await record(storage, entry("ses_indexed", "ses_top", 3))
       store.set(reverseKey("ses_gone"), { ancestors: ["ses_top"] })
       store.set(reverseKey("ses_junk"), "not an index")
-      const entries = [entry("ses_child", "ses_top", 1), entry("ses_grandchild", "ses_child", 2), entry("ses_indexed", "ses_top", 3)]
+      store.set(rosterKey("ses_top", "ses_moved"), entry("ses_moved", "ses_top", 4))
+      store.set(reverseKey("ses_moved"), { ancestors: ["ses_elsewhere"] })
+      const entries = [
+        entry("ses_child", "ses_top", 1),
+        entry("ses_grandchild", "ses_child", 2),
+        entry("ses_indexed", "ses_top", 3),
+        entry("ses_moved", "ses_top", 4),
+      ]
 
       await backfill(storage, entries)
       const once = new Map(store)
@@ -228,6 +235,21 @@ describe("roster", () => {
       expect(store.get(reverseKey("ses_indexed"))).toEqual({ ancestors: ["ses_top"] })
       expect(store.has(reverseKey("ses_gone"))).toBe(false)
       expect(store.has(reverseKey("ses_junk"))).toBe(false)
+      expect(store.get(reverseKey("ses_moved"))).toEqual({ ancestors: ["ses_top"] })
+    })
+
+    test("removing an entry succeeds when its reverse key cannot be removed", async () => {
+      const { storage, store } = fakeStorage()
+      await record(storage, entry("ses_child", "ses_top", 1))
+      const failing: RosterStorage = {
+        ...storage,
+        remove: async (key) => (key.startsWith("roster-by-child/") ? Promise.reject(new Error("locked")) : storage.remove(key)),
+      }
+
+      await remove(failing, "ses_top", "ses_child")
+
+      expect([...store.keys()]).toEqual([reverseKey("ses_child")])
+      expect(await lineage(storage, "ses_child")).toEqual([])
     })
 
     test("back-filling keeps a reverse key whose entry was recorded after the roster was read", async () => {

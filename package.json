@@ -1,7 +1,7 @@
 {
   "name": "opencode-courier",
   "version": "0.2.2",
-  "description": "Async multi-session orchestration for OpenCode V2: spawn child sessions and get woken when they finish, relay their questions, schedule messages, wake on webhooks. No polling.",
+  "description": "OpenCode V2 plugin: spawn sessions, relay their questions, wake on reports, timers or webhooks.",
   "license": "MIT",
   "author": "Ivo Pogace <71701666+ivopogace@users.noreply.github.com>",
   "homepage": "https://github.com/ivopogace/opencode-courier#readme",

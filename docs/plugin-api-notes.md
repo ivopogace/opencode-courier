@@ -120,8 +120,9 @@ Observed at `2.0.22`, differently from the beta (the live suite found each of th
   keeping it for the next load. Some 40 ms later OpenCode publishes a `location.shutdown` event
   (new since the beta; `data` is empty, `location.directory` names the location) and then unloads
   the plugin; the call's own failure is recorded as `aborted`, "Interaction cancelled because the
-  location shut down". The relay now holds a dismissal for its dismissal grace (`dismissalGraceMs` in its ports' `timing`, 2 s) to see
-  whether `location.shutdown` or its instance's unload follows, and treats it as cut off then
+  location shut down". The relay now holds a dismissal for its dismissal grace (2 s, the
+  `dismissalGraceMs` of the `timing` that `src/index.ts` gives its ports) to see whether
+  `location.shutdown` or its instance's unload follows, and treats it as cut off then
   (`src/question.ts`: `closingSoon`, `locationClosing`, which `src/watch.ts` calls for the
   event); an unload that comes later, while `settle` still waits for the notice to the top
   session, counts too. A dismissal by the person reaches the other side that much later. The schema marks the

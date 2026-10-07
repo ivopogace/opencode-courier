@@ -545,7 +545,7 @@ describe("watchChildren", () => {
 
     await watchChildren(ports, fresh(), watching.signal, 1)
 
-    expect(shutdownReportedAt("/repo")).toBeDefined()
+    expect(shutdownReportedAt("/repo")).toBe(1_000_000)
     expect(shutdownReportedAt("/elsewhere")).toBeUndefined()
     forgetQuestions()
 

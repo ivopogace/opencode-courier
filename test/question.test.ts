@@ -735,7 +735,7 @@ describe("the question tool of a spawned session", () => {
     expect(store.has("question/question_1")).toBe(false)
   })
 
-  test("a shutdown is judged by the relay's clock: one reported longer than the grace before a dismissal does not count, one within it does", async () => {
+  test("a shutdown is judged by the clock in the relay's ports: one reported longer than the grace before a dismissal does not count, one within it does", async () => {
     const { clock, store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 50 })
     shutDown("/repo")
     clock.now += 51

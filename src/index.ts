@@ -201,7 +201,7 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     const location = {}
     locations.set(location, ctx.permission)
     void watchChildren(
-      { storage: ctx.storage, session: ctx.session, event: ctx.event, permission: ctx.permission, now: Date.now, log: later.log },
+      { storage: ctx.storage, session: ctx.session, event: ctx.event, permission: ctx.permission, now: questionPorts.now, log: later.log },
       watchState,
       watching.signal,
     )

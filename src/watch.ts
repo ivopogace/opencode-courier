@@ -34,7 +34,7 @@ export interface WatchPorts {
   readonly event: Pick<Context["event"], "subscribe">
   /** This location's pending permission requests, relayed when the watcher (re)subscribes. */
   readonly permission: Pick<Context["permission"], "list">
-  /** The clock, in epoch milliseconds: when a location shutdown was seen. */
+  /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
   readonly now: () => number
   readonly log: (message: string) => void
 }

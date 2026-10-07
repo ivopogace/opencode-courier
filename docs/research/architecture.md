@@ -36,8 +36,9 @@ module-level variables, but an update installs the package into a new timestampe
 a reload of that copy is a second module with its own module state, alongside the first until it
 unloads. Process-wide state therefore needs a key outside the module graph (`globalThis`,
 `Symbol.for`), and must tolerate an *older* copy of the plugin reading and writing it. JetBrains has
-the same shape (application-level vs project-level services [S20]); VS Code does not, since it runs
-one extension host per window [S13].
+the same shape: an application-level service is one instance per process, a project-level one is
+"a separate instance for each" project [S20]. VS Code's extension host is the counter-example,
+activating each extension once per host [S12].
 
 **F2. Every instance sees every event.** `event.subscribe()` hands each instance the server's
 events, not just its location's (documented for `form.created` in `docs/plugin-api-notes.md`, and
@@ -58,8 +59,9 @@ real models, `docs/real-model.md`). The host adds its own constraints: tools nee
 `options: { codemode: false }` to be called directly, `undefined` in metadata hangs a call, and the
 host decodes input with its own copy of `effect`, which drops the plugin's schema refinements.
 Anthropic's guidance on writing tools for agents makes the same point from the other side:
-descriptions, names and result shapes are prompt engineering and should be evaluated as such
-[S8].
+write descriptions as for a new hire, return high-signal text, make errors actionable, and
+develop the wording against evals of realistic tasks [S8]; "Building effective agents" calls it
+the agent-computer interface and asks for it to be made hard to misuse [S7].
 
 **F5. Long-lived async work.** A plugin here is not request/response. Courier runs a 15 s
 scheduler, a reconnecting event stream, an HTTP listener on a fixed port, timers that hold a
@@ -74,7 +76,10 @@ host (`docs/plugin-api-notes.md`). Each bump needs reading the types and running
 
 **F7. Testing with a nondeterministic model.** The behaviour that matters most (does the parent
 end its turn, does a child report) happens only with a model in the loop. Unit tests cannot see
-it; a real model is slow, costs money or quota, and flakes.
+it; a real model is slow, costs money or quota, and flakes: at 75% per trial, three passes in a
+row happen 42% of the time (pass^k, [S24]). The usual tiers are a scripted stand-in model (AI SDK's
+`MockLanguageModel`, Inspect's `mockllm`) [S23, S24], recorded HTTP replayed from cassettes [S25],
+and evals with a real model graded on outcomes.
 
 ## 2. Candidate styles
 
@@ -104,16 +109,20 @@ shell has them.
 - F4: model-facing text becomes plain functions that can be snapshot-tested. F7: most logic is
   tested without fakes or time. F1 to F3 and F5 remain the shell's problem, which is honest: they
   *are* imperative problems.
-- Seen in: Elm-architecture plugins and editors; the Redux reducers of many VS Code webviews;
-  Zed's WASM extensions, which are pure functions of host-provided input by construction [S21].
+- Seen in: Zed's extensions, compiled to WebAssembly and allowed only the host calls their granted
+  capabilities permit, which pushes them towards pure code over host-provided input [S21]; the AI
+  SDK's tools, which take their shared runtime context as a validated argument rather than reading
+  globals [S23].
 
 ### 2.3 Effect-native services and layers
 
 Everything is an `Effect`: host domains are services, the plugin's parts are `Layer`s, lifetimes are
 `Scope`s with finalizers, concurrency uses fibers, `Deferred`, `Queue`, `Semaphore`, and tests
 supply test layers and `TestClock` [S9, S10, S11]. OpenCode's own core is written this way, and
-the Effect plugin API hands a plugin `Effect<void, never, Scope>` (`effect/plugin.d.ts`), so a
-plugin's finalizers run on unload.
+the Effect plugin API hands a plugin `Effect<void, never, Scope>` (`effect/plugin.d.ts`), run in a
+child scope forked per activation, so a plugin's finalizers run on unload; the plugin API's own
+design notes consume events as a `Stream` forked into that scope (`Stream.runForEach` with
+`Effect.forkScoped`) [S2].
 
 - F5: the strongest answer of any style. Interruption is structured: a fiber racing a host tool's
   `execute` can be stopped, which a promise cannot (this is why the question relay is an Effect
@@ -142,14 +151,21 @@ source of truth [S18].
   host's form events are ephemeral and never stored (`docs/plugin-api-notes.md`), and the persisted
   state (roster, scheduled messages, questions, subscriptions) is small records, not histories.
 - Seen in: courier's own webhook receiver (`joinReceiver` in `src/index.ts`: first instance starts
-  the listener, the last to leave stops it, requests use any live instance's ports); VS Code's
-  shared language-server processes; Erlang/Elixir editor tooling.
+  the listener, the last to leave stops it, requests use any live instance's ports); Cline's
+  `McpHub`, one object owning every MCP connection, settings watcher and refresh timer [S22];
+  JetBrains application-level services, one per process and disposed with it [S20].
+- A cautionary contrast: oh-my-opencode's `BackgroundManager` tracks background agents in one
+  3.2k-line in-memory class and decides completion from a `session.idle` event *plus* 3 s polling
+  with a 10 s stability window, which its own notes call the production hotspot [S19]. A single
+  owner does not by itself make the design simple; courier's wake-by-message avoids that polling.
 
 ### 2.5 Thin plugin over an MCP server or a separate daemon
 
 The work lives in a separate process (an MCP server, or a daemon with its own API); the in-host part
-is a shim. Claude Code is built this way: hooks are a process per event with JSON on stdin and
-stdout, and durable work is an MCP server or an outside service [S3, S4, S5].
+is a shim. Claude Code is built this way: a command hook is a process per event with JSON on stdin
+and its exit code as the verdict, hooks keep no state between runs, and a plugin's long-lived work
+is an MCP server, an LSP server or a monitor process the host supervises, with state under
+`${CLAUDE_PLUGIN_DATA}` because the plugin's root directory changes on every update [S3, S4, S5].
 
 - F1/F2/F3: solved by moving state into one process with its own storage. F6: the protocol is more
   stable than an in-process API. F7: the server can be tested on its own.
@@ -161,8 +177,8 @@ stdout, and durable work is an MCP server or an outside service [S3, S4, S5].
   e2e uses but which has its own churn (routes moved at 2.0.22), and would add a second process
   to install, start, secure and version. The webhook receiver is the one part that looks
   daemon-shaped, and it already runs in-process for want of an HTTP route in the plugin API.
-- Seen in: Claude Code plugins (hooks, MCP servers, subagents bundled) [S3, S4]; Continue and
-  Cline, which extend through MCP [S22]; OpenCode itself supports MCP servers next to plugins.
+- Seen in: Claude Code plugins (hooks, MCP servers, monitors, subagents bundled) [S3, S4]; Cline,
+  which extends through MCP [S22]; OpenCode itself supports MCP servers next to plugins.
 
 ### 2.6 Plain modules with dependency injection by argument
 
@@ -171,9 +187,10 @@ the cheapest form of 2.1, and what the repository mostly is.
 
 - Strong on F7 and readability. Silent on F1, F2 and F5: nothing stops each module from keeping
   its own globals and its own timers, which is how the shared state in this repository spread.
-- Seen in: most OpenCode V1 community plugins (a single `async ({ client, $ }) => ({ ...hooks })`
-  [S1, S2]); Vercel AI SDK and LangChain tool definitions, which are plain objects with an
-  `execute` [S23].
+- Seen in: OpenCode V1 plugins, a function of `{ project, directory, worktree, client, $ }`
+  returning hooks, with no lifecycle or teardown in the docs [S1]; Vercel AI SDK and LangChain
+  tools, plain objects or decorated functions with an `execute` [S23]; Neovim's Lua plugins, plain
+  modules `require`d lazily [S21].
 
 ### 2.7 How the styles compare on the forces
 
@@ -217,9 +234,10 @@ a single owner per process-wide resource, and Effect where interruption and timi
 - **Testing in layers against F7.** A fake context for logic, a live server with a scripted
   OpenAI-compatible model (`e2e/mock-model.mjs`) for integration, deterministic and keyless in CI,
   a pinned-host leg and an allowed-to-fail `latest` leg for F6, and an out-of-CI real-model smoke
-  test (`e2e/real-model.sh`) for F4. This is the record/replay-free version of what agent teams
-  recommend: deterministic stand-ins for the loop, evals with a real model on what wording changes
-  [S8, S24].
+  test (`e2e/real-model.sh`) for F4. This is the scripted tier of what agent teams
+  recommend, plus a small real-model check for wording [S8, S24]. One tier is missing: recorded
+  real-model exchanges replayed in CI [S25], which would catch a tool description change that a
+  scripted model, keyed on markers, cannot. Worth considering, not part of this plan.
 - **F6 is handled as a process.** The exact pin, a unit test keeping peer and dev dependency
   equal, a section per bump in `docs/plugin-api-notes.md`, and a load-time version notice
   (`src/version.ts`).
@@ -361,7 +379,9 @@ because they remove the N-instance duplication that most of the claim logic exis
   host's own adapter, and the only way to get an interruptible `execute` for the question tool.
 - The exact pin, the peer equal to the dev dependency, the `latest` leg, and the notes per bump.
 - `codemode: false`, `withoutUndefined`, `describeFailure`, and plain input schemas with
-  validation in the tool: each is a workaround for observed host behaviour.
+  validation in the tool: each is a workaround for observed host behaviour. VS Code's
+  `subscriptions` do not await async disposal [S14]; OpenCode awaits a promise plugin's cleanup,
+  which step 9 relies on.
 - Ports passed as arguments and the fake-context unit suite; no DI container, and no Effect
   `Layer` graph for the use cases.
 - The scripted mock model as the CI driver, and the real-model smoke test outside CI.
@@ -380,4 +400,42 @@ https://github.com/anomalyco/opencode (`packages/core/src/plugin/supervisor.ts`,
 `@opencode/plugin@2.0.24` (`dist/effect/plugin.d.ts`, `dist/effect/storage.d.ts`,
 `dist/promise/adapter.d.ts`).
 
-SOURCES_PLACEHOLDER
+Sources marked *(read via source repo)* were read in the documentation's own repository because
+the rendered site was not reachable from the research environment; *(unverified)* means the claim
+rests on a search snippet or memory.
+
+- [S1] OpenCode V1 plugins documentation. https://opencode.ai/docs/plugins/
+- [S2] OpenCode V2 plugin API: `packages/plugin/src/effect/plugin.ts`, `packages/plugin/src/effect/README.md`,
+  `packages/plugin/src/effect/PLAN.md` (Boot Batching, Event API), `packages/core/src/plugin.ts`
+  (per-activation scope), `packages/core/src/plugin/instance.ts`. https://github.com/anomalyco/opencode/tree/v2/packages/plugin
+- [S3] Claude Code hooks reference. https://code.claude.com/docs/en/hooks
+- [S4] Claude Code plugins reference. https://code.claude.com/docs/en/plugins-reference
+- [S5] Model Context Protocol, architecture (2025-06-18). https://modelcontextprotocol.io/specification/2025-06-18/architecture
+  *(read via source repo: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-06-18/architecture/index.mdx)*
+- [S6] Model Context Protocol, tools and tasks (2025-11-25), `server/tools.mdx` and `basic/utilities/tasks.mdx`.
+  https://github.com/modelcontextprotocol/modelcontextprotocol/tree/main/docs/specification/2025-11-25
+- [S7] Anthropic, Building effective agents. https://www.anthropic.com/engineering/building-effective-agents
+- [S8] Anthropic, Writing effective tools for agents. https://www.anthropic.com/engineering/writing-tools-for-agents
+- [S9] Effect, Scope and finalizers (v4). https://github.com/Effect-TS/website/blob/main/apps/web/src/content/docs/v4/resource-management/scope.mdx *(read via source repo)*
+- [S10] Effect, ManagedRuntime (v4). https://github.com/Effect-TS/website/blob/main/apps/web/src/content/docs/v4/runtime.mdx *(read via source repo)*
+- [S11] Effect, Layers and TestClock (v4): `requirements-management/layer-memoization.mdx`, `testing/testclock.mdx`.
+  https://github.com/Effect-TS/website/tree/main/apps/web/src/content/docs/v4 *(read via source repo)*
+- [S12] VS Code, extension host and activation events. https://code.visualstudio.com/api/advanced-topics/extension-host,
+  https://code.visualstudio.com/api/references/activation-events *(read via source repo: https://github.com/microsoft/vscode-docs/tree/main/api)*
+- [S13] VS Code, extension manifest (`engines.vscode`) and proposed APIs. https://code.visualstudio.com/api/references/extension-manifest,
+  https://code.visualstudio.com/api/advanced-topics/using-proposed-api *(read via source repo)*
+- [S14] VS Code API typings: `ExtensionContext.subscriptions`, `Memento`. https://github.com/microsoft/vscode/blob/main/src/vscode-dts/vscode.d.ts
+- [S15] Alistair Cockburn, Hexagonal architecture. https://alistair.cockburn.us/hexagonal-architecture/
+- [S16] Gary Bernhardt, Boundaries (talk, 2012). https://www.destroyallsoftware.com/talks/boundaries *(unverified: page not reachable)*
+- [S17] Martin Thompson, Single Writer Principle. https://mechanical-sympathy.blogspot.com/2011/09/single-writer-principle.html *(unverified: page not reachable)*
+- [S18] Martin Fowler, Event Sourcing. https://martinfowler.com/eaaDev/EventSourcing.html *(unverified: page not reachable)*
+- [S19] oh-my-opencode, background agent notes: `packages/omo-opencode/src/features/background-agent/AGENTS.md`. https://github.com/code-yeongyu/oh-my-opencode
+- [S20] IntelliJ Platform SDK, Services. https://github.com/JetBrains/intellij-sdk-docs/blob/main/topics/basics/plugin_structure/plugin_services.md
+- [S21] Zed, developing extensions and capabilities. https://github.com/zed-industries/zed/blob/main/docs/src/extensions/developing-extensions.md;
+  Neovim, Lua plugin guide. https://github.com/neovim/neovim/blob/master/runtime/doc/lua-plugin.txt
+- [S22] Cline, `McpHub`. https://github.com/cline/cline (`apps/vscode/src/services/mcp/McpHub.ts`)
+- [S23] Vercel AI SDK docs (tools, runtime and tool context, testing with `MockLanguageModel`). https://github.com/vercel/ai/tree/main/content/docs/03-ai-sdk-core;
+  LangChain tools. https://github.com/langchain-ai/docs/blob/main/src/oss/langchain/tools.mdx
+- [S24] Anthropic, Demystifying evals for AI agents. https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents;
+  Inspect AI mock model. https://github.com/UKGovernmentBEIS/inspect_ai/blob/main/src/inspect_ai/model/_providers/mockllm.py
+- [S25] VCR.py, HTTP record and replay. https://github.com/kevin1024/vcrpy; pytest-recording. https://github.com/kiwicom/pytest-recording

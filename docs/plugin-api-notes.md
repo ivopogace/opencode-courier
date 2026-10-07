@@ -351,8 +351,9 @@ reach the plugin instance of every location" (#77):
 
 - `e2e/probe-plugin`, loaded next to the courier from the project's `opencode.json` and so in every
   location, the child's worktree included, follows `event.subscribe()` from its `setup`, as the
-  courier's watcher does from its own, and appends `{ pid, location, type, id, sessionID }` per event
-  to the file named by its `log` option, plus `probe.loaded` and `probe.unloaded` lines. A probe
+  courier's watcher does from its own, subscribing again if the stream ends, and appends
+  `{ pid, location, type, id, sessionID }` per event to the file named by its `log` option (the
+  location with symlinks resolved), plus `probe.loaded` and `probe.unloaded` lines. A probe
   sees what the courier's instances see: the same context, the same domain, the same call.
 - Three locations are loaded: the project (the parent's), the isolated child's worktree, and an
   earlier child's worktree, opened by a session run there, that has no part in the exchange. The
@@ -371,7 +372,8 @@ reach the plugin instance of every location" (#77):
 
 So every event type the watcher handles reaches every location's instance, each event once per
 instance, with the same event id; an event's location does not limit who receives it. The scenario
-asserts this for every instance loaded in the server process at the time, not only those three.
+asserts this, exactly once per instance, for every instance loaded in the server process at the
+time (a location whose last probe line is `probe.loaded`), not only those three.
 
 Seen in the same runs, not asserted: on a graceful shutdown OpenCode closes the locations one after
 another, and each `location.shutdown` reaches every instance still loaded, its own location's

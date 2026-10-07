@@ -82,6 +82,7 @@ function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["data"][]
     permission: {
       list: async ({ sessionID }: { sessionID: string }) => pending.filter((item) => item.sessionID === sessionID),
     },
+    now: () => 1_000_000,
     log: (message: string) => void logged.push(message),
   } as unknown as WatchPorts
   return { ports, sent, logged, subscriptions: () => subscriptions }
@@ -544,7 +545,7 @@ describe("watchChildren", () => {
 
     await watchChildren(ports, fresh(), watching.signal, 1)
 
-    expect(shutdownReportedAt("/repo")).toBeDefined()
+    expect(shutdownReportedAt("/repo")).toBe(1_000_000)
     expect(shutdownReportedAt("/elsewhere")).toBeUndefined()
     forgetQuestions()
 

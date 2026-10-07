@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { cleanup, findGit, GIT_ENV, GIT_LOCATIONS, headOf, inspectWorktree, MAX_LISTED, type CleanupPorts, type WorktreeState } from "../src/cleanup.js"
 import { keepReason } from "../src/notices.js"
-import { record, rosterKey, type RosterEntry } from "../src/roster.js"
+import { record, reverseKey, rosterKey, type RosterEntry } from "../src/roster.js"
 
 const clean: WorktreeState = { changes: [], commits: [] }
 
@@ -73,6 +73,7 @@ describe("cleanup", () => {
     expect(result).toEqual({ sessionID: "ses_child", directory: "/data/worktree/p/child", outcome: "removed" })
     expect(removed).toEqual([{ projectID: "proj_1", directory: "/data/worktree/p/child", force: false }])
     expect(store.has(rosterKey("ses_parent", "ses_child"))).toBe(false)
+    expect(store.has(reverseKey("ses_child"))).toBe(false)
   })
 
   test("inspects the worktree against the commit it was made from", async () => {

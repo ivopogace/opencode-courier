@@ -70,8 +70,10 @@ once per batch in the reply that presents the PRs.
 **The bar**, checked on the PR's current head sha, never from a child's summary:
 
 - every check run on that sha concluded `success` (both CI jobs: unit and live e2e);
-- the PR body has `Closes #<N>`, and the child reports a `code-review` round at high effort with
-  its findings resolved; a behaviour change after that round gets another round;
+- the PR body has `Closes #<N>`, and the child reports a round of the code review plugin
+  (`code-review:code-review`, which `.claude/settings.json` enables for every child) with its
+  findings resolved; read its `### Code review` comment on the PR yourself (none means no finding
+  reached its confidence bar); a behaviour change after that round gets another round;
 - you read the diff yourself: scope matches the issue, tools follow CLAUDE.md's rules, new
   behaviour has unit tests and an e2e scenario, README is updated.
 

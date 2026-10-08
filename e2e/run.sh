@@ -443,10 +443,11 @@ for type in $(jq -r '.[]' <<<"$probe_types"); do
     "$(jq -r --arg type "$type" --argjson instances "$instances" '(.[$type] // []) | length > 0 and all(. == $instances)' <<<"$delivery")"
 done
 
-# The hub follows OpenCode's events once, through one location's instance. Reloading shuts every
-# location down and builds it again, so each instance unloads and a new one loads: the
-# subscription is handed over, or started again by the first new instance, and still tells a
-# child's request once.
+# The hub follows OpenCode's events through two locations' instances, one subscription and a
+# standby. Reloading shuts every location down and builds it again, so each instance unloads and a
+# new one loads: as each subscription's instance unloads, the other keeps following the events and
+# a new one starts through another instance, or the first new instances start both again, and a
+# child's request is still told once.
 echo "after OpenCode reloads every location, a child's permission request still reaches its parent once"
 check "every location reloads" "$([ "$(person location/reload)" = 204 ] && echo true || echo false)"
 ask_permission isolate

@@ -99,10 +99,10 @@ export interface WatchPorts {
 /**
  * What every plugin instance in the process shares. A hub follows OpenCode's events through two of
  * its members, one a standby, and a copy of another hub version, or one from before the hub, follows
- * them too, all sent the same events; so an event id is claimed synchronously and handled once. `waiting` holds the permission requests a session was
- * told about and has not answered; `answered`, requests answered before anyone was told, so a
- * notice whose roster lookup was overtaken by the answer is not sent. `forms` does the same for
- * the forms of spawned sessions.
+ * them too, all sent the same events; so an event id is claimed synchronously and handled once.
+ * `waiting` holds the permission requests a session was told about and has not answered;
+ * `answered`, requests answered before anyone was told, so a notice whose roster lookup was
+ * overtaken by the answer is not sent. `forms` does the same for the forms of spawned sessions.
  */
 export interface WatchState {
   readonly seen: Set<string>

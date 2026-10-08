@@ -617,7 +617,7 @@ describe("watchChildren", () => {
 
 describe("the hub's subscriptions: one active, one standby", () => {
   /** The scheduler's loop, which joining starts, never ticks here. */
-  const idle = { every: () => 0, stop: () => {} }
+  const idle = { every: () => 0, stop: () => {}, wait: async () => {} }
 
   /** A member whose event stream stays open until its subscription is aborted, counting subscriptions. */
   function member(name: string, pending: PermissionAsked["data"][] = [], events: unknown[] = []) {

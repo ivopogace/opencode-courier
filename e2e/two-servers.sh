@@ -3,8 +3,10 @@
 # driven by the scripted stand-in model (e2e/mock-model.mjs), so no API key is needed. It counts,
 # from a real run, how often courier tells a session something when both servers run:
 #
-#   - courier_later messages that fall due while both schedulers tick in step, then out of step;
-#   - a child's permission request, and whether courier_answer reaches it from the other server;
+#   - courier_later messages that fall due while both schedulers tick in step, then out of step,
+#     and which server holds the scheduler's owner key (scheduler/owner) that picks the one to deliver;
+#   - a child's permission request, and whether courier_answer reaches it from the other server, or
+#     says there that the request may wait in another server;
 #   - a child whose turn fails.
 #
 #   OPENCODE_BIN=/path/to/opencode e2e/two-servers.sh     # KEEP=1 keeps the temp dir and logs
@@ -16,9 +18,10 @@
 # time. Each server's event stream (/api/event) is recorded in events-a.sse and events-b*.sse,
 # which shows which server queued each message. Results and the setup are in
 # docs/plugin-api-notes.md; the script exits 1 when a result differs from what was seen at the
-# pinned version, so a host where two servers behave differently stands out. The count with the
-# schedulers in step is only printed: whether their ticks fall within milliseconds of each other
-# depends on how long each server takes to set the plugin up, and varies from run to run.
+# pinned version, so a host where two servers behave differently stands out. Whether the two
+# schedulers' ticks fall within milliseconds of each other depends on how long each server takes to
+# set the plugin up, and varies from run to run; since the owner key, only one of them delivers
+# either way, and a message delivered twice is a result that differs.
 #
 # Needs node and npm, bun (for the build), git, curl and jq.
 set -euo pipefail
@@ -97,6 +100,28 @@ first_tick() { cat "$@" | sed -n 's/^data: //p' | jq -s '[.[] | select(.type == 
   .data.item.payload.metadata.scheduled? != null) | .created] | min'; }
 prompt_on() { (cd "$WORK/project" && "$OPENCODE" run --server "$1" --auto --format json "$2" </dev/null); }
 prompt_in_on() { (cd "$WORK/project" && "$OPENCODE" run --server "$1" --auto --format json --session "$2" "$3" </dev/null); }
+kv() { XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" "$@"; }
+# Whether process $1 is process $2 or one of its descendants.
+descends() {
+  local pid=$1
+  while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
+    [ "$pid" = "$2" ] && return 0
+    # The parent's id, the second field after the process name, which may hold spaces or parentheses.
+    pid=$(tr '\n' ' ' 2>/dev/null <"/proc/$pid/stat" | sed 's/.*) //' | cut -d' ' -f2 || true)
+  done
+  return 1
+}
+# The server holding the scheduler's owner key, A or B by the process id in its id
+# (<host>:<pid>:<start>), or "none".
+owner() {
+  local server pid
+  server=$(kv get scheduler/owner | jq -r '.server // empty')
+  [ -n "$server" ] || { echo none; return; }
+  pid=$(cut -d: -f2 <<<"$server")
+  if descends "$pid" "$SERVER_PID"; then echo A
+  elif [ -n "$OTHER_PID" ] && descends "$pid" "$OTHER_PID"; then echo B
+  else echo "another process ($server)"; fi
+}
 tool_state() { jq -c --arg tool "$1" 'select(.type == "tool_use" and .part.tool == $tool) | .part.state'; }
 parent_of() { jq -r 'select(.type == "tool_use") | .sessionID' | head -1; }
 now_ms() { date +%s%3N; }
@@ -183,6 +208,7 @@ echo "  courier loaded on both, at once"
 
 echo "$ROUNDS courier_later messages fall due while both schedulers tick in step"
 in_step=$(later_rounds in-step)
+owner_in_step=$(owner)
 
 echo "a child asks for a permission"
 out=$(prompt_on "$SERVER" "COURIER-ASK")
@@ -191,7 +217,9 @@ wait_for "$parent" 'asks="permission"' || true
 sleep 15
 asked=$(count "$parent" 'asks="permission"')
 echo "  the parent answers it with courier_answer in a turn on server B, then on server A"
-answer_b=$(prompt_in_on "$OTHER" "$parent" "COURIER-ANSWER once" | tool_state courier_answer | jq -r '.metadata.metadata.answered')
+answered_b=$(prompt_in_on "$OTHER" "$parent" "COURIER-ANSWER once" | tool_state courier_answer)
+answer_b=$(jq -r '.metadata.metadata.answered' <<<"$answered_b")
+elsewhere_b=$(jq -r '.output | contains("another OpenCode server on the same data directory")' <<<"$answered_b")
 answer_a=$(prompt_in_on "$SERVER" "$parent" "COURIER-ANSWER once" | tool_state courier_answer | jq -r '.metadata.metadata.answered')
 
 echo "a child's turn fails"
@@ -208,6 +236,7 @@ echo "server B restarted, its plugin loaded half a tick after server A's ticks"
 tick=$(first_tick "$WORK/events-a.sse" "$WORK/events-b.sse")
 [ "$tick" != null ] || { echo "no scheduled message was delivered in step"; exit 1; }
 stop_other
+owner_b_stopped=$(owner)
 start_other
 record_events "$OTHER" "$WORK/events-b-restarted.sse"
 wait_ms=$(((tick + TICK_MS / 2 - $(now_ms)) % TICK_MS))
@@ -216,20 +245,22 @@ sleep "$((wait_ms / 1000)).$(printf '%03d' $((wait_ms % 1000)))"
 expect_active B "$(courier_on "$OTHER")"
 echo "$ROUNDS courier_later messages fall due while the schedulers tick out of step"
 out_of_step=$(later_rounds out-of-step)
+owner_out_of_step=$(owner)
 
 echo "which server queued the messages, by its event stream (scheduled, permission, failure)"
 for events in "$WORK"/events-*.sse; do echo "  $(basename "$events" .sse): $(queued_by "$events")"; done
 
 echo "results (OpenCode $version)"
-# Not compared: how close the two ticks fall varies from run to run (at the pin, from none to every
-# one of ten messages was delivered twice).
-echo "  deliveries of each courier_later message, schedulers in step: $in_step" \
-  "($(duplicates "$in_step") of $ROUNDS delivered twice)"
+echo "  deliveries of each courier_later message, schedulers in step: $in_step"
 echo "  deliveries of each courier_later message, schedulers out of step: $out_of_step"
+# Not compared: which server took the key first, A or B, varies from run to run.
+echo "  the owner key held by: in step $owner_in_step, B stopped $owner_b_stopped, out of step $owner_out_of_step"
 result "messages never delivered" "$(lost "$in_step $out_of_step")" 0
-result "some delivered twice, out of step" "$([ "$(duplicates "$out_of_step")" -gt 0 ] && echo yes || echo no)" no
+result "messages delivered twice, in step" "$(duplicates "$in_step")" 0
+result "messages delivered twice, out of step" "$(duplicates "$out_of_step")" 0
 result "notices of the permission request" "$asked" 1
 result "courier_answer in a turn on server B reached the request" "$answer_b" false
+result "and said the request may wait in another server" "$elsewhere_b" true
 result "courier_answer in a turn on server A reached the request" "$answer_a" true
 result "notices of the failed turn" "$failed" 1
 [ "$failures" -eq 0 ] || { echo "$failures result(s) differ from the pinned version's; rerun with KEEP=1 to keep the logs"; exit 1; }

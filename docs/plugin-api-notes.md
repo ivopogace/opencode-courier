@@ -451,6 +451,75 @@ the servers, which the plugin API does not offer; the most a fix could do there 
 request is found, that it may be pending on another OpenCode server, instead of that it was
 answered.
 
+#86 did both; see the next section.
+
+## Two servers with the scheduler's owner key (2026-10-08)
+
+What #86 changed, on the findings above:
+
+- **The scheduler's owner key.** The hub's tick reads `scheduler/owner` in plugin storage, the
+  shared `kv` table, before it looks for due messages: `{ server, at }`, the id of the server whose
+  scheduler delivers (`<host>:<pid>:<performance.timeOrigin>`, the same for every copy of the plugin
+  in a process and new with every process) and when it last wrote the key. A tick skips while
+  another server's key is less than 60 s old (`OWNER_EXPIRY_MS`, four ticks); renews its own while
+  it is less than 30 s old (`OWNER_RENEW_MS`) and delivers; and otherwise writes its own, waits a
+  random 0.5 to 1 s (`OWNER_WAIT_MS` to twice that), reads the key back and delivers only if it
+  still holds it. A tick that falls due while the last one is still delivering renews the key and
+  skips, for up to a minute from that tick's start. The loop's last leave removes the key if this
+  server holds it, once no tick is under way (a tick whose loop stopped removes it as it ends), the
+  loop has not started again and no hub of another version in the process has instances; the
+  plugin's unload waits up to 2 s for that. The key is outside
+  `later/`, so neither this version's nor 0.2.2's scan for messages finds it. Details and the
+  remaining race: [Two servers on one data directory](reference.md#two-servers-on-one-data-directory).
+- **`courier_answer` when no loaded location holds the request** says that nothing was passed on,
+  since no request is pending in this OpenCode server, has the model tell the person so and name
+  the possibilities (answered some other way, the session stopped waiting, or it waits in another
+  OpenCode server on the same data directory, to be answered there, in that session), and tells it
+  not to message the session about it or answer again from there. Its real-model runs are in
+  [docs/real-model.md](real-model.md#another-server-on-the-same-data-directory-86).
+
+Why these numbers. A tick that renews its key without reading it back first writes a key it may
+have lost: safe only while no other server can have found it expired, so the owner re-takes, with
+the wait, a key 30 s old, half the expiry, which leaves another server 30 s of stall to cover
+before it could take over. Expiry is four ticks so that a tick or two skipped (one still under way,
+a busy event loop) does not hand the key over; after a crash the others take over within 75 s.
+The wait bounds the race the key leaves: two servers both deliver only if one reads the key free
+and writes its own more than the other's whole wait later, at least 0.5 s, where a read and a write
+of the `kv` table take milliseconds. It is random so that two servers that keep re-taking the key in
+the same rhythm (both stalled and resumed, say) do not keep finishing in step.
+
+`e2e/two-servers.sh` now reads the key from the database between the rounds (`e2e/kv.ts get`,
+naming the holder A or B by the process id in its id) and fails when a message is delivered twice in
+either round, or when `courier_answer` on B does not name another server. The live suite's restart
+scenario checks the key is held, released by a graceful stop (`SIGTERM`; OpenCode unloads the
+plugin, and storage still takes the write), and that another server's key, planted with
+`e2e/kv.ts set` while the server is stopped, holds the restarted server's delivery off until it
+expires.
+
+Results at 2.0.24, the plugin as of #86, runs on 2026-10-08 (same setup as above, ten messages per
+round). Runs 1 to 3 used an earlier draft: before the review fixes (renewing the key while a tick
+still delivers, releasing it only while the loop is stopped) and with the first wording of the
+`courier_answer` text, which the script's check also matches. Run 4 has the first review's fixes
+and the final text; run 5 is the final code, after the second review (renewal for up to a minute of
+a tick, the release left to a tick under way and to other hub versions):
+
+| | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 |
+|---|---|---|---|---|---|
+| `courier_later`, schedulers in step: messages delivered twice | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 |
+| `courier_later`, schedulers half a tick apart: delivered twice | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 |
+| messages never delivered | 0 | 0 | 0 | 0 | 0 |
+| the owner key held by, in step / B stopped / out of step | B / none / B | A / A / A | A / A / A | A / A / A | B / none / B |
+| notices of the child's permission request | 1 | 1 | 1 | 1 | 1 |
+| `courier_answer` in a turn on B reaches the request | no, and names another server | no, and names another server | no, and names another server | no, and names another server | no, and names another server |
+| `courier_answer` in a turn on A reaches the request | yes | yes | yes | yes | yes |
+| notices of the child's failed turn | 1 | 1 | 1 | 1 | 1 |
+
+In run 1 each round's ten messages were all queued by B (B's event streams carried 10 scheduled
+messages each, A's none): B took the key as both loaded the plugin, A skipped every tick while B
+held it, B released it when it was stopped, and the restarted B took it again on loading the
+plugin, before A's next tick. In runs 2 to 4 A took it as both loaded the plugin and kept it
+throughout, delivering all twenty, B's restart included; run 5 went as run 1. Which server takes the key first varies.
+
 ## Which plugin instances receive an isolated child's events (2026-10-07)
 
 OpenCode sets the plugin up once per location, and an isolated child runs in a location of its own,

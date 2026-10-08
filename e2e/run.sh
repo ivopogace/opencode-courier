@@ -181,7 +181,7 @@ check "the notice names the request and the answer" \
   "$(notices_with "$parent" answered | jq -r --arg request "$request" 'length == 1 and (.[0] | contains("request=\"" + $request + "\"") and contains("answered=\"once\""))')"
 answered=$(prompt_in "$parent" "COURIER-ANSWER once" | tool_state courier_answer)
 check "a late courier_answer passes nothing on" \
-  "$(jq -r '.status == "completed" and .metadata.metadata.answered == false and (.output | contains("no longer waits"))' <<<"$answered")"
+  "$(jq -r '.status == "completed" and .metadata.metadata.answered == false and (.output | contains("is pending in this OpenCode server") and contains("another OpenCode server on the same data directory"))' <<<"$answered")"
 check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
 
 # The texts of session $1: what it was sent, what it replied and what its tools returned.
@@ -485,11 +485,17 @@ indexed_under() { kv get "roster-by-child/$1" | jq -r '.ancestors[0] // empty'; 
 check "each child is indexed under its parent" \
   "$(for id in $spawned; do [ "$(indexed_under "$id")" = "$roster_parent" ] || { echo false; exit; }; done; echo true)"
 
-echo "a scheduled message survives a server restart"
+echo "a scheduled message survives a server restart, delivered once another server's owner key expires"
 out=$(prompt "COURIER-LATER 0.25")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 check "courier_later completed" "$(tool_state courier_later <<<"$out" | jq -r '.status == "completed"')"
+check "the scheduler holds the owner key" "$(kv get scheduler/owner | jq -r '(.server | type) == "string" and (.at | type) == "number"')"
 stop_server
+check "and gave it back as the server stopped" "$([ -z "$(kv get scheduler/owner)" ] && echo true || echo false)"
+# Another server on this data directory, as it would have renewed the key 40 s ago: it expires
+# 20 s from now, and until then this server's scheduler leaves the message to it.
+expires=$(($(now_ms) + 20000))
+kv set scheduler/owner "{\"server\":\"another server\",\"at\":$((expires - 60000))}" "roster-by-child/$(tail -1 <<<"$spawned")"
 # As an older version of the plugin writes it: a roster entry with no reverse key.
 unindexed=$(head -1 <<<"$spawned")
 kv remove "roster-by-child/$unindexed"
@@ -501,6 +507,8 @@ restarted=$(now_ms)
 api "plugin?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" >/dev/null
 woke=$(reply_time "$parent" "PARENT WOKE" 60)
 check "it was delivered after the restart" "$([ -n "$woke" ] && [ "$woke" -gt "$restarted" ] && echo true || echo false)"
+check "only once the other server's key had expired" "$([ -n "$woke" ] && [ "$woke" -ge "$expires" ] && echo true || echo false)"
+check "and this server holds the key now" "$(kv get scheduler/owner | jq -r '.server != "another server"')"
 
 echo "the roster survives a restart and can be read from another session"
 out=$(prompt "COURIER-CHILDREN $roster_parent")

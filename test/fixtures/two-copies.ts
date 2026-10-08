@@ -7,10 +7,16 @@ type HubModule = typeof import("../../src/hub.js")
 const copy = (name: string) => import(`../../src/hub.js?copy=${name}`) as Promise<HubModule>
 const registry = globalThis as Record<symbol, unknown>
 
-// The scheduler's ticks, by the directory of the member they ran through.
-const ticks: string[] = []
+// The reads of the scheduler's owner key, by the directory of the member they ran through: the first
+// thing a tick does, at once as it starts. (A last leave's release reads it later, after the tick.)
+const ownerReads: string[] = []
 const later = (directory: string) => ({
-  storage: { scan: async () => (ticks.push(directory), { entries: [] }) },
+  storage: {
+    get: async () => void ownerReads.push(directory),
+    set: async () => {},
+    remove: async () => {},
+    scan: async () => ({ entries: [] }),
+  },
   now: () => 0,
   log: () => {},
 })
@@ -52,7 +58,7 @@ console.log(
     loopKept,
     emptyAtEnd,
     skewedOwnLoop,
-    ticks,
+    ownerReads,
     skewedOwnHub: skewed.hub !== first.hub && registry[Symbol.for(`${first.HUB_KEY}@${first.HUB_VERSION}`)] === skewed.hub,
     skewedSharesClaims: skewed.hub.claimed === first.hub.claimed && skewed.hub.questions === first.hub.questions,
     logs: logs.length,

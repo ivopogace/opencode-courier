@@ -9,7 +9,9 @@
 #
 # COURIER_SCENARIO=permission runs the permission relay instead: one child whose command needs an
 # approval, a parent that should ask the person rather than answer by itself, and this script as
-# the person, answering "once" (e2e/real-model-permission.mjs). COURIER_SCENARIO=question runs the
+# the person, answering "once" (e2e/real-model-permission.mjs); with COURIER_PERSON=other-server, a
+# second server runs on the same data directory and the person answers the parent through it, where
+# the child's request is not pending. COURIER_SCENARIO=question runs the
 # question relay: one child that is to find out from the person which greeting to use, and this
 # script as the person, answering COURIER_ANSWER (default Hi) in the parent's session
 # (e2e/real-model-question.mjs).
@@ -40,6 +42,8 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OPENCODE=${OPENCODE_BIN:-opencode}
 SERVER_PORT=${SERVER_PORT:-4610}
+OTHER_PORT=${OTHER_PORT:-4611}
+OTHER_PID=
 PROVIDER=${COURIER_PROVIDER:-opencode}
 MODEL=${COURIER_MODEL:-longcat-2.5-preview-free}
 if [ -z "${COURIER_BASE_URL+set}" ] && [ "$PROVIDER" = opencode ]; then
@@ -74,6 +78,12 @@ case $SCENARIO in
     ;;
   *) echo "COURIER_SCENARIO must be fanout, permission or question"; exit 1 ;;
 esac
+unset COURIER_OTHER_SERVER
+case ${COURIER_PERSON:-} in
+  "") ;;
+  other-server) [ "$SCENARIO" = permission ] || { echo "COURIER_PERSON=other-server goes with COURIER_SCENARIO=permission"; exit 1; } ;;
+  *) echo "COURIER_PERSON must be other-server, or unset"; exit 1 ;;
+esac
 WORK=${E2E_WORK:-$(mktemp -d)}
 export WORK
 # shellcheck source=e2e/lib.sh
@@ -82,6 +92,7 @@ export SERVER OPENCODE_PASSWORD
 
 cleanup() {
   stop_server
+  if [ -n "$OTHER_PID" ]; then kill "$OTHER_PID" 2>/dev/null || true; wait "$OTHER_PID" 2>/dev/null || true; fi
   echo "transcripts and logs in $WORK"
 }
 trap cleanup EXIT
@@ -117,6 +128,17 @@ commit_config
 
 start_server
 echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL"
+if [ "${COURIER_PERSON:-}" = other-server ]; then
+  # A second server on the same data directory, started once the first is up (two starting at once
+  # race to create the database's tables), as in e2e/two-servers.sh.
+  OTHER="http://127.0.0.1:$OTHER_PORT"
+  export COURIER_OTHER_SERVER=$OTHER
+  (cd "$WORK/project" && exec "$OPENCODE" serve --hostname 127.0.0.1 --port "$OTHER_PORT" --print-logs >>"$WORK/server-b.log" 2>&1 </dev/null) &
+  OTHER_PID=$!
+  for _ in $(seq 1 30); do curl -sf -u "opencode:$OPENCODE_PASSWORD" "$OTHER/api/info" >/dev/null 2>&1 && break; sleep 1; done
+  curl -sf -u "opencode:$OPENCODE_PASSWORD" "$OTHER/api/info" >/dev/null || { echo "the second server did not start; see $WORK/server-b.log"; exit 1; }
+  echo "a second server on the same data directory: $OTHER"
+fi
 echo "parent prompt: $PROMPT"
 
 post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }

@@ -319,7 +319,7 @@ test("a spawned child's permission request reaches its parent, and courier_answe
 
   const late = await tools.get("courier_answer").execute({ sessionID: "ses_child", requestID: "per_1", reply: "once" }, { sessionID: "ses_parent" })
   expect(late.metadata.answered).toBe(false)
-  expect(late.content).toContain("no longer waits on request per_1")
+  expect(late.content).toContain("no request per_1 of ses_child is pending in this OpenCode server")
   await expect(
     tools.get("courier_answer").execute({ sessionID: "ses_child", requestID: "per_1", reply: "once" }, { sessionID: "ses_x" }),
   ).rejects.toThrow("courier_answer failed: ses_child's permission requests go to ses_parent")
@@ -381,7 +381,7 @@ test("courier_later schedules for the calling session and courier_cancel drops i
   expect(store.get(`later/${scheduled.metadata.id}`)).toMatchObject({ from: "ses_parent", message: "check" })
   const cancelled = await tools.get("courier_cancel").execute({ id: scheduled.metadata.id }, { sessionID: "ses_parent" })
   expect(cancelled.metadata).toEqual({ id: scheduled.metadata.id, cancelled: true })
-  expect(store.size).toBe(0)
+  expect([...store.keys()].filter((key) => key.startsWith("later/"))).toEqual([])
 })
 
 test("courier_later tells a session scheduling its own check-in to end its turn, and no one else", async () => {
@@ -411,13 +411,14 @@ test("on setup, delivers messages that fell due while OpenCode was down", async 
   const due = { id: "later_x", sessionID: "ses_parent", from: "ses_parent", message: "wake", fireAt: 1, createdAt: 0 }
   const { calls, store } = await setUp({ "later/later_x": due })
 
-  for (let i = 0; i < 20 && store.size > 0; i++) await Bun.sleep(5)
+  // The first tick takes the scheduler's owner key, reading it back after a wait of up to a second.
+  for (let i = 0; i < 300 && store.has("later/later_x"); i++) await Bun.sleep(10)
 
   expect(calls.find((call) => call.method === "session.synthetic")?.input).toMatchObject({
     sessionID: "ses_parent",
     delivery: "queue",
   })
-  expect(store.size).toBe(0)
+  expect([...store.keys()]).toEqual(["scheduler/owner"])
 })
 
 test("courier_subscribe subscribes the calling session and says when no receiver runs", async () => {
@@ -427,7 +428,7 @@ test("courier_subscribe subscribes the calling session and says when no receiver
 
   expect(result.metadata).toEqual({ sessionID: "ses_parent", topic: "github:octo/repo#5", receiver: false })
   expect(result.content).toContain("no webhook receiver runs")
-  expect([...store.keys()]).toEqual(["webhook/github%3Aocto%2Frepo%235/ses_parent"])
+  expect([...store.keys()].filter((key) => key.startsWith("webhook/"))).toEqual(["webhook/github%3Aocto%2Frepo%235/ses_parent"])
   const dropped = await tools.get("courier_unsubscribe").execute({}, { sessionID: "ses_parent" })
   expect(dropped.metadata).toEqual({ sessionID: "ses_parent", dropped: ["github:octo/repo#5"] })
 })

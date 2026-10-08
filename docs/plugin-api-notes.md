@@ -465,10 +465,12 @@ What #86 changed, on the findings above:
   it is less than 30 s old (`OWNER_RENEW_MS`) and delivers; and otherwise writes its own, waits a
   random 0.5 to 1 s (`OWNER_WAIT_MS` to twice that), reads the key back and delivers only if it
   still holds it. A tick that falls due while the last one is still delivering renews the key and
-  skips, for up to a minute from that tick's start. The loop's last leave removes the key if this
-  server holds it, once no tick is under way (a tick whose loop stopped removes it as it ends), the
-  loop has not started again and no hub of another version in the process has instances; the
-  plugin's unload waits up to 2 s for that. The key is outside
+  skips, for up to a minute from that tick's start; the tick under way is kept on the hub
+  (`scheduler.running`, #92), so this holds for one through an instance that has left and for one
+  another copy of the same hub version, from #92 on, started. The loop's last leave waits for that tick and
+  removes the key if this server holds it, once no tick is under way (a tick whose loop stopped
+  removes it as it ends), the loop has not started again and no hub of another version in the
+  process has instances; the plugin's unload waits up to 2 s for that. The key is outside
   `later/`, so neither this version's nor 0.2.2's scan for messages finds it. Details and the
   remaining race: [Two servers on one data directory](reference.md#two-servers-on-one-data-directory).
 - **`courier_answer` when no loaded location holds the request** says that nothing was passed on,

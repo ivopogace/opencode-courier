@@ -178,6 +178,17 @@ export interface Member {
 }
 
 /**
+ * A tick under way: the member it runs through, when it started, by the wall clock every member's
+ * `now` reads (the next ticks compare it with another member's), and its end.
+ */
+export interface Tick {
+  readonly member: Member
+  readonly since: number
+  /** Settles once the tick has ended, the owner key released if its loop stopped meanwhile; never rejects. */
+  readonly done: Promise<void>
+}
+
+/**
  * The scheduler's loop, one per hub: it runs while the hub has members, and each tick delivers the
  * due `courier_later` messages through the ports of the member that joined first and is still loaded.
  */
@@ -185,8 +196,16 @@ export interface Scheduler {
   /** The loop's interval, while it runs. */
   timer?: unknown
   /**
-   * The member the tick under way runs through, if any. A tick that falls due meanwhile is skipped,
-   * unless that member has left: a tick that never ends through an unloaded instance holds up nothing.
+   * The tick under way, if any, whichever copy of the plugin started it and whether or not its
+   * member is still loaded. A tick that falls due meanwhile renews the owner key for it, for up to a
+   * minute from its start, and is skipped; past that minute one whose member has left holds up
+   * nothing, and the next tick starts. Optional, since a copy of the same hub version made before it
+   * existed keeps only `ticking`.
+   */
+  running?: Tick
+  /**
+   * The member the tick under way runs through, if any, set and cleared with `running`, for a copy
+   * that reads only this: a tick that falls due meanwhile is skipped, unless that member has left.
    */
   ticking?: Member
   /** One tick, by the copy of the plugin that joined last, so a copy loaded after an update runs its own code. */
@@ -303,7 +322,8 @@ export interface Opened {
    * tick at once; the last one to leave stops it. An instance joining while the hub has fewer than
    * `WATCHERS` subscriptions to OpenCode's events starts one through itself; when one leaves that
    * has one, another member without one starts its replacement before it ends. The last leave
-   * settles once the scheduler's owner key is released, or after a moment if storage does not answer.
+   * settles once the scheduler's owner key is released, after the tick under way, whichever copy
+   * started it, or after a moment if storage or that tick does not answer.
    */
   readonly join: (member: Member) => () => Promise<void>
 }
@@ -383,51 +403,69 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
 
   /**
    * Removes the owner key if this server holds it, so another server takes over at its next tick:
-   * once the loop has stopped and no tick is under way (a tick whose loop stopped releases it as it
-   * ends), and while no hub of another version in the process still runs a loop under the same id.
+   * once the loop has stopped and no tick is under way, whichever copy started it (a tick whose loop
+   * stopped releases it as it ends), and while no hub of another version in the process still runs a
+   * loop under the same id.
    */
   const release = async (ports: LaterPorts) => {
-    const idle = () => hub.scheduler.timer === undefined && !hub.scheduler.ticking && !othersRunning()
+    const scheduler = hub.scheduler
+    const idle = () => scheduler.timer === undefined && !scheduler.running && !scheduler.ticking && !othersRunning()
     if (idle() && (await readOwner(ports))?.server === server && idle()) await ports.storage.remove(OWNER_KEY)
   }
 
-  // This copy's tick under way, if any: the member it runs through, when it started, and its end.
-  let current: { readonly member: Member; since: number; done?: Promise<void> } | undefined
+  /**
+   * Whether the tick under way, kept on the hub by whichever copy started it, still holds up the
+   * next: within a minute of its start it does, and the key is renewed for it, through the first
+   * member still loaded, since a delivery may run longer than the key holds; past the minute it is
+   * taken to hang, and holds up the next only while its member is still loaded. A tick of a copy that
+   * keeps only `ticking` holds it up while its member is loaded, without renewing the key.
+   */
+  const underWay = () => {
+    const { running, ticking } = hub.scheduler
+    if (!running) return ticking !== undefined && hub.members.has(ticking)
+    const first = hub.members.values().next().value
+    if (first && holds(running.since, first.later.now(), OWNER_EXPIRY_MS)) {
+      void renew(first.later).catch((error: unknown) => first.log(`courier_later scheduler: ${String(error)}`))
+      return true
+    }
+    return hub.members.has(running.member)
+  }
 
   // One tick, through the first member still loaded, by the server holding the owner key. The claim
   // on each delivery stays, as the second line of defence against a copy before the hub, which runs
   // its own interval until it unloads, and has no owner key.
   const tick = async () => {
     const scheduler = hub.scheduler
-    const ticking = scheduler.ticking
-    if (ticking && hub.members.has(ticking)) {
-      // A tick under way may deliver for longer than the key holds: it stays renewed meanwhile, for
-      // up to a minute from the tick's start, so one that hangs lets another server deliver.
-      if (current?.member === ticking && holds(current.since, ticking.later.now(), OWNER_EXPIRY_MS))
-        void renew(ticking.later).catch((error: unknown) => ticking.log(`courier_later scheduler: ${String(error)}`))
-      return
-    }
+    if (underWay()) return
     const owner = hub.members.values().next().value
     if (!owner) return
+    let since: number
+    try {
+      since = owner.later.now()
+    } catch (error) {
+      owner.log(`courier_later scheduler: ${String(error)}`)
+      return
+    }
+    let end = () => {}
+    const run: Tick = { member: owner, since, done: new Promise((resolve) => (end = resolve)) }
+    scheduler.running = run
     scheduler.ticking = owner
-    const run: NonNullable<typeof current> = { member: owner, since: Number.NaN }
-    current = run
-    run.done = (async () => {
-      try {
-        run.since = owner.later.now()
-        if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner))
-          await deliverDue(owner.later, hub.claimed)
-      } catch (error) {
-        owner.log(`courier_later scheduler: ${String(error)}`)
-      } finally {
-        if (scheduler.ticking === owner) scheduler.ticking = undefined
+    try {
+      if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner))
+        await deliverDue(owner.later, hub.claimed)
+    } catch (error) {
+      owner.log(`courier_later scheduler: ${String(error)}`)
+    } finally {
+      // A tick past its minute may have been followed by another, whose record stays.
+      if (scheduler.running === run) {
+        scheduler.running = undefined
+        scheduler.ticking = undefined
       }
-      // A loop stopped meanwhile, its members gone, gives back the key this tick may have written.
-      if (scheduler.timer === undefined)
-        await release(owner.later).catch((error: unknown) => owner.log(`courier_later scheduler: owner key not released: ${String(error)}`))
-    })()
-    await run.done
-    if (current === run) current = undefined
+    }
+    // A loop stopped meanwhile, its members gone, gives back the key this tick may have written.
+    if (scheduler.timer === undefined)
+      await release(owner.later).catch((error: unknown) => owner.log(`courier_later scheduler: owner key not released: ${String(error)}`))
+    end()
   }
 
   // Subscriptions through the earliest members without one, the longest loaded, until there are
@@ -471,9 +509,9 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
       if (hub.members.size > 0 || scheduler.timer === undefined) return Promise.resolve()
       timers.stop(scheduler.timer)
       scheduler.timer = undefined
-      // After this copy's tick under way, which may be writing the key, through this instance's ports.
+      // After the tick under way, whichever copy started it, which may be writing the key.
       const released = (async () => {
-        await current?.done
+        await scheduler.running?.done
         await release(member.later)
       })().catch((error: unknown) => member.log(`courier_later scheduler: owner key not released: ${String(error)}`))
       return Promise.race([released, timers.wait(RELEASE_MS)])

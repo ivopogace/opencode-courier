@@ -48,8 +48,69 @@ const skewedOwnLoop = skewed.hub.scheduler.timer !== undefined
 leaveC()
 leaveD()
 
+// A tick that the first copy started, still delivering, keeps the owner key renewed by the second
+// copy's ticks for a minute from its start, and the second copy's last leave waits for it before the
+// key is released. In a registry of their own, with timers fired by hand.
+const store = new Map<string, unknown>()
+let now = 1_000
+let finish = () => {}
+const runs: Array<() => void> = []
+// The first tick's wait before reading the key back ends at once; a leave's own wait never does.
+let waits = 0
+const timers = {
+  every: (run: () => void) => (runs.push(run), runs.length),
+  stop: () => {},
+  wait: () => (waits++ === 0 ? Promise.resolve() : new Promise<void>(() => {})),
+}
+const stored = (directory: string, deliver?: () => Promise<unknown>) =>
+  ({
+    directory,
+    permission: { directory },
+    later: {
+      storage: {
+        get: async (key: string) => store.get(key),
+        set: async (key: string, value: unknown) => void store.set(key, value),
+        remove: async (key: string) => void store.delete(key),
+        scan: async ({ prefix }: { prefix: string }) => ({
+          entries: [...store].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
+        }),
+      },
+      session: { synthetic: deliver ?? (async () => ({ id: "msg_1" })) },
+      now: () => now,
+      newID: () => "later_new",
+      log: () => {},
+    },
+    watch: {},
+    questions: {},
+    log: () => {},
+  }) as unknown as Member
+const settle = () => Bun.sleep(1)
+store.set("later/later_1", { id: "later_1", sessionID: "ses_parent", from: "ses_parent", message: "wake", fireAt: 1, createdAt: 0 })
+const own: Record<symbol, unknown> = {}
+const olderCopy = first.open(own, timers, "server_a")
+const newerCopy = second.open(own, timers, "server_a")
+const leaveOlder = olderCopy.join(stored("/a", () => new Promise((resolve) => (finish = () => resolve({ id: "msg_1" })))))
+await settle()
+const leaveNewer = newerCopy.join(stored("/b"))
+const renewedAt: number[] = []
+for (const step of [1, 2, 3, 4]) {
+  now = 1_000 + step * first.OWNER_EXPIRY_MS / 4
+  runs.at(-1)!()
+  await settle()
+  renewedAt.push((store.get(first.OWNER_KEY) as { at: number }).at)
+}
+void leaveOlder()
+let left = false
+void leaveNewer().then(() => (left = true))
+await settle()
+const heldWhileDelivering = store.has(first.OWNER_KEY) && !left
+finish()
+await settle()
+const otherCopy = { renewedAt, heldWhileDelivering, releasedAfter: !store.has(first.OWNER_KEY) && left }
+
 console.log(
   JSON.stringify({
+    otherCopy,
     sameHub: first.hub === second.hub,
     separateModules: first.join !== second.join,
     joined,

@@ -18,7 +18,12 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   and tells about questions, and tidies up on load; `lifecycle.ts` takes the signals watch.ts and
   index.ts send (forms shown, shutdowns, instances joining, events followed) and the waits on them;
   `shared.ts` the hub's question state and the storage keys; `pure.ts` the pure parts (prompts,
-  answers, how a call ended, the keys a top session's question is matched by). The state's types are in `hub.ts`.
+  answers, how a call ended, the keys a top session's question is matched by); `runtime.ts` the
+  copy's own Effect runtime: the scope its fibers are forked into, and the clock they run by, which
+  tests swap for a `TestClock` that `ports.now` reads too. The state's types are in `hub.ts`. Inside
+  the folder the relay is Effect code (a `Deferred` per resolver, a `Semaphore` per question in
+  `deliver`, `Effect.timeout`, `Effect.sleep`); what it exports, and the hub's shared fields, which
+  copies of other versions use, stay promises and plain functions. Effect stays inside the folder.
   `src/hub.ts`: the plugin's process-wide state in one versioned hub, which instances `join` with
   their ports and location and leave on unload, the types of that state, and the scheduler's loop,
   run once per hub through one of its members, and by one server per data directory, the one holding

@@ -197,13 +197,18 @@ export interface Scheduler {
 export interface Timers {
   readonly every: (run: () => void, ms: number) => unknown
   readonly stop: (timer: unknown) => void
-  readonly wait: (ms: number) => Promise<void>
+  /** Settles after `ms`; with `keepAlive` false, the wait does not keep the process alive meanwhile. */
+  readonly wait: (ms: number, keepAlive?: boolean) => Promise<void>
 }
 
 const realTimers: Timers = {
   every: (run, ms) => setInterval(run, ms),
   stop: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
-  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  wait: (ms, keepAlive = true) =>
+    new Promise((resolve) => {
+      const timer = setTimeout(resolve, ms)
+      if (!keepAlive) timer.unref()
+    }),
 }
 
 /**
@@ -471,11 +476,12 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
       if (hub.members.size > 0 || scheduler.timer === undefined) return Promise.resolve()
       timers.stop(scheduler.timer)
       scheduler.timer = undefined
-      // A tick of this copy under way, which may be writing the key, releases it as it ends.
-      const released = (current?.done ?? release(member.later)).catch((error: unknown) =>
-        member.log(`courier_later scheduler: owner key not released: ${String(error)}`),
-      )
-      return Promise.race([released, timers.wait(RELEASE_MS)])
+      // After this copy's tick under way, which may be writing the key, through this instance's ports.
+      const released = (async () => {
+        await current?.done
+        await release(member.later)
+      })().catch((error: unknown) => member.log(`courier_later scheduler: owner key not released: ${String(error)}`))
+      return Promise.race([released, timers.wait(RELEASE_MS, false)])
     }
   }
   return { hub, join }

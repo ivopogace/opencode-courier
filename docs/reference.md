@@ -454,7 +454,8 @@ or a storage write held up that long between two calls is what it takes (a write
 SQLite database can wait for the other process's lock), or a delivery of over a minute that the
 owner's ticks take to hang. So can a delivery still under way when the hub loses track of it: one
 through an instance that has since left, after the next tick has started through another, or one
-run by an older copy of the plugin while a newer copy's ticks renew the key, which they then do not.
+of an older copy of the plugin that runs past a minute, since only the copy that started a tick
+keeps renewing the key for it while it runs.
 The ticks some milliseconds apart that delivered twice before do not. The
 key's time is the wall clock, which servers on one data directory share; a key written more than
 60 s in the future, after the clock went back, counts as expired.

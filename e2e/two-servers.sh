@@ -107,7 +107,7 @@ descends() {
   while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
     [ "$pid" = "$2" ] && return 0
     # The parent's id, the second field after the process name, which may hold spaces or parentheses.
-    pid=$(tr '\n' ' ' <"/proc/$pid/stat" 2>/dev/null | sed 's/.*) //' | cut -d' ' -f2 || true)
+    pid=$(tr '\n' ' ' 2>/dev/null <"/proc/$pid/stat" | sed 's/.*) //' | cut -d' ' -f2 || true)
   done
   return 1
 }

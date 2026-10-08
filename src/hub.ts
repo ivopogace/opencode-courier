@@ -197,18 +197,13 @@ export interface Scheduler {
 export interface Timers {
   readonly every: (run: () => void, ms: number) => unknown
   readonly stop: (timer: unknown) => void
-  /** Settles after `ms`; with `keepAlive` false, the wait does not keep the process alive meanwhile. */
-  readonly wait: (ms: number, keepAlive?: boolean) => Promise<void>
+  readonly wait: (ms: number) => Promise<void>
 }
 
 const realTimers: Timers = {
   every: (run, ms) => setInterval(run, ms),
   stop: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
-  wait: (ms, keepAlive = true) =>
-    new Promise((resolve) => {
-      const timer = setTimeout(resolve, ms)
-      if (!keepAlive) timer.unref()
-    }),
+  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }
 
 /**
@@ -481,7 +476,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
         await current?.done
         await release(member.later)
       })().catch((error: unknown) => member.log(`courier_later scheduler: owner key not released: ${String(error)}`))
-      return Promise.race([released, timers.wait(RELEASE_MS, false)])
+      return Promise.race([released, timers.wait(RELEASE_MS)])
     }
   }
   return { hub, join }

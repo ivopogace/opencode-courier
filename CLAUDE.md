@@ -18,7 +18,7 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   and tells about questions, and tidies up on load; `lifecycle.ts` takes the signals watch.ts and
   index.ts send (forms shown, shutdowns, instances joining, events followed) and the waits on them;
   `shared.ts` the hub's question state and the storage keys; `pure.ts` the pure parts (prompts,
-  answers, how a call ended, matching a top session's question). The state's types are in `hub.ts`.
+  answers, how a call ended, the keys a top session's question is matched by). The state's types are in `hub.ts`.
   `src/hub.ts`: the plugin's process-wide state in one versioned hub, which instances `join` with
   their ports and location and leave on unload, the types of that state, and the scheduler's loop,
   run once per hub through one of its members; the version-skew rule

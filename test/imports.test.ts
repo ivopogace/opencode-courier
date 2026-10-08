@@ -15,7 +15,7 @@ function imports() {
     const text = readFileSync(join(SRC, file), "utf8")
     graph.set(
       module,
-      [...text.matchAll(/\b(?:from|import)\s*\(?\s*["'](\.{1,2}\/[\w/-]+)\.js["']/g)].map((match) =>
+      [...text.matchAll(/\b(?:from|import)\s*\(?\s*["'](\.{1,2}\/[\w./-]+)\.js["']/g)].map((match) =>
         posix.normalize(posix.join(posix.dirname(module), match[1]!)),
       ),
     )
@@ -47,4 +47,11 @@ test("bounded.ts imports nothing of the plugin's, so any module can hold its col
 test("the question relay's modules are found, so the checks above cover them", () => {
   expect(imports().get("index")).toContain("question/index")
   expect(imports().get("question/relay")).toContain("question/answer")
+})
+
+test("modules outside question/ use the relay through question/index.ts only", () => {
+  const reaching = [...imports()]
+    .filter(([module]) => !module.startsWith("question/"))
+    .flatMap(([module, imported]) => imported.filter((name) => name.startsWith("question/") && name !== "question/index").map((name) => `${module} -> ${name}`))
+  expect(reaching).toEqual([])
 })

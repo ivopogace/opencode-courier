@@ -177,7 +177,10 @@ export interface Member {
   readonly log: (message: string) => void
 }
 
-/** A tick under way: the member it runs through, when it started, by that member's clock, and its end. */
+/**
+ * A tick under way: the member it runs through, when it started, by the wall clock every member's
+ * `now` reads (the next ticks compare it with another member's), and its end.
+ */
 export interface Tick {
   readonly member: Member
   readonly since: number

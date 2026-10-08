@@ -372,11 +372,12 @@ plugin started it: one still under way when the next falls due makes that one sk
 minute from its start even when the instance it runs through has left since, since it may still be
 delivering. Past that minute it is taken to hang: one through an unloaded instance holds nothing up
 any more, and the next tick starts; one through an instance still loaded keeps the loop waiting, so
-another server takes over (below). Two copies of the plugin with the same hub version share the loop the
-first of them started, and each tick runs the code of the copy whose instance joined last, so after
-an update the new copy's delivery code runs, whichever copy's instances it ticks through. A copy before the hub (0.2.2 and earlier) still runs its
-own interval per instance until it unloads; each delivery is claimed in the shared claim set, so it
-and the hub's loop never deliver the same message twice.
+another server takes over (below). Two copies of the plugin with the same hub version share the
+loop the first of them started, and each tick runs the code of the copy whose instance joined
+last, so after an update the new copy's delivery code runs, whichever copy's instances it ticks
+through. A copy before the hub (0.2.2 and earlier) still runs its own interval per instance until
+it unloads; each delivery is claimed in the shared claim set, so it and the hub's loop never
+deliver the same message twice.
 
 The watcher is such a job too. Every instance in the process is sent every OpenCode event, an
 isolated child's included ([the notes](plugin-api-notes.md#which-plugin-instances-receive-an-isolated-childs-events-2026-10-07)),
@@ -440,9 +441,9 @@ for due messages, a hub's scheduler reads the key:
   the other skips the tick. So after a start the first delivery comes up to a second later.
 - When the hub's last instance leaves (a graceful stop, a reload) its loop stops and it removes the
   key if it holds it, so another server takes over at its next tick: after a tick still under way,
-  whichever copy started it, has ended (that tick removes it then), and not if an instance has joined again meanwhile, nor
-  while a hub of another version in the process still has instances, since its loop holds the key
-  under the same id. The instance's unload waits for that, up to 2 s.
+  whichever copy started it, has ended (that tick removes it then), and not if an instance has
+  joined again meanwhile, nor while a hub of another version in the process still has instances,
+  since its loop holds the key under the same id. The instance's unload waits for that, up to 2 s.
 - When the owner dies without that (a crash, `kill -9`) or stalls, the key expires 60 s after its
   last renewal, and another server takes over at its next tick after that: the messages due
   meanwhile arrive up to 75 s late, not lost. A server restarted after a crash has a new id, so it
@@ -458,10 +459,13 @@ or a storage write held up that long between two calls is what it takes (a write
 SQLite database can wait for the other process's lock), or a delivery of over a minute that the
 owner's ticks take to hang. A delivery through an instance that has since left, or one an older
 copy of the plugin with the same hub version started, is not among them: the tick under way is
-kept on the hub, so every copy's ticks renew the key for it, and no tick starts beside it within
-its minute. The ticks some milliseconds apart that delivered twice before do not. The
-key's time is the wall clock, which servers on one data directory share; a key written more than
-60 s in the future, after the clock went back, counts as expired.
+kept on the hub (since #92), so every copy's ticks renew the key for it, and no tick starts beside
+it within its minute. (A build of the plugin from before #92, none of them released, keeps only
+the instance a tick runs through on the hub; a tick it started is skipped by the others while
+that instance is loaded, without their renewing the key for it.) The ticks some milliseconds apart
+that delivered twice before do not. The key's time is the wall clock, which servers on one data
+directory share; a key written more than 60 s in the future, after the clock went back, counts as
+expired.
 
 A released copy of the plugin (0.2.2 and earlier) has no owner key: one running beside this
 version on the same data directory delivers on its own schedule, with or without the key, so a

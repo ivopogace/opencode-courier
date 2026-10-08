@@ -38,7 +38,7 @@ import { isPassing, keyOf, QUESTION_TOOL, shared, storedOf } from "./shared.js"
  * Without one, the next load tells it.
  */
 function tellLater(ports: QuestionPorts, question: Question) {
-  const later = Effect.suspend(() => {
+  const tellNow = Effect.suspend(() => {
     const later = shared.loaded.values().next().value
     if (!later || question.call || question.link || shared.questions.get(question.requestID) !== question) return Effect.void
     return Effect.promise(() =>
@@ -47,7 +47,7 @@ function tellLater(ports: QuestionPorts, question: Question) {
       ),
     )
   })
-  void background(Effect.andThen(Effect.sleep(ports.timing.closingGraceMs), later), (error) =>
+  void background(Effect.andThen(Effect.sleep(ports.timing.closingGraceMs), tellNow), (error) =>
     ports.log(`courier question: could not tell ${question.top} about ${question.requestID}: ${String(error)}`),
   )
 }
@@ -151,7 +151,8 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
       const byTop = Deferred.makeUnsafe<Outcome>()
       const accepted = Deferred.makeUnsafe<boolean>()
       // For a copy of the plugin that answers through `call`, which takes promises.
-      const acceptance = () => Effect.runPromise(Deferred.await(accepted))
+      let acceptancePromise: Promise<boolean> | undefined
+      const acceptance = () => (acceptancePromise ??= Effect.runPromise(Deferred.await(accepted)))
       // Handed one outcome only: a second, while the first still ends the call, is not taken.
       let handed = false
       const question: Question = {

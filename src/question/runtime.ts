@@ -25,7 +25,7 @@ const live: Clock.Clock = {
 function sleep(ms: number): Effect.Effect<void> {
   if (ms <= 0) return Effect.yieldNow
   if (!Number.isFinite(ms)) return Effect.never
-  const rest = ms > MAX_TIMER_MS ? sleep(ms - MAX_TIMER_MS) : Effect.void
+  const rest = ms > MAX_TIMER_MS ? Effect.suspend(() => sleep(ms - MAX_TIMER_MS)) : Effect.void
   return Effect.callback<void>((resume) => {
     const timer = setTimeout(() => resume(rest), Math.min(ms, MAX_TIMER_MS))
     timer.unref?.()

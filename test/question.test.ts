@@ -1067,7 +1067,9 @@ describe("the question tool of a spawned session", () => {
     let passed!: () => void
     hub.questions.passing.set("question_1", new Promise<void>((resolve) => (passed = resolve)))
     let answered: unknown
-    void answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }).then((result) => (answered = result))
+    void answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
+      .then((result) => (answered = result))
+      .catch(() => undefined)
     await settle()
     expect(answered).toBeUndefined()
 
@@ -1426,6 +1428,16 @@ describe("the relay's runtime", () => {
     await stopRelay()
     await pending
     expect(failed.map(String)).toEqual(["Error: failed"])
+  })
+
+  test("a sleep longer than a timer takes is slept in parts, not cut short", async () => {
+    const failed: unknown[] = []
+    let woke = false
+    const pending = background(Effect.andThen(Effect.sleep(1e15), Effect.sync(() => (woke = true))), (error) => failed.push(error))
+    await settle()
+    await stopRelay()
+    await pending
+    expect({ woke, failed }).toEqual({ woke: false, failed: [] })
   })
 })
 

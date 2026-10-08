@@ -46,7 +46,8 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   `bun test --update-snapshots` and rerun the real-model smoke test.
   `src/index.ts`: the plugin (an Effect plugin running the promise one): builds the ports, registers
   the tools from `tools.ts`, and starts the scheduler, the watcher and the webhook receiver; the
-  Effect half wraps the question tool and finds its instance's ports in the hub by its location.
+  Effect half wraps the question tool and binds it to its instance's member in the hub, found by
+  its location once the promise half has joined.
 - `test/`: unit tests against a fake plugin context (`bun test`).
 - `e2e/run.sh`: live test against a real OpenCode V2 server, driven by `e2e/mock-model.mjs`, a
   scripted OpenAI-compatible stand-in model, with `e2e/search-plugin` as a stand-in web search

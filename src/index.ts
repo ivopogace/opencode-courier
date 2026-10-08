@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
 import type { CourierPorts } from "./courier.js"
 import { headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
-import { hub, join, memberAt, permissions, track, type Member, type Receiver } from "./hub.js"
+import { hub, join, permissions, portsAt, track, type Member, type Receiver } from "./hub.js"
 import type { LaterPorts } from "./later.js"
 import { pendingOf, type AnswerPorts } from "./relay.js"
 import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question/index.js"
@@ -208,7 +208,8 @@ export default EffectPlugin.define({
   effect: (host) =>
     Effect.gen(function* () {
       yield* fromPromise(courier()).effect(host)
-      // The promise plugin's instance is handed this same location: its member, while it is loaded.
-      yield* relayQuestions(host, () => memberAt(host.location)?.questions)
+      // The promise plugin's instance is handed this same location and has just joined with it: its
+      // member, bound now, while it stays loaded.
+      yield* relayQuestions(host, portsAt(host.location))
     }),
 })

@@ -197,7 +197,8 @@ The plugin is an Effect plugin that runs the promise plugin through `fromPromise
 relay, in the Effect half, finds the instance's ports in the hub by the location object: the
 promise adapter (`@opencode/plugin/dist/promise/adapter.js`, 2.0.24) builds the promise plugin's
 context with `location: host.location`, the very object the Effect half is handed, so
-`memberAt(host.location)` finds the member the promise half joined with (#79). Were a later adapter
+`portsAt(host.location)`, called once the promise half's setup has joined the hub, binds the relay to
+the member it joined with, the newest at that location (#79). Were a later adapter
 to copy it, the relay would find no ports and leave every question call unchanged; a pin bump
 re-checks it, and the live suite's question scenarios, which need the relay, would fail.
 

@@ -419,10 +419,12 @@ what is still under way finishes on its own.
 
 The hub's members are the one registry of loaded instances this copy reads. The question relay,
 which wraps OpenCode's question tool from the plugin's Effect half, finds its instance's ports
-there, by the location object OpenCode hands both halves of the instance. Every copy also keeps
-its instances' question ports in the `.questions` object's `loaded` set, which a release before the
-hub (0.2.2) reads to pick an instance to tell a cut-off question through; this copy reads it only
-when its hub has no member left, for an instance of such a copy.
+there, by the location object OpenCode hands both halves of the instance: once the promise half
+has joined, the relay binds to the member it joined with, the newest at that location, and keeps it
+until it leaves, so an instance loaded later on the same location never takes its place. Every
+copy also keeps its instances' question ports in the `.questions` object's `loaded` set, which a
+release before the hub (0.2.2) reads to pick an instance to tell a cut-off question through; this
+copy reads it only when its hub has no member left, for an instance of such a copy.
 
 The hub is per process. It does not reach a second OpenCode server on the same data directory; the
 owner key described next sits beside it: the hub picks one scheduler per process, the owner key one

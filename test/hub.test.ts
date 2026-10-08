@@ -15,6 +15,7 @@ import {
   join,
   open,
   permissions,
+  portsAt,
   resetHub,
   type Member,
   type Timers,
@@ -995,6 +996,30 @@ describe("a leave", () => {
     bound.resolve()
     expect(await settledYet(left)).toBe(true)
     await leaveB()
+  })
+})
+
+describe("the question relay's binding to its member", () => {
+  test("holds the member that joined last at the location, until it leaves, whoever joins there after", async () => {
+    const location = { directory: "/a" }
+    const first = { ...member("/a"), location, questions: { directory: "/a", which: "first" } } as unknown as Member
+    const second = { ...member("/a"), location, questions: { directory: "/a", which: "second" } } as unknown as Member
+    const leaveFirst = join(first)
+    const firstPorts = portsAt(location)
+    expect(firstPorts()).toBe(first.questions)
+    // A new instance on the same location object while the first is still loaded, as in a reload.
+    const leaveSecond = join(second)
+    const secondPorts = portsAt(location)
+    expect(secondPorts()).toBe(second.questions)
+    expect(firstPorts()).toBe(first.questions)
+
+    await leaveFirst()
+    expect(firstPorts()).toBeUndefined()
+    expect(secondPorts()).toBe(second.questions)
+    await leaveSecond()
+    expect(secondPorts()).toBeUndefined()
+    // Another location object, even of the same directory, finds none.
+    expect(portsAt({ directory: "/a" })()).toBeUndefined()
   })
 })
 

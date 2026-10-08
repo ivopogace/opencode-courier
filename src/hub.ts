@@ -178,7 +178,7 @@ export interface Member {
   readonly directory: string
   /**
    * The location OpenCode set the instance up with, the very object the instance's Effect half is
-   * handed too, which finds its member by it (`memberAt`). A member of a copy before it has none.
+   * handed too, which finds its member by it (`portsAt`). A member of a copy before it has none.
    */
   readonly location?: object
   readonly permission: Permissions
@@ -577,8 +577,22 @@ export const join = opened.join
 /** Hands this copy's hub work a member started; see `Opened.track`. */
 export const track = opened.track
 
-/** The member of this copy's hub set up with `location`, while it is loaded. */
-export const memberAt = (location: object) => [...hub.members].find((member) => member.location === location)
+/** The member of this copy's hub set up with `location` that joined last, while it is loaded. */
+export function memberAt(location: object) {
+  let found: Member | undefined
+  for (const member of hub.members) if (member.location === location) found = member
+  return found
+}
+
+/**
+ * The question ports of the member that has just joined at `location`, the newest there, for as long
+ * as it stays loaded: resolved once, so an instance joining later at the same location, while this
+ * one is still loaded, does not take its place.
+ */
+export function portsAt(location: object): () => QuestionPorts | undefined {
+  const own = memberAt(location)
+  return () => (own && hub.members.has(own) ? own.questions : undefined)
+}
 
 /** The permission domains of the loaded instances. */
 export const permissions = () => hub.locations.values()

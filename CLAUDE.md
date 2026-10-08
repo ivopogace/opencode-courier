@@ -7,14 +7,15 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
 ## Layout
 
 - `src/courier.ts`: spawn, send, status, children. `src/later.ts`: scheduled messages and their
-  scheduler. `src/roster.ts`: the children each parent spawned. `src/cleanup.ts`: removing an
+  delivery. `src/roster.ts`: the children each parent spawned. `src/cleanup.ts`: removing an
   isolated child's worktree. `src/webhook.ts`: the webhook receiver and subscriptions.
   `src/watch.ts`: following OpenCode's events to tell a parent that a child's turn failed, that it
   waits for a permission, or that it shows a form only the person can answer. `src/relay.ts`: the
   permission and form notices, and passing a permission answer back.
   `src/question.ts`: relaying a child's question, by wrapping OpenCode's `question` tool.
   `src/hub.ts`: the plugin's process-wide state in one versioned hub, which instances `join` with
-  their ports and location and leave on unload, and the types of that state; the version-skew rule
+  their ports and location and leave on unload, the types of that state, and the scheduler's loop,
+  run once per hub through one of its members; the version-skew rule
   is in `docs/reference.md`. `src/storage.ts`: shared storage helpers and `processWide`, the
   process-wide registry, which only `hub.ts` uses (a unit test checks).
   `src/json.ts`: readers for untyped JSON (webhook payloads, plugin options).

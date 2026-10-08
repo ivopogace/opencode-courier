@@ -1,16 +1,40 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
 import { join as joinPath } from "node:path"
-import { HUB_KEY, HUB_VERSION, hub, join, open, permissions, resetHub, type Member } from "../src/hub.js"
+import { HUB_KEY, HUB_VERSION, hub, join, open, permissions, resetHub, type Member, type Timers } from "../src/hub.js"
+import { TICK_MS, type LaterEntry, type LaterPorts } from "../src/later.js"
 
 const LEGACY = ["claimed", "watched", "forms", "questions", "receiver", "locations"]
 const at = (registry: Record<symbol, unknown>, key: string) => registry[Symbol.for(key)]
 
-const member = (directory: string, log: (message: string) => void = () => {}): Member =>
+/** Scheduler ports over `store`, recording the deliveries made through them under `directory`. */
+function laterPorts(directory: string, store = new Map<string, unknown>(), delivered: string[] = []): LaterPorts {
+  return {
+    storage: {
+      get: async (key: string) => store.get(key),
+      set: async (key: string, value: unknown) => void store.set(key, value),
+      remove: async (key: string) => void store.delete(key),
+      scan: async ({ prefix }: { prefix: string }) => ({
+        entries: [...store].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
+      }),
+    } as unknown as LaterPorts["storage"],
+    session: {
+      synthetic: async (input: { metadata: { scheduled: string } }) => {
+        delivered.push(`${directory} ${input.metadata.scheduled}`)
+        return { id: "msg_1" }
+      },
+    } as unknown as LaterPorts["session"],
+    now: () => 1_000,
+    newID: () => "later_new",
+    log: () => {},
+  }
+}
+
+const member = (directory: string, log: (message: string) => void = () => {}, later = laterPorts(directory)): Member =>
   ({
     directory,
     permission: { list: async () => [], reply: async () => {} },
-    later: {},
+    later,
     watch: {},
     questions: {},
     log,
@@ -126,8 +150,9 @@ describe("the hub", () => {
     const opened = open(registry)
     expect(at(registry, HUB_KEY)).toBe(opened.hub)
     const logs: string[] = []
-    opened.join(member("/a", (message) => logs.push(message)))
+    const leave = opened.join(member("/a", (message) => logs.push(message)))
     expect(logs).toEqual([])
+    leave()
   })
 
   test("is shared by two copies of the module in one process", () => {
@@ -138,8 +163,13 @@ describe("the hub", () => {
       sameHub: true,
       separateModules: true,
       joined: { members: ["/a", "/b"], permissions: 2 },
+      oneLoop: true,
       afterLeave: ["/b"],
+      loopKept: true,
       emptyAtEnd: true,
+      skewedOwnLoop: true,
+      // One tick as the shared loop started, through the first copy's instance, and one as the skewed hub's did.
+      ticks: ["/a", "/c"],
       skewedOwnHub: true,
       skewedSharesClaims: true,
       logs: 1,
@@ -168,6 +198,138 @@ describe("the hub", () => {
     expect(hub.questions.following).toBe(0)
     expect(hub.questions.followed).toBe(false)
     expect(hub.members.size).toBe(1)
+    leave()
+  })
+})
+
+/** Timers the test fires by hand, recording what was started and stopped. */
+function fakeTimers() {
+  const started: Array<{ run: () => void; ms: number }> = []
+  const stopped: unknown[] = []
+  const timers: Timers = {
+    every: (run, ms) => (started.push({ run, ms }), started.length),
+    stop: (timer) => void stopped.push(timer),
+  }
+  return { timers, started, stopped, fire: () => started.at(-1)!.run() }
+}
+
+const due = (id: string): LaterEntry => ({ id, sessionID: "ses_parent", from: "ses_parent", message: "wake", fireAt: 1, createdAt: 0 })
+const settle = () => Bun.sleep(1)
+
+describe("the scheduler", () => {
+  test("runs one loop for several instances, through the first one loaded, with a tick as it starts", async () => {
+    const { timers, started, fire } = fakeTimers()
+    const { join: joinHub } = open({}, timers)
+    const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
+    const delivered: string[] = []
+    const leaves = ["/a", "/b", "/c"].map((directory) => joinHub(member(directory, () => {}, laterPorts(directory, store, delivered))))
+
+    expect(started.map((timer) => timer.ms)).toEqual([TICK_MS])
+    await settle()
+    expect(delivered).toEqual(["/a later_1"])
+
+    store.set("later/later_2", due("later_2"))
+    fire()
+    await settle()
+    expect(delivered).toEqual(["/a later_1", "/a later_2"])
+    expect(store.size).toBe(0)
+    for (const leave of leaves) leave()
+  })
+
+  test("hands the loop over to the next instance when the one it runs through leaves", async () => {
+    const { timers, started, stopped, fire } = fakeTimers()
+    const { join: joinHub } = open({}, timers)
+    const store = new Map<string, unknown>()
+    const delivered: string[] = []
+    const leaveA = joinHub(member("/a", () => {}, laterPorts("/a", store, delivered)))
+    const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store, delivered)))
+    await settle()
+
+    leaveA()
+    store.set("later/later_1", due("later_1"))
+    fire()
+    await settle()
+
+    expect(delivered).toEqual(["/b later_1"])
+    expect(started.length).toBe(1)
+    expect(stopped).toEqual([])
+    leaveB()
+  })
+
+  test("stops after the last instance leaves, and starts again, with a tick, when one joins", async () => {
+    const { timers, started, stopped } = fakeTimers()
+    const { hub: fresh, join: joinHub } = open({}, timers)
+    const store = new Map<string, unknown>()
+    const delivered: string[] = []
+    const leaveA = joinHub(member("/a", () => {}, laterPorts("/a", store, delivered)))
+    const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store, delivered)))
+    await settle()
+
+    leaveA()
+    expect(stopped).toEqual([])
+    leaveB()
+    expect(stopped).toEqual([1])
+    expect(fresh.scheduler.timer).toBeUndefined()
+    // A leave called again does not stop it twice.
+    leaveB()
+    expect(stopped).toEqual([1])
+
+    store.set("later/later_1", due("later_1"))
+    const leaveC = joinHub(member("/c", () => {}, laterPorts("/c", store, delivered)))
+    await settle()
+    expect(started.length).toBe(2)
+    expect(delivered).toEqual(["/c later_1"])
+    leaveC()
+    expect(stopped).toEqual([1, 2])
+  })
+
+  test("skips a tick while the last one is still under way", async () => {
+    const { timers, fire } = fakeTimers()
+    const { join: joinHub } = open({}, timers)
+    let scans = 0
+    let release = () => {}
+    const later = laterPorts("/a")
+    const slow: LaterPorts = {
+      ...later,
+      storage: { ...later.storage, scan: () => (scans++, new Promise((resolve) => (release = () => resolve({ entries: [] } as never)))) },
+    }
+    const leave = joinHub(member("/a", () => {}, slow))
+
+    fire()
+    fire()
+    expect(scans).toBe(1)
+    release()
+    await settle()
+    fire()
+    expect(scans).toBe(2)
+    release()
+    leave()
+  })
+
+  test("logs a failed tick through the instance it ran through, and carries on", async () => {
+    const { timers, fire } = fakeTimers()
+    const { join: joinHub } = open({}, timers)
+    const logs: string[] = []
+    const later = laterPorts("/a")
+    let fail = true
+    const failing: LaterPorts = {
+      ...later,
+      storage: {
+        ...later.storage,
+        scan: async (input: never) => {
+          if (fail) throw new Error("storage gone")
+          return later.storage.scan(input)
+        },
+      } as LaterPorts["storage"],
+    }
+    const leave = joinHub(member("/a", (message) => logs.push(message), failing))
+    await settle()
+    expect(logs).toEqual(["courier_later scheduler: Error: storage gone"])
+
+    fail = false
+    fire()
+    await settle()
+    expect(logs.length).toBe(1)
     leave()
   })
 })

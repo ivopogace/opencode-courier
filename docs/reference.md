@@ -308,10 +308,11 @@ reported. It works on the calling session's own children.
 
 ## Scheduled messages
 
-Pending `courier_later` messages are kept in the plugin's storage, and every loaded copy of the
-plugin checks for due ones every 15 seconds, so a message can arrive up to about 15 seconds late.
-OpenCode loads the plugin once per project location; the copies in one server share one claim set,
-so each message is delivered once. Two servers on one data directory do not share it (see below).
+Pending `courier_later` messages are kept in the plugin's storage, and the plugin checks for due
+ones every 15 seconds, so a message can arrive up to about 15 seconds late. OpenCode loads the
+plugin once per project location; the instances in one server share one scheduler, run by the hub
+(see "Several copies in one process"), and one claim set, so each message is delivered once. Two
+servers on one data directory share neither (see below).
 
 They survive a server restart. After a start, OpenCode loads plugins for a project the first time
 that project is used, so messages that fell due while it was down are delivered then, not at the
@@ -355,9 +356,20 @@ copied, they are honoured as long as the process runs, which covers "until the o
 without having to detect the unload; each claim set is bounded, so keeping them costs little. A
 future hub version that needed another meaning for one of them would make a new key, and keep
 claiming in the old one as well while a copy that uses it may still be loaded. The loaded
-instances are the one thing each hub version keeps to itself, so once the scheduler and the
-watcher run once per hub rather than once per instance, they still run once per hub version
-during an update, and the shared claim sets keep the two from acting on the same thing.
+instances are the one thing each hub version keeps to itself, so a job the hub runs once for its
+instances still runs once per hub version during an update, and the shared claim sets keep the two
+from acting on the same thing.
+
+The scheduler is such a job. The hub runs one loop, ticking every 15 seconds, while it has
+instances: the first instance to join starts it, with a tick at once (which delivers what fell due
+while the server was down), and the last one to leave stops it, so the next to join starts it
+again. Each tick looks for due messages through the ports of the instance that joined first and is
+still loaded; when that one leaves, the next tick runs through the next, so nothing has to be handed
+over but the hub's list of instances. A tick still under way when the next falls due makes that one
+skip. Two copies of the plugin with the same hub version share the loop the first of them started,
+whichever copy's instances it ticks through. A copy before the hub (0.2.2 and earlier) still runs its
+own interval per instance until it unloads; each delivery is claimed in the shared claim set, so it
+and the hub's loop never deliver the same message twice.
 
 The hub is per process. It does not reach a second OpenCode server on the same data directory, so
 it does not prevent the duplicates described next; a fix for those (an owner key with an expiry in

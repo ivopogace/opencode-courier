@@ -1,8 +1,9 @@
+import { Deferred, Effect, Semaphore } from "effect"
 import type { QuestionPorts } from "../hub.js"
 import { cutOffAnswer, envelope, questionNotice, type Asked, type CutOff, type Outcome, type Prompt, type QuestionAnswered } from "../notices.js"
 import { allEntries, answeringTop, lineageIn, RETENTION_MS, type RosterStorage } from "../roster.js"
 import { scanAll } from "../storage.js"
-import { within } from "./lifecycle.js"
+import { within, run } from "./runtime.js"
 import { normalize, type QuestionAnswerInput } from "./pure.js"
 import { claim, isPassing, keyOf, MAX_STORED, PREFIX, shared, storedOf, type Stored } from "./shared.js"
 
@@ -30,35 +31,78 @@ export async function tellCutOff(ports: QuestionPorts, asked: Asked, cutOff: Cut
   }
 }
 
+const busy = (id: string) => new Error(`another answer to ${id} is still being passed on; try again in a while.`)
+
+/** This copy's lock per question, kept while an answer to it is passed on or waits its turn. */
+const locks = new Map<string, { readonly semaphore: Semaphore.Semaphore; users: number }>()
+
+/**
+ * Runs `effect` holding the question's lock, once it is taken; fails if that takes more than `ms`.
+ * Only this copy of the plugin takes the lock: another copy's answer shows in `shared.passing`.
+ */
+const holding = <A, E>(id: string, ms: number, effect: Effect.Effect<A, E>): Effect.Effect<A, E | Error> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const lock = locks.get(id) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
+      lock.users++
+      locks.set(id, lock)
+      return lock
+    }),
+    (lock) => {
+      const taken = Deferred.makeUnsafe<void>()
+      return Effect.timeoutOrElse(lock.semaphore.withPermit(Effect.andThen(Deferred.succeed(taken, undefined), effect)), {
+        duration: ms,
+        orElse: () => (Deferred.isDoneUnsafe(taken) ? Effect.never : Effect.fail(busy(id))),
+      })
+    },
+    (lock) =>
+      Effect.sync(() => {
+        if (--lock.users === 0) locks.delete(id)
+      }),
+  )
+
 /**
  * Passes the top session's answer, or the person's dismissal, to a question: as the result of the
- * call that waits on it, or as a message when that call was cut off. False when it was settled.
+ * call that waits on it, or as a message when that call was cut off. Undefined when it was settled.
  */
-export async function deliver(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
-  const id = asked.requestID
-  // One answer at a time, and once, per question in this process: storage cannot be claimed
-  // atomically. A second answer waits for the first, and is passed on if the first was not.
-  // While one is under way, nobody is told that the question was cut off, nor links to it.
-  const since = ports.now()
-  for (let under = shared.passing.get(id); under; under = shared.passing.get(id)) {
-    const left = ports.timing.passingWaitMs - (ports.now() - since)
-    if (left <= 0) throw new Error(`another answer to ${id} is still being passed on; try again in a while.`)
-    await within(under, left)
-  }
-  if (shared.answered.has(id)) return undefined
-  const passing = passOn(ports, asked, outcome)
-  shared.passing.set(id, passing)
-  // One that hangs, on a notice that never returns, gives way after a while, so the question can be
-  // answered again; should it still go through, the child is told twice.
-  const release = setTimeout(() => shared.passing.get(id) === passing && shared.passing.delete(id), ports.timing.passingWaitMs)
-  release.unref?.()
-  try {
-    return await passing
-  } finally {
-    clearTimeout(release)
-    if (shared.passing.get(id) === passing) shared.passing.delete(id)
-  }
-}
+export const deliver = (ports: QuestionPorts, asked: Asked, outcome: Outcome): Effect.Effect<"result" | "message" | undefined, unknown> =>
+  Effect.suspend(() => {
+    const id = asked.requestID
+    const wait = ports.timing.passingWaitMs
+    // One answer at a time, and once, per question in this process: storage cannot be claimed
+    // atomically. A second answer waits for the first, and is passed on if the first was not.
+    // While one is under way, nobody is told that the question was cut off, nor links to it.
+    const since = ports.now()
+    const left = () => wait - (ports.now() - since)
+    const turn = holding(
+      id,
+      wait,
+      Effect.gen(function* () {
+        // An answer that another copy of the plugin, loaded beside this one, passes on.
+        for (let under = shared.passing.get(id); under; under = shared.passing.get(id)) {
+          if (left() <= 0) return yield* Effect.fail(busy(id))
+          yield* within(under, left())
+        }
+        if (shared.answered.has(id)) return undefined
+        const passing = passOn(ports, asked, outcome)
+        shared.passing.set(id, passing)
+        // Held while it is passed on. One that hangs, on a notice that never returns, gives way
+        // after a while, so the question can be answered again; should it still go through, the
+        // child is told twice.
+        yield* within(passing, wait).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (shared.passing.get(id) === passing) shared.passing.delete(id)
+            }),
+          ),
+        )
+        return passing
+      }),
+    )
+    return Effect.flatMap(turn, (passing) =>
+      passing ? Effect.tryPromise({ try: () => passing, catch: (error) => error }) : Effect.succeed(undefined),
+    )
+  })
 
 async function passOn(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   const id = asked.requestID
@@ -129,7 +173,7 @@ export async function answerQuestion(ports: QuestionPorts, callerID: string, inp
   const asked: Stored | undefined = shared.questions.get(requestID) ?? ((await ports.storage.get(keyOf(requestID))) as Stored | undefined)
   if (asked?.sessionID !== sessionID || asked.answered) return { sessionID, requestID, answered: false }
   const answers = normalize(asked, input.answers)
-  const by = await deliver(ports, asked, { answers })
+  const by = await run(deliver(ports, asked, { answers }))
   return by ? { sessionID, requestID, answered: true, by, answers } : { sessionID, requestID, answered: false }
 }
 

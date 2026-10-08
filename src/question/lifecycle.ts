@@ -1,3 +1,4 @@
+import { Deferred, Effect, Exit } from "effect"
 import type { QuestionPorts } from "../hub.js"
 import { shared } from "./shared.js"
 
@@ -33,44 +34,22 @@ export function locationClosing(at: number, directory?: string) {
  * instance unloads, within the grace from now, by the clock of `ports`. A shutdown reported without a location counts for every
  * location, and with the directory unknown, any location's shutdown counts.
  */
-export function closingSoon(ports: QuestionPorts, loaded: () => boolean, directory: string | undefined): Promise<boolean> {
-  const ms = ports.timing.dismissalGraceMs
-  const closing = () => !loaded() || ports.now() - shutdownAt(directory) <= ms
-  if (closing()) return Promise.resolve(true)
-  return new Promise((resolve) => {
-    const done = (result: boolean) => {
-      clearTimeout(timer)
-      shared.closingWaiters.delete(wake)
-      resolve(result)
-    }
+export const closingSoon = (ports: QuestionPorts, loaded: () => boolean, directory: string | undefined): Effect.Effect<boolean> =>
+  Effect.suspend(() => {
+    const ms = ports.timing.dismissalGraceMs
+    const closing = () => !loaded() || ports.now() - shutdownAt(directory) <= ms
+    if (closing()) return Effect.succeed(true)
+    const closed = Deferred.makeUnsafe<boolean>()
     // Woken by any shutdown or unload: only one that answers the question ends the wait.
     const wake = () => {
-      if (closing()) done(true)
+      if (closing()) Deferred.doneUnsafe(closed, Exit.succeed(true))
     }
-    const timer = setTimeout(() => done(false), ms)
-    timer.unref?.()
-    shared.closingWaiters.add(wake)
-  })
-}
-
-/** The promise's value, or undefined once `ms` have passed or it failed. */
-export function within<T>(promise: Promise<T> | undefined, ms: number): Promise<T | undefined> {
-  if (!promise) return Promise.resolve(undefined)
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(undefined), ms)
-    timer.unref?.()
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      () => {
-        clearTimeout(timer)
-        resolve(undefined)
-      },
+    return Effect.acquireUseRelease(
+      Effect.sync(() => shared.closingWaiters.add(wake)),
+      () => Effect.raceFirst(Deferred.await(closed), Effect.as(Effect.sleep(ms), false)),
+      () => Effect.sync(() => shared.closingWaiters.delete(wake)),
     )
   })
-}
 
 /**
  * A plugin instance whose ports the relay may use, until the returned function is called. A

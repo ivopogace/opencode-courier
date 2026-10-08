@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Exit, Fiber } from "effect"
+import { TestClock } from "effect/testing"
 import {
   byCodeUnit,
   answerQuestion,
@@ -15,7 +16,8 @@ import {
   type QuestionPorts,
   type QuestionTiming,
 } from "../src/question/index.js"
-import { resetHub } from "../src/hub.js"
+import { hub, resetHub } from "../src/hub.js"
+import { background, run, stopRelay, useClock } from "../src/question/runtime.js"
 import { answeredText, questionNotice, questionSettledNotice as settledNotice, type Asked } from "../src/notices.js"
 import { record, RETENTION_MS } from "../src/roster.js"
 
@@ -24,7 +26,8 @@ const formShownOff = () => {
   showForms = false
   return { restore: () => void (showForms = true) }
 }
-afterEach(() => {
+afterEach(async () => {
+  await stopRelay()
   resetHub()
   showForms = true
 })
@@ -80,11 +83,14 @@ function questionTool() {
 
 let calls = 0
 /**
- * A relay in one location, with its own clock, which only a test moves, and its own timings: a
- * dismissal is taken at once, unless a test holds it to see a location close.
+ * A relay in one location, with its own timings, and a `TestClock`, which only a test moves
+ * (`advance`), read by the relay's ports and run by its fibers alike: a dismissal is taken at once,
+ * unless a test holds it to see a location close.
  */
 async function setUp(timings: Partial<QuestionTiming> = {}) {
-  const clock = { now: 1_000_000 }
+  const clock = Effect.runSync(Effect.scoped(TestClock.make()))
+  await Effect.runPromise(clock.setTime(1_000_000))
+  useClock(clock)
   const timing: QuestionTiming = { closingGraceMs: 30_000, passingWaitMs: 30_000, relayWaitMs: 30_000, dismissalGraceMs: 0, ...timings }
   const store = new Map<string, unknown>()
   const told: any[] = []
@@ -100,7 +106,7 @@ async function setUp(timings: Partial<QuestionTiming> = {}) {
     } as unknown as QuestionPorts["storage"],
     session: { synthetic: async (input: any) => (told.push(input), { id: `msg_${told.length}` }) } as unknown as QuestionPorts["session"],
     directory: "/repo",
-    now: () => clock.now,
+    now: () => clock.currentTimeMillisUnsafe(),
     timing,
     newID: () => `question_${++ids}`,
     log: () => undefined,
@@ -125,8 +131,13 @@ async function setUp(timings: Partial<QuestionTiming> = {}) {
       wrapped.execute({ questions }, { sessionID, agent: "build", messageID: "msg", id: `call_${++calls}`, progress: () => Effect.void }),
     ) as Fiber.Fiber<any, any>
   // OpenCode's `location.shutdown` for `directory`, as the watcher reports it, by this clock.
-  const shutDown = (directory?: string) => locationClosing(clock.now, directory)
-  return { ports, clock, store, told, tool, ask, shutDown, unload: () => void (loaded = false) }
+  const shutDown = (directory?: string) => locationClosing(clock.currentTimeMillisUnsafe(), directory)
+  // Moves the clock on, which ends the relay's waits that fall due, and lets what follows them run.
+  const advance = async (ms: number) => {
+    await Effect.runPromise(clock.adjust(ms))
+    await settle()
+  }
+  return { ports, advance, store, told, tool, ask, shutDown, unload: () => void (loaded = false) }
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
@@ -490,7 +501,7 @@ describe("the question tool of a spawned session", () => {
   })
 
   test("a dismissal in the parent's question that lands after courier_answer answered it is dropped, and logged", async () => {
-    const { ports, told, tool, ask } = await setUp({ dismissalGraceMs: 50 })
+    const { advance, ports, told, tool, ask } = await setUp({ dismissalGraceMs: 50 })
     const logged: string[] = []
     ;(ports as any).log = (message: string) => logged.push(message)
     const child = ask("ses_child")
@@ -502,7 +513,7 @@ describe("the question tool of a spawned session", () => {
     expect(Exit.isFailure(await exitOf(parent))).toBe(true)
     // Within the grace the dismissal is held for, courier_answer answers the question.
     const answered = await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    await advance(80)
 
     expect(answered).toMatchObject({ answered: true, by: "result" })
     const childExit = await exitOf(child)
@@ -512,7 +523,7 @@ describe("the question tool of a spawned session", () => {
   })
 
   test("a dismissal held while the parent asks again: the second question is withdrawn, since the child carries on without the answers", async () => {
-    const { tool, ask } = await setUp({ dismissalGraceMs: 50 })
+    const { advance, tool, ask } = await setUp({ dismissalGraceMs: 50 })
     const child = ask("ses_child")
     await settle()
     const first = ask("ses_parent")
@@ -523,6 +534,8 @@ describe("the question tool of a spawned session", () => {
     const second = ask("ses_parent")
     await settle()
     expect(formOf(tool, "ses_parent")).toBeDefined()
+    // The grace passes without a shutdown: the dismissal was the person's.
+    await advance(50)
 
     const childExit = await exitOf(child)
     expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [[]] })
@@ -665,7 +678,7 @@ describe("the question tool of a spawned session", () => {
   })
 
   test("a location closing withdraws both forms first and reports its shutdown right after: the question is kept, and the next load tells the parent", async () => {
-    const { ports, store, told, tool, ask, unload, shutDown } = await setUp({ dismissalGraceMs: 200 })
+    const { advance, ports, store, told, tool, ask, unload, shutDown } = await setUp({ dismissalGraceMs: 200 })
     const child = ask("ses_child")
     await settle()
     const parent = ask("ses_parent")
@@ -680,6 +693,9 @@ describe("the question tool of a spawned session", () => {
     expect(Exit.isFailure(await exitOf(child))).toBe(true)
     expect(Exit.isFailure(await exitOf(parent))).toBe(true)
     await settle()
+    expect(hub.questions.closingWaiters.size).toBe(0)
+    // No instance is loaded once the closing grace is over to tell the parent.
+    await advance(30_000)
 
     expect(told).toHaveLength(1)
     expect(store.has("question/question_1")).toBe(true)
@@ -688,7 +704,7 @@ describe("the question tool of a spawned session", () => {
   })
 
   test("a location's shutdown reported within the grace, before or after the dismissal, makes it a cut-off; another location's does not", async () => {
-    const { store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 100 })
+    const { advance, store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 100 })
     const first = ask("ses_child")
     await settle()
     shutDown("/repo")
@@ -705,7 +721,7 @@ describe("the question tool of a spawned session", () => {
     await exitOf(second)
     await settle()
     shutDown("/elsewhere")
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await advance(150)
     expect(notices(told, "answered")[0].text).toContain('answered="dismissed" request="question_2"')
     expect(store.has("question/question_2")).toBe(false)
 
@@ -715,13 +731,13 @@ describe("the question tool of a spawned session", () => {
     await exitOf(third)
     await settle()
     shutDown("/repo")
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await advance(150)
     expect(notices(told, "answered")).toHaveLength(1)
     expect(store.has("question/question_3")).toBe(true)
   })
 
   test("a dismissal that no shutdown follows within the grace is the person's", async () => {
-    const { told, tool, ask, store } = await setUp({ dismissalGraceMs: 50 })
+    const { advance, told, tool, ask, store } = await setUp({ dismissalGraceMs: 50 })
     const child = ask("ses_child")
     await settle()
 
@@ -729,51 +745,55 @@ describe("the question tool of a spawned session", () => {
     await exitOf(child)
     await settle()
     expect(notices(told, "answered")).toEqual([])
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    expect(hub.questions.closingWaiters.size).toBe(1)
+    await advance(49)
+    expect(notices(told, "answered")).toEqual([])
+    await advance(1)
 
     expect(notices(told, "answered")[0].text).toContain('answered="dismissed" request="question_1"')
     expect(store.has("question/question_1")).toBe(false)
+    expect(hub.questions.closingWaiters.size).toBe(0)
   })
 
   test("a shutdown is judged by the clock in the relay's ports: one reported longer than the grace before a dismissal does not count, one within it does", async () => {
-    const { clock, store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 50 })
+    const { advance, store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 50 })
     shutDown("/repo")
-    clock.now += 51
+    await advance(51)
     const first = ask("ses_child")
     await settle()
     formOf(tool, "ses_child").dismiss()
     await exitOf(first)
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    await advance(80)
     expect(notices(told, "answered")[0].text).toContain('answered="dismissed" request="question_1"')
     expect(store.has("question/question_1")).toBe(false)
 
     shutDown("/repo")
-    clock.now += 50
+    await advance(50)
     const second = ask("ses_child")
     await settle()
     formOf(tool, "ses_child").dismiss()
     await exitOf(second)
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    await advance(80)
     expect(notices(told, "answered")).toHaveLength(1)
     expect(store.has("question/question_2")).toBe(true)
   })
 
   test("a shutdown reported without a location counts for every location", async () => {
-    const { store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 100 })
+    const { advance, store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 100 })
     const child = ask("ses_child")
     await settle()
     formOf(tool, "ses_child").dismiss()
     await exitOf(child)
     await settle()
     shutDown()
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await advance(150)
 
     expect(notices(told, "answered")).toEqual([])
     expect(store.has("question/question_1")).toBe(true)
   })
 
   test("the location a dismissal is judged by is the one the call runs in, not the one recorded for the session", async () => {
-    const { ports, store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 100 })
+    const { advance, ports, store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 100 })
     await record(ports.storage, { sessionID: "ses_child", parentID: "ses_parent", title: "Fix the bug", directory: "/worktree", isolated: true, createdAt: 1 })
     const first = ask("ses_child")
     await settle()
@@ -781,7 +801,7 @@ describe("the question tool of a spawned session", () => {
     await exitOf(first)
     await settle()
     shutDown("/worktree")
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await advance(150)
     expect(notices(told, "answered")[0].text).toContain('answered="dismissed" request="question_1"')
     expect(store.has("question/question_1")).toBe(false)
 
@@ -791,13 +811,13 @@ describe("the question tool of a spawned session", () => {
     await exitOf(second)
     await settle()
     shutDown("/repo")
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await advance(150)
     expect(notices(told, "answered")).toHaveLength(1)
     expect(store.has("question/question_2")).toBe(true)
   })
 
   test("an unload after the grace, while the notice to the top session hangs, still makes the dismissal a cut-off", async () => {
-    const { ports, store, told, tool, ask, unload } = await setUp({ dismissalGraceMs: 30, relayWaitMs: 200 })
+    const { advance, ports, store, told, tool, ask, unload } = await setUp({ dismissalGraceMs: 30, relayWaitMs: 200 })
     const synthetic = ports.session.synthetic
     ;(ports.session as any).synthetic = () => new Promise(() => undefined)
     const child = ask("ses_child")
@@ -806,9 +826,9 @@ describe("the question tool of a spawned session", () => {
 
     formOf(tool, "ses_child").dismiss()
     await exitOf(child)
-    await new Promise((resolve) => setTimeout(resolve, 60))
+    await advance(60)
     unload()
-    await new Promise((resolve) => setTimeout(resolve, 250))
+    await advance(250)
 
     expect(told).toEqual([])
     expect(store.has("question/question_1")).toBe(true)
@@ -816,14 +836,14 @@ describe("the question tool of a spawned session", () => {
   })
 
   test("a location loading again within the grace forgets its shutdown: a dismissal there is the person's", async () => {
-    const { ports, store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 100 })
+    const { advance, ports, store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 100 })
     shutDown("/repo")
     const leave = joinRelay(ports)
     const child = ask("ses_child")
     await settle()
     formOf(tool, "ses_child").dismiss()
     await exitOf(child)
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await advance(150)
 
     expect(notices(told, "answered")[0].text).toContain('answered="dismissed" request="question_1"')
     expect(store.has("question/question_1")).toBe(false)
@@ -831,7 +851,7 @@ describe("the question tool of a spawned session", () => {
   })
 
   test("a location closing while OpenCode keeps running: an instance still loaded tells the parent a little later", async () => {
-    const { ports, told, tool, ask, unload } = await setUp({ closingGraceMs: 30 })
+    const { advance, ports, told, tool, ask, unload } = await setUp({ closingGraceMs: 30 })
     const elsewhere: any[] = []
     const leave = joinRelay({ ...ports, session: { synthetic: async (input: any) => (elsewhere.push(input), { id: "msg" }) } as any })
     const child = ask("ses_child")
@@ -840,7 +860,7 @@ describe("the question tool of a spawned session", () => {
     unload()
     formOf(tool, "ses_child").dismiss()
     await exitOf(child)
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    await advance(80)
 
     expect(told).toHaveLength(1)
     expect(elsewhere).toHaveLength(1)
@@ -1039,8 +1059,46 @@ describe("the question tool of a spawned session", () => {
     expect(told.filter((item) => item.sessionID === "ses_child").map((item) => item.text)).toEqual([expect.stringContaining('"Which greeting?"="Hey"')])
   })
 
+  test("an answer waits for one that another copy of the plugin passes on, and is not passed on again when that one went through", async () => {
+    const { ports, told, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    // A copy loaded beside this one, a release before the hub say, passes an answer on: it shows in the shared state only.
+    let passed!: () => void
+    hub.questions.passing.set("question_1", new Promise<void>((resolve) => (passed = resolve)))
+    let answered: unknown
+    void answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }).then((result) => (answered = result))
+    await settle()
+    expect(answered).toBeUndefined()
+
+    hub.questions.answered.add("question_1")
+    hub.questions.passing.delete("question_1")
+    passed()
+    await settle()
+
+    expect(answered).toMatchObject({ answered: false })
+    expect(told.filter((item) => item.sessionID === "ses_child")).toEqual([])
+    await Effect.runPromise(Fiber.interrupt(child))
+  })
+
+  test("an answer gives up after the wait behind one that another copy passes on and that hangs", async () => {
+    const { ports, ask, advance } = await setUp({ passingWaitMs: 30 })
+    const child = ask("ses_child")
+    await settle()
+    hub.questions.passing.set("question_1", new Promise(() => undefined))
+    let failed: unknown
+    void answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }).catch((error) => (failed = error))
+    await advance(29)
+    expect(failed).toBeUndefined()
+
+    await advance(1)
+    expect(String(failed)).toBe("Error: another answer to question_1 is still being passed on; try again in a while.")
+    hub.questions.passing.delete("question_1")
+    await Effect.runPromise(Fiber.interrupt(child))
+  })
+
   test("an answer does not wait for ever behind one that hangs", async () => {
-    const { ports, told, ask } = await setUp({ passingWaitMs: 30 })
+    const { ports, told, ask, advance } = await setUp({ passingWaitMs: 30 })
     const child = ask("ses_child")
     await settle()
     await Effect.runPromise(Fiber.interrupt(child))
@@ -1053,9 +1111,11 @@ describe("the question tool of a spawned session", () => {
     const input = { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }
 
     void answerQuestion(ports, "ses_parent", input)
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await advance(5)
     // Behind it, an answer waits until the hung one gives way, and then goes through.
-    expect(await answerQuestion(ports, "ses_parent", { ...input, answers: ["Hey"] })).toMatchObject({ answered: true, by: "message" })
+    const second = answerQuestion(ports, "ses_parent", { ...input, answers: ["Hey"] })
+    await advance(25)
+    expect(await second).toMatchObject({ answered: true, by: "message" })
     expect(told.at(-1).text).toContain('"Which greeting?"="Hey"')
   })
 
@@ -1147,7 +1207,7 @@ describe("the question tool of a spawned session", () => {
   })
 
   test("the top session's answer reaches the call while the notice to the parent hangs, and the record goes once that gives way", async () => {
-    const { ports, store, tool, ask } = await setUp({ relayWaitMs: 30 })
+    const { advance, ports, store, tool, ask } = await setUp({ relayWaitMs: 30 })
     const synthetic = ports.session.synthetic
     ;(ports.session as any).synthetic = () => new Promise(() => undefined)
     const child = ask("ses_child")
@@ -1160,7 +1220,7 @@ describe("the question tool of a spawned session", () => {
     const exit = await exitOf(child)
     expect(Exit.isSuccess(exit) && exit.value.output).toEqual({ answers: [["Hi"]] })
     expect(tool.cancelled).toHaveLength(1)
-    await new Promise((resolve) => setTimeout(resolve, 60))
+    await advance(60)
     expect(store.has("question/question_1")).toBe(false)
     ;(ports.session as any).synthetic = synthetic
   })
@@ -1348,3 +1408,23 @@ describe("noticeCutOff", () => {
     expect(kept).not.toContain(`question/question_${MAX_STORED}x`)
   })
 })
+
+describe("the relay's runtime", () => {
+  test("run settles as the effect ends, by the system clock unless a test sets another", async () => {
+    const started = Date.now()
+    expect(await run(Effect.as(Effect.sleep(5), "slept"))).toBe("slept")
+    expect(Date.now() - started).toBeGreaterThanOrEqual(4)
+    expect(await run(Effect.as(Effect.sleep(0), "at once"))).toBe("at once")
+    await expect(run(Effect.fail(new Error("failed")))).rejects.toThrow("failed")
+  })
+
+  test("background reports a failure, and not an interruption by stopRelay", async () => {
+    const failed: unknown[] = []
+    await background(Effect.fail(new Error("failed")), (error) => failed.push(error))
+    const pending = background(Effect.never, (error) => failed.push(error))
+    await stopRelay()
+    await pending
+    expect(failed.map(String)).toEqual(["Error: failed"])
+  })
+})
+

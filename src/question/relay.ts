@@ -267,6 +267,10 @@ const linkedCallFailed = (ports: QuestionPorts, linked: Question, cause: Cause.C
     } else if (!linked.call && shared.questions.get(linked.requestID) === linked) yield* Effect.promise(() => tellCutOff(ports, linked, "stopped"))
   })
 
+/** Logs that what happened to a linked call could not be passed on. */
+const notPassedOn = (ports: QuestionPorts, linked: Question) => (error: unknown) =>
+  ports.log(`courier question: could not pass on what happened to ${linked.requestID}: ${String(error)}`)
+
 /**
  * The question call of a session that a waiting question was relayed to, asking the person the
  * same: what they choose is passed on, and the call is withdrawn if the question is settled first.
@@ -296,9 +300,7 @@ function linking(ports: () => QuestionPorts | undefined, directory: string, ask:
             // Unloaded: OpenCode is closing the location, which withdraws the form; nobody dismissed it.
             if (Exit.isSuccess(exit) || !loaded()) return
             // Not waited for, as in asking.
-            void background(linkedCallFailed(current, linked, exit.cause, loaded, directory), (error) =>
-              current.log(`courier question: could not pass on what happened to ${linked.requestID}: ${String(error)}`),
-            )
+            void background(linkedCallFailed(current, linked, exit.cause, loaded, directory), notPassedOn(current, linked))
           }),
         ),
       )

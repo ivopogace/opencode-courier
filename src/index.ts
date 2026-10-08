@@ -11,7 +11,7 @@ import { pendingOf, type AnswerPorts } from "./relay.js"
 import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
 import { pruneExpired } from "./roster.js"
 import { addTools, type ToolPorts } from "./tools.js"
-import { handOver, watchForHub, type WatchPorts, type WatchState } from "./watch.js"
+import { watchFromHub, type WatchPorts, type WatchState } from "./watch.js"
 import { builtVersions, versionNotice } from "./version.js"
 import { listen, readConfig, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
@@ -173,22 +173,19 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
       now: questionPorts.now,
       log: later.log,
     }
-    const member = {
+    // The hub's subscriptions to OpenCode's events, one and a standby, start with this copy's watcher.
+    watchFromHub(hub, watchState)
+    const leaveHub = join({
       directory: ctx.location.directory,
       permission: ctx.permission,
       later,
       watch: watchPorts,
       questions: questionPorts,
       log,
-    }
-    const leaveHub = join(member)
-    // The hub's subscriptions to OpenCode's events, one active and one standby: the second instance
-    // to load starts the standby, and when one's instance unloads, another instance starts its replacement.
-    watchForHub(hub, watchState)
+    })
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
       leaveHub()
-      handOver(hub, member, watchState)
       if (relay.ports === questionPorts) relay.ports = undefined
       leaveRelay()
       await leave?.()

@@ -257,41 +257,17 @@ export async function watchChildren(ports: WatchPorts, state: WatchState, signal
   }
 }
 
-/** How many subscriptions to OpenCode's events a hub keeps, each through another member. */
-export const WATCHERS = 2
-
 /**
- * Follows OpenCode's events for the hub through up to `WATCHERS` members other than `leaving`, the
- * latest to join first, starting a subscription through each that has none until there are as many.
- * Every instance in the process is sent every event, so one subscription would serve them all; the
- * second is a standby, already connected when the first one's member leaves, so no event goes
- * unseen then. Both handle every event, and the claim sets tell each once. The latest members,
- * since during a reload, which closes every location and loads it again, a newly loaded one is the
- * likeliest to stay.
+ * Makes the hub start its subscriptions to OpenCode's events with this copy's watcher, the copy loaded
+ * last's, as after an update; `join` starts them. Every instance in the process is sent every event,
+ * so one subscription would serve them all; the second is a standby, already connected when the
+ * first one's member leaves, so no event goes unseen then. Both handle every event, and the claim
+ * sets tell each once. Like any (re)subscription, a new one relays the requests already pending,
+ * which the claim sets tell once too.
  */
-export function watchForHub(hub: Pick<Hub, "members" | "watchers">, state: WatchState, retryMs = RESUBSCRIBE_MS, leaving?: Member) {
-  const watchers = (hub.watchers ??= [])
-  const watching = new Set(watchers.map((watcher) => watcher.member))
-  for (const member of [...hub.members].reverse()) {
-    if (watchers.length >= WATCHERS) return
-    if (member === leaving || watching.has(member)) continue
+export function watchFromHub(hub: Pick<Hub, "subscribe">, state: WatchState, retryMs = RESUBSCRIBE_MS) {
+  hub.subscribe = (member: Member) => {
     const stop = new AbortController()
-    watchers.push({ member, stop, done: watchChildren(member.watch, state, stop.signal, retryMs) })
+    return { member, stop, done: watchChildren(member.watch, state, stop.signal, retryMs) }
   }
-}
-
-/**
- * Called when `member` leaves the hub: when one of the hub's subscriptions runs through it, a new
- * one starts through another member before it ends, while the other subscription, already
- * connected, keeps following the events, so none goes unseen and the question relay's count of
- * watchers never drops to none. Like any (re)subscription, the new one relays the requests already
- * pending, which the claim sets tell once.
- */
-export function handOver(hub: Pick<Hub, "members" | "watchers">, member: Member, state: WatchState, retryMs = RESUBSCRIBE_MS) {
-  const watchers = hub.watchers ?? []
-  const index = watchers.findIndex((watcher) => watcher.member === member)
-  if (index < 0) return
-  const [watcher] = watchers.splice(index, 1)
-  watchForHub(hub, state, retryMs, member)
-  watcher!.stop.abort()
 }

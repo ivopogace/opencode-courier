@@ -201,6 +201,9 @@ const realTimers: Timers = {
   stop: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
 }
 
+/** How many subscriptions to OpenCode's events a hub keeps, each through another member: one, and a standby. */
+export const WATCHERS = 2
+
 /** One of the hub's subscriptions to OpenCode's events: the member whose ports it runs through, and how it ends. */
 export interface Watcher {
   readonly member: Member
@@ -218,7 +221,12 @@ export interface Hub {
    * The hub's subscriptions to OpenCode's events, each through another member: two while two members
    * are loaded, so one is always connected when the other's member leaves.
    */
-  watchers?: Watcher[]
+  readonly watchers: Watcher[]
+  /**
+   * Starts a subscription through a member, by the copy of the plugin that set it last; until one
+   * has, the hub follows no events.
+   */
+  subscribe?: (member: Member) => Watcher
   /** The ids of the `courier_later` messages being delivered. */
   readonly claimed: Set<string>
   /** The events handled, and the permission requests a session was told about or that were answered first. */
@@ -243,7 +251,9 @@ export interface Opened {
    * Adds a loaded instance to the hub and its permission domain to `locations`; returns its leave,
    * which takes both out again. The first instance to join logs a hub of another version found
    * under `HUB_KEY`. An instance joining a hub without members starts the scheduler's loop, with a
-   * tick at once; the last one to leave stops it.
+   * tick at once; the last one to leave stops it. An instance joining while the hub has fewer than
+   * `WATCHERS` subscriptions to OpenCode's events starts one through itself; when one leaves that
+   * has one, another member without one starts its replacement before it ends.
    */
   readonly join: (member: Member) => () => void
 }
@@ -274,6 +284,7 @@ export function open(registry: Registry, timers: Timers = realTimers): Opened {
     version: HUB_VERSION,
     members: new Set(),
     scheduler: {},
+    watchers: [],
     claimed: shared("claimed", () => new Set<string>()),
     watched: shared<Omit<WatchState, "forms">>("watched", () => ({ seen: new Set(), waiting: new Set(), answered: new Set() })),
     forms: shared<FormsTold>("forms", () => ({ told: new Map(), settled: new Set() })),
@@ -304,6 +315,16 @@ export function open(registry: Registry, timers: Timers = realTimers): Opened {
     }
   }
 
+  // Subscriptions through the earliest members without one, the longest loaded, until there are
+  // `WATCHERS`; never through `leaving`.
+  const watch = (leaving?: Member) => {
+    const watching = new Set(hub.watchers.map((watcher) => watcher.member))
+    for (const member of hub.members) {
+      if (hub.watchers.length >= WATCHERS || !hub.subscribe) return
+      if (member !== leaving && !watching.has(member)) hub.watchers.push(hub.subscribe(member))
+    }
+  }
+
   const join = (member: Member) => {
     if (skew && !hub.skewLogged) {
       hub.skewLogged = true
@@ -320,9 +341,18 @@ export function open(registry: Registry, timers: Timers = realTimers): Opened {
       scheduler.timer = timers.every(() => void hub.scheduler.tick?.(), TICK_MS)
       void tick()
     }
+    watch()
     return () => {
       hub.members.delete(member)
       hub.locations.delete(member)
+      // The other subscription, already connected, follows the events meanwhile; this one is
+      // replaced before it ends, so the question relay's count of watchers never drops to none.
+      const index = hub.watchers.findIndex((watcher) => watcher.member === member)
+      if (index >= 0) {
+        const [leaving] = hub.watchers.splice(index, 1)
+        watch(member)
+        leaving!.stop.abort()
+      }
       if (hub.members.size > 0 || scheduler.timer === undefined) return
       timers.stop(scheduler.timer)
       scheduler.timer = undefined

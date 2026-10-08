@@ -382,15 +382,17 @@ published in between. The hub therefore keeps two, through two instances: the fi
 load starts one, the second a standby, and later ones none. Both handle every event, and the claim
 sets tell each one once, as they did when every instance followed the events. When the instance of
 either one unloads, the other, already connected, keeps following the events, and a new
-subscription starts through the instance that joined last among those without one (during a
-reload, which closes every location and loads it again, a newly loaded one), before the old one is
-stopped. So no event goes unseen in a hand-over, the question relay's count of watchers never drops
-to none, and no question is taken as missed. Like any (re)subscription, the new one relays the
-permission requests already pending, in every loaded location; the claims tell each once. With one
-instance loaded there is no standby, and when the last one unloads, the subscription ends, and the
-next instance to load starts one. Each subscription runs the code of the copy whose instance started
-it. A copy before the hub still follows the events with its own watcher, once per instance, beside
-the hub's; the claim sets keep each event to one notice.
+subscription starts through the instance that joined first among those without one, the longest
+loaded, before the old one is stopped. So no event goes unseen in a hand-over, the question relay's
+count of watchers never drops to none, and no question is taken as missed. After a reload, which
+closes every location and loads it again, both run through new instances, the only ones left.
+Like any (re)subscription, a new one relays the permission requests already pending, in every
+loaded location; the claims tell each once. With one instance loaded there is no standby, and when
+the last one unloads, the subscription ends, and the next instance to load starts one. As with the
+scheduler's tick, a subscription starts with the watcher of the copy whose instance joined last, so
+after an update the new copy's code takes over as the old copy's instances unload. A copy before the
+hub still follows the events with its own watcher, once per instance, beside the hub's; the claim
+sets keep each event to one notice.
 
 The hub is per process. It does not reach a second OpenCode server on the same data directory, so
 it does not prevent the duplicates described next; a fix for those (an owner key with an expiry in

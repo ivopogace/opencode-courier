@@ -21,11 +21,10 @@ import {
   reportFailure,
   reportForm,
   reportFormSettled,
-  handOver,
   relayPending,
   reportReplied,
   watchChildren,
-  watchForHub,
+  watchFromHub,
   type ExecutionFailed,
   type WatchPorts,
 } from "../src/watch.js"
@@ -638,19 +637,18 @@ describe("the hub's subscriptions: one active, one standby", () => {
     return { joined, ports, sent, subscriptions: () => subscriptions, ended: () => ended }
   }
 
-  /** Joins `member` and starts what the hub then needs, as a loading instance does; returns its unload. */
+  /** Loads `member` as an instance does, with this copy's watcher; returns its unload, which settles once its subscription, if any, has ended. */
   function load(opened: ReturnType<typeof open>, loaded: ReturnType<typeof member>, state = fresh()) {
+    watchFromHub(opened.hub, state, 1)
     const leave = opened.join(loaded.joined)
-    watchForHub(opened.hub, state, 1)
     return () => {
-      const done = opened.hub.watchers?.find((watcher) => watcher.member === loaded.joined)?.done
+      const done = opened.hub.watchers.find((watcher) => watcher.member === loaded.joined)?.done
       leave()
-      handOver(opened.hub, loaded.joined, state, 1)
       return done ?? Promise.resolve()
     }
   }
 
-  const watchingThrough = (hub: Hub) => (hub.watchers ?? []).map((watcher) => watcher.member)
+  const watchingThrough = (hub: Hub) => hub.watchers.map((watcher) => watcher.member)
 
   test("one instance gives one subscription and no standby; a second starts the standby, a third neither", async () => {
     resetHub()
@@ -680,7 +678,7 @@ describe("the hub's subscriptions: one active, one standby", () => {
     resetHub()
   })
 
-  test("when the active one's instance leaves, the standby keeps following and a new standby starts, the latest instance first", async () => {
+  test("when the first one's instance leaves, the standby keeps following and a new one starts, through the earliest instance without one", async () => {
     resetHub()
     const opened = open({}, idle)
     const state = fresh()
@@ -711,25 +709,40 @@ describe("the hub's subscriptions: one active, one standby", () => {
     resetHub()
   })
 
-  test("when the standby's instance leaves, another starts, never through the instance leaving", async () => {
+  test("when the standby's instance leaves, another starts", async () => {
     resetHub()
     const opened = open({}, idle)
     const [a, b, c] = [member("a"), member("b"), member("c")]
     const unloadA = load(opened, a)
-    const leaveB = opened.join(b.joined)
-    watchForHub(opened.hub, fresh(), 1)
+    const unloadB = load(opened, b)
     const unloadC = load(opened, c)
-    const standby = opened.hub.watchers![1]!
 
-    // Even called before the instance has left the hub.
-    handOver(opened.hub, b.joined, fresh(), 1)
-    leaveB()
-    await standby.done
+    await unloadB()
 
     expect(watchingThrough(opened.hub)).toEqual([a.joined, c.joined])
-    expect(b.subscriptions()).toBe(1)
+    expect([b.subscriptions(), b.ended(), c.subscriptions()]).toEqual([1, 1, 1])
     await unloadA()
     await unloadC()
+    resetHub()
+  })
+
+  test("a subscription started after an update runs the watcher of the copy loaded last", async () => {
+    resetHub()
+    const opened = open({}, idle)
+    const [a, b, c] = [member("a"), member("b"), member("c")]
+    const unloadA = load(opened, a)
+    const unloadB = load(opened, b)
+    let newer = 0
+    const subscribe = opened.hub.subscribe!
+    opened.hub.subscribe = (joined) => (newer++, subscribe(joined))
+    const leaveC = opened.join(c.joined)
+
+    await unloadA()
+
+    expect(newer).toBe(1)
+    expect(watchingThrough(opened.hub)).toEqual([b.joined, c.joined])
+    await unloadB()
+    leaveC()
     resetHub()
   })
 

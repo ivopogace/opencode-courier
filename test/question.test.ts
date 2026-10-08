@@ -1069,7 +1069,7 @@ describe("the question tool of a spawned session", () => {
     let answered: unknown
     void answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
       .then((result) => (answered = result))
-      .catch(() => undefined)
+      .catch((error) => (answered = error))
     await settle()
     expect(answered).toBeUndefined()
 
@@ -1430,7 +1430,7 @@ describe("the relay's runtime", () => {
     expect(failed.map(String)).toEqual(["Error: failed"])
   })
 
-  test("a sleep longer than a timer takes is slept in parts, not cut short", async () => {
+  test("a sleep longer than a timer takes starts without building every part first, and is not cut short at once", async () => {
     const failed: unknown[] = []
     let woke = false
     const pending = background(Effect.andThen(Effect.sleep(1e15), Effect.sync(() => (woke = true))), (error) => failed.push(error))

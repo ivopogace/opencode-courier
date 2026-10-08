@@ -443,6 +443,17 @@ for type in $(jq -r '.[]' <<<"$probe_types"); do
     "$(jq -r --arg type "$type" --argjson instances "$instances" '(.[$type] // []) | length > 0 and all(. == $instances)' <<<"$delivery")"
 done
 
+# The hub follows OpenCode's events once, through one location's instance. Reloading shuts every
+# location down and builds it again, so each instance unloads and a new one loads: the
+# subscription is handed over, or started again by the first new instance, and still tells a
+# child's request once.
+echo "after OpenCode reloads every location, a child's permission request still reaches its parent once"
+check "every location reloads" "$([ "$(person location/reload)" = 204 ] && echo true || echo false)"
+ask_permission isolate
+answered=$(prompt_in "$parent" "COURIER-ANSWER once" | tool_state courier_answer)
+check "courier_answer passed it on" "$(jq -r '.status == "completed" and .metadata.metadata.answered == true' <<<"$answered")"
+check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+
 echo "courier_later wakes the idle parent, with the delay sent as a string as some models do"
 out=$(prompt "COURIER-LATER-STRING 0.05")
 turn_ended=$(now_ms)

@@ -78,6 +78,7 @@ case $SCENARIO in
     ;;
   *) echo "COURIER_SCENARIO must be fanout, permission or question"; exit 1 ;;
 esac
+unset COURIER_OTHER_SERVER
 case ${COURIER_PERSON:-} in
   "") ;;
   other-server) [ "$SCENARIO" = permission ] || { echo "COURIER_PERSON=other-server goes with COURIER_SCENARIO=permission"; exit 1; } ;;
@@ -130,7 +131,8 @@ echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL"
 if [ "${COURIER_PERSON:-}" = other-server ]; then
   # A second server on the same data directory, started once the first is up (two starting at once
   # race to create the database's tables), as in e2e/two-servers.sh.
-  export OTHER="http://127.0.0.1:$OTHER_PORT"
+  OTHER="http://127.0.0.1:$OTHER_PORT"
+  export COURIER_OTHER_SERVER=$OTHER
   (cd "$WORK/project" && exec "$OPENCODE" serve --hostname 127.0.0.1 --port "$OTHER_PORT" --print-logs >>"$WORK/server-b.log" 2>&1 </dev/null) &
   OTHER_PID=$!
   for _ in $(seq 1 30); do curl -sf -u "opencode:$OPENCODE_PASSWORD" "$OTHER/api/info" >/dev/null 2>&1 && break; sleep 1; done

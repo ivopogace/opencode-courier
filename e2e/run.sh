@@ -489,14 +489,13 @@ echo "a scheduled message survives a server restart, delivered once another serv
 out=$(prompt "COURIER-LATER 0.25")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 check "courier_later completed" "$(tool_state courier_later <<<"$out" | jq -r '.status == "completed"')"
-scheduled=$(tool_state courier_later <<<"$out" | jq -r '.metadata.metadata.id')
 check "the scheduler holds the owner key" "$(kv get scheduler/owner | jq -r '(.server | type) == "string" and (.at | type) == "number"')"
 stop_server
 check "and gave it back as the server stopped" "$([ -z "$(kv get scheduler/owner)" ] && echo true || echo false)"
 # Another server on this data directory, as it would have renewed the key 40 s ago: it expires
 # 20 s from now, and until then this server's scheduler leaves the message to it.
 expires=$(($(now_ms) + 20000))
-kv set scheduler/owner "{\"server\":\"another server\",\"at\":$((expires - 60000))}" "later/$scheduled"
+kv set scheduler/owner "{\"server\":\"another server\",\"at\":$((expires - 60000))}" "roster-by-child/$(tail -1 <<<"$spawned")"
 # As an older version of the plugin writes it: a roster entry with no reverse key.
 unindexed=$(head -1 <<<"$spawned")
 kv remove "roster-by-child/$unindexed"

@@ -5,7 +5,7 @@
 //
 //   bun e2e/kv.ts get roster-by-child/ses_x      # prints the value as JSON, or nothing
 //   bun e2e/kv.ts remove roster-by-child/ses_x   # only while the server is stopped
-//   bun e2e/kv.ts set scheduler/owner '{"server":"other","at":1}' later/later_x   # while the server is stopped
+//   bun e2e/kv.ts set scheduler/owner '{"server":"other","at":1}' roster-by-child/ses_x   # while the server is stopped
 //
 // `set` takes a key the same plugin has stored, whose prefix names the plugin.
 import { Database } from "bun:sqlite"

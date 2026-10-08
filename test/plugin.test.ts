@@ -319,7 +319,7 @@ test("a spawned child's permission request reaches its parent, and courier_answe
 
   const late = await tools.get("courier_answer").execute({ sessionID: "ses_child", requestID: "per_1", reply: "once" }, { sessionID: "ses_parent" })
   expect(late.metadata.answered).toBe(false)
-  expect(late.content).toContain("No request per_1 of ses_child is pending in this OpenCode server")
+  expect(late.content).toContain("no request per_1 of ses_child is pending in this OpenCode server")
   await expect(
     tools.get("courier_answer").execute({ sessionID: "ses_child", requestID: "per_1", reply: "once" }, { sessionID: "ses_x" }),
   ).rejects.toThrow("courier_answer failed: ses_child's permission requests go to ses_parent")

@@ -7,7 +7,7 @@
 //   node e2e/real-model-permission.mjs <parentSessionID>
 //
 // Reads SERVER, OPENCODE_PASSWORD, WORK, COURIER_TIMEOUT (seconds to wait at each stage) and
-// COURIER_EXPECT (what the child's command prints). With OTHER set, the URL of a second server on
+// COURIER_EXPECT (what the child's command prints). With COURIER_OTHER_SERVER set, the URL of a second server on
 // the same data directory (COURIER_PERSON=other-server in real-model.sh), the person dismisses the
 // parent's form, if it opened one, and sends "Allow it once." through the other server, so the
 // parent's next turn, and its courier_answer, run there, where the child's request is not pending.
@@ -25,7 +25,7 @@ const work = process.env.WORK
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").trim()
 const ANSWER = "Allow it once."
-const other = process.env.OTHER
+const other = process.env.COURIER_OTHER_SERVER
 
 async function api(path, init = {}, base = server) {
   const response = await fetch(`${base}/api/${path}`, {
@@ -118,7 +118,7 @@ const asked =
 let how = "did not ask"
 let personAt = Infinity
 
-// 2. The person answers, in the form or as a new message; with OTHER, through the other server.
+// 2. The person answers, in the form or as a new message; with COURIER_OTHER_SERVER, through that server.
 let elsewhereSaid = ""
 if (told && !answeredItself && other) {
   if (told.form) {
@@ -226,7 +226,8 @@ const checks = [
 ]
 const notes = [`the parent ${how}`]
 if (other) notes.push(`after courier_answer on the other server, the parent said: ${short(elsewhereSaid, 600)}`)
-if (answers.length > (other ? notPending : passedOn).length) notes.push(`courier_answer was called ${answers.length} time(s), ${passedOn.length} of them as checked`)
+const asChecked = (other ? notPending : passedOn).length
+if (answers.length > asChecked) notes.push(`courier_answer was called ${answers.length} time(s), ${asChecked} of them as checked`)
 // Failed model requests, or a turn whose idle marker (2.0.22) says it failed: a run that fails its
 // checks with any is inconclusive rather than failed. The two are counted apart.
 const providerErrors = [...parent, ...childMessages].filter((message) => message.type === "assistant" && message.error !== undefined)

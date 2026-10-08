@@ -185,10 +185,12 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     })
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
-      leaveHub()
+      // Waits for the scheduler's owner key to be released, so another server takes over at once.
+      const leftHub = leaveHub()
       if (relay.ports === questionPorts) relay.ports = undefined
       leaveRelay()
       await leave?.()
+      await leftHub
     }
   },
 })

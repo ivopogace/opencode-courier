@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
 import type { Server } from "node:http"
 import { hostname } from "node:os"
+import { num, obj, str } from "./json.js"
 import { deliverDue, TICK_MS, type LaterPorts } from "./later.js"
 import type { Asked, Outcome, Withdrawal } from "./notices.js"
 import type { Permissions, Waiting } from "./relay.js"
@@ -236,9 +237,14 @@ interface Owner {
 }
 
 async function readOwner(ports: LaterPorts): Promise<Owner | undefined> {
-  const value = (await ports.storage.get(OWNER_KEY)) as Partial<Owner> | null | undefined
-  return typeof value?.server === "string" && typeof value.at === "number" ? { server: value.server, at: value.at } : undefined
+  const value = obj(await ports.storage.get(OWNER_KEY))
+  const server = str(value.server)
+  const at = num(value.at)
+  return server !== undefined && at !== undefined ? { server, at } : undefined
 }
+
+/** How long an unloading instance waits for the owner key to be released before it lets go. */
+const RELEASE_MS = 2_000
 
 /** Whether a key written at `at` still holds at `now`; one from the future, after the clock went back, holds as long. */
 const holds = (at: number, now: number, ms: number) => Math.abs(now - at) < ms
@@ -295,9 +301,10 @@ export interface Opened {
    * under `HUB_KEY`. An instance joining a hub without members starts the scheduler's loop, with a
    * tick at once; the last one to leave stops it. An instance joining while the hub has fewer than
    * `WATCHERS` subscriptions to OpenCode's events starts one through itself; when one leaves that
-   * has one, another member without one starts its replacement before it ends.
+   * has one, another member without one starts its replacement before it ends. The last leave
+   * settles once the scheduler's owner key is released, or after a moment if storage does not answer.
    */
-  readonly join: (member: Member) => () => void
+  readonly join: (member: Member) => () => Promise<void>
 }
 
 /**
@@ -356,9 +363,19 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     return (await readOwner(ports))?.server === server
   }
 
-  /** Removes the owner key if this server holds it, so another server takes over at its next tick. */
+  /** Renews the owner key if this server holds it fresh: what a tick does, for a tick still delivering. */
+  const renew = async (ports: LaterPorts) => {
+    const held = await readOwner(ports)
+    const now = ports.now()
+    if (held?.server === server && holds(held.at, now, OWNER_RENEW_MS)) await ports.storage.set(OWNER_KEY, { server, at: now })
+  }
+
+  /**
+   * Removes the owner key if this server holds it and the loop is still stopped, so another server
+   * takes over at its next tick; a loop started again meanwhile keeps it.
+   */
   const release = async (ports: LaterPorts) => {
-    if ((await readOwner(ports))?.server === server) await ports.storage.remove(OWNER_KEY)
+    if ((await readOwner(ports))?.server === server && hub.scheduler.timer === undefined) await ports.storage.remove(OWNER_KEY)
   }
 
   // One tick, through the first member still loaded, by the server holding the owner key. The claim
@@ -367,7 +384,13 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
   const tick = async () => {
     const scheduler = hub.scheduler
     const owner = hub.members.values().next().value
-    if (!owner || (scheduler.ticking && hub.members.has(scheduler.ticking))) return
+    const ticking = scheduler.ticking
+    if (ticking && hub.members.has(ticking)) {
+      // The tick under way may deliver for longer than the key holds: it stays renewed meanwhile.
+      void renew(ticking.later).catch((error: unknown) => ticking.log(`courier_later scheduler: ${String(error)}`))
+      return
+    }
+    if (!owner) return
     scheduler.ticking = owner
     try {
       // A loop stopped meanwhile, its members gone, gives the key it may just have written back.
@@ -419,10 +442,13 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
         watch(member)
         leaving!.stop.abort()
       }
-      if (hub.members.size > 0 || scheduler.timer === undefined) return
+      if (hub.members.size > 0 || scheduler.timer === undefined) return Promise.resolve()
       timers.stop(scheduler.timer)
       scheduler.timer = undefined
-      void release(member.later).catch((error: unknown) => member.log(`courier_later scheduler: owner key not released: ${String(error)}`))
+      const released = release(member.later).catch((error: unknown) =>
+        member.log(`courier_later scheduler: owner key not released: ${String(error)}`),
+      )
+      return Promise.race([released, timers.wait(RELEASE_MS)])
     }
   }
   return { hub, join }

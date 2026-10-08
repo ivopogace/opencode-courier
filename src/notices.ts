@@ -127,12 +127,11 @@ export function answerText(result: AnswerResult) {
   // stored where every server on the data directory finds it.
   if (!result.answered && "reply" in result)
     return (
-      `No request ${result.requestID} of ${result.sessionID} is pending in this OpenCode server, so nothing was passed on. ` +
-      "Either it was answered some other way or the session stopped waiting, and the answer is not needed; or it waits " +
-      "in another OpenCode server on the same data directory, which this one cannot reach. Do not message the session " +
-      "about it or answer it again from here. Tell the person their answer " +
-      "was not passed on, and that if the session still waits, its request is in another OpenCode server, where they " +
-      "must answer it, in that session."
+      `Nothing was passed on: no request ${result.requestID} of ${result.sessionID} is pending in this OpenCode server. ` +
+      "Tell the person their answer was not passed on, and why: the request was answered some other way, or the " +
+      "session stopped waiting, and then the answer is not needed; or it waits in another OpenCode server on the same " +
+      "data directory, which this one cannot reach, and then they must answer it there, in that session. Do not message " +
+      "the session about it or answer it again from here."
     )
   if (!result.answered)
     return (

@@ -464,13 +464,17 @@ What #86 changed, on the findings above:
   another server's key is less than 60 s old (`OWNER_EXPIRY_MS`, four ticks); renews its own while
   it is less than 30 s old (`OWNER_RENEW_MS`) and delivers; and otherwise writes its own, waits a
   random 0.5 to 1 s (`OWNER_WAIT_MS` to twice that), reads the key back and delivers only if it
-  still holds it. The loop's last leave removes the key if this server holds it. The key is outside
+  still holds it. A tick that falls due while the last one is still delivering renews the key and
+  skips. The loop's last leave removes the key if this server holds it and the loop has not started
+  again, and the plugin's unload waits up to 2 s for that. The key is outside
   `later/`, so neither this version's nor 0.2.2's scan for messages finds it. Details and the
   remaining race: [Two servers on one data directory](reference.md#two-servers-on-one-data-directory).
-- **`courier_answer` when no loaded location holds the request** says that no request is pending
-  in this OpenCode server and nothing was passed on, and names the three possibilities: answered some
-  other way, the session stopped waiting, or it waits in another OpenCode server on the same data
-  directory, where the person has to answer it in that session.
+- **`courier_answer` when no loaded location holds the request** says that nothing was passed on,
+  since no request is pending in this OpenCode server, has the model tell the person so and name
+  the possibilities (answered some other way, the session stopped waiting, or it waits in another
+  OpenCode server on the same data directory, to be answered there, in that session), and tells it
+  not to message the session about it or answer again from there. Its real-model runs are in
+  [docs/real-model.md](real-model.md#another-server-on-the-same-data-directory-86).
 
 Why these numbers. A tick that renews its key without reading it back first writes a key it may
 have lost: safe only while no other server can have found it expired, so the owner re-takes, with

@@ -290,7 +290,9 @@ export async function watchChildren(ports: WatchPorts, state: WatchState, signal
       if (!signal.aborted) ports.log(`courier watch: event stream broke: ${String(error)}`)
     } finally {
       if (following) eventsLeft()
-      // Closed without waiting: the subscription's own signal has aborted, or the stream ended.
+      // Closed without waiting: the subscription's own signal has aborted, or the stream ended, and
+      // closing the adapter's stream waits on OpenCode's side, which may not answer while a location
+      // closes; the leave that waits for this watcher must not wait for that too.
       void events?.return?.().catch(() => {})
     }
     if (!signal.aborted) await pause(retryMs, signal)

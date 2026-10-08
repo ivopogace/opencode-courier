@@ -999,10 +999,11 @@ describe("a leave", () => {
 })
 
 describe("a tick's end", () => {
-  test("settles when the log of a failure throws, so a last leave does not wait for the bound", async () => {
+  test("settles, and gives back the key, when the log of a failure throws, so a last leave does not wait for the bound", async () => {
     const { timers } = fakeTimers(true)
     const { hub: fresh, join: joinHub } = open({}, timers, "server_a")
-    const later = laterPorts("/a", new Map<string, unknown>([[OWNER_KEY, { server: "server_a", at: 1_000 }]]))
+    const store = new Map<string, unknown>([[OWNER_KEY, { server: "server_a", at: 1_000 }]])
+    const later = laterPorts("/a", store)
     const scanning = deferred<never>()
     const failing: LaterPorts = { ...later, storage: { ...later.storage, scan: () => scanning.promise } as LaterPorts["storage"] }
     const leave = joinHub(
@@ -1016,6 +1017,8 @@ describe("a tick's end", () => {
     scanning.reject(new Error("storage gone"))
     expect(await settledYet(tick.done)).toBe(true)
     expect(await settledYet(left)).toBe(true)
+    // And the key the tick renewed is given back, the loop having stopped.
+    expect(store.has(OWNER_KEY)).toBe(false)
   })
 })
 

@@ -17,7 +17,8 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   top session's linked call); `answer.ts` passes an answer on (`courier_answer`, `deliver`), lists
   and tells about questions, and tidies up on load; `lifecycle.ts` takes the signals watch.ts and
   index.ts send (forms shown, shutdowns, instances joining, events followed) and the waits on them;
-  `shared.ts` the hub's question state and the storage keys; `pure.ts` the pure parts (prompts,
+  `shared.ts` the hub's question state, the storage keys and `anyLoaded`, the instance a cut-off
+  question is told through; `pure.ts` the pure parts (prompts,
   answers, how a call ended, the keys a top session's question is matched by); `runtime.ts` the
   copy's own Effect runtime: the scope its fibers are forked into, and the clock they run by, which
   tests swap for a `TestClock` that `ports.now` reads too. The state's types are in `hub.ts`. Inside

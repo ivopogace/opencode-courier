@@ -20,7 +20,9 @@ type Context = Plugin.Context
  *
  * The hub is versioned by `HUB_VERSION`, not by the package's version: copies whose hub has the
  * same shape share one hub, however far apart their releases, and only a change to the hub's shape
- * (the ports a `Member` carries included) or to the meaning of one of its fields bumps it.
+ * (the ports a `Member` carries included) or to the meaning of one of its fields bumps it. An
+ * optional field that a copy without it gets along without, such as `Member.location` or
+ * `Scheduler.running`, is added without a bump while no release has the hub (the latest is 0.2.2).
  *
  * Version skew: a copy that finds a hub of another version under `opencode-courier.hub` logs that
  * once and runs its own hub under `opencode-courier.hub@<version>`. Whatever its version, a hub
@@ -468,28 +470,29 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     const run: Tick = { member: owner, since, done: new Promise((resolve) => (end = resolve)) }
     scheduler.running = run
     scheduler.ticking = owner
-    // `done` settles however the tick ends, a log that throws included: leaves wait for it.
-    try {
+    // `done` settles however the tick ends, and the key is given back, a log that throws included:
+    // leaves wait for it. A log that throws is not logged again; there is nowhere left to tell.
+    const tell = (message: string) => {
       try {
-        if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner))
-          await deliverDue(owner.later, hub.claimed)
-      } catch (error) {
-        owner.log(`courier_later scheduler: ${String(error)}`)
-      } finally {
-        // A tick past its minute may have been followed by another, whose record stays.
-        if (scheduler.running === run) {
-          scheduler.running = undefined
-          scheduler.ticking = undefined
-        }
-      }
-      // A loop stopped meanwhile, its members gone, gives back the key this tick may have written.
-      if (scheduler.timer === undefined)
-        await release(owner.later).catch((error: unknown) => owner.log(`courier_later scheduler: owner key not released: ${String(error)}`))
-    } catch {
-      // Only the log can have thrown here: there is nothing left to tell.
-    } finally {
-      end()
+        owner.log(message)
+      } catch {}
     }
+    try {
+      if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner))
+        await deliverDue(owner.later, hub.claimed)
+    } catch (error) {
+      tell(`courier_later scheduler: ${String(error)}`)
+    } finally {
+      // A tick past its minute may have been followed by another, whose record stays.
+      if (scheduler.running === run) {
+        scheduler.running = undefined
+        scheduler.ticking = undefined
+      }
+    }
+    // A loop stopped meanwhile, its members gone, gives back the key this tick may have written.
+    if (scheduler.timer === undefined)
+      await release(owner.later).catch((error: unknown) => tell(`courier_later scheduler: owner key not released: ${String(error)}`))
+    end()
   }
 
   // Subscriptions through the earliest members without one, the longest loaded, until there are

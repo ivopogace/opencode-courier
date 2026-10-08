@@ -56,10 +56,11 @@ export const closingSoon = (ports: QuestionPorts, loaded: () => boolean, directo
   })
 
 /**
- * A plugin instance whose ports the relay may use, until the returned function is called. A
- * location loading again forgets the shutdown recorded for it, so a dismissal there is not
- * mistaken for that shutdown. One recorded for every location is left alone, since a dismissal
- * held in another location may still need it; it ages out with the grace.
+ * Adds a plugin instance's ports to `loaded`, which copies of other versions read to tell a cut-off
+ * question through it, until the returned function is called. A location loading again forgets the
+ * shutdown recorded for it, so a dismissal there is not mistaken for that shutdown. One recorded for
+ * every location is left alone, since a dismissal held in another location may still need it; it
+ * ages out with the grace.
  */
 export function joinRelay(ports: QuestionPorts) {
   shared.loaded.add(ports)

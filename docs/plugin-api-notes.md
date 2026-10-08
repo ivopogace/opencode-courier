@@ -191,6 +191,17 @@ a 2.0.24 host before the pin moved, and passed it again after):
   `headers` is re-exported from there under the same name, and the Solid data store gained
   `active()` and `sessions()`. The courier uses none of these.
 
+## Both halves of an Effect plugin share their location object (2026-10-08)
+
+The plugin is an Effect plugin that runs the promise plugin through `fromPromise`, and the question
+relay, in the Effect half, finds the instance's ports in the hub by the location object: the
+promise adapter (`@opencode/plugin/dist/promise/adapter.js`, 2.0.24) builds the promise plugin's
+context with `location: host.location`, the very object the Effect half is handed, so
+`portsAt(host.location)`, called once the promise half's setup has joined the hub, binds the relay to
+the member it joined with, the newest at that location (#79). Were a later adapter
+to copy it, the relay would find no ports and leave every question call unchanged; a pin bump
+re-checks it, and the live suite's question scenarios, which need the relay, would fail.
+
 ## What `plugin add` and loading do with the peer dependency (2026-10-04)
 
 The peer dependency on `@opencode/plugin` is the range of OpenCode versions a release claims to

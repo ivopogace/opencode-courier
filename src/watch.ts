@@ -222,39 +222,90 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
   return []
 }
 
+const ENDED: IteratorReturnResult<undefined> = { done: true, value: undefined }
+
+/**
+ * The events of `events` until it ends or `signal` aborts, whichever comes first; the stream is not
+ * closed. Each wait for the next event listens for the abort only while it waits, so a watcher that
+ * follows events for the life of the process holds nothing per event it has seen.
+ */
+const until = <T>(events: AsyncIterator<T>, signal: AbortSignal): AsyncIterable<T> => ({
+  [Symbol.asyncIterator]: () => ({
+    next: () =>
+      new Promise<IteratorResult<T>>((resolve, reject) => {
+        if (signal.aborted) return resolve(ENDED)
+        const stop = () => resolve(ENDED)
+        signal.addEventListener("abort", stop, { once: true })
+        // Once the signal has aborted, whatever the stream ends this wait with is not wanted.
+        events.next().then(
+          (next) => {
+            signal.removeEventListener("abort", stop)
+            resolve(next)
+          },
+          (error: unknown) => {
+            signal.removeEventListener("abort", stop)
+            reject(error)
+          },
+        )
+      }),
+  }),
+})
+
+/** Relays the requests already pending, kept in `relaying` until done, for the watcher's end to wait for. */
+function relayAlongside(ports: WatchPorts, state: WatchState, relaying: Set<Promise<void>>) {
+  const relayed: Promise<void> = relayPending(ports, state)
+    .catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`))
+    .finally(() => relaying.delete(relayed))
+  relaying.add(relayed)
+}
+
+/** Handles one event, logging a failure rather than ending the watch. */
+function handleLogged(ports: WatchPorts, state: WatchState, event: { readonly type: string; readonly data?: unknown }) {
+  return handle(ports, state, event).catch((error: unknown) => {
+    const data = event.data as { sessionID?: string; form?: { sessionID?: string } } | undefined
+    const sessionID = data?.sessionID ?? data?.form?.sessionID
+    ports.log(`courier watch: could not handle ${event.type} of ${sessionID}: ${String(error)}`)
+  })
+}
+
 /**
  * Follows OpenCode's events until `signal` aborts, telling parents when a spawned child's turn
  * fails, when it waits for a permission or on a form and when that is answered without them, and
  * noting for the question relay the question forms shown, which it waits for, and the locations
- * shutting down, whose withdrawn forms must not pass for dismissals.
+ * shutting down, whose withdrawn forms must not pass for dismissals. Once `signal` aborts it ends
+ * as soon as the event it is handling, and the relay of the requests already pending, are done,
+ * without waiting for the stream to close: an unloading instance's leave waits for that.
  */
 export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
+  const relaying = new Set<Promise<void>>()
   while (!signal.aborted) {
     let following = false
+    let events: AsyncIterator<{ readonly type: string; readonly data?: unknown }> | undefined
     try {
-      const events = ports.event.subscribe({ signal })
+      events = ports.event.subscribe({ signal })[Symbol.asyncIterator]()
       // Question forms shown while no instance followed the events were not seen: released now,
       // and again on the first event, by when the stream is surely connected.
       let missed = eventsFollowed()
       following = true
       // Alongside the new subscription; a request both relays see is relayed once.
-      void relayPending(ports, state).catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`))
-      for await (const event of events) {
+      relayAlongside(ports, state, relaying)
+      for await (const event of until(events, signal)) {
         if (missed) formsMayHaveBeenMissed()
         missed = false
-        await handle(ports, state, event).catch((error: unknown) => {
-          const data = event.data as { sessionID?: string; form?: { sessionID?: string } } | undefined
-          const sessionID = data?.sessionID ?? data?.form?.sessionID
-          ports.log(`courier watch: could not handle ${event.type} of ${sessionID}: ${String(error)}`)
-        })
+        await handleLogged(ports, state, event)
       }
     } catch (error) {
       if (!signal.aborted) ports.log(`courier watch: event stream broke: ${String(error)}`)
     } finally {
       if (following) eventsLeft()
+      // Closed without waiting: the subscription's own signal has aborted, or the stream ended, and
+      // closing the adapter's stream waits on OpenCode's side, which may not answer while a location
+      // closes; the leave that waits for this watcher must not wait for that too.
+      void events?.return?.().catch(() => {})
     }
     if (!signal.aborted) await pause(retryMs, signal)
   }
+  await Promise.allSettled(relaying)
 }
 
 /**

@@ -1,6 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test"
 import { Schema } from "effect"
-import plugin, { courier, type RelaySlot } from "../src/index.js"
+import plugin, { courier } from "../src/index.js"
+import { hub, memberAt, OWNER_KEY, SERVER } from "../src/hub.js"
 import { builtVersions } from "../src/version.js"
 
 const cleanups: Array<() => unknown> = []
@@ -35,6 +36,8 @@ async function setUp(
   options?: Record<string, unknown>,
   permissions: any[] = [],
   app: { name: string; version: string; channel: string } = pinned,
+  // Storage scans outside the scheduler's messages wait for it, as a slow storage's would.
+  hold: Promise<unknown> = Promise.resolve(),
 ) {
   const store = new Map(Object.entries(stored))
   const tools = new Map<string, any>()
@@ -80,9 +83,10 @@ async function setUp(
       get: async (key: string) => store.get(key),
       set: async (key: string, value: unknown) => void store.set(key, value),
       remove: async (key: string) => void store.delete(key),
-      scan: async ({ prefix }: { prefix: string }) => ({
-        entries: [...store].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
-      }),
+      scan: async ({ prefix }: { prefix: string }) => {
+        if (!prefix.startsWith("later/")) await hold
+        return { entries: [...store].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })) }
+      },
     },
     tool: {
       transform: async (callback: (editor: any) => void) => {
@@ -91,10 +95,9 @@ async function setUp(
       },
     },
   }
-  const relay: RelaySlot = {}
-  const cleanup = await courier(relay).setup(ctx as any)
+  const cleanup = await courier().setup(ctx as any)
   if (cleanup) cleanups.push(cleanup)
-  return { tools, calls, store, emit: events.emit, relay, cleanup, subscriptions: () => events.counted.subscriptions }
+  return { tools, calls, store, emit: events.emit, location: ctx.location, cleanup, subscriptions: () => events.counted.subscriptions }
 }
 
 test("OpenCode loads an Effect plugin, which runs the promise one and wraps the question tool", () => {
@@ -103,12 +106,32 @@ test("OpenCode loads an Effect plugin, which runs the promise one and wraps the 
   expect("setup" in plugin).toBe(false)
 })
 
-test("a loaded instance hands the question relay its ports, and takes them back when it unloads", async () => {
-  const { relay } = await setUp()
+test("a loaded instance is found in the hub by its location, its ports in the relay's loaded set, until it unloads", async () => {
+  const { location } = await setUp()
 
-  expect(relay.ports).toBeDefined()
+  const member = memberAt(location)
+  expect(member?.directory).toBe("/repo")
+  expect(hub.questions.loaded.has(member!.questions)).toBe(true)
+  // Another location object, as another instance's, even of the same directory, finds no member.
+  expect(memberAt({ ...location })).toBeUndefined()
   await cleanups.shift()!()
-  expect(relay.ports).toBeUndefined()
+  expect(memberAt(location)).toBeUndefined()
+  expect(hub.questions.loaded.has(member!.questions)).toBe(false)
+})
+
+test("unloading waits for the roster's prune and the cut-off questions' notice still in flight", async () => {
+  let release = () => {}
+  const hold = new Promise<void>((resolve) => (release = resolve))
+  // The owner key this server holds fresh, so the scheduler's first tick ends at once.
+  const { cleanup } = await setUp({ [OWNER_KEY]: { server: SERVER, at: Date.now() } }, undefined, [], pinned, hold)
+  cleanups.pop()
+  let unloaded = false
+  const unloading = Promise.resolve(cleanup!()).then(() => (unloaded = true))
+  await Bun.sleep(20)
+  expect(unloaded).toBe(false)
+  release()
+  await unloading
+  expect(unloaded).toBe(true)
 })
 
 test("on the pinned OpenCode, loading logs nothing about the version", async () => {

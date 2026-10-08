@@ -399,6 +399,33 @@ after an update the new copy's code takes over as the old copy's instances unloa
 hub still follows the events with its own watcher, once per instance, beside the hub's; the claim
 sets keep each event to one notice.
 
+An instance that unloads leaves the hub, and OpenCode, which waits for a plugin's cleanup, waits
+for the work the instance leaves behind, up to 2 s in all, so none of it runs on against a location
+that is closing:
+
+- what it started on loading: the prune of the roster's expired entries, and the notice to top
+  sessions of the questions cut off by an earlier shutdown;
+- a tick of the scheduler under way through it, whether or not it is the last instance: that tick
+  delivers through its storage and sessions until it ends. A tick through another instance is not
+  waited for, except by the last leave, which waits for any tick before it releases the owner key;
+- the subscription to OpenCode's events it ran, stopped once its replacement has started: it ends
+  after the event it is handling, whose notice may be going out, and after the relay of the
+  requests already pending that it started, without waiting for the event stream to close.
+
+The question relay's own work is not waited for: a cut-off question is told to its top session
+after the closing grace, by whichever instance is still loaded then, of any copy, and that has to
+happen after the instance whose call was cut off has gone. Past the 2 s the unload goes on, and
+what is still under way finishes on its own.
+
+The hub's members are the one registry of loaded instances this copy reads. The question relay,
+which wraps OpenCode's question tool from the plugin's Effect half, finds its instance's ports
+there, by the location object OpenCode hands both halves of the instance: once the promise half
+has joined, the relay binds to the member it joined with, the newest at that location, and keeps it
+until it leaves, so an instance loaded later on the same location never takes its place. Every
+copy also keeps its instances' question ports in the `.questions` object's `loaded` set, which a
+release before the hub (0.2.2) reads to pick an instance to tell a cut-off question through; this
+copy reads it only when its hub has no member left, for an instance of such a copy.
+
 The hub is per process. It does not reach a second OpenCode server on the same data directory; the
 owner key described next sits beside it: the hub picks one scheduler per process, the owner key one
 process per data directory.

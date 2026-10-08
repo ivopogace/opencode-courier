@@ -652,6 +652,14 @@ else
 fi
 check "no line says the versions could not be compared" "$(grep -qF "cannot compare the OpenCode version" "$WORK/server.log" && echo false || echo true)"
 
+# The reload, the reinstall and the restarts above unloaded every instance. An instance's unload
+# waits for the work it started (the roster's prune, the notice of cut-off questions, the relay of
+# the requests already pending as its subscription started), so none of it fails against a location
+# that has closed: the lines those failures log are absent.
+echo "the work an unloading instance started finished before its location closed"
+check "no prune, cut-off notice or pending relay failed" \
+  "$(grep -qE "courier roster prune:|courier question: stored questions:|courier watch: could not relay pending requests:" "$WORK/server.log" && echo false || echo true)"
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed; rerun with KEEP=1 to keep the server and model logs"
   exit 1

@@ -30,7 +30,7 @@ import {
   type ToolResult,
 } from "./pure.js"
 import { background, run, within } from "./runtime.js"
-import { isPassing, keyOf, QUESTION_TOOL, shared, storedOf } from "./shared.js"
+import { anyLoaded, isPassing, keyOf, QUESTION_TOOL, shared, storedOf } from "./shared.js"
 
 /**
  * Tells the top session about a question its closing location cut off, after the closing grace of
@@ -39,7 +39,7 @@ import { isPassing, keyOf, QUESTION_TOOL, shared, storedOf } from "./shared.js"
  */
 function tellLater(ports: QuestionPorts, question: Question) {
   const tellNow = Effect.suspend(() => {
-    const later = shared.loaded.values().next().value
+    const later = anyLoaded()
     if (!later || question.call || question.link || shared.questions.get(question.requestID) !== question) return Effect.void
     return Effect.promise(() =>
       tellCutOff(later, question, "restarted").catch((error: unknown) =>

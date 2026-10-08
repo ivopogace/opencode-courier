@@ -5,6 +5,7 @@ import { join as joinPath } from "node:path"
 import {
   HUB_KEY,
   HUB_VERSION,
+  LEAVE_MS,
   OWNER_EXPIRY_MS,
   OWNER_KEY,
   OWNER_RENEW_MS,
@@ -14,6 +15,7 @@ import {
   join,
   open,
   permissions,
+  portsAt,
   resetHub,
   type Member,
   type Timers,
@@ -856,6 +858,192 @@ describe("the owner key", () => {
 
   test("names this server by host, process and the process's start, the same for every copy", () => {
     expect(SERVER).toBe(`${hostname()}:${process.pid}:${performance.timeOrigin}`)
+  })
+})
+
+/** A promise the test settles by hand. */
+function deferred<T = void>() {
+  let resolve: (value: T) => void = () => {}
+  let reject: (error: unknown) => void = () => {}
+  const promise = new Promise<T>((res, rej) => ((resolve = res), (reject = rej)))
+  return { promise, resolve, reject }
+}
+
+/** Whether `promise` has settled by now. */
+async function settledYet(promise: Promise<unknown>) {
+  let settled = false
+  void promise.then(
+    () => (settled = true),
+    () => (settled = true),
+  )
+  await settle()
+  return settled
+}
+
+describe("a leave", () => {
+  // The owner key held fresh by this server, so a tick renews it without the wait `held` timers hold.
+  const owned = () => new Map<string, unknown>([[OWNER_KEY, { server: "server_a", at: 1_000 }]])
+
+  test("waits for the work its member handed over, a failure included, and not for another member's", async () => {
+    const { timers } = fakeTimers(true)
+    const { join: joinHub, track } = open({}, timers, "server_a")
+    const store = owned()
+    const a = member("/a", () => {}, laterPorts("/a", store))
+    const b = member("/b", () => {}, laterPorts("/b", store))
+    const leaveA = joinHub(a)
+    const leaveB = joinHub(b)
+    await settle()
+    const prune = deferred()
+    const notice = deferred()
+    const other = deferred()
+    track(a, prune.promise)
+    track(a, notice.promise)
+    track(b, other.promise)
+
+    const left = leaveA()
+    expect(await settledYet(left)).toBe(false)
+    prune.resolve()
+    expect(await settledYet(left)).toBe(false)
+    notice.reject(new Error("storage gone"))
+    expect(await settledYet(left)).toBe(true)
+    other.resolve()
+    await leaveB()
+  })
+
+  test("of a member with nothing in flight settles at once", async () => {
+    const { timers } = fakeTimers(true)
+    const { join: joinHub, track } = open({}, timers, "server_a")
+    const store = owned()
+    const a = member("/a", () => {}, laterPorts("/a", store))
+    const leaveA = joinHub(a)
+    const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store)))
+    await settle()
+    track(a, Promise.resolve())
+    await settle()
+    expect(await settledYet(leaveA())).toBe(true)
+    await leaveB()
+  })
+
+  test("that is not the last waits for a tick under way through its member, and not for one through another", async () => {
+    const { timers, fire } = fakeTimers(true)
+    const { join: joinHub } = open({}, timers, "server_a")
+    const store = owned()
+    store.set("later/later_1", due("later_1"))
+    const later = laterPorts("/a", store)
+    const delivering = deferred<{ id: string }>()
+    const slow: LaterPorts = { ...later, session: { synthetic: () => delivering.promise } as never }
+    const leaveA = joinHub(member("/a", () => {}, slow))
+    const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store)))
+    const leaveC = joinHub(member("/c", () => {}, laterPorts("/c", store)))
+    await settle()
+
+    // /b runs no tick: its leave does not wait for /a's.
+    expect(await settledYet(leaveB())).toBe(true)
+    const left = leaveA()
+    expect(await settledYet(left)).toBe(false)
+    delivering.resolve({ id: "msg_1" })
+    expect(await settledYet(left)).toBe(true)
+    expect(store.has("later/later_1")).toBe(false)
+    fire()
+    await leaveC()
+  })
+
+  test("waits for the subscription its member ran to end, after the event it is handling", async () => {
+    const { timers } = fakeTimers(true)
+    const { hub: fresh, join: joinHub } = open({}, timers, "server_a")
+    const ended = new Map<string, ReturnType<typeof deferred<void>>>()
+    fresh.subscribe = (m) => {
+      const end = deferred()
+      ended.set(m.directory, end)
+      const stop = new AbortController()
+      return { member: m, stop, done: end.promise }
+    }
+    const store = owned()
+    const leaveA = joinHub(member("/a", () => {}, laterPorts("/a", store)))
+    const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store)))
+    await settle()
+    const leaveC = joinHub(member("/c", () => {}, laterPorts("/c", store)))
+
+    const left = leaveA()
+    // Its replacement, through /c, started before it ends.
+    expect(fresh.watchers.map((watcher) => watcher.member.directory)).toEqual(["/b", "/c"])
+    expect(await settledYet(left)).toBe(false)
+    ended.get("/a")!.resolve()
+    expect(await settledYet(left)).toBe(true)
+    for (const end of ended.values()) end.resolve()
+    await leaveB()
+    await leaveC()
+  })
+
+  test("lets go after LEAVE_MS when its work does not end", async () => {
+    const waits: number[] = []
+    const bound = deferred()
+    const timers: Timers = {
+      every: () => 1,
+      stop: () => {},
+      wait: (ms) => (waits.push(ms), ms === LEAVE_MS ? bound.promise : Promise.resolve()),
+    }
+    const { join: joinHub, track } = open({}, timers, "server_a")
+    const store = owned()
+    const a = member("/a", () => {}, laterPorts("/a", store))
+    const leaveA = joinHub(a)
+    const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store)))
+    await settle()
+    track(a, new Promise(() => {}))
+    const left = leaveA()
+    expect(waits).toEqual([LEAVE_MS])
+    expect(await settledYet(left)).toBe(false)
+    bound.resolve()
+    expect(await settledYet(left)).toBe(true)
+    await leaveB()
+  })
+})
+
+describe("the question relay's binding to its member", () => {
+  test("holds the member that joined last at the location, until it leaves, whoever joins there after", async () => {
+    const location = { directory: "/a" }
+    const first = { ...member("/a"), location, questions: { directory: "/a", which: "first" } } as unknown as Member
+    const second = { ...member("/a"), location, questions: { directory: "/a", which: "second" } } as unknown as Member
+    const leaveFirst = join(first)
+    const firstPorts = portsAt(location)
+    expect(firstPorts()).toBe(first.questions)
+    // A new instance on the same location object while the first is still loaded, as in a reload.
+    const leaveSecond = join(second)
+    const secondPorts = portsAt(location)
+    expect(secondPorts()).toBe(second.questions)
+    expect(firstPorts()).toBe(first.questions)
+
+    await leaveFirst()
+    expect(firstPorts()).toBeUndefined()
+    expect(secondPorts()).toBe(second.questions)
+    await leaveSecond()
+    expect(secondPorts()).toBeUndefined()
+    // Another location object, even of the same directory, finds none.
+    expect(portsAt({ directory: "/a" })()).toBeUndefined()
+  })
+})
+
+describe("a tick's end", () => {
+  test("settles, and gives back the key, when the log of a failure throws, so a last leave does not wait for the bound", async () => {
+    const { timers } = fakeTimers(true)
+    const { hub: fresh, join: joinHub } = open({}, timers, "server_a")
+    const store = new Map<string, unknown>([[OWNER_KEY, { server: "server_a", at: 1_000 }]])
+    const later = laterPorts("/a", store)
+    const scanning = deferred<never>()
+    const failing: LaterPorts = { ...later, storage: { ...later.storage, scan: () => scanning.promise } as LaterPorts["storage"] }
+    const leave = joinHub(
+      member("/a", () => {
+        throw new Error("log gone")
+      }, failing),
+    )
+    await settle()
+    const tick = fresh.scheduler.running!
+    const left = leave()
+    scanning.reject(new Error("storage gone"))
+    expect(await settledYet(tick.done)).toBe(true)
+    expect(await settledYet(left)).toBe(true)
+    // And the key the tick renewed is given back, the loop having stopped.
+    expect(store.has(OWNER_KEY)).toBe(false)
   })
 })
 

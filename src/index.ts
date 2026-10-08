@@ -76,9 +76,9 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
   }
 }
 
-// One set of handled events for every instance in the process, since a copy of another hub
-// version, or one from before the hub, follows the same events with its own watcher beside the hub's,
-// and of the permission requests sessions were told about. The scheduler's claim set is the hub's
+// One set of handled events for every instance in the process, since the hub's two subscriptions,
+// and a copy of another hub version or one from before the hub, are sent the same events, and of
+// the permission requests sessions were told about. The scheduler's claim set is the hub's
 // own business: the hub runs the scheduler once for its members.
 const { watched } = hub
 const watchState: WatchState = { ...watched, forms: hub.forms }
@@ -182,8 +182,8 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
       log,
     }
     const leaveHub = join(member)
-    // One subscription to OpenCode's events for the whole hub, started by the first instance to
-    // load and handed over when the one it runs through unloads.
+    // The hub's subscriptions to OpenCode's events, one active and one standby: the second instance
+    // to load starts the standby, and when one's instance unloads, another instance starts its replacement.
     watchForHub(hub, watchState)
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {

@@ -13,7 +13,7 @@ import {
   type PermissionAsked,
   type PermissionReplied,
 } from "../src/relay.js"
-import { hub as processHub, open, resetHub, type Member } from "../src/hub.js"
+import { hub as processHub, open, resetHub, type Hub, type Member } from "../src/hub.js"
 import { shutdownReportedAt } from "../src/question.js"
 import { record } from "../src/roster.js"
 import {
@@ -616,7 +616,7 @@ describe("watchChildren", () => {
   })
 })
 
-describe("one watcher per hub", () => {
+describe("the hub's subscriptions: one active, one standby", () => {
   /** The scheduler's loop, which joining starts, never ticks here. */
   const idle = { every: () => 0, stop: () => {} }
 
@@ -638,151 +638,115 @@ describe("one watcher per hub", () => {
     return { joined, ports, sent, subscriptions: () => subscriptions, ended: () => ended }
   }
 
-  test("subscribes once, through the first member to join, however many join, and hands over to the latest", async () => {
-    resetHub()
-    const { hub, join } = open({}, idle)
-    const [first, second, third] = [member("a"), member("b"), member("c")]
-    const leaves = [first, second, third].map(({ joined }) => {
-      const leave = join(joined)
-      watchForHub(hub, fresh(), 1)
-      return leave
-    })
+  /** Joins `member` and starts what the hub then needs, as a loading instance does; returns its unload. */
+  function load(opened: ReturnType<typeof open>, loaded: ReturnType<typeof member>, state = fresh()) {
+    const leave = opened.join(loaded.joined)
+    watchForHub(opened.hub, state, 1)
+    return () => {
+      const done = opened.hub.watchers?.find((watcher) => watcher.member === loaded.joined)?.done
+      leave()
+      handOver(opened.hub, loaded.joined, state, 1)
+      return done ?? Promise.resolve()
+    }
+  }
 
-    expect([first.subscriptions(), second.subscriptions(), third.subscriptions()]).toEqual([1, 0, 0])
-    expect(hub.watcher?.member).toBe(first.joined)
+  const watchingThrough = (hub: Hub) => (hub.watchers ?? []).map((watcher) => watcher.member)
+
+  test("one instance gives one subscription and no standby; a second starts the standby, a third neither", async () => {
+    resetHub()
+    const opened = open({}, idle)
+    const [a, b, c] = [member("a"), member("b"), member("c")]
+    const unloadA = load(opened, a)
+    expect(watchingThrough(opened.hub)).toEqual([a.joined])
     expect(processHub.questions.following).toBe(1)
 
-    // A member that does not run the subscription leaves without touching it.
-    leaves[1]!()
-    handOver(hub, second.joined, fresh(), 1)
-    expect(hub.watcher?.member).toBe(first.joined)
-
-    // Then it moves to the member that joined last, and ends with it.
-    const old = hub.watcher!
-    leaves[0]!()
-    handOver(hub, first.joined, fresh(), 1)
-    await old.done
-    expect(hub.watcher?.member).toBe(third.joined)
-    expect([first.ended(), third.subscriptions()]).toEqual([1, 1])
-    const last = hub.watcher!
-    leaves[2]!()
-    handOver(hub, third.joined, fresh(), 1)
-    await last.done
-    expect(hub.watcher).toBeUndefined()
-    expect(processHub.questions.following).toBe(0)
-    resetHub()
-  })
-
-  test("hands the subscription over when its member leaves, subscribing again before the old one ends", async () => {
-    resetHub()
-    const { hub, join } = open({}, idle)
-    const state = fresh()
-    const first = member("a")
-    const second = member("b", [request])
-    await record(second.ports.storage, child())
-    const leaveFirst = join(first.joined)
-    watchForHub(hub, state, 1)
-    const leaveSecond = join(second.joined)
-    watchForHub(hub, state, 1)
-    const old = hub.watcher!
-
-    leaveFirst()
-    handOver(hub, first.joined, state, 1)
-
-    expect(hub.watcher?.member).toBe(second.joined)
-    expect(second.subscriptions()).toBe(1)
-    // The events stay followed throughout: the new subscription counts before the old one ends, so
-    // question forms are not taken as missed.
+    const unloadB = load(opened, b)
+    const unloadC = load(opened, c)
+    expect(watchingThrough(opened.hub)).toEqual([a.joined, b.joined])
+    expect([a.subscriptions(), b.subscriptions(), c.subscriptions()]).toEqual([1, 1, 0])
     expect(processHub.questions.following).toBe(2)
-    await old.done
-    expect(first.ended()).toBe(1)
-    expect(processHub.questions.following).toBe(1)
 
-    // Like any resubscription, the new one relays what is already pending, which it was not sent.
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(second.sent.map((notice: any) => notice.metadata.requestID)).toEqual(["per_1"])
+    // An instance with no subscription leaves without touching them.
+    await unloadC()
+    expect(watchingThrough(opened.hub)).toEqual([a.joined, b.joined])
 
-    const last = hub.watcher!
-    leaveSecond()
-    handOver(hub, second.joined, state, 1)
-    await last.done
+    // The last one to leave stops the last subscription.
+    await unloadA()
+    expect(watchingThrough(opened.hub)).toEqual([b.joined])
+    await unloadB()
+    expect(watchingThrough(opened.hub)).toEqual([])
+    expect([a.ended(), b.ended()]).toEqual([1, 1])
     expect(processHub.questions.following).toBe(0)
     resetHub()
   })
 
-  test("a member joining after the last one left subscribes again", async () => {
+  test("when the active one's instance leaves, the standby keeps following and a new standby starts, the latest instance first", async () => {
     resetHub()
-    const { hub, join } = open({}, idle)
-    watchForHub(hub, fresh(), 1)
-    expect(hub.watcher).toBeUndefined()
-
-    const only = member("a")
-    const leave = join(only.joined)
-    watchForHub(hub, fresh(), 1)
-    expect(only.subscriptions()).toBe(1)
-    const watcher = hub.watcher!
-    leave()
-    handOver(hub, only.joined, fresh(), 1)
-    await watcher.done
-    expect(hub.watcher).toBeUndefined()
-
-    const next = member("b")
-    const leaveNext = join(next.joined)
-    watchForHub(hub, fresh(), 1)
-    expect(hub.watcher?.member).toBe(next.joined)
-    leaveNext()
-    handOver(hub, next.joined, fresh(), 1)
-    await watcher.done
-    resetHub()
-  })
-
-  test("never hands over to the member leaving, even before it has left", async () => {
-    resetHub()
-    const { hub, join } = open({}, idle)
-    const first = member("a")
-    const second = member("b")
-    const leaveFirst = join(first.joined)
-    watchForHub(hub, fresh(), 1)
-    const leaveSecond = join(second.joined)
-    const old = hub.watcher!
-
-    handOver(hub, first.joined, fresh(), 1)
-    leaveFirst()
-
-    expect(hub.watcher?.member).toBe(second.joined)
-    expect(first.subscriptions()).toBe(1)
-    await old.done
-    const last = hub.watcher!
-    leaveSecond()
-    handOver(hub, second.joined, fresh(), 1)
-    await last.done
-    resetHub()
-  })
-
-  test("on its first event, the subscription taken over releases the question calls waiting for their form", async () => {
-    resetHub()
-    const { hub, join } = open({}, idle)
-    const first = member("a")
-    const second = member("b", [], [{ id: "evt_x", type: "session.execution.succeeded", data: { sessionID: "ses_other" } }])
-    const leaveFirst = join(first.joined)
-    watchForHub(hub, fresh(), 1)
-    const leaveSecond = join(second.joined)
+    const opened = open({}, idle)
+    const state = fresh()
+    const [a, b, c] = [member("a"), member("b"), member("c", [request])]
+    await record(c.ports.storage, child())
+    const unloadA = load(opened, a, state)
+    const unloadB = load(opened, b, state)
+    const unloadC = load(opened, c, state)
     let released = false
     processHub.questions.shown.set("ses_child call_1", () => (released = true))
 
-    const old = hub.watcher!
-    leaveFirst()
-    handOver(hub, first.joined, fresh(), 1)
-    // Not at once: the events are still followed, so nothing is taken as missed yet.
-    expect(released).toBe(false)
-    await old.done
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(released).toBe(true)
+    const ended = unloadA()
+    // Never fewer than one subscription following the events, so nothing is taken as missed.
+    expect(watchingThrough(opened.hub)).toEqual([b.joined, c.joined])
+    expect(processHub.questions.following).toBe(3)
+    await ended
+    expect(processHub.questions.following).toBe(2)
+    expect([b.subscriptions(), c.subscriptions()]).toEqual([1, 1])
 
-    const last = hub.watcher!
-    leaveSecond()
-    handOver(hub, second.joined, fresh(), 1)
-    await last.done
+    // The new standby, like any subscription, relays what is already pending, once.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(c.sent.map((notice: any) => notice.metadata.requestID)).toEqual(["per_1"])
+    expect(released).toBe(false)
+
+    await unloadB()
+    await unloadC()
+    expect(processHub.questions.following).toBe(0)
+    resetHub()
+  })
+
+  test("when the standby's instance leaves, another starts, never through the instance leaving", async () => {
+    resetHub()
+    const opened = open({}, idle)
+    const [a, b, c] = [member("a"), member("b"), member("c")]
+    const unloadA = load(opened, a)
+    const leaveB = opened.join(b.joined)
+    watchForHub(opened.hub, fresh(), 1)
+    const unloadC = load(opened, c)
+    const standby = opened.hub.watchers![1]!
+
+    // Even called before the instance has left the hub.
+    handOver(opened.hub, b.joined, fresh(), 1)
+    leaveB()
+    await standby.done
+
+    expect(watchingThrough(opened.hub)).toEqual([a.joined, c.joined])
+    expect(b.subscriptions()).toBe(1)
+    await unloadA()
+    await unloadC()
+    resetHub()
+  })
+
+  test("after a reload, which closes every location and loads it again, both subscriptions run through new instances", async () => {
+    resetHub()
+    const opened = open({}, idle)
+    const old = [member("a"), member("b"), member("c")]
+    const unloads = old.map((loaded) => load(opened, loaded))
+    const fresh_ = [member("a2"), member("b2"), member("c2")]
+    const reloads: Array<() => Promise<void>> = []
+    for (const [index, unload] of unloads.entries()) {
+      await unload()
+      reloads.push(load(opened, fresh_[index]!))
+    }
+    expect(watchingThrough(opened.hub).every((joined) => fresh_.some((loaded) => loaded.joined === joined))).toBe(true)
+    expect(watchingThrough(opened.hub)).toHaveLength(2)
+    for (const reload of reloads) await reload()
     resetHub()
   })
 })

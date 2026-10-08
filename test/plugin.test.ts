@@ -273,22 +273,24 @@ test("a spawned child whose turn fails is reported to its parent", async () => {
   expect(notice.text).toContain("failed: blocked (provider.auth, status 403)")
 })
 
-test("instances follow OpenCode's events once, and the next one takes over when the one following them unloads", async () => {
+test("two instances follow OpenCode's events, one as a standby, and a third takes over when one of them unloads", async () => {
   const request = { id: "per_9", sessionID: "ses_child", action: "shell", resources: ["git push"] }
   const first = await setUp()
-  const second = await setUp({}, undefined, [request])
-  expect([first.subscriptions(), second.subscriptions()]).toEqual([1, 0])
+  const second = await setUp()
+  const third = await setUp({}, undefined, [request])
+  expect([first.subscriptions(), second.subscriptions(), third.subscriptions()]).toEqual([1, 1, 0])
 
-  // The roster is the second instance's storage, which the first does not share in this fake.
-  await second.tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
+  // The roster is the third instance's storage, which the others do not share in this fake.
+  await third.tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
   await first.cleanup!()
   cleanups.splice(cleanups.indexOf(first.cleanup!), 1)
-  expect(second.subscriptions()).toBe(1)
+  expect(third.subscriptions()).toBe(1)
 
-  // Subscribing again relays what is already pending, since the request was asked before.
+  // Subscribing relays what is already pending, since the request was asked before.
   await new Promise((resolve) => setTimeout(resolve, 20))
-  const notice = second.calls.find((call) => call.method === "session.synthetic")!.input
-  expect(notice.text).toContain('<courier from="ses_child" asks="permission" request="per_9">')
+  const notices = third.calls.filter((call) => call.method === "session.synthetic").map((call) => call.input.text)
+  expect(notices).toHaveLength(1)
+  expect(notices[0]).toContain('<courier from="ses_child" asks="permission" request="per_9">')
 })
 
 test("a spawned child's permission request reaches its parent, and courier_answer passes the choice back", async () => {

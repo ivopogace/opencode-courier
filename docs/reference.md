@@ -136,7 +136,7 @@ says so.
 `courier_status` and `courier_children` list the requests a session waits on under `pending`, so a
 parent that has lost the message, after a compaction for example, can still find them. Whenever
 the plugin starts following OpenCode's events, on loading, after its event stream broke and when
-[another location's instance takes the events over](#several-copies-in-one-process), it also relays
+[another location's instance starts a subscription](#several-copies-in-one-process), it also relays
 the requests that spawned sessions already wait on, in every loaded location, so one asked in the
 gap is not missed.
 
@@ -376,27 +376,21 @@ and the hub's loop never deliver the same message twice.
 
 The watcher is such a job too. Every instance in the process is sent every OpenCode event, an
 isolated child's included ([the notes](plugin-api-notes.md#which-plugin-instances-receive-an-isolated-childs-events-2026-10-07)),
-so the hub follows the events once, through the ports of one instance, and handles each event once
-rather than once per instance. Unlike a tick, a subscription lasts, so it is handed over rather than
-picked up by the next tick. The first instance to load starts it. When the one it runs through
-unloads, the hub hands it to the instance that joined last among those still loaded (during a
-reload, which closes every location and loads it again, a newly loaded one): the new one subscribes
-before the old one is stopped, so for a moment both follow the events, and an event both are sent
-is claimed and handled once. An instance is sent only the events published while it is subscribed,
-so the new subscription relays the permission requests already pending, in every loaded location,
-as any resubscription does. The question relay's count of watchers never drops to none during a
-hand-over, so question forms are not taken as missed at once; but the new subscription, on its
-first event, once it is surely connected, relays the questions still waiting for their form to be
-seen, since one shown in the moment between the old stream's end and the new one's start was sent to
-neither (a question still waiting for its permission check is then relayed early, the lesser harm,
-as after any gap). When the last instance unloads, the subscription ends, and the next instance to
-load starts one. The subscription runs the code of the copy that started it or took it over. A copy
-before the hub still follows the events with its own watcher, once per instance, beside the hub's;
-the claim sets keep each event to one notice.
-
-Of the other events published in that moment, none is recovered: a failed turn, a form other than a
-question's shown or settled, or a location shutting down then is not told. With one watcher per
-instance, the other instances' streams covered that moment.
+so one subscription would serve them all; but an instance is sent only the events published while
+it is subscribed, so a subscription started when another one's instance unloads would miss what is
+published in between. The hub therefore keeps two, through two instances: the first instance to
+load starts one, the second a standby, and later ones none. Both handle every event, and the claim
+sets tell each one once, as they did when every instance followed the events. When the instance of
+either one unloads, the other, already connected, keeps following the events, and a new
+subscription starts through the instance that joined last among those without one (during a
+reload, which closes every location and loads it again, a newly loaded one), before the old one is
+stopped. So no event goes unseen in a hand-over, the question relay's count of watchers never drops
+to none, and no question is taken as missed. Like any (re)subscription, the new one relays the
+permission requests already pending, in every loaded location; the claims tell each once. With one
+instance loaded there is no standby, and when the last one unloads, the subscription ends, and the
+next instance to load starts one. Each subscription runs the code of the copy whose instance started
+it. A copy before the hub still follows the events with its own watcher, once per instance, beside
+the hub's; the claim sets keep each event to one notice.
 
 The hub is per process. It does not reach a second OpenCode server on the same data directory, so
 it does not prevent the duplicates described next; a fix for those (an owner key with an expiry in

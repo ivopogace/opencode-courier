@@ -97,10 +97,9 @@ export interface WatchPorts {
 }
 
 /**
- * What every plugin instance in the process shares. A hub follows OpenCode's events once for all its
- * members, but a copy of another hub version, or one from before the hub, follows them too and is
- * sent the same events, and a hand-over overlaps the old subscription with the new one; so an event
- * id is claimed synchronously and handled once. `waiting` holds the permission requests a session was
+ * What every plugin instance in the process shares. A hub follows OpenCode's events through two of
+ * its members, one a standby, and a copy of another hub version, or one from before the hub, follows
+ * them too, all sent the same events; so an event id is claimed synchronously and handled once. `waiting` holds the permission requests a session was
  * told about and has not answered; `answered`, requests answered before anyone was told, so a
  * notice whose roster lookup was overtaken by the answer is not sent. `forms` does the same for
  * the forms of spawned sessions.
@@ -202,7 +201,7 @@ const realTimers: Timers = {
   stop: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
 }
 
-/** The one subscription to OpenCode's events a hub runs: the member whose ports it runs through, and how it ends. */
+/** One of the hub's subscriptions to OpenCode's events: the member whose ports it runs through, and how it ends. */
 export interface Watcher {
   readonly member: Member
   readonly stop: AbortController
@@ -215,8 +214,11 @@ export interface Hub {
   /** The instances loaded now, in the order they joined. */
   readonly members: Set<Member>
   readonly scheduler: Scheduler
-  /** The hub's subscription to OpenCode's events, while a member is loaded to run it. */
-  watcher?: Watcher
+  /**
+   * The hub's subscriptions to OpenCode's events, each through another member: two while two members
+   * are loaded, so one is always connected when the other's member leaves.
+   */
+  watchers?: Watcher[]
   /** The ids of the `courier_later` messages being delivered. */
   readonly claimed: Set<string>
   /** The events handled, and the permission requests a session was told about or that were answered first. */

@@ -5,7 +5,7 @@ import { Cause, Clock, Duration, Effect, Exit, Fiber, Option, Scope } from "effe
 
 const system = Effect.runSync(Clock.clockWith(Effect.succeed))
 
-/** Largest delay a timer takes; a longer one would fire at once. */
+/** Largest delay a timer takes; a longer one would fire at once, so it is slept in parts. */
 const MAX_TIMER_MS = 2_147_483_647
 
 /**
@@ -19,25 +19,29 @@ const live: Clock.Clock = {
   currentTimeNanos: system.currentTimeNanos,
   monotonicTimeNanosUnsafe: () => system.monotonicTimeNanosUnsafe(),
   monotonicTimeNanos: system.monotonicTimeNanos,
-  sleep: (duration) => {
-    const ms = Duration.toMillis(duration)
-    if (ms <= 0) return Effect.yieldNow
-    if (!Number.isFinite(ms)) return Effect.never
-    return Effect.callback<void>((resume) => {
-      const timer = setTimeout(() => resume(Effect.void), Math.min(ms, MAX_TIMER_MS))
-      timer.unref?.()
-      return Effect.sync(() => clearTimeout(timer))
-    })
-  },
+  sleep: (duration) => sleep(Duration.toMillis(duration)),
+}
+
+function sleep(ms: number): Effect.Effect<void> {
+  if (ms <= 0) return Effect.yieldNow
+  if (!Number.isFinite(ms)) return Effect.never
+  const rest = ms > MAX_TIMER_MS ? sleep(ms - MAX_TIMER_MS) : Effect.void
+  return Effect.callback<void>((resume) => {
+    const timer = setTimeout(() => resume(rest), Math.min(ms, MAX_TIMER_MS))
+    timer.unref?.()
+    return Effect.sync(() => clearTimeout(timer))
+  })
 }
 
 let clock: Clock.Clock = live
 /** The fibers the relay starts, which run as long as the process unless a test ends them. */
 let scope = Scope.makeUnsafe()
 
-/** Starts an effect of the relay in a fiber of its own, by the relay's clock, in the relay's scope. */
-const start = <A, E>(effect: Effect.Effect<A, E>) =>
-  Effect.runSync(Effect.forkIn(Effect.provideService(effect, Clock.Clock, clock), scope, { startImmediately: true }))
+/**
+ * Starts an effect of the relay in a fiber of its own, by the relay's clock, in the relay's scope:
+ * at once, up to its first wait, as an async function would.
+ */
+const start = <A, E>(effect: Effect.Effect<A, E>) => Effect.runFork(Effect.provideService(effect, Clock.Clock, clock)).pipe(Fiber.runIn(scope))
 
 /**
  * Runs an effect of the relay in a fiber of its own, by the relay's clock, which is the clock of

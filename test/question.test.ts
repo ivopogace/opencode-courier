@@ -1110,7 +1110,8 @@ describe("the question tool of a spawned session", () => {
     }
     const input = { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }
 
-    void answerQuestion(ports, "ses_parent", input)
+    // Never returns: its notice hangs.
+    void answerQuestion(ports, "ses_parent", input).catch(() => undefined)
     await advance(5)
     // Behind it, an answer waits until the hung one gives way, and then goes through.
     const second = answerQuestion(ports, "ses_parent", { ...input, answers: ["Hey"] })

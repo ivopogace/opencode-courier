@@ -50,10 +50,12 @@ const holding = <A, E>(id: string, ms: number, effect: Effect.Effect<A, E>): Eff
     }),
     (lock) => {
       const taken = Deferred.makeUnsafe<void>()
-      return Effect.timeoutOrElse(lock.semaphore.withPermit(Effect.andThen(Deferred.succeed(taken, undefined), effect)), {
-        duration: ms,
-        orElse: () => (Deferred.isDoneUnsafe(taken) ? Effect.never : Effect.fail(busy(id))),
-      })
+      // Whichever ends first: the effect, or the wait, which fails only if the lock was not taken by then.
+      const late = Effect.andThen(
+        Effect.sleep(ms),
+        Effect.suspend(() => (Deferred.isDoneUnsafe(taken) ? Effect.never : Effect.fail(busy(id)))),
+      )
+      return Effect.raceFirst(lock.semaphore.withPermit(Effect.andThen(Deferred.succeed(taken, undefined), effect)), late)
     },
     (lock) =>
       Effect.sync(() => {

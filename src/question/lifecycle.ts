@@ -45,8 +45,12 @@ export const closingSoon = (ports: QuestionPorts, loaded: () => boolean, directo
       if (closing()) Deferred.doneUnsafe(closed, Exit.succeed(true))
     }
     return Effect.acquireUseRelease(
-      Effect.sync(() => shared.closingWaiters.add(wake)),
-      () => Effect.raceFirst(Deferred.await(closed), Effect.as(Effect.sleep(ms), false)),
+      // Looked at as the waiter is added, so a shutdown cannot come in between unseen.
+      Effect.sync(() => {
+        shared.closingWaiters.add(wake)
+        wake()
+      }),
+      () => (Deferred.isDoneUnsafe(closed) ? Effect.succeed(true) : Effect.raceFirst(Deferred.await(closed), Effect.as(Effect.sleep(ms), false))),
       () => Effect.sync(() => shared.closingWaiters.delete(wake)),
     )
   })

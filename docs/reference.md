@@ -452,7 +452,10 @@ and renews it more than 30 s later, after another has found it expired; or the o
 stalls for a minute while a tick of it is still delivering, so nothing renews its key. A GC pause
 or a storage write held up that long between two calls is what it takes (a write to the shared
 SQLite database can wait for the other process's lock), or a delivery of over a minute that the
-owner's ticks take to hang; the ticks some milliseconds apart that delivered twice before do not. The
+owner's ticks take to hang. So can a delivery still under way when the hub loses track of it: one
+through an instance that has since left, after the next tick has started through another, or one
+run by an older copy of the plugin while a newer copy's ticks renew the key, which they then do not.
+The ticks some milliseconds apart that delivered twice before do not. The
 key's time is the wall clock, which servers on one data directory share; a key written more than
 60 s in the future, after the clock went back, counts as expired.
 

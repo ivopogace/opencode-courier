@@ -203,8 +203,7 @@ export interface Timers {
 const realTimers: Timers = {
   every: (run, ms) => setInterval(run, ms),
   stop: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
-  // Unreferenced, so a wait never keeps the process alive.
-  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms).unref()),
+  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }
 
 /**
@@ -472,11 +471,10 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
       if (hub.members.size > 0 || scheduler.timer === undefined) return Promise.resolve()
       timers.stop(scheduler.timer)
       scheduler.timer = undefined
-      // After this copy's tick under way, which may be writing the key.
-      const released = (async () => {
-        await current?.done
-        await release(member.later)
-      })().catch((error: unknown) => member.log(`courier_later scheduler: owner key not released: ${String(error)}`))
+      // A tick of this copy under way, which may be writing the key, releases it as it ends.
+      const released = (current?.done ?? release(member.later)).catch((error: unknown) =>
+        member.log(`courier_later scheduler: owner key not released: ${String(error)}`),
+      )
       return Promise.race([released, timers.wait(RELEASE_MS)])
     }
   }

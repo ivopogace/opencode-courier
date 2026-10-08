@@ -264,8 +264,8 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
   [Roster](docs/reference.md#roster), [Scheduled messages](docs/reference.md#scheduled-messages).
 - **One OpenCode server per data directory, preferably.** A second server on the same one, such as
   `opencode serve` next to `opencode service`, shares the plugin's storage, where an owner key picks
-  the one server that delivers `courier_later` messages, so each arrives once (a stall of half a
-  second at the wrong moment, or a 0.2.2 copy on the other server, can still deliver one twice). A
+  the one server that delivers `courier_later` messages, so each arrives once (a server stalling
+  at the wrong moment, or a 0.2.2 copy on the other server, can still deliver one twice). A
   `courier_answer` from a turn on the server not running the child does not reach its request; it
   says the request may wait in another server, to be answered there.
   [More](docs/reference.md#two-servers-on-one-data-directory).

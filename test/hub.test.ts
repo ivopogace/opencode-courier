@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
 import { join as joinPath } from "node:path"
 import { HUB_KEY, HUB_VERSION, hub, join, open, permissions, resetHub, type Member, type Timers } from "../src/hub.js"
@@ -40,7 +40,17 @@ const member = (directory: string, log: (message: string) => void = () => {}, la
     log,
   }) as unknown as Member
 
-afterEach(() => resetHub())
+// These members carry no ports to follow OpenCode's events through, so the process's hub starts no
+// subscription while they are joined, whichever test file set its watcher before.
+let subscribe: typeof hub.subscribe
+beforeEach(() => {
+  subscribe = hub.subscribe
+  hub.subscribe = undefined
+})
+afterEach(() => {
+  resetHub()
+  hub.subscribe = subscribe
+})
 
 describe("the hub", () => {
   test("is kept under its key on globalThis, with the claim sets under the keys of the copies before the hub", () => {

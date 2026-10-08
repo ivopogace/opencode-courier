@@ -492,3 +492,9 @@ included. An instance only receives events published while it is subscribed: one
 not see what came before, which is why the watcher relays pending permission requests when it
 (re)subscribes. And `GET /api/plugin?directory=<worktree>` did not boot that worktree's location
 (the server log showed no "location services booted" for it); a session run from the directory did.
+
+What #76 built on this: the hub follows the events through two instances rather than every one, the
+second a standby already subscribed when the first one's location closes, since a subscription
+started then would miss what is published before it connects; and the pending permission requests
+it relays on (re)subscribing are listed in every loaded location, not only its own. See
+[Several copies in one process](reference.md#several-copies-in-one-process).

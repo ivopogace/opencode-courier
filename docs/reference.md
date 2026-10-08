@@ -135,9 +135,10 @@ says so.
 
 `courier_status` and `courier_children` list the requests a session waits on under `pending`, so a
 parent that has lost the message, after a compaction for example, can still find them. Whenever
-the plugin starts following OpenCode's events, on loading and after its event stream broke, it
-also relays the requests that spawned sessions already wait on, so one asked in the gap is not
-missed.
+the plugin starts following OpenCode's events, on loading, after its event stream broke and when
+[another location's instance starts a subscription](#several-copies-in-one-process), it also relays
+the requests that spawned sessions already wait on, in every loaded location, so one asked in the
+gap is not missed.
 
 ## A child that shows a form
 
@@ -241,7 +242,7 @@ and can be answered all the same.
 A question is relayed only once OpenCode's permission check for it has passed: a child whose agent
 may not ask questions (OpenCode's `general` agent, or a `question` rule with `"effect": "deny"`)
 is refused as before, and the parent hears nothing. The plugin learns that a question is on screen
-from OpenCode's events; when no instance of it followed them for a while and one does again, it
+from OpenCode's events; when nothing in the process followed them for a while and something does again, it
 relays every question still waiting for that, since one shown meanwhile was not seen. The child brief tells children to use the
 question tool when the person must decide; a child can still send its question with
 `courier_send` instead, and the parent then passes your answer back with `courier_send`.
@@ -372,6 +373,26 @@ first of them started, and each tick runs the code of the copy whose instance jo
 an update the new copy's delivery code runs, whichever copy's instances it ticks through. A copy before the hub (0.2.2 and earlier) still runs its
 own interval per instance until it unloads; each delivery is claimed in the shared claim set, so it
 and the hub's loop never deliver the same message twice.
+
+The watcher is such a job too. Every instance in the process is sent every OpenCode event, an
+isolated child's included ([the notes](plugin-api-notes.md#which-plugin-instances-receive-an-isolated-childs-events-2026-10-07)),
+so one subscription would serve them all; but an instance is sent only the events published while
+it is subscribed, so a subscription started when another one's instance unloads would miss what is
+published in between. The hub therefore keeps two, through two instances: the first instance to
+load starts one, the second a standby, and later ones none. Both handle every event, and the claim
+sets tell each one once, as they did when every instance followed the events. When the instance of
+either one unloads, the other, already connected, keeps following the events, and a new
+subscription starts through the instance that joined first among those without one, the longest
+loaded, before the old one is stopped. So no event goes unseen in a hand-over, the question relay's
+count of watchers never drops to none, and no question is taken as missed. After a reload, which
+closes every location and loads it again, both run through new instances, the only ones left.
+Like any (re)subscription, a new one relays the permission requests already pending, in every
+loaded location; the claims tell each once. With one instance loaded there is no standby, and when
+the last one unloads, the subscription ends, and the next instance to load starts one. As with the
+scheduler's tick, a subscription starts with the watcher of the copy whose instance joined last, so
+after an update the new copy's code takes over as the old copy's instances unload. A copy before the
+hub still follows the events with its own watcher, once per instance, beside the hub's; the claim
+sets keep each event to one notice.
 
 The hub is per process. It does not reach a second OpenCode server on the same data directory, so
 it does not prevent the duplicates described next; a fix for those (an owner key with an expiry in

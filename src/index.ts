@@ -11,7 +11,7 @@ import { pendingOf, type AnswerPorts } from "./relay.js"
 import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
 import { pruneExpired } from "./roster.js"
 import { addTools, type ToolPorts } from "./tools.js"
-import { watchChildren, type WatchPorts, type WatchState } from "./watch.js"
+import { watchFromHub, type WatchPorts, type WatchState } from "./watch.js"
 import { builtVersions, versionNotice } from "./version.js"
 import { listen, readConfig, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
@@ -76,9 +76,10 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
   }
 }
 
-// One set of handled events for every instance in the process, since every instance may be sent the
-// same event, and of the permission requests sessions were told about. The scheduler's claim set is
-// the hub's own business: the hub runs the scheduler once for its members.
+// One set of handled events for every instance in the process, since the hub's two subscriptions,
+// and a copy of another hub version or one from before the hub, are sent the same events, and of
+// the permission requests sessions were told about. The scheduler's claim set is the hub's
+// own business: the hub runs the scheduler once for its members.
 const { watched } = hub
 const watchState: WatchState = { ...watched, forms: hub.forms }
 
@@ -88,9 +89,9 @@ export interface RelaySlot {
 }
 
 /**
- * The courier tools, webhook receiver and event watcher, as a promise plugin, which joins the hub
- * that runs the scheduler. `relay` receives this instance's ports for the question relay while it
- * is loaded.
+ * The courier tools and webhook receiver, as a promise plugin, which joins the hub that runs the
+ * scheduler and the event watcher. `relay` receives this instance's ports for the question relay
+ * while it is loaded.
  */
 export const courier = (relay: RelaySlot = {}) => Plugin.define({
   id: "courier",
@@ -164,15 +165,16 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     const leaveRelay = joinRelay(questionPorts)
     void noticeCutOff(questionPorts).catch((error: unknown) => questionPorts.log(`courier question: stored questions: ${String(error)}`))
 
-    const watching = new AbortController()
     const watchPorts: WatchPorts = {
       storage: ctx.storage,
       session: ctx.session,
       event: ctx.event,
-      permission: ctx.permission,
+      permissions,
       now: questionPorts.now,
       log: later.log,
     }
+    // The hub's subscriptions to OpenCode's events, one and a standby, start with this copy's watcher.
+    watchFromHub(hub, watchState)
     const leaveHub = join({
       directory: ctx.location.directory,
       permission: ctx.permission,
@@ -181,10 +183,8 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
       questions: questionPorts,
       log,
     })
-    void watchChildren(watchPorts, watchState, watching.signal)
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
-      watching.abort()
       leaveHub()
       if (relay.ports === questionPorts) relay.ports = undefined
       leaveRelay()

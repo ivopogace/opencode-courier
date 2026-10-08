@@ -40,7 +40,7 @@ export interface AnswerInput {
 }
 
 /** A session's pending requests in every location, with the domain holding each; a location that cannot be read gives its error. */
-function listEverywhere(permissions: Iterable<Permissions>, sessionID: string) {
+export function listEverywhere<D extends Pick<Permissions, "list">>(permissions: Iterable<D>, sessionID: string) {
   return Promise.all(
     [...permissions].map((domain) =>
       domain.list({ sessionID }).then(

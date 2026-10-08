@@ -495,23 +495,25 @@ plugin, and storage still takes the write), and that another server's key, plant
 expires.
 
 Results at 2.0.24, the plugin as of #86, runs on 2026-10-08 (same setup as above, ten messages per
-round):
+round). Runs 1 to 3 used an earlier draft: before the review fixes (renewing the key while a tick
+still delivers, releasing it only while the loop is stopped) and with the first wording of the
+`courier_answer` text, which the script's check also matches. Run 4 is the final code:
 
-| | Run 1 | Run 2 | Run 3 |
-|---|---|---|---|
-| `courier_later`, schedulers in step: messages delivered twice | 0 of 10 | 0 of 10 | 0 of 10 |
-| `courier_later`, schedulers half a tick apart: delivered twice | 0 of 10 | 0 of 10 | 0 of 10 |
-| messages never delivered | 0 | 0 | 0 |
-| the owner key held by, in step / B stopped / out of step | B / none / B | A / A / A | A / A / A |
-| notices of the child's permission request | 1 | 1 | 1 |
-| `courier_answer` in a turn on B reaches the request | no, and names another server | no, and names another server | no, and names another server |
-| `courier_answer` in a turn on A reaches the request | yes | yes | yes |
-| notices of the child's failed turn | 1 | 1 | 1 |
+| | Run 1 | Run 2 | Run 3 | Run 4 |
+|---|---|---|---|---|
+| `courier_later`, schedulers in step: messages delivered twice | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 |
+| `courier_later`, schedulers half a tick apart: delivered twice | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 |
+| messages never delivered | 0 | 0 | 0 | 0 |
+| the owner key held by, in step / B stopped / out of step | B / none / B | A / A / A | A / A / A | A / A / A |
+| notices of the child's permission request | 1 | 1 | 1 | 1 |
+| `courier_answer` in a turn on B reaches the request | no, and names another server | no, and names another server | no, and names another server | no, and names another server |
+| `courier_answer` in a turn on A reaches the request | yes | yes | yes | yes |
+| notices of the child's failed turn | 1 | 1 | 1 | 1 |
 
 In run 1 each round's ten messages were all queued by B (B's event streams carried 10 scheduled
 messages each, A's none): B took the key as both loaded the plugin, A skipped every tick while B
 held it, B released it when it was stopped, and the restarted B took it again on loading the
-plugin, before A's next tick. In runs 2 and 3 A took it as both loaded the plugin and kept it
+plugin, before A's next tick. In runs 2 to 4 A took it as both loaded the plugin and kept it
 throughout, delivering all twenty, B's restart included. Which server takes the key first varies.
 
 ## Which plugin instances receive an isolated child's events (2026-10-07)

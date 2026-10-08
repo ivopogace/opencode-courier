@@ -514,7 +514,7 @@ exports[`tool results keepReason 1`] = `"1 uncommitted change (a.ts)"`;
 
 exports[`tool results keepReason 2`] = `"6 uncommitted changes (a, b, c, d, e, ...) and 2 commits on no branch, tag or remote (abc1234, def5678)"`;
 
-exports[`tool results answerText 1`] = `"Nothing was passed on: no request per_1 of ses_child is pending in this OpenCode server. Tell the person their answer was not passed on, and why: the request was answered some other way, or the session stopped waiting, and then the answer is not needed; or it waits in another OpenCode server on the same data directory, which this one cannot reach, and then they must answer it there, in that session. Do not message the session about it or answer it again from here."`;
+exports[`tool results answerText 1`] = `"Nothing was passed on: no request per_1 of ses_child is pending in this OpenCode server. It was answered some other way, or the session stopped waiting, or it waits in another OpenCode server on the same data directory, which this one cannot reach; only the person can see which. Tell them: "Your answer was not passed on. If the session still waits, its request is in another OpenCode server: answer it there, in that session." Do not message the session about it or answer it again from here. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`tool results answerText 2`] = `"Passed on always for request per_1 of ses_child, which carries on and reports back with courier_send. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 

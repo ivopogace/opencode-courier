@@ -26,6 +26,7 @@ the prompt here is trivial on purpose.
 | `COURIER_BASE_URL` | Zen's endpoint for `opencode` | Declares the provider in `opencode.json` as an OpenAI-compatible endpoint with this URL. Set it empty to use OpenCode's catalog instead, with the provider's usual key variable, such as `ANTHROPIC_API_KEY`. |
 | `COURIER_API_KEY_ENV` | | For a declared provider, the name of the variable holding its key. The config refers to it as `{env:NAME}`, so the key is never written to a file. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | see below | The parent's prompt, and the values the reports and the final reply must hold. |
+| `COURIER_PERSON` | | `other-server`, with `COURIER_SCENARIO=permission`: the person answers the parent through a second server on the same data directory (see below). |
 | `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, and then for the children. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |
 
@@ -218,6 +219,53 @@ asked with its question tool, offering exactly the choices in the notice (`once`
 `reject`, with the notice's descriptions), and none answered by itself. A fan-out run on
 `longcat-2.5-preview-free` with the new `courier_spawn` description, which also mentions the
 permission notice, passed all seven checks.
+
+## Another server on the same data directory (#86)
+
+`courier_answer` from a turn on a server where the child's request is not pending used to tell the
+model the child "no longer waits", while it still waited on the other server. #86 changed that
+result. The permission scenario never reaches it, since its parent answers on the server where the
+child waits, so `COURIER_PERSON=other-server` adds a second server on the same data directory (as
+in `e2e/two-servers.sh`) and changes what the person does: dismiss the parent's question form, if
+there is one, and send "Allow it once." through the second server. The parent's next turn, and its
+`courier_answer`, then run on the second server, which does not hold the request. The checker
+records what the parent says next. Then, as the person, it allows the request in the child's own
+session on the first server, so the child carries on and reports.
+
+```bash
+COURIER_SCENARIO=permission COURIER_PERSON=other-server OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
+```
+
+Its fourth check becomes "the parent's courier_answer on the other server passed nothing on and
+named another server". On 2026-10-08, with `opencode v2.0.24` and `longcat-2.5-preview-free`, the
+wording took five drafts. Every run noted one failed model request, `aborted`: dismissing the form
+interrupts the step that opened it.
+
+| Draft of the not-found text | Runs | What the parent did after `courier_answer` |
+|---|---|---|
+| 1. Not pending here; answered some other way, stopped waiting, or waits in another server; tell the person it was not passed on and, if the session still waits, to answer it there | 1, pass | Told the person their answer was not passed on and to answer in that session directly, but gave "may have expired" as the reason, not another server. |
+| 2. As 1, but the last sentence says the request is "in another OpenCode server" | 1, inconclusive | Sent the child a `courier_send` asking it to run the command. That interrupted the child's waiting command and started a new request on the second server; the run timed out. |
+| 3. As 2, plus "Do not message the session about it or answer it again from here." | 2, pass | Once it said the request "may be waiting in another OpenCode server where you'd need to answer it directly". Once it said the request "was already resolved on the session side". |
+| 4. Starts with "Nothing was passed on" and puts telling the person before the possibilities | 3: 2 pass, 1 inconclusive | All three said the request had already been handled. One then polled `courier_status` about 30 times in the same turn. |
+| 5. (shipped) Names the possibilities, says only the person can see which, gives the sentence to pass on, and ends with the usual line on ending the turn | 3, pass | Every run replied with the sentence word for word ("Your answer was not passed on. If the session still waits, its request is in another OpenCode server: answer it there, in that session.") and ended its turn. |
+
+The shipped text:
+
+> Nothing was passed on: no request per_… of ses_… is pending in this OpenCode server. It was
+> answered some other way, or the session stopped waiting, or it waits in another OpenCode server
+> on the same data directory, which this one cannot reach; only the person can see which. Tell
+> them: "Your answer was not passed on. If the session still waits, its request is in another
+> OpenCode server: answer it there, in that session." Do not message the session about it or answer
+> it again from here. If nothing else is left to do now, end your turn by replying without calling
+> more tools.
+
+A free model takes the first plausible explanation it is given, so listing the possibilities was
+not enough: with drafts 1 to 4 it settled on "already answered" in most runs. Only a sentence it
+could repeat reached the person every time. A variant in which the person first allowed the request in
+the child's own session did not reach the text either: the notice that the request was answered
+without `courier_answer` reached the parent first, and it rightly did not call `courier_answer`.
+
+The plain permission scenario passed with draft 1 (run 1) and with the shipped text (run 13), passing all six checks.
 
 ## The question relay
 

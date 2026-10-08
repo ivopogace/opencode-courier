@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
+import { randomInt } from "node:crypto"
 import type { Server } from "node:http"
 import { hostname } from "node:os"
 import { num, obj, str } from "./json.js"
@@ -359,7 +360,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     if (held && held.server !== server && holds(held.at, now, OWNER_EXPIRY_MS)) return false
     await ports.storage.set(OWNER_KEY, { server, at: now })
     if (held?.server === server && holds(held.at, now, OWNER_RENEW_MS)) return true
-    await timers.wait(OWNER_WAIT_MS * (1 + Math.random()))
+    await timers.wait(randomInt(OWNER_WAIT_MS, 2 * OWNER_WAIT_MS))
     return (await readOwner(ports))?.server === server
   }
 

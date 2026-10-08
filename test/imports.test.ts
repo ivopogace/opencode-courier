@@ -1,15 +1,24 @@
 import { expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
-import { join } from "node:path"
+import { join, posix } from "node:path"
 
 const SRC = join(import.meta.dir, "..", "src")
 
-/** Each module of src/ with the modules of src/ it imports: static, type-only, side-effect and dynamic imports alike. */
+/**
+ * Each module of src/, by its path there without `.ts` (`hub`, `question/relay`), with the modules of
+ * src/ it imports: static, type-only, side-effect and dynamic imports alike.
+ */
 function imports() {
   const graph = new Map<string, string[]>()
-  for (const file of readdirSync(SRC).filter((name) => name.endsWith(".ts"))) {
+  for (const file of readdirSync(SRC, { recursive: true, encoding: "utf8" }).filter((name) => name.endsWith(".ts"))) {
+    const module = file.slice(0, -3).split("\\").join("/")
     const text = readFileSync(join(SRC, file), "utf8")
-    graph.set(file.slice(0, -3), [...text.matchAll(/\b(?:from|import)\s*\(?\s*["']\.\/([\w-]+)\.js["']/g)].map((match) => match[1]!))
+    graph.set(
+      module,
+      [...text.matchAll(/\b(?:from|import)\s*\(?\s*["'](\.{1,2}\/[\w/-]+)\.js["']/g)].map((match) =>
+        posix.normalize(posix.join(posix.dirname(module), match[1]!)),
+      ),
+    )
   }
   return graph
 }
@@ -33,4 +42,9 @@ test("notices.ts imports nothing of the plugin's but json.ts, so any module can 
 
 test("bounded.ts imports nothing of the plugin's, so any module can hold its collections", () => {
   expect(imports().get("bounded")).toEqual([])
+})
+
+test("the question relay's modules are found, so the checks above cover them", () => {
+  expect(imports().get("index")).toContain("question/index")
+  expect(imports().get("question/relay")).toContain("question/answer")
 })

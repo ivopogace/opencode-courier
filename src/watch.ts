@@ -10,7 +10,7 @@ import {
   permissionSettledNotice,
   type ExecutionError,
 } from "./notices.js"
-import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing } from "./question.js"
+import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing } from "./question/index.js"
 import {
   listEverywhere,
   QUESTION_FORM,

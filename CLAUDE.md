@@ -12,7 +12,13 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   `src/watch.ts`: following OpenCode's events to tell a parent that a child's turn failed, that it
   waits for a permission, or that it shows a form only the person can answer. `src/relay.ts`: the
   permission and form notices, and passing a permission answer back.
-  `src/question.ts`: relaying a child's question, by wrapping OpenCode's `question` tool.
+  `src/question/`: relaying a child's question, by wrapping OpenCode's `question` tool. `index.ts` is
+  what the rest of the plugin imports; `relay.ts` wraps the tool (the raced call, settling it, the
+  top session's linked call); `answer.ts` passes an answer on (`courier_answer`, `deliver`), lists
+  and tells about questions, and tidies up on load; `lifecycle.ts` takes the signals watch.ts and
+  index.ts send (forms shown, shutdowns, instances joining, events followed) and the waits on them;
+  `shared.ts` the hub's question state and the storage keys; `pure.ts` the pure parts (prompts,
+  answers, how a call ended, matching a top session's question). The state's types are in `hub.ts`.
   `src/hub.ts`: the plugin's process-wide state in one versioned hub, which instances `join` with
   their ports and location and leave on unload, the types of that state, and the scheduler's loop,
   run once per hub through one of its members; the version-skew rule

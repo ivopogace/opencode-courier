@@ -14,7 +14,7 @@ import {
   relayQuestions,
   type QuestionPorts,
   type QuestionTiming,
-} from "../src/question.js"
+} from "../src/question/index.js"
 import { resetHub } from "../src/hub.js"
 import { answeredText, questionNotice, questionSettledNotice as settledNotice, type Asked } from "../src/notices.js"
 import { record, RETENTION_MS } from "../src/roster.js"

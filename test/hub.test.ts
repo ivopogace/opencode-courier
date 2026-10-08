@@ -391,8 +391,8 @@ describe("the scheduler", () => {
 
 test("hub.ts is the only module of src/ that keeps anything process-wide", () => {
   const src = joinPath(import.meta.dir, "..", "src")
-  const users = readdirSync(src).filter(
-    (file) => file !== "storage.ts" && /\bprocessWide\s*[(<]|Symbol\.for\s*\(|globalThis/.test(readFileSync(joinPath(src, file), "utf8")),
+  const users = readdirSync(src, { recursive: true, encoding: "utf8" }).filter(
+    (file) => file.endsWith(".ts") && file !== "storage.ts" && /\bprocessWide\s*[(<]|Symbol\.for\s*\(|globalThis/.test(readFileSync(joinPath(src, file), "utf8")),
   )
   expect(users).toEqual(["hub.ts"])
 })

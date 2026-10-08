@@ -309,10 +309,11 @@ reported. It works on the calling session's own children.
 
 ## Scheduled messages
 
-Pending `courier_later` messages are kept in the plugin's storage, and every loaded copy of the
-plugin checks for due ones every 15 seconds, so a message can arrive up to about 15 seconds late.
-OpenCode loads the plugin once per project location; the copies in one server share one claim set,
-so each message is delivered once. Two servers on one data directory do not share it (see below).
+Pending `courier_later` messages are kept in the plugin's storage, and the plugin checks for due
+ones every 15 seconds, so a message can arrive up to about 15 seconds late. OpenCode loads the
+plugin once per project location; the instances in one server share one scheduler, run by the hub
+(see "Several copies in one process"), and one claim set, so each message is delivered once. Two
+servers on one data directory share neither (see below).
 
 They survive a server restart. After a start, OpenCode loads plugins for a project the first time
 that project is used, so messages that fell due while it was down are delivered then, not at the
@@ -356,26 +357,40 @@ copied, they are honoured as long as the process runs, which covers "until the o
 without having to detect the unload; each claim set is bounded, so keeping them costs little. A
 future hub version that needed another meaning for one of them would make a new key, and keep
 claiming in the old one as well while a copy that uses it may still be loaded. The loaded
-instances are the one thing each hub version keeps to itself, so a job a hub runs once rather than
-once per instance still runs once per hub version during an update, and the shared claim sets keep
-the two from acting on the same thing.
+instances are the one thing each hub version keeps to itself, so a job the hub runs once for its
+instances still runs once per hub version during an update, and the shared claim sets keep the two
+from acting on the same thing.
 
-The watcher is such a job. Every instance in the process is sent every OpenCode event, an isolated
-child's included ([the notes](plugin-api-notes.md#which-plugin-instances-receive-an-isolated-childs-events-2026-10-07)),
+The scheduler is such a job. The hub runs one loop, ticking every 15 seconds, while it has
+instances: the first instance to join starts it, with a tick at once (which delivers what fell due
+while the server was down), and the last one to leave stops it, so the next to join starts it
+again. Each tick looks for due messages through the ports of the instance that joined first and is
+still loaded; when that one leaves, the next tick runs through the next, so nothing has to be handed
+over but the hub's list of instances. A tick still under way when the next falls due makes that one
+skip, unless the instance it runs through has left since: a tick that never ends through an unloaded
+instance holds nothing up. Two copies of the plugin with the same hub version share the loop the
+first of them started, and each tick runs the code of the copy whose instance joined last, so after
+an update the new copy's delivery code runs, whichever copy's instances it ticks through. A copy before the hub (0.2.2 and earlier) still runs its
+own interval per instance until it unloads; each delivery is claimed in the shared claim set, so it
+and the hub's loop never deliver the same message twice.
+
+The watcher is such a job too. Every instance in the process is sent every OpenCode event, an
+isolated child's included ([the notes](plugin-api-notes.md#which-plugin-instances-receive-an-isolated-childs-events-2026-10-07)),
 so the hub follows the events once, through the ports of one instance, and handles each event once
-rather than once per instance. The first instance to load starts the subscription. When the one it
-runs through unloads, the hub hands it to the instance that joined last among those still loaded
-(during a reload, which closes every location and loads it again, a newly loaded one): the new one
-subscribes before the old one is stopped, so for a moment both follow the events, and an event both
-are sent is claimed and handled once. An instance is sent only the events published while it is
-subscribed, so the new subscription relays the permission requests already pending, in every
-loaded location, as any resubscription does. The question relay's count of watchers never drops to
-none during a hand-over, so question forms are not taken as missed at once; but the new subscription,
-on its first event, once it is surely connected, relays the questions still waiting for their form
-to be seen, since one shown in the moment between the old stream's end and the new one's start was
-sent to neither (a question still waiting for its permission check is then relayed early, the
-lesser harm, as after any gap). When the last
-instance unloads, the subscription ends, and the next instance to load starts one. A copy from
+rather than once per instance. Unlike a tick, a subscription lasts, so it is handed over rather than
+picked up by the next tick. The first instance to load starts it. When the one it runs through
+unloads, the hub hands it to the instance that joined last among those still loaded (during a
+reload, which closes every location and loads it again, a newly loaded one): the new one subscribes
+before the old one is stopped, so for a moment both follow the events, and an event both are sent
+is claimed and handled once. An instance is sent only the events published while it is subscribed,
+so the new subscription relays the permission requests already pending, in every loaded location,
+as any resubscription does. The question relay's count of watchers never drops to none during a
+hand-over, so question forms are not taken as missed at once; but the new subscription, on its
+first event, once it is surely connected, relays the questions still waiting for their form to be
+seen, since one shown in the moment between the old stream's end and the new one's start was sent to
+neither (a question still waiting for its permission check is then relayed early, the lesser harm,
+as after any gap). When the last instance unloads, the subscription ends, and the next instance to
+load starts one. The subscription runs the code of the copy that started it or took it over. A copy
 before the hub still follows the events with its own watcher, once per instance, beside the hub's;
 the claim sets keep each event to one notice.
 

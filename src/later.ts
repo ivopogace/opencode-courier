@@ -4,7 +4,7 @@ import { scanAll, type Storage } from "./storage.js"
 
 type Context = Plugin.Context
 
-/** How often each plugin instance looks for due messages; a delivery can be this late. */
+/** How often the hub's scheduler looks for due messages; a delivery can be this late. */
 export const TICK_MS = 15_000
 
 const PREFIX = "later/"

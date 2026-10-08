@@ -617,6 +617,9 @@ describe("watchChildren", () => {
 })
 
 describe("one watcher per hub", () => {
+  /** The scheduler's loop, which joining starts, never ticks here. */
+  const idle = { every: () => 0, stop: () => {} }
+
   /** A member whose event stream stays open until its subscription is aborted, counting subscriptions. */
   function member(name: string, pending: PermissionAsked["data"][] = [], events: unknown[] = []) {
     const { ports, sent } = fakePorts([], pending)
@@ -637,7 +640,7 @@ describe("one watcher per hub", () => {
 
   test("subscribes once, through the first member to join, however many join, and hands over to the latest", async () => {
     resetHub()
-    const { hub, join } = open({})
+    const { hub, join } = open({}, idle)
     const [first, second, third] = [member("a"), member("b"), member("c")]
     const leaves = [first, second, third].map(({ joined }) => {
       const leave = join(joined)
@@ -672,7 +675,7 @@ describe("one watcher per hub", () => {
 
   test("hands the subscription over when its member leaves, subscribing again before the old one ends", async () => {
     resetHub()
-    const { hub, join } = open({})
+    const { hub, join } = open({}, idle)
     const state = fresh()
     const first = member("a")
     const second = member("b", [request])
@@ -709,7 +712,7 @@ describe("one watcher per hub", () => {
 
   test("a member joining after the last one left subscribes again", async () => {
     resetHub()
-    const { hub, join } = open({})
+    const { hub, join } = open({}, idle)
     watchForHub(hub, fresh(), 1)
     expect(hub.watcher).toBeUndefined()
 
@@ -735,7 +738,7 @@ describe("one watcher per hub", () => {
 
   test("never hands over to the member leaving, even before it has left", async () => {
     resetHub()
-    const { hub, join } = open({})
+    const { hub, join } = open({}, idle)
     const first = member("a")
     const second = member("b")
     const leaveFirst = join(first.joined)
@@ -758,7 +761,7 @@ describe("one watcher per hub", () => {
 
   test("on its first event, the subscription taken over releases the question calls waiting for their form", async () => {
     resetHub()
-    const { hub, join } = open({})
+    const { hub, join } = open({}, idle)
     const first = member("a")
     const second = member("b", [], [{ id: "evt_x", type: "session.execution.succeeded", data: { sessionID: "ses_other" } }])
     const leaveFirst = join(first.joined)

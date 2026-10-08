@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto"
 import type { CourierPorts } from "./courier.js"
 import { headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
 import { hub, join, permissions, type Receiver } from "./hub.js"
-import { deliverDue, TICK_MS, type LaterPorts } from "./later.js"
+import type { LaterPorts } from "./later.js"
 import { pendingOf, type AnswerPorts } from "./relay.js"
 import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
 import { pruneExpired } from "./roster.js"
@@ -76,11 +76,11 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
   }
 }
 
-// One claim set for every instance in the process: OpenCode sets the plugin up once per project
-// location, and those instances share one storage. Likewise one set of handled events, since a copy
-// of another hub version, or one from before the hub, follows the same events with its own watcher,
-// and the permission requests sessions were told about.
-const { claimed, watched } = hub
+// One set of handled events for every instance in the process, since a copy of another hub
+// version, or one from before the hub, follows the same events with its own watcher beside the hub's,
+// and of the permission requests sessions were told about. The scheduler's claim set is the hub's
+// own business: the hub runs the scheduler once for its members.
+const { watched } = hub
 const watchState: WatchState = { ...watched, forms: hub.forms }
 
 /** What a question relay needs from the plugin instance that wraps the question tool. */
@@ -89,8 +89,9 @@ export interface RelaySlot {
 }
 
 /**
- * The courier tools, scheduler, webhook receiver and the hub's event watcher, as a promise plugin. `relay`
- * receives this instance's ports for the question relay while it is loaded.
+ * The courier tools and webhook receiver, as a promise plugin, which joins the hub that runs the
+ * scheduler and the event watcher. `relay` receives this instance's ports for the question relay
+ * while it is loaded.
  */
 export const courier = (relay: RelaySlot = {}) => Plugin.define({
   id: "courier",
@@ -164,16 +165,6 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     const leaveRelay = joinRelay(questionPorts)
     void noticeCutOff(questionPorts).catch((error: unknown) => questionPorts.log(`courier question: stored questions: ${String(error)}`))
 
-    let ticking = false
-    const tick = async () => {
-      if (ticking) return
-      ticking = true
-      await deliverDue(later, claimed)
-        .catch((error: unknown) => later.log(`courier_later scheduler: ${String(error)}`))
-        .finally(() => (ticking = false))
-    }
-    void tick()
-    const timer = setInterval(tick, TICK_MS)
     const watchPorts: WatchPorts = {
       storage: ctx.storage,
       session: ctx.session,
@@ -196,7 +187,6 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     watchForHub(hub, watchState)
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
-      clearInterval(timer)
       leaveHub()
       handOver(hub, member, watchState)
       if (relay.ports === questionPorts) relay.ports = undefined

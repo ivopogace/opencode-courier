@@ -16,7 +16,8 @@ import {
   type QuestionPorts,
   type QuestionTiming,
 } from "../src/question/index.js"
-import { hub, resetHub } from "../src/hub.js"
+import { hub, join, resetHub, type Member } from "../src/hub.js"
+import { anyLoaded } from "../src/question/shared.js"
 import { background, run, stopRelay, useClock } from "../src/question/runtime.js"
 import { answeredText, questionNotice, questionSettledNotice as settledNotice, type Asked } from "../src/notices.js"
 import { record, RETENTION_MS } from "../src/roster.js"
@@ -1441,3 +1442,18 @@ describe("the relay's runtime", () => {
   })
 })
 
+
+test("a cut-off question is told through a member of this copy's hub first, else through any copy's loaded instance", () => {
+  const subscribe = hub.subscribe
+  hub.subscribe = undefined
+  const elsewhere = { directory: "/old" } as never
+  hub.questions.loaded.add(elsewhere)
+  expect(anyLoaded()).toBe(elsewhere)
+  const questions = { directory: "/a" } as never
+  const later = { storage: { get: async () => undefined, set: async () => {}, scan: async () => ({ entries: [] }) }, now: () => 0, log: () => {} }
+  const leave = join({ directory: "/a", permission: {}, later, watch: {}, questions, log: () => {} } as unknown as Member)
+  expect(anyLoaded()).toBe(questions)
+  void leave()
+  hub.questions.loaded.delete(elsewhere)
+  hub.subscribe = subscribe
+})

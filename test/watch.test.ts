@@ -615,6 +615,61 @@ describe("watchChildren", () => {
   })
 })
 
+describe("watchChildren, stopped", () => {
+  test("ends once aborted, though the stream neither ends nor yields again, after the event it is handling", async () => {
+    const watching = new AbortController()
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    let deliver = (_: unknown) => {}
+    ;(ports.session as any).synthetic = (input: unknown) => {
+      sent.push(input)
+      return new Promise((resolve) => (deliver = resolve))
+    }
+    // A stream that yields one event and then never another, and is never closed.
+    ;(ports.event as any).subscribe = async function* () {
+      yield failed()
+      await new Promise(() => {})
+    }
+    let ended = false
+    const done = watchChildren(ports, fresh(), watching.signal, 1).then(() => (ended = true))
+    await Bun.sleep(1)
+    expect(sent).toHaveLength(1)
+
+    // Its notice is going out: aborting does not end it until the notice has gone.
+    watching.abort()
+    await Bun.sleep(1)
+    expect(ended).toBe(false)
+    deliver({ id: "msg_1" })
+    await done
+    expect(ended).toBe(true)
+  })
+
+  test("ends after the relay of the requests already pending", async () => {
+    const watching = new AbortController()
+    const { ports, sent } = fakePorts([], [request])
+    await record(ports.storage, child())
+    let deliver = (_: unknown) => {}
+    ;(ports.session as any).synthetic = (input: unknown) => {
+      sent.push(input)
+      return new Promise((resolve) => (deliver = resolve))
+    }
+    ;(ports.event as any).subscribe = async function* () {
+      await new Promise(() => {})
+    }
+    let ended = false
+    const done = watchChildren(ports, fresh(), watching.signal, 1).then(() => (ended = true))
+    await Bun.sleep(1)
+    expect(sent.map((notice: any) => notice.description)).toEqual(["Session ses_child asks for permission"])
+
+    watching.abort()
+    await Bun.sleep(1)
+    expect(ended).toBe(false)
+    deliver({ id: "msg_1" })
+    await done
+    expect(ended).toBe(true)
+  })
+})
+
 describe("the hub's subscriptions: one active, one standby", () => {
   /** The scheduler's loop, which joining starts, never ticks here. */
   const idle = { every: () => 0, stop: () => {}, wait: async () => {} }

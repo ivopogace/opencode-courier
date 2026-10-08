@@ -150,7 +150,11 @@ export interface QuestionState {
   /** The questions whose answer is being passed on, each until that is done, and those whose answer went out. */
   readonly passing: Map<string, Promise<unknown>>
   readonly answered: Set<string>
-  /** The ports of the loaded instances. */
+  /**
+   * The ports of the loaded instances, of every copy of the plugin. A release before the hub picks
+   * one here to tell a cut-off question through, so every copy keeps it filled; this copy reads its
+   * hub's members, and this only for an instance of another copy, when it has none.
+   */
   readonly loaded: Set<QuestionPorts>
   /** How many instances follow OpenCode's events now, and whether any has since the process started. */
   following: number
@@ -170,6 +174,11 @@ export interface QuestionState {
  */
 export interface Member {
   readonly directory: string
+  /**
+   * The location OpenCode set the instance up with, the very object the instance's Effect half is
+   * handed too, which finds its member by it (`memberAt`). A member of a copy before it has none.
+   */
+  readonly location?: object
   readonly permission: Permissions
   readonly later: LaterPorts
   readonly watch: WatchPorts
@@ -263,8 +272,12 @@ async function readOwner(ports: LaterPorts): Promise<Owner | undefined> {
   return server !== undefined && at !== undefined ? { server, at } : undefined
 }
 
-/** How long an unloading instance waits for the owner key to be released before it lets go. */
-const RELEASE_MS = 2_000
+/**
+ * How long an unloading instance waits, before it lets go, for the work it leaves behind: what it
+ * started itself, a tick or an event's notice still under way through it, and on the last leave the
+ * owner key's release.
+ */
+export const LEAVE_MS = 2_000
 
 /** Whether a key written at `at` still holds at `now`; one from the future, after the clock went back, holds as long. */
 const holds = (at: number, now: number, ms: number) => Math.abs(now - at) < ms
@@ -276,7 +289,7 @@ export const WATCHERS = 2
 export interface Watcher {
   readonly member: Member
   readonly stop: AbortController
-  /** Settles once the subscription has ended, after `stop`. */
+  /** Settles once the subscription has ended, after `stop`: after the event it is handling, not the stream's close. */
   readonly done: Promise<void>
 }
 
@@ -323,9 +336,14 @@ export interface Opened {
    * `WATCHERS` subscriptions to OpenCode's events starts one through itself; when one leaves that
    * has one, another member without one starts its replacement before it ends. The last leave
    * settles once the scheduler's owner key is released, after the tick under way, whichever copy
-   * started it, or after a moment if storage or that tick does not answer.
+   * started it. Every leave first waits for the work its member leaves behind: what was handed to
+   * `track`, a tick under way through it, and the subscription it ran, which ends after the event
+   * it is handling; all of it, the release included, for up to `LEAVE_MS`. The question relay's
+   * own work is not waited for: it outlives the instance on purpose.
    */
   readonly join: (member: Member) => () => Promise<void>
+  /** Hands the hub work a member started, which its leave waits for; the member's own background work. */
+  readonly track: (member: Member, work: Promise<unknown>) => void
 }
 
 /**
@@ -450,22 +468,28 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     const run: Tick = { member: owner, since, done: new Promise((resolve) => (end = resolve)) }
     scheduler.running = run
     scheduler.ticking = owner
+    // `done` settles however the tick ends, a log that throws included: leaves wait for it.
     try {
-      if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner))
-        await deliverDue(owner.later, hub.claimed)
-    } catch (error) {
-      owner.log(`courier_later scheduler: ${String(error)}`)
-    } finally {
-      // A tick past its minute may have been followed by another, whose record stays.
-      if (scheduler.running === run) {
-        scheduler.running = undefined
-        scheduler.ticking = undefined
+      try {
+        if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner))
+          await deliverDue(owner.later, hub.claimed)
+      } catch (error) {
+        owner.log(`courier_later scheduler: ${String(error)}`)
+      } finally {
+        // A tick past its minute may have been followed by another, whose record stays.
+        if (scheduler.running === run) {
+          scheduler.running = undefined
+          scheduler.ticking = undefined
+        }
       }
+      // A loop stopped meanwhile, its members gone, gives back the key this tick may have written.
+      if (scheduler.timer === undefined)
+        await release(owner.later).catch((error: unknown) => owner.log(`courier_later scheduler: owner key not released: ${String(error)}`))
+    } catch {
+      // Only the log can have thrown here: there is nothing left to tell.
+    } finally {
+      end()
     }
-    // A loop stopped meanwhile, its members gone, gives back the key this tick may have written.
-    if (scheduler.timer === undefined)
-      await release(owner.later).catch((error: unknown) => owner.log(`courier_later scheduler: owner key not released: ${String(error)}`))
-    end()
   }
 
   // Subscriptions through the earliest members without one, the longest loaded, until there are
@@ -476,6 +500,18 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
       if (hub.watchers.length >= WATCHERS || !hub.subscribe) return
       if (member !== leaving && !watching.has(member)) hub.watchers.push(hub.subscribe(member))
     }
+  }
+
+  // The work each member of this copy started and handed over, until it settles.
+  const work = new WeakMap<Member, Set<Promise<unknown>>>()
+  const track = (member: Member, started: Promise<unknown>) => {
+    const set = work.get(member) ?? new Set()
+    work.set(member, set)
+    const settled = started.then(
+      () => void set.delete(settled),
+      () => void set.delete(settled),
+    )
+    set.add(settled)
   }
 
   const join = (member: Member) => {
@@ -498,26 +534,36 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     return () => {
       hub.members.delete(member)
       hub.locations.delete(member)
+      // What this member leaves behind: the work it handed over, and a tick under way through it,
+      // which keeps using its storage and session until it ends.
+      const behind: Array<Promise<unknown>> = [...(work.get(member) ?? [])]
+      if (scheduler.running?.member === member) behind.push(scheduler.running.done)
       // The other subscription, already connected, follows the events meanwhile; this one is
       // replaced before it ends, so the question relay's count of watchers never drops to none.
+      // It ends once the event it is handling, whose notice may be going out, has been handled.
       const index = hub.watchers.findIndex((watcher) => watcher.member === member)
       if (index >= 0) {
         const [leaving] = hub.watchers.splice(index, 1)
         watch(member)
         leaving!.stop.abort()
+        behind.push(leaving!.done)
       }
-      if (hub.members.size > 0 || scheduler.timer === undefined) return Promise.resolve()
-      timers.stop(scheduler.timer)
-      scheduler.timer = undefined
-      // After the tick under way, whichever copy started it, which may be writing the key.
-      const released = (async () => {
-        await scheduler.running?.done
-        await release(member.later)
-      })().catch((error: unknown) => member.log(`courier_later scheduler: owner key not released: ${String(error)}`))
-      return Promise.race([released, timers.wait(RELEASE_MS)])
+      if (hub.members.size === 0 && scheduler.timer !== undefined) {
+        timers.stop(scheduler.timer)
+        scheduler.timer = undefined
+        // After the tick under way, whichever copy started it, which may be writing the key.
+        behind.push(
+          (async () => {
+            await scheduler.running?.done
+            await release(member.later)
+          })().catch((error: unknown) => member.log(`courier_later scheduler: owner key not released: ${String(error)}`)),
+        )
+      }
+      if (behind.length === 0) return Promise.resolve()
+      return Promise.race([Promise.allSettled(behind).then(() => {}), timers.wait(LEAVE_MS)])
     }
   }
-  return { hub, join }
+  return { hub, join, track }
 }
 
 const opened = open(globalThis as Registry)
@@ -527,6 +573,12 @@ export const hub: Hub = opened.hub
 
 /** Joins this copy's hub; see `Opened.join`. */
 export const join = opened.join
+
+/** Hands this copy's hub work a member started; see `Opened.track`. */
+export const track = opened.track
+
+/** The member of this copy's hub set up with `location`, while it is loaded. */
+export const memberAt = (location: object) => [...hub.members].find((member) => member.location === location)
 
 /** The permission domains of the loaded instances. */
 export const permissions = () => hub.locations.values()

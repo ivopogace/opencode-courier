@@ -222,24 +222,46 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
   return []
 }
 
+/** Settles with the end of a stream once `signal` aborts, so a wait for the next event ends then. */
+const abortion = (signal: AbortSignal) =>
+  new Promise<IteratorReturnResult<undefined>>((resolve) => {
+    const end = () => resolve({ done: true, value: undefined })
+    if (signal.aborted) end()
+    else signal.addEventListener("abort", end, { once: true })
+  })
+
 /**
  * Follows OpenCode's events until `signal` aborts, telling parents when a spawned child's turn
  * fails, when it waits for a permission or on a form and when that is answered without them, and
  * noting for the question relay the question forms shown, which it waits for, and the locations
- * shutting down, whose withdrawn forms must not pass for dismissals.
+ * shutting down, whose withdrawn forms must not pass for dismissals. Once `signal` aborts it ends
+ * as soon as the event it is handling, and the relay of the requests already pending, are done,
+ * without waiting for the stream to close: an unloading instance's leave waits for that.
  */
 export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
+  const aborted = abortion(signal)
+  const relaying = new Set<Promise<void>>()
   while (!signal.aborted) {
     let following = false
+    let events: AsyncIterator<{ readonly type: string; readonly data?: unknown }> | undefined
     try {
-      const events = ports.event.subscribe({ signal })
+      events = ports.event.subscribe({ signal })[Symbol.asyncIterator]()
       // Question forms shown while no instance followed the events were not seen: released now,
       // and again on the first event, by when the stream is surely connected.
       let missed = eventsFollowed()
       following = true
       // Alongside the new subscription; a request both relays see is relayed once.
-      void relayPending(ports, state).catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`))
-      for await (const event of events) {
+      const relayed: Promise<void> = relayPending(ports, state)
+        .catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`))
+        .finally(() => relaying.delete(relayed))
+      relaying.add(relayed)
+      for (;;) {
+        const pending = events.next()
+        // Left behind when the signal aborts first; whatever it ends with then is not wanted.
+        pending.catch(() => {})
+        const next = await Promise.race([pending, aborted])
+        if (next.done) break
+        const event = next.value
         if (missed) formsMayHaveBeenMissed()
         missed = false
         await handle(ports, state, event).catch((error: unknown) => {
@@ -252,9 +274,12 @@ export async function watchChildren(ports: WatchPorts, state: WatchState, signal
       if (!signal.aborted) ports.log(`courier watch: event stream broke: ${String(error)}`)
     } finally {
       if (following) eventsLeft()
+      // Closed without waiting: the subscription's own signal has aborted, or the stream ended.
+      void events?.return?.().catch(() => {})
     }
     if (!signal.aborted) await pause(retryMs, signal)
   }
+  await Promise.allSettled(relaying)
 }
 
 /**

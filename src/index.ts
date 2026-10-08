@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
 import type { CourierPorts } from "./courier.js"
 import { headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
-import { hub, join, permissions, type Receiver } from "./hub.js"
+import { hub, join, memberAt, permissions, track, type Member, type Receiver } from "./hub.js"
 import type { LaterPorts } from "./later.js"
 import { pendingOf, type AnswerPorts } from "./relay.js"
 import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question/index.js"
@@ -83,17 +83,12 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 const { watched } = hub
 const watchState: WatchState = { ...watched, forms: hub.forms }
 
-/** What a question relay needs from the plugin instance that wraps the question tool. */
-export interface RelaySlot {
-  ports?: QuestionPorts
-}
-
 /**
  * The courier tools and webhook receiver, as a promise plugin, which joins the hub that runs the
- * scheduler and the event watcher. `relay` receives this instance's ports for the question relay
- * while it is loaded.
+ * scheduler and the event watcher. Its member of the hub carries the instance's location, by which
+ * the question relay, the Effect half of the same instance, finds its ports.
  */
-export const courier = (relay: RelaySlot = {}) => Plugin.define({
+export const courier = () => Plugin.define({
   id: "courier",
   setup: async (ctx) => {
     const log = (message: string) => console.error(message)
@@ -160,10 +155,11 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     }
     await ctx.tool.transform((tools) => addTools(tools, toolPorts))
 
-    void pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
-    relay.ports = questionPorts
+    const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
     const leaveRelay = joinRelay(questionPorts)
-    void noticeCutOff(questionPorts).catch((error: unknown) => questionPorts.log(`courier question: stored questions: ${String(error)}`))
+    const noticed = noticeCutOff(questionPorts).catch((error: unknown) =>
+      questionPorts.log(`courier question: stored questions: ${String(error)}`),
+    )
 
     const watchPorts: WatchPorts = {
       storage: ctx.storage,
@@ -175,19 +171,24 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     }
     // The hub's subscriptions to OpenCode's events, one and a standby, start with this copy's watcher.
     watchFromHub(hub, watchState)
-    const leaveHub = join({
+    const member: Member = {
       directory: ctx.location.directory,
+      location: ctx.location,
       permission: ctx.permission,
       later,
       watch: watchPorts,
       questions: questionPorts,
       log,
-    })
+    }
+    const leaveHub = join(member)
+    // The leave waits for them, so they do not run on against a location that is closing.
+    track(member, pruned)
+    track(member, noticed)
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
-      // Waits for the scheduler's owner key to be released, so another server takes over at once.
+      // Waits, for a moment at most, for the work this instance leaves behind, and on the last
+      // leave for the scheduler's owner key to be released, so another server takes over at once.
       const leftHub = leaveHub()
-      if (relay.ports === questionPorts) relay.ports = undefined
       leaveRelay()
       await leave?.()
       await leftHub
@@ -206,8 +207,8 @@ export default EffectPlugin.define({
   id: "courier",
   effect: (host) =>
     Effect.gen(function* () {
-      const relay: RelaySlot = {}
-      yield* fromPromise(courier(relay)).effect(host)
-      yield* relayQuestions(host, () => relay.ports)
+      yield* fromPromise(courier()).effect(host)
+      // The promise plugin's instance is handed this same location: its member, while it is loaded.
+      yield* relayQuestions(host, () => memberAt(host.location)?.questions)
     }),
 })

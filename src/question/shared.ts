@@ -1,5 +1,5 @@
 import { addBounded } from "../bounded.js"
-import { hub, type Question } from "../hub.js"
+import { hub, type Question, type QuestionPorts } from "../hub.js"
 import type { Asked } from "../notices.js"
 
 /** OpenCode's own question tool, which the relay wraps. */
@@ -20,6 +20,13 @@ export const isPassing = (requestID: string) => shared.passing.has(requestID) ||
 // Shared by every plugin instance in the process, since a child and the session it asks can be in
 // different locations.
 export const shared = hub.questions
+
+/**
+ * The ports of an instance still loaded, if any: a member of this copy's hub, or else one that a
+ * copy of another hub version, or a release before the hub, keeps in `loaded`.
+ */
+export const anyLoaded = (): QuestionPorts | undefined =>
+  hub.members.values().next().value?.questions ?? shared.loaded.values().next().value
 
 export const keyOf = (requestID: string) => `${PREFIX}${requestID}`
 

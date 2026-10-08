@@ -25,7 +25,9 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   `deliver`, `Effect.timeout`, `Effect.sleep`); what it exports, and the hub's shared fields, which
   copies of other versions use, stay promises and plain functions. Effect stays inside the folder.
   `src/hub.ts`: the plugin's process-wide state in one versioned hub, which instances `join` with
-  their ports and location and leave on unload, the types of that state, and the scheduler's loop,
+  their ports and location and leave on unload, the leave waiting, with a bound, for the work the
+  instance leaves behind (what it handed to `track`, a tick through it, its event subscription),
+  the types of that state, and the scheduler's loop,
   run once per hub through one of its members, and by one server per data directory, the one holding
   the owner key (`scheduler/owner`) in the plugin's storage; the version-skew rule
   is in `docs/reference.md`. `src/storage.ts`: shared storage helpers and `processWide`, the
@@ -42,7 +44,8 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   descriptions, so a wording change shows up as a diff in `test/__snapshots__/`; update it with
   `bun test --update-snapshots` and rerun the real-model smoke test.
   `src/index.ts`: the plugin (an Effect plugin running the promise one): builds the ports, registers
-  the tools from `tools.ts`, and starts the scheduler, the watcher and the webhook receiver.
+  the tools from `tools.ts`, and starts the scheduler, the watcher and the webhook receiver; the
+  Effect half wraps the question tool and finds its instance's ports in the hub by its location.
 - `test/`: unit tests against a fake plugin context (`bun test`).
 - `e2e/run.sh`: live test against a real OpenCode V2 server, driven by `e2e/mock-model.mjs`, a
   scripted OpenAI-compatible stand-in model, with `e2e/search-plugin` as a stand-in web search

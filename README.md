@@ -56,9 +56,7 @@ first. Older releases and their versions: [Supported OpenCode version](#supporte
 OpenCode V2 has its own [`subagent` tool](https://opencode.ai/v2/docs/agents): it starts an agent
 with fresh context in a child session, and the parent either waits for its final answer or, with
 `background: true`, carries on and is notified when the child finishes. Passing the child's
-`sessionID` back sends it another prompt, steering it if it is running and waking it if it is idle
-([source at
-v2.0.24](https://github.com/anomalyco/opencode/blob/v2.0.24/packages/core/src/tool/plugin/subagent.ts)).
+`sessionID` back sends it another prompt, steering it if it is running and waking it if it is idle.
 Use it when one result back is all you need: a search, a review, a self-contained task that needs
 nothing from you on the way.
 
@@ -81,9 +79,6 @@ it adds:
 
 ## How it works
 
-An [OpenCode](https://github.com/anomalyco/opencode) V2 plugin that lets one session start other
-sessions, message them, and be woken by them, without polling.
-
 A parent session calls `courier_spawn`, gets a session id back immediately and ends its turn. The
 child works on its own and, when it is done or stuck, calls `courier_send` with the parent's id.
 That message lands in the parent's inbox and OpenCode starts a new turn for the parent if it is
@@ -92,16 +87,10 @@ child that waits for a permission or asks a question has it passed to the parent
 passes your answer back. A child that waits on a form only you can answer, such as OpenCode asking
 which web search provider to use, has its parent told so.
 
-### How the wake works
-
-There is no polling anywhere. `courier_send` calls the plugin API's `session.synthetic`, which
-admits a message into the target session's inbox and, unless `resume: false` is passed, calls
-`execution.wake` on it (`packages/core/src/session/session.ts` on OpenCode's `v2` branch).
-OpenCode's own background subagents report to their parent the same way
-(`packages/core/src/session/subagent-completion.ts`).
-
-Delivery is `steer` by default (injected into the target's running turn, or starts one if idle);
-`queue: true` waits until the current turn ends.
+There is no polling anywhere: a message is admitted into the target session's inbox through
+OpenCode's own API, which wakes the session, the same way OpenCode's background subagents report to
+their parent. Delivery is `steer` by default (injected into the target's running turn, or starts
+one if idle); `queue: true` waits until the current turn ends.
 
 ## Demos
 
@@ -133,22 +122,19 @@ Watch the child's question open in the parent's session as OpenCode's own questi
 
 </details>
 
-Both recordings are real runs on `opencode2 v0.0.0-beta-19271` with a free model on [OpenCode
-Zen](https://opencode.ai/zen) (Muse Spark 1.3).
+Both recordings are real runs with a free model on [OpenCode Zen](https://opencode.ai/zen) (Muse
+Spark 1.3).
 
 ## Install
 
 ### Supported OpenCode version
 
-Requires OpenCode V2: the `opencode` command from `@opencode/cli` (the same binary is also installed
-as `opencode2`, the name of the beta line, so a shell that still calls that keeps working). Each
-release of this plugin is built and tested against exactly one OpenCode V2 version, the
-`@opencode/plugin` version pinned in `package.json` (the CLI and the plugin API share a version). A
-release that moves the pin adds a row here. When the plugin loads on an OpenCode whose version is
-not the pinned one, it writes one line to the server log naming both versions, so a mismatch is
-named before a tool fails. How a release is tested, the other OpenCode versions it was tried on, and
-why OpenCode itself says nothing about a mismatch: [the
-reference](docs/reference.md#the-opencode-version).
+Requires OpenCode V2: the `opencode` command from `@opencode/cli` (also installed as `opencode2`,
+the name of the beta line). Each release of this plugin is built and tested against exactly one
+OpenCode V2 version, and a release that moves the pin adds a row here. OpenCode itself never
+checks the version: the plugin installs and loads on any V2 host. When it loads on a version other
+than the pinned one, it writes one line to the server log naming both versions, so a mismatch is
+named before a tool fails. More in [the reference](docs/reference.md#the-opencode-version).
 
 | opencode-courier | OpenCode V2 (`opencode` and `@opencode/plugin`) |
 |---|---|
@@ -165,8 +151,6 @@ npm install -g @opencode/cli@2.0.24
 
 ### The plugin
 
-Then install the plugin:
-
 ```bash
 opencode plugin add opencode-courier
 ```
@@ -176,14 +160,14 @@ configuration (`~/.config/opencode/opencode.json`). To receive webhooks, replace
 object form shown under [Webhooks](#webhooks), which carries a `webhook` option.
 
 Install it by name, without a version: OpenCode only checks plugins for updates when their entry is
-not an exact version, so `opencode-courier@0.2.1` is never offered a newer release. Moving an
+not an exact version, so `opencode-courier@0.2.1` is never offered a newer release. How to move an
 entry that carries a version to the name, and what to look at when an update still does not show:
 [Updating the plugin](docs/reference.md#updating-the-plugin).
 
 ### From a local clone
 
 ```bash
-git clone <this repo> && cd opencode-courier
+git clone https://github.com/ivopogace/opencode-courier && cd opencode-courier
 bun install && npm run build
 ```
 
@@ -201,16 +185,13 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
 1. Keep the background server running so sessions can be woken while you are away (`opencode
    service start`; `opencode service status` to check).
 2. Give the agents that run children the permissions their work needs. A child that hits an approval
-   prompt has it passed to its parent, which asks you (see [A child that asks for
-   permission](docs/reference.md#a-child-that-asks-for-permission)), but the child waits until you
-   answer, so keep prompts for what you want to decide yourself. A child's question goes to the
-   parent the same way (see [A child that asks a
-   question](docs/reference.md#a-child-that-asks-a-question)), so let the agents that run children
-   use the `question` tool if they should be able to ask you; OpenCode's default agent may.
-   Choose a web search provider before children search the web (run one web search in your own
-   session and answer OpenCode's prompt, or use its "Third-party search" setting): otherwise the
-   first child to search shows that prompt in its own session, which only you can answer there (see
-   [A child that shows a form](docs/reference.md#a-child-that-shows-a-form)).
+   prompt has it passed to its parent, which asks you, but the child waits until you answer, so keep
+   prompts for what you want to decide yourself. A child's question goes to the parent the same
+   way, so let the agents that run children use the `question` tool if they should be able to ask
+   you; OpenCode's default agent may. Choose a web search provider before children search the web
+   (run one web search in your own session and answer OpenCode's prompt, or use its "Third-party
+   search" setting): otherwise the first child to search shows that prompt in its own session,
+   which only you can answer there.
 3. Use `isolate: true` whenever children edit files in parallel. The child's worktree is made from
    the last commit, so an uncommitted `opencode.json` is not there and the child falls back to your
    global config: keep providers and models in the global config, or commit the file. When you are
@@ -227,8 +208,8 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
 | `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. |
 | `courier_status` | One look at a session: outcome, idle time, last reply and the permission requests and questions it waits on. For check-ins, not for waiting. |
 | `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated and when it was started. |
-| `courier_cleanup` | Removes the git worktree of a child started with `isolate: true` and drops the child from `courier_children`. Keeps a worktree with uncommitted changes or commits on no branch, tag or remote and lists them, unless `force: true` is passed. Runs git from its usual install locations, never through `PATH`; set `OPENCODE_COURIER_GIT` to git's absolute path if yours is elsewhere ([reference](docs/reference.md#worktree-cleanup)). |
-| `courier_answer` | Passes the person's answer to a permission request or a question that a session started from this one waits on, after the plugin relayed it here: `reply` (`once`, `always` or `reject`, with an optional `message`) for a permission request, `answers` for a question. See [A child that asks for permission](docs/reference.md#a-child-that-asks-for-permission) and [A child that asks a question](docs/reference.md#a-child-that-asks-a-question). |
+| `courier_cleanup` | Removes the git worktree of a child started with `isolate: true` and drops the child from `courier_children`. Keeps a worktree with uncommitted changes or commits on no branch, tag or remote and lists them, unless `force: true` is passed ([reference](docs/reference.md#worktree-cleanup)). |
+| `courier_answer` | Passes your answer to a permission request or a question that a session started from this one waits on: `reply` (`once`, `always` or `reject`, with an optional `message`) for a permission request, `answers` for a question. |
 | `courier_later` | Schedules a message for a session (this one by default) in `delayMinutes` or `at` an ISO time, and returns an id. When due it is delivered like `courier_send`, queued behind any running turn and waking the session if idle. |
 | `courier_cancel` | Drops a message scheduled with `courier_later`, e.g. because the child it was waiting for reported first. |
 | `courier_subscribe` | Subscribes a session (this one by default) to webhook deliveries for a `topic`: `owner/repo`, `owner/repo#12` (one pull request or issue) or a generic name. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. Needs the [webhook receiver](#webhooks). |
@@ -256,19 +237,14 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
   [More](docs/reference.md#a-child-that-asks-a-question).
 - **A child that shows a form** the plugin cannot pass on, such as OpenCode's web search asking
   for a provider, has the top session told, marked `asks="form"`, with the form's choices: only you
-  can answer it, in the child's session. For web search it adds that OpenCode gives up after a
-  minute and that the choice holds for every session; once the form is answered or withdrawn, the
-  top session is told it is settled. [More](docs/reference.md#a-child-that-shows-a-form).
+  can answer it, in the child's session. [More](docs/reference.md#a-child-that-shows-a-form).
 - **The plugin remembers.** Each parent's children (`courier_children`), pending `courier_later`
   messages and open questions survive a compaction or a restart; entries are dropped after 14 days.
   [Roster](docs/reference.md#roster), [Scheduled messages](docs/reference.md#scheduled-messages).
 - **One OpenCode server per data directory, preferably.** A second server on the same one, such as
-  `opencode serve` next to `opencode service`, shares the plugin's storage, where an owner key picks
-  the one server that delivers `courier_later` messages, so each arrives once (a server stalling
-  at the wrong moment, or a 0.2.2 copy on the other server, can still deliver one twice). A
-  `courier_answer` from a turn on the server not running the child does not reach its request; it
-  says the request may wait in another server, to be answered there.
-  [More](docs/reference.md#two-servers-on-one-data-directory).
+  `opencode serve` next to `opencode service`, shares the plugin's storage: one of the two delivers
+  `courier_later` messages, but a child's permission request can only be answered from the server
+  that runs the child. [More](docs/reference.md#two-servers-on-one-data-directory).
 - **Worktrees are yours to remove.** An isolated child's worktree is kept until `courier_cleanup`,
   which refuses to drop uncommitted changes or unbranched commits unless told to.
   [More](docs/reference.md#worktree-cleanup).
@@ -344,43 +320,28 @@ OPENCODE_BIN=$(which opencode) npm run test:e2e   # live test, about two minutes
 OPENCODE_BIN=$(which opencode) e2e/real-model.sh  # smoke test with a real model, not in CI
 ```
 
-`e2e/run.sh` starts a real OpenCode V2 server in a throwaway project and home directory, with this
-plugin loaded and `e2e/mock-model.mjs` as the model: an OpenAI-compatible server that replies from a
-fixed script. It walks every tool through the behaviour above, including a permission request, a
-question answered on either side, a web search's provider form (with `e2e/search-plugin`, a
-stand-in search provider), which plugin instances receive an isolated child's events (with
-`e2e/probe-plugin`, an event probe), a server restart with pending work, held off by another
-server's owner key until it expires, a signed and an unsigned GitHub delivery, and the package
-installed from a stand-in npm registry. It needs node, npm, bun, git, curl, jq and openssl. New
-behaviour gets a scenario there.
+The live test (`e2e/run.sh`) starts a real OpenCode V2 server in a throwaway project and home
+directory, with this plugin loaded and a scripted OpenAI-compatible stand-in model, and walks every
+tool through the behaviour above. It needs node, npm, bun, git, curl, jq and openssl. New behaviour
+gets a scenario there.
 
-`e2e/two-servers.sh`, not in CI, runs two servers on one data directory with the same stand-in
-model and counts what each delivers; its results are in
-[docs/plugin-api-notes.md](docs/plugin-api-notes.md#two-servers-with-the-schedulers-owner-key-2026-10-08).
+The smoke test (`e2e/real-model.sh`) runs the same server with a real model (by default a free one
+on [OpenCode Zen](https://opencode.ai/zen), no key needed) and checks that the parent spawns instead
+of doing the work, ends its turn instead of polling, and is woken by each report;
+`COURIER_SCENARIO=permission` and `COURIER_SCENARIO=question` exercise the two relays. Which models
+pass and what was tuned for them: [docs/real-model.md](docs/real-model.md).
 
-`e2e/real-model.sh` runs the same server with a real model (by default a free one on [OpenCode
-Zen](https://opencode.ai/zen), no key needed) and asks the parent to fan a small task out to two
-children; `COURIER_SCENARIO=permission` and `COURIER_SCENARIO=question` exercise the two relays with
-the script in the person's place. It checks that the parent spawns instead of doing the work, ends
-its turn instead of polling, and that each report wakes it. Which models pass and what was tuned for
-them: [docs/real-model.md](docs/real-model.md).
-
-CI (`.github/workflows/ci.yml`) runs both suites on every push to `main` and every pull request,
-with the OpenCode CLI at the same version as the pinned plugin API, and the live suite once more
-with the CLI at its `latest` dist-tag: that job may fail, and its step summary names the version it
-ran on, so a host release that breaks the plugin is seen without blocking the build. On `main` and
-on this repository's own pull requests, a SonarCloud job then scans `src/` with the unit suites'
-coverage (`sonar-project.properties`), and fails when the quality gate does. Releases start from
-GitHub and end with a maintainer's 2FA approval on npm: [docs/releasing.md](docs/releasing.md).
-What the plugin API does that the plugin had to work around, and what changed when the pin last
-moved: [docs/plugin-api-notes.md](docs/plugin-api-notes.md).
+CI runs both suites on every push to `main` and every pull request, with the OpenCode CLI at the
+pinned version, and the live suite once more on the newest OpenCode release, where a failure warns
+rather than breaks the build. SonarCloud scans `src/` on `main` and on pull requests. Releases start
+from GitHub and end with a maintainer's 2FA approval on npm: [docs/releasing.md](docs/releasing.md).
+What the plugin API does that the plugin had to work around: [docs/plugin-api-notes.md](docs/plugin-api-notes.md).
 
 ## Contributing
 
 Questions and bug reports go to the [issues](https://github.com/ivopogace/opencode-courier/issues).
 Pull requests are welcome: a change in behaviour comes with a unit test, an `e2e/run.sh` scenario
 and its line in this README or [docs/reference.md](docs/reference.md), and CI must be green.
-Maintainers release from GitHub as [docs/releasing.md](docs/releasing.md) describes.
 
 ## License
 

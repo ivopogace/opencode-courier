@@ -1,6 +1,5 @@
 # Releasing
 
-
 A release starts from GitHub and ends with a maintainer's 2FA approval on npm; no tag needs
 creating or pushing by hand. Three workflows under `.github/workflows/` take turns:
 

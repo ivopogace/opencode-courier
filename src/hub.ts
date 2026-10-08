@@ -178,8 +178,13 @@ export interface Member {
 export interface Scheduler {
   /** The loop's interval, while it runs. */
   timer?: unknown
-  /** Whether a tick is under way; a tick that falls due meanwhile is skipped. */
-  ticking: boolean
+  /**
+   * The member the tick under way runs through, if any. A tick that falls due meanwhile is skipped,
+   * unless that member has left: a tick that never ends through an unloaded instance holds up nothing.
+   */
+  ticking?: Member
+  /** One tick, by the copy of the plugin that joined last, so a copy loaded after an update runs its own code. */
+  tick?: () => Promise<void>
 }
 
 /** How the hub starts and stops the scheduler's loop; tests pass their own. */
@@ -252,7 +257,7 @@ export function open(registry: Registry, timers: Timers = realTimers): Opened {
   const create = (): Hub => ({
     version: HUB_VERSION,
     members: new Set(),
-    scheduler: { ticking: false },
+    scheduler: {},
     claimed: shared("claimed", () => new Set<string>()),
     watched: shared<Omit<WatchState, "forms">>("watched", () => ({ seen: new Set(), waiting: new Set(), answered: new Set() })),
     forms: shared<FormsTold>("forms", () => ({ told: new Map(), settled: new Set() })),
@@ -272,14 +277,14 @@ export function open(registry: Registry, timers: Timers = realTimers): Opened {
   const tick = async () => {
     const scheduler = hub.scheduler
     const owner = hub.members.values().next().value
-    if (scheduler.ticking || !owner) return
-    scheduler.ticking = true
+    if (!owner || (scheduler.ticking && hub.members.has(scheduler.ticking))) return
+    scheduler.ticking = owner
     try {
       await deliverDue(owner.later, hub.claimed)
     } catch (error) {
       owner.log(`courier_later scheduler: ${String(error)}`)
     } finally {
-      scheduler.ticking = false
+      if (scheduler.ticking === owner) scheduler.ticking = undefined
     }
   }
 
@@ -294,8 +299,9 @@ export function open(registry: Registry, timers: Timers = realTimers): Opened {
     hub.members.add(member)
     hub.locations.set(member, member.permission)
     const scheduler = hub.scheduler
+    scheduler.tick = tick
     if (scheduler.timer === undefined) {
-      scheduler.timer = timers.every(() => void tick(), TICK_MS)
+      scheduler.timer = timers.every(() => void hub.scheduler.tick?.(), TICK_MS)
       void tick()
     }
     return () => {

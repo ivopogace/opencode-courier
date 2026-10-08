@@ -366,8 +366,10 @@ while the server was down), and the last one to leave stops it, so the next to j
 again. Each tick looks for due messages through the ports of the instance that joined first and is
 still loaded; when that one leaves, the next tick runs through the next, so nothing has to be handed
 over but the hub's list of instances. A tick still under way when the next falls due makes that one
-skip. Two copies of the plugin with the same hub version share the loop the first of them started,
-whichever copy's instances it ticks through. A copy before the hub (0.2.2 and earlier) still runs its
+skip, unless the instance it runs through has left since: a tick that never ends through an unloaded
+instance holds nothing up. Two copies of the plugin with the same hub version share the loop the
+first of them started, and each tick runs the code of the copy whose instance joined last, so after
+an update the new copy's delivery code runs, whichever copy's instances it ticks through. A copy before the hub (0.2.2 and earlier) still runs its
 own interval per instance until it unloads; each delivery is claimed in the shared claim set, so it
 and the hub's loop never deliver the same message twice.
 

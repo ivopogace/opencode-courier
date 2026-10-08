@@ -306,6 +306,51 @@ describe("the scheduler", () => {
     leave()
   })
 
+  test("does not wait on a tick through an instance that has left, so a new loop ticks at once", async () => {
+    const { timers, fire } = fakeTimers()
+    const { join: joinHub } = open({}, timers)
+    const later = laterPorts("/a")
+    // A tick through /a that never ends, as through an instance whose location has shut down.
+    const hung: LaterPorts = { ...later, storage: { ...later.storage, scan: () => new Promise(() => {}) } }
+    const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
+    const delivered: string[] = []
+    const leaveA = joinHub(member("/a", () => {}, hung))
+    const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store, delivered)))
+    fire()
+    await settle()
+    expect(delivered).toEqual([])
+
+    leaveA()
+    fire()
+    await settle()
+    expect(delivered).toEqual(["/b later_1"])
+
+    // And once every instance has left, the next to join ticks at once, the hung tick notwithstanding.
+    const leaveC = joinHub(member("/c", () => {}, hung))
+    leaveB()
+    leaveC()
+    store.set("later/later_2", due("later_2"))
+    const leaveD = joinHub(member("/d", () => {}, laterPorts("/d", store, delivered)))
+    await settle()
+    expect(delivered).toEqual(["/b later_1", "/d later_2"])
+    leaveD()
+  })
+
+  test("ticks with the code of the copy that joined last", () => {
+    const registry: Record<symbol, unknown> = {}
+    const { timers } = fakeTimers()
+    const first = open(registry, timers)
+    const leaveA = first.join(member("/a"))
+    const firstTick = first.hub.scheduler.tick
+    const second = open(registry, timers)
+    const leaveB = second.join(member("/b"))
+    expect(second.hub).toBe(first.hub)
+    expect(first.hub.scheduler.tick).toBeFunction()
+    expect(first.hub.scheduler.tick).not.toBe(firstTick)
+    leaveA()
+    leaveB()
+  })
+
   test("logs a failed tick through the instance it ran through, and carries on", async () => {
     const { timers, fire } = fakeTimers()
     const { join: joinHub } = open({}, timers)

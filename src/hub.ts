@@ -86,17 +86,21 @@ export interface WatchPorts {
   readonly storage: RosterStorage
   readonly session: Pick<Context["session"], "synthetic">
   readonly event: Pick<Context["event"], "subscribe">
-  /** This location's pending permission requests, relayed when the watcher (re)subscribes. */
-  readonly permission: Pick<Context["permission"], "list">
+  /**
+   * The permission domains of every loaded location, whose pending requests are relayed when the
+   * watcher (re)subscribes: one watcher serves them all, and an isolated child's are in its worktree's.
+   */
+  readonly permissions: () => Iterable<Pick<Context["permission"], "list">>
   /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
   readonly now: () => number
   readonly log: (message: string) => void
 }
 
 /**
- * What every plugin instance in the process shares: OpenCode sets the plugin up once per project
- * location, all in one process, and each instance may see the same event, so an event id is
- * claimed synchronously and handled once. `waiting` holds the permission requests a session was
+ * What every plugin instance in the process shares. A hub follows OpenCode's events once for all its
+ * members, but a copy of another hub version, or one from before the hub, follows them too and is
+ * sent the same events, and a hand-over overlaps the old subscription with the new one; so an event
+ * id is claimed synchronously and handled once. `waiting` holds the permission requests a session was
  * told about and has not answered; `answered`, requests answered before anyone was told, so a
  * notice whose roster lookup was overtaken by the answer is not sent. `forms` does the same for
  * the forms of spawned sessions.
@@ -171,6 +175,14 @@ export interface Member {
   readonly log: (message: string) => void
 }
 
+/** The one subscription to OpenCode's events a hub runs: the member whose ports it runs through, and how it ends. */
+export interface Watcher {
+  readonly member: Member
+  readonly stop: AbortController
+  /** Settles once the subscription has ended, after `stop`. */
+  readonly done: Promise<void>
+}
+
 export interface Hub {
   readonly version: typeof HUB_VERSION
   /** The instances loaded now, in the order they joined. */
@@ -188,6 +200,8 @@ export interface Hub {
   readonly locations: Map<object, Permissions>
   readonly receivers: Receivers
   readonly questions: QuestionState
+  /** The hub's subscription to OpenCode's events, while a member is loaded to run it. */
+  watcher?: Watcher
   /** Whether the hub of another version found under `HUB_KEY` has been logged. */
   skewLogged: boolean
 }

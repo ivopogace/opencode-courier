@@ -1,5 +1,5 @@
 import { addBounded, setBounded } from "./bounded.js"
-import type { WatchPorts, WatchState } from "./hub.js"
+import type { Hub, Member, WatchPorts, WatchState } from "./hub.js"
 import {
   envelope,
   failureNotice,
@@ -170,15 +170,17 @@ export async function reportFormSettled(ports: WatchPorts, state: WatchState, ev
 }
 
 /**
- * Relays the requests that spawned sessions in this location already wait on, which the event
- * stream does not repeat: those asked while it was down, before the watcher (re)subscribed.
+ * Relays the requests that spawned sessions already wait on, in every loaded location, which the
+ * event stream does not repeat: those asked while it was down, before the watcher (re)subscribed.
  */
 export async function relayPending(ports: WatchPorts, state: WatchState) {
   const sessions = new Set((await allEntries(ports.storage)).map((entry) => entry.sessionID))
-  // Each request is claimed before its notice goes out, so relaying them all at once tells each once.
+  const domains = [...ports.permissions()]
+  // Each request is claimed before its notice goes out, so relaying them all at once tells each
+  // once, however many locations list it.
   const relay = async (sessionID: string) => {
-    const requests = await ports.permission.list({ sessionID }).catch(() => [])
-    await Promise.all(requests.map((request) => reportAsked(ports, state, { id: `pending:${request.id}`, data: request })))
+    const listed = await Promise.all(domains.map((domain) => domain.list({ sessionID }).catch(() => [])))
+    await Promise.all(listed.flat().map((request) => reportAsked(ports, state, { id: `pending:${request.id}`, data: request })))
   }
   await Promise.all([...sessions].map(relay))
 }
@@ -203,7 +205,7 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
   if (event.type === "permission.asked") return reportAsked(ports, state, event as unknown as PermissionAsked)
   if (event.type === "permission.replied") return reportReplied(ports, state, event as unknown as PermissionReplied)
   if (event.type === "form.created") {
-    // Not claimed: every instance may resolve the same waiting call, which is harmless.
+    // Not claimed: another copy's watcher may resolve the same waiting call, which is harmless.
     formShown(event as unknown as Parameters<typeof formShown>[0])
     return reportForm(ports, state, event as unknown as FormCreated)
   }
@@ -251,4 +253,32 @@ export async function watchChildren(ports: WatchPorts, state: WatchState, signal
     }
     if (!signal.aborted) await pause(retryMs, signal)
   }
+}
+
+/**
+ * Follows OpenCode's events once for the hub, through the ports of its earliest member, unless it
+ * already does or no member is loaded. Every instance in the process is sent every event, so one
+ * subscription serves them all.
+ */
+export function watchForHub(hub: Pick<Hub, "members" | "watcher">, state: WatchState, retryMs = RESUBSCRIBE_MS) {
+  if (hub.watcher) return
+  const member: Member | undefined = hub.members.values().next().value
+  if (!member) return
+  const stop = new AbortController()
+  hub.watcher = { member, stop, done: watchChildren(member.watch, state, stop.signal, retryMs) }
+}
+
+/**
+ * Called once `member` has left the hub: when the hub's subscription runs through it, another
+ * member subscribes before it ends, so the events stay followed throughout. The new subscription
+ * relays the requests already pending, as any (re)subscription does, since an instance is sent
+ * only the events published while it is subscribed. The two overlap for a moment; an event both
+ * are sent is claimed and handled once.
+ */
+export function handOver(hub: Pick<Hub, "members" | "watcher">, member: Member, state: WatchState, retryMs = RESUBSCRIBE_MS) {
+  const watcher = hub.watcher
+  if (watcher?.member !== member) return
+  hub.watcher = undefined
+  watchForHub(hub, state, retryMs)
+  watcher.stop.abort()
 }

@@ -11,7 +11,7 @@ import { pendingOf, type AnswerPorts } from "./relay.js"
 import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
 import { pruneExpired } from "./roster.js"
 import { addTools, type ToolPorts } from "./tools.js"
-import { watchChildren, type WatchPorts, type WatchState } from "./watch.js"
+import { handOver, watchForHub, type WatchPorts, type WatchState } from "./watch.js"
 import { builtVersions, versionNotice } from "./version.js"
 import { listen, readConfig, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
@@ -77,8 +77,9 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 }
 
 // One claim set for every instance in the process: OpenCode sets the plugin up once per project
-// location, and those instances share one storage. Likewise one set of handled events, since every
-// instance may be sent the same event, and the permission requests sessions were told about.
+// location, and those instances share one storage. Likewise one set of handled events, since a copy
+// of another hub version, or one from before the hub, follows the same events with its own watcher,
+// and the permission requests sessions were told about.
 const { claimed, watched } = hub
 const watchState: WatchState = { ...watched, forms: hub.forms }
 
@@ -88,7 +89,7 @@ export interface RelaySlot {
 }
 
 /**
- * The courier tools, scheduler, webhook receiver and event watcher, as a promise plugin. `relay`
+ * The courier tools, scheduler, webhook receiver and the hub's event watcher, as a promise plugin. `relay`
  * receives this instance's ports for the question relay while it is loaded.
  */
 export const courier = (relay: RelaySlot = {}) => Plugin.define({
@@ -173,29 +174,30 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     }
     void tick()
     const timer = setInterval(tick, TICK_MS)
-    const watching = new AbortController()
     const watchPorts: WatchPorts = {
       storage: ctx.storage,
       session: ctx.session,
       event: ctx.event,
-      permission: ctx.permission,
+      permissions,
       now: questionPorts.now,
       log: later.log,
     }
-    const leaveHub = join({
+    const member = {
       directory: ctx.location.directory,
       permission: ctx.permission,
       later,
       watch: watchPorts,
       questions: questionPorts,
       log,
-    })
-    void watchChildren(watchPorts, watchState, watching.signal)
+    }
+    const leaveHub = join(member)
+    // One subscription to OpenCode's events for the whole hub, through the earliest member.
+    watchForHub(hub, watchState)
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
       clearInterval(timer)
-      watching.abort()
       leaveHub()
+      handOver(hub, member, watchState)
       if (relay.ports === questionPorts) relay.ports = undefined
       leaveRelay()
       await leave?.()

@@ -12,9 +12,12 @@ afterEach(async () => {
 function fakeEvents() {
   const waiting: Array<(event: unknown) => void> = []
   const queued: unknown[] = []
+  const counted = { subscriptions: 0 }
   return {
+    counted,
     emit: (event: unknown) => (waiting.length ? waiting.shift()!(event) : void queued.push(event)),
     subscribe: async function* ({ signal }: { signal: AbortSignal }) {
+      counted.subscriptions++
       const stopped = new Promise<undefined>((resolve) => signal.addEventListener("abort", () => resolve(undefined)))
       while (!signal.aborted) {
         const event = queued.length ? queued.shift() : await Promise.race([new Promise((resolve) => waiting.push(resolve)), stopped])
@@ -91,7 +94,7 @@ async function setUp(
   const relay: RelaySlot = {}
   const cleanup = await courier(relay).setup(ctx as any)
   if (cleanup) cleanups.push(cleanup)
-  return { tools, calls, store, emit: events.emit, relay }
+  return { tools, calls, store, emit: events.emit, relay, cleanup, subscriptions: () => events.counted.subscriptions }
 }
 
 test("OpenCode loads an Effect plugin, which runs the promise one and wraps the question tool", () => {
@@ -268,6 +271,24 @@ test("a spawned child whose turn fails is reported to its parent", async () => {
   expect(notice.sessionID).toBe("ses_parent")
   expect(notice.text).toContain('<courier from="ses_child" failed="provider.auth">')
   expect(notice.text).toContain("failed: blocked (provider.auth, status 403)")
+})
+
+test("instances follow OpenCode's events once, and the next one takes over when the one following them unloads", async () => {
+  const request = { id: "per_9", sessionID: "ses_child", action: "shell", resources: ["git push"] }
+  const first = await setUp()
+  const second = await setUp({}, undefined, [request])
+  expect([first.subscriptions(), second.subscriptions()]).toEqual([1, 0])
+
+  // The roster is the second instance's storage, which the first does not share in this fake.
+  await second.tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
+  await first.cleanup!()
+  cleanups.splice(cleanups.indexOf(first.cleanup!), 1)
+  expect(second.subscriptions()).toBe(1)
+
+  // Subscribing again relays what is already pending, since the request was asked before.
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const notice = second.calls.find((call) => call.method === "session.synthetic")!.input
+  expect(notice.text).toContain('<courier from="ses_child" asks="permission" request="per_9">')
 })
 
 test("a spawned child's permission request reaches its parent, and courier_answer passes the choice back", async () => {

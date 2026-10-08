@@ -135,9 +135,10 @@ says so.
 
 `courier_status` and `courier_children` list the requests a session waits on under `pending`, so a
 parent that has lost the message, after a compaction for example, can still find them. Whenever
-the plugin starts following OpenCode's events, on loading and after its event stream broke, it
-also relays the requests that spawned sessions already wait on, so one asked in the gap is not
-missed.
+the plugin starts following OpenCode's events, on loading, after its event stream broke and when
+[another location's instance takes the events over](#several-copies-in-one-process), it also relays
+the requests that spawned sessions already wait on, in every loaded location, so one asked in the
+gap is not missed.
 
 ## A child that shows a form
 
@@ -241,7 +242,7 @@ and can be answered all the same.
 A question is relayed only once OpenCode's permission check for it has passed: a child whose agent
 may not ask questions (OpenCode's `general` agent, or a `question` rule with `"effect": "deny"`)
 is refused as before, and the parent hears nothing. The plugin learns that a question is on screen
-from OpenCode's events; when no instance of it followed them for a while and one does again, it
+from OpenCode's events; when nothing in the process followed them for a while and something does again, it
 relays every question still waiting for that, since one shown meanwhile was not seen. The child brief tells children to use the
 question tool when the person must decide; a child can still send its question with
 `courier_send` instead, and the parent then passes your answer back with `courier_send`.
@@ -355,9 +356,22 @@ copied, they are honoured as long as the process runs, which covers "until the o
 without having to detect the unload; each claim set is bounded, so keeping them costs little. A
 future hub version that needed another meaning for one of them would make a new key, and keep
 claiming in the old one as well while a copy that uses it may still be loaded. The loaded
-instances are the one thing each hub version keeps to itself, so once the scheduler and the
-watcher run once per hub rather than once per instance, they still run once per hub version
-during an update, and the shared claim sets keep the two from acting on the same thing.
+instances are the one thing each hub version keeps to itself, so a job a hub runs once rather than
+once per instance still runs once per hub version during an update, and the shared claim sets keep
+the two from acting on the same thing.
+
+The watcher is such a job. Every instance in the process is sent every OpenCode event, an isolated
+child's included ([the notes](plugin-api-notes.md#which-plugin-instances-receive-an-isolated-childs-events-2026-10-07)),
+so the hub follows the events once, through the ports of the instance that joined it first, and
+handles each event once rather than once per instance. When that instance unloads, the hub hands
+the subscription to the earliest instance still loaded: the new one subscribes before the old one
+is stopped, so for a moment both follow the events, and an event both are sent is claimed and
+handled once. An instance is sent only the events published while it is subscribed, so the new
+subscription relays the permission requests already pending, as any resubscription does. The
+question relay's count of watchers therefore never drops to none during a hand-over, and question
+forms are not taken as missed. When the last instance unloads, the subscription ends, and the next
+instance to load starts one. A copy from before the hub still follows the events with its own
+watcher, once per instance, beside the hub's; the claim sets keep each event to one notice.
 
 The hub is per process. It does not reach a second OpenCode server on the same data directory, so
 it does not prevent the duplicates described next; a fix for those (an owner key with an expiry in

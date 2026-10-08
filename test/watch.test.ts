@@ -13,7 +13,7 @@ import {
   type PermissionAsked,
   type PermissionReplied,
 } from "../src/relay.js"
-import { resetHub } from "../src/hub.js"
+import { hub as processHub, open, resetHub, type Member } from "../src/hub.js"
 import { shutdownReportedAt } from "../src/question.js"
 import { record } from "../src/roster.js"
 import {
@@ -21,9 +21,11 @@ import {
   reportFailure,
   reportForm,
   reportFormSettled,
+  handOver,
   relayPending,
   reportReplied,
   watchChildren,
+  watchForHub,
   type ExecutionFailed,
   type WatchPorts,
 } from "../src/watch.js"
@@ -79,9 +81,9 @@ function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["data"][]
         yield* events
       },
     },
-    permission: {
-      list: async ({ sessionID }: { sessionID: string }) => pending.filter((item) => item.sessionID === sessionID),
-    },
+    permissions: () => [
+      { list: async ({ sessionID }: { sessionID: string }) => pending.filter((item) => item.sessionID === sessionID) },
+    ],
     now: () => 1_000_000,
     log: (message: string) => void logged.push(message),
   } as unknown as WatchPorts
@@ -481,6 +483,21 @@ describe("relayPending", () => {
   })
 })
 
+describe("relayPending, across locations", () => {
+  test("relays the requests pending in every loaded location, each once", async () => {
+    const isolated = { ...request, id: "per_2" }
+    const { ports, sent } = fakePorts([], [request])
+    const here = [...ports.permissions()][0]!
+    const worktree = { list: async ({ sessionID }: { sessionID: string }) => [isolated, request].filter((item) => item.sessionID === sessionID) }
+    ;(ports as any).permissions = () => [here, worktree]
+    await record(ports.storage, child())
+
+    await relayPending(ports, fresh())
+
+    expect(sent.map((notice: any) => notice.metadata.requestID).sort()).toEqual(["per_1", "per_2"])
+  })
+})
+
 describe("relayPending, concurrency", () => {
   test("a notice slow to go out does not hold up the others", async () => {
     const second = { ...request, id: "per_2", sessionID: "ses_child2" }
@@ -596,5 +613,112 @@ describe("watchChildren", () => {
       "courier watch: could not handle permission.asked of ses_child: Error: parent is gone",
       "courier watch: could not handle form.created of ses_child: Error: parent is gone",
     ])
+  })
+})
+
+describe("one watcher per hub", () => {
+  /** A member whose event stream stays open until its subscription is aborted, counting subscriptions. */
+  function member(name: string, pending: PermissionAsked["data"][] = []) {
+    const { ports, sent } = fakePorts([], pending)
+    let subscriptions = 0
+    let ended = 0
+    ;(ports.event as any).subscribe = async function* ({ signal }: { signal: AbortSignal }) {
+      subscriptions++
+      try {
+        await new Promise((resolve) => signal.addEventListener("abort", resolve))
+      } finally {
+        ended++
+      }
+      yield* []
+    }
+    const joined = { directory: `/${name}`, watch: ports, log: () => {} } as unknown as Member
+    return { joined, ports, sent, subscriptions: () => subscriptions, ended: () => ended }
+  }
+
+  test("subscribes once, through the earliest member, however many members join", async () => {
+    resetHub()
+    const { hub, join } = open({})
+    const [first, second, third] = [member("a"), member("b"), member("c")]
+    const leaves = [first, second, third].map(({ joined }) => {
+      const leave = join(joined)
+      watchForHub(hub, fresh(), 1)
+      return leave
+    })
+
+    expect([first.subscriptions(), second.subscriptions(), third.subscriptions()]).toEqual([1, 0, 0])
+    expect(hub.watcher?.member).toBe(first.joined)
+    expect(processHub.questions.following).toBe(1)
+
+    // A member that does not run the subscription leaves without touching it.
+    leaves[1]!()
+    handOver(hub, second.joined, fresh(), 1)
+    expect(hub.watcher?.member).toBe(first.joined)
+
+    // Then it moves to the next member still loaded, and ends with the last one.
+    const old = hub.watcher!
+    leaves[0]!()
+    handOver(hub, first.joined, fresh(), 1)
+    await old.done
+    expect(hub.watcher?.member).toBe(third.joined)
+    expect([first.ended(), third.subscriptions()]).toEqual([1, 1])
+    const last = hub.watcher!
+    leaves[2]!()
+    handOver(hub, third.joined, fresh(), 1)
+    await last.done
+    expect(hub.watcher).toBeUndefined()
+    expect(processHub.questions.following).toBe(0)
+    resetHub()
+  })
+
+  test("hands the subscription over when its member leaves, subscribing again before the old one ends", async () => {
+    resetHub()
+    const { hub, join } = open({})
+    const state = fresh()
+    const first = member("a")
+    const second = member("b", [request])
+    await record(second.ports.storage, child())
+    const leaveFirst = join(first.joined)
+    watchForHub(hub, state, 1)
+    const leaveSecond = join(second.joined)
+    watchForHub(hub, state, 1)
+    const old = hub.watcher!
+
+    leaveFirst()
+    handOver(hub, first.joined, state, 1)
+
+    expect(hub.watcher?.member).toBe(second.joined)
+    expect(second.subscriptions()).toBe(1)
+    // The events stay followed throughout: the new subscription counts before the old one ends, so
+    // question forms are not taken as missed.
+    expect(processHub.questions.following).toBe(2)
+    await old.done
+    expect(first.ended()).toBe(1)
+    expect(processHub.questions.following).toBe(1)
+
+    // Like any resubscription, the new one relays what is already pending, which it was not sent.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(second.sent.map((notice: any) => notice.metadata.requestID)).toEqual(["per_1"])
+
+    const last = hub.watcher!
+    leaveSecond()
+    handOver(hub, second.joined, state, 1)
+    await last.done
+    expect(processHub.questions.following).toBe(0)
+    resetHub()
+  })
+
+  test("a member joining after the last one left subscribes again", () => {
+    const { hub, join } = open({})
+    watchForHub(hub, fresh(), 1)
+    expect(hub.watcher).toBeUndefined()
+
+    const only = member("a")
+    const leave = join(only.joined)
+    watchForHub(hub, fresh(), 1)
+    expect(only.subscriptions()).toBe(1)
+    leave()
+    handOver(hub, only.joined, fresh(), 1)
+    expect(hub.watcher).toBeUndefined()
+    resetHub()
   })
 })

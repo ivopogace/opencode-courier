@@ -72,7 +72,6 @@ describe("the hub", () => {
     expect(registry[Symbol.for("opencode-courier.questions")]).toBe(hub.questions)
     expect(registry[Symbol.for("opencode-courier.receiver")]).toBe(hub.receivers)
     expect(registry[Symbol.for("opencode-courier.locations")]).toBe(hub.locations)
-    expect(hub.watch).toEqual({ ...hub.watched, forms: hub.forms })
   })
 
   test("takes the objects of a copy before the hub, loaded first, and fills in the fields it lacks", async () => {
@@ -95,7 +94,7 @@ describe("the hub", () => {
         expect(registry[Symbol.for(HUB_KEY)]).toBe(fresh.hub)
         expect(fresh.hub.claimed).toBe(claimed)
         expect(fresh.hub.watched).toBe(watched)
-        expect(fresh.hub.watch.seen).toBe(watched.seen)
+        expect(fresh.hub.watched.seen).toBe(watched.seen)
         expect(fresh.hub.questions).toBe(questions as never)
         expect(fresh.hub.questions.noticed.has("question_1")).toBe(true)
         expect(fresh.hub.questions.loaded).toBeInstanceOf(Set)
@@ -141,7 +140,7 @@ describe("the hub", () => {
         expect(third.hub).toBe(skewed.hub)
         const leaveC = third.join(member("/c", (message) => logs.push(message)))
         expect(logs).toEqual([
-          `courier: another copy of the plugin with hub version ${HUB_VERSION + 1} is loaded in this process; ` +
+          `courier: another copy of the plugin with hub version ${HUB_VERSION + 1} has been loaded in this process; ` +
             `this copy (hub version ${HUB_VERSION}) keeps its own under ${HUB_KEY}@${HUB_VERSION} and shares the claim sets with it`,
         ])
         expect(skewed.hub.members.size).toBe(3)
@@ -180,7 +179,7 @@ describe("the hub", () => {
 test("hub.ts is the only module of src/ that keeps anything process-wide", () => {
   const src = joinPath(import.meta.dir, "..", "src")
   const users = readdirSync(src).filter(
-    (file) => file !== "storage.ts" && /\bprocessWide\s*[(<]/.test(readFileSync(joinPath(src, file), "utf8")),
+    (file) => file !== "storage.ts" && /\bprocessWide\s*[(<]|Symbol\.for\s*\(|globalThis/.test(readFileSync(joinPath(src, file), "utf8")),
   )
   expect(users).toEqual(["hub.ts"])
 })

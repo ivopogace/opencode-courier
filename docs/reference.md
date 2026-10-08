@@ -336,7 +336,9 @@ share one. When a copy loads:
   puts its hub there; with a hub of its own version it uses that one.
 - With a hub of another version there, it runs its own hub under `opencode-courier.hub@<version>`
   instead, shared with any other copy of its version, and the first instance to join it logs one
-  line: `courier: another copy of the plugin with hub version … is loaded in this process; …`.
+  line: `courier: another copy of the plugin with hub version … has been loaded in this process; …`.
+  The other copy's hub stays under the key after it unloads, so the copies of this version loaded
+  later in the process keep to the versioned key too.
 - Either way, the claim sets and the other shared objects are not the hub's own: the hub takes
   them from the keys the copies before the hub used, `opencode-courier.claimed`, `.watched`,
   `.forms`, `.questions`, `.receiver` and `.locations`, and makes each that is missing (filling in
@@ -350,7 +352,10 @@ Those six keys' shapes and meanings are fixed for that reason. Since they are sh
 copied, they are honoured as long as the process runs, which covers "until the old copy unloads"
 without having to detect the unload; each claim set is bounded, so keeping them costs little. A
 future hub version that needed another meaning for one of them would make a new key, and keep
-claiming in the old one as well while a copy that uses it may still be loaded.
+claiming in the old one as well while a copy that uses it may still be loaded. The loaded
+instances are the one thing each hub version keeps to itself, so once the scheduler and the
+watcher run once per hub rather than once per instance, they still run once per hub version
+during an update, and the shared claim sets keep the two from acting on the same thing.
 
 The hub is per process. It does not reach a second OpenCode server on the same data directory, so
 it does not prevent the duplicates described next; a fix for those (an owner key with an expiry in

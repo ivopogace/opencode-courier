@@ -26,7 +26,10 @@ type Context = Plugin.Context
  * making each when it is missing, so every copy in the process, with a hub or without, claims an
  * event or a delivery in the same set, and an old and a new copy never both act on it. Those keys'
  * shapes and meanings are therefore fixed: a hub version that needs other ones makes new keys, and
- * keeps claiming in the old ones too while a copy that uses them may still be loaded.
+ * keeps claiming in the old ones too while a copy that uses them may still be loaded. `members` is
+ * the one thing each version keeps to itself, so a job a hub runs once for its members runs once
+ * per hub version, and still claims what it acts on in the shared sets, which keep it from acting
+ * twice.
  */
 export const HUB_VERSION = 1
 
@@ -178,8 +181,6 @@ export interface Hub {
   readonly watched: Omit<WatchState, "forms">
   /** The forms sessions were told about, and those settled first. */
   readonly forms: FormsTold
-  /** `watched` and `forms`, as the event watcher takes them. */
-  readonly watch: WatchState
   /**
    * The permission domain of every loaded instance, by instance. OpenCode keeps a request where its
    * session runs, so a request of an isolated child is answered through the instance loaded in its worktree.
@@ -211,15 +212,12 @@ function questionState(): QuestionState {
 }
 
 function create(): Hub {
-  const watched = shared<Omit<WatchState, "forms">>("watched", () => ({ seen: new Set(), waiting: new Set(), answered: new Set() }))
-  const forms = shared<FormsTold>("forms", () => ({ told: new Map(), settled: new Set() }))
   return {
     version: HUB_VERSION,
     members: new Set(),
     claimed: shared("claimed", () => new Set<string>()),
-    watched,
-    forms,
-    watch: { ...watched, forms },
+    watched: shared<Omit<WatchState, "forms">>("watched", () => ({ seen: new Set(), waiting: new Set(), answered: new Set() })),
+    forms: shared<FormsTold>("forms", () => ({ told: new Map(), settled: new Set() })),
     locations: shared("locations", () => new Map<object, Permissions>()),
     receivers: shared<Receivers>("receiver", () => ({})),
     questions: questionState(),
@@ -243,7 +241,7 @@ export function join(member: Member) {
   if (skew && !hub.skewLogged) {
     hub.skewLogged = true
     member.log(
-      `courier: another copy of the plugin with hub version ${String(skew.version)} is loaded in this process; ` +
+      `courier: another copy of the plugin with hub version ${String(skew.version)} has been loaded in this process; ` +
         `this copy (hub version ${HUB_VERSION}) keeps its own under ${HUB_KEY}@${HUB_VERSION} and shares the claim sets with it`,
     )
   }

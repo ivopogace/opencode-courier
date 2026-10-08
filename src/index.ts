@@ -11,7 +11,7 @@ import { pendingOf, type AnswerPorts } from "./relay.js"
 import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
 import { pruneExpired } from "./roster.js"
 import { addTools, type ToolPorts } from "./tools.js"
-import { watchChildren, type WatchPorts } from "./watch.js"
+import { watchChildren, type WatchPorts, type WatchState } from "./watch.js"
 import { builtVersions, versionNotice } from "./version.js"
 import { listen, readConfig, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
@@ -79,7 +79,8 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 // One claim set for every instance in the process: OpenCode sets the plugin up once per project
 // location, and those instances share one storage. Likewise one set of handled events, since every
 // instance may be sent the same event, and the permission requests sessions were told about.
-const { claimed, watched, watch: watchState } = hub
+const { claimed, watched } = hub
+const watchState: WatchState = { ...watched, forms: hub.forms }
 
 /** What a question relay needs from the plugin instance that wraps the question tool. */
 export interface RelaySlot {

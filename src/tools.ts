@@ -16,7 +16,7 @@ import {
   subscribeText,
   unsubscribeText,
 } from "./notices.js"
-import { answerQuestion, isQuestion, type QuestionPorts } from "./question.js"
+import { answerQuestion, isQuestion, type QuestionPorts } from "./question/index.js"
 import { answer, type AnswerPorts, type Waiting } from "./relay.js"
 import { subscribe, unsubscribe, type WebhookPorts } from "./webhook.js"
 

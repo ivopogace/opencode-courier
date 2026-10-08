@@ -37,7 +37,7 @@ export const HUB_VERSION = 1
 export const HUB_KEY = "opencode-courier.hub"
 
 // The ports an instance joins with, and the state the hub keeps for the question relay and the
-// event watcher. Declared here rather than in `question.ts` and `watch.ts`, which use the hub.
+// event watcher. Declared here rather than in `question/` and `watch.ts`, which use the hub.
 
 /**
  * A question this process knows: one whose call waits (`call`), or one whose call was cut off,

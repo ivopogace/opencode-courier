@@ -507,10 +507,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
   const track = (member: Member, started: Promise<unknown>) => {
     const set = work.get(member) ?? new Set()
     work.set(member, set)
-    const settled = started.then(
-      () => void set.delete(settled),
-      () => void set.delete(settled),
-    )
+    const settled: Promise<unknown> = started.catch(() => {}).finally(() => set.delete(settled))
     set.add(settled)
   }
 

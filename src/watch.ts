@@ -222,23 +222,32 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
   return []
 }
 
-/** Settles with the end of a stream once `signal` aborts, so a wait for the next event ends then. */
-const abortion = (signal: AbortSignal) =>
-  new Promise<IteratorReturnResult<undefined>>((resolve) => {
-    const end = () => resolve({ done: true, value: undefined })
-    if (signal.aborted) end()
-    else signal.addEventListener("abort", end, { once: true })
-  })
+const ENDED: IteratorReturnResult<undefined> = { done: true, value: undefined }
 
-/** The events of `events` until it ends or `aborted` settles, whichever comes first; the stream is not closed. */
-const until = <T>(events: AsyncIterator<T>, aborted: Promise<IteratorReturnResult<undefined>>): AsyncIterable<T> => ({
+/**
+ * The events of `events` until it ends or `signal` aborts, whichever comes first; the stream is not
+ * closed. Each wait for the next event listens for the abort only while it waits, so a watcher that
+ * follows events for the life of the process holds nothing per event it has seen.
+ */
+const until = <T>(events: AsyncIterator<T>, signal: AbortSignal): AsyncIterable<T> => ({
   [Symbol.asyncIterator]: () => ({
-    next: () => {
-      const pending = events.next()
-      // Left behind when `aborted` settles first; whatever it ends with then is not wanted.
-      pending.catch(() => {})
-      return Promise.race([pending, aborted])
-    },
+    next: () =>
+      new Promise<IteratorResult<T>>((resolve, reject) => {
+        if (signal.aborted) return resolve(ENDED)
+        const stop = () => resolve(ENDED)
+        signal.addEventListener("abort", stop, { once: true })
+        // Once the signal has aborted, whatever the stream ends this wait with is not wanted.
+        events.next().then(
+          (next) => {
+            signal.removeEventListener("abort", stop)
+            resolve(next)
+          },
+          (error: unknown) => {
+            signal.removeEventListener("abort", stop)
+            reject(error)
+          },
+        )
+      }),
   }),
 })
 
@@ -268,7 +277,6 @@ function handleLogged(ports: WatchPorts, state: WatchState, event: { readonly ty
  * without waiting for the stream to close: an unloading instance's leave waits for that.
  */
 export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
-  const aborted = abortion(signal)
   const relaying = new Set<Promise<void>>()
   while (!signal.aborted) {
     let following = false
@@ -281,7 +289,7 @@ export async function watchChildren(ports: WatchPorts, state: WatchState, signal
       following = true
       // Alongside the new subscription; a request both relays see is relayed once.
       relayAlongside(ports, state, relaying)
-      for await (const event of until(events, aborted)) {
+      for await (const event of until(events, signal)) {
         if (missed) formsMayHaveBeenMissed()
         missed = false
         await handleLogged(ports, state, event)

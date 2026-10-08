@@ -644,6 +644,27 @@ describe("watchChildren, stopped", () => {
     expect(ended).toBe(true)
   })
 
+  test("holds no listener on its signal per event it has seen", async () => {
+    const watching = new AbortController()
+    const { ports } = fakePorts()
+    let listening = 0
+    const add = watching.signal.addEventListener.bind(watching.signal)
+    const remove = watching.signal.removeEventListener.bind(watching.signal)
+    watching.signal.addEventListener = ((...args: Parameters<typeof add>) => (listening++, add(...args))) as typeof add
+    watching.signal.removeEventListener = ((...args: Parameters<typeof remove>) => (listening--, remove(...args))) as typeof remove
+    let seen = 0
+    let atEnd = -1
+    ;(ports.event as any).subscribe = async function* () {
+      for (; seen < 1_000; seen++) yield { id: `evt_${seen}`, type: "session.idle", data: {} }
+      atEnd = listening
+      watching.abort()
+    }
+    await watchChildren(ports, fresh(), watching.signal, 1)
+    expect(seen).toBe(1_000)
+    // One wait for the next event listening, whatever the number of events before it.
+    expect(atEnd).toBe(1)
+  })
+
   test("ends after the relay of the requests already pending", async () => {
     const watching = new AbortController()
     const { ports, sent } = fakePorts([], [request])

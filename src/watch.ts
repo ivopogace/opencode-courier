@@ -1,5 +1,5 @@
-import type { Plugin } from "@opencode/plugin"
 import { addBounded, setBounded } from "./bounded.js"
+import type { WatchPorts, WatchState } from "./hub.js"
 import {
   envelope,
   failureNotice,
@@ -17,51 +17,16 @@ import {
   type FormSettled,
   type PermissionAsked,
   type PermissionReplied,
-  type Waiting,
 } from "./relay.js"
-import { allEntries, entriesOf, lineage, type RosterEntry, type RosterStorage } from "./roster.js"
+import { allEntries, entriesOf, lineage, type RosterEntry } from "./roster.js"
 
-type Context = Plugin.Context
+export type { FormsTold, WatchPorts, WatchState } from "./hub.js"
 
 /** How long to wait before subscribing again after the event stream ended or broke. */
 export const RESUBSCRIBE_MS = 5_000
 
 /** How many handled event ids, and waiting or answered requests, are remembered. */
 const SEEN_MAX = 1_000
-
-export interface WatchPorts {
-  readonly storage: RosterStorage
-  readonly session: Pick<Context["session"], "synthetic">
-  readonly event: Pick<Context["event"], "subscribe">
-  /** This location's pending permission requests, relayed when the watcher (re)subscribes. */
-  readonly permission: Pick<Context["permission"], "list">
-  /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
-  readonly now: () => number
-  readonly log: (message: string) => void
-}
-
-/**
- * What every plugin instance in the process shares: OpenCode sets the plugin up once per project
- * location, all in one process, and each instance may see the same event, so an event id is
- * claimed synchronously and handled once. `waiting` holds the permission requests a session was
- * told about and has not answered; `answered`, requests answered before anyone was told, so a
- * notice whose roster lookup was overtaken by the answer is not sent. `forms` does the same for
- * the forms of spawned sessions.
- */
-export interface WatchState {
-  readonly seen: Set<string>
-  readonly waiting: Waiting
-  readonly answered: Set<string>
-  readonly forms: FormsTold
-}
-
-/** The forms sessions were told about, kept apart from the permission requests. */
-export interface FormsTold {
-  /** Forms still shown whose notice went out, or is going out: the notice's delivery. */
-  readonly told: Map<string, Promise<unknown>>
-  /** Forms settled before anyone was told, so a notice whose roster lookup was overtaken is not sent. */
-  readonly settled: Set<string>
-}
 
 /** The part of OpenCode's `session.execution.failed` event the notice is made from. */
 export interface ExecutionFailed {

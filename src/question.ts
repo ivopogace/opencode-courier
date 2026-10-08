@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import type { Plugin as EffectPlugin } from "@opencode/plugin/effect"
 import { Cause, Effect, Exit, Result } from "effect"
 import { addBounded } from "./bounded.js"
+import { hub, type Question, type QuestionPorts } from "./hub.js"
 import {
   answeredText,
   cutOffAnswer,
@@ -22,7 +23,7 @@ import {
   type Withdrawal,
 } from "./notices.js"
 import { allEntries, answeringTop, lineage, lineageIn, RETENTION_MS, type RosterStorage } from "./roster.js"
-import { processWide, scanAll } from "./storage.js"
+import { scanAll } from "./storage.js"
 
 type Context = Plugin.Context
 type ToolEditor = Parameters<Parameters<EffectPlugin.Context["tool"]["transform"]>[0]>[0]
@@ -41,79 +42,15 @@ export const MAX_STORED = 100
 /** A question as stored; `answered` marks one whose answer went out but that could not be dropped. */
 type Stored = Asked & { readonly answered?: true }
 
-/**
- * A question this process knows: one whose call waits (`call`), or one whose call was cut off,
- * which is answered by message. `link` withdraws the top session's question call that passes its
- * answer on, once the question is settled without that call.
- */
-interface Question extends Asked {
-  /** The directory of the location the call runs in, whose shutdown withdraws its form. */
-  directory?: string
-  /** Hands the waiting call the top session's outcome; true once the call has ended with it. */
-  call?: (outcome: Outcome) => Promise<boolean>
-  link?: (how: Withdrawal) => void
-  /** Storing the question and telling the top session, while that is under way. */
-  relaying?: Promise<boolean>
-  /** Working out what became of it once its call ended without the top session's answer. */
-  settling?: Promise<void>
-}
-
 const storedOf = ({ directory: _directory, call: _call, link: _link, relaying: _relaying, settling: _settling, ...asked }: Question): Asked =>
   asked
 const isPassing = (requestID: string) => shared.passing.has(requestID) || shared.answered.has(requestID)
 
-/**
- * Shared by every plugin instance in the process, since a child and the session it asks can be in
- * different locations: the questions told to a top session and not yet settled, the cut-off ones
- * whose top session has been told so, and the question calls waiting for their form to be shown.
- */
-interface Shared {
-  readonly questions: Map<string, Question>
-  readonly noticed: Set<string>
-  readonly shown: Map<string, () => void>
-  /** The questions whose answer is being passed on, each until that is done, and those whose answer went out. */
-  readonly passing: Map<string, Promise<unknown>>
-  readonly answered: Set<string>
-  /** The ports of the loaded instances. */
-  readonly loaded: Set<QuestionPorts>
-  /** How many instances follow OpenCode's events now, and whether any has since the process started. */
-  following: number
-  followed: boolean
-  /**
-   * When OpenCode last reported each location shutting down (`location.shutdown`), by directory
-   * in epoch milliseconds by the clock of the watcher that saw it; under `ANYWHERE` when the event named no location.
-   */
-  readonly shutdowns: Map<string, number>
-  /** Woken when a location shuts down or an instance unloads: dismissals held to see whether one follows. */
-  readonly closingWaiters: Set<() => void>
-}
-// Field by field, so a copy of the plugin loaded later in the process gets what an older copy lacks.
-const sharedState = processWide<{ -readonly [K in keyof Shared]?: Shared[K] }>("opencode-courier.questions", () => ({}))
-sharedState.questions ??= new Map()
-sharedState.noticed ??= new Set()
-sharedState.shown ??= new Map()
-sharedState.passing ??= new Map()
-sharedState.answered ??= new Set()
-sharedState.loaded ??= new Set()
-sharedState.following ??= 0
-sharedState.followed ??= false
-sharedState.shutdowns ??= new Map()
-sharedState.closingWaiters ??= new Set()
-const shared = sharedState as Shared
+export type { QuestionPorts, QuestionTiming } from "./hub.js"
 
-/**
- * The relay's timings, carried by its ports: how long a question cut off by a closing location
- * waits before an instance still loaded tells its top session, how long an answer waits for another
- * one to it that is still being passed on, how long what follows a call's end waits for the notice
- * of the question to go out, and how long a dismissal is held to see whether the location is
- * shutting down.
- */
-export interface QuestionTiming {
-  readonly closingGraceMs: number
-  readonly passingWaitMs: number
-  readonly relayWaitMs: number
-  readonly dismissalGraceMs: number
-}
+// Shared by every plugin instance in the process, since a child and the session it asks can be in
+// different locations.
+const shared = hub.questions
 
 /** The key of a shutdown reported without a location: it counts for every location. */
 const ANYWHERE = ""
@@ -184,18 +121,6 @@ function within<T>(promise: Promise<T> | undefined, ms: number): Promise<T | und
       },
     )
   })
-}
-
-export interface QuestionPorts {
-  readonly storage: RosterStorage
-  readonly session: Pick<Context["session"], "synthetic">
-  /** The directory of the instance's location. */
-  readonly directory: string
-  /** The clock, in epoch milliseconds, as OpenCode's location shutdowns are recorded. */
-  readonly now: () => number
-  readonly timing: QuestionTiming
-  readonly newID: () => string
-  readonly log: (message: string) => void
 }
 
 const keyOf = (requestID: string) => `${PREFIX}${requestID}`
@@ -841,18 +766,4 @@ export function relayQuestions(host: Pick<EffectPlugin.Context, "tool" | "locati
       tool.execute = linking(ports, directory, asking(ports, directory, tool.execute))
     })
   })
-}
-
-/** For tests: forgets every question this process knows. */
-export function forgetQuestions() {
-  shared.questions.clear()
-  shared.noticed.clear()
-  shared.shown.clear()
-  shared.passing.clear()
-  shared.answered.clear()
-  shared.loaded.clear()
-  shared.following = 0
-  shared.followed = false
-  shared.shutdowns.clear()
-  shared.closingWaiters.clear()
 }

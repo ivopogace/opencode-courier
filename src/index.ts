@@ -3,16 +3,15 @@ import { Plugin as EffectPlugin } from "@opencode/plugin/effect"
 import { fromPromise } from "@opencode/plugin/promise/adapter"
 import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
-import type { Server } from "node:http"
 import type { CourierPorts } from "./courier.js"
 import { headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
+import { hub, join, permissions, type Receiver } from "./hub.js"
 import { deliverDue, TICK_MS, type LaterPorts } from "./later.js"
-import { pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
+import { pendingOf, type AnswerPorts } from "./relay.js"
 import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question.js"
 import { pruneExpired } from "./roster.js"
-import { processWide } from "./storage.js"
 import { addTools, type ToolPorts } from "./tools.js"
-import { watchChildren, type FormsTold, type WatchState } from "./watch.js"
+import { watchChildren, type WatchPorts } from "./watch.js"
 import { builtVersions, versionNotice } from "./version.js"
 import { listen, readConfig, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
@@ -23,12 +22,7 @@ import { listen, readConfig, type WebhookConfig, type WebhookPorts } from "./web
  * A receiver that could not listen is dropped, so the next instance to load tries again, and a new
  * one waits for the previous one to finish closing, as on a plugin reload.
  */
-interface Receiver {
-  readonly config: WebhookConfig
-  readonly instances: Set<WebhookPorts>
-  readonly server: Promise<Server | undefined>
-}
-const receivers = processWide<{ current?: Receiver; closing?: Promise<void> }>("opencode-courier.receiver", () => ({}))
+const receivers = hub.receivers
 
 const sameSettings = (a: WebhookConfig, b: WebhookConfig) =>
   a.port === b.port && a.host === b.host && a.secret === b.secret && a.maxBytes === b.maxBytes
@@ -83,28 +77,9 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 }
 
 // One claim set for every instance in the process: OpenCode sets the plugin up once per project
-// location, and those instances share one storage.
-const claimed = processWide("opencode-courier.claimed", () => new Set<string>())
-
-// Likewise one set of handled events, since every instance may be sent the same event, and the
-// permission requests sessions were told about and have not answered.
-const watched = processWide<Omit<WatchState, "forms">>("opencode-courier.watched", () => ({
-  seen: new Set<string>(),
-  waiting: new Set<string>(),
-  answered: new Set<string>(),
-}))
-// The forms sessions were told about, under a key of their own, which an instance of an earlier
-// version, loaded before in this process, did not make.
-const watchState: WatchState = {
-  ...watched,
-  forms: processWide<FormsTold>("opencode-courier.forms", () => ({ told: new Map(), settled: new Set() })),
-}
-
-// The permission domain of every loaded instance, under a key of its own. OpenCode keeps a request
-// where its session runs, so a request of an isolated child is answered through the instance loaded
-// in its worktree.
-const locations = processWide("opencode-courier.locations", () => new Map<object, Permissions>())
-const permissions = () => locations.values()
+// location, and those instances share one storage. Likewise one set of handled events, since every
+// instance may be sent the same event, and the permission requests sessions were told about.
+const { claimed, watched, watch: watchState } = hub
 
 /** What a question relay needs from the plugin instance that wraps the question tool. */
 export interface RelaySlot {
@@ -198,18 +173,28 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
     void tick()
     const timer = setInterval(tick, TICK_MS)
     const watching = new AbortController()
-    const location = {}
-    locations.set(location, ctx.permission)
-    void watchChildren(
-      { storage: ctx.storage, session: ctx.session, event: ctx.event, permission: ctx.permission, now: questionPorts.now, log: later.log },
-      watchState,
-      watching.signal,
-    )
+    const watchPorts: WatchPorts = {
+      storage: ctx.storage,
+      session: ctx.session,
+      event: ctx.event,
+      permission: ctx.permission,
+      now: questionPorts.now,
+      log: later.log,
+    }
+    const leaveHub = join({
+      directory: ctx.location.directory,
+      permission: ctx.permission,
+      later,
+      watch: watchPorts,
+      questions: questionPorts,
+      log,
+    })
+    void watchChildren(watchPorts, watchState, watching.signal)
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
       clearInterval(timer)
       watching.abort()
-      locations.delete(location)
+      leaveHub()
       if (relay.ports === questionPorts) relay.ports = undefined
       leaveRelay()
       await leave?.()

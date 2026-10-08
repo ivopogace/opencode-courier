@@ -129,8 +129,10 @@ export function answerText(result: AnswerResult) {
     return (
       `No request ${result.requestID} of ${result.sessionID} is pending in this OpenCode server, so nothing was passed on. ` +
       "Either it was answered some other way or the session stopped waiting, and the answer is not needed; or it waits " +
-      "in another OpenCode server on the same data directory, which this one cannot reach. Tell the person their answer " +
-      "was not passed on, and that if the session still waits, they must answer it there, in that session."
+      "in another OpenCode server on the same data directory, which this one cannot reach. Do not message the session " +
+      "about it or answer it again from here. Tell the person their answer " +
+      "was not passed on, and that if the session still waits, its request is in another OpenCode server, where they " +
+      "must answer it, in that session."
     )
   if (!result.answered)
     return (

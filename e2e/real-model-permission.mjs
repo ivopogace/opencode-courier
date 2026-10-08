@@ -7,7 +7,13 @@
 //   node e2e/real-model-permission.mjs <parentSessionID>
 //
 // Reads SERVER, OPENCODE_PASSWORD, WORK, COURIER_TIMEOUT (seconds to wait at each stage) and
-// COURIER_EXPECT (what the child's command prints). Exits 0 when every check passes, 2 when some
+// COURIER_EXPECT (what the child's command prints). With OTHER set, the URL of a second server on
+// the same data directory (COURIER_PERSON=other-server in real-model.sh), the person dismisses the
+// parent's form, if it opened one, and sends "Allow it once." through the other server, so the
+// parent's next turn, and its courier_answer, run there, where the child's request is not pending.
+// Checks that courier_answer then passes nothing on and names another server among the
+// possibilities, records what the parent tells the person, and, as the person, allows the request
+// in the child's own session, on the first server, so the child carries on and reports. Exits 0 when every check passes, 2 when some
 // failed along with model requests (inconclusive), else 1.
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -19,9 +25,10 @@ const work = process.env.WORK
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").trim()
 const ANSWER = "Allow it once."
+const other = process.env.OTHER
 
-async function api(path, init = {}) {
-  const response = await fetch(`${server}/api/${path}`, {
+async function api(path, init = {}, base = server) {
+  const response = await fetch(`${base}/api/${path}`, {
     ...init,
     headers: { authorization: auth, "content-type": "application/json", ...init.headers },
   })
@@ -111,8 +118,40 @@ const asked =
 let how = "did not ask"
 let personAt = Infinity
 
-// 2. The person answers, in the form or as a new message.
-if (told && !answeredItself) {
+// 2. The person answers, in the form or as a new message; with OTHER, through the other server.
+let elsewhereSaid = ""
+if (told && !answeredItself && other) {
+  if (told.form) {
+    how = `asked with a question form, which the person dismissed: ${short(told.form.fields.map((field) => ({ title: field.title, options: field.options?.map((option) => option.label) })), 300)}`
+    console.log("  the person dismisses the parent's form")
+    await api(`session/${parentID}/form/${told.form.id}`, { method: "DELETE" })
+    await until("the parent's turn to end after the dismissal", async () => {
+      const list = await messages(parentID)
+      const forms = (await api(`session/${parentID}/form`)).data
+      for (const form of forms) await api(`session/${parentID}/form/${form.id}`, { method: "DELETE" })
+      return forms.length === 0 && settled(list)
+    })
+  } else how = `asked in its reply: ${short(textOf(last).trim(), 300)}`
+  personAt = Date.now()
+  console.log(`  the person replies "${ANSWER}" through the other server`)
+  await api(`session/${parentID}/prompt`, { method: "POST", body: JSON.stringify({ text: ANSWER }) }, other)
+  await until("the parent's turn on the other server to end", async () => {
+    const list = await messages(parentID)
+    return toolsOf(list.filter((message) => message.time?.created >= personAt)).some((part) => part.name === "courier_answer") && settled(list)
+      ? list
+      : undefined
+  })
+  const list = await messages(parentID)
+  elsewhereSaid = textOf(list.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {}).trim()
+  // The person follows the advice: allows the request in the child's own session, on the first server.
+  const asking = told.list[told.notice].text
+  const childID = asking.match(/<courier from="(ses_\w+)"/)?.[1]
+  const request = asking.match(/request="(per_\w+)"/)?.[1]
+  console.log(`  the person allows ${request} once in the child's own session`)
+  await api(`session/${childID}/permission/${request}/reply`, { method: "POST", body: JSON.stringify({ decision: "once" }) }).catch(
+    (error) => console.log(`  (the request could not be answered there: ${error.message})`),
+  )
+} else if (told && !answeredItself) {
   personAt = Date.now()
   if (told.form) {
     const answer = answerOf(told.form)
@@ -166,18 +205,28 @@ const passedOn = toolsOf(afterPerson).filter(
     part.state.input?.sessionID === child &&
     (part.state.metadata?.answered ?? part.state.metadata?.metadata?.answered) === true,
 )
+const notPending = toolsOf(afterPerson).filter(
+  (part) =>
+    part.name === "courier_answer" &&
+    part.state.status === "completed" &&
+    (part.state.metadata?.answered ?? part.state.metadata?.metadata?.answered) === false &&
+    (part.state.content ?? []).some((item) => item.text?.includes("another OpenCode server on the same data directory")),
+)
 const report = parent.find((message) => isReport(message, child))
 const finalText = textOf(parent.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
 const checks = [
   ["the parent spawned a child, which asked for permission, and the parent was told", Boolean(child) && Boolean(told)],
   ["the parent did not answer the request by itself", Boolean(told) && !answeredItself],
   ["the parent asked the person", asked],
-  ["the parent passed on the person's choice (once) with courier_answer", passedOn.length > 0],
+  other
+    ? ["the parent's courier_answer on the other server passed nothing on and named another server", notPending.length > 0]
+    : ["the parent passed on the person's choice (once) with courier_answer", passedOn.length > 0],
   ["the child ran its command and reported what it printed", Boolean(report) && expected !== "" && report.text.includes(expected)],
   ["the parent's final reply holds it", expected !== "" && finalText.includes(expected)],
 ]
 const notes = [`the parent ${how}`]
-if (answers.length > passedOn.length) notes.push(`courier_answer was called ${answers.length} time(s), ${passedOn.length} of them as checked`)
+if (other) notes.push(`after courier_answer on the other server, the parent said: ${short(elsewhereSaid, 600)}`)
+if (answers.length > (other ? notPending : passedOn).length) notes.push(`courier_answer was called ${answers.length} time(s), ${passedOn.length} of them as checked`)
 // Failed model requests, or a turn whose idle marker (2.0.22) says it failed: a run that fails its
 // checks with any is inconclusive rather than failed. The two are counted apart.
 const providerErrors = [...parent, ...childMessages].filter((message) => message.type === "assistant" && message.error !== undefined)

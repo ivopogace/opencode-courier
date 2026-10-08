@@ -1,6 +1,6 @@
 {
   "name": "opencode-courier",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Multi-session orchestration for OpenCode V2: spawn child sessions, be woken by them. No polling.",
   "license": "MIT",
   "author": "Ivo Pogace <71701666+ivopogace@users.noreply.github.com>",

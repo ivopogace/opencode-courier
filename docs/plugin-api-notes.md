@@ -140,6 +140,30 @@ Nothing the courier calls changed, and the code needed no change. `@opencode/plu
 `@opencode/schema` and `@opencode/protocol` are identical to 2.0.23 apart from their version and
 dependency numbers; `effect` stays at `4.0.0-rc.112`.
 
+## From `2.0.24` to `2.0.26`
+
+2.0.25 and 2.0.26 were released on the same day. Read from the type packages,
+`@opencode/plugin@2.0.24` against `@2.0.26`, from OpenCode's plugin loader at the two tags, and
+checked by the live suite (the 0.2.2 build passed it on a 2.0.26 host, in CI's `latest` leg, before
+the pin moved, and passed it again after):
+
+- Nothing the courier calls changed, and the code needed no change. `effect` stays at
+  `4.0.0-rc.112`, and the promise adapter still builds the promise plugin's context with the very
+  `location` object the Effect half is handed.
+- Integrations gained an "external" connect method (`IntegrationExternalMethod`, with
+  `integration.connect.external` in both APIs and the adapter). The courier registers no
+  integration.
+- `@opencode/plugin` gained a `runtime` export (`dist/runtime.js`, `runtime-modules.js`): under
+  Bun, it registers a loader that makes a plugin's imports of `@opencode/plugin` and `effect`
+  resolve to OpenCode's own copies, and the Bun source scanner skips those packages once it has.
+  Nothing in the package or in the loader calls it at 2.0.26, so a plugin still runs on the copy
+  installed next to it, as [below](#the-peer-dependency-is-a-statement-not-a-check); once OpenCode
+  does call it, the host's copies take over, which the question relay (whose Effects must compose
+  with the host's) is built for either way. A pin bump should re-check which it is.
+- OpenCode's plugin loader (`packages/core/src/plugin/module.ts`) now consults the managed policy
+  before loading a plugin, and refuses one an organisation's policy denies (`integration.use` on
+  `plugin:<name>`); the load reports `blocked`. An administrator's setting, not the plugin's.
+
 ## The peer dependency is a statement, not a check
 
 Whether anything enforces the `@opencode/plugin` peer dependency was tested on six hosts (2.0.0,
@@ -247,7 +271,7 @@ requests.
 `e2e/two-servers.sh` measures what that does, at the pinned version:
 
 ```bash
-npm install --prefix <scratch>/oc @opencode/cli@2.0.24
+npm install --prefix <scratch>/oc @opencode/cli@2.0.26
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh   # a few minutes, no API key; KEEP=1 keeps the logs
 ```
 

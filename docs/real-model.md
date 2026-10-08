@@ -10,7 +10,7 @@ description, a tool result or the child brief.
 
 ```bash
 bun install
-npm install --prefix <scratch>/oc @opencode/cli@2.0.24
+npm install --prefix <scratch>/oc @opencode/cli@2.0.26
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
 ```
 

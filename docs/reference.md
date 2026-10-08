@@ -6,61 +6,39 @@ what the webhook receiver does with a delivery. The [README](../README.md) has t
 
 ## The OpenCode version
 
-### How a release is tested
+Each release of the plugin is built and tested against one OpenCode V2 version, the exact
+`@opencode/plugin` version pinned in its `package.json` (the README's [Supported OpenCode
+version](../README.md#supported-opencode-version) table). The end-to-end suite runs on that version
+with every change, and once more on the newest `@opencode/cli` release, where a failure is a warning
+rather than a red build, so a host release that breaks the plugin shows up in CI first.
 
-The end-to-end suite runs on the pinned version (the README's [Supported OpenCode
-version](../README.md#supported-opencode-version) table) with every change, and once more on the
-newest `@opencode/cli` release, where a failure is a warning rather than a red build, so a host
-release that breaks the plugin shows up in CI first. A newer OpenCode may still break tools;
-[plugin-api-notes.md](plugin-api-notes.md) lists what the pinned version already needed working
-around, and what changed the last time the pin moved.
+Nothing in OpenCode checks the version: `opencode plugin add` installs the plugin on any V2 host,
+and the loader warns about nothing. The plugin loads on hosts from 2.0.4 on, and fails to load on
+2.0.0 to 2.0.3, which lack a domain the plugin API gained in 2.0.4. On a newer host, tools may still
+break; [plugin-api-notes.md](plugin-api-notes.md) lists what each pinned version needed working
+around.
 
-### Other versions it was tried on
-
-0.2.2 moves the pin to 2.0.24, which changed nothing the plugin calls; 0.2.1 passes the suite on
-2.0.24 as well. 0.2.1 changes nothing but the pin: 2.0.23 changed nothing the plugin calls, and
-0.2.0 passes the suite on 2.0.23 as well. 0.2.0 was tested on 2.0.22 and on the `dev` build
-0.0.0-dev-20534 of 2026-10-04, the newest build then (no 2.x release above 2.0.22 existed), where
-the suite passed too. Of the older hosts tried, it loads on 2.0.4 and 2.0.21 (nothing in between was
-run, and the suite was not), and fails to load on 2.0.0 and 2.0.3, which lack the `model` domain the
-plugin API gained in 2.0.4. The version in `package.json` protects nobody on its own: OpenCode says
-nothing about it, since `opencode plugin add` installs the plugin whatever your OpenCode version and
-its loader warns about nothing either (a recorded experiment, in
-[plugin-api-notes.md](plugin-api-notes.md#what-plugin-add-and-loading-do-with-the-peer-dependency-2026-10-04),
-which also says why the peer dependency stays exact rather than a range: it picks the copy of the
-plugin API the plugin runs on). The plugin's own log line,
-[below](#the-log-line-on-another-version), is the only runtime signal, apart from the load failure
-on those hosts before 2.0.4. Check yours with `opencode --version`.
-
-### The log line on another version
-
-Each build of the plugin is tested against one OpenCode version, the exact `@opencode/plugin`
-version under `devDependencies` in its `package.json`, which the plugin reads from its own
-package when it loads, along with its own `version`. When the running OpenCode reports another
-version (`app.version` in the plugin context), the plugin writes one line to the server log, as
-`opencode serve --print-logs` shows it:
+When the running OpenCode reports a version other than the pinned one, the plugin writes one line
+to the server log (`opencode serve --print-logs` shows it) when it loads:
 
 ```
 opencode-courier 0.2.0 was built and tested against OpenCode 2.0.22; this server is 2.0.30 (channel beta). Its tools may fail: see the Supported OpenCode version table in the README, https://github.com/ivopogace/opencode-courier#supported-opencode-version
 ```
 
-That is all it does: the plugin loads and registers its tools as usual, since the other version
-may well be compatible, and no tool result mentions it, so the models never see it. The line is
-written once per load, so once per project location OpenCode sets the plugin up for, never per
-tool call. An older server is named the same way as a newer one, and so is a development build
-of OpenCode, whose version is not a release's; one whose plugin context reports no version at all
-gets the line too, saying so, since that is the mismatch the line is for. If the plugin cannot
-read its own `package.json`, it logs that instead and carries on.
+That is all it does: the plugin loads and registers its tools as usual, since the other version may
+well be compatible, and no tool result mentions it. The line is written once per load, so once per
+project location, never per tool call. An older server, a development build of OpenCode and one
+whose plugin context reports no version at all get the line too. Check yours with
+`opencode --version`.
 
 ## Updating the plugin
 
 Install the plugin by name, without a version (`opencode plugin add opencode-courier`). OpenCode
 only checks plugins for updates when their entry is not an exact version: `opencode-courier` (or a
 tag or range such as `opencode-courier@latest` or `opencode-courier@^0.2.0`) is checked against npm,
-but `opencode-courier@0.2.1` counts as fixed. Its check reports it as current without asking npm, so
-`opencode plugin check`, `opencode plugin update` and *check for updates* (ctrl+r) in the TUI's
-`/plugins` dialog never offer a newer release. If your entry carries an exact version, replace it
-with the name and restart OpenCode:
+but `opencode-courier@0.2.1` counts as fixed, and `opencode plugin check`, `opencode plugin update`
+and *check for updates* (ctrl+r) in the TUI's `/plugins` dialog never offer it a newer release. If
+your entry carries an exact version, replace it with the name and restart OpenCode:
 
 ```bash
 opencode plugin remove opencode-courier@0.2.1   # the entry exactly as it appears in plugins
@@ -84,10 +62,10 @@ up, the child is started anyway, on OpenCode's default.
 
 A child reports with `courier_send`, which it cannot do when its turn fails: the model is not
 available to the account, the credentials are missing, the provider is down. The plugin follows
-OpenCode's events, and for every `session.execution.failed` of a session on a roster it sends the
-parent a message from that child, marked `failed="<error type>"`, with the child's title and the
-error, waking the parent if it is idle. The parent then decides: message the child to have it try
-again, start a replacement, or carry on without it.
+OpenCode's events, and for every failed turn of a spawned session it sends the parent a message
+from that child, marked `failed="<error type>"`, with the child's title and the error, waking the
+parent if it is idle. The parent then decides: message the child to have it try again, start a
+replacement, or carry on without it.
 
 Every failed turn of a child is reported, also one that fails after the child has reported. A turn
 that was interrupted is not a failure and is not reported, and neither is a failure that happens
@@ -98,10 +76,10 @@ covers those.
 
 When a child's tool call needs an approval (a permission rule with `"effect": "ask"`, or no rule
 for it), OpenCode holds the call until someone answers in the child's session, which the person
-working in the parent's session does not see. The plugin follows `permission.asked`, and for a
-session on a roster it sends the parent a message from that child, marked `asks="permission"` and
-`request="<id>"`, waking the parent if it is idle. The message says what the child asks for (the
-action, such as `shell` or `edit`, and its resources, such as the command or the paths), lists
+working in the parent's session does not see. The plugin follows OpenCode's permission events, and
+for a spawned session it sends the parent a message from that child, marked `asks="permission"`
+and `request="<id>"`, waking the parent if it is idle. The message says what the child asks for
+(the action, such as `shell` or `edit`, and its resources, such as the command or the paths), lists
 the choices OpenCode's own prompt offers, and tells the parent to ask the person rather than
 decide:
 
@@ -112,7 +90,7 @@ decide:
 
 The parent asks you, with its question tool if it has one, and calls
 `courier_answer { sessionID, requestID, reply, message? }` with your choice. The plugin passes it
-on with the plugin API's `permission.reply`, and the child carries on.
+on, and the child carries on.
 
 A request of a child's child goes to the session at the top, the one you started the first child
 from, and so on down any number of levels, since that is where you are; the message names the
@@ -122,8 +100,8 @@ it ask by starting a child to do the job and approving it.
 
 OpenCode ends the child's turn when a request is rejected without a message, and the child would
 then never report back. So `courier_answer` always sends a message with a rejection, the person's
-reason or a default one; the child's call fails and it carries on, and can report. At
-`0.0.0-beta-19271` the child's model is told that the call could not be run, not the reason.
+reason or a default one; the child's call fails and it carries on, and can report. The child's
+model is told that the call could not be run, not the reason.
 
 A request can also be answered without the parent: in the child's own session, or along with
 another answer (an `always` that covers it, or a rejection, which rejects the session's other
@@ -135,10 +113,9 @@ says so.
 
 `courier_status` and `courier_children` list the requests a session waits on under `pending`, so a
 parent that has lost the message, after a compaction for example, can still find them. Whenever
-the plugin starts following OpenCode's events, on loading, after its event stream broke and when
-[another location's instance starts a subscription](#several-copies-in-one-process), it also relays
-the requests that spawned sessions already wait on, in every loaded location, so one asked in the
-gap is not missed.
+the plugin starts following OpenCode's events again, after loading or after its event stream broke,
+it also relays the requests that spawned sessions already wait on, so one asked in the gap is not
+missed.
 
 ## A child that shows a form
 
@@ -150,14 +127,13 @@ and a second one, "Choose a web search provider", if the person picks another. T
 pass such a form on or answer it, since the plugin API has no way to answer or withdraw a form; only
 the person can, in the child's session.
 
-So the plugin follows `form.created`, and for a form of a session on a roster it sends the session at
-the top, the one its permission requests go to, a message from that child marked `asks="form"`,
-`form="<id>"` and, when the form says what it is for, `kind="<kind>"` (`kind="websearch.provider"`
-for web search), waking it if it is idle. The message gives the form's title, its fields and their
-choices, and says that neither the parent nor `courier_answer` can answer it, only the person, in
-that child's session: the parent should tell you, not choose for you. A form of a child's child
-goes to the top session, naming the session that started the asking one, as with a permission
-request. Each form is told once, however many plugin instances see it.
+So for a form of a spawned session the plugin sends the session at the top, the one its permission
+requests go to, a message from that child marked `asks="form"`, `form="<id>"` and, when the form
+says what it is for, `kind="<kind>"` (`kind="websearch.provider"` for web search), waking it if it
+is idle. The message gives the form's title, its fields and their choices, and says that neither the
+parent nor `courier_answer` can answer it, only the person, in that child's session: the parent
+should tell you, not choose for you. A form of a child's child goes to the top session, naming the
+session that started the asking one, as with a permission request.
 
 For web search the message adds what OpenCode does next. It waits for the choice at most a minute;
 then the child's search fails with "Web search cancelled", and the child carries on without it. The
@@ -171,17 +147,17 @@ after OpenCode's minute, or cut off with the child's turn), the plugin sends a s
 form that is gone.
 
 The question tool's forms are not told this way: [the question relay](#a-child-that-asks-a-question)
-passes every question of a spawned session on, and OpenCode marks those forms with the kind
-`question`. Forms of sessions not on a roster are ignored, among them MCP servers' requests for
-input, which OpenCode does not attach to a session. The plugin cannot list the forms a session
-shows, so `courier_status` does not report them; a form shown while the plugin was not following
-OpenCode's events is not told, and one settled then, or across a server restart, is not told settled.
+passes every question of a spawned session on. Forms of sessions the plugin did not spawn are
+ignored, among them MCP servers' requests for input, which OpenCode does not attach to a session.
+The plugin cannot list the forms a session shows, so `courier_status` does not report them; a form
+shown while the plugin was not following OpenCode's events is not told, and one settled then, or
+across a server restart, is not told settled.
 
 ## A child that asks a question
 
 A child that calls OpenCode's question tool shows its question in its own session only. The plugin
-wraps that tool, and once the question of a session on a roster is on screen, it sends the session
-at the top, the one its permission requests go to, a message from that child marked
+wraps that tool, and once the question of a spawned session is on screen, it sends the session at
+the top, the one its permission requests go to, a message from that child marked
 `asks="question"` and `request="question_<id>"`, waking it if it is idle. The message lists the
 questions and their options, gives them again as one line of JSON in the question tool's own input
 shape, and tells the parent to ask the person, with its question tool and exactly those questions,
@@ -191,15 +167,14 @@ When the parent asks you the same questions with the same options, the two are l
 pick in the parent's session is passed to the child's waiting call, which returns it as if you had
 answered there, and the child carries on in the same turn. The parent's tool result says so. Only
 the same wording links (spacing and case aside; the options may come in any order), so a question
-of the parent's own with the same yes-or-no choices never answers a child's; when a waiting question has the same choices, the
-parent's tool result says the answers were not passed on and names the request. A parent that asked you some
-other way, in text or reworded, calls
+of the parent's own with the same yes-or-no choices never answers a child's; when a waiting question
+has the same choices, the parent's tool result says the answers were not passed on and names the
+request. A parent that asked you some other way, in text or reworded, calls
 `courier_answer { sessionID, requestID, answers }`: one entry per question, in order, each the
 label you chose or the text you gave, or a list of labels where a question allows several. As with
 permission requests, only the session at the top can answer. Answers to one question are passed on
 one at a time, and once: a second waits for the first, and is told the question no longer waits once
-the first got through. A first that has not got through after 30 seconds gives way, and the second
-goes on; should the first still get through, the child is told twice.
+the first got through.
 
 The question stays in the child's session too, and you can answer it there instead. Whichever
 answer comes first counts, and the other side's question is withdrawn:
@@ -212,13 +187,10 @@ answer comes first counts, and the other side's question is withdrawn:
 - answered in the parent's session: the child's question disappears;
 - dismissed in the parent's session: the parent's turn ends, as OpenCode's tool does, and the
   child's call returns that you dismissed the question, so the child carries on without the answer
-  and can report. Should the parent ask you again within the two seconds the dismissal is held
-  (below), that question is withdrawn too, saying the child carries on without the answers;
+  and can report;
 - answered with `courier_answer` while the parent's question is open (a parent that asks you and
   calls `courier_answer` in the same step): the parent's question disappears, and its tool result
-  names the answers that went to the child, as a message when its question had been cut off. A
-  pick in the parent's question that lands just as `courier_answer` goes through is not passed on,
-  and the parent's tool result says so; a dismissal that lands then is dropped and logged.
+  names the answers that went to the child.
 
 A dismissal on either side reaches the other about two seconds later: OpenCode withdraws open
 questions the same way when it shuts down, and the plugin waits that long to tell the two apart.
@@ -227,23 +199,17 @@ A question whose call is cut off stays answerable. When the child's turn is stop
 or by OpenCode itself, which stops every turn in a project location after 60 minutes without
 activity there), or the server restarts or closes the project, the question is gone from the
 screen. The plugin keeps it in its storage, sends the parent a message marked `stopped="true"`, or
-`restarted="true"` when the plugin is next loaded (or half a minute later, when
-OpenCode closed only that project, keeps running, and has the plugin loaded for another), with the
-questions, and passes
-the answer on as a message to the child, which wakes it. If the parent is asking you at that
-moment, your answer goes that way without a new message. When the plugin loads, stored questions
-are dropped after 14 days, once the child is off its parent's roster, or beyond the 100 newest.
+`restarted="true"` when the plugin is next loaded, with the questions, and passes the answer on as a
+message to the child, which wakes it. If the parent is asking you at that moment, your answer goes
+that way without a new message. Stored questions are dropped after 14 days, once the child is off
+its parent's roster, or beyond the 100 newest.
 
 `courier_status` and `courier_children` list a session's questions under `pending`, with
-`type: "question"`, the questions, and `stopped: true` for one that was cut off. A question whose
-message to the parent could not be sent, or whose record could not be stored, is listed there too,
-and can be answered all the same.
+`type: "question"`, the questions, and `stopped: true` for one that was cut off.
 
 A question is relayed only once OpenCode's permission check for it has passed: a child whose agent
 may not ask questions (OpenCode's `general` agent, or a `question` rule with `"effect": "deny"`)
-is refused as before, and the parent hears nothing. The plugin learns that a question is on screen
-from OpenCode's events; when nothing in the process followed them for a while and something does again, it
-relays every question still waiting for that, since one shown meanwhile was not seen. The child brief tells children to use the
+is refused as before, and the parent hears nothing. The child brief tells children to use the
 question tool when the person must decide; a child can still send its question with
 `courier_send` instead, and the parent then passes your answer back with `courier_send`.
 
@@ -254,26 +220,15 @@ lost track after a compaction or a server restart can call `courier_children` to
 A child that can no longer be looked up is still listed, with the error instead of its state.
 Entries are dropped 14 days after the child was started, when that parent's roster is read or
 the plugin is next loaded, except isolated children whose worktree is still there (see
-[Worktree cleanup](#worktree-cleanup)). If the roster cannot be written, the child still gets its task and
-`courier_spawn` says it is not on the list.
-
-In the plugin's storage, each child's entry is under `roster/<parentID>/<sessionID>`. Next to it,
-`roster-by-child/<sessionID>` holds `{ "ancestors": [...] }`: the child's parent, that parent's
-parent, and so on up to the session courier_spawn did not start. It is an index, so the plugin finds
-a child's entry, and the sessions above it, with one read per level instead of reading every roster
-whenever a child fails, waits for a permission, shows a form or asks a question. The `roster/`
-entries stay the record: each entry the index leads to is read there, and an entry without an index
-key, such as one an older version of the plugin wrote, is found by reading every roster, as before.
-When the plugin loads, it writes the index keys missing for the entries it keeps and drops those
-whose entry is gone; an older version ignores them, so rosters survive an update and a downgrade.
+[Worktree cleanup](#worktree-cleanup)). If the roster cannot be written, the child still gets its
+task and `courier_spawn` says it is not on the list.
 
 ## Worktree cleanup
 
 An isolated child works in a git worktree under OpenCode's data directory
 (`…/opencode/worktree/<project>/<name>`, on a detached HEAD), and nothing removes it on its own.
 When the parent has what it needs from the child, it calls `courier_cleanup { sessionID }`, which
-removes the worktree through the plugin API's `worktree.remove` and drops the child from
-`courier_children`.
+removes the worktree and drops the child from `courier_children`.
 
 The worktree is kept, and the result says why, when it holds work that would otherwise be lost:
 
@@ -290,14 +245,14 @@ or branch what you want to keep (`git -C <worktree> branch <name>` keeps its com
 no longer read. A worktree whose directory is already gone is just dropped from the list; git
 forgets its registration on its next `git worktree prune` or `git gc`.
 
-The plugin reads a worktree's state, and the commit `courier_spawn` records, by running git itself,
-which it looks for in its usual install locations and never through `PATH`, so a writable
-directory early in `PATH` cannot put another program in its place: `/usr/bin/git`,
-`/usr/local/bin/git`, `/opt/homebrew/bin/git` and `/run/current-system/sw/bin/git` (NixOS and
-nix-darwin), or on Windows `C:\Program Files\Git\cmd\git.exe` and its `(x86)` twin. Git
-installed anywhere else is named by the environment variable `OPENCODE_COURIER_GIT`, an absolute
-path, set for the OpenCode server. Without a git, `courier_cleanup` refuses with a message naming
-the places it looked, unless `force` is set, and `courier_spawn` records no commit.
+The plugin reads a worktree's state by running git itself, which it looks for in its usual install
+locations and never through `PATH`, so a writable directory early in `PATH` cannot put another
+program in its place: `/usr/bin/git`, `/usr/local/bin/git`, `/opt/homebrew/bin/git` and
+`/run/current-system/sw/bin/git` (NixOS and nix-darwin), or on Windows
+`C:\Program Files\Git\cmd\git.exe` and its `(x86)` twin. Git installed anywhere else is named by
+the environment variable `OPENCODE_COURIER_GIT`, an absolute path, set for the OpenCode server.
+Without a git, `courier_cleanup` refuses with a message naming the places it looked, unless `force`
+is set, and `courier_spawn` records no commit.
 
 Cleanup is explicit only. A child reporting back does not mean the parent has merged, reviewed or
 even read its work, and the parent may still send it more to do in the same worktree, so the
@@ -310,11 +265,9 @@ reported. It works on the calling session's own children.
 ## Scheduled messages
 
 Pending `courier_later` messages are kept in the plugin's storage, and the plugin checks for due
-ones every 15 seconds, so a message can arrive up to about 15 seconds late. OpenCode loads the
-plugin once per project location; the instances in one server share one scheduler, run by the hub
-(see "Several copies in one process"), and one claim set, so each message is delivered once. Two
-servers on one data directory share neither, and an owner key in the plugin's storage picks the
-one whose scheduler delivers (see below).
+ones every 15 seconds, so a message can arrive up to about 15 seconds late. Within one OpenCode
+server, however many projects have the plugin loaded, one scheduler delivers, so each message
+arrives once.
 
 They survive a server restart. After a start, OpenCode loads plugins for a project the first time
 that project is used, so messages that fell due while it was down are delivered then, not at the
@@ -325,189 +278,59 @@ it twice after the restart; a lost check-in would be worse.
 
 OpenCode runs one instance of the plugin per location (project or worktree), all in one process,
 and after an update it loads the new copy of the package next to the old one until the old one
-unloads. What those instances share is kept in one process-wide hub (`src/hub.ts`): the claim set
-of `courier_later` deliveries, the watcher's handled events and the permission requests and forms
-sessions were told about, the question relay's state, the permission domain of every loaded
-instance, and the webhook receiver. Instances join the hub when they load and leave it when they
-unload.
+unloads. All instances share one process-wide hub, where each scheduled message, OpenCode event,
+permission request, form and question is claimed once, before any instance acts on it, so no
+message is delivered twice and no notice is sent twice, whichever instance or copy sees it first.
+The hub also runs the scheduler once per process and follows OpenCode's events through two
+instances, one of them a standby, so that an instance unloading does not leave a gap in which an
+event, or a child's question, is missed. A webhook receiver started by one instance is the one the
+others join, so two never contend for the port.
 
-The hub carries a version, `HUB_VERSION` in `src/hub.ts`, which changes only when the hub's shape (the
-ports an instance joins with included) or the meaning of one of its fields does, not with every
-release: two releases with the same hub share one. When a copy loads:
+The hub carries a version, which changes only when its shape or the meaning of a field does, not
+with every release. A copy that finds a hub of another version in the process runs its own, under a
+key of its version, and logs one line saying so. The claim sets themselves are shared across hub
+versions, under keys whose shape and meaning are fixed for good, so an old and a new copy of the
+plugin loaded together still never both deliver or tell the same thing; a change that needed
+another meaning for one of them would make a new key and keep claiming in the old one as well.
 
-- It looks under `opencode-courier.hub` (a `Symbol.for` key on `globalThis`). With nothing there it
-  puts its hub there; with a hub of its own version it uses that one.
-- With a hub of another version there, it runs its own hub under `opencode-courier.hub@<version>`
-  instead, shared with any other copy of its version, and the first instance to join it logs one
-  line: `courier: another copy of the plugin with hub version … has been loaded in this process; …`.
-  The other copy's hub stays under the key after it unloads, so the copies of this version loaded
-  later in the process keep to the versioned key too.
-- Either way, the claim sets and the other shared objects are not the hub's own: the hub takes
-  them from the keys the copies before the hub used, `opencode-courier.claimed`, `.watched`,
-  `.forms`, `.questions`, `.receiver` and `.locations`, and makes each that is missing (filling in
-  the fields an older copy's `.questions` lacks). Every copy, with a hub of any version or without
-  one, therefore claims a scheduled message, an event, a permission request, a form or a question
-  in the same set, synchronously, before acting on it, so an old and a new copy never both deliver
-  or tell the same thing. Likewise a webhook receiver started by one copy is the one the other
-  joins, so the two never contend for the port: the server the first copy started keeps serving,
-  with its own code and any joined instance's ports, until the last instance of either copy
-  unloads, and the next instance to load starts a new one.
-
-Those six keys' shapes and meanings are fixed for that reason. Since they are shared rather than
-copied, they are honoured as long as the process runs, which covers "until the old copy unloads"
-without having to detect the unload; each claim set is bounded, so keeping them costs little. A
-future hub version that needed another meaning for one of them would make a new key, and keep
-claiming in the old one as well while a copy that uses it may still be loaded. The loaded
-instances are the one thing each hub version keeps to itself, so a job the hub runs once for its
-instances still runs once per hub version during an update, and the shared claim sets keep the two
-from acting on the same thing.
-
-The scheduler is such a job. The hub runs one loop, ticking every 15 seconds, while it has
-instances: the first instance to join starts it, with a tick at once (which delivers what fell due
-while the server was down), and the last one to leave stops it, so the next to join starts it
-again. Each tick looks for due messages through the ports of the instance that joined first and is
-still loaded; when that one leaves, the next tick runs through the next, so nothing has to be handed
-over but the hub's list of instances. The tick under way is kept on the hub, whichever copy of the
-plugin started it: one still under way when the next falls due makes that one skip, for up to a
-minute from its start even when the instance it runs through has left since, since it may still be
-delivering. Past that minute it is taken to hang: one through an unloaded instance holds nothing up
-any more, and the next tick starts; one through an instance still loaded keeps the loop waiting, so
-another server takes over (below). Two copies of the plugin with the same hub version share the
-loop the first of them started, and each tick runs the code of the copy whose instance joined
-last, so after an update the new copy's delivery code runs, whichever copy's instances it ticks
-through. A copy before the hub (0.2.2 and earlier) still runs its own interval per instance until
-it unloads; each delivery is claimed in the shared claim set, so it and the hub's loop never
-deliver the same message twice.
-
-The watcher is such a job too. Every instance in the process is sent every OpenCode event, an
-isolated child's included ([the notes](plugin-api-notes.md#which-plugin-instances-receive-an-isolated-childs-events-2026-10-07)),
-so one subscription would serve them all; but an instance is sent only the events published while
-it is subscribed, so a subscription started when another one's instance unloads would miss what is
-published in between. The hub therefore keeps two, through two instances: the first instance to
-load starts one, the second a standby, and later ones none. Both handle every event, and the claim
-sets tell each one once, as they did when every instance followed the events. When the instance of
-either one unloads, the other, already connected, keeps following the events, and a new
-subscription starts through the instance that joined first among those without one, the longest
-loaded, before the old one is stopped. So no event goes unseen in a hand-over, the question relay's
-count of watchers never drops to none, and no question is taken as missed. After a reload, which
-closes every location and loads it again, both run through new instances, the only ones left.
-Like any (re)subscription, a new one relays the permission requests already pending, in every
-loaded location; the claims tell each once. With one instance loaded there is no standby, and when
-the last one unloads, the subscription ends, and the next instance to load starts one. As with the
-scheduler's tick, a subscription starts with the watcher of the copy whose instance joined last, so
-after an update the new copy's code takes over as the old copy's instances unload. A copy before the
-hub still follows the events with its own watcher, once per instance, beside the hub's; the claim
-sets keep each event to one notice.
-
-An instance that unloads leaves the hub, and OpenCode, which waits for a plugin's cleanup, waits
-for the work the instance leaves behind, up to 2 s in all, so none of it runs on against a location
-that is closing:
-
-- what it started on loading: the prune of the roster's expired entries, and the notice to top
-  sessions of the questions cut off by an earlier shutdown;
-- a tick of the scheduler under way through it, whether or not it is the last instance: that tick
-  delivers through its storage and sessions until it ends. A tick through another instance is not
-  waited for, except by the last leave, which waits for any tick before it releases the owner key;
-- the subscription to OpenCode's events it ran, stopped once its replacement has started: it ends
-  after the event it is handling, whose notice may be going out, and after the relay of the
-  requests already pending that it started, without waiting for the event stream to close.
-
-The question relay's own work is not waited for: a cut-off question is told to its top session
-after the closing grace, by whichever instance is still loaded then, of any copy, and that has to
-happen after the instance whose call was cut off has gone. Past the 2 s the unload goes on, and
-what is still under way finishes on its own.
-
-The hub's members are the one registry of loaded instances this copy reads. The question relay,
-which wraps OpenCode's question tool from the plugin's Effect half, finds its instance's ports
-there, by the location object OpenCode hands both halves of the instance: once the promise half
-has joined, the relay binds to the member it joined with, the newest at that location, and keeps it
-until it leaves, so an instance loaded later on the same location never takes its place. Every
-copy also keeps its instances' question ports in the `.questions` object's `loaded` set, which a
-release before the hub (0.2.2) reads to pick an instance to tell a cut-off question through; this
-copy reads it only when its hub has no member left, for an instance of such a copy.
-
-The hub is per process. It does not reach a second OpenCode server on the same data directory; the
-owner key described next sits beside it: the hub picks one scheduler per process, the owner key one
-process per data directory.
+When an instance unloads, OpenCode waits, up to 2 seconds, for the work it leaves behind: a
+scheduler tick running through it, the event subscription it ran (once its replacement has
+started), and what it started on loading. Past that, what is still under way finishes on its own.
 
 ## Two servers on one data directory
 
 Two OpenCode servers on one data directory, such as `opencode serve` next to the background server
-of `opencode service`, share the plugin's storage but not its memory. Measured at 2.0.24 with
-`e2e/two-servers.sh` ([the notes](plugin-api-notes.md#two-servers-on-one-data-directory-2026-10-07),
-and [with the owner key](plugin-api-notes.md#two-servers-with-the-schedulers-owner-key-2026-10-08)):
+of `opencode service`, share the plugin's storage (the roster, pending `courier_later` messages,
+stored questions) but not its memory. The plugin handles that as follows:
 
 - **A `courier_later` message is delivered by one server**, the one holding the scheduler's owner
-  key. Without it, both schedulers scanned the same storage and claimed a message only in their own
-  memory, so when both looked within a few milliseconds of each other, from none to all of ten
-  messages due together were delivered twice.
-- A child's permission request and a child's failed turn are told to the parent once, by the
+  key, `scheduler/owner` in the plugin's storage. A server's scheduler delivers while it holds the
+  key, renewing it as it goes, and skips its tick while another server's key is less than 60
+  seconds old. A key that is missing or expired is taken with a short random wait and a read back,
+  so of two servers taking it at once only one delivers. A server that stops gracefully releases
+  the key; one that crashes or stalls leaves it to expire, and another server takes over within
+  about 75 seconds, so the messages due meanwhile arrive late, not lost. The storage has no
+  compare-and-set, so a message delivered twice is rare rather than impossible: it takes a process
+  stalling for half a second or more between two storage calls, or a delivery running for over a
+  minute. A release of the plugin from before the owner key (0.2.2 and earlier) delivers on its own
+  schedule beside the owner.
+- **A child's permission request and a child's failed turn are told to the parent once**, by the
   server that runs the child's turn: the one that handled the `courier_spawn`, or the latest
   message, that started it.
-- `courier_answer` passes an answer on only from a turn on that same server. From the other one it
-  finds no request pending there and passes nothing on, and says so: the request was answered some
-  other way, or the session stopped waiting, or it waits in another OpenCode server on the same
-  data directory, where the person has to answer it, in the child's session. The plugin API offers
-  no channel between servers to pass it through. By the same token, not measured, `courier_status`
-  lists only the requests waiting on its own server.
-
-The owner key is `scheduler/owner` in the plugin's storage, outside `later/`, holding the id of the
-server whose scheduler delivers (its host, process id and the process's start time, the same for
-every copy of the plugin in the process) and when it last wrote the key. Every tick, before it looks
-for due messages, a hub's scheduler reads the key:
-
-- Held by another server and written less than 60 s ago (four ticks): it skips the tick.
-- Its own, written less than 30 s ago: it renews the key, writing the time, and delivers. A tick
-  that falls due while the last one is still delivering renews the key the same way, and skips,
-  for up to a minute from that tick's start, whichever copy of the plugin started it and whether or
-  not its instance is still loaded: a tick that runs longer is taken to hang, and the key is left to
-  expire, so another server delivers.
-- Missing, expired, not an owner record, or its own but 30 s old or more (it may have lost the key
-  meanwhile): it writes its own, waits a random 0.5 to 1 s, reads the key back, and delivers only if
-  it still holds it. Of two servers taking the key at once, the one that wrote last holds it, and
-  the other skips the tick. So after a start the first delivery comes up to a second later.
-- When the hub's last instance leaves (a graceful stop, a reload) its loop stops and it removes the
-  key if it holds it, so another server takes over at its next tick: after a tick still under way,
-  whichever copy started it, has ended (that tick removes it then), and not if an instance has
-  joined again meanwhile, nor while a hub of another version in the process still has instances,
-  since its loop holds the key under the same id. The instance's unload waits for that, up to 2 s.
-- When the owner dies without that (a crash, `kill -9`) or stalls, the key expires 60 s after its
-  last renewal, and another server takes over at its next tick after that: the messages due
-  meanwhile arrive up to 75 s late, not lost. A server restarted after a crash has a new id, so it
-  too waits for its predecessor's key to expire, up to a minute, before it delivers.
-
-The storage has no compare-and-set, so the key makes a message delivered twice rare, not
-impossible. Two servers can both deliver in one tick only when a process stalls at the wrong
-moment: one reads the key free and writes its own more than half a second later (another's
-shortest wait), after the other has written and read back its own; or the owner reads its own key
-and renews it more than 30 s later, after another has found it expired; or the owner's process
-stalls for a minute while a tick of it is still delivering, so nothing renews its key. A GC pause
-or a storage write held up that long between two calls is what it takes (a write to the shared
-SQLite database can wait for the other process's lock), or a delivery of over a minute that the
-owner's ticks take to hang. A delivery through an instance that has since left, or one an older
-copy of the plugin with the same hub version started, is not among them: the tick under way is
-kept on the hub (since #92), so every copy's ticks renew the key for it, and no tick starts beside
-it within its minute. (A build of the plugin from before #92, none of them released, keeps only
-the instance a tick runs through on the hub; a tick it started is skipped by the others while
-that instance is loaded, without their renewing the key for it.) The ticks some milliseconds apart
-that delivered twice before do not. The key's time is the wall clock, which servers on one data
-directory share; a key written more than 60 s in the future, after the clock went back, counts as
-expired.
-
-A released copy of the plugin (0.2.2 and earlier) has no owner key: one running beside this
-version on the same data directory delivers on its own schedule, with or without the key, so a
-message can still be delivered twice between it and the owner, as before. It neither reads nor
-writes the key (it scans only `later/`), so the servers with this version still pick one owner
-among themselves. Within one process, the claim set keeps it and the hub's loop apart as before,
-and two hub versions in one process share the server id, so they hold the key together.
+- **`courier_answer` passes an answer on only from a turn on that same server.** Pending requests
+  live in the memory of the process running the child, and the plugin API offers no channel between
+  servers. From the other server it finds no request pending and says so: the request was answered
+  some other way, or the session stopped waiting, or it waits in another OpenCode server on the
+  same data directory, where the person has to answer it, in the child's session. `courier_status`
+  likewise lists only the requests waiting on its own server.
 
 Where you can, run one OpenCode server per data directory, or point a second one at another
-(`XDG_DATA_HOME`): a permission request is still answered only from the server running the child.
+(`XDG_DATA_HOME`).
 
 ## Webhooks
 
-With the `webhook` option set (see [Receiving webhooks](../README.md#webhooks)), the plugin listens
-for HTTP deliveries and turns them into messages for subscribed sessions:
+With the `webhook` option set (see [Webhooks](../README.md#webhooks) in the README), the plugin
+listens for HTTP deliveries and turns them into messages for subscribed sessions:
 
 - `POST /github` takes GitHub webhook deliveries. A pull request review, a review comment, a
   comment, a pull request or issue being opened, reopened, closed (or merged) or marked ready for
@@ -520,9 +343,9 @@ for HTTP deliveries and turns them into messages for subscribed sessions:
   `text`, `summary` or `message` field is delivered, otherwise the body itself.
 
 Every delivery must carry an `X-Hub-Signature-256` header: `sha256=` followed by exactly 64 hex
-digits, the HMAC-SHA256 under the shared secret. For GitHub that is of the raw body, as GitHub sends it. For
-`/hook/<name>` it is of the name, a newline and the body, so a captured delivery cannot be sent to
-another topic:
+digits, the HMAC-SHA256 under the shared secret. For GitHub that is of the raw body, as GitHub
+sends it. For `/hook/<name>` it is of the name, a newline and the body, so a captured delivery
+cannot be sent to another topic:
 
 ```bash
 sig=$(printf '%s\n%s' deploys "$body" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)
@@ -531,13 +354,12 @@ curl -X POST -H "x-hub-signature-256: sha256=$sig" --data-binary "$body" http://
 
 A missing or wrong signature gets `401`, and the body is not parsed. The check is constant-time.
 Bodies over 1 MiB (`maxBytes`) get `413`. A delivered event gets `202`, with the number of
-sessions it reached, which can be 0. The digests of the last 1000 accepted deliveries are remembered in
-memory (as lowercase hex, so re-casing the header does not get around it), and a delivery already
-accepted gets `200 already delivered`. One that reached nobody because every delivery to a session
-failed is forgotten again, so it can be retried. That stops replays of
-a captured delivery, and it also means a GitHub Redeliver of a delivery that already arrived is
-ignored. Redelivering one that failed works. Generic senders that post the same text twice should
-add something unique, such as a timestamp, to the body.
+sessions it reached, which can be 0. The digests of the last 1000 accepted deliveries are remembered
+in memory, and a delivery already accepted gets `200 already delivered`. One that reached nobody
+because every delivery to a session failed is forgotten again, so it can be retried. That stops
+replays of a captured delivery, and it also means a GitHub Redeliver of a delivery that already
+arrived is ignored. Redelivering one that failed works. Generic senders that post the same text
+twice should add something unique, such as a timestamp, to the body.
 
 The subscribed sessions are sent their messages at once, so a session slow to take one holds up
 none of the others. A session that OpenCode no longer knows loses its subscriptions the next time a
@@ -550,6 +372,5 @@ comment bodies are written by whoever can comment on the repository, so subscrib
 repositories whose commenters you trust with your agent's attention. The server log gets one line
 per delivery (event, delivery id, number of sessions), never the payload or the secret.
 
-GitHub does not report check suites on pull requests from forks (`pull_requests` is empty), so CI
-results for those reach `owner/repo` subscribers only. There is no GitHub event for a merge
-conflict.
+GitHub does not report check suites on pull requests from forks, so CI results for those reach
+`owner/repo` subscribers only. There is no GitHub event for a merge conflict.

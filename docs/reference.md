@@ -328,9 +328,9 @@ sessions were told about, the question relay's state, the permission domain of e
 instance, and the webhook receiver. Instances join the hub when they load and leave it when they
 unload.
 
-The hub carries a version, `HUB_VERSION` in `src/hub.ts`, which changes only when the hub's shape or
-the meaning of one of its fields does, not with every release: two releases with the same hub
-share one. When a copy loads:
+The hub carries a version, `HUB_VERSION` in `src/hub.ts`, which changes only when the hub's shape (the
+ports an instance joins with included) or the meaning of one of its fields does, not with every
+release: two releases with the same hub share one. When a copy loads:
 
 - It looks under `opencode-courier.hub` (a `Symbol.for` key on `globalThis`). With nothing there it
   puts its hub there; with a hub of its own version it uses that one.
@@ -345,8 +345,10 @@ share one. When a copy loads:
   the fields an older copy's `.questions` lacks). Every copy, with a hub of any version or without
   one, therefore claims a scheduled message, an event, a permission request, a form or a question
   in the same set, synchronously, before acting on it, so an old and a new copy never both deliver
-  or tell the same thing; and a webhook receiver started by one copy is the one the other joins,
-  so the new copy takes over its port when the old one unloads.
+  or tell the same thing. Likewise a webhook receiver started by one copy is the one the other
+  joins, so the two never contend for the port: the server the first copy started keeps serving,
+  with its own code and any joined instance's ports, until the last instance of either copy
+  unloads, and the next instance to load starts a new one.
 
 Those six keys' shapes and meanings are fixed for that reason. Since they are shared rather than
 copied, they are honoured as long as the process runs, which covers "until the old copy unloads"

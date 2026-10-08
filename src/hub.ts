@@ -17,7 +17,7 @@ type Context = Plugin.Context
  *
  * The hub is versioned by `HUB_VERSION`, not by the package's version: copies whose hub has the
  * same shape share one hub, however far apart their releases, and only a change to the hub's shape
- * or to the meaning of one of its fields bumps it.
+ * (the ports a `Member` carries included) or to the meaning of one of its fields bumps it.
  *
  * Version skew: a copy that finds a hub of another version under `opencode-courier.hub` logs that
  * once and runs its own hub under `opencode-courier.hub@<version>`. Whatever its version, a hub
@@ -227,7 +227,7 @@ function create(): Hub {
 
 const found = (globalThis as Record<symbol, unknown>)[Symbol.for(HUB_KEY)] as { version?: unknown } | undefined
 /** The version of the hub of another copy found under `HUB_KEY`, if one is there. */
-const skew = found !== undefined && found.version !== HUB_VERSION ? { version: found.version } : undefined
+const skew = found != null && found.version !== HUB_VERSION ? { version: found.version } : undefined
 
 /** This copy's hub: the one under `HUB_KEY`, or its own under a versioned key when another version holds that. */
 export const hub: Hub = processWide(skew ? `${HUB_KEY}@${HUB_VERSION}` : HUB_KEY, create)
@@ -257,8 +257,9 @@ export function join(member: Member) {
 export const permissions = () => hub.locations.values()
 
 /**
- * For tests: forgets every remembered id and the question relay's state. The joined instances and
- * the webhook receiver are left alone; leaving and unloading take them out.
+ * For tests: forgets every remembered id and the question relay's state, the relay's loaded
+ * instances and its count of watchers included. The hub's members, the locations and the webhook
+ * receiver are left alone; leaving and unloading take them out.
  */
 export function resetHub() {
   hub.claimed.clear()

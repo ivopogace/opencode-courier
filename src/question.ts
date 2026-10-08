@@ -1,4 +1,3 @@
-import type { Plugin } from "@opencode/plugin"
 import type { Plugin as EffectPlugin } from "@opencode/plugin/effect"
 import { Cause, Effect, Exit, Result } from "effect"
 import { addBounded } from "./bounded.js"
@@ -25,7 +24,6 @@ import {
 import { allEntries, answeringTop, lineage, lineageIn, RETENTION_MS, type RosterStorage } from "./roster.js"
 import { scanAll } from "./storage.js"
 
-type Context = Plugin.Context
 type ToolEditor = Parameters<Parameters<EffectPlugin.Context["tool"]["transform"]>[0]>[0]
 type HostTool = Parameters<Parameters<ToolEditor["update"]>[1]>[0]
 type Execute = HostTool["execute"]

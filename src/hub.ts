@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 import type { Server } from "node:http"
-import type { LaterPorts } from "./later.js"
+import { deliverDue, TICK_MS, type LaterPorts } from "./later.js"
 import type { Asked, Outcome, Withdrawal } from "./notices.js"
 import type { Permissions, Waiting } from "./relay.js"
 import type { RosterStorage } from "./roster.js"
@@ -171,10 +171,38 @@ export interface Member {
   readonly log: (message: string) => void
 }
 
+/**
+ * The scheduler's loop, one per hub: it runs while the hub has members, and each tick delivers the
+ * due `courier_later` messages through the ports of the member that joined first and is still loaded.
+ */
+export interface Scheduler {
+  /** The loop's interval, while it runs. */
+  timer?: unknown
+  /**
+   * The member the tick under way runs through, if any. A tick that falls due meanwhile is skipped,
+   * unless that member has left: a tick that never ends through an unloaded instance holds up nothing.
+   */
+  ticking?: Member
+  /** One tick, by the copy of the plugin that joined last, so a copy loaded after an update runs its own code. */
+  tick?: () => Promise<void>
+}
+
+/** How the hub starts and stops the scheduler's loop; tests pass their own. */
+export interface Timers {
+  readonly every: (run: () => void, ms: number) => unknown
+  readonly stop: (timer: unknown) => void
+}
+
+const realTimers: Timers = {
+  every: (run, ms) => setInterval(run, ms),
+  stop: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
+}
+
 export interface Hub {
   readonly version: typeof HUB_VERSION
   /** The instances loaded now, in the order they joined. */
   readonly members: Set<Member>
+  readonly scheduler: Scheduler
   /** The ids of the `courier_later` messages being delivered. */
   readonly claimed: Set<string>
   /** The events handled, and the permission requests a session was told about or that were answered first. */
@@ -198,7 +226,8 @@ export interface Opened {
   /**
    * Adds a loaded instance to the hub and its permission domain to `locations`; returns its leave,
    * which takes both out again. The first instance to join logs a hub of another version found
-   * under `HUB_KEY`.
+   * under `HUB_KEY`. An instance joining a hub without members starts the scheduler's loop, with a
+   * tick at once; the last one to leave stops it.
    */
   readonly join: (member: Member) => () => void
 }
@@ -208,7 +237,7 @@ export interface Opened {
  * versioned key when a hub of another version holds that. Either way, its claim sets and shared
  * objects are the ones under the keys of the copies before the hub, made when missing.
  */
-export function open(registry: Registry): Opened {
+export function open(registry: Registry, timers: Timers = realTimers): Opened {
   const shared = <T>(name: string, create: () => T) => processWide(`opencode-courier.${name}`, create, registry)
   const questionState = () => {
     // Field by field, since a copy before the hub may have made it without the fields added later.
@@ -228,6 +257,7 @@ export function open(registry: Registry): Opened {
   const create = (): Hub => ({
     version: HUB_VERSION,
     members: new Set(),
+    scheduler: {},
     claimed: shared("claimed", () => new Set<string>()),
     watched: shared<Omit<WatchState, "forms">>("watched", () => ({ seen: new Set(), waiting: new Set(), answered: new Set() })),
     forms: shared<FormsTold>("forms", () => ({ told: new Map(), settled: new Set() })),
@@ -242,6 +272,22 @@ export function open(registry: Registry): Opened {
   const skew = found != null && found.version !== HUB_VERSION ? { version: found.version } : undefined
   const hub = processWide(skew ? `${HUB_KEY}@${HUB_VERSION}` : HUB_KEY, create, registry)
 
+  // One tick, through the first member still loaded. The claim on each delivery stays, as the second
+  // line of defence against a copy before the hub, which runs its own interval until it unloads.
+  const tick = async () => {
+    const scheduler = hub.scheduler
+    const owner = hub.members.values().next().value
+    if (!owner || (scheduler.ticking && hub.members.has(scheduler.ticking))) return
+    scheduler.ticking = owner
+    try {
+      await deliverDue(owner.later, hub.claimed)
+    } catch (error) {
+      owner.log(`courier_later scheduler: ${String(error)}`)
+    } finally {
+      if (scheduler.ticking === owner) scheduler.ticking = undefined
+    }
+  }
+
   const join = (member: Member) => {
     if (skew && !hub.skewLogged) {
       hub.skewLogged = true
@@ -252,9 +298,18 @@ export function open(registry: Registry): Opened {
     }
     hub.members.add(member)
     hub.locations.set(member, member.permission)
+    const scheduler = hub.scheduler
+    scheduler.tick = tick
+    if (scheduler.timer === undefined) {
+      scheduler.timer = timers.every(() => void hub.scheduler.tick?.(), TICK_MS)
+      void tick()
+    }
     return () => {
       hub.members.delete(member)
       hub.locations.delete(member)
+      if (hub.members.size > 0 || scheduler.timer === undefined) return
+      timers.stop(scheduler.timer)
+      scheduler.timer = undefined
     }
   }
   return { hub, join }

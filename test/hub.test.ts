@@ -191,6 +191,12 @@ describe("the hub", () => {
     const run = Bun.spawnSync([process.execPath, joinPath(import.meta.dir, "fixtures", "two-copies.ts")])
     expect(run.stderr.toString()).toBe("")
     expect(JSON.parse(run.stdout.toString())).toEqual({
+      // Renewed for the first copy's tick by the second's, each tick, until a minute from its start.
+      otherCopy: {
+        renewedAt: [1_000 + TICK_MS, 1_000 + 2 * TICK_MS, 1_000 + 3 * TICK_MS, 1_000 + 3 * TICK_MS],
+        heldWhileDelivering: true,
+        releasedAfter: true,
+      },
       sameHub: true,
       separateModules: true,
       joined: { members: ["/a", "/b"], permissions: 2 },
@@ -348,34 +354,81 @@ describe("the scheduler", () => {
     leave()
   })
 
-  test("does not wait on a tick through an instance that has left, so a new loop ticks at once", async () => {
+  test("waits on a tick through an instance that has left for a minute from its start, then ticks without it", async () => {
     const { timers, fire } = fakeTimers()
     const { join: joinHub } = open({}, timers)
-    const later = laterPorts("/a")
+    let now = 1_000
+    const clock = () => now
+    const later = laterPorts("/a", new Map(), [], clock)
     // A tick through /a that never ends, as through an instance whose location has shut down.
     const hung: LaterPorts = { ...later, storage: { ...later.storage, scan: () => new Promise(() => {}) } }
     const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
     const delivered: string[] = []
     const leaveA = joinHub(member("/a", () => {}, hung))
-    const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store, delivered)))
+    const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store, delivered, clock)))
+    await settle()
+
+    // Gone, its tick may still be delivering: the next ones skip, for a minute from its start.
+    leaveA()
+    now = 1_000 + OWNER_EXPIRY_MS - 1
     fire()
     await settle()
     expect(delivered).toEqual([])
 
-    leaveA()
+    now = 1_000 + OWNER_EXPIRY_MS
     fire()
     await settle()
     expect(delivered).toEqual(["/b later_1"])
 
-    // And once every instance has left, the next to join ticks at once, the hung tick notwithstanding.
-    const leaveC = joinHub(member("/c", () => {}, hung))
-    leaveB()
-    leaveC()
+    // And once every instance has left, the next to join ticks at once once the hung tick is a minute old.
+    const leaveC = joinHub(member("/c", () => {}, { ...hung, now: clock }))
+    await settle()
+    void leaveB()
+    void leaveC()
     store.set("later/later_2", due("later_2"))
-    const leaveD = joinHub(member("/d", () => {}, laterPorts("/d", store, delivered)))
+    now += OWNER_EXPIRY_MS
+    const leaveD = joinHub(member("/d", () => {}, laterPorts("/d", store, delivered, clock)))
     await settle()
     expect(delivered).toEqual(["/b later_1", "/d later_2"])
-    leaveD()
+    void leaveD()
+  })
+
+  test("keeps skipping a tick past its minute while its instance is loaded", async () => {
+    const { timers, fire } = fakeTimers()
+    const { join: joinHub } = open({}, timers)
+    let now = 1_000
+    let scans = 0
+    const later = laterPorts("/a", new Map(), [], () => now)
+    const hung: LaterPorts = { ...later, storage: { ...later.storage, scan: () => (scans++, new Promise(() => {})) } }
+    const leave = joinHub(member("/a", () => {}, hung))
+    await settle()
+    now += 2 * OWNER_EXPIRY_MS
+    fire()
+    await settle()
+    expect(scans).toBe(1)
+    void leave()
+  })
+
+  test("skips a tick while one of a copy that keeps only the member it ticks through is under way", async () => {
+    const { timers, fire } = fakeTimers()
+    const { hub: fresh, join: joinHub } = open({}, timers)
+    const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
+    const delivered: string[] = []
+    const a = member("/a", () => {}, laterPorts("/a", store, delivered))
+    const leaveA = joinHub(a)
+    await settle()
+    expect(delivered).toEqual(["/a later_1"])
+
+    store.set("later/later_2", due("later_2"))
+    fresh.scheduler.ticking = a
+    fire()
+    await settle()
+    expect(delivered).toEqual(["/a later_1"])
+    fresh.scheduler.ticking = undefined
+    fire()
+    await settle()
+    expect(delivered).toEqual(["/a later_1", "/a later_2"])
+    void leaveA()
   })
 
   test("ticks with the code of the copy that joined last", () => {
@@ -589,6 +642,93 @@ describe("the owner key", () => {
     await settle()
     expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: 1_000 + 3 * TICK_MS })
     void leave()
+  })
+
+  test("is renewed for a tick still delivering through an instance that has left, for a minute from its start", async () => {
+    const { timers, fire } = fakeTimers()
+    const { hub: fresh, join: joinHub } = open({}, timers, "server_a")
+    let now = 1_000
+    const store = new Map<string, unknown>()
+    const later = laterPorts("/a", store, [], () => now)
+    const slow: LaterPorts = { ...later, storage: { ...later.storage, scan: () => new Promise(() => {}) } }
+    const leaveA = joinHub(member("/a", () => {}, slow))
+    const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store, [], () => now)))
+    await settle()
+    expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: 1_000 })
+
+    void leaveA()
+    for (const step of [1, 2, 3]) {
+      now = 1_000 + step * TICK_MS
+      fire()
+      await settle()
+      expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: now })
+    }
+    expect(fresh.scheduler.running?.member.directory).toBe("/a")
+
+    // Past the minute it holds the key no longer, and the next tick starts, through /b.
+    now = 1_000 + OWNER_EXPIRY_MS
+    fire()
+    await settle()
+    expect(fresh.scheduler.running).toBeUndefined()
+    expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: now })
+    void leaveB()
+  })
+
+  test("is renewed for a tick still delivering that another copy of the same hub version started, for a minute from its start", async () => {
+    const registry: Record<symbol, unknown> = {}
+    const { timers, fire } = fakeTimers()
+    let now = 1_000
+    const store = new Map<string, unknown>()
+    const later = laterPorts("/a", store, [], () => now)
+    const slow: LaterPorts = { ...later, storage: { ...later.storage, scan: () => new Promise(() => {}) } }
+    const first = open(registry, timers, "server_a")
+    const leaveA = first.join(member("/a", () => {}, slow))
+    await settle()
+    const second = open(registry, timers, "server_a")
+    const leaveB = second.join(member("/b", () => {}, laterPorts("/b", store, [], () => now)))
+    expect(second.hub).toBe(first.hub)
+
+    for (const step of [1, 2, 3]) {
+      now = 1_000 + step * TICK_MS
+      fire()
+      await settle()
+      expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: now })
+    }
+    now = 1_000 + OWNER_EXPIRY_MS
+    fire()
+    await settle()
+    expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: 1_000 + 3 * TICK_MS })
+    void leaveA()
+    void leaveB()
+  })
+
+  test("is released by the last leave only after a tick under way that another copy started", async () => {
+    const registry: Record<symbol, unknown> = {}
+    const { timers, go } = fakeTimers(true)
+    const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
+    const later = laterPorts("/a", store)
+    let finish = () => {}
+    const slow: LaterPorts = {
+      ...later,
+      session: { synthetic: () => new Promise((resolve) => (finish = () => resolve({ id: "msg_1" } as never))) } as never,
+    }
+    const first = open(registry, timers, "server_a")
+    const leaveA = first.join(member("/a", () => {}, slow))
+    await settle()
+    go()
+    await settle()
+    const second = open(registry, timers, "server_a")
+    const leaveB = second.join(member("/b", () => {}, laterPorts("/b", store)))
+    void leaveA()
+    let left = false
+    void leaveB().then(() => (left = true))
+    await settle()
+    expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: 1_000 })
+    expect(left).toBe(false)
+    finish()
+    await settle()
+    expect(store.has(OWNER_KEY)).toBe(false)
+    expect(left).toBe(true)
   })
 
   test("held by another server is not renewed by a tick still delivering", async () => {

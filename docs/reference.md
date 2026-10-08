@@ -313,7 +313,8 @@ Pending `courier_later` messages are kept in the plugin's storage, and the plugi
 ones every 15 seconds, so a message can arrive up to about 15 seconds late. OpenCode loads the
 plugin once per project location; the instances in one server share one scheduler, run by the hub
 (see "Several copies in one process"), and one claim set, so each message is delivered once. Two
-servers on one data directory share neither (see below).
+servers on one data directory share neither, and an owner key in the plugin's storage picks the
+one whose scheduler delivers (see below).
 
 They survive a server restart. After a start, OpenCode loads plugins for a project the first time
 that project is used, so messages that fell due while it was down are delivered then, not at the
@@ -394,30 +395,68 @@ after an update the new copy's code takes over as the old copy's instances unloa
 hub still follows the events with its own watcher, once per instance, beside the hub's; the claim
 sets keep each event to one notice.
 
-The hub is per process. It does not reach a second OpenCode server on the same data directory, so
-it does not prevent the duplicates described next; a fix for those (an owner key with an expiry in
-the plugin's storage, see [the notes](plugin-api-notes.md#two-servers-on-one-data-directory-2026-10-07))
-would sit beside it.
+The hub is per process. It does not reach a second OpenCode server on the same data directory; the
+owner key described next sits beside it: the hub picks one scheduler per process, the owner key one
+process per data directory.
 
 ## Two servers on one data directory
 
 Two OpenCode servers on one data directory, such as `opencode serve` next to the background server
 of `opencode service`, share the plugin's storage but not its memory. Measured at 2.0.24 with
-`e2e/two-servers.sh` ([the notes](plugin-api-notes.md#two-servers-on-one-data-directory-2026-10-07)):
+`e2e/two-servers.sh` ([the notes](plugin-api-notes.md#two-servers-on-one-data-directory-2026-10-07),
+and [with the owner key](plugin-api-notes.md#two-servers-with-the-schedulers-owner-key-2026-10-08)):
 
-- A `courier_later` message is delivered by whichever server's scheduler finds it due first, and
-  twice when both look within a few milliseconds of each other. With the plugin loaded on both at
-  the same moment, from none to all of ten messages due together were delivered twice, varying
-  from run to run; loaded half a tick apart, none was.
+- **A `courier_later` message is delivered by one server**, the one holding the scheduler's owner
+  key. Without it, both schedulers scanned the same storage and claimed a message only in their own
+  memory, so when both looked within a few milliseconds of each other, from none to all of ten
+  messages due together were delivered twice.
 - A child's permission request and a child's failed turn are told to the parent once, by the
   server that runs the child's turn: the one that handled the `courier_spawn`, or the latest
   message, that started it.
 - `courier_answer` passes an answer on only from a turn on that same server. From the other one it
-  finds no request, says the child no longer waits, and passes nothing on, while the child still
-  waits. By the same token, not measured, `courier_status` lists only the requests waiting on its
-  own server.
+  finds no request pending there and passes nothing on, and says so: the request was answered some
+  other way, or the session stopped waiting, or it waits in another OpenCode server on the same
+  data directory, where the person has to answer it, in the child's session. The plugin API offers
+  no channel between servers to pass it through. By the same token, not measured, `courier_status`
+  lists only the requests waiting on its own server.
 
-Run one OpenCode server per data directory, or point a second one at another (`XDG_DATA_HOME`).
+The owner key is `scheduler/owner` in the plugin's storage, outside `later/`, holding the id of the
+server whose scheduler delivers (its host, process id and the process's start time, the same for
+every copy of the plugin in the process) and when it last wrote the key. Every tick, before it looks
+for due messages, a hub's scheduler reads the key:
+
+- Held by another server and written less than 60 s ago (four ticks): it skips the tick.
+- Its own, written less than 30 s ago: it renews the key, writing the time, and delivers.
+- Missing, expired, not an owner record, or its own but 30 s old or more (it may have lost the key
+  meanwhile): it writes its own, waits a random 0.5 to 1 s, reads the key back, and delivers only if
+  it still holds it. Of two servers taking the key at once, the one that wrote last holds it, and
+  the other skips the tick. So after a start the first delivery comes up to a second later.
+- When the hub's last instance leaves (a graceful stop, a reload) its loop stops and it removes the
+  key if it holds it, so another server takes over at its next tick.
+- When the owner dies without that (a crash, `kill -9`) or stalls, the key expires 60 s after its
+  last renewal, and another server takes over at its next tick after that: the messages due
+  meanwhile arrive up to 75 s late, not lost. A server restarted after a crash has a new id, so it
+  too waits for its predecessor's key to expire, up to a minute, before it delivers.
+
+The storage has no compare-and-set, so the key makes a message delivered twice rare, not
+impossible. Two servers can both deliver in one tick only when a process stalls at the wrong
+moment: one reads the key free and writes its own more than half a second later (another's
+shortest wait), after the other has written and read back its own; or the owner reads its own key
+and renews it more than 30 s later, after another has found it expired; or a tick of the owner is
+still delivering when its key expires. A GC pause or a storage write held up that long between two
+calls is what it takes; the ticks some milliseconds apart that delivered twice before do not. The
+key's time is the wall clock, which servers on one data directory share; a key written more than
+60 s in the future, after the clock went back, counts as expired.
+
+A released copy of the plugin (0.2.2 and earlier) has no owner key: one running beside this
+version on the same data directory delivers on its own schedule, with or without the key, so a
+message can still be delivered twice between it and the owner, as before. It neither reads nor
+writes the key (it scans only `later/`), so the servers with this version still pick one owner
+among themselves. Within one process, the claim set keeps it and the hub's loop apart as before,
+and two hub versions in one process share the server id, so they hold the key together.
+
+Where you can, run one OpenCode server per data directory, or point a second one at another
+(`XDG_DATA_HOME`): a permission request is still answered only from the server running the child.
 
 ## Webhooks
 

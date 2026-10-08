@@ -15,7 +15,8 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   `src/question.ts`: relaying a child's question, by wrapping OpenCode's `question` tool.
   `src/hub.ts`: the plugin's process-wide state in one versioned hub, which instances `join` with
   their ports and location and leave on unload, the types of that state, and the scheduler's loop,
-  run once per hub through one of its members; the version-skew rule
+  run once per hub through one of its members, and by one server per data directory, the one holding
+  the owner key (`scheduler/owner`) in the plugin's storage; the version-skew rule
   is in `docs/reference.md`. `src/storage.ts`: shared storage helpers and `processWide`, the
   process-wide registry, which only `hub.ts` uses (a unit test checks).
   `src/json.ts`: readers for untyped JSON (webhook payloads, plugin options).
@@ -35,7 +36,7 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
 - `e2e/run.sh`: live test against a real OpenCode V2 server, driven by `e2e/mock-model.mjs`, a
   scripted OpenAI-compatible stand-in model, with `e2e/search-plugin` as a stand-in web search
   provider, `e2e/probe-plugin` logging the events each location's instance receives, and `e2e/kv.ts`
-  to read or remove the plugin's storage keys in OpenCode's database. New behaviour gets a scenario
+  to read, remove or set the plugin's storage keys in OpenCode's database. New behaviour gets a scenario
   there. `e2e/two-servers.sh`, not in CI: two servers on one data directory, with the same stand-in
   model; its results are in `docs/plugin-api-notes.md`.
 - `e2e/real-model.sh` (with `e2e/real-model.mjs`, `e2e/real-model-permission.mjs` for

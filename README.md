@@ -262,9 +262,12 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
 - **The plugin remembers.** Each parent's children (`courier_children`), pending `courier_later`
   messages and open questions survive a compaction or a restart; entries are dropped after 14 days.
   [Roster](docs/reference.md#roster), [Scheduled messages](docs/reference.md#scheduled-messages).
-- **One OpenCode server per data directory.** A second server on the same one, such as
-  `opencode serve` next to `opencode service`, can deliver a `courier_later` message twice, and a
-  `courier_answer` from a turn on the server not running the child does not reach its request.
+- **One OpenCode server per data directory, preferably.** A second server on the same one, such as
+  `opencode serve` next to `opencode service`, shares the plugin's storage, where an owner key picks
+  the one server that delivers `courier_later` messages, so each arrives once (a stall of half a
+  second at the wrong moment, or a 0.2.2 copy on the other server, can still deliver one twice). A
+  `courier_answer` from a turn on the server not running the child does not reach its request; it
+  says the request may wait in another server, to be answered there.
   [More](docs/reference.md#two-servers-on-one-data-directory).
 - **Worktrees are yours to remove.** An isolated child's worktree is kept until `courier_cleanup`,
   which refuses to drop uncommitted changes or unbranched commits unless told to.
@@ -346,13 +349,14 @@ plugin loaded and `e2e/mock-model.mjs` as the model: an OpenAI-compatible server
 fixed script. It walks every tool through the behaviour above, including a permission request, a
 question answered on either side, a web search's provider form (with `e2e/search-plugin`, a
 stand-in search provider), which plugin instances receive an isolated child's events (with
-`e2e/probe-plugin`, an event probe), a server restart with pending work, a signed and an unsigned
-GitHub delivery, and the package installed from a stand-in npm registry. It needs node, npm, bun,
-git, curl, jq and openssl. New behaviour gets a scenario there.
+`e2e/probe-plugin`, an event probe), a server restart with pending work, held off by another
+server's owner key until it expires, a signed and an unsigned GitHub delivery, and the package
+installed from a stand-in npm registry. It needs node, npm, bun, git, curl, jq and openssl. New
+behaviour gets a scenario there.
 
 `e2e/two-servers.sh`, not in CI, runs two servers on one data directory with the same stand-in
 model and counts what each delivers; its results are in
-[docs/plugin-api-notes.md](docs/plugin-api-notes.md#two-servers-on-one-data-directory-2026-10-07).
+[docs/plugin-api-notes.md](docs/plugin-api-notes.md#two-servers-with-the-schedulers-owner-key-2026-10-08).
 
 `e2e/real-model.sh` runs the same server with a real model (by default a free one on [OpenCode
 Zen](https://opencode.ai/zen), no key needed) and asks the parent to fan a small task out to two

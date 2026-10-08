@@ -99,7 +99,11 @@ function preview(items: readonly string[]) {
  */
 export type AnswerResult = PermissionAnswered | QuestionAnswered
 
-/** What answering a permission request did; `answered` is false when nothing was waiting. */
+/**
+ * What answering a permission request did; `answered` is false when no location loaded in this
+ * server held the request: it was answered, the session stopped waiting, or it waits in another
+ * OpenCode server on the same data directory.
+ */
 export interface PermissionAnswered {
   readonly sessionID: string
   readonly requestID: string
@@ -119,10 +123,18 @@ export type QuestionAnswered =
     }
 
 export function answerText(result: AnswerResult) {
-  const kind = "reply" in result ? "request" : "question"
+  // A permission request is pending only in the server running the session's turn; a question is
+  // stored where every server on the data directory finds it.
+  if (!result.answered && "reply" in result)
+    return (
+      `No request ${result.requestID} of ${result.sessionID} is pending in this OpenCode server, so nothing was passed on. ` +
+      "Either it was answered some other way or the session stopped waiting, and the answer is not needed; or it waits " +
+      "in another OpenCode server on the same data directory, which this one cannot reach. Tell the person their answer " +
+      "was not passed on, and that if the session still waits, they must answer it there, in that session."
+    )
   if (!result.answered)
     return (
-      `${result.sessionID} no longer waits on ${kind} ${result.requestID}: it was answered some other way, or the ` +
+      `${result.sessionID} no longer waits on question ${result.requestID}: it was answered some other way, or the ` +
       "session stopped waiting. Nothing was passed on; tell the person their answer is not needed."
     )
   if ("reply" in result)

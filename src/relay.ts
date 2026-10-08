@@ -67,7 +67,7 @@ async function locate(ports: AnswerPorts, sessionID: string, requestID: string) 
  * Answers a permission request of a session started, directly or through others, from the
  * caller, which must be the session at the top: requests go there, to the person, so a session
  * started with courier_spawn cannot approve what its own children ask. `answered` is false when
- * nothing was waiting.
+ * no location loaded in this server holds the request, which may then wait in another server.
  */
 export async function answer(ports: AnswerPorts, waiting: Waiting, callerID: string, input: AnswerInput): Promise<PermissionAnswered> {
   const reply = input.reply as Reply

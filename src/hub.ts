@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 import type { Server } from "node:http"
+import { hostname } from "node:os"
 import { deliverDue, TICK_MS, type LaterPorts } from "./later.js"
 import type { Asked, Outcome, Withdrawal } from "./notices.js"
 import type { Permissions, Waiting } from "./relay.js"
@@ -190,16 +191,57 @@ export interface Scheduler {
   tick?: () => Promise<void>
 }
 
-/** How the hub starts and stops the scheduler's loop; tests pass their own. */
+/** How the hub starts and stops the scheduler's loop, and waits before re-reading the owner key; tests pass their own. */
 export interface Timers {
   readonly every: (run: () => void, ms: number) => unknown
   readonly stop: (timer: unknown) => void
+  readonly wait: (ms: number) => Promise<void>
 }
 
 const realTimers: Timers = {
   every: (run, ms) => setInterval(run, ms),
   stop: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
+  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }
+
+/**
+ * The key in the plugin's storage, shared by every OpenCode server on one data directory, naming
+ * the server whose scheduler delivers the `courier_later` messages: `{ server, at }`, its id and
+ * when it last wrote the key, in epoch milliseconds. Outside `later/`, which the schedulers scan
+ * for messages, those of copies before the key included.
+ */
+export const OWNER_KEY = "scheduler/owner"
+
+/** How long the owner key holds without being renewed; the owner renews it every tick, four times as often. */
+export const OWNER_EXPIRY_MS = 4 * TICK_MS
+
+/**
+ * How old the owner's own key may be for it to renew the key and deliver at once. An older one,
+ * which it may no longer hold by the time it writes, is taken again like a free one, with the wait.
+ */
+export const OWNER_RENEW_MS = OWNER_EXPIRY_MS / 2
+
+/** The wait between writing the owner key and reading it back, at least `OWNER_WAIT_MS` and up to twice that. */
+export const OWNER_WAIT_MS = 500
+
+/**
+ * This server's id in the owner key: the same for every copy of the plugin in the process, and
+ * different in every other process, a restart of this one included.
+ */
+export const SERVER = `${hostname()}:${process.pid}:${performance.timeOrigin}`
+
+interface Owner {
+  readonly server: string
+  readonly at: number
+}
+
+async function readOwner(ports: LaterPorts): Promise<Owner | undefined> {
+  const value = (await ports.storage.get(OWNER_KEY)) as Partial<Owner> | null | undefined
+  return typeof value?.server === "string" && typeof value.at === "number" ? { server: value.server, at: value.at } : undefined
+}
+
+/** Whether a key written at `at` still holds at `now`; one from the future, after the clock went back, holds as long. */
+const holds = (at: number, now: number, ms: number) => Math.abs(now - at) < ms
 
 /** How many subscriptions to OpenCode's events a hub keeps, each through another member: one, and a standby. */
 export const WATCHERS = 2
@@ -263,7 +305,7 @@ export interface Opened {
  * versioned key when a hub of another version holds that. Either way, its claim sets and shared
  * objects are the ones under the keys of the copies before the hub, made when missing.
  */
-export function open(registry: Registry, timers: Timers = realTimers): Opened {
+export function open(registry: Registry, timers: Timers = realTimers, server = SERVER): Opened {
   const shared = <T>(name: string, create: () => T) => processWide(`opencode-courier.${name}`, create, registry)
   const questionState = () => {
     // Field by field, since a copy before the hub may have made it without the fields added later.
@@ -299,15 +341,39 @@ export function open(registry: Registry, timers: Timers = realTimers): Opened {
   const skew = found != null && found.version !== HUB_VERSION ? { version: found.version } : undefined
   const hub = processWide(skew ? `${HUB_KEY}@${HUB_VERSION}` : HUB_KEY, create, registry)
 
-  // One tick, through the first member still loaded. The claim on each delivery stays, as the second
-  // line of defence against a copy before the hub, which runs its own interval until it unloads.
+  /**
+   * Whether this server holds the owner key, taking or renewing it through `ports`. Its own fresh
+   * key is renewed. A free one, an expired one, or its own after a stall, is written and read back
+   * after a random wait: of two servers taking it at once, the one that wrote last holds it.
+   */
+  const own = async (ports: LaterPorts) => {
+    const held = await readOwner(ports)
+    const now = ports.now()
+    if (held && held.server !== server && holds(held.at, now, OWNER_EXPIRY_MS)) return false
+    await ports.storage.set(OWNER_KEY, { server, at: now })
+    if (held?.server === server && holds(held.at, now, OWNER_RENEW_MS)) return true
+    await timers.wait(OWNER_WAIT_MS * (1 + Math.random()))
+    return (await readOwner(ports))?.server === server
+  }
+
+  /** Removes the owner key if this server holds it, so another server takes over at its next tick. */
+  const release = async (ports: LaterPorts) => {
+    if ((await readOwner(ports))?.server === server) await ports.storage.remove(OWNER_KEY)
+  }
+
+  // One tick, through the first member still loaded, by the server holding the owner key. The claim
+  // on each delivery stays, as the second line of defence against a copy before the hub, which runs
+  // its own interval until it unloads, and has no owner key.
   const tick = async () => {
     const scheduler = hub.scheduler
     const owner = hub.members.values().next().value
     if (!owner || (scheduler.ticking && hub.members.has(scheduler.ticking))) return
     scheduler.ticking = owner
     try {
-      await deliverDue(owner.later, hub.claimed)
+      // A loop stopped meanwhile, its members gone, gives the key it may just have written back.
+      const owned = await own(owner.later)
+      if (scheduler.timer === undefined) await release(owner.later)
+      else if (owned && hub.members.has(owner)) await deliverDue(owner.later, hub.claimed)
     } catch (error) {
       owner.log(`courier_later scheduler: ${String(error)}`)
     } finally {
@@ -356,6 +422,7 @@ export function open(registry: Registry, timers: Timers = realTimers): Opened {
       if (hub.members.size > 0 || scheduler.timer === undefined) return
       timers.stop(scheduler.timer)
       scheduler.timer = undefined
+      void release(member.later).catch((error: unknown) => member.log(`courier_later scheduler: owner key not released: ${String(error)}`))
     }
   }
   return { hub, join }

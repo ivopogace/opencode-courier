@@ -1,30 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
 import { join as joinPath } from "node:path"
-import { HUB_KEY, HUB_VERSION, hub, join, permissions, resetHub, type Member } from "../src/hub.js"
+import { HUB_KEY, HUB_VERSION, hub, join, open, permissions, resetHub, type Member } from "../src/hub.js"
 
-type HubModule = typeof import("../src/hub.js")
-
-/** Another copy of the hub module, with its own module state, as a second copy of the plugin in the process. */
-const copy = (name: string) => import(`../src/hub.js?copy=${name}`) as Promise<HubModule>
-
-const registry = globalThis as Record<symbol, unknown>
-const LEGACY = ["claimed", "watched", "forms", "questions", "receiver", "locations"].map((name) => `opencode-courier.${name}`)
-
-/** Runs `body` with the process-wide keys as `set` leaves them, and puts the current ones back afterwards. */
-async function withKeys(set: () => void, body: () => Promise<void>) {
-  const keys = [HUB_KEY, `${HUB_KEY}@${HUB_VERSION}`, ...LEGACY]
-  const saved = keys.map((key) => [key, Object.hasOwn(registry, Symbol.for(key)), registry[Symbol.for(key)]] as const)
-  try {
-    set()
-    await body()
-  } finally {
-    for (const [key, had, value] of saved) {
-      if (had) registry[Symbol.for(key)] = value
-      else delete registry[Symbol.for(key)]
-    }
-  }
-}
+const LEGACY = ["claimed", "watched", "forms", "questions", "receiver", "locations"]
+const at = (registry: Record<symbol, unknown>, key: string) => registry[Symbol.for(key)]
 
 const member = (directory: string, log: (message: string) => void = () => {}): Member =>
   ({
@@ -39,115 +19,131 @@ const member = (directory: string, log: (message: string) => void = () => {}): M
 afterEach(() => resetHub())
 
 describe("the hub", () => {
-  test("is one object for every copy of the plugin of its version in the process", async () => {
-    const second = await copy("2")
-    expect(second.hub).toBe(hub)
+  test("is kept under its key on globalThis, with the claim sets under the keys of the copies before the hub", () => {
     expect(hub.version).toBe(HUB_VERSION)
-    expect(registry[Symbol.for(HUB_KEY)]).toBe(hub)
+    expect(at(globalThis, HUB_KEY)).toBe(hub)
+    expect(at(globalThis, "opencode-courier.claimed")).toBe(hub.claimed)
+    expect(at(globalThis, "opencode-courier.watched")).toBe(hub.watched)
+    expect(at(globalThis, "opencode-courier.forms")).toBe(hub.forms)
+    expect(at(globalThis, "opencode-courier.questions")).toBe(hub.questions)
+    expect(at(globalThis, "opencode-courier.receiver")).toBe(hub.receivers)
+    expect(at(globalThis, "opencode-courier.locations")).toBe(hub.locations)
   })
 
-  test("join adds an instance and its permission domain, and its leave takes both out, from any copy", async () => {
-    const second = await copy("2")
+  test("join adds an instance and its permission domain, and its leave takes both out", () => {
     const a = member("/a")
     const b = member("/b")
     const leaveA = join(a)
-    const leaveB = second.join(b)
+    const leaveB = join(b)
 
     expect([...hub.members]).toEqual([a, b])
     expect([...permissions()]).toEqual([a.permission, b.permission])
-    expect([...second.permissions()]).toEqual([a.permission, b.permission])
 
     leaveA()
-    expect([...second.hub.members]).toEqual([b])
+    expect([...hub.members]).toEqual([b])
     expect([...permissions()]).toEqual([b.permission])
     leaveB()
     expect(hub.members.size).toBe(0)
     expect(hub.locations.size).toBe(0)
   })
 
-  test("keeps its claim sets and shared objects under the keys of the copies before the hub", () => {
-    expect(registry[Symbol.for("opencode-courier.claimed")]).toBe(hub.claimed)
-    expect(registry[Symbol.for("opencode-courier.watched")]).toBe(hub.watched)
-    expect(registry[Symbol.for("opencode-courier.forms")]).toBe(hub.forms)
-    expect(registry[Symbol.for("opencode-courier.questions")]).toBe(hub.questions)
-    expect(registry[Symbol.for("opencode-courier.receiver")]).toBe(hub.receivers)
-    expect(registry[Symbol.for("opencode-courier.locations")]).toBe(hub.locations)
+  test("of the same version is found by the next copy, which joins the same one", () => {
+    const registry: Record<symbol, unknown> = {}
+    const first = open(registry)
+    const second = open(registry)
+    expect(second.hub).toBe(first.hub)
+    expect(at(registry, HUB_KEY)).toBe(first.hub)
+    const leave = second.join(member("/a"))
+    expect(first.hub.members.size).toBe(1)
+    leave()
+    expect(first.hub.members.size).toBe(0)
   })
 
-  test("takes the objects of a copy before the hub, loaded first, and fills in the fields it lacks", async () => {
+  test("takes the objects of a copy before the hub, loaded first, fills in the fields it lacks, and makes the missing ones", () => {
     const claimed = new Set(["later_1"])
     const watched = { seen: new Set(["evt_1"]), waiting: new Set<string>(), answered: new Set<string>() }
     const questions = { questions: new Map(), noticed: new Set(["question_1"]) }
     const locations = new Map()
-    await withKeys(
-      () => {
-        delete registry[Symbol.for(HUB_KEY)]
-        for (const key of LEGACY) delete registry[Symbol.for(key)]
-        registry[Symbol.for("opencode-courier.claimed")] = claimed
-        registry[Symbol.for("opencode-courier.watched")] = watched
-        registry[Symbol.for("opencode-courier.questions")] = questions
-        registry[Symbol.for("opencode-courier.locations")] = locations
-      },
-      async () => {
-        const fresh = await copy("after-a-copy-before-the-hub")
-        expect(fresh.hub).not.toBe(hub)
-        expect(registry[Symbol.for(HUB_KEY)]).toBe(fresh.hub)
-        expect(fresh.hub.claimed).toBe(claimed)
-        expect(fresh.hub.watched).toBe(watched)
-        expect(fresh.hub.watched.seen).toBe(watched.seen)
-        expect(fresh.hub.questions).toBe(questions as never)
-        expect(fresh.hub.questions.noticed.has("question_1")).toBe(true)
-        expect(fresh.hub.questions.loaded).toBeInstanceOf(Set)
-        expect(fresh.hub.questions.following).toBe(0)
-        // The one the earlier copy did not make is made, under its key, for the copies after.
-        expect(registry[Symbol.for("opencode-courier.forms")]).toBe(fresh.hub.forms)
+    const registry: Record<symbol, unknown> = {
+      [Symbol.for("opencode-courier.claimed")]: claimed,
+      [Symbol.for("opencode-courier.watched")]: watched,
+      [Symbol.for("opencode-courier.questions")]: questions,
+      [Symbol.for("opencode-courier.locations")]: locations,
+    }
 
-        const leave = fresh.join(member("/a"))
-        expect(locations.size).toBe(1)
-        leave()
-        expect(locations.size).toBe(0)
-      },
-    )
+    const { hub: fresh, join: joinFresh } = open(registry)
+
+    expect(at(registry, HUB_KEY)).toBe(fresh)
+    expect(fresh.claimed).toBe(claimed)
+    expect(fresh.watched).toBe(watched)
+    expect(fresh.questions).toBe(questions as never)
+    expect(fresh.questions.noticed.has("question_1")).toBe(true)
+    expect(fresh.questions.loaded).toBeInstanceOf(Set)
+    expect(fresh.questions.following).toBe(0)
+    expect(fresh.questions.followed).toBe(false)
+    // The ones the earlier copy did not make are made, under their keys, for the copies after.
+    expect(at(registry, "opencode-courier.forms")).toBe(fresh.forms)
+    expect(at(registry, "opencode-courier.receiver")).toBe(fresh.receivers)
+    for (const name of LEGACY) expect(at(registry, `opencode-courier.${name}`)).toBeDefined()
+
+    const leave = joinFresh(member("/a"))
+    expect(locations.size).toBe(1)
+    leave()
+    expect(locations.size).toBe(0)
   })
 
-  test("of another version found under its key is logged once, and the copy keeps its own, sharing the claim sets", async () => {
+  test("of another version found under its key is logged once, and the copy keeps its own, sharing the claim sets", () => {
     const other = { version: HUB_VERSION + 1 }
-    await withKeys(
-      () => {
-        registry[Symbol.for(HUB_KEY)] = other
-        delete registry[Symbol.for(`${HUB_KEY}@${HUB_VERSION}`)]
-      },
-      async () => {
-        const skewed = await copy("skewed")
-        expect(registry[Symbol.for(HUB_KEY)]).toBe(other)
-        expect(registry[Symbol.for(`${HUB_KEY}@${HUB_VERSION}`)]).toBe(skewed.hub)
-        expect(skewed.hub).not.toBe(hub)
-        expect(skewed.hub.version).toBe(HUB_VERSION)
-        expect(skewed.hub.members.size).toBe(0)
-        // The claim sets are the ones every copy claims in, so an older copy and this one never both act.
-        expect(skewed.hub.claimed).toBe(hub.claimed)
-        expect(skewed.hub.watched).toBe(hub.watched)
-        expect(skewed.hub.forms).toBe(hub.forms)
-        expect(skewed.hub.questions).toBe(hub.questions)
-        expect(skewed.hub.receivers).toBe(hub.receivers)
-        expect(skewed.hub.locations).toBe(hub.locations)
+    // The other copy's claim set, under the key every copy shares.
+    const claimed = new Set(["later_1"])
+    const registry: Record<symbol, unknown> = { [Symbol.for(HUB_KEY)]: other, [Symbol.for("opencode-courier.claimed")]: claimed }
 
-        const logs: string[] = []
-        const leaveA = skewed.join(member("/a", (message) => logs.push(message)))
-        const leaveB = skewed.join(member("/b", (message) => logs.push(message)))
-        // A second copy of the same version finds the same versioned hub, which has logged already.
-        const third = await copy("skewed-too")
-        expect(third.hub).toBe(skewed.hub)
-        const leaveC = third.join(member("/c", (message) => logs.push(message)))
-        expect(logs).toEqual([
-          `courier: another copy of the plugin with hub version ${HUB_VERSION + 1} has been loaded in this process; ` +
-            `this copy (hub version ${HUB_VERSION}) keeps its own under ${HUB_KEY}@${HUB_VERSION} and shares the claim sets with it`,
-        ])
-        expect(skewed.hub.members.size).toBe(3)
-        for (const leave of [leaveA, leaveB, leaveC]) leave()
-        expect(skewed.hub.members.size).toBe(0)
-      },
-    )
+    const skewed = open(registry)
+    expect(at(registry, HUB_KEY)).toBe(other)
+    expect(at(registry, `${HUB_KEY}@${HUB_VERSION}`)).toBe(skewed.hub)
+    expect(skewed.hub.version).toBe(HUB_VERSION)
+    // The claim set is the one every copy claims in, so an older copy and this one never both act.
+    expect(skewed.hub.claimed).toBe(claimed)
+
+    const logs: string[] = []
+    const leaveA = skewed.join(member("/a", (message) => logs.push(message)))
+    const leaveB = skewed.join(member("/b", (message) => logs.push(message)))
+    // A second copy of the same version finds the same versioned hub, which has logged already.
+    const again = open(registry)
+    expect(again.hub).toBe(skewed.hub)
+    const leaveC = again.join(member("/c", (message) => logs.push(message)))
+    expect(logs).toEqual([
+      `courier: another copy of the plugin with hub version ${HUB_VERSION + 1} has been loaded in this process; ` +
+        `this copy (hub version ${HUB_VERSION}) keeps its own under ${HUB_KEY}@${HUB_VERSION} and shares the claim sets with it`,
+    ])
+    expect(skewed.hub.members.size).toBe(3)
+    for (const leave of [leaveA, leaveB, leaveC]) leave()
+    expect(skewed.hub.members.size).toBe(0)
+  })
+
+  test("found as null under its key counts as none", () => {
+    const registry: Record<symbol, unknown> = { [Symbol.for(HUB_KEY)]: null }
+    const opened = open(registry)
+    expect(at(registry, HUB_KEY)).toBe(opened.hub)
+    const logs: string[] = []
+    opened.join(member("/a", (message) => logs.push(message)))
+    expect(logs).toEqual([])
+  })
+
+  test("is shared by two copies of the module in one process", () => {
+    // In a process of its own, since a second copy would replace this one's coverage (see the script).
+    const run = Bun.spawnSync([process.execPath, joinPath(import.meta.dir, "fixtures", "two-copies.ts")])
+    expect(run.stderr.toString()).toBe("")
+    expect(JSON.parse(run.stdout.toString())).toEqual({
+      sameHub: true,
+      separateModules: true,
+      joined: { members: ["/a", "/b"], permissions: 2 },
+      afterLeave: ["/b"],
+      emptyAtEnd: true,
+      skewedOwnHub: true,
+      skewedSharesClaims: true,
+      logs: 1,
+    })
   })
 
   test("resetHub forgets the remembered ids and the question relay's state, not the joined instances", () => {

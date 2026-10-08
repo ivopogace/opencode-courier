@@ -4,7 +4,7 @@ import type { LaterPorts } from "./later.js"
 import type { Asked, Outcome, Withdrawal } from "./notices.js"
 import type { Permissions, Waiting } from "./relay.js"
 import type { RosterStorage } from "./roster.js"
-import { processWide } from "./storage.js"
+import { processWide, type Registry } from "./storage.js"
 import type { WebhookConfig, WebhookPorts } from "./webhook.js"
 
 type Context = Plugin.Context
@@ -192,27 +192,40 @@ export interface Hub {
   skewLogged: boolean
 }
 
-/** The object a copy before the hub kept under `opencode-courier.<name>`, made when missing. */
-const shared = <T>(name: string, create: () => T) => processWide(`opencode-courier.${name}`, create)
-
-function questionState(): QuestionState {
-  // Field by field, since a copy before the hub may have made it without the fields added later.
-  const state = shared<{ -readonly [K in keyof QuestionState]?: QuestionState[K] }>("questions", () => ({}))
-  state.questions ??= new Map()
-  state.noticed ??= new Set()
-  state.shown ??= new Map()
-  state.passing ??= new Map()
-  state.answered ??= new Set()
-  state.loaded ??= new Set()
-  state.following ??= 0
-  state.followed ??= false
-  state.shutdowns ??= new Map()
-  state.closingWaiters ??= new Set()
-  return state as QuestionState
+/** A hub, as `open` finds or makes it, and how instances join it. */
+export interface Opened {
+  readonly hub: Hub
+  /**
+   * Adds a loaded instance to the hub and its permission domain to `locations`; returns its leave,
+   * which takes both out again. The first instance to join logs a hub of another version found
+   * under `HUB_KEY`.
+   */
+  readonly join: (member: Member) => () => void
 }
 
-function create(): Hub {
-  return {
+/**
+ * Finds or makes this copy's hub in `registry`: the one under `HUB_KEY`, or its own under a
+ * versioned key when a hub of another version holds that. Either way, its claim sets and shared
+ * objects are the ones under the keys of the copies before the hub, made when missing.
+ */
+export function open(registry: Registry): Opened {
+  const shared = <T>(name: string, create: () => T) => processWide(`opencode-courier.${name}`, create, registry)
+  const questionState = () => {
+    // Field by field, since a copy before the hub may have made it without the fields added later.
+    const state = shared<{ -readonly [K in keyof QuestionState]?: QuestionState[K] }>("questions", () => ({}))
+    state.questions ??= new Map()
+    state.noticed ??= new Set()
+    state.shown ??= new Map()
+    state.passing ??= new Map()
+    state.answered ??= new Set()
+    state.loaded ??= new Set()
+    state.following ??= 0
+    state.followed ??= false
+    state.shutdowns ??= new Map()
+    state.closingWaiters ??= new Set()
+    return state as QuestionState
+  }
+  const create = (): Hub => ({
     version: HUB_VERSION,
     members: new Set(),
     claimed: shared("claimed", () => new Set<string>()),
@@ -222,36 +235,38 @@ function create(): Hub {
     receivers: shared<Receivers>("receiver", () => ({})),
     questions: questionState(),
     skewLogged: false,
+  })
+
+  const found = registry[Symbol.for(HUB_KEY)] as { version?: unknown } | null | undefined
+  // The version of the hub of another copy found under `HUB_KEY`, if one is there.
+  const skew = found != null && found.version !== HUB_VERSION ? { version: found.version } : undefined
+  const hub = processWide(skew ? `${HUB_KEY}@${HUB_VERSION}` : HUB_KEY, create, registry)
+
+  const join = (member: Member) => {
+    if (skew && !hub.skewLogged) {
+      hub.skewLogged = true
+      member.log(
+        `courier: another copy of the plugin with hub version ${String(skew.version)} has been loaded in this process; ` +
+          `this copy (hub version ${HUB_VERSION}) keeps its own under ${HUB_KEY}@${HUB_VERSION} and shares the claim sets with it`,
+      )
+    }
+    hub.members.add(member)
+    hub.locations.set(member, member.permission)
+    return () => {
+      hub.members.delete(member)
+      hub.locations.delete(member)
+    }
   }
+  return { hub, join }
 }
 
-const found = (globalThis as Record<symbol, unknown>)[Symbol.for(HUB_KEY)] as { version?: unknown } | undefined
-/** The version of the hub of another copy found under `HUB_KEY`, if one is there. */
-const skew = found != null && found.version !== HUB_VERSION ? { version: found.version } : undefined
+const opened = open(globalThis as Registry)
 
-/** This copy's hub: the one under `HUB_KEY`, or its own under a versioned key when another version holds that. */
-export const hub: Hub = processWide(skew ? `${HUB_KEY}@${HUB_VERSION}` : HUB_KEY, create)
+/** This copy's hub, in the process. */
+export const hub: Hub = opened.hub
 
-/**
- * Adds a loaded instance to the hub and its permission domain to `locations`; returns its leave,
- * which takes both out again. The first instance to join logs a hub of another version found in
- * the process.
- */
-export function join(member: Member) {
-  if (skew && !hub.skewLogged) {
-    hub.skewLogged = true
-    member.log(
-      `courier: another copy of the plugin with hub version ${String(skew.version)} has been loaded in this process; ` +
-        `this copy (hub version ${HUB_VERSION}) keeps its own under ${HUB_KEY}@${HUB_VERSION} and shares the claim sets with it`,
-    )
-  }
-  hub.members.add(member)
-  hub.locations.set(member, member.permission)
-  return () => {
-    hub.members.delete(member)
-    hub.locations.delete(member)
-  }
-}
+/** Joins this copy's hub; see `Opened.join`. */
+export const join = opened.join
 
 /** The permission domains of the loaded instances. */
 export const permissions = () => hub.locations.values()

@@ -350,7 +350,8 @@ servers can open it: `opencode serve` twice, or `opencode serve` next to the bac
 database's `kv` table (keys `plugin:<the plugin id, hex-encoded>:<key>`), so the plugin instances
 of two servers share the roster, the pending `courier_later` messages and the stored questions.
 What they do not share is anything in process memory: the claim set the scheduler marks a message
-with (`processWide("opencode-courier.claimed")` in `src/index.ts`), the watcher's handled events,
+with (`processWide("opencode-courier.claimed")`, made in `src/index.ts` then and in `src/hub.ts`
+since #74), the watcher's handled events,
 OpenCode's event bus and its pending permission requests. Whether that delivers anything twice was
 untested until #73; `e2e/two-servers.sh` tests it.
 

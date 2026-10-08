@@ -13,7 +13,8 @@ import {
   type PermissionAsked,
   type PermissionReplied,
 } from "../src/relay.js"
-import { forgetQuestions, shutdownReportedAt } from "../src/question.js"
+import { resetHub } from "../src/hub.js"
+import { shutdownReportedAt } from "../src/question.js"
 import { record } from "../src/roster.js"
 import {
   reportAsked,
@@ -535,7 +536,7 @@ describe("watchChildren", () => {
 
     expect(shutdownReportedAt("/repo")).toBe(1_000_000)
     expect(shutdownReportedAt("/elsewhere")).toBeUndefined()
-    forgetQuestions()
+    resetHub()
 
     const again = new AbortController()
     const second = fakePorts([[{ id: "evt_t", type: "location.shutdown" }, failed()]])
@@ -545,7 +546,7 @@ describe("watchChildren", () => {
     await watchChildren(second.ports, fresh(), again.signal, 1)
 
     expect(shutdownReportedAt("/elsewhere")).toBeDefined()
-    forgetQuestions()
+    resetHub()
   })
 
   test("subscribes again after the stream ends or breaks, and logs the break", async () => {

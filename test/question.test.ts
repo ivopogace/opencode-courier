@@ -3,7 +3,6 @@ import { Effect, Exit, Fiber } from "effect"
 import {
   byCodeUnit,
   answerQuestion,
-  forgetQuestions,
   joinRelay,
   formShown,
   locationClosing,
@@ -16,6 +15,7 @@ import {
   type QuestionPorts,
   type QuestionTiming,
 } from "../src/question.js"
+import { resetHub } from "../src/hub.js"
 import { answeredText, questionNotice, questionSettledNotice as settledNotice, type Asked } from "../src/notices.js"
 import { record, RETENTION_MS } from "../src/roster.js"
 
@@ -25,7 +25,7 @@ const formShownOff = () => {
   return { restore: () => void (showForms = true) }
 }
 afterEach(() => {
-  forgetQuestions()
+  resetHub()
   showForms = true
 })
 
@@ -698,7 +698,7 @@ describe("the question tool of a spawned session", () => {
     expect(notices(told, "answered")).toEqual([])
     expect(store.has("question/question_1")).toBe(true)
 
-    forgetQuestions()
+    resetHub()
     const second = ask("ses_child")
     await settle()
     formOf(tool, "ses_child").dismiss()

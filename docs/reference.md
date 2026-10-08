@@ -318,6 +318,52 @@ that project is used, so messages that fell due while it was down are delivered 
 moment the server comes back. A crash between delivering a message and forgetting it can deliver
 it twice after the restart; a lost check-in would be worse.
 
+## Several copies in one process
+
+OpenCode runs one instance of the plugin per location (project or worktree), all in one process,
+and after an update it loads the new copy of the package next to the old one until the old one
+unloads. What those instances share is kept in one process-wide hub (`src/hub.ts`): the claim set
+of `courier_later` deliveries, the watcher's handled events and the permission requests and forms
+sessions were told about, the question relay's state, the permission domain of every loaded
+instance, and the webhook receiver. Instances join the hub when they load and leave it when they
+unload.
+
+The hub carries a version, `HUB_VERSION` in `src/hub.ts`, which changes only when the hub's shape (the
+ports an instance joins with included) or the meaning of one of its fields does, not with every
+release: two releases with the same hub share one. When a copy loads:
+
+- It looks under `opencode-courier.hub` (a `Symbol.for` key on `globalThis`). With nothing there it
+  puts its hub there; with a hub of its own version it uses that one.
+- With a hub of another version there, it runs its own hub under `opencode-courier.hub@<version>`
+  instead, shared with any other copy of its version, and the first instance to join it logs one
+  line: `courier: another copy of the plugin with hub version … has been loaded in this process; …`.
+  The other copy's hub stays under the key after it unloads, so the copies of this version loaded
+  later in the process keep to the versioned key too.
+- Either way, the claim sets and the other shared objects are not the hub's own: the hub takes
+  them from the keys the copies before the hub used, `opencode-courier.claimed`, `.watched`,
+  `.forms`, `.questions`, `.receiver` and `.locations`, and makes each that is missing (filling in
+  the fields an older copy's `.questions` lacks). Every copy, with a hub of any version or without
+  one, therefore claims a scheduled message, an event, a permission request, a form or a question
+  in the same set, synchronously, before acting on it, so an old and a new copy never both deliver
+  or tell the same thing. Likewise a webhook receiver started by one copy is the one the other
+  joins, so the two never contend for the port: the server the first copy started keeps serving,
+  with its own code and any joined instance's ports, until the last instance of either copy
+  unloads, and the next instance to load starts a new one.
+
+Those six keys' shapes and meanings are fixed for that reason. Since they are shared rather than
+copied, they are honoured as long as the process runs, which covers "until the old copy unloads"
+without having to detect the unload; each claim set is bounded, so keeping them costs little. A
+future hub version that needed another meaning for one of them would make a new key, and keep
+claiming in the old one as well while a copy that uses it may still be loaded. The loaded
+instances are the one thing each hub version keeps to itself, so once the scheduler and the
+watcher run once per hub rather than once per instance, they still run once per hub version
+during an update, and the shared claim sets keep the two from acting on the same thing.
+
+The hub is per process. It does not reach a second OpenCode server on the same data directory, so
+it does not prevent the duplicates described next; a fix for those (an owner key with an expiry in
+the plugin's storage, see [the notes](plugin-api-notes.md#two-servers-on-one-data-directory-2026-10-07))
+would sit beside it.
+
 ## Two servers on one data directory
 
 Two OpenCode servers on one data directory, such as `opencode serve` next to the background server

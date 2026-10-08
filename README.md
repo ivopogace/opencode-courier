@@ -113,15 +113,6 @@ math.js. It must ask me first whether to name it multiply, times or product."*
 Watch the child's question open in the parent's session as OpenCode's own question form, where
 `times` is picked. The parent passes it back, and the child adds `times` to math.js and reports.
 
-<details>
-<summary>The same two runs in OpenCode's web UI</summary>
-
-![The async demo in the web UI: the parent writes its README, ends its turn, and is woken by each report](docs/demo-async.gif)
-
-![The question demo in the web UI: the child's question appears in the parent, is answered there, and the child carries on](docs/demo-question.gif)
-
-</details>
-
 Both recordings are real runs with a free model on [OpenCode Zen](https://opencode.ai/zen) (Muse
 Spark 1.3).
 

@@ -618,24 +618,24 @@ describe("watchChildren", () => {
 
 describe("one watcher per hub", () => {
   /** A member whose event stream stays open until its subscription is aborted, counting subscriptions. */
-  function member(name: string, pending: PermissionAsked["data"][] = []) {
+  function member(name: string, pending: PermissionAsked["data"][] = [], events: unknown[] = []) {
     const { ports, sent } = fakePorts([], pending)
     let subscriptions = 0
     let ended = 0
     ;(ports.event as any).subscribe = async function* ({ signal }: { signal: AbortSignal }) {
       subscriptions++
       try {
-        await new Promise((resolve) => signal.addEventListener("abort", resolve))
+        yield* events
+        if (!signal.aborted) await new Promise((resolve) => signal.addEventListener("abort", resolve))
       } finally {
         ended++
       }
-      yield* []
     }
     const joined = { directory: `/${name}`, watch: ports, log: () => {} } as unknown as Member
     return { joined, ports, sent, subscriptions: () => subscriptions, ended: () => ended }
   }
 
-  test("subscribes once, through the earliest member, however many members join", async () => {
+  test("subscribes once, through the first member to join, however many join, and hands over to the latest", async () => {
     resetHub()
     const { hub, join } = open({})
     const [first, second, third] = [member("a"), member("b"), member("c")]
@@ -654,7 +654,7 @@ describe("one watcher per hub", () => {
     handOver(hub, second.joined, fresh(), 1)
     expect(hub.watcher?.member).toBe(first.joined)
 
-    // Then it moves to the next member still loaded, and ends with the last one.
+    // Then it moves to the member that joined last, and ends with it.
     const old = hub.watcher!
     leaves[0]!()
     handOver(hub, first.joined, fresh(), 1)
@@ -707,7 +707,8 @@ describe("one watcher per hub", () => {
     resetHub()
   })
 
-  test("a member joining after the last one left subscribes again", () => {
+  test("a member joining after the last one left subscribes again", async () => {
+    resetHub()
     const { hub, join } = open({})
     watchForHub(hub, fresh(), 1)
     expect(hub.watcher).toBeUndefined()
@@ -716,9 +717,69 @@ describe("one watcher per hub", () => {
     const leave = join(only.joined)
     watchForHub(hub, fresh(), 1)
     expect(only.subscriptions()).toBe(1)
+    const watcher = hub.watcher!
     leave()
     handOver(hub, only.joined, fresh(), 1)
+    await watcher.done
     expect(hub.watcher).toBeUndefined()
+
+    const next = member("b")
+    const leaveNext = join(next.joined)
+    watchForHub(hub, fresh(), 1)
+    expect(hub.watcher?.member).toBe(next.joined)
+    leaveNext()
+    handOver(hub, next.joined, fresh(), 1)
+    await watcher.done
+    resetHub()
+  })
+
+  test("never hands over to the member leaving, even before it has left", async () => {
+    resetHub()
+    const { hub, join } = open({})
+    const first = member("a")
+    const second = member("b")
+    const leaveFirst = join(first.joined)
+    watchForHub(hub, fresh(), 1)
+    const leaveSecond = join(second.joined)
+    const old = hub.watcher!
+
+    handOver(hub, first.joined, fresh(), 1)
+    leaveFirst()
+
+    expect(hub.watcher?.member).toBe(second.joined)
+    expect(first.subscriptions()).toBe(1)
+    await old.done
+    const last = hub.watcher!
+    leaveSecond()
+    handOver(hub, second.joined, fresh(), 1)
+    await last.done
+    resetHub()
+  })
+
+  test("on its first event, the subscription taken over releases the question calls waiting for their form", async () => {
+    resetHub()
+    const { hub, join } = open({})
+    const first = member("a")
+    const second = member("b", [], [{ id: "evt_x", type: "session.execution.succeeded", data: { sessionID: "ses_other" } }])
+    const leaveFirst = join(first.joined)
+    watchForHub(hub, fresh(), 1)
+    const leaveSecond = join(second.joined)
+    let released = false
+    processHub.questions.shown.set("ses_child call_1", () => (released = true))
+
+    const old = hub.watcher!
+    leaveFirst()
+    handOver(hub, first.joined, fresh(), 1)
+    // Not at once: the events are still followed, so nothing is taken as missed yet.
+    expect(released).toBe(false)
+    await old.done
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(released).toBe(true)
+
+    const last = hub.watcher!
+    leaveSecond()
+    handOver(hub, second.joined, fresh(), 1)
+    await last.done
     resetHub()
   })
 })

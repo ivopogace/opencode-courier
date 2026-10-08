@@ -362,16 +362,26 @@ the two from acting on the same thing.
 
 The watcher is such a job. Every instance in the process is sent every OpenCode event, an isolated
 child's included ([the notes](plugin-api-notes.md#which-plugin-instances-receive-an-isolated-childs-events-2026-10-07)),
-so the hub follows the events once, through the ports of the instance that joined it first, and
-handles each event once rather than once per instance. When that instance unloads, the hub hands
-the subscription to the earliest instance still loaded: the new one subscribes before the old one
-is stopped, so for a moment both follow the events, and an event both are sent is claimed and
-handled once. An instance is sent only the events published while it is subscribed, so the new
-subscription relays the permission requests already pending, as any resubscription does. The
-question relay's count of watchers therefore never drops to none during a hand-over, and question
-forms are not taken as missed. When the last instance unloads, the subscription ends, and the next
-instance to load starts one. A copy from before the hub still follows the events with its own
-watcher, once per instance, beside the hub's; the claim sets keep each event to one notice.
+so the hub follows the events once, through the ports of one instance, and handles each event once
+rather than once per instance. The first instance to load starts the subscription. When the one it
+runs through unloads, the hub hands it to the instance that joined last among those still loaded
+(during a reload, which closes every location and loads it again, a newly loaded one): the new one
+subscribes before the old one is stopped, so for a moment both follow the events, and an event both
+are sent is claimed and handled once. An instance is sent only the events published while it is
+subscribed, so the new subscription relays the permission requests already pending, in every
+loaded location, as any resubscription does. The question relay's count of watchers never drops to
+none during a hand-over, so question forms are not taken as missed at once; but the new subscription,
+on its first event, once it is surely connected, relays the questions still waiting for their form
+to be seen, since one shown in the moment between the old stream's end and the new one's start was
+sent to neither (a question still waiting for its permission check is then relayed early, the
+lesser harm, as after any gap). When the last
+instance unloads, the subscription ends, and the next instance to load starts one. A copy from
+before the hub still follows the events with its own watcher, once per instance, beside the hub's;
+the claim sets keep each event to one notice.
+
+Of the other events published in that moment, none is recovered: a failed turn, a form other than a
+question's shown or settled, or a location shutting down then is not told. With one watcher per
+instance, the other instances' streams covered that moment.
 
 The hub is per process. It does not reach a second OpenCode server on the same data directory, so
 it does not prevent the duplicates described next; a fix for those (an owner key with an expiry in

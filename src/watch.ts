@@ -12,6 +12,7 @@ import {
 } from "./notices.js"
 import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing } from "./question.js"
 import {
+  listEverywhere,
   QUESTION_FORM,
   type FormCreated,
   type FormSettled,
@@ -177,10 +178,10 @@ export async function relayPending(ports: WatchPorts, state: WatchState) {
   const sessions = new Set((await allEntries(ports.storage)).map((entry) => entry.sessionID))
   const domains = [...ports.permissions()]
   // Each request is claimed before its notice goes out, so relaying them all at once tells each
-  // once, however many locations list it.
+  // once, however many locations list it; a location that cannot be read lists none.
   const relay = async (sessionID: string) => {
-    const listed = await Promise.all(domains.map((domain) => domain.list({ sessionID }).catch(() => [])))
-    await Promise.all(listed.flat().map((request) => reportAsked(ports, state, { id: `pending:${request.id}`, data: request })))
+    const listed = (await listEverywhere(domains, sessionID)).flatMap((found) => found.requests)
+    await Promise.all(listed.map((request) => reportAsked(ports, state, { id: `pending:${request.id}`, data: request })))
   }
   await Promise.all([...sessions].map(relay))
 }
@@ -226,14 +227,25 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
  * noting for the question relay the question forms shown, which it waits for, and the locations
  * shutting down, whose withdrawn forms must not pass for dismissals.
  */
-export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
+export async function watchChildren(
+  ports: WatchPorts,
+  state: WatchState,
+  signal: AbortSignal,
+  retryMs = RESUBSCRIBE_MS,
+  handedOver = false,
+) {
+  // Taken over from a subscription that ended: what was published between its end and this one's
+  // start was sent to neither.
+  let gap = handedOver
   while (!signal.aborted) {
     let following = false
     try {
       const events = ports.event.subscribe({ signal })
       // Question forms shown while no instance followed the events were not seen: released now,
-      // and again on the first event, by when the stream is surely connected.
-      let missed = eventsFollowed()
+      // and again on the first event, by when the stream is surely connected; after a hand-over,
+      // only then.
+      let missed = eventsFollowed() || gap
+      gap = false
       following = true
       // Alongside the new subscription; a request both relays see is relayed once.
       void relayPending(ports, state).catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`))
@@ -256,29 +268,31 @@ export async function watchChildren(ports: WatchPorts, state: WatchState, signal
 }
 
 /**
- * Follows OpenCode's events once for the hub, through the ports of its earliest member, unless it
- * already does or no member is loaded. Every instance in the process is sent every event, so one
- * subscription serves them all.
+ * Follows OpenCode's events once for the hub, through the ports of its latest member other than
+ * `leaving`, unless it already does or no such member is loaded. Every instance in the process is
+ * sent every event, so one subscription serves them all. The latest member, since during a reload,
+ * which closes every location and loads it again, a newly loaded one is the likeliest to stay.
  */
-export function watchForHub(hub: Pick<Hub, "members" | "watcher">, state: WatchState, retryMs = RESUBSCRIBE_MS) {
+export function watchForHub(hub: Pick<Hub, "members" | "watcher">, state: WatchState, retryMs = RESUBSCRIBE_MS, leaving?: Member) {
   if (hub.watcher) return
-  const member: Member | undefined = hub.members.values().next().value
+  const member = [...hub.members].reverse().find((candidate) => candidate !== leaving)
   if (!member) return
   const stop = new AbortController()
-  hub.watcher = { member, stop, done: watchChildren(member.watch, state, stop.signal, retryMs) }
+  hub.watcher = { member, stop, done: watchChildren(member.watch, state, stop.signal, retryMs, leaving !== undefined) }
 }
 
 /**
- * Called once `member` has left the hub: when the hub's subscription runs through it, another
+ * Called when `member` leaves the hub: when the hub's subscription runs through it, another
  * member subscribes before it ends, so the events stay followed throughout. The new subscription
  * relays the requests already pending, as any (re)subscription does, since an instance is sent
- * only the events published while it is subscribed. The two overlap for a moment; an event both
- * are sent is claimed and handled once.
+ * only the events published while it is subscribed, and on its first event releases the question
+ * calls still waiting for their form, which may have been shown between the old stream's end and
+ * the new one's start. The two overlap for a moment; an event both are sent is claimed and handled once.
  */
 export function handOver(hub: Pick<Hub, "members" | "watcher">, member: Member, state: WatchState, retryMs = RESUBSCRIBE_MS) {
   const watcher = hub.watcher
   if (watcher?.member !== member) return
   hub.watcher = undefined
-  watchForHub(hub, state, retryMs)
+  watchForHub(hub, state, retryMs, member)
   watcher.stop.abort()
 }

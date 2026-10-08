@@ -191,7 +191,8 @@ export const courier = (relay: RelaySlot = {}) => Plugin.define({
       log,
     }
     const leaveHub = join(member)
-    // One subscription to OpenCode's events for the whole hub, through the earliest member.
+    // One subscription to OpenCode's events for the whole hub, started by the first instance to
+    // load and handed over when the one it runs through unloads.
     watchForHub(hub, watchState)
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {

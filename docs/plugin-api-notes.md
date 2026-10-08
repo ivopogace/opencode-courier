@@ -465,8 +465,10 @@ What #86 changed, on the findings above:
   it is less than 30 s old (`OWNER_RENEW_MS`) and delivers; and otherwise writes its own, waits a
   random 0.5 to 1 s (`OWNER_WAIT_MS` to twice that), reads the key back and delivers only if it
   still holds it. A tick that falls due while the last one is still delivering renews the key and
-  skips. The loop's last leave removes the key if this server holds it and the loop has not started
-  again, and the plugin's unload waits up to 2 s for that. The key is outside
+  skips, for up to a minute from that tick's start. The loop's last leave removes the key if this
+  server holds it, once no tick is under way (a tick whose loop stopped removes it as it ends), the
+  loop has not started again and no hub of another version in the process has instances; the
+  plugin's unload waits up to 2 s for that. The key is outside
   `later/`, so neither this version's nor 0.2.2's scan for messages finds it. Details and the
   remaining race: [Two servers on one data directory](reference.md#two-servers-on-one-data-directory).
 - **`courier_answer` when no loaded location holds the request** says that nothing was passed on,
@@ -497,24 +499,26 @@ expires.
 Results at 2.0.24, the plugin as of #86, runs on 2026-10-08 (same setup as above, ten messages per
 round). Runs 1 to 3 used an earlier draft: before the review fixes (renewing the key while a tick
 still delivers, releasing it only while the loop is stopped) and with the first wording of the
-`courier_answer` text, which the script's check also matches. Run 4 is the final code:
+`courier_answer` text, which the script's check also matches. Run 4 has the first review's fixes
+and the final text; run 5 is the final code, after the second review (renewal for up to a minute of
+a tick, the release left to a tick under way and to other hub versions):
 
-| | Run 1 | Run 2 | Run 3 | Run 4 |
-|---|---|---|---|---|
-| `courier_later`, schedulers in step: messages delivered twice | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 |
-| `courier_later`, schedulers half a tick apart: delivered twice | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 |
-| messages never delivered | 0 | 0 | 0 | 0 |
-| the owner key held by, in step / B stopped / out of step | B / none / B | A / A / A | A / A / A | A / A / A |
-| notices of the child's permission request | 1 | 1 | 1 | 1 |
-| `courier_answer` in a turn on B reaches the request | no, and names another server | no, and names another server | no, and names another server | no, and names another server |
-| `courier_answer` in a turn on A reaches the request | yes | yes | yes | yes |
-| notices of the child's failed turn | 1 | 1 | 1 | 1 |
+| | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 |
+|---|---|---|---|---|---|
+| `courier_later`, schedulers in step: messages delivered twice | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 |
+| `courier_later`, schedulers half a tick apart: delivered twice | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 | 0 of 10 |
+| messages never delivered | 0 | 0 | 0 | 0 | 0 |
+| the owner key held by, in step / B stopped / out of step | B / none / B | A / A / A | A / A / A | A / A / A | B / none / B |
+| notices of the child's permission request | 1 | 1 | 1 | 1 | 1 |
+| `courier_answer` in a turn on B reaches the request | no, and names another server | no, and names another server | no, and names another server | no, and names another server | no, and names another server |
+| `courier_answer` in a turn on A reaches the request | yes | yes | yes | yes | yes |
+| notices of the child's failed turn | 1 | 1 | 1 | 1 | 1 |
 
 In run 1 each round's ten messages were all queued by B (B's event streams carried 10 scheduled
 messages each, A's none): B took the key as both loaded the plugin, A skipped every tick while B
 held it, B released it when it was stopped, and the restarted B took it again on loading the
 plugin, before A's next tick. In runs 2 to 4 A took it as both loaded the plugin and kept it
-throughout, delivering all twenty, B's restart included. Which server takes the key first varies.
+throughout, delivering all twenty, B's restart included; run 5 went as run 1. Which server takes the key first varies.
 
 ## Which plugin instances receive an isolated child's events (2026-10-07)
 

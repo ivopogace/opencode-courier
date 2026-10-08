@@ -199,9 +199,8 @@ describe("the hub", () => {
       loopKept: true,
       emptyAtEnd: true,
       skewedOwnLoop: true,
-      // A tick as the shared loop started, through the first copy's instance, and a release as its
-      // last instance left; the same for the skewed hub's own loop.
-      ownerReads: ["/a", "/b", "/c", "/d"],
+      // One tick as the shared loop started, through the first copy's instance, and one as the skewed hub's did.
+      ownerReads: ["/a", "/c"],
       skewedOwnHub: true,
       skewedSharesClaims: true,
       logs: 1,
@@ -566,7 +565,7 @@ describe("the owner key", () => {
     expect(store.has(OWNER_KEY)).toBe(false)
   })
 
-  test("is renewed by the ticks that fall due while a tick is still delivering", async () => {
+  test("is renewed by the ticks that fall due while a tick is still delivering, for a minute from its start", async () => {
     const { timers, fire } = fakeTimers()
     const { join: joinHub } = open({}, timers, "server_a")
     let now = 1_000
@@ -578,19 +577,74 @@ describe("the owner key", () => {
     await settle()
     expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: 1_000 })
 
-    for (const step of [1, 2, 3, 4]) {
+    for (const step of [1, 2, 3]) {
       now = 1_000 + step * TICK_MS
       fire()
       await settle()
       expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: now })
     }
-    // One it no longer holds is not renewed.
-    store.set(OWNER_KEY, { server: "server_b", at: now })
+    // A minute after the tick started it is taken to hang, and the key is left to expire.
+    now = 1_000 + OWNER_EXPIRY_MS
+    fire()
+    await settle()
+    expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: 1_000 + 3 * TICK_MS })
+    void leave()
+  })
+
+  test("held by another server is not renewed by a tick still delivering", async () => {
+    const { timers, fire } = fakeTimers()
+    const { join: joinHub } = open({}, timers, "server_a")
+    let now = 1_000
+    const store = new Map<string, unknown>()
+    const later = laterPorts("/a", store, [], () => now)
+    const slow: LaterPorts = { ...later, storage: { ...later.storage, scan: () => new Promise(() => {}) } }
+    const leave = joinHub(member("/a", () => {}, slow))
+    await settle()
+    store.set(OWNER_KEY, { server: "server_b", at: 1_000 })
     now += TICK_MS
     fire()
     await settle()
-    expect(store.get(OWNER_KEY)).toEqual({ server: "server_b", at: now - TICK_MS })
+    expect(store.get(OWNER_KEY)).toEqual({ server: "server_b", at: 1_000 })
     void leave()
+  })
+
+  test("is left by a last leave during a delivery to the tick, which releases it when it ends", async () => {
+    const { timers, go } = fakeTimers(true)
+    const { join: joinHub } = open({}, timers, "server_a")
+    const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
+    const later = laterPorts("/a", store)
+    let finish = () => {}
+    const slow: LaterPorts = {
+      ...later,
+      session: { synthetic: () => new Promise((resolve) => (finish = () => resolve({ id: "msg_1" } as never))) } as never,
+    }
+    const leave = joinHub(member("/a", () => {}, slow))
+    await settle()
+    // The first tick's wait before reading the key back; the leave's own wait is never let go.
+    go()
+    await settle()
+    let left = false
+    void leave().then(() => (left = true))
+    await settle()
+    // Still delivering: the key stays, so no other server takes the message meanwhile.
+    expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: 1_000 })
+    expect(left).toBe(false)
+    finish()
+    await settle()
+    expect(store.has(OWNER_KEY)).toBe(false)
+    expect(store.has("later/later_1")).toBe(false)
+    expect(left).toBe(true)
+  })
+
+  test("is not released while a hub of another version in the process has instances", async () => {
+    const { timers } = fakeTimers()
+    const registry: Record<symbol, unknown> = { [Symbol.for(HUB_KEY)]: { version: HUB_VERSION + 1, members: new Set([{}]) } }
+    const { join: joinHub } = open(registry, timers, "server_a")
+    const store = new Map<string, unknown>()
+    const leave = joinHub(member("/a", () => {}, laterPorts("/a", store)))
+    await settle()
+    await leave()
+    expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: 1_000 })
   })
 
   test("is kept when an instance joins again while it is being released", async () => {

@@ -427,14 +427,18 @@ for due messages, a hub's scheduler reads the key:
 
 - Held by another server and written less than 60 s ago (four ticks): it skips the tick.
 - Its own, written less than 30 s ago: it renews the key, writing the time, and delivers. A tick
-  that falls due while the last one is still delivering renews the key the same way, and skips.
+  that falls due while the last one is still delivering renews the key the same way, and skips,
+  for up to a minute from that tick's start: a tick that runs longer is taken to hang, and the key
+  is left to expire, so another server delivers.
 - Missing, expired, not an owner record, or its own but 30 s old or more (it may have lost the key
   meanwhile): it writes its own, waits a random 0.5 to 1 s, reads the key back, and delivers only if
   it still holds it. Of two servers taking the key at once, the one that wrote last holds it, and
   the other skips the tick. So after a start the first delivery comes up to a second later.
 - When the hub's last instance leaves (a graceful stop, a reload) its loop stops and it removes the
-  key if it holds it, unless an instance has joined again meanwhile, so another server takes over
-  at its next tick. The instance's unload waits for that, up to 2 s.
+  key if it holds it, so another server takes over at its next tick: after a tick still under way
+  has ended (that tick removes it then), and not if an instance has joined again meanwhile, nor
+  while a hub of another version in the process still has instances, since its loop holds the key
+  under the same id. The instance's unload waits for that, up to 2 s.
 - When the owner dies without that (a crash, `kill -9`) or stalls, the key expires 60 s after its
   last renewal, and another server takes over at its next tick after that: the messages due
   meanwhile arrive up to 75 s late, not lost. A server restarted after a crash has a new id, so it
@@ -447,8 +451,8 @@ shortest wait), after the other has written and read back its own; or the owner 
 and renews it more than 30 s later, after another has found it expired; or the owner's process
 stalls for a minute while a tick of it is still delivering, so nothing renews its key. A GC pause
 or a storage write held up that long between two calls is what it takes (a write to the shared
-SQLite database can wait for the other process's lock); the ticks some milliseconds apart that
-delivered twice before do not. The
+SQLite database can wait for the other process's lock), or a delivery of over a minute that the
+owner's ticks take to hang; the ticks some milliseconds apart that delivered twice before do not. The
 key's time is the wall clock, which servers on one data directory share; a key written more than
 60 s in the future, after the clock went back, counts as expired.
 

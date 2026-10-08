@@ -8,7 +8,7 @@ const copy = (name: string) => import(`../../src/hub.js?copy=${name}`) as Promis
 const registry = globalThis as Record<symbol, unknown>
 
 // The reads of the scheduler's owner key, by the directory of the member they ran through: the first
-// thing a tick does, and what a loop stopped by its last member's leave does to release the key.
+// thing a tick does, at once as it starts. (A last leave's release reads it later, after the tick.)
 const ownerReads: string[] = []
 const later = (directory: string) => ({
   storage: {

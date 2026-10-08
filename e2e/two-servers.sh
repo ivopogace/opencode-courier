@@ -106,7 +106,8 @@ descends() {
   local pid=$1
   while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
     [ "$pid" = "$2" ] && return 0
-    pid=$(awk '{ print $4 }' "/proc/$pid/stat" 2>/dev/null || true)
+    # The parent's id, the second field after the process name, which may hold spaces or parentheses.
+    pid=$(sed 's/.*) //' "/proc/$pid/stat" 2>/dev/null | cut -d' ' -f2 || true)
   done
   return 1
 }

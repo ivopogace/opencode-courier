@@ -251,7 +251,7 @@ describe("the scheduler", () => {
     await settle()
 
     expect(delivered).toEqual(["/b later_1"])
-    expect(started.length).toBe(1)
+    expect(started).toHaveLength(1)
     expect(stopped).toEqual([])
     leaveB()
   })
@@ -277,7 +277,7 @@ describe("the scheduler", () => {
     store.set("later/later_1", due("later_1"))
     const leaveC = joinHub(member("/c", () => {}, laterPorts("/c", store, delivered)))
     await settle()
-    expect(started.length).toBe(2)
+    expect(started).toHaveLength(2)
     expect(delivered).toEqual(["/c later_1"])
     leaveC()
     expect(stopped).toEqual([1, 2])
@@ -374,7 +374,7 @@ describe("the scheduler", () => {
     fail = false
     fire()
     await settle()
-    expect(logs.length).toBe(1)
+    expect(logs).toHaveLength(1)
     leave()
   })
 })

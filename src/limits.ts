@@ -91,7 +91,12 @@ async function check(ports: LimitPorts, parentID: string) {
   if (chain.length >= maxDepth) throw new Error(depthRefusal(chain.length, maxDepth))
   const top = chain.at(-1)?.parentID ?? parentID
   const tree = entries.filter((entry) => lineageIn(entries, entry.sessionID).at(-1)?.parentID === top)
-  const live = (await Promise.all(tree.map(async (entry) => ((await running(ports, entry.sessionID)) ? [entry] : [])))).flat()
+  const runs = await Promise.all(tree.map((entry) => running(ports, entry.sessionID)))
+  // A session waiting on a running descendant is live too: the brief tells it to end its turn meanwhile.
+  const active = new Set(
+    tree.filter((_, i) => runs[i]).flatMap((entry) => [entry.sessionID, ...lineageIn(entries, entry.sessionID).map((above) => above.parentID)]),
+  )
+  const live = tree.filter((entry) => active.has(entry.sessionID))
   // A spawn whose child is on the roster already is counted there, if it runs, not by its reservation.
   const recorded = new Set(tree.map((entry) => entry.sessionID))
   const pending = [...ports.gate.reserved].filter((held) => held.top === top && !(held.sessionID && recorded.has(held.sessionID)))

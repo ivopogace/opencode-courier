@@ -86,9 +86,17 @@ plugin loads. Like every option, a changed limit applies once OpenCode loads the
 depth and tree from the [roster](#roster) and refuses, with an error naming the limit and what to do
 instead (do the work yourself, or end the turn and try again once a child has reported), when the
 child would be deeper than `maxDepth`, or when `maxChildren` or `maxTotal` sessions are already
-running. A session counts as running from its creation until its turn ends, and again while a
-message keeps it busy; one whose last turn has ended, reported, failed or interrupted, does not
-count, and neither does one OpenCode no longer knows. The checks run one at a time in the process,
+live. A session is live while its turn runs, or a session below it runs: its turn runs from its
+creation until it ends, and again while a message keeps it busy, and a session that has split its
+task and ended its turn to wait for its children stays live while any of them, or theirs, runs. A
+session whose turn has ended, reported, failed or interrupted, with nothing below it running, does
+not count. Its turn counts as ended when `session.get` fails, so one OpenCode no longer knows, or
+cannot look up, does not count either. A child counts only while it runs, not until it has
+reported: a child that ends its turn without `courier_send` stops counting at once; counting it
+until it has reported comes with [#101](https://github.com/ivopogace/opencode-courier/issues/101).
+
+Each check reads the whole roster once, to find the calling session's tree, and looks up every
+session in that tree with `session.get`. The checks run one at a time in the process,
 and a spawn under way counts until its child is on the roster, so several `courier_spawn` calls made
 at once cannot get past a limit together, whichever locations or copies of the plugin make them.
 Two servers on one data directory do not see each other's spawns under way.

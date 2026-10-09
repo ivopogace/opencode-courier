@@ -199,6 +199,45 @@ describe("admit", () => {
   })
 })
 
+describe("admit, with sessions waiting on their own children", () => {
+  /** A tree under ses_r: ses_a and ses_b, each with one child; `running` names the sessions whose turn runs. */
+  async function waitingTree(limits: Partial<typeof DEFAULT_LIMITS>, running: string[]) {
+    const storage = fakeStorage()
+    const ports: LimitPorts = {
+      storage,
+      limits: { ...DEFAULT_LIMITS, ...limits },
+      gate: { reserved: new Set(), turn: Promise.resolve() },
+      session: {
+        get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID, time: running.includes(sessionID) ? RUNNING : FINISHED }),
+      } as any,
+    }
+    const add = (parentID: string, sessionID: string) =>
+      record(storage, { sessionID, parentID, title: sessionID, directory: "/repo", isolated: false, createdAt: 1 })
+    for (const [parentID, sessionID] of [["ses_r", "ses_a"], ["ses_r", "ses_b"], ["ses_a", "ses_a1"], ["ses_b", "ses_b1"]]) await add(parentID!, sessionID!)
+    return ports
+  }
+
+  test("maxChildren counts a child whose turn ended while a child of its own runs", async () => {
+    const ports = await waitingTree({ maxChildren: 2 }, ["ses_a1", "ses_b1"])
+    await expect(admit(ports, "ses_r")).rejects.toThrow(childrenRefusal(2, 2))
+  })
+
+  test("maxTotal counts those waiting sessions with the ones running below them", async () => {
+    const ports = await waitingTree({ maxTotal: 3 }, ["ses_a1", "ses_b1"])
+    await expect(admit(ports, "ses_r")).rejects.toThrow(totalRefusal(4, 3))
+  })
+
+  test("as it counts children whose own turn runs", async () => {
+    const ports = await waitingTree({ maxChildren: 2 }, ["ses_a", "ses_b"])
+    await expect(admit(ports, "ses_r")).rejects.toThrow(childrenRefusal(2, 2))
+  })
+
+  test("and counts none of them once nothing below them runs", async () => {
+    const ports = await waitingTree({ maxChildren: 2, maxTotal: 3 }, [])
+    expect((await admit(ports, "ses_r")).depth).toBe(1)
+  })
+})
+
 describe("spawn", () => {
   function spawnPorts(limits = DEFAULT_LIMITS) {
     const { ports, storage, gate, child } = limitPorts(limits)

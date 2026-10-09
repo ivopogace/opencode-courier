@@ -134,7 +134,16 @@ export async function lineage(storage: RosterStorage, sessionID: string) {
 
 /** `lineage` over roster entries already read. */
 export function lineageIn(entries: ReadonlyArray<RosterEntry>, sessionID: string) {
-  const bySession = new Map(entries.map((entry) => [entry.sessionID, entry]))
+  return lineageBy(bySession(entries), sessionID)
+}
+
+/** Roster entries by their session, for `lineageBy`. */
+export function bySession(entries: ReadonlyArray<RosterEntry>) {
+  return new Map(entries.map((entry) => [entry.sessionID, entry]))
+}
+
+/** `lineage` over roster entries already read and mapped by `bySession`. */
+export function lineageBy(bySession: ReadonlyMap<string, RosterEntry>, sessionID: string) {
   const chain: RosterEntry[] = []
   for (let entry = bySession.get(sessionID); entry && !chain.includes(entry); entry = bySession.get(entry.parentID)) chain.push(entry)
   return chain

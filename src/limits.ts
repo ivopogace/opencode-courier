@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import { setBounded } from "./bounded.js"
 import { obj } from "./json.js"
 import { childrenRefusal, depthRefusal, ROLE_PREFIX, rolePart, totalRefusal, type Limits } from "./notices.js"
-import { allEntries, children, lineage, lineageIn, type RosterStorage } from "./roster.js"
+import { allEntries, bySession, children, lineage, lineageBy, type RosterStorage } from "./roster.js"
 
 export type { Limits } from "./notices.js"
 
@@ -87,14 +87,16 @@ export async function admit(ports: LimitPorts, parentID: string) {
 async function check(ports: LimitPorts, parentID: string) {
   const { maxDepth, maxChildren, maxTotal } = ports.limits
   const entries = await allEntries(ports.storage)
-  const chain = lineageIn(entries, parentID)
+  const parents = bySession(entries)
+  const chain = lineageBy(parents, parentID)
   if (chain.length >= maxDepth) throw new Error(depthRefusal(chain.length, maxDepth))
   const top = chain.at(-1)?.parentID ?? parentID
-  const tree = entries.filter((entry) => lineageIn(entries, entry.sessionID).at(-1)?.parentID === top)
+  const chains = new Map(entries.map((entry) => [entry.sessionID, lineageBy(parents, entry.sessionID)]))
+  const tree = entries.filter((entry) => chains.get(entry.sessionID)!.at(-1)?.parentID === top)
   const runs = await Promise.all(tree.map((entry) => running(ports, entry.sessionID)))
   // A session waiting on a running descendant is live too: the brief tells it to end its turn meanwhile.
   const active = new Set(
-    tree.filter((_, i) => runs[i]).flatMap((entry) => [entry.sessionID, ...lineageIn(entries, entry.sessionID).map((above) => above.parentID)]),
+    tree.filter((_, i) => runs[i]).flatMap((entry) => [entry.sessionID, ...chains.get(entry.sessionID)!.map((above) => above.parentID)]),
   )
   const live = tree.filter((entry) => active.has(entry.sessionID))
   // A spawn whose child is on the roster already is counted there, if it runs, not by its reservation.

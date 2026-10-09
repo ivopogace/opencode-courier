@@ -110,6 +110,16 @@ export async function entriesOf(storage: RosterStorage, sessionID: string) {
 export async function lineage(storage: RosterStorage, sessionID: string) {
   const first = await storage.get(reverseKey(sessionID))
   if (!isReverse(first)) return lineageIn(await allEntries(storage), sessionID)
+  return walkIndex(storage, sessionID, first)
+}
+
+/** `lineage` by the reverse index alone: empty, without scanning the roster, when it does not name the session. */
+export async function indexedLineage(storage: RosterStorage, sessionID: string) {
+  const first = await storage.get(reverseKey(sessionID))
+  return isReverse(first) ? walkIndex(storage, sessionID, first) : []
+}
+
+async function walkIndex(storage: RosterStorage, sessionID: string, first: ReverseEntry) {
   let indexed: ReverseEntry = first
   const chain: RosterEntry[] = []
   let below = sessionID

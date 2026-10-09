@@ -125,7 +125,10 @@ never uses the courier sends exactly the request it did before. From the request
 spawn on, it gets a `root orchestrator` part with the limits. Each part is the same on every request
 of its session, so it changes the session's prompt once and the provider's prompt cache holds after
 that. Each instance remembers the depths it has looked up, so the hook reads the roster once per
-session, not per request.
+session, not per request. It reads only the session's [reverse index](#roster) key and its own
+children, never the whole roster: an entry an older copy wrote without a key is indexed on the next
+load, and until then the hook takes its session for one nobody spawned; `courier_spawn` still
+enforces the limits.
 
 ## A child that fails
 

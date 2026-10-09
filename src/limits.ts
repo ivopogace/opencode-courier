@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import { setBounded } from "./bounded.js"
 import { obj } from "./json.js"
 import { childrenRefusal, depthRefusal, ROLE_PREFIX, rolePart, totalRefusal, type Limits } from "./notices.js"
-import { allEntries, bySession, children, lineage, lineageBy, type RosterStorage } from "./roster.js"
+import { allEntries, bySession, children, indexedLineage, lineageBy, type RosterStorage } from "./roster.js"
 
 export type { Limits } from "./notices.js"
 
@@ -147,7 +147,8 @@ export async function shapeContext(ports: ContextPorts, event: Shaped) {
 async function depthOf(ports: ContextPorts, sessionID: string) {
   const known = ports.roles.get(sessionID)
   if (known !== undefined) return known
-  const chain = await lineage(ports.storage, sessionID)
+  // The reverse index alone: a scan here would run for every session's first request, courier or not.
+  const chain = await indexedLineage(ports.storage, sessionID)
   const depth = chain.length || ((await children(ports.storage, sessionID)).length ? 0 : null)
   setBounded(ports.roles, sessionID, depth, ROLES_MAX)
   return depth

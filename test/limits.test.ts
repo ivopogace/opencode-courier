@@ -351,6 +351,31 @@ describe("the context hook", () => {
     expect((await shape("ses_root")).system).toHaveLength(2)
   })
 
+  test("a session nobody spawned costs one read and one scan of its own children, never the whole roster", async () => {
+    const { storage, shape, child } = contextPorts()
+    await chainTo(child, 2)
+    const scanned: string[] = []
+    const scan = storage.scan
+    storage.scan = async (input: { prefix: string }) => {
+      scanned.push(input.prefix)
+      return scan(input)
+    }
+
+    expect((await shape("ses_alone")).system).toHaveLength(1)
+    expect(scanned).toEqual(["roster/ses_alone/"])
+  })
+
+  test("indexed sessions keep their depths without scanning the roster", async () => {
+    const { storage, shape, child } = contextPorts()
+    await chainTo(child, 3)
+    const scan = storage.scan
+    storage.scan = async (input: { prefix: string }) =>
+      input.prefix === "roster/" ? Promise.reject(new Error("whole roster scanned")) : scan(input)
+
+    for (const [sessionID, depth] of [["ses_root", 0], ["ses_d1", 1], ["ses_d2", 2], ["ses_d3", 3]] as const)
+      expect((await shape(sessionID)).system.at(-1)).toEqual({ type: "text", text: rolePart(depth, DEFAULT_LIMITS) })
+  })
+
   test("adds no second role part, as a second copy of the plugin would", async () => {
     const { ports, child } = contextPorts()
     await child("ses_root", "ses_a")

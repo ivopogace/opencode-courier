@@ -86,4 +86,5 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # ~2 min
 - Behaviour changes come with unit tests and an e2e scenario, and update README.md and
   `docs/reference.md`.
 - Feature work goes on a branch and through a PR with green CI; `Closes #N` in the body.
+- Code comments and TSDoc only where the code cannot say it itself, and at most two lines each.
 - Running several issues at once in child sessions: the `courier-wave` skill.

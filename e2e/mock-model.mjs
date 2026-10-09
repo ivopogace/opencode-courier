@@ -104,11 +104,8 @@ function decide(body) {
       args: { sessionID: startedBy[1], message: answered[1] ? "CHILD DISMISSED" : `CHILD GOT ${JSON.stringify(answersIn(recent))}` },
     }
   if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE" } }
-  // A parent told that its child asks a question asks the person the same, with its own question
-  // tool; the test answers its form. A parent of COURIER-QUESTION-RELABEL relabels the options, and
-  // one of COURIER-QUESTION-REWORD rewords the question, so its question is not linked to the
-  // child's and it passes the answer on with courier_answer. One of COURIER-QUESTION-BOTH slips:
-  // it asks the person and calls courier_answer in one step, two tool calls in parallel.
+  // A parent told of its child's question asks the person the same with its own question tool; the
+  // RELABEL, REWORD and BOTH variants relabel, reword, or also call courier_answer in the same step.
   const notice = recent.match(QUESTION_NOTICE)
   if (notice) {
     const args = JSON.parse(recent.split("\n").find((line) => line.startsWith('{"questions"')))

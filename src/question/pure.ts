@@ -61,9 +61,8 @@ export function settledIn(exit: CallExit): Elsewhere {
 }
 
 /**
- * Orders strings by their UTF-16 code units, the default sort's order, stated. The order is never
- * shown; it only has to come out the same on both sides of a comparison, which a locale-aware
- * compare would not promise: it can rank two different labels as equal and leave them as listed.
+ * Orders strings by UTF-16 code units, the default sort's order, stated: it only has to come out the
+ * same on both sides of a comparison; a locale-aware compare may rank two different labels as equal.
  */
 export function byCodeUnit(a: string, b: string) {
   if (a === b) return 0

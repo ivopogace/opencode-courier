@@ -16,11 +16,8 @@ import { builtVersions, versionNotice } from "./version.js"
 import { listen, readConfig, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
 /**
- * The webhook receiver, one per process like the claim set: every instance configured with a
- * `webhook` option joins `instances`, the first one starts the server, and the last one to unload
- * stops it. Requests are served with any live instance's ports; sessions and storage are shared.
- * A receiver that could not listen is dropped, so the next instance to load tries again, and a new
- * one waits for the previous one to finish closing, as on a plugin reload.
+ * The webhook receiver, one per process: instances with a `webhook` option join `instances`, the first
+ * starts the server and the last to unload stops it; one that could not listen is dropped for a retry.
  */
 const receivers = hub.receivers
 
@@ -76,17 +73,14 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
   }
 }
 
-// One set of handled events for every instance in the process, since the hub's two subscriptions,
-// and a copy of another hub version or one from before the hub, are sent the same events, and of
-// the permission requests sessions were told about. The scheduler's claim set is the hub's
-// own business: the hub runs the scheduler once for its members.
+// One set of handled events and of told permission requests for every instance in the process, since
+// several subscriptions and copies see the same events. The scheduler's claim set is the hub's own.
 const { watched } = hub
 const watchState: WatchState = { ...watched, forms: hub.forms }
 
 /**
- * The courier tools and webhook receiver, as a promise plugin, which joins the hub that runs the
- * scheduler and the event watcher. Its member of the hub carries the instance's location, by which
- * the question relay, the Effect half of the same instance, finds its ports.
+ * The courier tools and webhook receiver, as a promise plugin joining the hub that runs the scheduler
+ * and the watcher; its member carries the location by which the question relay finds its ports.
  */
 export const courier = () => Plugin.define({
   id: "courier",
@@ -197,11 +191,8 @@ export const courier = () => Plugin.define({
 })
 
 /**
- * The plugin OpenCode loads. It is an Effect plugin, because the question relay wraps OpenCode's own
- * question tool, whose execute the promise API hands out only as a promise that cannot be
- * interrupted, so a child's question could not be withdrawn once its parent answered. Everything
- * else is the promise plugin above, run through the plugin package's own adapter, as OpenCode runs
- * a promise plugin.
+ * The plugin OpenCode loads: an Effect plugin, since the question relay wraps OpenCode's question tool
+ * and only the Effect API makes its call interruptible; the rest is the promise plugin, adapted.
  */
 export default EffectPlugin.define({
   id: "courier",

@@ -18,10 +18,8 @@ const shutdownAt = (directory: string | undefined) =>
 export const shutdownReportedAt = (directory?: string) => shutdownAt(directory) || undefined
 
 /**
- * Called for OpenCode's `location.shutdown`: the location at `directory` is closing, which
- * withdraws its open forms as if the person had dismissed them (before unloading the plugin
- * there, since OpenCode 2.0.22). The event's location is optional in the schema; without it,
- * the shutdown counts for every location. `at` is when, by the watcher's clock (epoch milliseconds).
+ * Called for `location.shutdown`: the location at `directory` is closing, which withdraws its open
+ * forms as if dismissed; with no location it counts for all. `at` is the watcher's clock, epoch ms.
  */
 export function locationClosing(at: number, directory?: string) {
   shared.shutdowns.set(directory ?? ANYWHERE, at)
@@ -29,10 +27,8 @@ export function locationClosing(at: number, directory?: string) {
 }
 
 /**
- * Whether a dismissal just seen in the location at `directory` was that location closing rather
- * than the person: true when it shut down within the dismissal grace before, or does so, or this
- * instance unloads, within the grace from now, by the clock of `ports`. A shutdown reported without a location counts for every
- * location, and with the directory unknown, any location's shutdown counts.
+ * Whether a dismissal just seen at `directory` was the location closing rather than the person: it
+ * shut down within the grace, before or after, or this instance unloads in it; unknown matches any.
  */
 export const closingSoon = (ports: QuestionPorts, loaded: () => boolean, directory: string | undefined): Effect.Effect<boolean> =>
   Effect.suspend(() => {
@@ -56,11 +52,8 @@ export const closingSoon = (ports: QuestionPorts, loaded: () => boolean, directo
   })
 
 /**
- * Adds a plugin instance's ports to `loaded`, which copies of other versions read to tell a cut-off
- * question through it, until the returned function is called. A location loading again forgets the
- * shutdown recorded for it, so a dismissal there is not mistaken for that shutdown. One recorded for
- * every location is left alone, since a dismissal held in another location may still need it; it
- * ages out with the grace.
+ * Adds an instance's ports to `loaded`, which other copies tell cut-off questions through, until the
+ * returned function is called. A location loading again forgets the shutdown recorded for it alone.
  */
 export function joinRelay(ports: QuestionPorts) {
   shared.loaded.add(ports)
@@ -81,9 +74,8 @@ export function formShown(event: { readonly data: { readonly form: { readonly se
 }
 
 /**
- * Called when an event stream may have missed forms being shown: every call still waiting for its
- * form is taken as shown. One still waiting for its permission check is relayed early, which is the
- * lesser harm.
+ * Called when an event stream may have missed forms shown: every call still waiting for its form is
+ * taken as shown; one still waiting for its permission check is relayed early, the lesser harm.
  */
 export function formsMayHaveBeenMissed() {
   for (const shown of shared.shown.values()) shown()
@@ -91,9 +83,8 @@ export function formsMayHaveBeenMissed() {
 }
 
 /**
- * Called when an instance starts following OpenCode's events. Every instance is sent every event,
- * so a form shown is missed only while none follows them; then the calls waiting are released, and
- * true is returned, for the caller to release them again on its first event, once it is connected.
+ * Called when an instance starts following OpenCode's events: a shown form is missed only while none
+ * follows, so waiting calls are released; true tells the caller to release again on its first event.
  */
 export function eventsFollowed() {
   const missed = shared.following === 0 && shared.followed

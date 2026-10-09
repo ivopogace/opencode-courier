@@ -1,20 +1,5 @@
-// The permission scenario of e2e/real-model.sh: a real model's parent is told that its child waits
-// for a permission. Checks that it asks the person instead of answering by itself, plays the person
-// (answering its question form, or its question in text, with "once"), and checks that the answer
-// reaches the child, which runs its command and reports back. Called once the parent's first turn
-// has ended:
-//
-//   node e2e/real-model-permission.mjs <parentSessionID>
-//
-// Reads SERVER, OPENCODE_PASSWORD, WORK, COURIER_TIMEOUT (seconds to wait at each stage) and
-// COURIER_EXPECT (what the child's command prints). With COURIER_OTHER_SERVER set, the URL of a second server on
-// the same data directory (COURIER_PERSON=other-server in real-model.sh), the person dismisses the
-// parent's form, if it opened one, and sends "Allow it once." through the other server, so the
-// parent's next turn, and its courier_answer, run there, where the child's request is not pending.
-// Checks that courier_answer then passes nothing on and names another server among the
-// possibilities, records what the parent tells the person, and, as the person, allows the request
-// in the child's own session, on the first server, so the child carries on and reports. Exits 0 when every check passes, 2 when some
-// failed along with model requests (inconclusive), else 1.
+// The permission scenario of e2e/real-model.sh (node e2e/real-model-permission.mjs <parentSessionID>):
+// the parent asks the person about its child's permission request, and the answer reaches the child.
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 

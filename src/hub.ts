@@ -13,28 +13,8 @@ import type { WebhookConfig, WebhookPorts } from "./webhook.js"
 type Context = Plugin.Context
 
 /**
- * The plugin's process-wide state, in one place. OpenCode sets the plugin up once per location
- * (project or worktree), all in one process, and after an update loads the new copy of the package
- * next to the old one until the old one unloads; so the state every instance shares lives on
- * `globalThis`, outside the module graph, and this is the only module that puts it there.
- *
- * The hub is versioned by `HUB_VERSION`, not by the package's version: copies whose hub has the
- * same shape share one hub, however far apart their releases, and only a change to the hub's shape
- * (the ports a `Member` carries included) or to the meaning of one of its fields bumps it. An
- * optional field that a copy without it gets along without, such as `Member.location` or
- * `Scheduler.running`, is added without a bump while no release has the hub (the latest is 0.2.2).
- *
- * Version skew: a copy that finds a hub of another version under `opencode-courier.hub` logs that
- * once and runs its own hub under `opencode-courier.hub@<version>`. Whatever its version, a hub
- * takes the claim sets and the other shared objects of the copies before the hub from their own
- * keys (`opencode-courier.claimed`, `.watched`, `.forms`, `.questions`, `.receiver`, `.locations`),
- * making each when it is missing, so every copy in the process, with a hub or without, claims an
- * event or a delivery in the same set, and an old and a new copy never both act on it. Those keys'
- * shapes and meanings are therefore fixed: a hub version that needs other ones makes new keys, and
- * keeps claiming in the old ones too while a copy that uses them may still be loaded. `members` is
- * the one thing each version keeps to itself, so a job a hub runs once for its members runs once
- * per hub version, and still claims what it acts on in the shared sets, which keep it from acting
- * twice.
+ * The plugin's process-wide state on `globalThis`, shared by every loaded copy; only this module puts
+ * it there. `HUB_VERSION`, the fixed claim keys and version skew: docs/reference.md, § Several copies.
  */
 export const HUB_VERSION = 1
 
@@ -45,9 +25,8 @@ export const HUB_KEY = "opencode-courier.hub"
 // event watcher. Declared here rather than in `question/` and `watch.ts`, which use the hub.
 
 /**
- * A question this process knows: one whose call waits (`call`), or one whose call was cut off,
- * which is answered by message. `link` withdraws the top session's question call that passes its
- * answer on, once the question is settled without that call.
+ * A question this process knows: its call waits (`call`), or was cut off and is answered by message.
+ * `link` withdraws the top session's call passing the answer on, once settled without that call.
  */
 export interface Question extends Asked {
   /** The directory of the location the call runs in, whose shutdown withdraws its form. */
@@ -62,11 +41,8 @@ export interface Question extends Asked {
 }
 
 /**
- * The relay's timings, carried by its ports: how long a question cut off by a closing location
- * waits before an instance still loaded tells its top session, how long an answer waits for another
- * one to it that is still being passed on, how long what follows a call's end waits for the notice
- * of the question to go out, and how long a dismissal is held to see whether the location is
- * shutting down.
+ * The relay's timings, carried by its ports: the closing grace before a cut-off question is told, the
+ * wait for an answer still being passed on, the wait for a notice to go out, and the dismissal hold.
  */
 export interface QuestionTiming {
   readonly closingGraceMs: number
@@ -102,12 +78,8 @@ export interface WatchPorts {
 }
 
 /**
- * What every plugin instance in the process shares. A hub follows OpenCode's events through two of
- * its members, one a standby, and a copy of another hub version, or one from before the hub, follows
- * them too, all sent the same events; so an event id is claimed synchronously and handled once.
- * `waiting` holds the permission requests a session was told about and has not answered;
- * `answered`, requests answered before anyone was told, so a notice whose roster lookup was
- * overtaken by the answer is not sent. `forms` does the same for the forms of spawned sessions.
+ * What every plugin instance in the process shares. Several subscriptions and copies see the same
+ * events, so each is claimed synchronously and handled once; `answered` keeps stale notices unsent.
  */
 export interface WatchState {
   readonly seen: Set<string>
@@ -141,9 +113,8 @@ export interface Receivers {
 }
 
 /**
- * The question relay's state, shared by every instance, since a child and the session it asks can
- * be in different locations: the questions told to a top session and not yet settled, the cut-off
- * ones whose top session has been told so, and the question calls waiting for their form to be shown.
+ * The question relay's state, shared by every instance, as a child and the session it asks can be in
+ * different locations: open questions, cut-off ones already told, and calls waiting for their form.
  */
 export interface QuestionState {
   readonly questions: Map<string, Question>
@@ -153,9 +124,8 @@ export interface QuestionState {
   readonly passing: Map<string, Promise<unknown>>
   readonly answered: Set<string>
   /**
-   * The ports of the loaded instances, of every copy of the plugin. A release before the hub picks
-   * one here to tell a cut-off question through, so every copy keeps it filled; this copy reads its
-   * hub's members, and this only for an instance of another copy, when it has none.
+   * The ports of every loaded instance of every copy. A release before the hub picks one here to tell
+   * a cut-off question through, so every copy fills it; this copy reads it only for another copy.
    */
   readonly loaded: Set<QuestionPorts>
   /** How many instances follow OpenCode's events now, and whether any has since the process started. */
@@ -207,11 +177,8 @@ export interface Scheduler {
   /** The loop's interval, while it runs. */
   timer?: unknown
   /**
-   * The tick under way, if any, whichever copy of the plugin started it and whether or not its
-   * member is still loaded. A tick that falls due meanwhile renews the owner key for it, for up to a
-   * minute from its start, and is skipped; past that minute one whose member has left holds up
-   * nothing, and the next tick starts. Optional, since a copy of the same hub version made before it
-   * existed keeps only `ticking`.
+   * The tick under way, whichever copy started it: for a minute the key is renewed for it and due
+   * ticks skip; past it, one whose member left holds nothing up. Older copies have only `ticking`.
    */
   running?: Tick
   /**
@@ -237,10 +204,8 @@ const realTimers: Timers = {
 }
 
 /**
- * The key in the plugin's storage, shared by every OpenCode server on one data directory, naming
- * the server whose scheduler delivers the `courier_later` messages: `{ server, at }`, its id and
- * when it last wrote the key, in epoch milliseconds. Outside `later/`, which the schedulers scan
- * for messages, those of copies before the key included.
+ * The storage key, shared by every server on one data directory, naming the server whose scheduler
+ * delivers `courier_later` messages: `{ server, at }`, its id and when it last wrote (epoch ms).
  */
 export const OWNER_KEY = "scheduler/owner"
 
@@ -275,9 +240,8 @@ async function readOwner(ports: LaterPorts): Promise<Owner | undefined> {
 }
 
 /**
- * How long an unloading instance waits, before it lets go, for the work it leaves behind: what it
- * started itself, a tick or an event's notice still under way through it, and on the last leave the
- * owner key's release.
+ * How long an unloading instance waits for the work it leaves behind: what it started itself, a tick
+ * or a notice under way through it, and on the last leave the owner key's release.
  */
 export const LEAVE_MS = 2_000
 
@@ -331,17 +295,8 @@ export interface Hub {
 export interface Opened {
   readonly hub: Hub
   /**
-   * Adds a loaded instance to the hub and its permission domain to `locations`; returns its leave,
-   * which takes both out again. The first instance to join logs a hub of another version found
-   * under `HUB_KEY`. An instance joining a hub without members starts the scheduler's loop, with a
-   * tick at once; the last one to leave stops it. An instance joining while the hub has fewer than
-   * `WATCHERS` subscriptions to OpenCode's events starts one through itself; when one leaves that
-   * has one, another member without one starts its replacement before it ends. The last leave
-   * settles once the scheduler's owner key is released, after the tick under way, whichever copy
-   * started it. Every leave first waits for the work its member leaves behind: what was handed to
-   * `track`, a tick under way through it, and the subscription it ran, which ends after the event
-   * it is handling; all of it, the release included, for up to `LEAVE_MS`. The question relay's
-   * own work is not waited for: it outlives the instance on purpose.
+   * Adds a loaded instance to the hub and `locations`; returns its leave. The first join starts the
+   * scheduler and watchers, the last leave stops them; a leave waits `LEAVE_MS` for the member's work.
    */
   readonly join: (member: Member) => () => Promise<void>
   /** Hands the hub work a member started, which its leave waits for; the member's own background work. */
@@ -349,9 +304,8 @@ export interface Opened {
 }
 
 /**
- * Finds or makes this copy's hub in `registry`: the one under `HUB_KEY`, or its own under a
- * versioned key when a hub of another version holds that. Either way, its claim sets and shared
- * objects are the ones under the keys of the copies before the hub, made when missing.
+ * Finds or makes this copy's hub in `registry`: the one under `HUB_KEY`, or its own under a versioned
+ * key when another version holds that; its claim sets are the pre-hub keys', made when missing.
  */
 export function open(registry: Registry, timers: Timers = realTimers, server = SERVER): Opened {
   const shared = <T>(name: string, create: () => T) => processWide(`opencode-courier.${name}`, create, registry)
@@ -390,9 +344,8 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
   const hub = processWide(skew ? `${HUB_KEY}@${HUB_VERSION}` : HUB_KEY, create, registry)
 
   /**
-   * Whether this server holds the owner key, taking or renewing it through `ports`. Its own fresh
-   * key is renewed. A free one, an expired one, or its own after a stall, is written and read back
-   * after a random wait: of two servers taking it at once, the one that wrote last holds it.
+   * Whether this server holds the owner key, taking or renewing it through `ports`. A free, expired
+   * or stalled key is written and read back after a random wait: the last of two writers holds it.
    */
   const own = async (ports: LaterPorts) => {
     const held = await readOwner(ports)
@@ -422,10 +375,8 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     })
 
   /**
-   * Removes the owner key if this server holds it, so another server takes over at its next tick:
-   * once the loop has stopped and no tick is under way, whichever copy started it (a tick whose loop
-   * stopped releases it as it ends), and while no hub of another version in the process still runs a
-   * loop under the same id.
+   * Removes the owner key if this server holds it, so another takes over at its next tick: once the
+   * loop has stopped, no tick is under way and no other hub version here runs a loop under this id.
    */
   const release = async (ports: LaterPorts) => {
     const scheduler = hub.scheduler
@@ -434,11 +385,8 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
   }
 
   /**
-   * Whether the tick under way, kept on the hub by whichever copy started it, still holds up the
-   * next: within a minute of its start it does, and the key is renewed for it, through the first
-   * member still loaded, since a delivery may run longer than the key holds; past the minute it is
-   * taken to hang, and holds up the next only while its member is still loaded. A tick of a copy that
-   * keeps only `ticking` holds it up while its member is loaded, without renewing the key.
+   * Whether the tick under way still holds the next up: within a minute of its start it does, and the
+   * key is renewed for it; past that it is taken to hang, holding up only while its member is loaded.
    */
   const underWay = () => {
     const { running, ticking } = hub.scheduler
@@ -451,9 +399,8 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     return hub.members.has(running.member)
   }
 
-  // One tick, through the first member still loaded, by the server holding the owner key. The claim
-  // on each delivery stays, as the second line of defence against a copy before the hub, which runs
-  // its own interval until it unloads, and has no owner key.
+  // One tick, through the first loaded member, by the server holding the owner key. The claim on each
+  // delivery stays, as a second line of defence against a pre-hub copy running its own interval.
   const tick = async () => {
     const scheduler = hub.scheduler
     if (underWay()) return
@@ -538,9 +485,8 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
       // which keeps using its storage and session until it ends.
       const behind: Array<Promise<unknown>> = [...(work.get(member) ?? [])]
       if (scheduler.running?.member === member) behind.push(scheduler.running.done)
-      // The other subscription, already connected, follows the events meanwhile; this one is
-      // replaced before it ends, so the question relay's count of watchers never drops to none.
-      // It ends once the event it is handling, whose notice may be going out, has been handled.
+      // The other subscription, already connected, follows the events meanwhile; this one is replaced
+      // before it ends, after its current event, so the relay's watcher count never drops to none.
       const index = hub.watchers.findIndex((watcher) => watcher.member === member)
       if (index >= 0) {
         const [leaving] = hub.watchers.splice(index, 1)
@@ -585,9 +531,8 @@ export function memberAt(location: object) {
 }
 
 /**
- * The question ports of the member that has just joined at `location`, the newest there, for as long
- * as it stays loaded: resolved once, so an instance joining later at the same location, while this
- * one is still loaded, does not take its place.
+ * The question ports of the member that just joined at `location`, while it is loaded: resolved once,
+ * so a later instance at the same location does not take its place while this one is still loaded.
  */
 export function portsAt(location: object): () => QuestionPorts | undefined {
   const own = memberAt(location)
@@ -598,9 +543,8 @@ export function portsAt(location: object): () => QuestionPorts | undefined {
 export const permissions = () => hub.locations.values()
 
 /**
- * For tests: forgets every remembered id and the question relay's state, the relay's loaded
- * instances and its count of watchers included. The hub's members, the locations and the webhook
- * receiver are left alone; leaving and unloading take them out.
+ * For tests: forgets every remembered id and the question relay's state, loaded instances and watcher
+ * count included. Members, locations and the webhook receiver are left to leaving and unloading.
  */
 export function resetHub() {
   hub.claimed.clear()

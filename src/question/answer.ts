@@ -71,9 +71,8 @@ export const deliver = (ports: QuestionPorts, asked: Asked, outcome: Outcome): E
   Effect.suspend(() => {
     const id = asked.requestID
     const wait = ports.timing.passingWaitMs
-    // One answer at a time, and once, per question in this process: storage cannot be claimed
-    // atomically. A second answer waits for the first, and is passed on if the first was not.
-    // While one is under way, nobody is told that the question was cut off, nor links to it.
+    // One answer at a time, and once, per question in this process, since storage cannot be claimed
+    // atomically: a second waits, going only if the first did not; meanwhile no cut-off notice or link.
     const since = ports.now()
     const left = () => wait - (ports.now() - since)
     const turn = holding(
@@ -88,9 +87,8 @@ export const deliver = (ports: QuestionPorts, asked: Asked, outcome: Outcome): E
         if (shared.answered.has(id)) return undefined
         const passing = passOn(ports, asked, outcome)
         shared.passing.set(id, passing)
-        // Held while it is passed on. One that hangs, on a notice that never returns, gives way
-        // after a while, so the question can be answered again; should it still go through, the
-        // child is told twice.
+        // Held while it is passed on; one that hangs on a notice that never returns gives way after a
+        // while, so the question can be answered again, and the child may then be told twice.
         yield* within(passing, wait).pipe(
           Effect.ensuring(
             Effect.sync(() => {
@@ -118,9 +116,8 @@ async function passOn(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
     known.link?.({ by: "top", outcome })
     return "result" as const
   }
-  // Its call has just ended: whether it was cut off, and so stays registered, or was settled, and
-  // so is dropped, is known once settle is through. The registry decides, not storage, which a
-  // question whose record could not be written is missing from.
+  // Its call just ended: whether it was cut off and stays or was settled and is dropped is known once
+  // settle is through, from the registry, not storage, which lacks a question whose write failed.
   if (known) {
     await known.settling
     if (shared.questions.get(id) !== known) return undefined

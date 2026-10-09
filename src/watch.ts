@@ -92,9 +92,8 @@ export async function reportAsked(ports: WatchPorts, state: WatchState, event: P
 }
 
 /**
- * Tells the session that was told about a request that it has been answered some other way, in the
- * child's own session or along with another answer, so it does not pass on a stale question.
- * Requests answered through courier_answer are no longer waiting and are skipped.
+ * Tells the session told about a request that it was answered some other way, so it does not pass on
+ * a stale question; requests answered through courier_answer no longer wait and are skipped.
  */
 export async function reportReplied(ports: WatchPorts, state: WatchState, event: PermissionReplied) {
   if (!claim(state.seen, event.id)) return []
@@ -116,9 +115,8 @@ export async function reportReplied(ports: WatchPorts, state: WatchState, event:
 }
 
 /**
- * Tells the session at the top about a form OpenCode shows in a spawned session, such as web
- * search asking for its provider, which only the person can answer there. Question forms are
- * left to the question relay, which passes every question of a spawned session on.
+ * Tells the top session about a form OpenCode shows in a spawned session, such as web search asking
+ * for its provider, which only the person can answer; question forms are left to the question relay.
  */
 export async function reportForm(ports: WatchPorts, state: WatchState, event: FormCreated) {
   if (!claim(state.seen, event.id)) return []
@@ -225,9 +223,8 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
 const ENDED: IteratorReturnResult<undefined> = { done: true, value: undefined }
 
 /**
- * The events of `events` until it ends or `signal` aborts, whichever comes first; the stream is not
- * closed. Each wait for the next event listens for the abort only while it waits, so a watcher that
- * follows events for the life of the process holds nothing per event it has seen.
+ * `events` until it ends or `signal` aborts, the stream left open; each wait hears the abort only while
+ * it waits, so a watcher that follows events for the life of the process holds nothing per event.
  */
 const until = <T>(events: AsyncIterator<T>, signal: AbortSignal): AsyncIterable<T> => ({
   [Symbol.asyncIterator]: () => ({
@@ -269,12 +266,8 @@ function handleLogged(ports: WatchPorts, state: WatchState, event: { readonly ty
 }
 
 /**
- * Follows OpenCode's events until `signal` aborts, telling parents when a spawned child's turn
- * fails, when it waits for a permission or on a form and when that is answered without them, and
- * noting for the question relay the question forms shown, which it waits for, and the locations
- * shutting down, whose withdrawn forms must not pass for dismissals. Once `signal` aborts it ends
- * as soon as the event it is handling, and the relay of the requests already pending, are done,
- * without waiting for the stream to close: an unloading instance's leave waits for that.
+ * Follows OpenCode's events until `signal` aborts: tells parents of a spawned child's failed turn, its
+ * pending permission or form, notes forms and shutdowns for the relay; ends after its current event.
  */
 export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
   const relaying = new Set<Promise<void>>()
@@ -298,9 +291,8 @@ export async function watchChildren(ports: WatchPorts, state: WatchState, signal
       if (!signal.aborted) ports.log(`courier watch: event stream broke: ${String(error)}`)
     } finally {
       if (following) eventsLeft()
-      // Closed without waiting: the subscription's own signal has aborted, or the stream ended, and
-      // closing the adapter's stream waits on OpenCode's side, which may not answer while a location
-      // closes; the leave that waits for this watcher must not wait for that too.
+      // Closed without waiting: closing the adapter's stream waits on OpenCode, which may not answer
+      // while a location closes, and the leave waiting for this watcher must not wait for that too.
       void events?.return?.().catch(() => {})
     }
     if (!signal.aborted) await pause(retryMs, signal)
@@ -309,12 +301,8 @@ export async function watchChildren(ports: WatchPorts, state: WatchState, signal
 }
 
 /**
- * Makes the hub start its subscriptions to OpenCode's events with this copy's watcher, the copy loaded
- * last's, as after an update; `join` starts them. Every instance in the process is sent every event,
- * so one subscription would serve them all; the second is a standby, already connected when the
- * first one's member leaves, so no event goes unseen then. Both handle every event, and the claim
- * sets tell each once. Like any (re)subscription, a new one relays the requests already pending,
- * which the claim sets tell once too.
+ * Makes the hub start its subscriptions to OpenCode's events with this copy's watcher, the one loaded
+ * last; `join` starts them. The second is a standby, connected before the first's member leaves.
  */
 export function watchFromHub(hub: Pick<Hub, "subscribe">, state: WatchState, retryMs = RESUBSCRIBE_MS) {
   hub.subscribe = (member: Member) => {

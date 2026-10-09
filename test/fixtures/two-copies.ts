@@ -1,6 +1,5 @@
 // Run by test/hub.test.ts in a process of its own: loads the hub module twice, as two copies of the
-// plugin in one process, and prints what each saw. Kept out of the test process because Bun reports
-// a file's coverage from one of its module instances, and a second copy's would replace the first's.
+// plugin in one process; kept out of the test process, whose Bun coverage one copy would overwrite.
 import type { Member } from "../../src/hub.js"
 
 type HubModule = typeof import("../../src/hub.js")
@@ -48,9 +47,8 @@ const skewedOwnLoop = skewed.hub.scheduler.timer !== undefined
 leaveC()
 leaveD()
 
-// A tick that the first copy started, still delivering, keeps the owner key renewed by the second
-// copy's ticks for a minute from its start, and the second copy's last leave waits for it before the
-// key is released. In a registry of their own, with timers fired by hand.
+// A tick the first copy started, still delivering, keeps the owner key renewed by the second copy's
+// ticks for a minute, and the second's last leave waits for it; own registry, timers fired by hand.
 const store = new Map<string, unknown>()
 let now = 1_000
 let finish = () => {}

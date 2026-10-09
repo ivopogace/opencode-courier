@@ -45,9 +45,8 @@ const toppings = [
 ]
 
 /**
- * OpenCode's question tool, as far as the relay sees it: the form is shown (form.created) once the
- * call starts, unless the call is refused first, and the call ends when the form is answered or
- * dismissed, or is interrupted, which cancels the form.
+ * OpenCode's question tool as the relay sees it: form.created once the call starts, unless refused
+ * first; the call ends when the form is answered or dismissed, or is interrupted, which cancels it.
  */
 function questionTool() {
   const forms = new Map<string, { sessionID: string; answer: (answers: string[][]) => void; dismiss: () => void; fail: (message: string) => void }>()
@@ -84,9 +83,8 @@ function questionTool() {
 
 let calls = 0
 /**
- * A relay in one location, with its own timings, and a `TestClock`, which only a test moves
- * (`advance`), read by the relay's ports and run by its fibers alike: a dismissal is taken at once,
- * unless a test holds it to see a location close.
+ * A relay in one location with its own timings and a `TestClock`, moved only by a test (`advance`)
+ * and shared by its ports and fibers; a dismissal is taken at once unless a test holds it.
  */
 async function setUp(timings: Partial<QuestionTiming> = {}) {
   const clock = Effect.runSync(Effect.scoped(TestClock.make()))

@@ -1,8 +1,6 @@
 /**
- * Bounded collections of remembered ids: plain `Set`s and `Map`s that drop their oldest entry past
- * a bound. Functions over the built-in types rather than a class, since the process-wide ones are
- * shared with copies of the plugin loaded before an update, which call `.has` and `.add` on them.
- * Imports nothing of the plugin's.
+ * Bounded `Set`s and `Map`s of remembered ids that drop their oldest entry past a bound. Functions
+ * on the built-ins, not a class, as older plugin copies call `.has` and `.add` on the shared ones.
  */
 
 /** Adds to a bounded set, dropping the oldest entry past `max`; false when the value was there already. */

@@ -36,9 +36,8 @@ export interface CleanupInput {
 export const MAX_LISTED = 50
 
 /**
- * Removes the worktree of an isolated child the parent started, and forgets the child. A worktree
- * with uncommitted changes or commits that exist nowhere else is kept unless `force` is set, and the
- * result says what is in it.
+ * Removes the worktree of an isolated child the parent started, and forgets the child. One with
+ * uncommitted changes or commits found nowhere else is kept unless `force` is set; the result says so.
  */
 export async function cleanup(ports: CleanupPorts, parentID: string, input: CleanupInput): Promise<CleanupResult> {
   const entry = (await ports.storage.get(rosterKey(parentID, input.sessionID))) as unknown as RosterEntry | undefined

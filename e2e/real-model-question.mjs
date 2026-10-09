@@ -1,15 +1,5 @@
-// The question scenario of e2e/real-model.sh: a real model's child is to find out from the person
-// which greeting to use, without being told how to ask. Checks how it asks (its question tool, which
-// the plugin relays, or a courier_send to its parent), that the parent asks the person in its own
-// session with the child's options rather than answering by itself, plays the person (answering the
-// parent's question form, or its question in text, with COURIER_ANSWER), and checks that the answer
-// reaches the child, which reports it. Called once the parent has been prompted:
-//
-//   node e2e/real-model-question.mjs <parentSessionID>
-//
-// Reads SERVER, OPENCODE_PASSWORD, WORK, COURIER_TIMEOUT (seconds to wait at each stage) and
-// COURIER_ANSWER (the greeting the person picks, default Hi). Exits 0 when every check passes, 2 when
-// some failed along with model requests (inconclusive), else 1.
+// The question scenario of e2e/real-model.sh (node e2e/real-model-question.mjs <parentSessionID>): the
+// child asks the person which greeting to use, through its parent, and COURIER_ANSWER reaches it.
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 

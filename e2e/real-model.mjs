@@ -1,13 +1,5 @@
-// Waits for a real model's fan-out to settle, saves the transcripts and reports what happened.
-// Called by e2e/real-model.sh once the parent's first turn has ended:
-//
-//   node e2e/real-model.mjs <parentSessionID>
-//
-// With --saved it reports on the transcripts already saved in WORK instead, without a server.
-//
-// Reads SERVER, OPENCODE_PASSWORD, WORK, COURIER_TIMEOUT (seconds to wait for the children) and
-// COURIER_EXPECT (space-separated values each child's report and the parent's summary should hold).
-// Exits 0 when every check passes, 2 when some failed along with model requests (inconclusive), else 1.
+// Waits for a real model's fan-out to settle, saves the transcripts to WORK and reports what happened
+// (node e2e/real-model.mjs <parentSessionID>, or --saved to re-read WORK). Exit 2 means inconclusive.
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -47,9 +39,8 @@ const textOf = (message) =>
     : (message.text ?? "")
 const contentText = (state) =>
   (state.content ?? []).flatMap((item) => (typeof item?.text === "string" ? [item.text] : [])).join("")
-// Whether the message at the end of a turn says it failed: a step whose model request failed, as
-// on a rate limit, or the idle marker 2.0.22 records after each turn, with its outcome. Feeds the
-// per-turn checks.
+// Whether the message ending a turn says it failed: a step whose model request failed, as on a rate
+// limit, or the idle marker 2.0.22 records after each turn, with its outcome.
 const failed = (message) => message.error !== undefined || message.finish === "error" || message.outcome === "failed"
 // The two kinds of failure that make a failing run inconclusive, counted apart in the note: a step
 // whose model request failed, and a turn whose idle marker says it failed (for whatever reason).
@@ -66,9 +57,8 @@ const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
 }
-// Splits a transcript into turns. A prompt or a delivered message opens a turn when the session's
-// last step had ended its turn, and completed, before it arrived (or an idle marker had been
-// recorded, since OpenCode 2.0.22); otherwise it was steered into the running turn.
+// Splits a transcript into turns: a prompt or delivered message opens one when the last step had ended
+// its turn (or, since 2.0.22, an idle marker was recorded); otherwise it steered the running turn.
 function turnsOf(list) {
   const turns = []
   let busy = false

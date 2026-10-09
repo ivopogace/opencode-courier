@@ -91,11 +91,8 @@ function pending(ports: LaterPorts) {
 }
 
 /**
- * Delivers every due message once. OpenCode sets the plugin up once per project location, all in
- * one process and over one storage, so the instances share `claimed`: an id is claimed
- * synchronously, re-read after the claim (another instance may have just delivered it), delivered,
- * and only then removed. A crash between delivery and removal delivers it again after a restart,
- * which a check-in survives better than being lost.
+ * Delivers every due message once: an id is claimed synchronously in the shared `claimed`, re-read,
+ * delivered and only then removed; a crash in between delivers it again after a restart, not never.
  */
 export async function deliverDue(ports: LaterPorts, claimed: Set<string>) {
   const now = ports.now()

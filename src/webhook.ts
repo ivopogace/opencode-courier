@@ -43,9 +43,8 @@ const GITHUB_REPO = /^[\w.-]+\/[\w.-]+$/
 const GENERIC_NAME = /^[\w.-]{1,64}$/
 
 /**
- * Normalises a topic: `owner/repo` or `owner/repo#12` (optionally prefixed `github:`) is a GitHub
- * repository or one of its pull requests or issues; any other name of letters, digits, `.`, `_` and
- * `-` is a generic topic, posted to `/hook/<name>`.
+ * Normalises a topic: `owner/repo` or `owner/repo#12` (optionally `github:`-prefixed) is a GitHub
+ * repo, PR or issue; any other name of letters, digits, `.`, `_` and `-` is posted to `/hook/<name>`.
  */
 export function parseTopic(input: string) {
   const raw = input.trim()
@@ -104,9 +103,8 @@ function hmac(secret: string, body: string | Uint8Array, name?: string) {
 const SIGNATURE = /^sha256=([0-9a-fA-F]{64})$/
 
 /**
- * Checks an `X-Hub-Signature-256` header (`sha256=` and exactly 64 hex digits) in constant time and
- * returns the digest in canonical lowercase hex, or undefined when it does not match. Replays are
- * keyed by that digest, never by the header text, which could be re-cased or padded.
+ * Checks an `X-Hub-Signature-256` header (`sha256=` + 64 hex digits) in constant time, returning the
+ * digest in lowercase hex, or undefined; replays are keyed by that digest, never by the header text.
  */
 export function checkSignature(secret: string, body: Uint8Array, header: string | undefined, name?: string) {
   const hex = header?.match(SIGNATURE)?.[1]
@@ -151,9 +149,8 @@ function numbersOf(name: string, body: Record<string, any>): number[] {
 }
 
 /**
- * Maps a GitHub delivery to its topics (`github:owner/repo` and, for pull requests and issues,
- * `github:owner/repo#N`) and a summary. Undefined for deliveries nobody should be woken for: pings,
- * CI events that have not completed, and pull request or issue actions outside `ITEM_ACTIONS`.
+ * Maps a GitHub delivery to its topics (`github:owner/repo`, plus `github:owner/repo#N` for PRs and
+ * issues) and a summary; undefined for pings, unfinished CI events and actions outside `ITEM_ACTIONS`.
  */
 export function githubEvent(name: string, payload: unknown): Event | undefined {
   const body = obj(payload)
@@ -289,9 +286,8 @@ async function deliver(ports: WebhookPorts, request: Request, event: Event, dige
 }
 
 /**
- * Handles one request: `POST /github` with GitHub's headers, or `POST /hook/<name>` signed over
- * the name and the body. Anything not signed with the secret is refused before its body is parsed,
- * and a signature already accepted is ignored, so a captured delivery cannot be replayed.
+ * Handles one request: `POST /github` with GitHub's headers, or `POST /hook/<name>` signed over name
+ * and body; anything unsigned is refused before parsing, and a signature already accepted is ignored.
  */
 export async function receive(ports: WebhookPorts, secret: string, request: Request, seen = new Set<string>()): Promise<Response> {
   const routed = route(request)
@@ -362,9 +358,8 @@ export function listen(config: WebhookConfig, ports: () => WebhookPorts | undefi
 }
 
 /**
- * Reads the plugin's `webhook` option. The secret comes from the file named by `secretFile`, or
- * else the environment variable named by `secretEnv` (default `COURIER_WEBHOOK_SECRET`); never from
- * the option itself, so it stays out of opencode.json. Undefined when the receiver is not configured.
+ * Reads the `webhook` option, undefined when the receiver is not configured; the secret comes from
+ * `secretFile` or the env var `secretEnv` (default `COURIER_WEBHOOK_SECRET`), never from the option.
  */
 export function readConfig(options: unknown, env: Record<string, string | undefined> = process.env): WebhookConfig | undefined {
   const option = obj(options).webhook

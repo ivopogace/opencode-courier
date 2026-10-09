@@ -1,12 +1,6 @@
 /**
- * Every model-facing text the plugin builds: tool results, the child brief, and the notices sessions
- * are woken with. With the tool descriptions in `tools.ts`, it is the plugin's real user interface;
- * `test/notices.test.ts` snapshots both, so a wording change shows up as a snapshot diff (and calls
- * for the real-model rerun CLAUDE.md asks for). Plain error messages, thrown where the check is and
- * passed on through `describeFailure`, are the exception: they stay with their checks, unsnapshotted.
- *
- * Pure functions on plain data; it imports nothing of the plugin's but `json.ts`, so any module
- * can use it without an import cycle.
+ * Every model-facing text the plugin builds; `test/notices.test.ts` snapshots them with the tool
+ * descriptions. Pure functions on plain data, importing nothing of the plugin's but `json.ts`.
  */
 import { num, obj, str } from "./json.js"
 
@@ -100,9 +94,8 @@ function preview(items: readonly string[]) {
 export type AnswerResult = PermissionAnswered | QuestionAnswered
 
 /**
- * What answering a permission request did; `answered` is false when no location loaded in this
- * server held the request: it was answered, the session stopped waiting, or it waits in another
- * OpenCode server on the same data directory.
+ * What answering a permission request did; `answered` is false when no location loaded here held the
+ * request: answered already, no longer waited for, or waiting in another server on the same data dir.
  */
 export interface PermissionAnswered {
   readonly sessionID: string
@@ -486,9 +479,8 @@ export function withdrawnText(linked: Asked, how: Withdrawal) {
 }
 
 /**
- * What a linked call adds to the person's answers about passing them on: `passed` is what passing
- * them on gave ("result", "message", or undefined when it no longer waited), or the error as
- * `error: <message>`.
+ * What a linked call adds to the person's answers about passing them on: `passed` is "result",
+ * "message", undefined when it no longer waited, or the error as `error: <message>`.
  */
 export function passedNote(linked: Asked, passed: string | undefined) {
   if (passed === "result")

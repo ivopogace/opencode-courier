@@ -44,9 +44,8 @@ let scope = Scope.makeUnsafe()
 const start = <A, E>(effect: Effect.Effect<A, E>) => Effect.runFork(Effect.provideService(effect, Clock.Clock, clock)).pipe(Fiber.runIn(scope))
 
 /**
- * Runs an effect of the relay in a fiber of its own, by the relay's clock, which is the clock of
- * its ports (`ports.now`): the promise settles as the effect ends, and is rejected if it fails or
- * is interrupted. Interrupting what waits on the promise does not stop the fiber.
+ * Runs a relay effect in its own fiber by the relay's clock (`ports.now`): the promise settles as the
+ * effect ends, rejecting on failure or interruption; interrupting the waiter does not stop the fiber.
  */
 export function run<A, E>(effect: Effect.Effect<A, E>): Promise<A> {
   return Effect.runPromise(Fiber.join(start(effect)))

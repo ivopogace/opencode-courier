@@ -1,9 +1,5 @@
-// A stand-in npm registry for the end-to-end test: it serves one package from a local tarball (the
-// output of `npm pack`, with the package.json it was packed from) and redirects every other request
-// to the real registry, so `opencode plugin add <name>` installs this build exactly as it would a
-// published one.
-//
-//   REGISTRY_TARBALL=opencode-courier-0.1.0.tgz REGISTRY_MANIFEST=package.json node e2e/registry.mjs
+// A stand-in npm registry for the e2e test: serves one package from a local tarball and redirects the
+// rest to the real registry. REGISTRY_TARBALL names the tarball, REGISTRY_MANIFEST its package.json.
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { createServer } from "node:http"

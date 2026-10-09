@@ -10,12 +10,8 @@ export interface BuiltVersions {
 const README_TABLE = "https://github.com/ivopogace/opencode-courier#supported-opencode-version"
 
 /**
- * Reads the versions from the package's own package.json, which sits next to `dist/` in the
- * published package as it does next to `src/` in the repository: `version`, and the exact
- * `@opencode/plugin` version under devDependencies, the one installed for the build and both test
- * suites; the peer dependency names the same exact version, as the copy of the plugin API that
- * `opencode plugin add` installs next to the plugin. Throws when the file cannot be read or does
- * not hold both.
+ * Reads from the package's own package.json, next to `dist/` as to `src/`: `version` and the exact
+ * `@opencode/plugin` devDependency version, which the peer repeats. Throws if either is missing.
  */
 export function builtVersions(): BuiltVersions {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
@@ -30,10 +26,8 @@ export function builtVersions(): BuiltVersions {
 }
 
 /**
- * The line for the server log when the running OpenCode is not the one the plugin was built
- * against; undefined when it is. Logged once per plugin load, never in a tool result. An OpenCode
- * whose plugin context does not report a version, as one from before the pinned API or after a
- * change to it may not, is the case the line is for, so it still names the pin then.
+ * The server-log line for an OpenCode other than the plugin was built against, undefined when it is;
+ * logged once per load, never in a tool result. A context without a version is still told the pin.
  */
 export function versionNotice(built: BuiltVersions, app: Partial<Pick<App, "version" | "channel">> | undefined): string | undefined {
   const version = typeof app?.version === "string" ? app.version : undefined

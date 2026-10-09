@@ -9,10 +9,8 @@ export const RETENTION_MS = 14 * 24 * 60 * 60_000
 
 const PREFIX = "roster/"
 /**
- * The reverse index: under `roster-by-child/<sessionID>`, a child's `ReverseEntry`, written with its
- * roster entry. It is only an index: an entry without one, written by an older copy of the plugin,
- * is found by scanning `roster/`, and every entry it leads to is read from `roster/` to check that
- * it is still there.
+ * The reverse index: a child's `ReverseEntry` under `roster-by-child/<sessionID>`, written with its
+ * roster entry; only an index, so `roster/` is scanned for entries lacking one, and confirms a hit.
  */
 const BY_CHILD = "roster-by-child/"
 
@@ -33,9 +31,8 @@ export interface RosterEntry {
 }
 
 /**
- * What the reverse index holds for a child: the sessions above it, its parent first and the session
- * at the top, which courier_spawn did not start, last. Its roster entry is under the first, and each
- * of the others is the parent of the one before it.
+ * What the reverse index holds for a child: the sessions above it, its parent first and the top
+ * session, which courier_spawn did not start, last; each is the parent of the one before it.
  */
 export interface ReverseEntry {
   readonly ancestors: ReadonlyArray<string>
@@ -107,9 +104,8 @@ export async function entriesOf(storage: RosterStorage, sessionID: string) {
 }
 
 /**
- * The roster entries from a session up to the top, its own first: the session's, its parent's, and
- * so on, ending with the entry whose parent courier_spawn did not start. Empty when courier_spawn
- * did not start the session.
+ * The roster entries from a session up to the top, its own first, ending with the entry whose parent
+ * courier_spawn did not start; empty when courier_spawn did not start the session.
  */
 export async function lineage(storage: RosterStorage, sessionID: string) {
   const first = await storage.get(reverseKey(sessionID))
@@ -145,10 +141,8 @@ export function lineageIn(entries: ReadonlyArray<RosterEntry>, sessionID: string
 }
 
 /**
- * The session at the top of a spawned session's lineage, where its permission requests and
- * questions go, since that is where the person is; only it may answer them. Throws when the
- * session was not started with courier_spawn or `callerID` is another session. `what` names
- * what is being answered.
+ * The top of a spawned session's lineage, where its permission requests and questions go, since the
+ * person is there. Throws unless the session was spawned and `callerID` is that top; `what` names it.
  */
 export async function answeringTop(storage: RosterStorage, sessionID: string, callerID: string, what: string) {
   const chain = await lineage(storage, sessionID)
@@ -195,10 +189,8 @@ function indexes(value: unknown, entry: RosterEntry) {
 }
 
 /**
- * Writes the reverse keys missing for the given entries, or naming another parent, all of the roster, such as those an older
- * copy of the plugin recorded, and drops the reverse keys whose entry is gone, such as those of an
- * entry an older copy removed. Keys that lead to their entry are left as they are, so running it
- * again changes nothing.
+ * Writes the reverse keys missing or stale for the given entries, or the whole roster, and drops those
+ * whose entry is gone, as an older copy's writes and removals leave them; a rerun changes nothing.
  */
 export async function backfill(storage: RosterStorage, entries: ReadonlyArray<RosterEntry>) {
   const indexed = new Map((await scanEntries<unknown>(storage, BY_CHILD)).map(({ key, value }) => [key, value]))

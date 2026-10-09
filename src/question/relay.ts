@@ -34,8 +34,7 @@ import { anyLoaded, isPassing, keyOf, QUESTION_TOOL, shared, storedOf } from "./
 
 /**
  * Tells the top session about a question its closing location cut off, after the closing grace of
- * `ports` (the instance whose call was cut off), through an instance still loaded then, if any (any will do: a notice reaches a session in any location).
- * Without one, the next load tells it.
+ * `ports`, through any instance still loaded then; without one, the next load tells it.
  */
 function tellLater(ports: QuestionPorts, question: Question) {
   const tellNow = Effect.suspend(() => {
@@ -77,9 +76,8 @@ const settle = (ports: QuestionPorts, question: Question, exit: CallExit, loaded
     // A dismissal is held from now, alongside the wait below, so the grace is not spent waiting.
     const dismissed = Exit.isFailure(exit) && isDismissal(exit.cause)
     const held = dismissed && !unloaded ? yield* Effect.forkChild(closingSoon(ports, loaded, question.directory), { startImmediately: true }) : undefined
-    // Telling the top session first, so what follows does not overtake the notice or come before it
-    // is stored; for a while only, so a notice that never returns does not hold everything else up.
-    // `told` is false when the top session was not told, or not yet.
+    // The top session is told first, for a while only, so what follows neither overtakes the notice
+    // nor waits forever on one that never returns; `told` is false when it was not told, or not yet.
     const told = (yield* within(question.relaying, ports.timing.relayWaitMs)) === true
     // Answered by the top session.
     if (Exit.isSuccess(exit) && exit.value.by === "top") {
@@ -90,15 +88,8 @@ const settle = (ports: QuestionPorts, question: Question, exit: CallExit, loaded
     if (shared.questions.get(question.requestID) !== question) {
       return yield* Effect.promise(() => forget(ports, question))
     }
-    // Cut off: the turn was stopped, or OpenCode is closing the location, which withdraws every open
-    // form there as if the person had dismissed it (on a server shutdown, say), before unloading the
-    // plugin there (since 2.0.22) or after (the beta). So a dismissal is held for a moment, to see
-    // whether the location's shutdown or this instance's unload follows it. The question stays,
-    // answered by message from now on; a top session already asking the person passes their answer
-    // on that way. A closing location is not told now: the next load tells it, in this process or
-    // after a restart, or an instance still loaded does, a little later, when the process is still
-    // running then. The unload is looked at again here: it may have come during the wait above, after
-    // a held dismissal had already been taken for the person's.
+    // Cut off: the turn was stopped, or the closing location withdrew its forms as if dismissed, so a
+    // dismissal is held for a following shutdown or unload; the question stays, answered by message.
     const closing = unloaded || !loaded() || (held !== undefined && (yield* Fiber.join(held)))
     if (Exit.isFailure(exit) && (closing || (!dismissed && Exit.hasInterrupts(exit))))
       return closing ? tellLater(ports, question) : yield* Effect.promise(() => stopped(ports, question))
@@ -138,9 +129,8 @@ function startSettling(ports: QuestionPorts, question: Question, exit: CallExit,
 }
 
 /**
- * The question call of a session started with courier_spawn: once its form is shown, the session at
- * the top is told, and whichever answer comes first ends the call, the other side's question being
- * withdrawn. Other sessions' calls run unchanged.
+ * A spawned session's question call: once its form is shown the top session is told, and whichever
+ * answer comes first ends the call, the other side's question withdrawn. Other calls run unchanged.
  */
 function asking(ports: () => QuestionPorts | undefined, directory: string, original: Execute): Execute {
   return (input, context) =>
@@ -219,9 +209,8 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
 }
 
 /**
- * The waiting question a top session's call asks again, the oldest if several: the same questions
- * with the same choices, in any order. Matching choices alone are not enough, or an unrelated
- * yes-or-no question of the top session would answer a child's.
+ * The waiting question a top session's call asks again, the oldest if several: the same question with
+ * the same choices, in any order. Choices alone would let an unrelated yes-or-no answer a child's.
  */
 function linkFor(sessionID: string, questions: ReadonlyArray<Prompt>) {
   const asked = { choices: choices(questions), wording: wording(questions) }
@@ -238,9 +227,8 @@ function linkFor(sessionID: string, questions: ReadonlyArray<Prompt>) {
 }
 
 /**
- * The result of a top session's question call that no waiting question was linked to: when one
- * waits with the same choices, reworded or asked before that session asked, it says how to pass
- * the answers on.
+ * The result of a top session's question call that no waiting question was linked to: when one waits
+ * with the same choices, reworded or asked earlier, it says how to pass the answers on.
  */
 function unlinkedResult(result: ToolResult, sessionID: string, questions: ReadonlyArray<Prompt>): ToolResult {
   if (typeof result.content !== "string") return result
@@ -253,10 +241,8 @@ function unlinkedResult(result: ToolResult, sessionID: string, questions: Readon
 }
 
 /**
- * After a linked call failed, its location still loaded: a dismissal by the person, unless the
- * location is closing (see settle), dismisses the question they were asked for too, or is logged
- * when the question was answered meanwhile; a call stopped while the asking call was cut off as
- * well tells the top session, which nobody has told yet.
+ * After a linked call failed with its location still loaded: a dismissal by the person dismisses the
+ * child's question too, or is logged if answered meanwhile; a stop while cut off tells the top.
  */
 const linkedCallFailed = (ports: QuestionPorts, linked: Question, cause: Cause.Cause<unknown>, loaded: () => boolean, directory: string) =>
   Effect.gen(function* () {

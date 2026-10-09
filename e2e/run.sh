@@ -255,7 +255,7 @@ check "the child in between is a sub-orchestrator, with courier_spawn" \
   "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")))' "$WORK/model.log")"
 check "the root had no role part until it had started a child, then root orchestrator" \
   "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | .[0] == null and .[-1] == "root orchestrator"' "$WORK/model.log")"
-# maxChildren and maxTotal count running sessions: one whose last turn ended after anything reached it.
+# The limits count running sessions; a finished one's last turn ended after anything reached it.
 finished() { api "session/$1" | jq -r '(.data // .) | .time.idle != null and .time.updated <= .time.idle'; }
 check "a leaf that has reported reads as finished, so it no longer counts against the limits" \
   "$(for _ in $(seq 1 30); do [ "$(finished "$(jq -r '.[0]' <<<"$leaves")")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"

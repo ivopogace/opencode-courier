@@ -2,7 +2,8 @@
 
 How the plugin behaves beyond the happy path: what a child runs on, how deep and wide a tree of
 sessions may grow, how a child's failures, permission requests and questions reach the session that
-started it, what is kept where and for how long, and what the webhook receiver does with a delivery. The [README](../README.md) has the short version.
+started it, what is kept where and for how long, and what the webhook receiver does with a delivery.
+The [README](../README.md) has the short version.
 
 ## The OpenCode version
 
@@ -113,11 +114,11 @@ to another session, and sends its parent one combined report. At `maxDepth` it i
 task itself.
 
 **A `context` hook names the role on every model request.** For a spawned session the plugin adds
-one system part, `opencode-courier role: …`, naming its role, with its depth and the limits:
-`sub-orchestrator` below `maxDepth`, `leaf` at it. A leaf's request also goes without
-`courier_spawn` in its tool list, so its model does not try it. The hook is guidance and
-`courier_spawn` the guarantee: another plugin's hook can put the tool back, and the call is still
-refused.
+one system part, `opencode-courier role: …`, naming its role and depth: `sub-orchestrator` below
+`maxDepth`, with the limits, and `leaf` at it, which is told it cannot start sessions. A leaf's
+request also goes without `courier_spawn` in its tool list, so its model does not try it. The hook
+is guidance and `courier_spawn` the guarantee: another plugin's hook can put the tool back, and the
+call is still refused.
 
 A session nobody spawned gets nothing from the hook until it has started a session, so one that
 never uses the courier sends exactly the request it did before. From the request after its first
@@ -284,9 +285,10 @@ question tool when the person must decide; a child can still send its question w
 ## Roster
 
 `courier_spawn` records each child under its parent in the plugin's storage, so a parent that has
-lost track after a compaction or a server restart can call `courier_children` to find them again.
-A child that can no longer be looked up is still listed, with the error instead of its state.
-The roster is also where a session's depth and tree are read from, for the [limits](#session-trees-and-their-limits).
+lost track after a compaction or a server restart can call `courier_children` to find them again. A
+child that can no longer be looked up is still listed, with the error instead of its state. The
+roster is also where a session's depth and tree are read from, for the
+[limits](#session-trees-and-their-limits).
 Entries are dropped 14 days after the child was started, when that parent's roster is read or
 the plugin is next loaded, except isolated children whose worktree is still there (see
 [Worktree cleanup](#worktree-cleanup)). If the roster cannot be written, the child still gets its
@@ -345,17 +347,17 @@ it twice after the restart; a lost check-in would be worse.
 
 ## Several copies in one process
 
-OpenCode runs one instance of the plugin per location (project or worktree), all in one process,
-and after an update it loads the new copy of the package next to the old one until the old one
-unloads. All instances share one process-wide hub, where each scheduled message, OpenCode event,
-permission request, form and question is claimed once, before any instance acts on it, so no
-message is delivered twice and no notice is sent twice, whichever instance or copy sees it first.
-The hub also runs the scheduler once per process and follows OpenCode's events through two
-instances, one of them a standby, so that an instance unloading does not leave a gap in which an
-event, or a child's question, is missed. A webhook receiver started by one instance is the one the
-others join, so two never contend for the port. The `courier_spawn` calls under way are kept process-wide in the
-same way, under a fixed key of their own, so spawns in every location and copy count each other
-against the limits.
+OpenCode runs one instance of the plugin per location (project or worktree), all in one process, and
+after an update it loads the new copy of the package next to the old one until the old one unloads.
+All instances share one process-wide hub, where each scheduled message, OpenCode event, permission
+request, form and question is claimed once, before any instance acts on it, so no message is
+delivered twice and no notice is sent twice, whichever instance or copy sees it first. The hub also
+runs the scheduler once per process and follows OpenCode's events through two instances, one of them
+a standby, so that an instance unloading does not leave a gap in which an event, or a child's
+question, is missed. A webhook receiver started by one instance is the one the others join, so two
+never contend for the port. The `courier_spawn` calls under way are kept process-wide in the same
+way, under a fixed key of their own, so spawns in every location and copy count each other against
+the limits.
 
 The hub carries a version, which changes only when its shape or the meaning of a field does, not
 with every release. A copy that finds a hub of another version in the process runs its own, under a

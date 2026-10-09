@@ -263,12 +263,12 @@ bound it. Set them in the plugin's `options`, in the global config (`~/.config/o
 | `maxTotal` | `20` | How many spawned sessions may run at once in one tree. |
 
 `courier_spawn` refuses a spawn past a limit, naming it and saying what to do instead: do the work
-itself, or wait for a child to report. A session counts while it is live: its turn runs, or a session
-below it runs. One that has reported and ended its turn, with nothing below it running, does not. Each spawned session's model is also told its role on every request:
-`sub-orchestrator`, which may split its task, or `leaf`, at `maxDepth`, which does not see
-`courier_spawn` at all. Your own session gets a `root orchestrator` part only once it has started
-a session; one that never does is sent exactly what it was before. The details:
-[the reference](docs/reference.md#session-trees-and-their-limits).
+itself, or wait for a child to report. A session counts while it is live: its turn runs, or a
+session below it runs. One whose turn has ended, with nothing below it running, does not. Each
+spawned session's model is also told its role on every request: `sub-orchestrator`, which may split
+its task, or `leaf`, at `maxDepth`, which does not see `courier_spawn` at all. Your own session gets
+a `root orchestrator` part only once it has started a session; one that never does is sent exactly
+what it was before. The details: [the reference](docs/reference.md#session-trees-and-their-limits).
 
 ## Webhooks
 

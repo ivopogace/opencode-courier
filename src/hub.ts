@@ -550,7 +550,7 @@ export const permissions = () => hub.locations.values()
 
 /**
  * For tests: forgets every remembered id, the spawns under way and the question relay's state, loaded
- * instances and watcher count included. Members, locations and the webhook receiver are left to leaving and unloading.
+ * instances and watcher count included. Members, locations and the receiver are left to unloading.
  */
 export function resetHub() {
   gate.reserved.clear()

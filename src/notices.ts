@@ -9,7 +9,15 @@ import { num, obj, str } from "./json.js"
 /** Closes a tool result after which the caller most likely has nothing left to do. */
 export const END_TURN = "If nothing else is left to do now, end your turn by replying without calling more tools."
 
-export function childBrief(parentID: string, task: string) {
+/** The limits on the tree of sessions courier_spawn builds, from the plugin's options. */
+export interface Limits {
+  readonly maxDepth: number
+  readonly maxChildren: number
+  readonly maxTotal: number
+}
+
+/** What a spawned session at `depth` is told; `depth` 1 is a child of a session nobody spawned. */
+export function childBrief(parentID: string, task: string, depth: number, limits: Limits) {
   return [
     `You were started by session ${parentID} through opencode-courier.`,
     "",
@@ -17,10 +25,65 @@ export function childBrief(parentID: string, task: string) {
     "That message wakes the parent. It is the only way the parent hears from you, so do not end without sending it.",
     "If you need the person to decide something, use your question tool; it reaches them through the session that started you.",
     "",
+    ...splitRule(parentID, depth, limits),
+    "",
     "Task:",
     task,
   ].join("\n")
 }
+
+function splitRule(parentID: string, depth: number, limits: Limits) {
+  if (depth >= limits.maxDepth)
+    return [`You are at depth ${depth}, the deepest the session tree goes, so you cannot start sessions: do the task yourself.`]
+  return [
+    `You are at depth ${depth} of a session tree that goes at most ${limits.maxDepth} deep. Split your task or do it yourself:`,
+    "- Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one " +
+      `session per part with courier_spawn, at most ${limits.maxChildren} of yours running at once and ${limits.maxTotal} in the whole tree.`,
+    "- Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session.",
+    "- If you split, you orchestrate: end your turn while they work, check and integrate each part yourself when it " +
+      `reports (never hand that checking to another session), then send ${parentID} one combined report.`,
+  ]
+}
+
+/** How every role part begins, so a second copy of the plugin does not add its own. */
+export const ROLE_PREFIX = "opencode-courier role:"
+
+/**
+ * The system part naming a session's place in its tree: `depth` 0 for a session nobody spawned that
+ * has started one. The same on every request, so a session's prompt changes at most once.
+ */
+export function rolePart(depth: number, limits: Limits) {
+  const { maxDepth, maxChildren, maxTotal } = limits
+  const budget = `At most ${maxChildren} of the sessions you start run at once, and ${maxTotal} in the whole tree.`
+  if (depth === 0)
+    return (
+      `${ROLE_PREFIX} root orchestrator. You started sessions with courier_spawn, and they may start their own, ` +
+      `down to ${maxDepth} levels below you. ${budget} Check and integrate what each one reports yourself.`
+    )
+  if (depth < maxDepth)
+    return (
+      `${ROLE_PREFIX} sub-orchestrator, at depth ${depth} of at most ${maxDepth}. Split your task with courier_spawn or ` +
+      `do it yourself, as your brief says; sessions can be started ${count(maxDepth - depth, "level")} below you. ${budget}`
+    )
+  return (
+    `${ROLE_PREFIX} leaf, at depth ${depth}, the deepest the session tree goes. You cannot start sessions: do your ` +
+    "task yourself and report with courier_send to the session that started you."
+  )
+}
+
+// courier_spawn's refusals, one per limit.
+
+export const depthRefusal = (depth: number, maxDepth: number) =>
+  `Not started: this session is at depth ${depth} of its session tree, and the tree goes at most ${maxDepth} deep ` +
+  "(maxDepth), so it cannot start sessions. Do the task yourself, and report with courier_send."
+
+export const childrenRefusal = (running: number, maxChildren: number) =>
+  `Not started: ${count(running, "session")} you started ${running === 1 ? "is" : "are"} still running, the most ` +
+  `allowed at once (maxChildren ${maxChildren}). Do this part yourself, or end your turn and start it once one of them has reported.`
+
+export const totalRefusal = (running: number, maxTotal: number) =>
+  `Not started: ${count(running, "session")} ${running === 1 ? "is" : "are"} running in this session tree, the most ` +
+  `allowed at once (maxTotal ${maxTotal}). Do this part yourself, or end your turn and try again once a report has arrived.`
 
 export function envelope(from: string, message: string, attributes: Record<string, string> = {}) {
   const extra = Object.entries(attributes)

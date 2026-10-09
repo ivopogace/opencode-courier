@@ -60,7 +60,7 @@ build_plugin
 cat >"$WORK/project/opencode.json" <<EOF
 {
   "plugins": [
-    { "package": "$ROOT/dist", "options": { "webhook": { "port": $WEBHOOK_PORT, "secretFile": "$WORK/webhook-secret" } } },
+    { "package": "$ROOT/dist", "options": { "maxDepth": 2, "webhook": { "port": $WEBHOOK_PORT, "secretFile": "$WORK/webhook-secret" } } },
     "$ROOT/e2e/search-plugin",
     { "package": "$ROOT/e2e/probe-plugin", "options": { "log": "$WORK/probe.log" } }
   ],
@@ -232,6 +232,33 @@ ask_question() {
   check "the child asks, and the parent asks the person in its own session" \
     "$([ -n "$child_form" ] && [ -n "$parent_form" ] && echo true || echo false)"
 }
+
+# With maxDepth 2, a child starts two leaves; one tries courier_spawn as its tool list stands, the
+# other once the probe plugin has put the tool back, so OpenCode refuses the first and courier the second.
+echo "a leaf at maxDepth does not see courier_spawn, and is refused when it calls it anyway"
+out=$(prompt "COURIER-DEPTH")
+root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the leaf without the tool was told it is not available" \
+  "$(has_text "$middle" "Tool is not available for this request: courier_spawn" 60)"
+check "the leaf that called it anyway was refused by courier_spawn, naming maxDepth" \
+  "$(has_text "$middle" "Not started: this session is at depth 2 of its session tree, and the tree goes at most 2 deep (maxDepth)" 60)"
+leaves=$(jq -sc '[.[] | select(.reply.args.task? == "CHILD-TOO-DEEP") | .session] | unique' "$WORK/model.log")
+check "two leaves tried" "$(jq -r 'length == 2' <<<"$leaves")"
+check "every request of a leaf was named a leaf, and the courier's hook left it no courier_spawn" \
+  "$(jq -sr --argjson leaves "$leaves" '[.[] | select(.type == "probe.context" and (.sessionID | IN($leaves[])))]
+    | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_send")))' "$WORK/probe.log")"
+check "the model saw no courier_spawn in a leaf's tool list unless the probe put it back" \
+  "$(jq -sr --argjson leaves "$leaves" '[.[] | select((.session | IN($leaves[])) and (.tools | length > 0))] | group_by(.session)
+    | map(any(.tools | index("courier_spawn"))) | sort == [false, true]' "$WORK/model.log")"
+check "the child in between is a sub-orchestrator, with courier_spawn" \
+  "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")))' "$WORK/model.log")"
+check "the root had no role part until it had started a child, then root orchestrator" \
+  "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | .[0] == null and .[-1] == "root orchestrator"' "$WORK/model.log")"
+# The limits count running sessions; a finished one's last turn ended after anything reached it.
+finished() { api "session/$1" | jq -r '(.data // .) | .time.idle != null and .time.updated <= .time.idle'; }
+check "a leaf that has reported reads as finished, so it no longer counts against the limits" \
+  "$(for _ in $(seq 1 30); do [ "$(finished "$(jq -r '.[0]' <<<"$leaves")")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
 
 # The first web search of this run: no provider has been chosen, which OpenCode keeps for every session.
 echo "a child's web search asks for a provider with a form: the parent is told, and told when it is answered"

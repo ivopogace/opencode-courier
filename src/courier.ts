@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
+import { admit, type Limits, type SpawnGate } from "./limits.js"
 import { childBrief, envelope, type Prompt } from "./notices.js"
 import { current, record, type RosterStorage } from "./roster.js"
 
@@ -18,6 +19,10 @@ export interface CourierPorts {
   readonly now: () => number
   /** The permission requests and questions a session waits on, wherever they are pending. */
   readonly pending: (sessionID: string) => Promise<ReadonlyArray<Pending>>
+  readonly limits: Limits
+  readonly gate: SpawnGate
+  /** The depths the `context` hook remembers; a parent's is dropped when it starts a child. */
+  readonly roles: Map<string, number | null>
 }
 
 /** A request a session waits on until someone answers it: a permission request, or a question it asked. */
@@ -83,8 +88,20 @@ async function dropWorktree(ports: CourierPorts, directory: string) {
   }
 }
 
-/** Creates a child session, hands it the task and returns at once; the child reports back with courier_send. */
+/**
+ * Creates a child session, hands it the task and returns at once; the child reports back with
+ * courier_send. Refused past a limit, whether or not the `context` hook hid the tool.
+ */
 export async function spawn(ports: CourierPorts, parentID: string, input: SpawnInput) {
+  const admitted = await admit(ports, parentID)
+  try {
+    return await start(ports, parentID, input, admitted)
+  } finally {
+    admitted.release()
+  }
+}
+
+async function start(ports: CourierPorts, parentID: string, input: SpawnInput, admitted: Awaited<ReturnType<typeof admit>>) {
   // A failed lookup must not keep the child from starting; it then runs on OpenCode's default.
   const model = await inheritedModel(ports, parentID, input.agent).catch(() => undefined)
   const directory = input.isolate
@@ -105,6 +122,7 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
       if (directory) await dropWorktree(ports, directory)
       throw error
     })
+  admitted.reservation.sessionID = child.id
   // Recorded before the prompt, so a child that exists is on the roster even if prompting fails. A
   // failed write must not keep the child from its task, so it is reported instead of thrown.
   const rosterError = await record(ports.storage, {
@@ -120,7 +138,8 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
     () => undefined,
     (error: unknown) => describeFailure("roster", error).message,
   )
-  await ports.session.prompt({ sessionID: child.id, text: childBrief(parentID, input.task) })
+  ports.roles.delete(parentID)
+  await ports.session.prompt({ sessionID: child.id, text: childBrief(parentID, input.task, admitted.depth, ports.limits) })
   return {
     sessionID: child.id,
     directory: directory ?? child.location.directory,

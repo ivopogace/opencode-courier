@@ -17,10 +17,11 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   nothing of the plugin's but `json.ts`. `test/notices.test.ts` snapshots them and the tool
   descriptions, so a wording change shows up as a diff in `test/__snapshots__/`; update it with
   `bun test --update-snapshots` and rerun the real-model smoke test.
-- `courier.ts`: spawn, send, status, children. `later.ts`: scheduled messages and their delivery.
-  `roster.ts`: the children each parent spawned. `cleanup.ts`: removing an isolated child's
-  worktree. `webhook.ts`: the webhook receiver and subscriptions. `version.ts`: the log line on an
-  OpenCode version other than the pinned one.
+- `courier.ts`: spawn, send, status, children. `limits.ts`: the session tree limits `spawn()` checks,
+  and the `context` hook naming each spawned session's role and hiding `courier_spawn` from a leaf.
+  `later.ts`: scheduled messages and their delivery. `roster.ts`: the children each parent spawned.
+  `cleanup.ts`: removing an isolated child's worktree. `webhook.ts`: the webhook receiver and
+  subscriptions. `version.ts`: the log line on an OpenCode version other than the pinned one.
 - `watch.ts`: following OpenCode's events to tell a parent that a child's turn failed, waits for a
   permission, or shows a form only the person can answer. `relay.ts`: the permission and form
   notices, and passing a permission answer back.

@@ -1,7 +1,5 @@
-// An event probe for the live test, loaded next to the courier: each of its instances, one per
-// location like the courier's, follows OpenCode's events through the same `event.subscribe()` the
-// courier's watcher uses, and appends a line per event to the file named by its `log` option, with
-// the location it runs in and the server's pid, so the test can tell which instances saw an event.
+// Live-test probe: logs each event per instance (location, pid) to its `log` option's file, and, after the
+// courier's context hook, each request's tools and role; puts courier_spawn back for a CHILD-FORCES task.
 import { appendFileSync, realpathSync } from "node:fs"
 
 // The session an event concerns, where the watcher looks for it: `data.sessionID`, or a form's.
@@ -26,6 +24,15 @@ export default {
       } catch {}
     }
     write({ type: "probe.loaded" })
+    await ctx.session.hook("context", (event) => {
+      const role = event.system.map((part) => part.text.match(/^opencode-courier role: (root orchestrator|sub-orchestrator|leaf)/)?.[1]).find(Boolean)
+      write({ type: "probe.context", sessionID: event.sessionID, tools: Object.keys(event.tools), role: role ?? null })
+      if (!event.tools.courier_spawn && JSON.stringify(event.messages).includes("CHILD-FORCES"))
+        event.tools.courier_spawn = {
+          description: "Start a session.",
+          input: { type: "object", properties: { task: { type: "string" } }, required: ["task"] },
+        }
+    })
     const following = new AbortController()
     // Subscribes again when the stream ends or breaks, as the courier's watcher does.
     void (async () => {

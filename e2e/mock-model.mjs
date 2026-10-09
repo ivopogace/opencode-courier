@@ -47,8 +47,11 @@ function decide(body) {
       const options = ["Hello", "Hi", "Hey"].map((label) => ({ label, description: `Say ${label}` }))
       return { tool: "question", args: { questions: [{ header: "Greeting", question: "Which greeting?", options, multiple: false }] }, delayed: true }
     }
-    // The child of COURIER-ASK reports what its shell call gave, run or refused, once it has the answer.
     const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
+    // A leaf of COURIER-DEPTH reports what its courier_spawn call gave.
+    if (call?.function?.name === "courier_spawn" && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-LEAF"))
+      return { tool: "courier_send", args: { sessionID: startedBy[1], message: `LEAF GOT ${result}` } }
+    // The child of COURIER-ASK reports what its shell call gave, run or refused, once it has the answer.
     if ((call?.function?.name === "shell" || call?.function?.name === "websearch") && startedBy)
       return { tool: "courier_send", args: { sessionID: startedBy[1], message: `CHILD DONE ${call.function.name}: ${result}` } }
     if (call?.function?.name === "question") {
@@ -93,6 +96,11 @@ function decide(body) {
       delayed: true,
     }
   }
+  // The middle session of COURIER-DEPTH starts two leaves at once; the second's task makes the probe
+  // plugin put courier_spawn back. Each leaf tries to start a session of its own.
+  if (parent && recent.includes("CHILD-DEEPENS"))
+    return { calls: [{ tool: "courier_spawn", args: { task: "CHILD-LEAF" } }, { tool: "courier_spawn", args: { task: "CHILD-LEAF CHILD-FORCES" } }] }
+  if (parent && recent.includes("CHILD-LEAF")) return { tool: "courier_spawn", args: { task: "CHILD-TOO-DEEP" } }
   // The middle session of COURIER-QUESTION nested starts a child that asks.
   if (parent && recent.includes("CHILD-NESTS")) return { tool: "courier_spawn", args: { task: "CHILD-QUESTION" } }
   // A child whose question was cut off gets the answer as a message, and reports it.
@@ -149,6 +157,7 @@ function decide(body) {
   const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
+  if (recent.includes("COURIER-DEPTH")) return { tool: "courier_spawn", args: { task: "CHILD-DEEPENS" } }
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
   const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL|-REWORD|-BOTH)?(?: (isolate|nested))?/)
   if (questions)
@@ -191,7 +200,11 @@ createServer((request, response) => {
     const reply = decide(body)
     if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status || reply.delayed) && childDelay)
       await new Promise((resolve) => setTimeout(resolve, childDelay))
-    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, tools: (body.tools ?? []).map((tool) => tool.function?.name), reply })}\n`)
+    // The session, and the courier role its system prompt names, for the recursion scenario.
+    const session = request.headers["x-opencode-session-id"]
+    const system = (body.messages ?? []).filter((message) => message.role === "system").map((message) => textOf(message.content)).join("\n")
+    const role = system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf)/)?.[1] ?? null
+    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, tools: (body.tools ?? []).map((tool) => tool.function?.name), reply })}\n`)
     if (reply.status) {
       response.writeHead(reply.status, { "content-type": "application/json" })
       response.end(JSON.stringify({ error: { message: reply.error, type: "forbidden" } }))

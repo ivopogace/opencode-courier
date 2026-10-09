@@ -110,6 +110,16 @@ export async function entriesOf(storage: RosterStorage, sessionID: string) {
 export async function lineage(storage: RosterStorage, sessionID: string) {
   const first = await storage.get(reverseKey(sessionID))
   if (!isReverse(first)) return lineageIn(await allEntries(storage), sessionID)
+  return walkIndex(storage, sessionID, first)
+}
+
+/** `lineage` by the reverse index alone: empty, without scanning the roster, when it does not name the session. */
+export async function indexedLineage(storage: RosterStorage, sessionID: string) {
+  const first = await storage.get(reverseKey(sessionID))
+  return isReverse(first) ? walkIndex(storage, sessionID, first) : []
+}
+
+async function walkIndex(storage: RosterStorage, sessionID: string, first: ReverseEntry) {
   let indexed: ReverseEntry = first
   const chain: RosterEntry[] = []
   let below = sessionID
@@ -134,7 +144,16 @@ export async function lineage(storage: RosterStorage, sessionID: string) {
 
 /** `lineage` over roster entries already read. */
 export function lineageIn(entries: ReadonlyArray<RosterEntry>, sessionID: string) {
-  const bySession = new Map(entries.map((entry) => [entry.sessionID, entry]))
+  return lineageBy(bySession(entries), sessionID)
+}
+
+/** Roster entries by their session, for `lineageBy`. */
+export function bySession(entries: ReadonlyArray<RosterEntry>) {
+  return new Map(entries.map((entry) => [entry.sessionID, entry]))
+}
+
+/** `lineage` over roster entries already read and mapped by `bySession`. */
+export function lineageBy(bySession: ReadonlyMap<string, RosterEntry>, sessionID: string) {
   const chain: RosterEntry[] = []
   for (let entry = bySession.get(sessionID); entry && !chain.includes(entry); entry = bySession.get(entry.parentID)) chain.push(entry)
   return chain

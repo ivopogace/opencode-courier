@@ -2,6 +2,8 @@ import { afterEach, expect, spyOn, test } from "bun:test"
 import { Schema } from "effect"
 import plugin, { courier } from "../src/index.js"
 import { hub, memberAt, OWNER_KEY, SERVER } from "../src/hub.js"
+import { DEFAULT_LIMITS } from "../src/limits.js"
+import { depthRefusal, rolePart } from "../src/notices.js"
 import { builtVersions } from "../src/version.js"
 
 const cleanups: Array<() => unknown> = []
@@ -41,6 +43,7 @@ async function setUp(
 ) {
   const store = new Map(Object.entries(stored))
   const tools = new Map<string, any>()
+  const hooks = new Map<string, (event: any) => Promise<void> | void>()
   const calls: { method: string; input: any }[] = []
   const record = (method: string, result: unknown) => async (input: any) => {
     calls.push({ method, input })
@@ -62,6 +65,10 @@ async function setUp(
         return { id: input.sessionID, time: { created: 1, updated: 2 } }
       },
       context: record("session.context", []),
+      hook: async (name: string, callback: (event: any) => Promise<void> | void) => {
+        hooks.set(name, callback)
+        return { dispose: async () => {} }
+      },
     },
     worktree: {
       create: record("worktree.create", { directory: "/wt" }),
@@ -97,7 +104,7 @@ async function setUp(
   }
   const cleanup = await courier().setup(ctx as any)
   if (cleanup) cleanups.push(cleanup)
-  return { tools, calls, store, emit: events.emit, location: ctx.location, cleanup, subscriptions: () => events.counted.subscriptions }
+  return { tools, hooks, calls, store, emit: events.emit, location: ctx.location, cleanup, subscriptions: () => events.counted.subscriptions }
 }
 
 test("OpenCode loads an Effect plugin, which runs the promise one and wraps the question tool", () => {
@@ -186,6 +193,30 @@ test("registers them as direct tools, not code-mode ones only reachable through 
   const { tools } = await setUp()
 
   for (const tool of tools.values()) expect(tool.options).toEqual({ codemode: false })
+})
+
+test("its context hook, with the limits from the options, hides courier_spawn from a child at maxDepth", async () => {
+  const { tools, hooks } = await setUp({}, { maxDepth: 1 })
+  await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
+  const event = { sessionID: "ses_child", tools: { courier_spawn: {}, courier_send: {} }, system: [] as any[] }
+
+  await hooks.get("context")!(event)
+
+  expect(Object.keys(event.tools)).toEqual(["courier_send"])
+  expect(event.system).toEqual([{ type: "text", text: rolePart(1, { ...DEFAULT_LIMITS, maxDepth: 1 }) }])
+  await expect(tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_child" })).rejects.toThrow(
+    `courier_spawn failed: ${depthRefusal(1, 1)}`,
+  )
+})
+
+test("logs a limit option it cannot use, and keeps that limit's default", async () => {
+  const logged = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    await setUp({}, { maxChildren: -1 })
+    expect(logged.mock.calls.map((call) => call[0])).toContain("courier: maxChildren must be a positive integer, not -1; using 5")
+  } finally {
+    logged.mockRestore()
+  }
 })
 
 test("tool inputs decode with their schemas", async () => {

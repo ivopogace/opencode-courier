@@ -1,8 +1,9 @@
 # Behaviour reference
 
-How the plugin behaves beyond the happy path: what a child runs on, how its failures, permission
-requests and questions reach the session that started it, what is kept where and for how long, and
-what the webhook receiver does with a delivery. The [README](../README.md) has the short version.
+How the plugin behaves beyond the happy path: what a child runs on, how deep and wide a tree of
+sessions may grow, how a child's failures, permission requests and questions reach the session that
+started it, what is kept where and for how long, and what the webhook receiver does with a delivery.
+The [README](../README.md) has the short version.
 
 ## The OpenCode version
 
@@ -57,6 +58,78 @@ A child runs on the model its parent is using, not on OpenCode's default, so a p
 another model starts children that can reach theirs too. The exception is a child given an `agent`
 that names a model of its own: that agent's model is kept. If the parent's model cannot be looked
 up, the child is started anyway, on OpenCode's default.
+
+## Session trees and their limits
+
+Any spawned session can call `courier_spawn` too, so sessions form a tree: the session nobody
+spawned is its top, at depth 0, the sessions it starts are at depth 1, theirs at depth 2, and so on.
+Three options bound the tree, each a positive integer, read from the plugin's `options` next to
+`webhook`:
+
+| Option | Default | |
+|---|---|---|
+| `maxDepth` | `3` | The deepest a spawned session may be. A session at this depth cannot start sessions. |
+| `maxChildren` | `5` | How many of the sessions one session started may run at once. |
+| `maxTotal` | `20` | How many spawned sessions may run at once in one tree, anywhere in it; the top session is not counted. |
+
+```jsonc
+{
+  "plugins": [{ "package": "opencode-courier", "options": { "maxDepth": 2, "maxChildren": 3 } }]
+}
+```
+
+Each location's instance reads its own options, and a spawn is checked by the instance of the
+location the calling session runs in, so set them once, in the global config. A value that is not
+a positive integer is not used: that limit keeps its default, and the server log says so when the
+plugin loads. Like every option, a changed limit applies once OpenCode loads the plugin again.
+
+**`courier_spawn` enforces them.** Before it creates anything, it works out the calling session's
+depth and tree from the [roster](#roster) and refuses, with an error naming the limit and what to do
+instead (do the work yourself, or end the turn and try again once a child has reported), when the
+child would be deeper than `maxDepth`, or when `maxChildren` or `maxTotal` sessions are already
+live. A session is live while its turn runs, or a session below it runs: its turn runs from its
+creation until it ends, and again while a message keeps it busy, and a session that has split its
+task and ended its turn to wait for its children stays live while any of them, or theirs, runs. A
+session whose turn has ended, reported, failed or interrupted, with nothing below it running, does
+not count. Its turn counts as ended when `session.get` fails, so one OpenCode no longer knows, or
+cannot look up, does not count either. A child counts only while it runs, not until it has
+reported: a child that ends its turn without `courier_send` stops counting at once; counting it
+until it has reported comes with [#101](https://github.com/ivopogace/opencode-courier/issues/101).
+
+Each check reads the whole roster once, to find the calling session's tree, and looks up every
+session in that tree with `session.get`. The checks run one at a time in the process,
+and a spawn under way counts until its child is on the roster, so several `courier_spawn` calls made
+at once cannot get past a limit together, whichever locations or copies of the plugin make them.
+Two servers on one data directory do not see each other's spawns under way. A failed roster read
+refuses the spawn, failing closed, while a failed `session.get` counts that session as not running.
+
+Depth is read from the roster, so a session whose roster entry could not be written, or was
+dropped after 14 days, starts its children as if it were the top of a tree.
+
+**The brief says when to split.** A spawned session is told its depth and the limits. Below
+`maxDepth` it is given a rule: split the task when it has 2 or more independent, substantial parts
+touching separate files or areas, one session per part; do it itself when it is small, sequential or
+tightly coupled, and never start exactly one session. A session that splits orchestrates: it ends its
+turn while its children work, checks and integrates each part itself, never handing that checking
+to another session, and sends its parent one combined report. At `maxDepth` it is told to do the
+task itself.
+
+**A `context` hook names the role on every model request.** For a spawned session the plugin adds
+one system part, `opencode-courier role: …`, naming its role and depth: `sub-orchestrator` below
+`maxDepth`, with the limits, and `leaf` at it, which is told it cannot start sessions. A leaf's
+request also goes without `courier_spawn` in its tool list, so its model does not try it. The hook
+is guidance and `courier_spawn` the guarantee: another plugin's hook can put the tool back, and the
+call is still refused.
+
+A session nobody spawned gets nothing from the hook until it has started a session, so one that
+never uses the courier sends exactly the request it did before. From the request after its first
+spawn on, it gets a `root orchestrator` part with the limits. Each part is the same on every request
+of its session, so it changes the session's prompt once and the provider's prompt cache holds after
+that. Each instance remembers the depths it has looked up, so the hook reads the roster once per
+session, not per request. It reads only the session's [reverse index](#roster) key and its own
+children, never the whole roster: an entry an older copy wrote without a key is indexed on the next
+load, and until then the hook takes its session for one nobody spawned; `courier_spawn` still
+enforces the limits.
 
 ## A child that fails
 
@@ -216,8 +289,10 @@ question tool when the person must decide; a child can still send its question w
 ## Roster
 
 `courier_spawn` records each child under its parent in the plugin's storage, so a parent that has
-lost track after a compaction or a server restart can call `courier_children` to find them again.
-A child that can no longer be looked up is still listed, with the error instead of its state.
+lost track after a compaction or a server restart can call `courier_children` to find them again. A
+child that can no longer be looked up is still listed, with the error instead of its state. The
+roster is also where a session's depth and tree are read from, for the
+[limits](#session-trees-and-their-limits).
 Entries are dropped 14 days after the child was started, when that parent's roster is read or
 the plugin is next loaded, except isolated children whose worktree is still there (see
 [Worktree cleanup](#worktree-cleanup)). If the roster cannot be written, the child still gets its
@@ -276,15 +351,17 @@ it twice after the restart; a lost check-in would be worse.
 
 ## Several copies in one process
 
-OpenCode runs one instance of the plugin per location (project or worktree), all in one process,
-and after an update it loads the new copy of the package next to the old one until the old one
-unloads. All instances share one process-wide hub, where each scheduled message, OpenCode event,
-permission request, form and question is claimed once, before any instance acts on it, so no
-message is delivered twice and no notice is sent twice, whichever instance or copy sees it first.
-The hub also runs the scheduler once per process and follows OpenCode's events through two
-instances, one of them a standby, so that an instance unloading does not leave a gap in which an
-event, or a child's question, is missed. A webhook receiver started by one instance is the one the
-others join, so two never contend for the port.
+OpenCode runs one instance of the plugin per location (project or worktree), all in one process, and
+after an update it loads the new copy of the package next to the old one until the old one unloads.
+All instances share one process-wide hub, where each scheduled message, OpenCode event, permission
+request, form and question is claimed once, before any instance acts on it, so no message is
+delivered twice and no notice is sent twice, whichever instance or copy sees it first. The hub also
+runs the scheduler once per process and follows OpenCode's events through two instances, one of them
+a standby, so that an instance unloading does not leave a gap in which an event, or a child's
+question, is missed. A webhook receiver started by one instance is the one the others join, so two
+never contend for the port. The `courier_spawn` calls under way are kept process-wide in the same
+way, under a fixed key of their own, so spawns in every location and copy count each other against
+the limits.
 
 The hub carries a version, which changes only when its shape or the meaning of a field does, not
 with every release. A copy that finds a hub of another version in the process runs its own, under a

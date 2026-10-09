@@ -149,7 +149,8 @@ opencode plugin add opencode-courier
 
 This installs the package from npm and adds `"opencode-courier"` to `plugins` in the global
 configuration (`~/.config/opencode/opencode.json`). To receive webhooks, replace that entry with the
-object form shown under [Webhooks](#webhooks), which carries a `webhook` option.
+object form shown under [Webhooks](#webhooks), which carries a `webhook` option; the [session tree
+limits](#session-trees) are options of the same entry.
 
 Install it by name, without a version: OpenCode only checks plugins for updates when their entry is
 not an exact version, so `opencode-courier@0.2.1` is never offered a newer release. How to move an
@@ -196,7 +197,7 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
 
 | Tool | Does |
 |---|---|
-| `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`) on the parent's model, sends it the task plus a brief naming the parent and how to report back, and returns at once. |
+| `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`) on the parent's model, sends it the task plus a brief naming the parent, how to report back and when to split the task further, and returns at once. Refused past the [session tree limits](#session-trees). |
 | `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. |
 | `courier_status` | One look at a session: outcome, idle time, last reply and the permission requests and questions it waits on. For check-ins, not for waiting. |
 | `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated and when it was started. |
@@ -214,6 +215,9 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
 - **A child runs on its parent's model**, not on OpenCode's default, so a parent you moved to
   another model starts children that can reach theirs too. An `agent` with a model of its own keeps
   it. [More](docs/reference.md#the-childs-model).
+- **A child can split its task** with `courier_spawn` of its own, within the [limits](#session-trees):
+  its brief says when to split and when to do the work itself, and a session that splits checks
+  its children's work and sends one combined report. [More](docs/reference.md#session-trees-and-their-limits).
 - **A child that fails** cannot report, so the plugin does: every failed turn of a spawned session
   sends its parent a message marked `failed="<error type>"`, with the error, waking it if idle.
   [More](docs/reference.md#a-child-that-fails).
@@ -240,6 +244,31 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
 - **Worktrees are yours to remove.** An isolated child's worktree is kept until `courier_cleanup`,
   which refuses to drop uncommitted changes or unbranched commits unless told to.
   [More](docs/reference.md#worktree-cleanup).
+
+## Session trees
+
+A spawned session may start sessions of its own, so the sessions form a tree, and three options
+bound it. Set them in the plugin's `options`, in the global config (`~/.config/opencode/opencode.json`):
+
+```jsonc
+{
+  "plugins": [{ "package": "opencode-courier", "options": { "maxDepth": 2, "maxChildren": 3 } }]
+}
+```
+
+| Option | Default | |
+|---|---|---|
+| `maxDepth` | `3` | How deep the tree goes: your session is depth 0, the sessions it starts depth 1. A session at `maxDepth` cannot start sessions. |
+| `maxChildren` | `5` | How many sessions one session started may run at once. |
+| `maxTotal` | `20` | How many spawned sessions may run at once in one tree. |
+
+`courier_spawn` refuses a spawn past a limit, naming it and saying what to do instead: do the work
+itself, or wait for a child to report. A session counts while it runs; one that has reported and
+ended its turn does not. Each spawned session's model is also told its role on every request:
+`sub-orchestrator`, which may split its task, or `leaf`, at `maxDepth`, which does not see
+`courier_spawn` at all. Your own session gets a `root orchestrator` part only once it has started
+a session; one that never does is sent exactly what it was before. The details:
+[the reference](docs/reference.md#session-trees-and-their-limits).
 
 ## Webhooks
 

@@ -78,7 +78,10 @@ export async function admit(ports: LimitPorts, parentID: string) {
   const checked = gate.turn.then(() => check(ports, parentID))
   gate.turn = checked.catch(() => undefined)
   const { depth, reservation } = await checked
-  return { depth, reservation, release: () => void gate.reserved.delete(reservation) }
+  const release = () => {
+    gate.reserved.delete(reservation)
+  }
+  return { depth, reservation, release }
 }
 
 async function check(ports: LimitPorts, parentID: string) {
@@ -89,7 +92,7 @@ async function check(ports: LimitPorts, parentID: string) {
   const top = chain.at(-1)?.parentID ?? parentID
   const tree = entries.filter((entry) => lineageIn(entries, entry.sessionID).at(-1)?.parentID === top)
   const live = (await Promise.all(tree.map(async (entry) => ((await running(ports, entry.sessionID)) ? [entry] : [])))).flat()
-  // A spawn whose child is on the roster already is counted there, running or not.
+  // A spawn whose child is on the roster already is counted there, if it runs, not by its reservation.
   const recorded = new Set(tree.map((entry) => entry.sessionID))
   const pending = [...ports.gate.reserved].filter((held) => held.top === top && !(held.sessionID && recorded.has(held.sessionID)))
   const mine = live.filter((entry) => entry.parentID === parentID).length + pending.filter((held) => held.parentID === parentID).length

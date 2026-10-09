@@ -50,7 +50,7 @@ export const ROLE_PREFIX = "opencode-courier role:"
 
 /**
  * The system part naming a session's place in its tree: `depth` 0 for a session nobody spawned that
- * has started one. Fixed for the session, so it does not disturb the provider's prompt cache.
+ * has started one. The same on every request, so a session's prompt changes at most once.
  */
 export function rolePart(depth: number, limits: Limits) {
   const { maxDepth, maxChildren, maxTotal } = limits

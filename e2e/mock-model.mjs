@@ -47,11 +47,11 @@ function decide(body) {
       const options = ["Hello", "Hi", "Hey"].map((label) => ({ label, description: `Say ${label}` }))
       return { tool: "question", args: { questions: [{ header: "Greeting", question: "Which greeting?", options, multiple: false }] }, delayed: true }
     }
-    // The child of COURIER-ASK reports what its shell call gave, run or refused, once it has the answer.
     const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
     // A leaf of COURIER-DEPTH reports what its courier_spawn call gave.
     if (call?.function?.name === "courier_spawn" && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-LEAF"))
       return { tool: "courier_send", args: { sessionID: startedBy[1], message: `LEAF GOT ${result}` } }
+    // The child of COURIER-ASK reports what its shell call gave, run or refused, once it has the answer.
     if ((call?.function?.name === "shell" || call?.function?.name === "websearch") && startedBy)
       return { tool: "courier_send", args: { sessionID: startedBy[1], message: `CHILD DONE ${call.function.name}: ${result}` } }
     if (call?.function?.name === "question") {

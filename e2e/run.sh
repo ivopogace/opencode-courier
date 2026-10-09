@@ -233,9 +233,8 @@ ask_question() {
     "$([ -n "$child_form" ] && [ -n "$parent_form" ] && echo true || echo false)"
 }
 
-# maxDepth is 2 here: the root starts a child at depth 1, which starts two leaves at depth 2 at once.
-# Each leaf tries courier_spawn: the first as its tool list stands, so OpenCode refuses the call,
-# the second with the tool put back by the probe plugin's context hook, so courier_spawn refuses it.
+# With maxDepth 2, a child starts two leaves; one tries courier_spawn as its tool list stands, the
+# other once the probe plugin has put the tool back, so OpenCode refuses the first and courier the second.
 echo "a leaf at maxDepth does not see courier_spawn, and is refused when it calls it anyway"
 out=$(prompt "COURIER-DEPTH")
 root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)

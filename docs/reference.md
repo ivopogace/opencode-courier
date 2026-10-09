@@ -100,7 +100,8 @@ Each check reads the whole roster once, to find the calling session's tree, and 
 session in that tree with `session.get`. The checks run one at a time in the process,
 and a spawn under way counts until its child is on the roster, so several `courier_spawn` calls made
 at once cannot get past a limit together, whichever locations or copies of the plugin make them.
-Two servers on one data directory do not see each other's spawns under way.
+Two servers on one data directory do not see each other's spawns under way. A failed roster read
+refuses the spawn, failing closed, while a failed `session.get` counts that session as not running.
 
 Depth is read from the roster, so a session whose roster entry could not be written, or was
 dropped after 14 days, starts its children as if it were the top of a tree.

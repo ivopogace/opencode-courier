@@ -1,9 +1,5 @@
-// An event probe for the live test, loaded next to the courier: each of its instances, one per
-// location like the courier's, follows OpenCode's events through the same `event.subscribe()` the
-// courier's watcher uses, and appends a line per event to the file named by its `log` option, with
-// the location it runs in and the server's pid, so the test can tell which instances saw an event.
-// Its context hook, which runs after the courier's, logs the tools and courier role a request got, and
-// puts courier_spawn back for a session whose task says CHILD-FORCES, as a model that calls it anyway.
+// Live-test probe: logs each event per instance (location, pid) to its `log` option's file, and, after the
+// courier's context hook, each request's tools and role; puts courier_spawn back for a CHILD-FORCES task.
 import { appendFileSync, realpathSync } from "node:fs"
 
 // The session an event concerns, where the watcher looks for it: `data.sessionID`, or a form's.

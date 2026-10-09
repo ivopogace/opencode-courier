@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "../src/courier.js"
+import { DEFAULT_LIMITS } from "../src/limits.js"
 import { childBrief, envelope } from "../src/notices.js"
 import { record, rosterKey } from "../src/roster.js"
 
@@ -48,6 +49,9 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
     },
     head: async () => "abc123",
     pending: async () => [],
+    limits: DEFAULT_LIMITS,
+    gate: { reserved: new Set(), turn: Promise.resolve() },
+    roles: new Map(),
   } as unknown as CourierPorts
   return { ports, calls, store }
 }
@@ -62,7 +66,7 @@ describe("spawn", () => {
     expect(child).toEqual({ sessionID: "ses_child", directory: "/repo" })
     expect(calls.map((call) => call.method)).toEqual(["session.create", "session.prompt"])
     expect(calls[0]!.input).toEqual({ title: "Fix the bug", metadata: { courier: { parentID: "ses_parent" } } })
-    expect(calls[1]!.input).toEqual({ sessionID: "ses_child", text: childBrief("ses_parent", "Fix the bug\nin checkout") })
+    expect(calls[1]!.input).toEqual({ sessionID: "ses_child", text: childBrief("ses_parent", "Fix the bug\nin checkout", 1, DEFAULT_LIMITS) })
   })
 
   test("records the child on its parent's roster before prompting it", async () => {

@@ -462,10 +462,45 @@ When you finish, or need a decision you cannot make yourself, call courier_send 
 That message wakes the parent. It is the only way the parent hears from you, so do not end without sending it.
 If you need the person to decide something, use your question tool; it reaches them through the session that started you.
 
+You are at depth 1 of a session tree that goes at most 3 deep. Split your task or do it yourself:
+- Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
+- Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session.
+- If you split, you orchestrate: end your turn while they work, check and integrate each part yourself when it reports (never hand that checking to another session), then send ses_parent one combined report.
+
 Task:
 Fix the bug
 in src/a.ts"
 `;
+
+exports[`envelope and child brief childBrief 2`] = `
+"You were started by session ses_parent through opencode-courier.
+
+When you finish, or need a decision you cannot make yourself, call courier_send with sessionID "ses_parent" and a short report.
+That message wakes the parent. It is the only way the parent hears from you, so do not end without sending it.
+If you need the person to decide something, use your question tool; it reaches them through the session that started you.
+
+You are at depth 3, the deepest the session tree goes, so you cannot start sessions: do the task yourself.
+
+Task:
+Fix the bug
+in src/a.ts"
+`;
+
+exports[`envelope and child brief rolePart 1`] = `"opencode-courier role: root orchestrator. You started sessions with courier_spawn, and they may start their own, down to 3 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree. Check and integrate what each one reports yourself."`;
+
+exports[`envelope and child brief rolePart 2`] = `"opencode-courier role: sub-orchestrator, at depth 1 of at most 3. Split your task with courier_spawn or do it yourself, as your brief says; sessions can be started 2 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree."`;
+
+exports[`envelope and child brief rolePart 3`] = `"opencode-courier role: sub-orchestrator, at depth 2 of at most 3. Split your task with courier_spawn or do it yourself, as your brief says; sessions can be started 1 level below you. At most 5 of the sessions you start run at once, and 20 in the whole tree."`;
+
+exports[`envelope and child brief rolePart 4`] = `"opencode-courier role: leaf, at depth 3, the deepest the session tree goes. You cannot start sessions: do your task yourself and report with courier_send to the session that started you."`;
+
+exports[`envelope and child brief refusals 1`] = `"Not started: this session is at depth 3 of its session tree, and the tree goes at most 3 deep (maxDepth), so it cannot start sessions. Do the task yourself, and report with courier_send."`;
+
+exports[`envelope and child brief refusals 2`] = `"Not started: 5 sessions you started are still running, the most allowed at once (maxChildren 5). Do this part yourself, or end your turn and start it once one of them has reported."`;
+
+exports[`envelope and child brief refusals 3`] = `"Not started: 1 session you started is still running, the most allowed at once (maxChildren 1). Do this part yourself, or end your turn and start it once one of them has reported."`;
+
+exports[`envelope and child brief refusals 4`] = `"Not started: 20 sessions are running in this session tree, the most allowed at once (maxTotal 20). Do this part yourself, or end your turn and try again once a report has arrived."`;
 
 exports[`envelope and child brief envelope 1`] = `
 "<courier from="ses_child">

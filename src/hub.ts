@@ -4,6 +4,7 @@ import type { Server } from "node:http"
 import { hostname } from "node:os"
 import { num, obj, str } from "./json.js"
 import { deliverDue, TICK_MS, type LaterPorts } from "./later.js"
+import type { SpawnGate } from "./limits.js"
 import type { Asked, Outcome, Withdrawal } from "./notices.js"
 import type { Permissions, Waiting } from "./relay.js"
 import type { RosterStorage } from "./roster.js"
@@ -301,6 +302,8 @@ export interface Opened {
   readonly join: (member: Member) => () => Promise<void>
   /** Hands the hub work a member started, which its leave waits for; the member's own background work. */
   readonly track: (member: Member, work: Promise<unknown>) => void
+  /** The spawns under way, under a fixed key of its own rather than in the hub, so every hub version shares it. */
+  readonly gate: SpawnGate
 }
 
 /**
@@ -509,7 +512,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
       return Promise.race([Promise.allSettled(behind).then(() => {}), timers.wait(LEAVE_MS)])
     }
   }
-  return { hub, join, track }
+  return { hub, join, track, gate: shared<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() })) }
 }
 
 const opened = open(globalThis as Registry)
@@ -522,6 +525,9 @@ export const join = opened.join
 
 /** Hands this copy's hub work a member started; see `Opened.track`. */
 export const track = opened.track
+
+/** The spawns under way in the process; see `Opened.gate`. */
+export const gate = opened.gate
 
 /** The member of this copy's hub set up with `location` that joined last, while it is loaded. */
 export function memberAt(location: object) {
@@ -547,6 +553,7 @@ export const permissions = () => hub.locations.values()
  * count included. Members, locations and the webhook receiver are left to leaving and unloading.
  */
 export function resetHub() {
+  gate.reserved.clear()
   hub.claimed.clear()
   hub.watched.seen.clear()
   hub.watched.waiting.clear()

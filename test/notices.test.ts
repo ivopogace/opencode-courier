@@ -23,7 +23,20 @@ describe("tools", () => {
 
 describe("envelope and child brief", () => {
   test("END_TURN", () => expect(notices.END_TURN).toMatchSnapshot())
-  test("childBrief", () => expect(notices.childBrief("ses_parent", "Fix the bug\nin src/a.ts")).toMatchSnapshot())
+  const limits = { maxDepth: 3, maxChildren: 5, maxTotal: 20 }
+  test("childBrief", () => {
+    expect(notices.childBrief("ses_parent", "Fix the bug\nin src/a.ts", 1, limits)).toMatchSnapshot()
+    expect(notices.childBrief("ses_parent", "Fix the bug\nin src/a.ts", 3, limits)).toMatchSnapshot()
+  })
+  test("rolePart", () => {
+    for (const depth of [0, 1, 2, 3]) expect(notices.rolePart(depth, limits)).toMatchSnapshot()
+  })
+  test("refusals", () => {
+    expect(notices.depthRefusal(3, 3)).toMatchSnapshot()
+    expect(notices.childrenRefusal(5, 5)).toMatchSnapshot()
+    expect(notices.childrenRefusal(1, 1)).toMatchSnapshot()
+    expect(notices.totalRefusal(20, 20)).toMatchSnapshot()
+  })
   test("envelope", () => {
     expect(notices.envelope("ses_child", "done")).toMatchSnapshot()
     expect(notices.envelope("ses_child", "failed", { failed: "provider.auth", request: "per_1" })).toMatchSnapshot()

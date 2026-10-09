@@ -1,0 +1,333 @@
+import { describe, expect, test } from "bun:test"
+import { DateTime } from "effect"
+import { spawn, type CourierPorts } from "../src/courier.js"
+import { admit, DEFAULT_LIMITS, readLimits, running, shapeContext, type ContextPorts, type LimitPorts, type SpawnGate } from "../src/limits.js"
+import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/notices.js"
+import { record } from "../src/roster.js"
+
+function fakeStorage() {
+  const store = new Map<string, unknown>()
+  return {
+    store,
+    get: async (key: string) => store.get(key),
+    set: async (key: string, value: unknown) => void store.set(key, value),
+    remove: async (key: string) => void store.delete(key),
+    scan: async ({ prefix }: { prefix: string }) => ({
+      entries: [...store].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
+    }),
+  } as any
+}
+
+const RUNNING = { created: 1, updated: 5 }
+const FINISHED = { created: 1, updated: 5, idle: 5 }
+
+/** Limit ports over a roster and the sessions' times, all running unless `times` says otherwise. */
+function limitPorts(limits = DEFAULT_LIMITS, times: Record<string, object> = {}) {
+  const storage = fakeStorage()
+  const gate: SpawnGate = { reserved: new Set(), turn: Promise.resolve() }
+  const ports: LimitPorts = {
+    storage,
+    limits,
+    gate,
+    session: { get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID, time: times[sessionID] ?? RUNNING }) } as any,
+  }
+  const child = (parentID: string, sessionID: string) =>
+    record(storage, { sessionID, parentID, title: sessionID, directory: "/repo", isolated: false, createdAt: 1 })
+  return { ports, storage, gate, child }
+}
+
+/** Records a chain root -> d1 -> d2 -> ... down to `depth`, returning the deepest session. */
+async function chainTo(child: (parentID: string, sessionID: string) => Promise<void>, depth: number) {
+  let parent = "ses_root"
+  for (let level = 1; level <= depth; level++) {
+    await child(parent, `ses_d${level}`)
+    parent = `ses_d${level}`
+  }
+  return parent
+}
+
+describe("readLimits", () => {
+  test("defaults to maxDepth 3, maxChildren 5 and maxTotal 20", () => {
+    expect(readLimits(undefined)).toEqual({ limits: { maxDepth: 3, maxChildren: 5, maxTotal: 20 }, problems: [] })
+    expect(readLimits({ webhook: true })).toEqual({ limits: DEFAULT_LIMITS, problems: [] })
+  })
+
+  test("reads each from the plugin's options", () => {
+    expect(readLimits({ maxDepth: 1, maxChildren: 2, maxTotal: 7 }).limits).toEqual({ maxDepth: 1, maxChildren: 2, maxTotal: 7 })
+  })
+
+  test("keeps the default for one that is not a positive integer, and names it", () => {
+    const { limits, problems } = readLimits({ maxDepth: 0, maxChildren: "4", maxTotal: 2.5 })
+    expect(limits).toEqual(DEFAULT_LIMITS)
+    expect(problems).toEqual([
+      "maxDepth must be a positive integer, not 0; using 3",
+      'maxChildren must be a positive integer, not "4"; using 5',
+      "maxTotal must be a positive integer, not 2.5; using 20",
+    ])
+  })
+})
+
+describe("running", () => {
+  const ports = (time: unknown) => ({ session: { get: async () => ({ time }) } }) as any
+
+  test("a session that never finished a turn, or was reached after its last one, is running", async () => {
+    expect(await running(ports({ created: 1, updated: 2 }), "s")).toBe(true)
+    expect(await running(ports({ created: 1, updated: 9, idle: 5 }), "s")).toBe(true)
+  })
+
+  test("one whose last turn ended after anything reached it is not", async () => {
+    expect(await running(ports({ created: 1, updated: 5, idle: 5 }), "s")).toBe(false)
+    expect(await running(ports({ created: 1, updated: 4, idle: 5 }), "s")).toBe(false)
+  })
+
+  test("reads OpenCode's DateTime values", async () => {
+    const at = (ms: number) => DateTime.makeUnsafe(ms)
+    expect(await running(ports({ created: at(1), updated: at(9), idle: at(5) }), "s")).toBe(true)
+    expect(await running(ports({ created: at(1), updated: at(5), idle: at(5) }), "s")).toBe(false)
+  })
+
+  test("one OpenCode cannot find is not", async () => {
+    const gone = { session: { get: async () => Promise.reject(new Error("NotFound")) } } as any
+    expect(await running(gone, "s")).toBe(false)
+  })
+})
+
+describe("admit", () => {
+  test("maxDepth: a session one level above it may spawn, its child at maxDepth", async () => {
+    const { ports, child } = limitPorts()
+    const parent = await chainTo(child, 2)
+
+    const admitted = await admit(ports, parent)
+
+    expect(admitted.depth).toBe(3)
+  })
+
+  test("maxDepth: a session at it is refused, saying so", async () => {
+    const { ports, child } = limitPorts()
+    const parent = await chainTo(child, 3)
+
+    await expect(admit(ports, parent)).rejects.toThrow(depthRefusal(3, 3))
+  })
+
+  test("a session nobody spawned starts children at depth 1", async () => {
+    const { ports } = limitPorts()
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  test("maxChildren: one below it is allowed, and at it the spawn is refused", async () => {
+    const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 3 })
+    await child("ses_root", "ses_a")
+    await child("ses_root", "ses_b")
+
+    const admitted = await admit(ports, "ses_root")
+    admitted.release()
+    await child("ses_root", "ses_c")
+
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(3, 3))
+  })
+
+  test("maxChildren counts only running children", async () => {
+    const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 2 }, { ses_a: FINISHED, ses_b: FINISHED })
+    await child("ses_root", "ses_a")
+    await child("ses_root", "ses_b")
+    await child("ses_root", "ses_c")
+
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  test("spawns made together count each other, so no more than maxChildren get through", async () => {
+    const { ports, gate } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 2 })
+
+    const results = await Promise.allSettled([1, 2, 3].map(() => admit(ports, "ses_root")))
+
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled", "rejected"])
+    expect(gate.reserved.size).toBe(2)
+  })
+
+  test("a spawn whose child is on the roster is counted once, not as well by its reservation", async () => {
+    const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 2 })
+    const first = await admit(ports, "ses_root")
+    first.reservation.sessionID = "ses_a"
+    await child("ses_root", "ses_a")
+
+    const second = await admit(ports, "ses_root")
+
+    expect(second.depth).toBe(1)
+  })
+
+  test("release frees the place", async () => {
+    const { ports, gate } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 })
+    const first = await admit(ports, "ses_root")
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+
+    first.release()
+
+    expect(gate.reserved.size).toBe(0)
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  test("maxTotal: counts the running sessions of the whole tree, and refuses at it", async () => {
+    const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxTotal: 4 })
+    await child("ses_root", "ses_a")
+    await child("ses_root", "ses_b")
+    await child("ses_a", "ses_a1")
+
+    const admitted = await admit(ports, "ses_b")
+    admitted.release()
+    await child("ses_b", "ses_b1")
+
+    await expect(admit(ports, "ses_b")).rejects.toThrow(totalRefusal(4, 4))
+    await expect(admit(ports, "ses_root")).rejects.toThrow(totalRefusal(4, 4))
+  })
+
+  test("maxTotal does not count another tree's sessions, or finished ones", async () => {
+    const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxTotal: 2 }, { ses_a: FINISHED })
+    await child("ses_other", "ses_x")
+    await child("ses_other", "ses_y")
+    await child("ses_root", "ses_a")
+    await child("ses_root", "ses_b")
+
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  test("a refused check does not hold up the next", async () => {
+    const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxDepth: 1 })
+    await child("ses_root", "ses_a")
+
+    await expect(admit(ports, "ses_a")).rejects.toThrow(depthRefusal(1, 1))
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+})
+
+describe("spawn", () => {
+  function spawnPorts(limits = DEFAULT_LIMITS) {
+    const { ports, storage, gate, child } = limitPorts(limits)
+    const calls: string[] = []
+    const roles = new Map<string, number | null>([["ses_root", null]])
+    let next = 0
+    const courier = {
+      ...ports,
+      roles,
+      directory: "/repo",
+      projectID: "proj_1",
+      now: () => 1,
+      head: async () => undefined,
+      pending: async () => [],
+      agent: { get: async () => ({ data: {} }) },
+      worktree: {},
+      session: {
+        ...ports.session,
+        create: async () => {
+          calls.push("session.create")
+          return { id: `ses_new${++next}`, location: { directory: "/repo" } }
+        },
+        prompt: async (input: { text: string }) => void calls.push(input.text),
+      },
+    } as unknown as CourierPorts
+    return { courier, storage, gate, roles, calls, child }
+  }
+
+  test("a refused spawn creates nothing", async () => {
+    const { courier, calls, child, gate } = spawnPorts({ ...DEFAULT_LIMITS, maxDepth: 1 })
+    await child("ses_root", "ses_a")
+
+    await expect(spawn(courier, "ses_a", { task: "t" })).rejects.toThrow(depthRefusal(1, 1))
+
+    expect(calls).toEqual([])
+    expect(gate.reserved.size).toBe(0)
+  })
+
+  test("briefs the child with its depth and the limits, frees its place, and forgets the parent's role", async () => {
+    const { courier, calls, gate, roles, child } = spawnPorts()
+    await child("ses_root", "ses_a")
+
+    await spawn(courier, "ses_a", { task: "t" })
+
+    expect(calls).toEqual(["session.create", childBrief("ses_a", "t", 2, DEFAULT_LIMITS)])
+    expect(gate.reserved.size).toBe(0)
+    await spawn(courier, "ses_root", { task: "t" })
+    expect(roles.has("ses_root")).toBe(false)
+  })
+
+  test("frees its place when the child cannot be created", async () => {
+    const { courier, gate } = spawnPorts()
+    ;(courier.session as any).create = async () => Promise.reject(new Error("boom"))
+
+    await expect(spawn(courier, "ses_root", { task: "t" })).rejects.toThrow("boom")
+
+    expect(gate.reserved.size).toBe(0)
+  })
+})
+
+describe("the context hook", () => {
+  const tools = () => ({ courier_spawn: {}, courier_send: {}, read: {} })
+
+  function contextPorts(limits = DEFAULT_LIMITS) {
+    const { storage, child } = limitPorts(limits)
+    const logged: string[] = []
+    const ports: ContextPorts = { storage, limits, roles: new Map(), log: (message) => void logged.push(message) }
+    const shape = async (sessionID: string) => {
+      const event = { sessionID, tools: tools() as Record<string, unknown>, system: [{ type: "text" as const, text: "base" }] }
+      await shapeContext(ports, event)
+      return event
+    }
+    return { ports, storage, child, shape, logged }
+  }
+
+  test("leaves a session nobody spawned that has started none as it is", async () => {
+    const { shape } = contextPorts()
+    expect(await shape("ses_alone")).toEqual({ sessionID: "ses_alone", tools: tools(), system: [{ type: "text", text: "base" }] })
+  })
+
+  test("names the role per depth: root orchestrator, sub-orchestrator, leaf", async () => {
+    const { shape, child } = contextPorts()
+    await chainTo(child, 3)
+
+    for (const [sessionID, depth] of [["ses_root", 0], ["ses_d1", 1], ["ses_d2", 2], ["ses_d3", 3]] as const) {
+      const event = await shape(sessionID)
+      expect(event.system).toEqual([{ type: "text", text: "base" }, { type: "text", text: rolePart(depth, DEFAULT_LIMITS) }])
+    }
+  })
+
+  test("hides courier_spawn at maxDepth and keeps it above", async () => {
+    const { shape, child } = contextPorts({ ...DEFAULT_LIMITS, maxDepth: 2 })
+    await chainTo(child, 2)
+
+    expect(Object.keys((await shape("ses_d1")).tools)).toEqual(["courier_spawn", "courier_send", "read"])
+    expect(Object.keys((await shape("ses_d2")).tools)).toEqual(["courier_send", "read"])
+    expect(Object.keys((await shape("ses_root")).tools)).toEqual(["courier_spawn", "courier_send", "read"])
+  })
+
+  test("remembers a depth, and finds a root's role once a spawn forgot it", async () => {
+    const { ports, storage, shape, child } = contextPorts()
+    expect((await shape("ses_root")).system).toHaveLength(1)
+    await child("ses_root", "ses_a")
+    expect((await shape("ses_root")).system).toHaveLength(1)
+
+    ports.roles.delete("ses_root")
+    expect((await shape("ses_root")).system).toHaveLength(2)
+
+    storage.scan = async () => Promise.reject(new Error("not read again"))
+    storage.get = async () => Promise.reject(new Error("not read again"))
+    expect((await shape("ses_root")).system).toHaveLength(2)
+  })
+
+  test("adds no second role part, as a second copy of the plugin would", async () => {
+    const { ports, child } = contextPorts()
+    await child("ses_root", "ses_a")
+    const event = { sessionID: "ses_a", tools: tools(), system: [{ type: "text" as const, text: `${ROLE_PREFIX} other copy` }] }
+
+    await shapeContext(ports, event)
+
+    expect(event.system).toHaveLength(1)
+  })
+
+  test("logs a failed lookup and leaves the request as it is", async () => {
+    const { storage, shape, logged } = contextPorts()
+    storage.get = async () => Promise.reject(new Error("db locked"))
+    storage.scan = async () => Promise.reject(new Error("db locked"))
+
+    expect((await shape("ses_a")).system).toHaveLength(1)
+    expect(logged).toEqual(["courier: cannot tell the role of session ses_a: Error: db locked"])
+  })
+})

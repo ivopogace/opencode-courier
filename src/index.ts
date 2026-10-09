@@ -5,8 +5,9 @@ import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
 import type { CourierPorts } from "./courier.js"
 import { headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
-import { hub, join, permissions, portsAt, track, type Member, type Receiver } from "./hub.js"
+import { gate, hub, join, permissions, portsAt, track, type Member, type Receiver } from "./hub.js"
 import type { LaterPorts } from "./later.js"
+import { readLimits, shapeContext } from "./limits.js"
 import { pendingOf, type AnswerPorts } from "./relay.js"
 import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question/index.js"
 import { pruneExpired } from "./roster.js"
@@ -103,7 +104,13 @@ export const courier = () => Plugin.define({
       newID: () => `question_${randomUUID()}`,
       log,
     }
+    const { limits, problems } = readLimits(ctx.options)
+    for (const problem of problems) log(`courier: ${problem}`)
+    const roles = new Map<string, number | null>()
     const ports: CourierPorts = {
+      limits,
+      gate,
+      roles,
       session: ctx.session,
       agent: ctx.agent,
       worktree: ctx.worktree,
@@ -148,6 +155,7 @@ export const courier = () => Plugin.define({
       receiving: async () => (await receivers.current?.server) !== undefined,
     }
     await ctx.tool.transform((tools) => addTools(tools, toolPorts))
+    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, log }, event))
 
     const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
     const leaveRelay = joinRelay(questionPorts)

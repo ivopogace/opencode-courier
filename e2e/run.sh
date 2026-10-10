@@ -797,17 +797,17 @@ check "with force, courier_cleanup removed it" "$(jq -r '.status == "completed" 
 check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
 
 echo "courier_tree shows a three-level tree, and courier_stop from the root stops all of it"
-out=$(prompt "COURIER-NEST-START")
+out=$(prompt "COURIER-SUBTREE-START")
 root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
 check "the middle session started its leaf, and its turn runs on" "$(has_text "$middle" "Started session ses_" 60)"
-seen=$(prompt_in "$root" "COURIER-NEST-TREE" | tool_state courier_tree)
+seen=$(prompt_in "$root" "COURIER-SUBTREE-TREE" | tool_state courier_tree)
 leaf=$(jq -r '.metadata.metadata.sessions[1].sessionID // empty' <<<"$seen")
 check "courier_tree lists the middle session and its leaf, with their depths and parents" \
   "$(jq -r --arg root "$root" --arg middle "$middle" '.status == "completed" and (.metadata.metadata.sessions | map([.sessionID, .depth, .parentID]) | .[0] == [$middle, 1, $root] and .[1][1] == 2 and .[1][2] == $middle and length == 2)' <<<"$seen")"
 check "each owes its report and is not isolated" \
   "$(jq -r '.metadata.metadata.sessions | all(.report.owes == true and .isolated == false)' <<<"$seen")"
-stopped=$(prompt_in "$root" "COURIER-NEST-STOP $middle" | tool_state courier_stop)
+stopped=$(prompt_in "$root" "COURIER-SUBTREE-STOP $middle" | tool_state courier_stop)
 check "courier_stop interrupted the leaf, then the middle session" \
   "$(jq -r --arg middle "$middle" --arg leaf "$leaf" '.status == "completed" and (.metadata.metadata.stopped | map([.sessionID, .outcome]) == [[$leaf, "interrupted"], [$middle, "interrupted"]])' <<<"$stopped")"
 ended() { for _ in $(seq 1 30); do [ "$(api "session/$1" | jq -r '(.data // .) | .outcome')" = interrupted ] && { echo true; return; }; sleep 1; done; echo false; }
@@ -817,6 +817,25 @@ check "neither parent was told of the stop, nor that a session ended without a r
   "$([ "$(notices_with "$root" ended)" = '[]' ] && [ "$(notices_with "$middle" ended)" = '[]' ] && echo true || echo false)"
 check "the stop is noted for both" "$([ -n "$(kv get "report/$leaf/stopped")" ] && [ -n "$(kv get "report/$middle/stopped")" ] && echo true || echo false)"
 check "a failure notice did not follow either" "$(notices_with "$root" failed | jq -r 'length == 0')"
+
+echo "nested isolation: a grandchild starts from its isolated parent's HEAD"
+out=$(prompt "COURIER-NEST")
+nest_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+nest_mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the child's report, after it merged its grandchild's branch, woke the parent" "$(has_text "$nest_parent" "MID MERGED leaf.txt" 90)"
+nest_leaf=$(texts "$nest_mid" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
+check "the child started an isolated grandchild" "$([ -n "$nest_leaf" ] && echo true || echo false)"
+mid_dir=$(kv get "roster/$nest_parent/$nest_mid" | jq -r '.directory')
+leaf_entry=$(kv get "roster/$nest_mid/$nest_leaf")
+leaf_dir=$(jq -r '.directory' <<<"$leaf_entry")
+check "the grandchild has a worktree of its own" "$([[ $leaf_dir == */worktree/* && $leaf_dir != "$mid_dir" ]] && echo true || echo false)"
+mid_commit=$(git -C "$WORK/project" log --grep='^mid work$' --format=%H "courier/$nest_mid" 2>/dev/null | head -1 || true)
+check "the child committed on courier/<its session>" "$([ -n "$mid_commit" ] && echo true || echo false)"
+check "the grandchild's recorded base is the child's commit" "$([ -n "$mid_commit" ] && [ "$(jq -r '.base' <<<"$leaf_entry")" = "$mid_commit" ] && echo true || echo false)"
+check "its worktree contains the child's file" "$([ -f "$leaf_dir/leaf-saw-mid.txt" ] && echo true || echo false)"
+check "and the child's commit is in its history" "$(git -C "$leaf_dir" log --format=%s | grep -qx 'mid work' && echo true || echo false)"
+check "the grandchild committed on courier/<its session>" "$(git -C "$WORK/project" log -1 --format=%s "courier/$nest_leaf" 2>/dev/null | grep -qx 'leaf work' && echo true || echo false)"
+check "the child merged it into its own worktree" "$([ -f "$mid_dir/leaf.txt" ] && echo true || echo false)"
 
 # Last, because it swaps the local plugin for the installed one.
 echo "opencode plugin add installs the packed package and its tools load"

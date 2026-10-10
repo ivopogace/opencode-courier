@@ -4,7 +4,7 @@ import { fromPromise } from "@opencode/plugin/promise/adapter"
 import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
 import type { CourierPorts } from "./courier.js"
-import { headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
+import { dirtyOf, headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
 import { gate, hub, inbox, join, nudge, permissions, portsAt, track, type Member, type Receiver } from "./hub.js"
 import type { LaterPorts } from "./later.js"
 import { readLimits, shapeContext } from "./limits.js"
@@ -121,6 +121,7 @@ export const courier = () => Plugin.define({
       projectID: ctx.location.project.id,
       now: Date.now,
       head: headOf,
+      dirty: dirtyOf,
       pending: async (sessionID) => {
         const [requests, questions] = await Promise.all([
           pendingOf(permissions(), sessionID),

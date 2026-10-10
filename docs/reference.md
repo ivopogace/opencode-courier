@@ -587,6 +587,28 @@ An isolated child works in a git worktree under OpenCode's data directory
 When the parent has what it needs from the child, it calls `courier_cleanup { sessionID }`, which
 removes the worktree and drops the child from `courier_children`.
 
+### Nested isolation
+
+A root session's isolated child starts from the project's last commit, as above. When the session
+calling `courier_spawn` with `isolate: true` is itself an isolated child on the roster, the new
+worktree starts from the commit **the parent's worktree is on now**, so a sub-orchestrator hands its
+committed work down; that commit is the child's recorded `base`. Uncommitted work is not handed
+down: the brief of an isolated session tells it to commit before it spawns, and when the parent's
+worktree has uncommitted changes `courier_spawn` says so in its result (the spawn goes on).
+
+- The parent is found by the roster's reverse index alone; a parent whose index entry could not be
+  written (see [the roster](#roster)) is taken for a root, and its children start from the
+  project.
+- If the parent's HEAD cannot be read (git missing, the worktree gone), `courier_spawn` fails and
+  starts nothing: starting from the project instead would give the child code without the parent's
+  work, unannounced. The error says to start it without `isolate`.
+- Every isolated child is told to commit its work on a branch named `courier/<its session ID>`
+  (it starts on a detached HEAD, so it creates it) and to name that branch in `artifacts.branch` of
+  its report. The branch is in the shared repository, so the parent merges it into its own
+  worktree, which is the parent's to do. `courier_cleanup` counts the branch like any other: the
+  commits on it are not "on no branch", and the commits a worktree was made from never count.
+- How `from` and `branch` behave in OpenCode 2.0.26: [plugin API notes](plugin-api-notes.md#creating-a-worktree-from-a-given-commit-v2026).
+
 The worktree is kept, and the result says why, when it holds work that would otherwise be lost:
 
 - uncommitted changes, untracked files included (ignored files, such as `node_modules`, are not

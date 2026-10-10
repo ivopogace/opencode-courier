@@ -25,8 +25,11 @@ export const isStatus = (value: unknown): value is Status => typeof value === "s
 /** How a text names the statuses a report may carry. */
 const STATUS_LIST = `${STATUSES.slice(0, -1).join(", ")} or ${STATUSES.at(-1)}`
 
-/** What a spawned session at `depth` is told; `depth` 1 is a child of a session nobody spawned. */
-export function childBrief(parentID: string, task: string, depth: number, limits: Limits) {
+/** The branch an isolated child commits its work on, and names in the `branch` of its report. */
+export const childBranch = (sessionID: string) => `courier/${sessionID}`
+
+/** What a spawned session at `depth` is told; `depth` 1 is a child of a session nobody spawned. `branch` is for an isolated one. */
+export function childBrief(parentID: string, task: string, depth: number, limits: Limits, branch?: string) {
   return [
     `You were started by session ${parentID} through opencode-courier.`,
     "",
@@ -39,11 +42,26 @@ export function childBrief(parentID: string, task: string, depth: number, limits
       "A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.",
     "If you need the person to decide something, use your question tool; it reaches them through the session that started you.",
     "",
+    ...(branch ? [...isolationRule(branch, depth < limits.maxDepth), ""] : []),
     ...splitRule(parentID, depth, limits),
     "",
     "Task:",
     task,
   ].join("\n")
+}
+
+function isolationRule(branch: string, mayPass: boolean) {
+  return [
+    "You work in a git worktree of your own, on a detached HEAD. Commit your work on the branch " +
+      `${branch}: create it first (git switch -c ${branch}), and name it in the branch of your report's artifacts, so the ` +
+      "session that started you can merge it. Uncommitted work is not in your report.",
+    ...(mayPass
+      ? [
+          `If you split your task and start a session with isolate: true, commit first: its worktree starts from your current HEAD, ` +
+            "not from your uncommitted changes. Merge each branch it reports into yours before you report.",
+        ]
+      : []),
+  ]
 }
 
 function splitRule(parentID: string, depth: number, limits: Limits) {
@@ -150,8 +168,14 @@ export function spawnText(child: {
   readonly group?: string
   readonly rosterError?: string
   readonly groupError?: string
+  readonly fromParent?: boolean
+  readonly uncommitted?: boolean
 }) {
   const warning =
+    (child.fromParent ? " Its worktree starts from the commit your own worktree is on." : "") +
+    (child.uncommitted
+      ? " Your worktree has uncommitted changes, which it does not see: commit them and tell it, or send them to it, if it needs them."
+      : "") +
     (child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : "") +
     (child.groupError ? ` It is in no group, so its report comes on its own: ${child.groupError}` : "")
   const reports = child.group

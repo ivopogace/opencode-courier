@@ -20,6 +20,10 @@ const QUESTION_NOTICE = /<courier from="(ses_\w+)" asks="question" request="(que
 // The answers in the question tool's result text: "Which greeting?"="Hello, Hey" gives [["Hello", "Hey"]].
 const answersIn = (text) => [...text.matchAll(/"[^"]*"="([^"]*)"/g)].map((match) => match[1].split(", "))
 
+// The git identity a nested-isolation child commits with, and the branch its brief names.
+const GIT = "git -c user.name=courier -c user.email=courier@example.invalid"
+const branchIn = (messages) => textOf(messages.find((message) => message.role === "user")?.content).match(/branch (courier\/ses_\w+)/)?.[1]
+
 function decide(body) {
   const messages = body.messages ?? []
   if (!body.tools?.length) return { text: "Courier test" }
@@ -38,6 +42,19 @@ function decide(body) {
       const spawned = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_spawn")
       return spawned.length < 2 ? spawnChild(false) : { tool: "courier_children", args: {} }
     }
+    // COURIER-NEST: an isolated child commits on its branch, starts an isolated grandchild, which commits on its
+    // own and reports its branch, and the child merges that branch before it reports.
+    const first = textOf(messages.find((message) => message.role === "user")?.content)
+    const startedByNest = first.match(/You were started by session (ses_\w+)/)
+    if (startedByNest && first.includes("CHILD-NEST-MID")) {
+      const command = call?.function?.arguments ?? ""
+      if (call?.function?.name === "shell" && command.includes("merge"))
+        return { tool: "courier_send", args: { sessionID: startedByNest[1], message: `MID MERGED ${result.includes("leaf.txt") ? "leaf.txt" : "nothing"}`, status: "done", artifacts: { branch: branchIn(messages) } } }
+      if (call?.function?.name === "shell") return { tool: "courier_spawn", args: { task: "CHILD-NEST-LEAF", isolate: true } }
+      if (call?.function?.name === "courier_spawn") return { text: "MID SPAWNED" }
+    }
+    if (startedByNest && first.includes("CHILD-NEST-LEAF") && call?.function?.name === "shell")
+      return { tool: "courier_send", args: { sessionID: startedByNest[1], message: "LEAF DONE", status: "done", artifacts: { branch: branchIn(messages) } } }
     // The child of COURIER-PROBE, once its permission request is answered, asks two questions in
     // turn, held back like a report, and then cannot reach its model.
     const probes = textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-PROBES")
@@ -84,6 +101,16 @@ function decide(body) {
     .map((message) => textOf(message.content))
     .join("\n")
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
+  // COURIER-NEST's middle session commits on its branch, then merges the branch its leaf reports.
+  const nestBranch = branchIn(messages)
+  if (parent && recent.includes("CHILD-NEST-MID"))
+    return { tool: "shell", args: { command: `${GIT} switch -c ${nestBranch} && echo mid > mid.txt && git add mid.txt && ${GIT} commit -m "mid work"` } }
+  if (parent && recent.includes("CHILD-NEST-LEAF"))
+    return { tool: "shell", args: { command: `cp mid.txt leaf-saw-mid.txt && ${GIT} switch -c ${nestBranch} && echo leaf > leaf.txt && git add . && ${GIT} commit -m "leaf work"` } }
+  const reported = recent.match(/- branch: (courier\/ses_\w+)/)
+  if (reported && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-NEST-MID"))
+    return { tool: "shell", args: { command: `${GIT} merge --no-edit ${reported[1]} && ls` } }
+  if (recent.includes("COURIER-NEST")) return { tool: "courier_spawn", args: { task: "CHILD-NEST-MID", isolate: true } }
   // The child of COURIER-FAIL cannot reach its model, as with a model blocked for the account.
   if (parent && recent.includes("CHILD-FAILS")) return { status: 403, error: "This model is not available in your country" }
   // The child of COURIER-PROBE first runs a command the test's permission rules make it ask for.

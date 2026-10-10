@@ -346,3 +346,24 @@ the key in the same rhythm do not keep finishing in step.
 
 Not covered by the script: the webhook receiver (its port can be bound by one process only) and
 the question relay.
+
+## Creating a worktree from a given commit (v2.0.26)
+
+Read in OpenCode's source at tag `v2.0.26` (`packages/core/src/worktree.ts`, `worktree/git.ts`,
+`git.ts`):
+
+- The client's `worktree.create` takes `projectID`, and optionally `from`, `branch`, `directory`
+  and `name`. **`from` is a source directory, not a ref**: the worktree is created from the
+  repository of that directory, which must be a directory the project already knows (its main
+  worktree or one it created), else the call fails with `SourceDirectoryNotFoundError`. It
+  defaults to the project's own worktree.
+- **`branch` is a starting ref, not the name of a new branch**, as the plugin-side strategy input
+  documents it. The built-in git strategy runs `git worktree add --detach -- <dir> <branch ?? HEAD>`,
+  so a commit hash works as well as a branch name, and the new worktree is always on a detached
+  HEAD. With neither, it starts from `HEAD` of the source directory, which for the project is its
+  last commit; uncommitted changes are never carried over.
+- Worktrees of one project share one repository, so a commit made in any of them is visible to
+  `git worktree add` from another, and so are the branches they create.
+
+`courier_spawn` uses it for a nested isolated child: `from` is the isolated parent's worktree and
+`branch` the commit its HEAD is on, which is also what the child's roster entry records as `base`.

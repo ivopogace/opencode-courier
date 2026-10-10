@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
 import { groupStanding, holdReport, isGroupName, joinGroup, leaveGroup, memberKey, memberOf, membershipOf, standingOf, unholdForBlocked, unholdReport, type Membership } from "./group.js"
 import { admit, type Limits, type SpawnGate } from "./limits.js"
-import { childBrief, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Held, type HeldReport, type Prompt, type Sent, type Status } from "./notices.js"
+import { childBrief, childBranch, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Held, type HeldReport, type Prompt, type Sent, type Status } from "./notices.js"
 import { progressed, progressKey, prompted, settled, settledKey } from "./report.js"
 import { current, indexedEntry, record, type RosterEntry, type RosterStorage } from "./roster.js"
 
@@ -16,6 +16,8 @@ export interface CourierPorts {
   readonly projectID: string
   /** The commit a directory's checkout is on, or undefined; recorded as an isolated child's base. */
   readonly head: (directory: string) => Promise<string | undefined>
+  /** Whether a directory's checkout has uncommitted changes, or undefined when git cannot tell. */
+  readonly dirty: (directory: string) => Promise<boolean | undefined>
   readonly storage: RosterStorage
   readonly directory: string
   readonly now: () => number
@@ -114,7 +116,7 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
 }
 
 async function start(ports: CourierPorts, parentID: string, input: SpawnInput, admitted: Awaited<ReturnType<typeof admit>>, group: string | undefined) {
-  const { worktree, ...child } = await create(ports, parentID, input)
+  const { worktree, handedDown, ...child } = await create(ports, parentID, input)
   admitted.reservation.sessionID = child.sessionID
   const entry: RosterEntry = {
     ...child,
@@ -134,6 +136,8 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     ...(group && !rosterError && !groupError ? { group } : {}),
     ...(rosterError ? { rosterError } : {}),
     ...(groupError ? { groupError } : {}),
+    ...(handedDown ? { fromParent: true } : {}),
+    ...(handedDown?.uncommitted ? { uncommitted: true } : {}),
   }
 }
 
@@ -141,7 +145,10 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
 async function create(ports: CourierPorts, parentID: string, input: SpawnInput) {
   // A failed lookup must not keep the child from starting; it then runs on OpenCode's default.
   const model = await inheritedModel(ports, parentID, input.agent).catch(() => undefined)
-  const worktree = input.isolate ? (await ports.worktree.create({ projectID: ports.projectID })).directory : undefined
+  const handedDown = input.isolate ? await parentWork(ports, parentID) : undefined
+  const worktree = input.isolate
+    ? (await ports.worktree.create({ projectID: ports.projectID, ...(handedDown ? { from: handedDown.directory, branch: handedDown.head } : {}) })).directory
+    : undefined
   const base = worktree ? await ports.head(worktree) : undefined
   const title = input.title ?? titleOf(input.task)
   const child = await ports.session
@@ -157,7 +164,25 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
       if (worktree) await dropWorktree(ports, worktree)
       throw error
     })
-  return { sessionID: child.id, title, directory: worktree ?? child.location.directory, worktree, ...(base ? { base } : {}) }
+  return { sessionID: child.id, title, directory: worktree ?? child.location.directory, worktree, handedDown, ...(base ? { base } : {}) }
+}
+
+/**
+ * What an isolated parent hands its isolated child: its worktree and the commit it is on, so the child's worktree starts
+ * there rather than at the project's last commit. Undefined for a parent that is not an isolated child on the roster (found
+ * by the reverse index alone), whose children start from the project as before. A HEAD that cannot be read fails the
+ * spawn: starting from the project instead would hand the child code without the parent's work, unannounced.
+ */
+async function parentWork(ports: CourierPorts, parentID: string) {
+  const parent = await indexedEntry(ports.storage, parentID)
+  if (!parent?.isolated) return undefined
+  const head = await ports.head(parent.directory)
+  if (!head)
+    throw new Error(
+      `the HEAD of your worktree ${parent.directory} could not be read, so an isolated session cannot start from it; nothing was started. Start it without isolate, or fix the worktree.`,
+    )
+  const uncommitted = (await ports.dirty(parent.directory).catch(() => undefined)) === true
+  return { directory: parent.directory, head, uncommitted }
 }
 
 /**
@@ -181,7 +206,7 @@ async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, 
   // A baseline, until OpenCode's event for the prompt's delivery moves it on; written first, so it never overtakes that.
   if (rostered) await prompted(ports.storage, entry.sessionID, ports.now()).catch(() => undefined)
   try {
-    await ports.session.prompt({ sessionID: entry.sessionID, text: childBrief(entry.parentID, task, depth, ports.limits) })
+    await ports.session.prompt({ sessionID: entry.sessionID, text: childBrief(entry.parentID, task, depth, ports.limits, entry.isolated ? childBranch(entry.sessionID) : undefined) })
   } catch (error) {
     if (rostered) await settled(ports.storage, entry.sessionID, "failed", ports.now()).catch(() => undefined)
     if (grouped && entry.group)

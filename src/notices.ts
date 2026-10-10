@@ -144,8 +144,16 @@ export function reportBody(message: string, artifacts: Artifacts | undefined) {
 
 // Tool results.
 
-export function spawnText(child: { readonly sessionID: string; readonly directory: string; readonly group?: string; readonly rosterError?: string }) {
-  const warning = child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : ""
+export function spawnText(child: {
+  readonly sessionID: string
+  readonly directory: string
+  readonly group?: string
+  readonly rosterError?: string
+  readonly groupError?: string
+}) {
+  const warning =
+    (child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : "") +
+    (child.groupError ? ` It is in no group, so its report comes on its own: ${child.groupError}` : "")
   const reports = child.group
     ? `Its report is held with group "${child.group}": once every session you started in that group has reported, you get ` +
       "their reports in one message, which starts a new turn for you; a blocked report, a question or a failure still reaches you at once."

@@ -175,7 +175,8 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     sessionID: child.id,
     directory: directory ?? child.location.directory,
     ...(group && !rosterError && !groupError ? { group } : {}),
-    ...(rosterError ? { rosterError } : groupError ? { rosterError: groupError } : {}),
+    ...(rosterError ? { rosterError } : {}),
+    ...(groupError ? { groupError } : {}),
   }
 }
 

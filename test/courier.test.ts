@@ -249,7 +249,7 @@ describe("spawn, into a group", () => {
       if (key.startsWith("group/")) throw new Error("disk full")
       return set(key, value as never)
     }
-    expect(await spawn(ports, "ses_parent", { task: "t", group: "reviews" })).toEqual({ sessionID: "ses_child", directory: "/repo", rosterError: "group failed: disk full" })
+    expect(await spawn(ports, "ses_parent", { task: "t", group: "reviews" })).toEqual({ sessionID: "ses_child", directory: "/repo", groupError: "group failed: disk full" })
 
     ;(ports.storage as any).set = async () => {
       throw new Error("disk full")

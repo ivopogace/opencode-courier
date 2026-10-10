@@ -70,6 +70,7 @@ describe("tool results", () => {
     expect(notices.spawnText({ sessionID: "ses_child", directory: "/repo" })).toMatchSnapshot()
     expect(notices.spawnText({ sessionID: "ses_child", directory: "/wt", rosterError: "roster failed: disk full" })).toMatchSnapshot()
     expect(notices.spawnText({ sessionID: "ses_child", directory: "/repo", group: "reviews" })).toMatchSnapshot()
+    expect(notices.spawnText({ sessionID: "ses_child", directory: "/repo", groupError: "group failed: disk full" })).toMatchSnapshot()
   })
   test("sendText", () => {
     expect(notices.sendText("ses_parent")).toMatchSnapshot()

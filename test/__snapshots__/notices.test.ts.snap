@@ -657,6 +657,8 @@ exports[`tool results spawnText 2`] = `"Started session ses_child in /wt. It wil
 
 exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported, you get their reports in one message, which starts a new turn for you; a blocked report, a question or a failure still reaches you at once. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
+exports[`tool results spawnText 4`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is in no group, so its report comes on its own: group failed: disk full"`;
+
 exports[`tool results sendText 1`] = `"Delivered to ses_parent."`;
 
 exports[`tool results sendText 2`] = `"Delivered to ses_parent as your report, status done. If nothing else is left to do now, end your turn by replying without calling more tools."`;

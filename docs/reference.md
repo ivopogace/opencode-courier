@@ -231,7 +231,7 @@ the parent sends it more to do, is delivered on its own, as a report of a child 
 the person, or by OpenCode after an hour without activity; not by a shutdown, which the next start
 resumes), whose task could not be handed over as it was started, or whose session OpenCode deletes,
 leaves the group without a report, and the group no longer waits for it: it is released once its
-other members have reported, the message naming who left and why. The parent hears of each as of a
+other members have reported and the parent's turn has ended, the message naming who left and why. The parent hears of each as of a
 child in no group: a failed turn at once, in a notice with a line naming the group, a task not
 handed over as `courier_spawn`'s error, and an interruption or a deletion only in the group's
 message. For a failed turn, the member is marked as left before the notice goes out, so the parent
@@ -245,7 +245,7 @@ outlives the member's [roster](#roster) entry: a member dropped after 14 days or
 `courier_cleanup` goes from its group with no trace when it has not reported, and otherwise stays
 until the group is released, which the dropping of the members still out brings about, so a group's
 keys live as long as the roster entries of its members still out; a member dropped by `courier_cleanup` while still out has the group
-delivered at once if that completes it, with no line for it, since the parent did the dropping. A
+delivered once the parent's turn has ended, if that completes it, with no line for it, since the parent did the dropping. A
 group whose every member left is dropped unsent, with no report to carry: the parent was told of
 each failed turn and did the rest, and hears of an interruption or a deletion no more than for a
 child in no group. A member that [ends its turn without a report](#a-child-that-ends-without-a-report) is still
@@ -269,9 +269,9 @@ be read). A child whose group could not be joined when it was started is recorde
 `courier_spawn`'s result says so: its report comes on its own.
 
 **Delivery.** The scheduler that delivers `courier_later` messages delivers released groups too,
-at each tick and at once when a report, a failure, an interruption or a deletion completes a group
-or the parent's turn ends with one complete, so the parent waits no longer than for a plain report
-on one server; with [two servers](#two-servers-on-one-data-directory)
+at each tick, and at once when the parent's turn ends with a group complete, or a report, a
+failure, an interruption or a deletion completes a group whose parent's turn has ended; so once its
+turn has ended, the parent waits no longer than for a plain report on one server; with [two servers](#two-servers-on-one-data-directory)
 on one data directory, by the one holding the owner key, within a tick of it. Each release is
 claimed once in the process, like a scheduled message, and dropped only after the message has been
 delivered: a delivery that fails is logged and tried again at the next tick, and nothing is lost,

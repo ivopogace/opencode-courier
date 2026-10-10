@@ -278,7 +278,7 @@ async function memberIn(ports: CourierPorts, entry: RosterEntry): Promise<Member
 }
 
 /**
- * Holds a member's report with its group, and has the scheduler deliver the group if that completes it. Undefined
+ * Holds a member's report with its group, and nudges the scheduler if that completes the group. Undefined
  * when it could not be held: the member is dropped from the group, which releases without it, and reports on its own.
  */
 async function hold(ports: CourierPorts, member: Membership, report: HeldReport): Promise<Held | undefined> {

@@ -252,6 +252,18 @@ from MCP elicitation (`kind: "mcp-elicitation"`), whose forms belong to the sess
 The plugin API has no form domain: a plugin cannot list, answer or withdraw a form, so the plugin
 can only tell the top session about one.
 
+## When a session's turn ended
+
+A session's `time.idle` is when its last turn ended, as epoch milliseconds: OpenCode's session
+projector stamps it from `session.execution.succeeded`, `failed` and `interrupted`, but not from an
+interruption by a shutdown, which the next start resumes (`projectIdle` in
+`packages/core/src/session/projector.ts`, at `v2.0.26`). It is persisted, never cleared when a
+new turn starts, and always moves forward (`max(created, previous + 1)`). A join group's release
+compares it with when its last member joined, so a group waits for the turn that started it to
+end. On the live server the group's message followed the parent's turn end by a few milliseconds,
+so the projection is in place by the time the plugin's watcher sees the event and nudges the
+scheduler.
+
 ## Which plugin instances receive an isolated child's events
 
 OpenCode sets the plugin up once per location, and an isolated child runs in a location of its

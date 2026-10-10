@@ -383,7 +383,15 @@ async function sealGroups(ports: WatchPorts, event: SessionEvent) {
  * relayed for one, are ignored.
  */
 async function handle(ports: WatchPorts, state: WatchState, event: { readonly type: string }) {
-  if (TURN_ENDS.has(event.type)) await sealGroups(ports, event as unknown as SessionEvent)
+  try {
+    return await route(ports, state, event)
+  } finally {
+    // After: a silent end is judged while the group the nudge may deliver is still there to wait on.
+    if (TURN_ENDS.has(event.type)) await sealGroups(ports, event as unknown as SessionEvent)
+  }
+}
+
+async function route(ports: WatchPorts, state: WatchState, event: { readonly type: string }) {
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent)
   if (event.type === "session.execution.interrupted") return noteInterrupted(ports, event as unknown as SessionEvent)

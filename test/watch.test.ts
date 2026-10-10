@@ -1244,6 +1244,23 @@ describe("watchChildren", () => {
     expect(nudges).toEqual([1])
   })
 
+  test("a sub-orchestrator's turn that ends with a complete group is not told of as silent, though the nudge delivers the group at once", async () => {
+    const watching = new AbortController()
+    const { ports, sent, store } = fakePorts([[delivered("evt_d", 100), succeeded("evt_s", 200)]])
+    await record(ports.storage, child())
+    await record(ports.storage, { ...child("ses_child"), sessionID: "ses_grandchild", createdAt: 150, group: "pair" })
+    await ports.storage.set(memberKey("ses_child", "pair", "ses_grandchild"), { title: "G", joinedAt: 150, report: { at: 180, status: "done", message: "m" } })
+    // A tick that delivers and drops the group before anything else runs.
+    ;(ports as any).nudge = () => {
+      for (const key of [...store.keys()]) if (key.startsWith("group/")) store.delete(key)
+      watching.abort()
+    }
+
+    await watchChildren(ports, fresh(), watching.signal, 1)
+
+    expect(sent).toEqual([])
+  })
+
   test("tells of a child's turn that ended without a report from the event stream", async () => {
     const watching = new AbortController()
     const { ports, sent } = fakePorts([[delivered("evt_d", 100), succeeded("evt_s", 200)]])

@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
-import { isNotFound, num, obj, str } from "./json.js"
+import { isNotFound, millis, num, obj, str } from "./json.js"
 import { envelope, groupNotice, isStatus, type Artifacts, type HeldReport, type LeftMember } from "./notices.js"
 import { scanEntries, type Storage } from "./storage.js"
 
@@ -95,7 +95,7 @@ export async function joinGroup(storage: Pick<Storage, "set">, parentID: string,
   await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt: at }))
 }
 
-/** Whether every member of a group has a held report or has left, so the group is released. */
+/** Whether every member of a group has a held report or has left: released once the parent's turn has ended. */
 const complete = (members: ReadonlyArray<Member>) => members.every((member) => member.report || member.left)
 
 /** The members of each group among `members`, by the claim key of the group. */
@@ -110,7 +110,7 @@ function byGroup(members: ReadonlyArray<Membership>) {
   return groups
 }
 
-/** Whether a parent has a complete group with a report in it, whose message the scheduler is about to deliver. */
+/** Whether a parent has a complete group with a report in it, which the scheduler delivers once the parent's turn has ended. */
 export async function hasCompleteGroup(storage: Pick<Storage, "scan">, parentID: string) {
   return [...byGroup(await membersUnder(storage, groupsPrefix(parentID))).values()].some(
     (members) => complete(members) && members.some((member) => member.report),
@@ -226,7 +226,8 @@ async function sealed(ports: GroupPorts, parentID: string, members: ReadonlyArra
   const joined = Math.max(...members.map((member) => member.joinedAt))
   try {
     const { time } = await ports.session.get({ sessionID: parentID })
-    return (num(time.idle) ?? 0) >= joined
+    // NaN, for a parent that has ended no turn yet, holds it.
+    return millis(time.idle) >= joined
   } catch (error) {
     if (isNotFound(error)) return "gone"
     throw error

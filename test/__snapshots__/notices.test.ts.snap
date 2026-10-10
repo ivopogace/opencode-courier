@@ -655,7 +655,7 @@ exports[`tool results spawnText 1`] = `"Started session ses_child in /repo. It w
 
 exports[`tool results spawnText 2`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is not on your courier_children list: roster failed: disk full"`;
 
-exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported, you get their reports in one message, which starts a new turn for you; a blocked report, a question or a failed turn still reaches you at once. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
+exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a question or a failed turn still reaches you at once. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
 exports[`tool results spawnText 4`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is in no group, so its report comes on its own: group failed: disk full"`;
 
@@ -671,7 +671,7 @@ exports[`tool results sendText 5`] = `"Delivered to ses_other."`;
 
 exports[`tool results sendText 6`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported (1 of 3 have). Nothing more is needed from you for it. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
-exports[`tool results sendText 7`] = `"Recorded as your report, status failed. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, now, yours being the last. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+exports[`tool results sendText 7`] = `"Recorded as your report, status failed. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once its turn has ended, yours being the last. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`tool results sendText 8`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported. Nothing more is needed from you for it. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
@@ -746,7 +746,7 @@ exports[`turn failures failureNotice 3`] = `
 "This session, "Fix the bug", which you started with courier_spawn, failed: boom (unknown).
 Its turn ended without finishing, so it will not report back on its own.
 Message it with courier_send to have it try again, start a replacement, or carry on without it.
-It is a member of group "reviews", which no longer waits for it: its other members' reports reach you once they have reported, and if it reports after all before then, its report joins them."
+It is a member of group "reviews", which no longer waits for it: its other members' reports reach you once they have reported and your turn has ended, and if it reports after all before then, its report joins them."
 `;
 
 exports[`turn failures silentNotice 1`] = `

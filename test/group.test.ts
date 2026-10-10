@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { DateTime } from "effect"
 import {
   deliverReleased,
   dropGroups,
@@ -258,7 +259,8 @@ describe("deliverReleased", () => {
     expect(delivered).toEqual([])
     expect(store.size).toBe(2)
 
-    parent.idle = 1
+    // As OpenCode's API gives it: a DateTime.
+    parent.idle = DateTime.makeUnsafe(1) as never
     await deliverReleased(ports, new Set())
     expect(delivered).toHaveLength(1)
     expect(store.size).toBe(0)

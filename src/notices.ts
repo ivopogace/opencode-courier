@@ -155,8 +155,9 @@ export function spawnText(child: {
     (child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : "") +
     (child.groupError ? ` It is in no group, so its report comes on its own: ${child.groupError}` : "")
   const reports = child.group
-    ? `Its report is held with group "${child.group}": once every session you started in that group has reported, you get ` +
-      "their reports in one message, which starts a new turn for you; a blocked report, a question or a failed turn still reaches you at once."
+    ? `Its report is held with group "${child.group}": once every session you started in that group has reported and your ` +
+      "turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a question " +
+      "or a failed turn still reaches you at once."
     : "It will report back with courier_send, which starts a new turn for you."
   return (
     `Started session ${child.sessionID} in ${child.directory}. ${reports} Once you have started every session you need, ` +
@@ -188,7 +189,7 @@ export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"
   if (sent.held) {
     const { group, reported, members } = sent.held
     const counted = reported !== undefined && members !== undefined
-    let when = "now, yours being the last."
+    let when = "once its turn has ended, yours being the last."
     if (!counted || reported < members) {
       const have = counted ? ` (${reported} of ${members} have)` : ""
       when = `once every member of the group has reported${have}. Nothing more is needed from you for it.`
@@ -338,7 +339,7 @@ export function failureNotice(title: string, error: ExecutionError, group?: stri
     ...(group
       ? [
           `It is a member of group "${group}", which no longer waits for it: its other members' reports reach you once they have ` +
-            "reported, and if it reports after all before then, its report joins them.",
+            "reported and your turn has ended, and if it reports after all before then, its report joins them.",
         ]
       : []),
   ].join("\n")

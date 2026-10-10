@@ -59,7 +59,7 @@ function readMember(value: unknown): Member | undefined {
     title,
     joinedAt,
     ...(report ? { report } : {}),
-    ...(by === "failed" || by === "deleted" ? { left: { at: num(left.at) ?? 0, by } } : {}),
+    ...(by === "failed" || by === "interrupted" || by === "deleted" ? { left: { at: num(left.at) ?? 0, by } } : {}),
   }
 }
 
@@ -110,9 +110,11 @@ function byGroup(members: ReadonlyArray<Membership>) {
   return groups
 }
 
-/** Whether a parent has a complete group, whose message the scheduler is about to deliver. */
+/** Whether a parent has a complete group with a report in it, whose message the scheduler is about to deliver. */
 export async function hasCompleteGroup(storage: Pick<Storage, "scan">, parentID: string) {
-  return [...byGroup(await membersUnder(storage, groupsPrefix(parentID))).values()].some(complete)
+  return [...byGroup(await membersUnder(storage, groupsPrefix(parentID))).values()].some(
+    (members) => complete(members) && members.some((member) => member.report),
+  )
 }
 
 /** Holds a member's report with its group, in place of an earlier one, or of how it had left. */
@@ -131,16 +133,26 @@ export async function groupStanding(storage: Pick<Storage, "scan">, parentID: st
   }
 }
 
-/**
- * Notes that a member left its group without a report: its turn failed, or it was deleted. Returns whether it
- * did (one whose report is held keeps it) and whether the group is complete now; undefined when it was in none.
- */
-export async function leaveGroup(storage: Pick<Storage, "get" | "set" | "scan">, parentID: string, group: string, sessionID: string, by: LeftMember["by"], at: number) {
+/** A session's membership of a parent's group, if it is a member; `out` says whether it still owes the group a report. */
+export async function membershipOf(storage: Pick<Storage, "get">, parentID: string, group: string, sessionID: string) {
   const member = await memberOf(storage, parentID, group, sessionID)
-  if (!member) return undefined
-  const left = !member.report
-  if (left) await storage.set(memberKey(parentID, group, sessionID), stored({ title: member.title, joinedAt: member.joinedAt, left: { at, by } }))
-  return { left, complete: (await groupStanding(storage, parentID, group)).complete }
+  return member && { ...member, parentID, group, sessionID, out: !member.report }
+}
+
+/**
+ * Notes that a member, read already, left its group without a report: its turn failed or was interrupted, or it was
+ * deleted. One whose report is held keeps it. Returns whether the group is complete now.
+ */
+export async function markLeft(storage: Pick<Storage, "set" | "scan">, membership: Membership, by: LeftMember["by"], at: number) {
+  const { parentID, group, sessionID, title, joinedAt } = membership
+  if (!membership.report) await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt, left: { at, by } }))
+  return (await groupStanding(storage, parentID, group)).complete
+}
+
+/** `markLeft` for a member not read yet; undefined when it is in no open group. */
+export async function leaveGroup(storage: Pick<Storage, "get" | "set" | "scan">, parentID: string, group: string, sessionID: string, by: LeftMember["by"], at: number) {
+  const membership = await membershipOf(storage, parentID, group, sessionID)
+  return membership && { left: membership.out, complete: await markLeft(storage, membership, by, at) }
 }
 
 /** Drops a member from its group, with its roster entry, unless its report is held: that still goes to the parent. */

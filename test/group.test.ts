@@ -9,8 +9,10 @@ import {
   isGroupName,
   joinGroup,
   leaveGroup,
+  markLeft,
   memberKey,
   memberOf,
+  membershipOf,
   standingOf,
   type GroupPorts,
   type Membership,
@@ -87,6 +89,25 @@ describe("joining and leaving", () => {
     await leaveGroup(ports.storage, "ses_parent", "pair", "ses_b", "failed", 50)
     expect(await hasCompleteGroup(ports.storage, "ses_parent")).toBe(true)
     expect(await hasCompleteGroup(ports.storage, "ses_nobody")).toBe(false)
+    // A group whose every member left has no message coming: not one about to be delivered.
+    await ports.storage.set(memberKey("ses_parent", "pair", "ses_a"), { title: "A", joinedAt: 1, left: { at: 60, by: "deleted" } })
+    expect(await hasCompleteGroup(ports.storage, "ses_parent")).toBe(false)
+  })
+
+  test("a membership read says whether the member is still out, and marking it left writes nothing over a held report", async () => {
+    const { ports, store } = fakePorts()
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "B", 2)
+    await holdReport(ports.storage, membership("ses_a", "A"), report("done"))
+
+    const a = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_a"))!
+    const b = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_b"))!
+    expect([a.out, b.out]).toEqual([false, true])
+    expect(await membershipOf(ports.storage, "ses_parent", "pair", "ses_c")).toBeUndefined()
+    expect(await markLeft(ports.storage, a, "interrupted", 50)).toBe(false)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toMatchObject({ report: { status: "done" } })
+    expect(await markLeft(ports.storage, b, "interrupted", 50)).toBe(true)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 50, by: "interrupted" } })
   })
 
   test("holding a report counts among the members that have reported, and the last one completes the group", async () => {

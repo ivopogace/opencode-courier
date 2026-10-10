@@ -816,7 +816,7 @@ Check and integrate each one yourself. The sessions that reported are idle; mess
 `;
 
 exports[`join groups groupNotice 2`] = `
-"Every session you started in group "reviews" has reported: 1 report of 3 members (1 done). Each follows, with its status.
+"Every session you started in group "reviews" has reported: 1 report of 4 members (1 done). Each follows, with its status.
 
 [1/1] ses_a "Review a.ts": done
 Looks fine.
@@ -826,7 +826,7 @@ Artifacts:
 - checks:
   - bun test: ok
 
-Without a report: ses_d "Review d.ts" (its turn failed), ses_e "Review e.ts" (it was deleted).
+Without a report: ses_d "Review d.ts" (its turn failed), ses_e "Review e.ts" (it was deleted), ses_f "Review f.ts" (its turn was interrupted).
 
 Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
 `;

@@ -641,6 +641,20 @@ describe("join groups", () => {
     expect(sent.map((notice: any) => notice.sessionID)).toEqual(["ses_parent", "ses_root"])
   })
 
+  test("a member whose turn is interrupted leaves its group, unless a shutdown stopped it, or its report is held", async () => {
+    const { ports, store, nudges } = fakePorts()
+    await pair(ports)
+    await sendFrom(ports, "ses_a", "ses_parent", 150)
+
+    expect(await noteInterrupted(ports, sessionEvent("session.execution.interrupted", "evt_i1", 200, "ses_b", "shutdown") as SessionEvent)).toBe(false)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2 })
+    expect(await noteInterrupted(ports, sessionEvent("session.execution.interrupted", "evt_i2", 200, "ses_b", "user") as SessionEvent)).toBe(true)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 200, by: "interrupted" } })
+    expect(nudges).toHaveLength(1)
+    expect(await noteInterrupted(ports, sessionEvent("session.execution.interrupted", "evt_i3", 300, "ses_a", "user") as SessionEvent)).toBe(true)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toMatchObject({ report: { status: "done" } })
+  })
+
   test("a deleted parent's groups go even when its children are off the roster, as a held report outlives its entry", async () => {
     const { ports, store } = fakePorts()
     await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
@@ -650,18 +664,19 @@ describe("join groups", () => {
     expect([...store.keys()]).toEqual([])
   })
 
-  test("a membership that cannot be read as a child fails is logged, and the leave tried all the same", async () => {
-    const { ports, sent, logged, store } = fakePorts()
+  test("a membership that cannot be read as a child fails is logged; the notice goes out, and the member stays as it was", async () => {
+    const { ports, sent, logged, store, nudges } = fakePorts()
     await pair(ports)
     const get = ports.storage.get
-    let reads = 0
-    ;(ports.storage as any).get = async (key: string) => (key.startsWith("group/") && ++reads === 1 ? Promise.reject(new Error("locked")) : get(key))
+    ;(ports.storage as any).get = async (key: string) => (key.startsWith("group/") ? Promise.reject(new Error("locked")) : get(key))
 
     await reportFailure(ports, new Set(), failed("ses_b", "evt_1"))
 
     expect(sent).toHaveLength(1)
+    expect(sent[0].text).not.toContain("group")
     expect(logged).toEqual(["courier watch: could not read ses_b's place in group pair: Error: locked"])
-    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toMatchObject({ left: { by: "failed" } })
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2 })
+    expect(nudges).toEqual([])
   })
 })
 

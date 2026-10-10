@@ -499,6 +499,20 @@ describe("send, from a member of a group", () => {
     expect(logs).toEqual(["courier_send: ses_other's report could not be held with group pair (Error: disk full), nor the member dropped: Error: locked"])
   })
 
+  test("a member whose place in the group cannot be read reports on its own, and is dropped from the group, which is logged", async () => {
+    const { ports, calls, store, nudges, logs } = fakePorts()
+    await grouped(ports)
+    const get = ports.storage.get
+    ;(ports.storage as any).get = async (key: string) => (key.startsWith("group/") ? Promise.reject(new Error("locked")) : get(key))
+
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done", report: true })
+
+    expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(1)
+    expect(store.has(memberKey("ses_parent", "pair", "ses_child"))).toBe(false)
+    expect(nudges).toHaveLength(1)
+    expect(logs).toEqual(["courier_send: ses_child's place in group pair could not be read, so its report goes on its own: Error: locked"])
+  })
+
   test("a message to any session but the parent is not held", async () => {
     const { ports, calls } = fakePorts()
     await grouped(ports)

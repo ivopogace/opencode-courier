@@ -464,11 +464,13 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     if (scheduler.nudged && scheduler.timer !== undefined) void scheduler.tick?.()
   }
 
-  // Through the hub's tick, the copy loaded last's, like the loop's; this copy's only before one joined.
+  // Through the hub's tick, the copy loaded last's, like the loop's; this copy's only before one joined. A
+  // tick under way runs once more when it ends, so nothing is started here meanwhile.
   const nudge = () => {
-    if (hub.scheduler.timer === undefined) return
-    hub.scheduler.nudged = true
-    void (hub.scheduler.tick ?? tick)()
+    const scheduler = hub.scheduler
+    if (scheduler.timer === undefined) return
+    scheduler.nudged = true
+    if (!scheduler.running && !scheduler.ticking) void (scheduler.tick ?? tick)()
   }
 
   // Subscriptions through the earliest members without one, the longest loaded, until there are

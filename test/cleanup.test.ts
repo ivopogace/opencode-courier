@@ -13,8 +13,10 @@ function fakePorts(state: WorktreeState | "gone" = clean) {
   const store = new Map<string, unknown>()
   const removed: unknown[] = []
   const inspected: unknown[] = []
+  const nudges: number[] = []
   const ports: CleanupPorts = {
     projectID: "proj_plugin",
+    nudge: () => void nudges.push(removed.length),
     storage: {
       get: async (key) => store.get(key) as any,
       set: async (key, value) => void store.set(key, value),
@@ -31,7 +33,7 @@ function fakePorts(state: WorktreeState | "gone" = clean) {
       return state === "gone" ? undefined : state
     },
   }
-  return { ports, store, removed, inspected }
+  return { ports, store, removed, inspected, nudges }
 }
 
 const child = (overrides: Partial<RosterEntry> = {}): RosterEntry => ({
@@ -320,4 +322,18 @@ describe("findGit", () => {
       else process.env[GIT_ENV] = saved
     }
   })
+})
+
+test("forgetting a child started in a group has the scheduler deliver the group, which may be complete without it", async () => {
+  const { ports, store, nudges } = fakePorts()
+  await record(ports.storage, child({ group: "pair" }))
+  store.set("group/ses_parent/pair/ses_child", { title: "t", joinedAt: 1 })
+
+  await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
+
+  expect(store.has("group/ses_parent/pair/ses_child")).toBe(false)
+  expect(nudges).toEqual([1])
+  await record(ports.storage, child())
+  await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
+  expect(nudges).toEqual([1])
 })

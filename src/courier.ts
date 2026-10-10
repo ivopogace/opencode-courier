@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
-import { groupStanding, holdReport, isGroupName, joinGroup, leaveGroup, memberOf, standingOf, unholdReport, type Membership } from "./group.js"
+import { groupStanding, holdReport, isGroupName, joinGroup, leaveGroup, memberKey, memberOf, membershipOf, standingOf, unholdReport, type Membership } from "./group.js"
 import { admit, type Limits, type SpawnGate } from "./limits.js"
-import { childBrief, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Held, type Prompt, type Sent, type Status } from "./notices.js"
+import { childBrief, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Held, type HeldReport, type Prompt, type Sent, type Status } from "./notices.js"
 import { progressed, progressKey, prompted, settled, settledKey } from "./report.js"
 import { current, indexedEntry, record, type RosterEntry, type RosterStorage } from "./roster.js"
 
@@ -243,21 +243,29 @@ async function noteReport(ports: CourierPorts, from: string, to: string, status:
   }
   // A report with a final status may be held with the sender's group; a blocked one reaches the parent at once.
   const held = status !== undefined && status !== "blocked"
-  return { report, at, undo, member: held ? await membershipOf(ports, entry).catch(() => undefined) : undefined }
+  return { report, at, undo, member: held ? await memberIn(ports, entry) : undefined }
 }
 
-/** A child's membership of an open group of its parent's: its roster entry names the group, and the group lists it. */
-async function membershipOf(ports: CourierPorts, entry: RosterEntry): Promise<Membership | undefined> {
+/**
+ * A child's membership of an open group of its parent's, by its roster entry. One that cannot be read is dropped
+ * from the group, best effort, as the report then goes on its own and the group must not wait for it.
+ */
+async function memberIn(ports: CourierPorts, entry: RosterEntry): Promise<Membership | undefined> {
   if (!entry.group) return undefined
-  const member = await memberOf(ports.storage, entry.parentID, entry.group, entry.sessionID)
-  return member && { ...member, parentID: entry.parentID, group: entry.group, sessionID: entry.sessionID }
+  try {
+    return await membershipOf(ports.storage, entry.parentID, entry.group, entry.sessionID)
+  } catch (error) {
+    ports.log(`courier_send: ${entry.sessionID}'s place in group ${entry.group} could not be read, so its report goes on its own: ${String(error)}`)
+    await ports.storage.remove(memberKey(entry.parentID, entry.group, entry.sessionID)).then(() => ports.nudge(), () => undefined)
+    return undefined
+  }
 }
 
 /**
  * Holds a member's report with its group, and has the scheduler deliver the group if that completes it. Undefined
  * when it could not be held: the member is dropped from the group, which releases without it, and reports on its own.
  */
-async function hold(ports: CourierPorts, member: Membership, report: Parameters<typeof holdReport>[2]): Promise<Held | undefined> {
+async function hold(ports: CourierPorts, member: Membership, report: HeldReport): Promise<Held | undefined> {
   try {
     await holdReport(ports.storage, member, report)
   } catch (error) {

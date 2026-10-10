@@ -377,11 +377,11 @@ export interface HeldReport {
   readonly artifacts?: Artifacts
 }
 
-/** A member of a group that left it without a report, and why: its turn failed, or it was deleted. */
+/** A member of a group that left it without a report, and why: its turn failed or was interrupted, or it was deleted. */
 export interface LeftMember {
   readonly sessionID: string
   readonly title: string
-  readonly by: "failed" | "deleted"
+  readonly by: "failed" | "interrupted" | "deleted"
 }
 
 /** How a release names each status among its reports: `2 done, 1 failed`. */
@@ -392,7 +392,7 @@ function statusCounts(reports: ReadonlyArray<Pick<HeldReport, "status">>) {
   }).join(", ")
 }
 
-const LEFT_HOW = { failed: "its turn failed", deleted: "it was deleted" }
+const LEFT_HOW = { failed: "its turn failed", interrupted: "its turn was interrupted", deleted: "it was deleted" }
 
 /**
  * What the parent gets when a group it named is released: every report, with its status, text and artifacts in

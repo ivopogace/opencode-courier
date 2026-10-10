@@ -227,8 +227,8 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
   their `done`, `partial` and `failed` reports are held until the last one is in, then delivered
   in one message, marked `group="<name>"`, listing every report with its status and artifacts in
   the order the sessions were started. A `blocked` report, progress, a failed turn, a silent end, a
-  permission request and a question reach you at once, as ever; a member whose turn fails leaves the
-  group, which is released without it. Held reports survive a restart, and the name is free again
+  permission request and a question reach you at once, as ever; a member whose turn fails or is
+  interrupted leaves the group, which is released without it. Held reports survive a restart, and the name is free again
   once the group has been delivered. [More](docs/reference.md#join-groups).
 - **A child that fails** cannot report, so the plugin does: every failed turn of a spawned session
   sends its parent a message marked `failed="<error type>"`, with the error, waking it if idle.

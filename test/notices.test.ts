@@ -151,7 +151,13 @@ describe("join groups", () => {
       { sessionID: "ses_c", title: "Review c.ts", at: 3, status: "failed" as const, message: "Could not read it." },
     ]
     expect(notices.groupNotice("reviews", reports)).toMatchSnapshot()
-    expect(notices.groupNotice("reviews", reports.slice(0, 1), [{ sessionID: "ses_d", title: "Review d.ts", by: "failed" }, { sessionID: "ses_e", title: "Review e.ts", by: "deleted" }])).toMatchSnapshot()
+    expect(
+      notices.groupNotice("reviews", reports.slice(0, 1), [
+        { sessionID: "ses_d", title: "Review d.ts", by: "failed" },
+        { sessionID: "ses_e", title: "Review e.ts", by: "deleted" },
+        { sessionID: "ses_f", title: "Review f.ts", by: "interrupted" },
+      ]),
+    ).toMatchSnapshot()
   })
 })
 

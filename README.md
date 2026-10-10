@@ -224,7 +224,8 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
   [More](docs/reference.md#a-child-that-fails).
 - **A child that ends its turn without reporting** to its parent has the parent told, marked
   `ended="without-report"`, with its last reply, waking it if idle; it counts toward the limits
-  until it reports. One that waits on a request, or on a session it started, is not reported.
+  until it reports. One that waits, on a request, a session it started, a scheduled message or a
+  webhook, is not reported.
   [More](docs/reference.md#a-child-that-ends-without-a-report).
 - **A child that asks for permission** has the request passed to the session at the top, with what
   it asks for and the choices OpenCode offers (`once`, `always`, `reject`). That session asks you

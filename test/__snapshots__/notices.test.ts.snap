@@ -592,7 +592,7 @@ exports[`turn failures silentNotice 1`] = `
 Its last reply:
 I looked at src/a.ts; the bug is on line 4.
 
-Decide what it needs: message it with courier_send to have it carry on or report, use its last reply if that is what you needed, or start a replacement.
+Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
 Until it reports, it counts toward your limits on the sessions you run at once."
 `;
 
@@ -600,7 +600,7 @@ exports[`turn failures silentNotice 2`] = `
 "This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
 It ended without a reply.
 
-Decide what it needs: message it with courier_send to have it carry on or report, use its last reply if that is what you needed, or start a replacement.
+Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
 Until it reports, it counts toward your limits on the sessions you run at once."
 `;
 
@@ -608,7 +608,7 @@ exports[`turn failures silentNotice 3`] = `
 "This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
 It ended without a reply.
 
-Decide what it needs: message it with courier_send to have it carry on or report, use its last reply if that is what you needed, or start a replacement.
+Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
 Until it reports, it counts toward your limits on the sessions you run at once."
 `;
 

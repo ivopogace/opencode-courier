@@ -142,7 +142,13 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
   ports.roles.delete(parentID)
   // A baseline, until OpenCode's event for the prompt's delivery moves it on; written first, so it never overtakes that.
   await prompted(ports.storage, child.id, ports.now()).catch(() => undefined)
-  await ports.session.prompt({ sessionID: child.id, text: childBrief(parentID, input.task, admitted.depth, ports.limits) })
+  await ports.session.prompt({ sessionID: child.id, text: childBrief(parentID, input.task, admitted.depth, ports.limits) }).catch(
+    async (error: unknown) => {
+      // A child that never got its task will never report: it must not count against the limits.
+      await settled(ports.storage, child.id, "failed", ports.now()).catch(() => undefined)
+      throw error
+    },
+  )
   return {
     sessionID: child.id,
     directory: directory ?? child.location.directory,
@@ -176,8 +182,14 @@ export async function send(ports: CourierPorts, from: string, input: SendInput) 
 async function noteReport(ports: CourierPorts, from: string, to: string) {
   if ((await indexedParent(ports.storage, from)) !== to) return undefined
   const before = await ports.storage.get(settledKey(from))
-  await settled(ports.storage, from, "report", ports.now())
-  return () => (before === undefined ? ports.storage.remove(settledKey(from)) : ports.storage.set(settledKey(from), before))
+  const at = ports.now()
+  await settled(ports.storage, from, "report", at)
+  // Only its own note: another courier_send of the session's may have noted its report since.
+  return async () => {
+    const now = (await ports.storage.get(settledKey(from))) as { at?: unknown; by?: unknown } | undefined
+    if (now?.at !== at || now.by !== "report") return
+    await (before === undefined ? ports.storage.remove(settledKey(from)) : ports.storage.set(settledKey(from), before))
+  }
 }
 
 /** A one-off look at a session, for check-ins; not meant to be called in a loop. */

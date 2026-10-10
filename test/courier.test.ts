@@ -266,6 +266,14 @@ describe("send", () => {
     await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).rejects.toThrow("parent is gone")
     expect(store.get(settledKey("ses_child"))).toEqual({ at: 5, by: "failed" })
 
+    // Another courier_send of the child's noted its report meanwhile: that note stays.
+    ;(ports.session as any).synthetic = async () => {
+      store.set(settledKey("ses_child"), { at: 2_000, by: "report" })
+      throw new Error("parent is gone")
+    }
+    await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).rejects.toThrow("parent is gone")
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 2_000, by: "report" })
+
     ;(ports.session as any).synthetic = async () => ({ id: "msg_3" })
     ;(ports.storage as any).set = async () => Promise.reject(new Error("disk full"))
     expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).toEqual({ messageID: "msg_3" })

@@ -36,8 +36,8 @@ pin moved, and what was found out about OpenCode's behaviour on the way. For con
 - `session.execution.started`, `.succeeded`, `.failed` and `.interrupted` frame a session's busy
   period, one terminal event however many prompts were steered into it; `.interrupted` carries a
   `reason`, and one of `shutdown` resumes the turn on the next start. `session.inbox.delivered`
-  (`data.inboxID` only) is published as each prompt, synthetic message, compaction or move reaches
-  the session, and the message it makes is stamped with that event's `created`, not with the time
+  (`data.inboxID` only) is published as each prompt, synthetic message, requested compaction or
+  move reaches the session (the runner compacts on its own without the inbox), and the message it makes is stamped with that event's `created`, not with the time
   a queued item was admitted to the inbox. Every event carries `created`, the epoch
   milliseconds OpenCode published it at, which the report state compares with the clock at
   `courier_send`. `session.context()` returns the session's stored messages

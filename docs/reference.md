@@ -95,7 +95,7 @@ turn fails or is interrupted, so a child that ends its turn without reporting ke
 it does; a session that has split its task and ended its turn to wait for its children owes one too.
 A session that has reported, failed or been interrupted since anything last reached it, with
 nothing live below it, does not count. Its turn counts as ended when `session.get` fails, so one
-OpenCode no longer knows, or cannot look up, counts only while it owes a report; one spawned by a
+OpenCode no longer knows, or cannot look up, does not count, whatever it owes; one spawned by a
 release of the plugin that kept no such state counts only while it runs.
 
 Each check reads the whole roster once, to find the calling session's tree, and looks up every
@@ -163,31 +163,39 @@ When a turn of a spawned session ends without failing (`session.execution.succee
 owes a report, the plugin sends its parent a message from that child, marked
 `ended="without-report"`, with the child's title and its last reply as `courier_status` gives it
 (at most 2000 characters), waking the parent if it is idle. The parent decides: message the child
-with `courier_send` to have it carry on or report, use its last reply if that is what it needed, or
-start a replacement. Until the child reports, it counts toward the
+with `courier_send` to have it carry on, or to report if its last reply is what it needed, or start
+a replacement. Until the child reports, it counts toward the
 [limits](#session-trees-and-their-limits). Each turn's end is claimed once, before its notice goes
 out, so one notice is sent however many instances and copies of the plugin see it.
 
-A turn that ends while the child waits is not reported: while it has a permission request or a
-question pending, or while a session it started owes it a report, as a session that has split its
-task ends its turn to wait for its children. Once they have all reported, failed or been
-interrupted, a turn of it that ends without a report of its own is reported. A turn stopped by
-OpenCode's shutdown resumes on the next start and does not count as interrupted.
+A turn that ends while the child waits is not reported. It waits while a session it started owes
+it a report that it has not been told about, as a session that has split its task ends its turn to
+wait for its children; while it has a permission request or a question pending; and while a
+`courier_later` message for it is pending or it is subscribed to a webhook topic, either of which
+wakes it. Once its children have reported, failed or been interrupted, or it has been told that
+they ended without a report, a turn of it that ends without a report of its own is reported. A turn
+stopped by OpenCode's shutdown resumes on the next start and does not count as interrupted; one
+stopped otherwise (by the person, or by OpenCode after an hour without activity) settles the report
+and is not told, as before.
 
 The state is kept in the plugin's storage, so a restart does not lose it: `report/<sessionID>/prompt`
 holds when a prompt last reached the session (`{ at }`, epoch milliseconds), and
 `report/<sessionID>/settled` when it last reported, failed or was interrupted (`{ at, by }`, `by`
-being `report`, `failed` or `interrupted`). It owes a report while `prompt` is later than `settled`.
+being `report`, `failed` or `interrupted`), and `report/<sessionID>/told` when its parent was last
+told that it ended a turn without one (`{ at }`). It owes a report while `prompt` is later than
+`settled`, and its parent waits for it while `prompt` is later than `told` too.
 The prompt's time is the one OpenCode published its delivery at, not when the plugin handled the
 event, and the report's is the server's clock as `courier_send` runs, before it delivers, so an event
 handled late cannot make a report look older than the prompt it answers. `courier_spawn` writes the
-first `prompt` itself, just before it hands the child its task. Both keys go with the child's roster
-entry.
+first `prompt` itself, just before it hands the child its task, and settles it as failed if handing
+it over fails. The keys go with the child's roster entry.
 
 What the plugin cannot see, it cannot judge: a prompt delivered while the server is down or the
 plugin not loaded leaves the earlier one in place, so a turn after it that ends without a report
 may not be told, and a `courier_send` whose note could not be written is taken for no report. A
-compaction or a move of the session, which OpenCode delivers like a prompt, counts as one.
+compaction someone asks for (OpenCode's compact command) or a move of the session, which OpenCode
+delivers like a prompt, counts as one; the compactions OpenCode makes on its own as the context
+fills do not.
 
 ## A child that asks for permission
 

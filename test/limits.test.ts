@@ -234,6 +234,16 @@ describe("admit, with children that owe a report", () => {
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(2, 2))
   })
 
+  test("a child OpenCode no longer knows does not count, though it owes a report", async () => {
+    const ports = await owing("silent")
+    const get = ports.session.get
+    ;(ports.session as any).get = async (input: { sessionID: string }) => {
+      if (input.sessionID === "ses_b") throw new Error("NotFoundError")
+      return get(input as never)
+    }
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
   test("a child whose state cannot be read counts only if it runs", async () => {
     const ports = await owing("silent")
     ;(ports.storage as any).get = async () => {
@@ -340,6 +350,15 @@ describe("spawn", () => {
     await spawn(courier, "ses_root", { task: "t" })
 
     expect(calls).toEqual(["session.create", "prompted, owing: true"])
+  })
+
+  test("a child that cannot be prompted owes no report, since it never got its task", async () => {
+    const { courier, storage } = spawnPorts()
+    ;(courier.session as any).prompt = async () => Promise.reject(new Error("session gone"))
+
+    await expect(spawn(courier, "ses_root", { task: "t" })).rejects.toThrow("session gone")
+
+    expect(await owesReport(storage, "ses_new1")).toBe(false)
   })
 
   test("frees its place when the child cannot be created", async () => {

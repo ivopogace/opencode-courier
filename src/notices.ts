@@ -255,7 +255,7 @@ export function silentNotice(title: string, lastText: string | undefined) {
     `This session, "${title}", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.`,
     ...(reply ? ["Its last reply:", defuse(clipText(reply, MAX_REPLY))] : ["It ended without a reply."]),
     "",
-    "Decide what it needs: message it with courier_send to have it carry on or report, use its last reply if that is what you needed, or start a replacement.",
+    "Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.",
     "Until it reports, it counts toward your limits on the sessions you run at once.",
   ].join("\n")
 }

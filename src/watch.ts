@@ -21,8 +21,10 @@ import {
   type PermissionAsked,
   type PermissionReplied,
 } from "./relay.js"
-import { owesReport, prompted, settled } from "./report.js"
+import { scheduledFor } from "./later.js"
+import { awaited, owesReport, prompted, settled, told } from "./report.js"
 import { allEntries, children, entriesOf, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
+import { subscriptions } from "./webhook.js"
 
 export type { FormsTold, WatchPorts, WatchState } from "./hub.js"
 
@@ -82,10 +84,9 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
 
 /**
  * Notes that a prompt or message reached a spawned session, which then owes its parent a report.
- * Every session's deliveries pass here, so it reads the reverse index alone.
+ * Every session's deliveries pass here, so it reads the reverse index alone, and claims nothing: the note is the same twice.
  */
-export async function notePrompt(ports: WatchPorts, seen: Set<string>, event: SessionEvent) {
-  if (!claim(seen, event.id)) return false
+export async function notePrompt(ports: WatchPorts, event: SessionEvent) {
   const { sessionID } = event.data
   if ((await indexedParent(ports.storage, sessionID)) === undefined) return false
   await prompted(ports.storage, sessionID, event.created ?? ports.now())
@@ -93,24 +94,25 @@ export async function notePrompt(ports: WatchPorts, seen: Set<string>, event: Se
 }
 
 /** Notes that a spawned session's turn was stopped; one stopped by a shutdown resumes on the next start. */
-export async function noteInterrupted(ports: WatchPorts, seen: Set<string>, event: SessionEvent) {
-  if (!claim(seen, event.id) || event.data.reason === "shutdown") return false
+export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
+  if (event.data.reason === "shutdown") return false
   const { sessionID } = event.data
   if ((await indexedParent(ports.storage, sessionID)) === undefined) return false
   await settled(ports.storage, sessionID, "interrupted", event.created ?? ports.now())
   return true
 }
 
-/** Whether a session waits on a request of its own, or on a report from a session it started. */
+/**
+ * Whether a session waits: on a report from a session it started that it has not been told about, on
+ * a request of its own, or for a scheduled message or a webhook to wake it. Cheapest first.
+ */
 async function waits(ports: WatchPorts, sessionID: string) {
-  const [requests, questions, started] = await Promise.all([
-    listEverywhere([...ports.permissions()], sessionID),
-    pendingQuestions(ports.storage, sessionID),
-    children(ports.storage, sessionID),
-  ])
-  if (questions.length || requests.some((found) => found.requests.length)) return true
-  const owed = await Promise.all(started.map((entry) => owesReport(ports.storage, entry.sessionID)))
-  return owed.includes(true)
+  const started = await children(ports.storage, sessionID)
+  if ((await Promise.all(started.map((entry) => awaited(ports.storage, entry.sessionID)))).includes(true)) return true
+  if ((await listEverywhere([...ports.permissions()], sessionID)).some((found) => found.requests.length)) return true
+  if ((await pendingQuestions(ports.storage, sessionID)).length) return true
+  const [scheduled, subscribed] = await Promise.all([scheduledFor(ports.storage, sessionID), subscriptions(ports)])
+  return scheduled.length > 0 || subscribed.some((subscription) => subscription.sessionID === sessionID)
 }
 
 /**
@@ -131,6 +133,10 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
     metadata: { source: "courier", from: sessionID, ended: "without-report" },
     delivery: "steer",
   })
+  // So the parent, once told, no longer counts as waiting for it.
+  await told(ports.storage, sessionID, event.created ?? ports.now()).catch((error: unknown) =>
+    ports.log(`courier watch: could not note that the parent of ${sessionID} was told: ${String(error)}`),
+  )
   return [entry.parentID]
 }
 
@@ -273,8 +279,8 @@ const pause = (ms: number, signal: AbortSignal) =>
 async function handle(ports: WatchPorts, state: WatchState, event: { readonly type: string }) {
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent)
-  if (event.type === "session.execution.interrupted") return noteInterrupted(ports, state.seen, event as unknown as SessionEvent)
-  if (event.type === "session.inbox.delivered") return notePrompt(ports, state.seen, event as unknown as SessionEvent)
+  if (event.type === "session.execution.interrupted") return noteInterrupted(ports, event as unknown as SessionEvent)
+  if (event.type === "session.inbox.delivered") return notePrompt(ports, event as unknown as SessionEvent)
   if (event.type === "permission.asked") return reportAsked(ports, state, event as unknown as PermissionAsked)
   if (event.type === "permission.replied") return reportReplied(ports, state, event as unknown as PermissionReplied)
   if (event.type === "form.created") {

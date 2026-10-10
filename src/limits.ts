@@ -57,23 +57,34 @@ function millis(value: unknown) {
   return typeof epoch === "number" ? epoch : Number.NaN
 }
 
-/**
- * Whether a session is running: it has never finished a turn, or something reached it after the last
- * one ended. One OpenCode no longer knows is not.
- */
+/** A session's times, as `session.get` gives them. */
+type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
+
+/** Whether a session with these times runs: it has never finished a turn, or something reached it after the last one ended. */
+const busy = (time: Times) => time.idle === undefined || millis(time.updated) > millis(time.idle)
+
+/** Whether a session is running. One OpenCode no longer knows is not. */
 export async function running(ports: Pick<LimitPorts, "session">, sessionID: string) {
   try {
-    const { time } = await ports.session.get({ sessionID })
-    return time.idle === undefined || millis(time.updated) > millis(time.idle)
+    return busy((await ports.session.get({ sessionID })).time)
   } catch {
     return false
   }
 }
 
-/** Whether a spawned session counts against the limits: it runs, or owes its parent a report; a failed read counts as neither. */
+/**
+ * Whether a spawned session counts against the limits: it runs, or owes its parent a report. One
+ * OpenCode no longer knows counts as neither, and a report state that cannot be read as not owing.
+ */
 async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: string) {
-  const [runs, owes] = await Promise.all([running(ports, sessionID), owesReport(ports.storage, sessionID).catch(() => false)])
-  return runs || owes
+  const [time, owes] = await Promise.all([
+    ports.session.get({ sessionID }).then(
+      (info) => info.time,
+      () => undefined,
+    ),
+    owesReport(ports.storage, sessionID).catch(() => false),
+  ])
+  return time !== undefined && (busy(time) || owes)
 }
 
 /**

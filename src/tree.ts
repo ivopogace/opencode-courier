@@ -16,38 +16,28 @@ export interface Below {
 export async function subtree(storage: RosterStorage, rootID: string, max = Number.POSITIVE_INFINITY) {
   const byParent = new Map<string, Below[]>()
   const seen = new Set([rootID])
-  let count = 0
   let truncated = false
   let level = [rootID]
   for (let depth = 1; level.length && !truncated; depth++) {
     const found = await Promise.all(level.map((parentID) => children(storage, parentID)))
     const next: string[] = []
     for (const [index, entries] of found.entries()) {
-      const kept: Below[] = []
-      for (const entry of entries) {
-        if (seen.has(entry.sessionID)) continue
-        if (count >= max) {
-          truncated = true
-          break
-        }
-        seen.add(entry.sessionID)
-        count++
-        kept.push({ entry, depth })
-        next.push(entry.sessionID)
-      }
-      if (kept.length) byParent.set(level[index]!, kept)
+      const fresh = entries.filter((entry) => !seen.has(entry.sessionID))
+      const room = Math.max(0, max - (seen.size - 1))
+      const kept = fresh.slice(0, room)
+      truncated ||= kept.length < fresh.length
+      for (const entry of kept) seen.add(entry.sessionID)
+      if (kept.length) byParent.set(level[index]!, kept.map((entry) => ({ entry, depth })))
+      next.push(...kept.map((entry) => entry.sessionID))
     }
     level = next
   }
-  const nodes: Below[] = []
-  const draw = (parentID: string) => {
-    for (const node of byParent.get(parentID) ?? []) {
-      nodes.push(node)
-      draw(node.entry.sessionID)
-    }
-  }
-  draw(rootID)
-  return { nodes, truncated }
+  return { nodes: drawn(byParent, rootID), truncated }
+}
+
+/** The nodes in the order a tree is drawn: each followed by what it started. */
+function drawn(byParent: ReadonlyMap<string, Below[]>, parentID: string): Below[] {
+  return (byParent.get(parentID) ?? []).flatMap((node) => [node, ...drawn(byParent, node.entry.sessionID)])
 }
 
 /**

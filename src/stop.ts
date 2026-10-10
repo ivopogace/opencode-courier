@@ -63,15 +63,17 @@ export async function stop(ports: StopPorts, callerID: string, input: StopInput)
   const nodes: Below[] = []
   const results: Stopped[] = []
   const cancelled: string[] = []
-  let pending: Below[] = [{ entry: target, depth: 0 }, ...(await subtree(storage, sessionID)).nodes]
-  for (let round = 0; round < ROUNDS && pending.length; round++) {
+  const round = async (pending: Below[], left: number): Promise<void> => {
+    if (!pending.length || left === 0) return
     for (const node of pending) seen.add(node.entry.sessionID)
     nodes.push(...pending)
     // Before any interrupt, so nothing scheduled wakes a session that was just stopped.
     await Promise.all(pending.map((node) => silence(ports, node.entry.sessionID, cancelled)))
-    for (const level of deepestFirst(pending)) results.push(...(await Promise.all(level.map((node) => interrupt(ports, node)))))
-    pending = (await subtree(storage, sessionID)).nodes.filter((node) => !seen.has(node.entry.sessionID))
+    results.push(...(await eachDeepestFirst(pending, (node) => interrupt(ports, node))))
+    const meanwhile = (await subtree(storage, sessionID)).nodes.filter((node) => !seen.has(node.entry.sessionID))
+    return round(meanwhile, left - 1)
   }
+  await round([{ entry: target, depth: 0 }, ...(await subtree(storage, sessionID)).nodes], ROUNDS)
 
   const told =
     target.parentID !== callerID && results.find((one) => one.sessionID === sessionID)?.outcome === "interrupted"
@@ -86,10 +88,13 @@ export async function stop(ports: StopPorts, callerID: string, input: StopInput)
   }
 }
 
-/** The nodes in levels, the deepest level first. */
-function deepestFirst(nodes: ReadonlyArray<Below>) {
+/** Runs `act` on the nodes level by level, the deepest level first and the level's nodes at once; the results in that order. */
+function eachDeepestFirst<T>(nodes: ReadonlyArray<Below>, act: (node: Below) => Promise<T>) {
   const depths = [...new Set(nodes.map((node) => node.depth))].sort((a, b) => b - a)
-  return depths.map((depth) => nodes.filter((node) => node.depth === depth))
+  return depths.reduce(
+    (before, depth) => before.then(async (done) => [...done, ...(await Promise.all(nodes.filter((node) => node.depth === depth).map(act)))]),
+    Promise.resolve<T[]>([]),
+  )
 }
 
 /** Notes that a session was stopped, so the failure and silent-end notices stay quiet for it, and cancels its pending messages. */
@@ -97,7 +102,9 @@ async function silence(ports: StopPorts, sessionID: string, cancelled: string[])
   const { storage, now, log } = ports.courier
   await stopped(storage, sessionID, now()).catch((error: unknown) => log(`courier_stop: could not note that ${sessionID} was stopped: ${String(error)}`))
   try {
-    for (const later of await scheduledFor(storage, sessionID)) if (await cancel(ports.later, later.id)) cancelled.push(later.id)
+    const pending = await scheduledFor(storage, sessionID)
+    const dropped = await Promise.all(pending.map(async (later) => ((await cancel(ports.later, later.id)) ? later.id : undefined)))
+    cancelled.push(...dropped.filter((id) => id !== undefined))
   } catch (error) {
     log(`courier_stop: could not cancel the messages scheduled for ${sessionID}: ${String(error)}`)
   }
@@ -137,15 +144,18 @@ async function tell(ports: StopPorts, callerID: string, target: Below["entry"]) 
 
 /** Removes the isolated sessions' worktrees, deepest first, through courier_cleanup's checks; a failure is reported, not thrown. */
 async function removeWorktrees(ports: StopPorts, nodes: ReadonlyArray<Below>) {
-  const out: NonNullable<StopResult["cleanup"]>[number][] = []
-  for (const level of deepestFirst(nodes.filter((node) => node.entry.isolated)))
-    for (const { entry } of level)
-      out.push(
+  const isolated = nodes.filter((node) => node.entry.isolated).sort((a, b) => b.depth - a.depth)
+  // One at a time: git locks the repository's worktree list while it removes one.
+  return isolated.reduce(
+    (before, { entry }) =>
+      before.then(async (done) => [
+        ...done,
         await cleanup(ports.cleanup, entry.parentID, { sessionID: entry.sessionID }).catch((error: unknown) => ({
           sessionID: entry.sessionID,
           outcome: "failed" as const,
           error: describeFailure("courier_cleanup", error).message,
         })),
-      )
-  return out
+      ]),
+    Promise.resolve<NonNullable<StopResult["cleanup"]>[number][]>([]),
+  )
 }

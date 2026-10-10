@@ -82,12 +82,34 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   return entries.map((entry) => entry.parentID)
 }
 
+/** OpenCode's `session.inbox.enqueued`: the item's type, which its `session.inbox.delivered` does not carry. */
+export interface InboxEnqueued {
+  readonly data: { readonly sessionID: string; readonly inboxID: string; readonly item: { readonly type: string } }
+}
+
+/** Inbox items that are not courier's or the parent's business: the person's own prompts, compactions and moves. */
+const UNOWED = new Set(["user", "compaction", "move"])
+
+/** Remembers the type of an item enqueued for a spawned session, for `notePrompt`; other sessions cost one read. */
+export async function noteEnqueued(ports: WatchPorts, inbox: Map<string, string>, event: InboxEnqueued) {
+  const { sessionID, inboxID, item } = event.data
+  if ((await indexedParent(ports.storage, sessionID)) === undefined) return false
+  setBounded(inbox, inboxID, item.type, SEEN_MAX)
+  return true
+}
+
 /**
- * Notes that a prompt or message reached a spawned session, which then owes its parent a report.
- * Every session's deliveries pass here, so it reads the reverse index alone, and claims nothing: the note is the same twice.
+ * Notes that a message reached a spawned session, which then owes its parent a report, unless `inbox` knows it for one of
+ * `UNOWED` (`spawn` notes the task itself); reads the reverse index alone, and claims nothing: the note is the same twice.
  */
-export async function notePrompt(ports: WatchPorts, event: SessionEvent) {
-  const { sessionID } = event.data
+export async function notePrompt(
+  ports: WatchPorts,
+  event: SessionEvent & { readonly data: { readonly inboxID?: string } },
+  inbox?: Map<string, string>,
+) {
+  const { sessionID, inboxID } = event.data
+  // Kept, not deleted: the hub's other subscription looks it up for the same delivery.
+  if (inboxID !== undefined && UNOWED.has(inbox?.get(inboxID) ?? "")) return false
   if ((await indexedParent(ports.storage, sessionID)) === undefined) return false
   await prompted(ports.storage, sessionID, event.created ?? ports.now())
   return true
@@ -301,7 +323,8 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent)
   if (event.type === "session.execution.interrupted") return noteInterrupted(ports, event as unknown as SessionEvent)
-  if (event.type === "session.inbox.delivered") return notePrompt(ports, event as unknown as SessionEvent)
+  if (event.type === "session.inbox.enqueued") return noteEnqueued(ports, state.inbox, event as unknown as InboxEnqueued)
+  if (event.type === "session.inbox.delivered") return notePrompt(ports, event as unknown as SessionEvent, state.inbox)
   if (event.type === "session.deleted") return noteDeleted(ports, event as unknown as SessionEvent)
   if (event.type === "permission.asked") return reportAsked(ports, state, event as unknown as PermissionAsked)
   if (event.type === "permission.replied") return reportReplied(ports, state, event as unknown as PermissionReplied)

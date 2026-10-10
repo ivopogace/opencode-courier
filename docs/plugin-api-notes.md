@@ -38,7 +38,9 @@ pin moved, and what was found out about OpenCode's behaviour on the way. For con
   `reason`, and one of `shutdown` resumes the turn on the next start. `session.inbox.delivered`
   (`data.inboxID` only) is published as each prompt, synthetic message, requested compaction or
   move reaches the session (the runner compacts on its own without the inbox), and the message it makes is stamped with that event's `created`, not with the time
-  a queued item was admitted to the inbox. Every event carries `created`, the epoch
+  a queued item was admitted to the inbox. Only `session.inbox.enqueued`, published as the item is
+  admitted, carries its type (`data.item.type`: `user`, `synthetic`, `compaction` or `move`; a
+  `session.prompt` is `user`); `delivered` does not. Every event carries `created`, the epoch
   milliseconds OpenCode published it at, which the report state compares with the clock at
   `courier_send`. `session.context()` returns the session's stored messages
   (`SessionMessage.Info[]`), not the model-facing ones the `context` hook sees.

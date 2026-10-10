@@ -161,6 +161,8 @@ describe("the hub", () => {
     expect(skewed.hub.version).toBe(HUB_VERSION)
     // The claim set is the one every copy claims in, so an older copy and this one never both act.
     expect(skewed.hub.claimed).toBe(claimed)
+    // The inbox item types are kept outside the hub, so this copy shares them with the current one.
+    expect(at(registry, "opencode-courier.inbox")).toBe(skewed.inbox)
 
     const logs: string[] = []
     const leaveA = skewed.join(member("/a", (message) => logs.push(message)))

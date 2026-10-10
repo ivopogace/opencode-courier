@@ -88,6 +88,8 @@ export interface WatchState {
   readonly waiting: Waiting
   readonly answered: Set<string>
   readonly forms: FormsTold
+  /** The type of each item enqueued for a spawned session, by inbox id, for its delivery to look up. */
+  readonly inbox: Map<string, string>
 }
 
 /** The forms sessions were told about, kept apart from the permission requests. */
@@ -279,7 +281,7 @@ export interface Hub {
   /** The ids of the `courier_later` messages being delivered. */
   readonly claimed: Set<string>
   /** The events handled, and the permission requests a session was told about or that were answered first. */
-  readonly watched: Omit<WatchState, "forms">
+  readonly watched: Omit<WatchState, "forms" | "inbox">
   /** The forms sessions were told about, and those settled first. */
   readonly forms: FormsTold
   /**
@@ -305,6 +307,8 @@ export interface Opened {
   readonly track: (member: Member, work: Promise<unknown>) => void
   /** The spawns under way, under a fixed key of its own rather than in the hub, so every hub version shares it. */
   readonly gate: SpawnGate
+  /** `WatchState.inbox`, under a fixed key of its own like the gate, so every hub version shares it. */
+  readonly inbox: Map<string, string>
 }
 
 /**
@@ -334,7 +338,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     scheduler: {},
     watchers: [],
     claimed: shared("claimed", () => new Set<string>()),
-    watched: shared<Omit<WatchState, "forms">>("watched", () => ({ seen: new Set(), waiting: new Set(), answered: new Set() })),
+    watched: shared<Omit<WatchState, "forms" | "inbox">>("watched", () => ({ seen: new Set(), waiting: new Set(), answered: new Set() })),
     forms: shared<FormsTold>("forms", () => ({ told: new Map(), settled: new Set() })),
     locations: shared("locations", () => new Map<object, Permissions>()),
     receivers: shared<Receivers>("receiver", () => ({})),
@@ -513,7 +517,13 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
       return Promise.race([Promise.allSettled(behind).then(() => {}), timers.wait(LEAVE_MS)])
     }
   }
-  return { hub, join, track, gate: shared<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() })) }
+  return {
+    hub,
+    join,
+    track,
+    gate: shared<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() })),
+    inbox: shared("inbox", () => new Map<string, string>()),
+  }
 }
 
 const opened = open(globalThis as Registry)
@@ -529,6 +539,9 @@ export const track = opened.track
 
 /** The spawns under way in the process; see `Opened.gate`. */
 export const gate = opened.gate
+
+/** The types of the items enqueued for spawned sessions; see `Opened.inbox`. */
+export const inbox = opened.inbox
 
 /** The member of this copy's hub set up with `location` that joined last, while it is loaded. */
 export function memberAt(location: object) {
@@ -555,6 +568,7 @@ export const permissions = () => hub.locations.values()
  */
 export function resetHub() {
   gate.reserved.clear()
+  inbox.clear()
   hub.claimed.clear()
   hub.watched.seen.clear()
   hub.watched.waiting.clear()

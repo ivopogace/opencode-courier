@@ -225,7 +225,7 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
 - **A child that ends its turn without reporting** to its parent has the parent told, marked
   `ended="without-report"`, with its last reply, waking it if idle; it counts toward the limits
   until it reports. One that waits, on a request, a session it started, a scheduled message or a
-  webhook it just subscribed to, is not reported.
+  webhook it just subscribed to, is not reported, nor is one that answers what you typed in its session.
   [More](docs/reference.md#a-child-that-ends-without-a-report).
 - **A child that asks for permission** has the request passed to the session at the top, with what
   it asks for and the choices OpenCode offers (`once`, `always`, `reject`). That session asks you
@@ -270,7 +270,7 @@ bound it. Set them in the plugin's `options`, in the global config (`~/.config/o
 
 `courier_spawn` refuses a spawn past a limit, naming it and saying what to do instead: do the work
 itself, or wait for a child to report. A session counts while it is live: its turn runs, it owes
-its parent a report (something reached it after it last reported, failed or was interrupted), or a
+its parent a report (its task or a message reached it after it last reported, failed or was interrupted), or a
 session below it is live. One that has reported, with nothing live below it, does not. Each
 spawned session's model is also told its role on every request: `sub-orchestrator`, which may split
 its task, or `leaf`, at `maxDepth`, which does not see `courier_spawn` at all. Your own session gets

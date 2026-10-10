@@ -240,8 +240,9 @@ outlives the member's [roster](#roster) entry: a member dropped after 14 days or
 until the group is released, which the dropping of the members still out brings about, so a group's
 keys live as long as the roster entries of its members still out; a member dropped by `courier_cleanup` while still out has the group
 delivered at once if that completes it, with no line for it, since the parent did the dropping. A
-group whose every member left is dropped unsent: the parent was told of each failure, and did the
-rest. A member that [ends its turn without a report](#a-child-that-ends-without-a-report) is still
+group whose every member left is dropped unsent, with no report to carry: the parent was told of
+each failed turn and did the rest, and hears of an interruption or a deletion no more than for a
+child in no group. A member that [ends its turn without a report](#a-child-that-ends-without-a-report) is still
 out, as a child in no group would still owe its report: the silent-end notice says the group's
 other reports are held until it reports, and `courier_children` shows it. A report that cannot be
 held, the storage failing as `courier_send` runs, is delivered on its own, and the member dropped

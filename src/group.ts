@@ -169,7 +169,7 @@ export async function unholdForBlocked(storage: Pick<Storage, "get" | "set">, me
   await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt }))
 }
 
-/** Drops a member from its group, with its roster entry, unless its report is held: that still goes to the parent. True when dropped. */
+/** Drops a member from its group as its roster entry goes, unless its report is held: that still goes to the parent. True when dropped. */
 export async function dropMember(storage: Pick<Storage, "get" | "remove">, parentID: string, group: string, sessionID: string) {
   const member = await memberOf(storage, parentID, group, sessionID)
   if (!member || member.report) return false

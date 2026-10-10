@@ -285,7 +285,7 @@ describe("deliverReleased", () => {
     expect(store.size).toBe(0)
   })
 
-  test("drops a group whose every member left, unsent: the parent was told of each", async () => {
+  test("drops a group whose every member left, unsent: it carries no report", async () => {
     const { ports, delivered, store } = fakePorts()
     await pair(ports)
     await leaveGroup(ports.storage, "ses_parent", "pair", "ses_a", "failed", 50)

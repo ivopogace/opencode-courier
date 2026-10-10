@@ -65,7 +65,7 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   const { sessionID, error } = event.data
   const entries = await entriesOf(ports.storage, sessionID)
   const at = event.created ?? ports.now()
-  // Not in the way of the notice: kept only so the limits stop counting the child, and its group does not wait for it.
+  // Not in the way of the notice: kept only so the limits stop counting the child.
   if (entries.length)
     await settled(ports.storage, sessionID, "failed", at).catch((error: unknown) =>
       ports.log(`courier watch: could not note the failed turn of ${sessionID}: ${String(error)}`),

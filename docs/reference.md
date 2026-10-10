@@ -90,7 +90,7 @@ child would be deeper than `maxDepth`, or when `maxChildren` or `maxTotal` sessi
 live. A session is live while its turn runs, while it [owes its parent a
 report](#a-child-that-ends-without-a-report), or while a session below it is live. Its turn runs
 from its creation until it ends, and again while a message keeps it busy. It owes a report from the
-moment a prompt or message reaches it until it reports to its parent with `courier_send`, or its
+moment its task or a message reaches it ([not what the person types in it](#a-child-that-ends-without-a-report)) until it reports to its parent with `courier_send`, or its
 turn fails or is interrupted, so a child that ends its turn without reporting keeps counting until
 it does; a session that has split its task and ended its turn to wait for its children owes one too.
 A session that has reported since anything last reached it counts only while its turn still runs;
@@ -155,10 +155,18 @@ covers those.
 A child's turn can also end without failing and without a `courier_send` to its parent: its model
 replied in text and stopped, or took its task for done. The parent would wait for a report that
 never comes, and in a tree, every session above it with it. So the plugin keeps, for each spawned
-session, whether it owes its parent a report: from the moment a prompt or message reaches it
-(OpenCode's `session.inbox.delivered` event: its task, a message from any session, a scheduled
-message, a webhook delivery, or what the person typed in its session) until it calls
-`courier_send` with its parent's id, or its turn fails or is interrupted. Only a message to the
+session, whether it owes its parent a report: from the moment its task or a message delivered
+through courier or the plugin reaches it (OpenCode's `session.inbox.delivered` event: a message
+from any session, a scheduled message, a webhook delivery, or one of the plugin's notices) until it
+calls `courier_send` with its parent's id, or its turn fails or is interrupted. What the person
+types in the child's own session, and a compaction or move of it, is between the person and the
+child: it does not make the child owe a report, so a child that has reported and then answers the
+person is not told to its parent. The plugin tells these apart by the type OpenCode gives each item
+as it enters the inbox (`session.inbox.enqueued`: `user`, `synthetic`, `compaction` or `move`),
+remembered in memory for the last 1000 items of spawned sessions, since the delivery event does not
+carry it. A delivery whose item it did not see enter, such as one queued before a restart, counts as
+a message, so the parent is told rather than left waiting. The task, which `courier_spawn` hands
+over as a prompt like the person's, is noted by `courier_spawn` itself (below). Only a message to the
 session that started it is a report; one to a sibling, or to the session at the top, is not, since
 the parent is the one waiting for it.
 
@@ -203,9 +211,9 @@ cannot be delivered, its `told` is taken back, unless a later notice has told th
 What the plugin cannot see, it cannot judge: a prompt delivered while the server is down or the
 plugin not loaded leaves the earlier one in place, so a turn after it that ends without a report
 may not be told, and a `courier_send` whose note could not be written is taken for no report. A
-compaction someone asks for (OpenCode's compact command) or a move of the session, which OpenCode
-delivers like a prompt, counts as one; the compactions OpenCode makes on its own as the context
-fills do not.
+prompt the person types, a compaction someone asks for (OpenCode's compact command) or a move of
+the session, which OpenCode delivers like a message, counts as one only when the plugin did not see
+it enter the inbox; the compactions OpenCode makes on its own as the context fills never do.
 
 ## A child that asks for permission
 
@@ -424,7 +432,8 @@ a standby, so that an instance unloading does not leave a gap in which an event,
 question, is missed. A webhook receiver started by one instance is the one the others join, so two
 never contend for the port. The `courier_spawn` calls under way are kept process-wide in the same
 way, under a fixed key of their own, so spawns in every location and copy count each other against
-the limits.
+the limits; so are the types of the items entering spawned sessions' inboxes, so whichever
+instance or copy sees an item's delivery knows what it was.
 
 The hub carries a version, which changes only when its shape or the meaning of a field does, not
 with every release. A copy that finds a hub of another version in the process runs its own, under a

@@ -475,6 +475,21 @@ describe("reportSilent", () => {
     expect(scanned).toEqual([])
     expect(store.has(promptKey("ses_parent"))).toBe(false)
   })
+
+  test("claims only the turns of spawned sessions, so others do not crowd out the events remembered", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    await notePrompt(ports, delivered("evt_d", 100))
+    const seen = new Set<string>()
+
+    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_parent"))).toEqual([])
+    expect([...seen]).toEqual([])
+    const told = await Promise.all([reportSilent(ports, seen, succeeded("evt_s2", 200)), reportSilent(ports, seen, succeeded("evt_s2", 200))])
+
+    expect(told).toEqual([["ses_parent"], []])
+    expect(sent).toHaveLength(1)
+    expect([...seen]).toEqual(["evt_s2"])
+  })
 })
 
 describe("what makes a child owe a report", () => {

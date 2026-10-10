@@ -35,7 +35,15 @@ pin moved, and what was found out about OpenCode's behaviour on the way. For con
   the domain of every loaded instance and answers through the one that holds the request.
 - `session.execution.started`, `.succeeded`, `.failed` and `.interrupted` frame a session's busy
   period, one terminal event however many prompts were steered into it; `.interrupted` carries a
-  `reason`, and one of `shutdown` resumes the turn on the next start. `session.inbox.delivered`
+  `reason`, and one of `shutdown` resumes the turn on the next start. A message steered into a
+  running turn interrupts nothing: observed on 2.0.26, `inbox.enqueued` (`delivery: "steer"`) as it
+  is sent, then `inbox.delivered` at the turn's next step and the one `.succeeded` after it, no
+  `.interrupted` between. The schema lists a `superseded` reason, but no code in 2.0.26 (nor on `v2`
+  as of 2026-10-09) publishes it: the core's reasons are `user`, `shutdown` and `inactivity`, the last
+  when an idle location is evicted, which stops its sessions without resuming them. An interrupt
+  with `resume` while a steer waits publishes `.interrupted` (`user`), then `.started` and the
+  steer's `inbox.delivered`, later than the interrupt, so the session owes a report again.
+  `session.inbox.delivered`
   (`data.inboxID` only) is published as each prompt, synthetic message, requested compaction or
   move reaches the session (the runner compacts on its own without the inbox), and the message it makes is stamped with that event's `created`, not with the time
   a queued item was admitted to the inbox. Only `session.inbox.enqueued`, published as the item is

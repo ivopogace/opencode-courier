@@ -155,11 +155,12 @@ async function waits(ports: WatchPorts, sessionID: string, prompt: number) {
  * prompt, unless it waits; finds the session by the reverse index alone. Returns the parents told.
  */
 export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: SessionEvent) {
-  if (!claim(seen, event.id)) return []
   const { sessionID } = event.data
   const entry = await indexedEntry(ports.storage, sessionID)
-  const report = entry && (await reportOf(ports.storage, sessionID))
-  if (!entry || !report?.owes || (await waits(ports, sessionID, report.prompt))) return []
+  // Claimed after the lookup, so other sessions' turns do not crowd `seen`, and before anything is told.
+  if (!entry || !claim(seen, event.id)) return []
+  const report = await reportOf(ports.storage, sessionID)
+  if (!report?.owes || (await waits(ports, sessionID, report.prompt))) return []
   // The notice goes out without the reply rather than not at all.
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
   // Before the notice, which may end the parent's turn at once: once told, it no longer waits for this one.

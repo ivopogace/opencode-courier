@@ -225,6 +225,12 @@ passes the fan-out, the permission relay and the question relay, every child's r
 `status="done"` on the brief's wording alone; one fan-out child also listed its command under
 `checks`, the other gave no artifacts.
 
+With the isolated-child brief (nested isolation), `longcat-2.5-preview-free` passes the fan-out with
+`COURIER_PROMPT` asking for two `isolate: true` helpers that each create a file and commit it: both
+created `courier/<their session ID>`, committed on it and named it in their report. One child took
+a dozen tool calls to get its file committed (a write to a path outside its worktree first); that is
+the model's doing.
+
 What the models did on the fan-out, over some 30 runs while the tool wording was tuned:
 
 | Model | Result |

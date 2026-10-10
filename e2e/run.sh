@@ -309,6 +309,9 @@ reported() {
 }
 check "a leaf that has reported reads as finished and owes no report, so it no longer counts against the limits" \
   "$(for _ in $(seq 1 30); do leaf=$(jq -r '.[0]' <<<"$leaves"); [ "$(finished "$leaf")" = true ] && [ "$(reported "$leaf")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+check "deleting the session in between forgets the report state of the leaves it started" \
+  "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$middle") == 20* ]] &&
+    for _ in $(seq 1 20); do [ -z "$(jq -r '.[]' <<<"$leaves" | while read -r leaf; do kv get "report/$leaf/prompt"; done)" ] && { echo true; exit; }; sleep 1; done; echo false)"
 
 # The first web search of this run: no provider has been chosen, which OpenCode keeps for every session.
 echo "a child's web search asks for a provider with a form: the parent is told, and told when it is answered"
@@ -629,7 +632,7 @@ body='{"text":"CHILD-REPORT-NOW"}'
 sig=$(printf '%s\n%s' child-ci "$body" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -r | cut -d' ' -f1)
 check "a delivery to its topic is accepted" "$([ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "x-hub-signature-256: sha256=$sig" \
   --data-binary "$body" "http://127.0.0.1:$WEBHOOK_PORT/hook/child-ci")" = 202 ] && echo true || echo false)"
-check "the delivery woke the child, which reported" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+check "the delivery woke the child, which reported" "$(has_text "$parent" "CHILD DONE AFTER NUDGE" 45)"
 check "and the parent was never told it ended without a report" "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 0')"
 
 # Spawns an isolated child from a new parent and waits for its report; sets parent, child and directory.

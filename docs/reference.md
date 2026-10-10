@@ -1,8 +1,8 @@
 # Behaviour reference
 
 How the plugin behaves beyond the happy path: what a child runs on, how deep and wide a tree of
-sessions may grow, how a child's failures, permission requests and questions reach the session that
-started it, what is kept where and for how long, and what the webhook receiver does with a delivery.
+sessions may grow, how a child's failures, silent turns, permission requests and questions reach the
+session that started it, what is kept where and for how long, and what the webhook receiver does with a delivery.
 The [README](../README.md) has the short version.
 
 ## The OpenCode version
@@ -69,8 +69,8 @@ Three options bound the tree, each a positive integer, read from the plugin's `o
 | Option | Default | |
 |---|---|---|
 | `maxDepth` | `3` | The deepest a spawned session may be. A session at this depth cannot start sessions. |
-| `maxChildren` | `5` | How many of the sessions one session started may run at once. |
-| `maxTotal` | `20` | How many spawned sessions may run at once in one tree, anywhere in it; the top session is not counted. |
+| `maxChildren` | `5` | How many of the sessions one session started may be live at once. |
+| `maxTotal` | `20` | How many spawned sessions may be live at once in one tree, anywhere in it; the top session is not counted. |
 
 ```jsonc
 {
@@ -87,17 +87,19 @@ plugin loads. Like every option, a changed limit applies once OpenCode loads the
 depth and tree from the [roster](#roster) and refuses, with an error naming the limit and what to do
 instead (do the work yourself, or end the turn and try again once a child has reported), when the
 child would be deeper than `maxDepth`, or when `maxChildren` or `maxTotal` sessions are already
-live. A session is live while its turn runs, or a session below it runs: its turn runs from its
-creation until it ends, and again while a message keeps it busy, and a session that has split its
-task and ended its turn to wait for its children stays live while any of them, or theirs, runs. A
-session whose turn has ended, reported, failed or interrupted, with nothing below it running, does
-not count. Its turn counts as ended when `session.get` fails, so one OpenCode no longer knows, or
-cannot look up, does not count either. A child counts only while it runs, not until it has
-reported: a child that ends its turn without `courier_send` stops counting at once; counting it
-until it has reported comes with [#101](https://github.com/ivopogace/opencode-courier/issues/101).
+live. A session is live while its turn runs, while it [owes its parent a
+report](#a-child-that-ends-without-a-report), or while a session below it is live. Its turn runs
+from its creation until it ends, and again while a message keeps it busy. It owes a report from the
+moment a prompt or message reaches it until it reports to its parent with `courier_send`, or its
+turn fails or is interrupted, so a child that ends its turn without reporting keeps counting until
+it does; a session that has split its task and ended its turn to wait for its children owes one too.
+A session that has reported, failed or been interrupted since anything last reached it, with
+nothing live below it, does not count. Its turn counts as ended when `session.get` fails, so one
+OpenCode no longer knows, or cannot look up, counts only while it owes a report; one spawned by a
+release of the plugin that kept no such state counts only while it runs.
 
 Each check reads the whole roster once, to find the calling session's tree, and looks up every
-session in that tree with `session.get`. The checks run one at a time in the process,
+session in that tree with `session.get` and its two report keys. The checks run one at a time in the process,
 and a spawn under way counts until its child is on the roster, so several `courier_spawn` calls made
 at once cannot get past a limit together, whichever locations or copies of the plugin make them.
 Two servers on one data directory do not see each other's spawns under way. A failed roster read
@@ -144,6 +146,48 @@ Every failed turn of a child is reported, also one that fails after the child ha
 that was interrupted is not a failure and is not reported, and neither is a failure that happens
 while the OpenCode server is down or the plugin is not loaded; a `courier_later` check-in still
 covers those.
+
+## A child that ends without a report
+
+A child's turn can also end without failing and without a `courier_send` to its parent: its model
+replied in text and stopped, or took its task for done. The parent would wait for a report that
+never comes, and in a tree, every session above it with it. So the plugin keeps, for each spawned
+session, whether it owes its parent a report: from the moment a prompt or message reaches it
+(OpenCode's `session.inbox.delivered` event: its task, a message from any session, a scheduled
+message, a webhook delivery, or what the person typed in its session) until it calls
+`courier_send` with its parent's id, or its turn fails or is interrupted. Only a message to the
+session that started it is a report; one to a sibling, or to the session at the top, is not, since
+the parent is the one waiting for it.
+
+When a turn of a spawned session ends without failing (`session.execution.succeeded`) while it
+owes a report, the plugin sends its parent a message from that child, marked
+`ended="without-report"`, with the child's title and its last reply as `courier_status` gives it
+(at most 2000 characters), waking the parent if it is idle. The parent decides: message the child
+with `courier_send` to have it carry on or report, use its last reply if that is what it needed, or
+start a replacement. Until the child reports, it counts toward the
+[limits](#session-trees-and-their-limits). Each turn's end is claimed once, before its notice goes
+out, so one notice is sent however many instances and copies of the plugin see it.
+
+A turn that ends while the child waits is not reported: while it has a permission request or a
+question pending, or while a session it started owes it a report, as a session that has split its
+task ends its turn to wait for its children. Once they have all reported, failed or been
+interrupted, a turn of it that ends without a report of its own is reported. A turn stopped by
+OpenCode's shutdown resumes on the next start and does not count as interrupted.
+
+The state is kept in the plugin's storage, so a restart does not lose it: `report/<sessionID>/prompt`
+holds when a prompt last reached the session (`{ at }`, epoch milliseconds), and
+`report/<sessionID>/settled` when it last reported, failed or was interrupted (`{ at, by }`, `by`
+being `report`, `failed` or `interrupted`). It owes a report while `prompt` is later than `settled`.
+The prompt's time is the one OpenCode published its delivery at, not when the plugin handled the
+event, and the report's is the server's clock as `courier_send` runs, before it delivers, so an event
+handled late cannot make a report look older than the prompt it answers. `courier_spawn` writes the
+first `prompt` itself, just before it hands the child its task. Both keys go with the child's roster
+entry.
+
+What the plugin cannot see, it cannot judge: a prompt delivered while the server is down or the
+plugin not loaded leaves the earlier one in place, so a turn after it that ends without a report
+may not be told, and a `courier_send` whose note could not be written is taken for no report. A
+compaction or a move of the session, which OpenCode delivers like a prompt, counts as one.
 
 ## A child that asks for permission
 
@@ -292,7 +336,8 @@ question tool when the person must decide; a child can still send its question w
 lost track after a compaction or a server restart can call `courier_children` to find them again. A
 child that can no longer be looked up is still listed, with the error instead of its state. The
 roster is also where a session's depth and tree are read from, for the
-[limits](#session-trees-and-their-limits).
+[limits](#session-trees-and-their-limits). Whether a child [owes its parent a
+report](#a-child-that-ends-without-a-report) is kept next to it, and dropped with its entry.
 Entries are dropped 14 days after the child was started, when that parent's roster is read or
 the plugin is next loaded, except isolated children whose worktree is still there (see
 [Worktree cleanup](#worktree-cleanup)). If the roster cannot be written, the child still gets its
@@ -391,9 +436,10 @@ stored questions) but not its memory. The plugin handles that as follows:
   stalling for half a second or more between two storage calls, or a delivery running for over a
   minute. A release of the plugin from before the owner key (0.2.2 and earlier) delivers on its own
   schedule beside the owner.
-- **A child's permission request and a child's failed turn are told to the parent once**, by the
-  server that runs the child's turn: the one that handled the `courier_spawn`, or the latest
-  message, that started it.
+- **A child's permission request, its failed turn and its turn without a report are told to the
+  parent once**, by the server that runs the child's turn: the one that handled the `courier_spawn`,
+  or the latest message, that started it. Whether a child owes a report compares the times of both
+  servers' clocks, so they should be one machine's.
 - **`courier_answer` passes an answer on only from a turn on that same server.** Pending requests
   live in the memory of the process running the child, and the plugin API offers no channel between
   servers. From the other server it finds no request pending and says so: the request was answered

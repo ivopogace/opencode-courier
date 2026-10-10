@@ -102,6 +102,8 @@ for mode in shared isolate; do
   fi
   woke=$(reply_time "$parent" "PARENT WOKE")
   check "parent got a new turn after its own had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+  check "and no notice of a turn without a report, since the child reported" \
+    "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains(" ended="))] | length == 0')"
 done
 
 echo "courier_status"
@@ -133,6 +135,26 @@ check "which child failed, and with what error"   "$(jq -r --arg child "$child" 
 
 # The parent's synthetic messages whose envelope carries attribute $2, from session $1.
 notices_with() { api "session/$1/message" | jq -c --arg attribute " $2=" '[.data[] | select(.type == "synthetic") | .text | select(contains($attribute))]'; }
+kv() { XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" "$@"; }
+
+echo "a child whose turn ends without a report is reported to its idle parent"
+out=$(prompt "COURIER-SILENT")
+turn_ended=$(now_ms)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+woke=$(reply_time "$parent" "PARENT TOLD SILENT" 45)
+check "the silent end started a new turn after the parent's had ended" \
+  "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+notice=$(notices_with "$parent" ended)
+check "the parent was told once, which child it was, and its last reply" "$(jq -r --arg child "$child" 'length == 1 and (.[0] |
+  contains("<courier from=\"" + $child + "\" ended=\"without-report\">") and contains("CHILD SILENT REPLY") and contains("Decide what it needs"))' <<<"$notice")"
+check "the child owes its parent a report" \
+  "$([ "$(kv get "report/$child/prompt" | jq -r '.at | type == "number"')" = true ] && [ -z "$(kv get "report/$child/settled")" ] && echo true || echo false)"
+prompt_in "$parent" "COURIER-NUDGE $child" >/dev/null
+check "told to report, the child did" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+check "which settled its report" "$(kv get "report/$child/settled" | jq -r '.by == "report"')"
+check "and its reported turn was not told as one without a report" \
+  "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 1')"
 # Starts a parent with COURIER-ASK ($1 is "isolate" or empty) and waits until it has been told that its
 # child asks for permission; sets parent, child, request and notice.
 ask_permission() {
@@ -245,6 +267,9 @@ check "the leaf that called it anyway was refused by courier_spawn, naming maxDe
   "$(has_text "$middle" "Not started: this session is at depth 2 of its session tree, and the tree goes at most 2 deep (maxDepth)" 60)"
 leaves=$(jq -sc '[.[] | select(.reply.args.task? == "CHILD-TOO-DEEP") | .session] | unique' "$WORK/model.log")
 check "two leaves tried" "$(jq -r 'length == 2' <<<"$leaves")"
+# The child in between never reports: its turns end while its leaves owe it reports, and once more after.
+check "the root was told once that the child in between ended without a report, once its leaves had reported" \
+  "$(has_text "$root" "PARENT TOLD SILENT" 60 >/dev/null; sleep 2; notices_with "$root" ended | jq -r --arg middle "$middle" 'length == 1 and (.[0] | contains("<courier from=\"" + $middle + "\" ended="))')"
 check "every request of a leaf was named a leaf, and the courier's hook left it no courier_spawn" \
   "$(jq -sr --argjson leaves "$leaves" '[.[] | select(.type == "probe.context" and (.sessionID | IN($leaves[])))]
     | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_send")))' "$WORK/probe.log")"
@@ -507,7 +532,6 @@ listed=$(tool_state courier_children <<<"$out" | jq -r 'select(.status == "compl
 check "courier_children lists both" "$(for id in $spawned; do grep -q "$id" <<<"$listed" || { echo false; exit; }; done; echo true)"
 check "the parent was woken by its children" "$([ -n "$(reply_time "$roster_parent" "PARENT WOKE")" ] && echo true || echo false)"
 # The roster's reverse index, read straight from OpenCode's database.
-kv() { XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" "$@"; }
 indexed_under() { kv get "roster-by-child/$1" | jq -r '.ancestors[0] // empty'; }
 check "each child is indexed under its parent" \
   "$(for id in $spawned; do [ "$(indexed_under "$id")" = "$roster_parent" ] || { echo false; exit; }; done; echo true)"

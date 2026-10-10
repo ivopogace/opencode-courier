@@ -232,7 +232,7 @@ describe("send", () => {
 
   const spawned = { sessionID: "ses_child", parentID: "ses_parent", title: "t", directory: "/repo", isolated: false, createdAt: 1 }
 
-  test("notes a spawned session's message to its parent as its report, once delivered", async () => {
+  test("notes a spawned session's message to its parent, and only that, as its report", async () => {
     const { ports, store } = fakePorts()
     await record(ports.storage, spawned)
 
@@ -244,12 +244,27 @@ describe("send", () => {
     expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000, by: "report" })
   })
 
-  test("notes no report when the message is not delivered, and delivers it when the report cannot be noted", async () => {
+  test("notes the report before delivering it, which may end the parent's turn at once", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, spawned)
+    let noted: unknown
+    ;(ports.session as any).synthetic = async () => {
+      noted = store.get(settledKey("ses_child"))
+      return { id: "msg_3" }
+    }
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })
+    expect(noted).toEqual({ at: 1_000, by: "report" })
+  })
+
+  test("takes the note back when the message is not delivered, and delivers it when the report cannot be noted", async () => {
     const { ports, store } = fakePorts()
     await record(ports.storage, spawned)
     ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
     await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).rejects.toThrow("parent is gone")
     expect(store.has(settledKey("ses_child"))).toBe(false)
+    store.set(settledKey("ses_child"), { at: 5, by: "failed" })
+    await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).rejects.toThrow("parent is gone")
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 5, by: "failed" })
 
     ;(ports.session as any).synthetic = async () => ({ id: "msg_3" })
     ;(ports.storage as any).set = async () => Promise.reject(new Error("disk full"))

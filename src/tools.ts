@@ -162,11 +162,11 @@ export function addTools(tools: ToolEditor, ports: ToolPorts) {
     options: { codemode: false },
     description:
       "Start a new OpenCode session on a task and return immediately. It runs on your model. The session reports " +
-      "back with courier_send, which wakes this session, and you are told if its turn fails instead, it waits for a " +
-      "permission or it asks a question. DO NOT poll it or call courier_status in a loop: once you have started the sessions " +
-      "you need, end your turn by replying without calling more tools; each report starts a new turn in which you " +
-      "carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and " +
-      "courier_cancel it when it does.",
+      "back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report " +
+      "instead, it waits for a permission or it asks a question. DO NOT poll it or call courier_status in a loop: once " +
+      "you have started the sessions you need, end your turn by replying without calling more tools; each report " +
+      "starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it " +
+      "never reports, and courier_cancel it when it does.",
     input: SpawnInput,
     execute: async (input, context) => {
       const child = await spawn(ports.courier, context.sessionID, input).catch(rethrow("courier_spawn"))

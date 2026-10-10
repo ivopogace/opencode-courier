@@ -22,7 +22,7 @@ import {
   type PermissionReplied,
 } from "./relay.js"
 import { owesReport, prompted, settled } from "./report.js"
-import { allEntries, entriesOf, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
+import { allEntries, children, entriesOf, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
 
 export type { FormsTold, WatchPorts, WatchState } from "./hub.js"
 
@@ -101,20 +101,27 @@ export async function noteInterrupted(ports: WatchPorts, seen: Set<string>, even
   return true
 }
 
+/** Whether a session waits on a request of its own, or on a report from a session it started. */
+async function waits(ports: WatchPorts, sessionID: string) {
+  const [requests, questions, started] = await Promise.all([
+    listEverywhere([...ports.permissions()], sessionID),
+    pendingQuestions(ports.storage, sessionID),
+    children(ports.storage, sessionID),
+  ])
+  if (questions.length || requests.some((found) => found.requests.length)) return true
+  const owed = await Promise.all(started.map((entry) => owesReport(ports.storage, entry.sessionID)))
+  return owed.includes(true)
+}
+
 /**
  * Tells the parent of a spawned session whose turn ended without reporting to it since its last
- * prompt, unless it waits on a request; reads the reverse index alone. Returns the parents told.
+ * prompt, unless it waits; finds the session by the reverse index alone. Returns the parents told.
  */
 export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: SessionEvent) {
   if (!claim(seen, event.id)) return []
   const { sessionID } = event.data
   const entry = await indexedEntry(ports.storage, sessionID)
-  if (!entry || !(await owesReport(ports.storage, sessionID))) return []
-  const [requests, questions] = await Promise.all([
-    listEverywhere([...ports.permissions()], sessionID),
-    pendingQuestions(ports.storage, sessionID),
-  ])
-  if (questions.length || requests.some((found) => found.requests.length)) return []
+  if (!entry || !(await owesReport(ports.storage, sessionID)) || (await waits(ports, sessionID))) return []
   // The notice goes out without the reply rather than not at all.
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
   await ports.session.synthetic({

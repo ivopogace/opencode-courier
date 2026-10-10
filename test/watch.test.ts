@@ -269,6 +269,22 @@ describe("reportSilent", () => {
     expect([...waiting.sent, ...asking.sent]).toEqual([])
   })
 
+  test("tells nothing while a session it started owes it a report, as one that split its task waits for them", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    await record(ports.storage, { ...child("ses_child"), sessionID: "ses_grandchild" })
+    const seen = new Set<string>()
+    await notePrompt(ports, seen, delivered("evt_d1", 100))
+    await notePrompt(ports, seen, delivered("evt_d2", 110, "ses_grandchild"))
+    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200))).toEqual([])
+
+    // Woken by its child's report, it ends its turn without reporting itself.
+    await sendFrom(ports, "ses_grandchild", "ses_child", 300)
+    await notePrompt(ports, seen, delivered("evt_d3", 310))
+    expect(await reportSilent(ports, seen, succeeded("evt_s2", 400))).toEqual(["ses_parent"])
+    expect(sent).toHaveLength(1)
+  })
+
   test("what it keeps survives a restart: a new instance over the same storage judges the same", async () => {
     const before = fakePorts()
     await record(before.ports.storage, child())

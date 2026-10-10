@@ -19,11 +19,12 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   `bun test --update-snapshots` and rerun the real-model smoke test.
 - `courier.ts`: spawn, send, status, children. `limits.ts`: the session tree limits `spawn()` checks,
   and the `context` hook naming each spawned session's role and hiding `courier_spawn` from a leaf.
-  `later.ts`: scheduled messages and their delivery. `roster.ts`: the children each parent spawned.
-  `cleanup.ts`: removing an isolated child's worktree. `webhook.ts`: the webhook receiver and
-  subscriptions. `version.ts`: the log line on an OpenCode version other than the pinned one.
-- `watch.ts`: following OpenCode's events to tell a parent that a child's turn failed, waits for a
-  permission, or shows a form only the person can answer. `relay.ts`: the permission and form
+  `report.ts`: whether each spawned session owes its parent a report. `later.ts`: scheduled
+  messages and their delivery. `roster.ts`: the children each parent spawned. `cleanup.ts`:
+  removing an isolated child's worktree. `webhook.ts`: the webhook receiver and subscriptions.
+  `version.ts`: the log line on an OpenCode version other than the pinned one.
+- `watch.ts`: following OpenCode's events to tell a parent that a child's turn failed or ended
+  without a report, waits for a permission, or shows a form only the person can answer. `relay.ts`: the permission and form
   notices, and passing a permission answer back.
 - `question/`: relaying a child's question by wrapping OpenCode's `question` tool. `index.ts` is
   what the rest of the plugin imports; `relay.ts` wraps the tool; `answer.ts` passes an answer on;

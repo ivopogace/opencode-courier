@@ -243,6 +243,7 @@ describe("spawn, into a group", () => {
     expect(calls).toEqual([])
     expect(await spawn(ports, "ses_parent", { task: "t", group: null as never })).toEqual({ sessionID: "ses_child", directory: "/repo" })
     expect(await spawn(ports, "ses_parent", { task: "t", group: " " })).toEqual({ sessionID: "ses_child", directory: "/repo" })
+    expect(await spawn(ports, "ses_parent", { task: "t", group: " pair " })).toMatchObject({ group: "pair" })
   })
 
   test("a child in a group that never got its task leaves the group, so the group does not wait for it", async () => {
@@ -458,6 +459,17 @@ describe("send, from a member of a group", () => {
     expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(2)
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({ title: "A", joinedAt: 1 })
     expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000, by: "report", status: "blocked" })
+  })
+
+  test("a blocked report after a held one drops the held one, stale now, so the member is out again", async () => {
+    const { ports, store } = fakePorts()
+    await grouped(ports)
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done.", status: "done" })
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { status: "done" } })
+
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "On second thought, which?", status: "blocked" })
+
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({ title: "A", joinedAt: 1 })
   })
 
   test("holds the report even when the group cannot be counted after, and says so without the count", async () => {

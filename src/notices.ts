@@ -409,7 +409,8 @@ export function groupNotice(group: string, reports: ReadonlyArray<HeldReport & {
     ? ["", `Without a report: ${left.map((member) => `${member.sessionID} "${member.title}" (${LEFT_HOW[member.by]})`).join(", ")}.`]
     : []
   return [
-    `Every session you started in group "${group}" has reported: ${count(reports.length, "report")} of ${count(total, "member")} (${statusCounts(reports)}). Each follows, with its status.`,
+    `Group "${group}" is complete: ${count(reports.length, "report")} of ${count(total, "member")} (${statusCounts(reports)})` +
+      `${left.length ? `, ${count(left.length, "member")} without a report, named at the end` : ""}. Each report follows, with its status.`,
     ...listed,
     ...without,
     "",

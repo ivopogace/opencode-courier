@@ -230,7 +230,7 @@ notices=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "syn
 check "the parent got exactly one message" "$(jq -r 'length == 1' <<<"$notices")"
 check "with both reports, each with its status and artifacts, under the group's envelope" \
   "$(jq -r --arg members "$(tr '\n' ',' <<<"$members" | sed 's/,$//')" '.[0] | startswith("<courier from=\"") and contains("\" group=\"pair\" reports=\"2\">") and
-    contains("Every session you started in group \"pair\" has reported: 2 reports of 2 members (2 done).") and contains("[1/2] ") and contains("[2/2] ") and
+    contains("Group \"pair\" is complete: 2 reports of 2 members (2 done). Each report follows") and contains("[1/2] ") and contains("[2/2] ") and
     (split("\": done\nCHILD DONE\n\nArtifacts:\n- branch: child/work") | length == 3) and
     ((capture("from=\"(?<from>[^\"]+)\"").from | split(",") | sort) == ($members | split(",") | sort))' <<<"$notices")"
 check "each child's courier_send result said its report was held with the group, not delivered" \

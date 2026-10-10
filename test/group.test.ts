@@ -14,6 +14,7 @@ import {
   memberOf,
   membershipOf,
   standingOf,
+  unholdForBlocked,
   type GroupPorts,
   type Membership,
 } from "../src/group.js"
@@ -132,7 +133,7 @@ describe("joining and leaving", () => {
     await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
     await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "B", 2)
 
-    expect(await leaveGroup(ports.storage, "ses_parent", "pair", "ses_a", "failed", 50)).toEqual({ left: true, complete: false })
+    expect(await leaveGroup(ports.storage, "ses_parent", "pair", "ses_a", "failed", 50)).toBe(false)
     expect(await memberOf(ports.storage, "ses_parent", "pair", "ses_a")).toEqual({ title: "A", joinedAt: 1, left: { at: 50, by: "failed" } })
     expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_a"))).toBe("failed")
     // Not a member: nothing to leave.
@@ -150,7 +151,7 @@ describe("joining and leaving", () => {
 
     await holdReport(ports.storage, membership("ses_a", "A"), report("done"))
     expect(await groupStanding(ports.storage, "ses_parent", "pair")).toEqual({ reported: 1, members: 2, complete: false })
-    expect(await leaveGroup(ports.storage, "ses_parent", "pair", "ses_a", "failed", 60)).toEqual({ left: false, complete: false })
+    expect(await leaveGroup(ports.storage, "ses_parent", "pair", "ses_a", "failed", 60)).toBe(false)
     expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_a"))).toBe("held")
   })
 
@@ -196,7 +197,7 @@ describe("deliverReleased", () => {
         sessionID: "ses_parent",
         text: envelope("ses_a,ses_b", groupNotice("pair", reports), { group: "pair", reports: "2" }),
         description: "Reports of group pair",
-        metadata: { source: "courier", from: ["ses_a", "ses_b"], group: "pair", reports: 2 },
+        metadata: { source: "courier", from: "ses_a,ses_b", group: "pair", reports: 2 },
         delivery: "steer",
       },
     ])
@@ -217,8 +218,36 @@ describe("deliverReleased", () => {
     expect(delivered).toHaveLength(1)
     expect(delivered[0].text).toContain('1 report of 2 members (1 done)')
     expect(delivered[0].text).toContain('Without a report: ses_b "Second" (its turn failed).')
-    expect(delivered[0].metadata.from).toEqual(["ses_a"])
+    expect(delivered[0].metadata.from).toBe("ses_a")
     expect(store.size).toBe(0)
+  })
+
+  test("drops a group whose parent OpenCode no longer knows, unsent, and says so once", async () => {
+    const { ports, delivered, logs, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a"), report("done"))
+    await holdReport(ports.storage, membership("ses_b"), report("done"))
+    ;(ports.session as any).synthetic = async () => Promise.reject(Object.assign(new Error(""), { _tag: "Session.NotFoundError", sessionID: "ses_parent" }))
+
+    await deliverReleased(ports, new Set())
+
+    expect(delivered).toEqual([])
+    expect(store.size).toBe(0)
+    expect(logs).toEqual(["courier group pair of ses_parent dropped: the session is gone (Error)"])
+  })
+
+  test("a blocked report puts a member whose report was held back among those out", async () => {
+    const { ports, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a", "First"), report("done"))
+    const held = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_a"))!
+    const out = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_b"))!
+
+    await unholdForBlocked(ports.storage, held)
+    await unholdForBlocked(ports.storage, out)
+
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toEqual({ title: "First", joinedAt: 1 })
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "Second", joinedAt: 2 })
   })
 
   test("drops a group whose every member left, unsent: the parent was told of each", async () => {

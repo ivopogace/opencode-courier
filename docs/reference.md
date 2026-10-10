@@ -211,31 +211,38 @@ the earlier.
 **The release.** Once every member has a held report, or has left (below), the group is released:
 the parent gets one message, waking it if it is idle, wrapped in `<courier from="<members>"
 group="<name>" reports="<n>">`, `from` listing the sessions whose reports it carries, comma-separated.
-The body names the group and counts the reports by status, then lists every report in the order the
-members joined, each as `[i/n] <sessionID> "<title>": <status>` followed by its text and its
-artifacts in [the fixed layout](#a-childs-report), and after them the members that left without a
-report. The message's metadata carries `group`, `reports` and `from` (the list). The held reports
+The body names the group and counts the reports by status, and the members without one, then lists
+every report in the order the members joined, each as `[i/n] <sessionID> "<title>": <status>`
+followed by its text and its artifacts in [the fixed layout](#a-childs-report), and after them the
+members that left without a report. The message's metadata carries `group`, `reports` and `from`
+(the same comma-separated list). The held reports
 are then dropped, and the group with them: the name is free again, and a `courier_spawn` with it
 starts a new group, with only the sessions started since. A session started into a group that is
 still open joins it, and the release waits for it too. A member's report after the release, as when
 the parent sends it more to do, is delivered on its own, as a report of a child in no group.
 
-**A member that leaves.** A member whose turn [fails](#a-child-that-fails), whose task could not be
-handed over as it was started, or whose session OpenCode deletes, leaves the group without a report: the parent is told of the failure at once, as ever, with
-a line naming the group (sent before the member leaves, so the group's message, which may follow at
-once, never overtakes it), and the group no longer waits for it, so it is released once its other
-members have reported, the message naming who left and why. A member that reports after all before
-then rejoins with its report, and one whose report comes in while the group's message is going out
-keeps it, to go out at the next tick. A member that has reported keeps its held report whatever
-happens to its turn after, and a held report outlives the member's [roster](#roster) entry: a
-member dropped after 14 days or by `courier_cleanup` goes from its group with no trace when it has
-not reported, and otherwise stays until the group is released. A group whose every member left is
-dropped unsent: the parent was told of each. A member that [ends its turn without a
-report](#a-child-that-ends-without-a-report), or whose turn is interrupted, is still out, as a child
-in no group would still owe its report: the silent-end notice says the group's other reports are
-held until it reports, and `courier_children` shows it. A report that cannot be held, the storage
-failing as `courier_send` runs, is delivered on its own, and the member dropped from the group, which
-releases without it.
+**A member that leaves.** A member whose turn [fails](#a-child-that-fails) or is interrupted (by
+the person, or by OpenCode after an hour without activity; not by a shutdown, which the next start
+resumes), whose task could not be handed over as it was started, or whose session OpenCode deletes,
+leaves the group without a report: the parent is told of a failure at once, as ever, with a line
+naming the group, and the group no longer waits for it, so it is released once its other members
+have reported, the message naming who left and why. The member is marked as left before the notice
+goes out, so the parent is waiting on the group meanwhile, and the scheduler is nudged after it, so
+the group's message does not overtake the notice. A member that reports after all before the release
+rejoins with its report, and one whose report comes in while the group's message is going out keeps
+it, to go out at the next tick. A member that has reported keeps its held report whatever happens to
+its turn after, unless its next word to the parent is a `blocked` report: that passes through, and
+the stale held report is dropped, so the member is out again until it reports. A held report
+outlives the member's [roster](#roster) entry: a member dropped after 14 days or by
+`courier_cleanup` goes from its group with no trace when it has not reported, and otherwise stays
+until the group is released; a member dropped by `courier_cleanup` while still out has the group
+delivered at once if that completes it, with no line for it, since the parent did the dropping. A
+group whose every member left is dropped unsent: the parent was told of each failure, and did the
+rest. A member that [ends its turn without a report](#a-child-that-ends-without-a-report) is still
+out, as a child in no group would still owe its report: the silent-end notice says the group's
+other reports are held until it reports, and `courier_children` shows it. A report that cannot be
+held, the storage failing as `courier_send` runs, is delivered on its own, and the member dropped
+from the group, which releases without it.
 
 **The parent waits.** A session [waits](#a-child-that-ends-without-a-report) on a group as on any
 children: while a member still owes it a report it has not been told about, and, once the group is
@@ -246,7 +253,7 @@ that a member ended without a report, which ends its turn without acting on it, 
 would be for a child in no group.
 
 **`courier_children`** lists, for a child started in a group, `group: { name, report }`, with
-`report` one of `held`, `out`, `failed`, `deleted` (it left), `released` (the group has been
+`report` one of `held`, `out`, `failed`, `interrupted`, `deleted` (it left), `released` (the group has been
 delivered, or the child joined an earlier one of that name) or `unknown` (its membership could not
 be read). A child whose group could not be joined when it was started is recorded in no group, and
 `courier_spawn`'s result says so: its report comes on its own.
@@ -258,8 +265,11 @@ on one data directory, by the one holding the owner key, within a tick of it. Ea
 claimed once in the process, like a scheduled message, and dropped only after the message has been
 delivered: a delivery that fails is logged and tried again at the next tick, and nothing is lost,
 while a crash between the delivery and the drop delivers it again after a restart. Held reports live
-in the plugin's storage, so a restart loses none. The group's message is a message like any other:
-it makes a spawned parent owe a report, and a report of its own settles that.
+in the plugin's storage, so a restart loses none. A group whose parent OpenCode no longer knows is
+dropped unsent, like the report state of a deleted session's children. The group's message is a
+message like any other, steered into the parent's running turn or starting one, whatever `queue`
+the members' `courier_send` calls gave: it makes a spawned parent owe a report, and a report of its
+own settles that.
 
 ## A child that fails
 

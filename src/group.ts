@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
-import { num, obj, str } from "./json.js"
+import { isNotFound, num, obj, str } from "./json.js"
 import { envelope, groupNotice, isStatus, type Artifacts, type HeldReport, type LeftMember } from "./notices.js"
 import { scanEntries, type Storage } from "./storage.js"
 
@@ -152,7 +152,13 @@ export async function markLeft(storage: Pick<Storage, "set" | "scan">, membershi
 /** `markLeft` for a member not read yet; undefined when it is in no open group. */
 export async function leaveGroup(storage: Pick<Storage, "get" | "set" | "scan">, parentID: string, group: string, sessionID: string, by: LeftMember["by"], at: number) {
   const membership = await membershipOf(storage, parentID, group, sessionID)
-  return membership && { left: membership.out, complete: await markLeft(storage, membership, by, at) }
+  return membership && (await markLeft(storage, membership, by, at))
+}
+
+/** Puts a member whose report is held back among those out: its latest word to the parent was a blocked report. */
+export async function unholdForBlocked(storage: Pick<Storage, "set">, membership: Membership) {
+  const { parentID, group, sessionID, title, joinedAt } = membership
+  if (membership.report) await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt }))
 }
 
 /** Drops a member from its group, with its roster entry, unless its report is held: that still goes to the parent. */
@@ -215,12 +221,16 @@ async function release(ports: GroupPorts, parentID: string, group: string) {
           reports: String(reports.length),
         }),
         description: `Reports of group ${group}`,
-        metadata: { source: "courier", from: reports.map((report) => report.sessionID), group, reports: reports.length },
+        metadata: { source: "courier", from: reports.map((report) => report.sessionID).join(","), group, reports: reports.length },
         delivery: "steer",
       })
     } catch (error) {
-      ports.log(`courier group ${group} of ${parentID} not delivered, held for another try: ${String(error)}`)
-      return
+      // A parent OpenCode no longer knows will never take it: dropped, like the children of a deleted session.
+      if (!isNotFound(error)) {
+        ports.log(`courier group ${group} of ${parentID} not delivered, held for another try: ${String(error)}`)
+        return
+      }
+      ports.log(`courier group ${group} of ${parentID} dropped: the session is gone (${String(error)})`)
     }
   }
   // A member left behind here is delivered again at the next tick, as after a crash: logged, so it can be seen.

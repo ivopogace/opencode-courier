@@ -24,7 +24,7 @@ import {
 } from "./relay.js"
 import { scheduledFor } from "./later.js"
 import { awaited, forgetReport, prompted, reportOf, settled, told, untold } from "./report.js"
-import { allEntries, children, entriesOf, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
+import { allEntries, children, entriesOf, indexedEntry, indexedParent, lineage, rosterKey, type RosterEntry } from "./roster.js"
 import { subscriptions } from "./webhook.js"
 
 export type { FormsTold, WatchPorts, WatchState } from "./hub.js"
@@ -71,7 +71,9 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
       ports.log(`courier watch: could not note the failed turn of ${sessionID}: ${String(error)}`),
     )
   const out = await Promise.all(entries.map((entry) => outIn(ports, entry)))
-  // The notice first, then the group: its release, which may follow at once, must not overtake it.
+  // Left before the notice, so the parent waits on the group meanwhile; delivered after it, so the
+  // group's message does not overtake the notice.
+  const completed = await Promise.all(out.map((member) => member && leave(ports, member, "failed", at)))
   try {
     await Promise.all(
       entries.map((entry, index) =>
@@ -85,7 +87,7 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
       ),
     )
   } finally {
-    await Promise.all(out.map((member) => member && leave(ports, member, "failed", at)))
+    if (completed.includes(true)) ports.nudge()
   }
   return entries.map((entry) => entry.parentID)
 }
@@ -102,12 +104,13 @@ async function outIn(ports: WatchPorts, entry: RosterEntry) {
   }
 }
 
-/** Takes a member out of its group without a report, and has the scheduler deliver the group if that completes it. */
+/** Takes a member out of its group without a report; true when that completes the group, for the caller to nudge the scheduler. */
 async function leave(ports: WatchPorts, member: Membership, by: "failed" | "interrupted" | "deleted", at: number) {
   try {
-    if (await markLeft(ports.storage, member, by, at)) ports.nudge()
+    return await markLeft(ports.storage, member, by, at)
   } catch (error) {
     ports.log(`courier watch: could not take ${member.sessionID} out of group ${member.group}: ${String(error)}`)
+    return false
   }
 }
 
@@ -156,7 +159,7 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
   const at = event.created ?? ports.now()
   await settled(ports.storage, sessionID, "interrupted", at)
   const member = await outIn(ports, entry)
-  if (member) await leave(ports, member, "interrupted", at)
+  if (member && (await leave(ports, member, "interrupted", at))) ports.nudge()
   return true
 }
 
@@ -166,15 +169,17 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
  */
 export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const { sessionID } = event.data
-  const [entry, started] = await Promise.all([indexedEntry(ports.storage, sessionID), children(ports.storage, sessionID)])
-  const forgotten = [...(entry === undefined ? [] : [sessionID]), ...started.map((child) => child.sessionID)]
+  const [parentID, started] = await Promise.all([indexedParent(ports.storage, sessionID), children(ports.storage, sessionID)])
+  const forgotten = [...(parentID === undefined ? [] : [sessionID]), ...started.map((child) => child.sessionID)]
+  const entry = parentID === undefined ? undefined : ((await ports.storage.get(rosterKey(parentID, sessionID))) as RosterEntry | undefined)
   const member = entry && (await outIn(ports, entry))
   // Its groups go whether or not it has children on the roster: a held report outlives the member's entry.
-  await Promise.all([
+  const [completed] = await Promise.all([
+    member ? leave(ports, member, "deleted", event.created ?? ports.now()) : false,
     ...forgotten.map((id) => forgetReport(ports.storage, id)),
-    member ? leave(ports, member, "deleted", event.created ?? ports.now()) : undefined,
     dropGroups(ports.storage, sessionID),
   ])
+  if (completed) ports.nudge()
   return forgotten
 }
 

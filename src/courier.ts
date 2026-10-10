@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
-import { groupStanding, holdReport, isGroupName, joinGroup, leaveGroup, memberKey, memberOf, membershipOf, standingOf, unholdReport, type Membership } from "./group.js"
+import { groupStanding, holdReport, isGroupName, joinGroup, leaveGroup, memberKey, memberOf, membershipOf, standingOf, unholdForBlocked, unholdReport, type Membership } from "./group.js"
 import { admit, type Limits, type SpawnGate } from "./limits.js"
 import { childBrief, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Held, type HeldReport, type Prompt, type Sent, type Status } from "./notices.js"
 import { progressed, progressKey, prompted, settled, settledKey } from "./report.js"
@@ -102,7 +102,7 @@ async function dropWorktree(ports: CourierPorts, directory: string) {
  */
 export async function spawn(ports: CourierPorts, parentID: string, input: SpawnInput) {
   // Some models send null, or an empty string, for an optional field they leave out.
-  const group = typeof input.group === "string" && !input.group.trim() ? undefined : (input.group ?? undefined)
+  const group = typeof input.group === "string" ? input.group.trim() || undefined : (input.group ?? undefined)
   if (group !== undefined && !isGroupName(group))
     throw new Error(`group must be a name of 1 to 60 letters, digits, dots, dashes or underscores, not ${JSON.stringify(group)}.`)
   const admitted = await admit(ports, parentID)
@@ -165,7 +165,7 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     if (!rosterError) await settled(ports.storage, child.id, "failed", ports.now()).catch(() => undefined)
     if (group && !rosterError && !groupError)
       await leaveGroup(ports.storage, parentID, group, child.id, "failed", ports.now()).then(
-        (left) => left?.complete && ports.nudge(),
+        (complete) => complete && ports.nudge(),
         (error: unknown) => ports.log(`courier_spawn: ${child.id} could not leave group ${group}: ${String(error)}`),
       )
     throw error
@@ -204,10 +204,12 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
   if (status !== undefined && !isStatus(status)) throw new Error(`status must be one of ${STATUSES.join(", ")}, not ${JSON.stringify(status)}.`)
   // Noted first: the delivery may wake the parent, whose turn may end before a later note.
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
-  if (noted?.member && status) {
+  if (noted?.member && status && status !== "blocked") {
     const held = await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) })
     if (held) return { status, report: true, held }
   }
+  // A blocked report is the member's latest word: an earlier report held for it would be stale.
+  if (noted?.member && status === "blocked") await unholdForBlocked(ports.storage, noted.member).catch(() => undefined)
   try {
     const delivered = await ports.session.synthetic({
       sessionID: input.sessionID,
@@ -241,9 +243,7 @@ async function noteReport(ports: CourierPorts, from: string, to: string, status:
     if (now?.at !== at || (report && now.by !== "report")) return
     await (before === undefined ? ports.storage.remove(key) : ports.storage.set(key, before))
   }
-  // A report with a final status may be held with the sender's group; a blocked one reaches the parent at once.
-  const held = status !== undefined && status !== "blocked"
-  return { report, at, undo, member: held ? await memberIn(ports, entry) : undefined }
+  return { report, at, undo, member: status !== undefined ? await memberIn(ports, entry) : undefined }
 }
 
 /**

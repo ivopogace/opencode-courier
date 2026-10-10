@@ -514,8 +514,23 @@ describe("join groups", () => {
     expect(sent[0].text).toBe(envelope("ses_b", failureNotice("B", blocked, "pair"), { failed: "provider.auth" }))
     expect(sent[0].text).toContain('It is a member of group "pair"')
     expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 200, by: "failed" } })
-    // After the notice, so the group's message, which says the parent was told, cannot overtake it.
+    // The scheduler is nudged after the notice, so the group's message cannot overtake it.
     expect(nudges).toEqual([1])
+  })
+
+  test("the member is marked as left before the notice goes out, so the parent is waiting on the group meanwhile", async () => {
+    const { ports, store } = fakePorts()
+    await pair(ports)
+    await sendFrom(ports, "ses_a", "ses_parent", 150)
+    let leftFirst: unknown
+    ;(ports.session as any).synthetic = async () => {
+      leftFirst = store.get(memberKey("ses_parent", "pair", "ses_b"))
+      return { id: "msg_1" }
+    }
+
+    await reportFailure(ports, new Set(), { ...failed("ses_b", "evt_1"), created: 200 })
+
+    expect(leftFirst).toEqual({ title: "B", joinedAt: 2, left: { at: 200, by: "failed" } })
   })
 
   test("a member whose report is held, or whose group was released, keeps it when its turn fails, and the notice says nothing of the group", async () => {
@@ -553,14 +568,26 @@ describe("join groups", () => {
     expect(sent[1].text).not.toContain("group")
   })
 
-  test("a member leaves its group even when the failure notice cannot be delivered", async () => {
-    const { ports, store } = fakePorts()
+  test("a member leaves its group even when the failure notice cannot be delivered, and the scheduler is nudged all the same", async () => {
+    const { ports, store, nudges } = fakePorts()
     await pair(ports)
+    await sendFrom(ports, "ses_a", "ses_parent", 150)
     ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
 
     await expect(reportFailure(ports, new Set(), failed("ses_b", "evt_1"))).rejects.toThrow("parent is gone")
 
     expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toMatchObject({ left: { by: "failed" } })
+    expect(nudges).toEqual([0])
+  })
+
+  test("a deleted session with a reverse key but no roster entry is still forgotten", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, child())
+    await notePrompt(ports, delivered("evt_d", 100))
+    store.delete("roster/ses_parent/ses_child")
+
+    expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_x", 150) as SessionEvent)).toEqual(["ses_child"])
+    expect([...store.keys()].filter((key) => key.startsWith("report/"))).toEqual([])
   })
 
   test("a member whose turn failed while another is still out leaves without completing the group", async () => {

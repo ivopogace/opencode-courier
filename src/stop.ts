@@ -43,10 +43,8 @@ export interface StopResult {
 const ROUNDS = 3
 
 /**
- * Stops a session and every session under it, deepest first, and cancels the courier_later messages pending for them.
- * Only a session above the target may stop it. A session that does not run is not an error. The caller is not told of
- * what it stopped; the target's parent is, unless that is the caller. Sessions under the target are not told: they are
- * stopped too. A session one of them started meanwhile is found by looking again, a few times.
+ * Stops a session and everything under it, deepest first, and cancels the messages scheduled for them; only a session above the target may.
+ * The caller is not told; the target's parent is, unless that is the caller.
  */
 export async function stop(ports: StopPorts, callerID: string, input: StopInput): Promise<StopResult> {
   const { storage } = ports.courier

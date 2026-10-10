@@ -9,9 +9,8 @@ export interface Below {
 }
 
 /**
- * The sessions started, directly or through others, from a session, read level by level with one prefix scan per
- * parent, at most `max` of them; `truncated` when there were more. Ordered as a tree is drawn: each session followed
- * by what it started, siblings oldest first.
+ * The sessions started from a session, directly or through others, read one prefix scan per parent, at most `max`
+ * (`truncated` if more), in the order a tree is drawn.
  */
 export async function subtree(storage: RosterStorage, rootID: string, max = Number.POSITIVE_INFINITY) {
   const byParent = new Map<string, Below[]>()
@@ -41,9 +40,8 @@ function drawn(byParent: ReadonlyMap<string, Below[]>, parentID: string): Below[
 }
 
 /**
- * The subtree under a session, at most `maxTotal` sessions of it: each with what courier_children shows of a child, its
- * depth, who started it and its report state: whether it owes a report, has sent progress, ended without one, and the
- * status of its last report.
+ * The subtree under a session, at most `maxTotal` sessions: what courier_children shows of each, plus its depth,
+ * its parent and its report state.
  */
 export async function tree(ports: CourierPorts, rootID: string) {
   const { nodes, truncated } = await subtree(ports.storage, rootID, ports.limits.maxTotal)

@@ -203,7 +203,11 @@ async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
     return undefined
   } catch (error) {
     const { group: _, ...ungrouped } = entry
-    await record(ports.storage, ungrouped).catch(() => undefined)
+    // A write that failed may have landed all the same: a member left there would hold its group up for good.
+    await Promise.all([
+      record(ports.storage, ungrouped).catch(() => undefined),
+      ports.storage.remove(memberKey(entry.parentID, group, entry.sessionID)).catch(() => undefined),
+    ])
     return describeFailure("group", error).message
   }
 }
@@ -324,7 +328,7 @@ export function lastReply(messages: Awaited<ReturnType<Context["session"]["conte
 
 /**
  * The sessions a parent started, each with what courier_status reports, or the error it gave; a child in a
- * group with the group's name and its standing there: `held`, `out`, `failed`, `deleted`, `released` or `unknown`.
+ * group with the group's name and its standing there: `held`, `out`, how it left, `released` or `unknown`.
  */
 export async function listChildren(ports: CourierPorts, parentID: string) {
   const entries = await current(ports.storage, parentID, ports.now())

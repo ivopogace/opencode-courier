@@ -270,6 +270,21 @@ describe("deliverReleased", () => {
     expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "Second", joinedAt: 2 })
   })
 
+  test("a blocked report opens no group released meanwhile, and keeps a report held since", async () => {
+    const { ports, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a", "First"), report("done"))
+    const stale = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_a"))!
+
+    await holdReport(ports.storage, membership("ses_a", "First"), report("partial", "again", 200))
+    await unholdForBlocked(ports.storage, stale)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toMatchObject({ report: { status: "partial" } })
+
+    store.clear()
+    await unholdForBlocked(ports.storage, stale)
+    expect(store.size).toBe(0)
+  })
+
   test("drops a group whose every member left, unsent: the parent was told of each", async () => {
     const { ports, delivered, store } = fakePorts()
     await pair(ports)

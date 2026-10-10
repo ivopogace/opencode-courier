@@ -157,10 +157,16 @@ export async function leaveGroup(storage: Pick<Storage, "get" | "set" | "scan">,
   return membership && (await markLeft(storage, membership, by, at))
 }
 
-/** Puts a member whose report is held back among those out: its latest word to the parent was a blocked report. */
-export async function unholdForBlocked(storage: Pick<Storage, "set">, membership: Membership) {
+/**
+ * Puts a member whose report is held back among those out: its latest word to the parent was a blocked report. Read
+ * again first: a group released meanwhile is not opened again, and a report held since is kept.
+ */
+export async function unholdForBlocked(storage: Pick<Storage, "get" | "set">, membership: Membership) {
   const { parentID, group, sessionID, title, joinedAt } = membership
-  if (membership.report) await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt }))
+  if (!membership.report) return
+  const current = await memberOf(storage, parentID, group, sessionID)
+  if (JSON.stringify(current?.report) !== JSON.stringify(membership.report)) return
+  await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt }))
 }
 
 /** Drops a member from its group, with its roster entry, unless its report is held: that still goes to the parent. True when dropped. */

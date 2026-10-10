@@ -271,6 +271,14 @@ describe("spawn, into a group", () => {
     // Recorded in no group, so courier_children does not show it as one whose report was released.
     expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("group")
 
+    // A write that fails after landing leaves no member behind for its group to wait on.
+    ;(ports.storage as any).set = async (key: string, value: unknown) => {
+      await set(key, value as never)
+      if (key.startsWith("group/")) throw new Error("timed out")
+    }
+    expect(await spawn(ports, "ses_parent", { task: "t", group: "reviews" })).toMatchObject({ groupError: "group failed: timed out" })
+    expect([...store.keys()].filter((key) => key.startsWith("group/"))).toEqual([])
+
     ;(ports.storage as any).set = async () => {
       throw new Error("disk full")
     }
@@ -475,6 +483,20 @@ describe("send, from a member of a group", () => {
     await send(ports, "ses_child", { sessionID: "ses_parent", message: "On second thought, which?", status: "blocked" })
 
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({ title: "A", joinedAt: 1 })
+  })
+
+  test("a blocked report does not open again a group released while it was going out", async () => {
+    const { ports, store } = fakePorts()
+    await grouped(ports)
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done.", status: "done" })
+    ;(ports.session as any).synthetic = async () => {
+      for (const key of [...store.keys()]) if (key.startsWith("group/")) store.delete(key)
+      return { id: "msg_3" }
+    }
+
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "Which?", status: "blocked" })
+
+    expect([...store.keys()].filter((key) => key.startsWith("group/"))).toEqual([])
   })
 
   test("holds the report even when the group cannot be counted after, and says so without the count", async () => {

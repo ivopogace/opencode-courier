@@ -346,8 +346,9 @@ holds when a prompt last reached the session (`{ at }`, epoch milliseconds),
 `report/<sessionID>/settled` when it last reported, failed or was interrupted (`{ at, by, status }`,
 `by` being `report`, `failed` or `interrupted`, and `status` the report's, `done`, `partial`,
 `blocked` or `failed`, when it carried one), `report/<sessionID>/progress` when it last messaged its
-parent without a status (`{ at }`), and `report/<sessionID>/told` when its parent was last
-told that it ended a turn without one (`{ at }`). It owes a report while `prompt` is later than
+parent without a status (`{ at }`), `report/<sessionID>/told` when its parent was last
+told that it ended a turn without one (`{ at }`), and `report/<sessionID>/stopped` when
+[`courier_stop`](#seeing-and-stopping-a-subtree) stopped it (`{ at }`). It owes a report while `prompt` is later than
 `settled`, and its parent waits for it while `prompt` is later than `told` too.
 The prompt's time is the one OpenCode published its delivery at, not when the plugin handled the
 event, and the report's, or the progress's, is the server's clock as `courier_send` runs, before it delivers, so an event
@@ -521,6 +522,63 @@ Entries are dropped 14 days after the child was started, when that parent's rost
 the plugin is next loaded, except isolated children whose worktree is still there (see
 [Worktree cleanup](#worktree-cleanup)). If the roster cannot be written, the child still gets its
 task and `courier_spawn` says it is not on the list.
+
+## Seeing and stopping a subtree
+
+**`courier_tree`** lists the sessions under the calling session, or under `sessionID`: those it
+started with `courier_spawn`, and those they started, and so on. The roster is read level by level,
+one prefix scan per parent (never the whole roster), at most `maxTotal` sessions; past that the
+result says `truncated` and the number, and `courier_tree` on one of the listed sessions lists what is
+under it. The result is flat, in the order a tree is drawn (each session followed by what it started,
+siblings oldest first). Each entry is what `courier_children` shows (`sessionID`, `title`,
+`outcome`, `lastText`, `pending`, `directory`, `isolated`, `created`, and `group: { name, report }`
+for a member of a join group) plus:
+
+- `parentID` and `depth`: 1 for a child of the session the tree is read from;
+- `report`, when its report state is known: `owes` (it has been prompted since it last reported,
+  failed or was interrupted), `progressed` (it messaged its parent without a status since its last
+  prompt), `ended` (its turn failed or was interrupted since) and `status` (the status of its last
+  report: `done`, `partial`, `blocked` or `failed`).
+
+Anyone can read any session's tree, as with `courier_children`.
+
+**`courier_stop { sessionID, cleanup? }`** stops a session and every session under it:
+
+1. Only a session above the target may stop it: the calling session must be one of the sessions that
+   started the target, directly or through others, as for [`courier_answer`](#a-child-that-asks-for-permission),
+   so a session cannot stop itself, a sibling or a parent, and one `courier_spawn` did not start cannot be stopped.
+2. Every session in the subtree is marked stopped (`report/<sessionID>/stopped`) and the
+   `courier_later` messages scheduled *for* them are cancelled, before any interrupt, so nothing
+   scheduled wakes a session that has just been stopped. Messages they scheduled for other sessions,
+   and webhook subscriptions, are left alone.
+3. They are interrupted with `session.interrupt`, level by level, deepest first, the level's
+   sessions at once. A session that does not run is not an error: its entry says `idle` and nothing
+   else happens to it; one OpenCode no longer knows says `gone`, and one whose interrupt failed
+   says `failed` with the error and may still run, while the others are stopped regardless. The
+   subtree is then read again, up to three times, for a session one of them started meanwhile.
+4. With `cleanup: true`, the worktrees of the stopped sessions that ran in one of their own are
+   removed deepest first by the rules of [`courier_cleanup`](#worktree-cleanup), without `force`:
+   one with uncommitted changes or commits on no branch is kept and listed in the result, and one
+   that fails is listed with its error.
+
+The result lists every session stopped, deepest first, with its outcome, the ids of the messages
+cancelled, and the worktrees.
+
+**Who is told.** An interrupt ends the turn with `session.execution.interrupted`, reason `user`,
+which settles the session's report, as before, and takes a member out of its join group (the
+release message names it as interrupted). The failure and the silent-end notices stay quiet for a
+session stopped since its last prompt: a session prompted again after a stop is judged as any other.
+
+- The calling session is not told of what it stopped.
+- The parent of the target is told once, `ended="stopped"`, when it is not the caller, that is when
+  there is a session between the caller and the target. The notice says it was stopped by a session
+  above, and is not a failure. It is not sent when the target did not run, as nothing was stopped.
+- Sessions under the target are not told: their parents are stopped too, and a notice would wake them.
+
+A stopped session is not forgotten: it stays on the roster and in `courier_tree`, can be messaged with
+`courier_send` (which prompts it again, and it owes a report again) and is removed by `courier_cleanup`.
+A session of the subtree that a running turn of its own starts between the first look and the
+last cannot be stopped.
 
 ## Worktree cleanup
 

@@ -796,6 +796,28 @@ cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child force" | tool_state courie
 check "with force, courier_cleanup removed it" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
 check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
 
+echo "courier_tree shows a three-level tree, and courier_stop from the root stops all of it"
+out=$(prompt "COURIER-NEST-START")
+root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the middle session started its leaf, and its turn runs on" "$(has_text "$middle" "Started session ses_" 60)"
+seen=$(prompt_in "$root" "COURIER-NEST-TREE" | tool_state courier_tree)
+leaf=$(jq -r '.metadata.metadata.sessions[1].sessionID // empty' <<<"$seen")
+check "courier_tree lists the middle session and its leaf, with their depths and parents" \
+  "$(jq -r --arg root "$root" --arg middle "$middle" '.status == "completed" and (.metadata.metadata.sessions | map([.sessionID, .depth, .parentID]) | .[0] == [$middle, 1, $root] and .[1][1] == 2 and .[1][2] == $middle and length == 2)' <<<"$seen")"
+check "each owes its report and is not isolated" \
+  "$(jq -r '.metadata.metadata.sessions | all(.report.owes == true and .isolated == false)' <<<"$seen")"
+stopped=$(prompt_in "$root" "COURIER-NEST-STOP $middle" | tool_state courier_stop)
+check "courier_stop interrupted the leaf, then the middle session" \
+  "$(jq -r --arg middle "$middle" --arg leaf "$leaf" '.status == "completed" and (.metadata.metadata.stopped | map([.sessionID, .outcome]) == [[$leaf, "interrupted"], [$middle, "interrupted"]])' <<<"$stopped")"
+ended() { for _ in $(seq 1 30); do [ "$(api "session/$1" | jq -r '(.data // .) | .outcome')" = interrupted ] && { echo true; return; }; sleep 1; done; echo false; }
+check "both sessions ended interrupted" "$([ "$(ended "$leaf")" = true ] && [ "$(ended "$middle")" = true ] && echo true || echo false)"
+sleep $((CHILD_DELAY_MS / 1000 + 3))
+check "neither parent was told of the stop, nor that a session ended without a report" \
+  "$([ "$(notices_with "$root" ended)" = '[]' ] && [ "$(notices_with "$middle" ended)" = '[]' ] && echo true || echo false)"
+check "the stop is noted for both" "$([ -n "$(kv get "report/$leaf/stopped")" ] && [ -n "$(kv get "report/$middle/stopped")" ] && echo true || echo false)"
+check "a failure notice did not follow either" "$(notices_with "$root" failed | jq -r 'length == 0')"
+
 # Last, because it swaps the local plugin for the installed one.
 echo "opencode plugin add installs the packed package and its tools load"
 stop_server

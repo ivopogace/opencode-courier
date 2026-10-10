@@ -7,6 +7,8 @@ const port = Number(process.env.MOCK_PORT ?? 4599)
 const log = process.env.MOCK_LOG
 // Holds the child's report (or its failure) back, so the parent's turn has ended and it is idle when it lands.
 const childDelay = Number(process.env.MOCK_CHILD_DELAY_MS ?? 0)
+// How long a `hold` reply is held back: a turn that is still running when the test stops it.
+const holdMs = Number(process.env.MOCK_HOLD_MS ?? 90_000)
 
 const textOf = (content) =>
   typeof content === "string"
@@ -32,6 +34,9 @@ function decide(body) {
     const scheduled = result.match(/Scheduled (later_[\w-]+)/)
     if (call?.function?.name === "courier_later" && prompt.includes("COURIER-LATER-CANCEL") && scheduled)
       return { tool: "courier_cancel", args: { id: scheduled[1] } }
+    // The middle session of COURIER-NEST-START has started its leaf and then waits for a model reply that does not come in time.
+    if (call?.function?.name === "courier_spawn" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-NEST-MID"))
+      return { text: "MID HOLDING", hold: true }
     // Any user message, not just the last: a child's report may already have been steered in.
     const roster = messages.some((message) => message.role === "user" && textOf(message.content).includes("COURIER-ROSTER"))
     if (call?.function?.name === "courier_spawn" && roster) {
@@ -127,6 +132,9 @@ function decide(body) {
   if (parent && recent.includes("CHILD-DEEPENS"))
     return { calls: [{ tool: "courier_spawn", args: { task: "CHILD-LEAF" } }, { tool: "courier_spawn", args: { task: "CHILD-LEAF CHILD-FORCES" } }] }
   if (parent && recent.includes("CHILD-LEAF")) return { tool: "courier_spawn", args: { task: "CHILD-TOO-DEEP" } }
+  // The middle session of COURIER-NEST-START starts a leaf, whose turn runs on until the test stops it.
+  if (parent && recent.includes("CHILD-NEST-MID")) return { tool: "courier_spawn", args: { task: "CHILD-NEST-LEAF" } }
+  if (parent && recent.includes("CHILD-NEST-LEAF")) return { text: "LEAF HOLDING", hold: true }
   // The middle session of COURIER-QUESTION nested starts a child that asks.
   if (parent && recent.includes("CHILD-NESTS")) return { tool: "courier_spawn", args: { task: "CHILD-QUESTION" } }
   // A child whose question was cut off gets the answer as a message, and reports it.
@@ -197,6 +205,10 @@ function decide(body) {
   if (look) return { tool: "courier_status", args: { sessionID: look[1] } }
   const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)
   if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
+  if (recent.includes("COURIER-NEST-START")) return { tool: "courier_spawn", args: { task: "CHILD-NEST-MID" } }
+  if (recent.includes("COURIER-NEST-TREE")) return { tool: "courier_tree", args: {} }
+  const stopping = recent.match(/COURIER-NEST-STOP (ses_\w+)/)
+  if (stopping) return { tool: "courier_stop", args: { sessionID: stopping[1] } }
   const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
@@ -264,6 +276,7 @@ createServer((request, response) => {
   request.on("end", async () => {
     const body = raw ? JSON.parse(raw) : {}
     const reply = decide(body)
+    if (reply.hold) await new Promise((resolve) => setTimeout(resolve, holdMs))
     if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status || reply.delayed) && !reply.quick && childDelay)
       await new Promise((resolve) => setTimeout(resolve, childDelay))
     // The session, and the courier role its system prompt names, for the recursion scenario.

@@ -114,68 +114,82 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
 }
 
 async function start(ports: CourierPorts, parentID: string, input: SpawnInput, admitted: Awaited<ReturnType<typeof admit>>, group: string | undefined) {
+  const { worktree, ...child } = await create(ports, parentID, input)
+  admitted.reservation.sessionID = child.sessionID
+  const entry: RosterEntry = {
+    ...child,
+    parentID,
+    isolated: worktree !== undefined,
+    createdAt: ports.now(),
+    reports: "status",
+    ...(worktree ? { source: ports.directory, project: ports.projectID } : {}),
+    ...(group ? { group } : {}),
+  }
+  const { rosterError, groupError } = await enrol(ports, entry, group)
+  ports.roles.delete(parentID)
+  await handOver(ports, entry, admitted.depth, input.task, !rosterError, !rosterError && !groupError)
+  return {
+    sessionID: entry.sessionID,
+    directory: entry.directory,
+    ...(group && !rosterError && !groupError ? { group } : {}),
+    ...(rosterError ? { rosterError } : {}),
+    ...(groupError ? { groupError } : {}),
+  }
+}
+
+/** Creates the child's session, in a worktree of its own if asked, which goes again if the session cannot be created. */
+async function create(ports: CourierPorts, parentID: string, input: SpawnInput) {
   // A failed lookup must not keep the child from starting; it then runs on OpenCode's default.
   const model = await inheritedModel(ports, parentID, input.agent).catch(() => undefined)
-  const directory = input.isolate
-    ? (await ports.worktree.create({ projectID: ports.projectID })).directory
-    : undefined
-  const base = directory ? await ports.head(directory) : undefined
+  const worktree = input.isolate ? (await ports.worktree.create({ projectID: ports.projectID })).directory : undefined
+  const base = worktree ? await ports.head(worktree) : undefined
   const title = input.title ?? titleOf(input.task)
   const child = await ports.session
     .create({
       title,
       ...(input.agent ? { agent: input.agent } : {}),
       ...(model ? { model } : {}),
-      ...(directory ? { location: { directory } } : {}),
+      ...(worktree ? { location: { directory: worktree } } : {}),
       metadata: { courier: { parentID } },
     })
     .catch(async (error: unknown) => {
       // No session will ever use the fresh worktree, and nothing records it, so it goes now.
-      if (directory) await dropWorktree(ports, directory)
+      if (worktree) await dropWorktree(ports, worktree)
       throw error
     })
-  admitted.reservation.sessionID = child.id
-  // Recorded before the prompt, so a child that exists is on the roster even if prompting fails. A
-  // failed write must not keep the child from its task, so it is reported instead of thrown.
-  const entry: RosterEntry = {
-    sessionID: child.id,
-    parentID,
-    title,
-    directory: directory ?? child.location.directory,
-    isolated: directory !== undefined,
-    createdAt: ports.now(),
-    reports: "status",
-    ...(directory ? { source: ports.directory, project: ports.projectID } : {}),
-    ...(base ? { base } : {}),
-    ...(group ? { group } : {}),
-  }
+  return { sessionID: child.id, title, directory: worktree ?? child.location.directory, worktree, ...(base ? { base } : {}) }
+}
+
+/**
+ * Records the child on the roster, before the prompt, so a child that exists is on the roster even if prompting
+ * fails, then in its group. A failed write must not keep the child from its task: each is reported, not thrown.
+ */
+async function enrol(ports: CourierPorts, entry: RosterEntry, group: string | undefined) {
   const rosterError = await record(ports.storage, entry).then(
     () => undefined,
     (error: unknown) => describeFailure("roster", error).message,
   )
-  ports.roles.delete(parentID)
   const groupError = group && !rosterError ? await join(ports, entry, group) : undefined
+  return { rosterError, groupError }
+}
+
+/**
+ * Hands the child its task. `rostered` says whether its report state is kept, which a child off the roster has none
+ * of, and `grouped` whether it is in its group; a child that never got its task leaves both, as it will never report.
+ */
+async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, task: string, rostered: boolean, grouped: boolean) {
   // A baseline, until OpenCode's event for the prompt's delivery moves it on; written first, so it never overtakes that.
-  // Not for a child off the roster: nothing would read or remove it.
-  if (!rosterError) await prompted(ports.storage, child.id, ports.now()).catch(() => undefined)
+  if (rostered) await prompted(ports.storage, entry.sessionID, ports.now()).catch(() => undefined)
   try {
-    await ports.session.prompt({ sessionID: child.id, text: childBrief(parentID, input.task, admitted.depth, ports.limits) })
+    await ports.session.prompt({ sessionID: entry.sessionID, text: childBrief(entry.parentID, task, depth, ports.limits) })
   } catch (error) {
-    // A child that never got its task will never report: it must not count against the limits, nor hold its group up.
-    if (!rosterError) await settled(ports.storage, child.id, "failed", ports.now()).catch(() => undefined)
-    if (group && !rosterError && !groupError)
-      await leaveGroup(ports.storage, parentID, group, child.id, "failed", ports.now()).then(
+    if (rostered) await settled(ports.storage, entry.sessionID, "failed", ports.now()).catch(() => undefined)
+    if (grouped && entry.group)
+      await leaveGroup(ports.storage, entry.parentID, entry.group, entry.sessionID, "failed", ports.now()).then(
         (complete) => complete && ports.nudge(),
-        (error: unknown) => ports.log(`courier_spawn: ${child.id} could not leave group ${group}: ${String(error)}`),
+        (leaveError: unknown) => ports.log(`courier_spawn: ${entry.sessionID} could not leave group ${entry.group}: ${String(leaveError)}`),
       )
     throw error
-  }
-  return {
-    sessionID: child.id,
-    directory: directory ?? child.location.directory,
-    ...(group && !rosterError && !groupError ? { group } : {}),
-    ...(rosterError ? { rosterError } : {}),
-    ...(groupError ? { groupError } : {}),
   }
 }
 
@@ -204,16 +218,9 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
   if (status !== undefined && !isStatus(status)) throw new Error(`status must be one of ${STATUSES.join(", ")}, not ${JSON.stringify(status)}.`)
   // Noted first: the delivery may wake the parent, whose turn may end before a later note.
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
-  if (noted?.member && status && status !== "blocked") {
-    const held = await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) }).catch(
-      async (error: unknown) => {
-        await noted.undo().catch(() => undefined)
-        throw error
-      },
-    )
-    if (held) return { status, report: true, held }
-  }
   try {
+    const held = noted?.member && status && status !== "blocked" ? await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) }) : undefined
+    if (held) return { status, report: true, held }
     const delivered = await ports.session.synthetic({
       sessionID: input.sessionID,
       text: envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {}),

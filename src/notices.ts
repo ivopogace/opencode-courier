@@ -188,10 +188,11 @@ export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"
   if (sent.held) {
     const { group, reported, members } = sent.held
     const counted = reported !== undefined && members !== undefined
-    const when =
-      counted && reported >= members
-        ? "now, yours being the last."
-        : `once every member of the group has reported${counted ? ` (${reported} of ${members} have)` : ""}. Nothing more is needed from you for it.`
+    let when = "now, yours being the last."
+    if (!counted || reported < members) {
+      const have = counted ? ` (${reported} of ${members} have)` : ""
+      when = `once every member of the group has reported${have}. Nothing more is needed from you for it.`
+    }
     return `Recorded as your report${status}. It is held with group "${group}" and goes to ${sessionID} in one message with the group's other reports, ${when} ${END_TURN}`
   }
   if (sent.report === true) return `Delivered to ${sessionID} as your report${status}. ${END_TURN}`
@@ -405,12 +406,11 @@ export function groupNotice(group: string, reports: ReadonlyArray<HeldReport & {
     `[${index + 1}/${reports.length}] ${report.sessionID} "${report.title}": ${report.status}`,
     reportBody(report.message, report.artifacts),
   ])
-  const without = left.length
-    ? ["", `Without a report: ${left.map((member) => `${member.sessionID} "${member.title}" (${LEFT_HOW[member.by]})`).join(", ")}.`]
-    : []
+  const named = left.map((member) => `${member.sessionID} "${member.title}" (${LEFT_HOW[member.by]})`).join(", ")
+  const without = left.length ? ["", `Without a report: ${named}.`] : []
+  const missing = left.length ? `, ${count(left.length, "member")} without a report, named at the end` : ""
   return [
-    `Group "${group}" is complete: ${count(reports.length, "report")} of ${count(total, "member")} (${statusCounts(reports)})` +
-      `${left.length ? `, ${count(left.length, "member")} without a report, named at the end` : ""}. Each report follows, with its status.`,
+    `Group "${group}" is complete: ${count(reports.length, "report")} of ${count(total, "member")} (${statusCounts(reports)})${missing}. Each report follows, with its status.`,
     ...listed,
     ...without,
     "",

@@ -196,16 +196,19 @@ const claimKey = (parentID: string, group: string) => `group:${parentID}/${group
  * delivered and only then dropped, so a failed delivery is tried again at the next tick, and a crash in between delivers it again.
  */
 export async function deliverReleased(ports: GroupPorts, claimed: Set<string>) {
-  for (const [key, members] of byGroup(await membersUnder(ports.storage, PREFIX))) {
-    if (!complete(members) || claimed.has(key)) continue
-    claimed.add(key)
-    try {
-      await release(ports, members[0]!.parentID, members[0]!.group)
-    } catch (error) {
-      ports.log(`courier group ${members[0]!.group} of ${members[0]!.parentID}: ${String(error)}`)
-    } finally {
-      claimed.delete(key)
-    }
+  const groups = [...byGroup(await membersUnder(ports.storage, PREFIX))].filter(([key, members]) => complete(members) && !claimed.has(key))
+  // Claimed all at once, before any delivery, so a tick alongside claims none of these.
+  for (const [key] of groups) claimed.add(key)
+  await Promise.all(groups.map(([key, members]) => releaseClaimed(ports, claimed, key, members[0]!)))
+}
+
+async function releaseClaimed(ports: GroupPorts, claimed: Set<string>, key: string, { parentID, group }: Membership) {
+  try {
+    await release(ports, parentID, group)
+  } catch (error) {
+    ports.log(`courier group ${group} of ${parentID}: ${String(error)}`)
+  } finally {
+    claimed.delete(key)
   }
 }
 

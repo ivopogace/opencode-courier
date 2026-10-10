@@ -73,7 +73,7 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   const out = await Promise.all(entries.map((entry) => outIn(ports, entry)))
   // Left before the notice, so the parent waits on the group meanwhile; nudged after it, so the group's
   // message does not overtake the notice, short of an interval tick falling in between.
-  const completed = await Promise.all(out.map((member) => member && leave(ports, member, "failed", at)))
+  const completed = await Promise.all(out.map((member) => (member ? leave(ports, member, "failed", at) : Promise.resolve(false))))
   try {
     await Promise.all(
       entries.map((entry, index) =>
@@ -175,7 +175,7 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const member = entry && (await outIn(ports, entry))
   // Its groups go whether or not it has children on the roster: a held report outlives the member's entry.
   const [completed] = await Promise.all([
-    member ? leave(ports, member, "deleted", event.created ?? ports.now()) : false,
+    member ? leave(ports, member, "deleted", event.created ?? ports.now()) : Promise.resolve(false),
     ...forgotten.map((id) => forgetReport(ports.storage, id)),
     dropGroups(ports.storage, sessionID),
   ])

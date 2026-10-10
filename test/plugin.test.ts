@@ -180,6 +180,8 @@ test("registers the courier tools", async () => {
     "courier_send",
     "courier_status",
     "courier_children",
+    "courier_tree",
+    "courier_stop",
     "courier_cleanup",
     "courier_answer",
     "courier_later",

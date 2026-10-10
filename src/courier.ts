@@ -9,7 +9,7 @@ type Context = Plugin.Context
 
 /** The slice of the plugin context the courier tools use; tests pass a fake. */
 export interface CourierPorts {
-  readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context">
+  readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context" | "interrupt">
   readonly agent: Pick<Context["agent"], "get">
   readonly worktree: Pick<Context["worktree"], "create" | "remove">
   /** The project of the plugin's location; an isolated child's worktree is made in it, and removed from it. */
@@ -355,24 +355,25 @@ export function lastReply(messages: Awaited<ReturnType<Context["session"]["conte
  */
 export async function listChildren(ports: CourierPorts, parentID: string) {
   const entries = await current(ports.storage, parentID, ports.now())
-  return Promise.all(
-    entries.map(async (entry) => {
-      const group = entry.group
-        ? { group: { name: entry.group, report: await memberOf(ports.storage, parentID, entry.group, entry.sessionID).then(standingOf, () => "unknown") } }
-        : {}
-      const roster = { directory: entry.directory, isolated: entry.isolated, created: entry.createdAt, ...group }
-      try {
-        return { ...(await status(ports, { sessionID: entry.sessionID })), ...roster }
-      } catch (error) {
-        return {
-          sessionID: entry.sessionID,
-          title: entry.title,
-          ...roster,
-          error: describeFailure("courier_status", error).message,
-        }
-      }
-    }),
-  )
+  return Promise.all(entries.map((entry) => described(ports, entry)))
+}
+
+/** One roster entry as courier_children shows it: what courier_status reports with its directory and group standing, or the error it gave. */
+export async function described(ports: CourierPorts, entry: RosterEntry) {
+  const group = entry.group
+    ? { group: { name: entry.group, report: await memberOf(ports.storage, entry.parentID, entry.group, entry.sessionID).then(standingOf, () => "unknown") } }
+    : {}
+  const roster = { directory: entry.directory, isolated: entry.isolated, created: entry.createdAt, ...group }
+  try {
+    return { ...(await status(ports, { sessionID: entry.sessionID })), ...roster }
+  } catch (error) {
+    return {
+      sessionID: entry.sessionID,
+      title: entry.title,
+      ...roster,
+      error: describeFailure("courier_status", error).message,
+    }
+  }
 }
 
 /** OpenCode leaves a tool call hanging when its metadata holds `undefined`, so results drop those keys. */

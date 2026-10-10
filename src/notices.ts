@@ -252,6 +252,55 @@ export function cleanupText(result: CleanupResult) {
   return `Kept the worktree ${result.directory} of ${result.sessionID}: it has ${result.reason}. Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it.`
 }
 
+/** courier_tree's result: the sessions under a session, drawn depth first, as JSON. */
+export function treeText(tree: { readonly sessions: ReadonlyArray<unknown>; readonly truncated?: number }) {
+  if (!tree.sessions.length) return "No sessions started with courier_spawn."
+  const note = tree.truncated === undefined ? "" : `\nOnly the first ${tree.truncated} sessions are listed (maxTotal); courier_tree on one of them lists what is under it.`
+  return JSON.stringify(tree, null, 2) + note
+}
+
+/** What courier_stop did to each session, and to the messages and worktrees. */
+export function stopText(result: {
+  readonly sessionID: string
+  readonly stopped: ReadonlyArray<{ readonly sessionID: string; readonly outcome: string; readonly error?: string }>
+  readonly cancelled: ReadonlyArray<string>
+  readonly cleanup?: ReadonlyArray<CleanupResult | { readonly sessionID: string; readonly outcome: "failed"; readonly error: string }>
+  readonly told?: string
+}) {
+  const interrupted = result.stopped.filter((one) => one.outcome === "interrupted").length
+  const failed = result.stopped.filter((one) => one.outcome === "failed")
+  return [
+    `Stopped ${result.sessionID} and ${count(result.stopped.length - 1, "session")} under it, deepest first: ${interrupted} had a turn running and was interrupted, ` +
+      `${result.stopped.filter((one) => one.outcome === "idle" || one.outcome === "gone").length} did not run.`,
+    ...result.stopped.map((one) => `- ${one.sessionID}: ${one.outcome}${one.error ? " (" + one.error + ")" : ""}`),
+    ...(failed.length ? ["Those that failed may still run: try courier_stop again."] : []),
+    result.cancelled.length
+      ? `Cancelled ${count(result.cancelled.length, "scheduled message")}: ${result.cancelled.join(", ")}.`
+      : "No scheduled messages were pending for them.",
+    ...(result.told ? [`Told ${result.told}, which started ${result.sessionID}, that it was stopped.`] : []),
+    ...(result.cleanup ? worktreeLines(result.cleanup) : []),
+  ].join("\n")
+}
+
+const FORCE_HINT = " Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it."
+
+/** courier_stop's lines on the worktrees it was asked to remove. */
+function worktreeLines(cleanup: ReadonlyArray<CleanupResult | { readonly sessionID: string; readonly outcome: "failed"; readonly error: string }>) {
+  if (!cleanup.length) return ["None of them ran in a worktree of its own."]
+  return cleanup.map((one) =>
+    one.outcome === "failed"
+      ? `Worktree of ${one.sessionID}: not removed (${one.error}).`
+      : cleanupText(one).replace(FORCE_HINT, " Kept; courier_cleanup with force: true discards it."),
+  )
+}
+
+/** What the parent of a stopped session is told when the stop was ordered by a session above both. */
+export const stoppedNotice = (title: string, by: string) =>
+  [
+    `This session, "${title}", which you started with courier_spawn, was stopped by ${by}, a session above you, together with the sessions under it.`,
+    "It was not a failure and it will not report back. Carry on without it, or start a replacement if you still need what it was doing.",
+  ].join("\n")
+
 /** Why a worktree in this state must be kept, or undefined when removing it loses nothing. */
 export function keepReason(state: { readonly changes: readonly string[]; readonly commits: readonly string[] }) {
   const reasons = [

@@ -1,6 +1,8 @@
 import type { Plugin } from "@opencode/plugin"
 import { Schema } from "effect"
 import { cleanup, type CleanupPorts } from "./cleanup.js"
+import { stop, type StopPorts } from "./stop.js"
+import { tree } from "./tree.js"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
 import { cancel, schedule, type LaterPorts } from "./later.js"
 import {
@@ -14,7 +16,9 @@ import {
   spawnText,
   STATUSES,
   statusText,
+  stopText,
   subscribeText,
+  treeText,
   unsubscribeText,
 } from "./notices.js"
 import { answerQuestion, isQuestion, type QuestionPorts } from "./question/index.js"
@@ -88,6 +92,21 @@ export const ChildrenInput = Schema.Struct({
   ),
 })
 
+export const TreeInput = Schema.Struct({
+  sessionID: Schema.optional(Schema.String.annotate({ description: "The session whose subtree to list; defaults to this one." })),
+})
+
+export const StopInput = Schema.Struct({
+  sessionID: Schema.String.annotate({ description: "The session to stop, with every session under it. It must have been started, directly or through others, from this one." }),
+  cleanup: Schema.optional(
+    Schema.Boolean.annotate({
+      description:
+        "Also remove the worktrees of the stopped sessions that ran in one of their own, as courier_cleanup does: " +
+        "one with uncommitted changes or commits on no branch is kept and listed.",
+    }),
+  ),
+})
+
 export const CleanupInput = Schema.Struct({
   sessionID: Schema.String.annotate({ description: "The isolated child whose worktree to remove." }),
   force: Schema.optional(
@@ -155,6 +174,7 @@ export type ToolEditor = Parameters<Parameters<Plugin.Context["tool"]["transform
 export interface ToolPorts {
   readonly courier: CourierPorts
   readonly cleanup: CleanupPorts
+  readonly stop: StopPorts
   readonly later: LaterPorts
   readonly answer: AnswerPorts
   readonly questions: QuestionPorts
@@ -252,6 +272,36 @@ export function addTools(tools: ToolEditor, ports: ToolPorts) {
     execute: async (input, context) => {
       const listed = await listChildren(ports.courier, input.sessionID || context.sessionID).catch(rethrow("courier_children"))
       return { content: childrenText(listed), metadata: { children: listed } }
+    },
+  })
+
+  tools.add({
+    name: "courier_tree",
+    options: { codemode: false },
+    description:
+      "List the whole tree of sessions under this one (or under sessionID): every session started with courier_spawn " +
+      "from it, directly or through others, each with its depth, what courier_children shows, and whether it still " +
+      "owes a report, sent progress, or ended without one. For a one-off look, not for waiting; long trees are cut at maxTotal sessions.",
+    input: TreeInput,
+    execute: async (input, context) => {
+      const result = await tree(ports.courier, input.sessionID || context.sessionID).catch(rethrow("courier_tree"))
+      return { content: treeText(result), metadata: result }
+    },
+  })
+
+  tools.add({
+    name: "courier_stop",
+    options: { codemode: false },
+    description:
+      "Stop a session you started, directly or through others, and every session under it: each running turn is " +
+      "interrupted, deepest first, and the messages scheduled for them with courier_later are cancelled. Use it when a " +
+      "subtree went wrong or is no longer needed. They do not report back, and you are not told of what you stopped; a " +
+      "session between you and the target is. A stopped session can be woken again with courier_send. With " +
+      "cleanup: true their worktrees are removed too, unless they hold work that is on no branch.",
+    input: StopInput,
+    execute: async (input, context) => {
+      const result = await stop(ports.stop, context.sessionID, input).catch(rethrow("courier_stop"))
+      return { content: stopText(result), metadata: result }
     },
   })
 

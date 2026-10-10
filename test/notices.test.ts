@@ -11,7 +11,7 @@ const registered: any[] = []
 addTools({ add: (tool: unknown) => registered.push(tool) } as unknown as ToolEditor, {} as ToolPorts)
 
 describe("tools", () => {
-  test("are the ten courier tools, each a direct tool", () => {
+  test("are the twelve courier tools, each a direct tool", () => {
     expect(registered.map((tool) => [tool.name, tool.options])).toMatchSnapshot()
   })
 
@@ -93,6 +93,34 @@ describe("tool results", () => {
     expect(notices.childrenText([])).toMatchSnapshot()
     expect(notices.childrenText([{ sessionID: "ses_child", isolated: false }])).toMatchSnapshot()
   })
+  test("treeText", () => {
+    expect(notices.treeText({ sessions: [] })).toMatchSnapshot()
+    expect(notices.treeText({ sessions: [{ sessionID: "ses_child", depth: 1 }] })).toMatchSnapshot()
+    expect(notices.treeText({ sessions: [{ sessionID: "ses_child", depth: 1 }], truncated: 20 })).toMatchSnapshot()
+  })
+  test("stopText", () => {
+    const stopped = [
+      { sessionID: "ses_leaf", outcome: "interrupted" },
+      { sessionID: "ses_mid", outcome: "idle" },
+      { sessionID: "ses_odd", outcome: "failed", error: "session.interrupt failed: boom" },
+    ]
+    expect(notices.stopText({ sessionID: "ses_mid", stopped, cancelled: [] })).toMatchSnapshot()
+    expect(notices.stopText({ sessionID: "ses_mid", stopped, cancelled: ["later_1", "later_2"], told: "ses_top" })).toMatchSnapshot()
+    expect(
+      notices.stopText({
+        sessionID: "ses_mid",
+        stopped,
+        cancelled: [],
+        cleanup: [
+          { sessionID: "ses_leaf", directory: "/wt/leaf", outcome: "removed" },
+          { sessionID: "ses_mid", directory: "/wt/mid", outcome: "kept", reason: "1 uncommitted change (a.ts)", changes: ["a.ts"], commits: [] },
+          { sessionID: "ses_odd", outcome: "failed", error: "courier_cleanup failed: git broke" },
+        ],
+      }),
+    ).toMatchSnapshot()
+    expect(notices.stopText({ sessionID: "ses_mid", stopped, cancelled: [], cleanup: [] })).toMatchSnapshot()
+  })
+  test("stoppedNotice", () => expect(notices.stoppedNotice("Review a.ts", "ses_root")).toMatchSnapshot())
   test("cleanupText", () => {
     expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "removed" })).toMatchSnapshot()
     expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "gone" })).toMatchSnapshot()

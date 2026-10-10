@@ -150,6 +150,7 @@ export const courier = () => Plugin.define({
     const toolPorts: ToolPorts = {
       courier: ports,
       cleanup: cleanupPorts,
+      stop: { courier: ports, later, cleanup: cleanupPorts },
       later,
       answer: answerPorts,
       questions: questionPorts,

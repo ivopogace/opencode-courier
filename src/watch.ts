@@ -23,7 +23,7 @@ import {
   type PermissionReplied,
 } from "./relay.js"
 import { scheduledFor } from "./later.js"
-import { awaited, forgetReport, prompted, reportOf, settled, told, untold } from "./report.js"
+import { awaited, forgetReport, prompted, reportOf, settled, stoppedSincePrompt, told, untold } from "./report.js"
 import { allEntries, children, entriesOf, entryUnder, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
 import { subscriptions } from "./webhook.js"
 
@@ -74,7 +74,10 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   // Left before the notice, so the parent waits on the group meanwhile; nudged after it, so the group's
   // message does not overtake the notice, short of an interval tick falling in between.
   const completed = await Promise.all(out.map((member) => (member ? leave(ports, member, "failed", at) : Promise.resolve(false))))
+  // A session courier_stop stopped is not a failure to tell: its parent was told of the stop, or ordered it.
+  const quiet = entries.length > 0 && (await stoppedSincePrompt(ports.storage, sessionID).catch(() => false))
   try {
+    if (quiet) return []
     await Promise.all(
       entries.map((entry, index) =>
         ports.session.synthetic({
@@ -210,6 +213,7 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   if (!entry || !claim(seen, event.id)) return []
   const report = await reportOf(ports.storage, sessionID)
   if (!report?.owes || (await waits(ports, sessionID, report.prompt))) return []
+  if (await stoppedSincePrompt(ports.storage, sessionID).catch(() => false)) return []
   // The notice goes out without the reply rather than not at all.
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
   const group = (await outIn(ports, entry))?.group

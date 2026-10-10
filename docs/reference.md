@@ -135,7 +135,9 @@ files or areas, load the `courier-orchestrate` skill and decide whether to split
 doing it itself being fine, and say which in one line of the reply (`split: no, because …` or
 `split: <n> parts: …`). The [skill's description](#the-courier-orchestrate-skill) alone fires only
 once a model already takes its task for a big one; the pointer reaches it before it starts
-working, and asks for the decision to be visible either way. From the request after its first
+working, and asks for the decision to be visible either way. A request without `courier_spawn` in
+its tool list, from a session whose agent does not have the courier tools or one another plugin's
+hook stripped them from, gets no pointer, since the session could not act on it. From the request after its first
 spawn on, the session gets a `root orchestrator` part with the limits instead. Every part the hook
 adds begins with the same `opencode-courier role:` prefix, and the hook adds none when one is there
 already, so a second copy of the plugin loaded next to it does not add its own. Each part is the same
@@ -143,7 +145,8 @@ on every request of its session, so a session's prompt changes once, at its firs
 provider's prompt cache holds otherwise. Each instance remembers the depths it has looked up, so
 the hook reads the roster once per session, not per request. It reads only the session's [reverse index](#roster) key and its own
 children, never the whole roster: an entry an older copy wrote without a key is indexed on the next
-load, and until then the hook takes its session for one nobody spawned; `courier_spawn` still
+load, and until then the hook takes its session for one nobody spawned, and points it to the skill
+as a root with none started, which its brief, naming its depth, contradicts; `courier_spawn` still
 enforces the limits.
 
 ## The courier-orchestrate skill

@@ -42,10 +42,13 @@ describe("envelope and child brief", () => {
     expect(notices.SKILL_DESCRIPTION.length).toBeLessThan(400)
     expect(notices.SKILL_CONTENT).toContain("Never start exactly one session")
     expect(notices.SKILL_CONTENT).toContain("Never hand the checking to another session")
-    expect(notices.SKILL_CONTENT).toContain("split: no, because")
+    // The split line reads the same wherever it is asked for: the skill, the brief and the root's pointer.
+    expect(notices.SKILL_CONTENT).toContain(notices.SPLIT_LINE)
     expect(notices.SKILL_CONTENT).toContain("bun run <script>")
-    expect(notices.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("split: no, because")
+    expect(notices.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(notices.SPLIT_LINE)
     expect(notices.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
+    expect(notices.rolePart(null, limits)).toContain(notices.SPLIT_LINE)
+    expect(notices.rolePart(null, limits)).toContain(notices.SKILL_ID)
   })
   test("refusals", () => {
     expect(notices.depthRefusal(3, 3)).toMatchSnapshot()

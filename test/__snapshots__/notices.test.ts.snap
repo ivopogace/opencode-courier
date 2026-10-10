@@ -709,7 +709,7 @@ exports[`envelope and child brief rolePart 3`] = `"opencode-courier role: sub-or
 
 exports[`envelope and child brief rolePart 4`] = `"opencode-courier role: leaf, at depth 3, the deepest the session tree goes. You cannot start sessions: do your task yourself and report with courier_send to the session that started you."`;
 
-exports[`envelope and child brief rolePart 5`] = `"opencode-courier role: root, no sessions started yet. Before a task that touches several files or areas, load the courier-orchestrate skill and decide whether to split it across sessions (doing it yourself is fine), and say which in one line of your reply: split: no, because … or split: <n> parts: …"`;
+exports[`envelope and child brief rolePart 5`] = `"opencode-courier role: root, no sessions started yet. Before a task that touches several files or areas, load the courier-orchestrate skill and decide whether to split it across sessions (doing it yourself is fine), and say which in one line of your reply: split: no, because … or split: <n> parts: … (one phrase per part)"`;
 
 exports[`envelope and child brief the courier-orchestrate skill 1`] = `"Load at the start of any implementation task that may have independent parts, or when a session started you, to decide whether to split it across OpenCode sessions with courier_spawn and state the decision, and how: plan the parts, start them, end your turn, read the reports, verify the work, integrate it and report upward, and what to do when a part goes wrong."`;
 

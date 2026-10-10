@@ -25,6 +25,9 @@ export const isStatus = (value: unknown): value is Status => typeof value === "s
 /** How a text names the statuses a report may carry. */
 const STATUS_LIST = `${STATUSES.slice(0, -1).join(", ")} or ${STATUSES.at(-1)}`
 
+/** The one line a session states its split decision in, so a transcript tells a decision from one never made. */
+export const SPLIT_LINE = "split: no, because … or split: <n> parts: … (one phrase per part)"
+
 /** The branch an isolated child commits its work on, and names in the `branch` of its report. */
 export const childBranch = (sessionID: string) => `courier/${sessionID}`
 
@@ -72,7 +75,7 @@ function splitRule(parentID: string, depth: number, limits: Limits) {
     "- Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one " +
       `session per part with courier_spawn, at most ${limits.maxChildren} of yours running at once and ${limits.maxTotal} in the whole tree.`,
     "- Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session.",
-    "- Say which in one line of your reply: split: no, because … or split: <n> parts: … (one phrase per part).",
+    `- Say which in one line of your reply: ${SPLIT_LINE}.`,
     "- If you split, you orchestrate: end your turn while they work, check and integrate each part yourself when it " +
       `reports (never hand that checking to another session), then send ${parentID} one combined report.`,
   ]
@@ -83,8 +86,7 @@ export const ROLE_PREFIX = "opencode-courier role:"
 
 /**
  * The system part naming a session's place in its tree: `depth` 0 for a session nobody spawned that
- * has started one, and `null` for one that has started none, which is pointed to the skill and
- * asked to state its split decision. The same on every request, so a session's prompt changes once, at its first spawn.
+ * has started one, `null` for one that has started none, which is pointed to the skill. The same on every request.
  */
 export function rolePart(depth: number | null, limits: Limits) {
   const { maxDepth, maxChildren, maxTotal } = limits
@@ -92,8 +94,8 @@ export function rolePart(depth: number | null, limits: Limits) {
   if (depth === null)
     return (
       `${ROLE_PREFIX} root, no sessions started yet. Before a task that touches several files or areas, load the ` +
-      "courier-orchestrate skill and decide whether to split it across sessions (doing it yourself is fine), and say " +
-      "which in one line of your reply: split: no, because … or split: <n> parts: …"
+      `${SKILL_ID} skill and decide whether to split it across sessions (doing it yourself is fine), and say ` +
+      `which in one line of your reply: ${SPLIT_LINE}`
     )
   if (depth === 0)
     return (
@@ -130,8 +132,8 @@ export const SKILL_CONTENT = [
   "1. Decide: split or do. Split when the task has 2 or more independent, substantial parts touching separate files or " +
     "areas; do it yourself when it is small, sequential or tightly coupled. Never start exactly one session. A part that is " +
     "itself big and divisible is split again by the session that gets it; at the deepest level a session does its part itself. " +
-    "Say which in one line of your reply, before you start: split: no, because … or split: <n> parts: … (one phrase per " +
-    "part), so that a reasoned decision to do it yourself can be told from one never made.",
+    `Say which in one line of your reply, before you start: ${SPLIT_LINE}, so that a reasoned decision to do it ` +
+    "yourself can be told from one never made.",
   "2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to " +
     "produce and where, how to check it, what to report. Say if it may split its part further.",
   "3. Start them: one courier_spawn per part, all with the same group name, so you are woken once with every report; " +

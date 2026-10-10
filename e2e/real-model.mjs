@@ -100,6 +100,8 @@ const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ??
 // Who sent a report with courier_send; a courier_later check-in, from whoever, is not a report.
 const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
 const reporterOf = (message) => reportersOf(message)[0]
+// The split decision a session's first turn states: a line that begins with `split:` (after any markdown), else one holding it.
+const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()
 // How the timeline names a delivered message.
 function deliveryOf(message) {
   const from = senderOf(message)
@@ -232,8 +234,8 @@ const notes = []
 // Whether the parent loaded the courier-orchestrate skill, and the split decision its replies state, as the pointer asks (#119).
 const loads = parentTools.filter((part) => part.name === "skill" && part.state.status === "completed").map((part) => part.state.input?.id)
 notes.push(loads.length ? `the parent loaded the skill(s): ${loads.join(", ")}` : "the parent loaded no skill")
-const decision = parent.filter((message) => message.type === "assistant").map(textOf).join("\n").match(/^.*\bsplit:.*$/im)?.[0].trim()
-notes.push(decision ? `the parent's split decision: ${decision.slice(0, 160)}` : "the parent stated no split decision")
+const decision = splitLineOf(firstText)
+notes.push(decision ? `the parent's split decision: ${decision.slice(0, 160)}` : "the parent stated no split decision in its first turn")
 const native = parentTools.filter((part) => part.name === "subagent")
 if (native.length) notes.push(`the parent also used OpenCode's own subagent tool ${native.length} time(s)`)
 const selfWorked = expected.filter((value) => firstText.includes(value))

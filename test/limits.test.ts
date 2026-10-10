@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { DateTime } from "effect"
 import { spawn, type CourierPorts } from "../src/courier.js"
 import { admit, busy, DEFAULT_LIMITS, readLimits, shapeContext, type ContextPorts, type LimitPorts, type SpawnGate } from "../src/limits.js"
-import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/notices.js"
+import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, SKILL_ID, SPLIT_LINE, totalRefusal } from "../src/notices.js"
 import { reportOf, prompted, settled } from "../src/report.js"
 import { record } from "../src/roster.js"
 
@@ -403,8 +403,17 @@ describe("the context hook", () => {
     const event = await shape("ses_alone")
     expect(event).toEqual({ sessionID: "ses_alone", tools: tools(), system: [{ type: "text", text: "base" }, { type: "text", text: rolePart(null, DEFAULT_LIMITS) }] })
     expect(event.system[1]!.text).toStartWith(ROLE_PREFIX)
-    expect(event.system[1]!.text).toContain("courier-orchestrate")
-    expect(event.system[1]!.text).toContain("split: no, because")
+    expect(event.system[1]!.text).toContain(SKILL_ID)
+    expect(event.system[1]!.text).toContain(SPLIT_LINE)
+  })
+
+  test("points no session that cannot spawn, such as one whose agent lacks the courier tools", async () => {
+    const { ports } = contextPorts()
+    const event = { sessionID: "ses_alone", tools: { courier_send: {}, read: {} }, system: [{ type: "text" as const, text: "base" }] }
+
+    await shapeContext(ports, event)
+
+    expect(event).toEqual({ sessionID: "ses_alone", tools: { courier_send: {}, read: {} }, system: [{ type: "text", text: "base" }] })
   })
 
   test("names the role per depth: root orchestrator, sub-orchestrator, leaf", async () => {

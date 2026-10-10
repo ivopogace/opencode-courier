@@ -134,11 +134,12 @@ export interface Shaped {
 
 /**
  * The `context` hook: names a session's role in its tree in a system part, and hides courier_spawn
- * from one at `maxDepth`. A session nobody spawned that has started none is pointed to the skill instead.
+ * from one at `maxDepth`. A session nobody spawned that has started none is pointed to the skill, if it could spawn.
  */
 export async function shapeContext(ports: ContextPorts, event: Shaped) {
   try {
     const depth = await depthOf(ports, event.sessionID)
+    if (depth === null && !event.tools.courier_spawn) return
     if (depth !== null && depth >= ports.limits.maxDepth) delete event.tools.courier_spawn
     if (!event.system.some((part) => part.text.startsWith(ROLE_PREFIX)))
       event.system.push({ type: "text", text: rolePart(depth, ports.limits) })

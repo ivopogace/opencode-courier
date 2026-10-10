@@ -33,6 +33,15 @@ describe("envelope and child brief", () => {
   test("rolePart", () => {
     for (const depth of [0, 1, 2, 3]) expect(notices.rolePart(depth, limits)).toMatchSnapshot()
   })
+  test("the courier-orchestrate skill", () => {
+    expect(notices.SKILL_ID).toBe("courier-orchestrate")
+    expect(notices.SKILL_DESCRIPTION).toMatchSnapshot()
+    expect(notices.SKILL_CONTENT).toMatchSnapshot()
+    // The description is what the model reads in every session's skill list; the content, only once loaded.
+    expect(notices.SKILL_DESCRIPTION.length).toBeLessThan(400)
+    expect(notices.SKILL_CONTENT).toContain("Never start exactly one session")
+    expect(notices.SKILL_CONTENT).toContain("Never hand the checking to another session")
+  })
   test("refusals", () => {
     expect(notices.depthRefusal(3, 3)).toMatchSnapshot()
     expect(notices.childrenRefusal(5, 5)).toMatchSnapshot()

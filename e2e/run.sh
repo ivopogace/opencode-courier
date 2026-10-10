@@ -658,6 +658,20 @@ answered=$(prompt_in "$parent" "COURIER-ANSWER once" | tool_state courier_answer
 check "courier_answer passed it on" "$(jq -r '.status == "completed" and .metadata.metadata.answered == true' <<<"$answered")"
 check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
 
+echo "the courier-orchestrate skill is listed in a session with the plugin loaded, and its text reaches the model"
+out=$(prompt "COURIER-SKILL")
+session=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+check "OpenCode lists it for the project, with its description" \
+  "$(api "skill?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" | jq -r '[.data[] | select(.id == "courier-orchestrate")] |
+    length == 1 and (.[0].name == "courier-orchestrate") and (.[0].description | contains("courier_spawn"))')"
+check "every request of the session listed it among the available skills" \
+  "$(jq -sr --arg session "$session" '[.[] | select(.session == $session and (.tools | length > 0))] | length > 0 and all(.skills | index("courier-orchestrate"))' "$WORK/model.log")"
+check "the model loaded it with the skill tool and got the playbook" \
+  "$(tool_state skill <<<"$out" | jq -r '.status == "completed" and (.output | tojson | contains("Never start exactly one session") and contains("Never hand the checking to another session"))')"
+# The person attaches the skill to a prompt, as the TUI's /skills dialog does, and its text goes to the model with the prompt.
+check "attached to the person's prompt, its text reached the model" \
+  "$([[ $(person "session/$session/prompt" '{"text":"COURIER-SKILL-ATTACHED","skills":[{"id":"courier-orchestrate"}]}') == 20* ]] && has_text "$session" "SKILL SEEN" 30)"
+
 echo "courier_later wakes the idle parent, with the delay sent as a string as some models do"
 out=$(prompt "COURIER-LATER-STRING 0.05")
 turn_ended=$(now_ms)

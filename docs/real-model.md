@@ -26,8 +26,10 @@ the prompt here is trivial on purpose.
 | `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `longcat-2.5-preview-free` | The model, as OpenCode names it. |
 | `COURIER_BASE_URL` | Zen's endpoint for `opencode` | Declares the provider in `opencode.json` as an OpenAI-compatible endpoint with this URL. Set it empty to use OpenCode's catalog instead, with the provider's usual key variable, such as `ANTHROPIC_API_KEY`. |
 | `COURIER_API_KEY_ENV` | | For a declared provider, the name of the variable holding its key. The config refers to it as `{env:NAME}`, so the key is never written to a file. |
-| `COURIER_SCENARIO` | | `permission` or `question` for the two relay scenarios below; the fan-out by default. |
+| `COURIER_SCENARIO` | | `permission` or `question` for the two relay scenarios below, `recursive` for [recursive orchestration](#recursive-orchestration); the fan-out by default. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | see below | The parent's prompt, and the values the reports and the final reply must hold. |
+| `COURIER_FILES` | see below | With `recursive`: the files, relative to the project, that must hold those values, in the same order. |
+| `COURIER_MAX_DEPTH` | `3` | With `recursive`: the `maxDepth` the checker holds the tree to. |
 | `COURIER_PERSON` | | `other-server`, with `COURIER_SCENARIO=permission`: the person answers the parent through a second server on the same data directory (see below). |
 | `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, and then for the children. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |
@@ -214,6 +216,114 @@ child ses_…:
 result: pass
 ```
 
+## Recursive orchestration
+
+`COURIER_SCENARIO=recursive` checks a tree: a job whose shape calls for one split at the root and
+one more below it, under [the brief's own rule](reference.md#session-trees-and-their-limits), with
+the `courier-orchestrate` skill listed for every session ([the reference](reference.md#the-courier-orchestrate-skill)).
+The parent is asked:
+
+> Have this job done through helper sessions started with courier_spawn, one session per part, and
+> do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the
+> session that gets it hands to two sessions of its own: one runs `` `sleep 20; echo $((17 * 23))` ``
+> and writes the number it printed to numbers/a.txt, the other runs `` `sleep 20; echo $((2 ** 10))` ``
+> and writes the number it printed to numbers/b.txt. Part "count" runs `` `sleep 20; echo $((99 - 57))` ``
+> and writes the number it printed to count/total.txt. When the parts have reported back, read the
+> three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
+
+So the root has two parts, one of which has two of its own, and the other is small enough to do
+directly; the sleeps stand in for real work, as in the fan-out, and the files are what each level
+verifies first-hand. The checker (`e2e/real-model-recursive.mjs`) reads every session reached from
+the root through its `courier_spawn` calls, waits until the whole tree has settled and every
+spawned session has reported, saves each transcript (`parent.json`, `child-<id>.json`), prints the
+tree's timeline and nine checks: the root spawned at least two children in its first turn; it ended
+that turn with no reports in it; no orchestrator polled (`courier_status`, `courier_children`,
+`courier_tree`, `sleep`, by the fan-out's rule); at least one child spawned at least two of its own
+in one turn, and no session ever started exactly one in a turn; no session went past `maxDepth` (`COURIER_MAX_DEPTH`, default 3); every spawned session
+reported to its parent with a status; each sub-orchestrator reported upward once, after every report
+of its own children had reached it; the files (`COURIER_FILES`) hold the expected values
+(`COURIER_EXPECT`); and the root's final reply holds every one of them. Its notes say which
+sessions loaded the skill, which used a join group, scheduled a check-in or had a spawn refused,
+and each report's status.
+
+A passing run, `longcat-2.5-preview-free`, 20 model requests across 5 sessions (the tree's own
+transcript is indented by depth):
+
+```
+root ses_…:
+turn 1 (opened by the prompt):
+  says: I'll start by loading the orchestration skill since this task matches it, then set up the helper sessions.
+  skill({"id":"courier-orchestrate"}) -> completed
+  says: The skill confirms the plan: one `courier_spawn` per top-level part with a shared group name, the "numbers" session splitting its own part further ...
+  courier_spawn({"task":"You are doing part \"numbers\" of a job, and you must do NO shell work yourself. This part has two independent halves — hand eac...) -> completed
+  courier_spawn({"task":"You are doing part \"count\" of a job. Run `sleep 20; echo $((99 - 57))` in the shell, capture the number it prints, and write e...) -> completed
+  says: Both parts are now running in helper sessions: ...
+  -- turn ended (succeeded)
+turn 2 (opened by a message from ses_…, ses_…):
+  <- <courier from="ses_…,ses_…" group="results-job" reports="2"> Group "results-job" is complete: 2 reports of 2 members (2 done). Each report follows,...
+  says: Both parts report done. Verifying first-hand by reading the three files myself:
+  read({"path":"…/project/numbers/a.txt"}) -> completed
+  read({"path":"…/project/numbers/b.txt"}) -> completed
+  read({"path":"…/project/count/total.txt"}) -> completed
+  says: RESULTS 391 1024 42
+  -- turn ended (succeeded)
+  depth 1 ses_…:
+  turn 1 (opened by the prompt):
+    courier_spawn({"task":"Run `sleep 20; echo $((17 * 23))` in the shell, capture the exact number it prints (stdout), and write exactly that number ...) -> completed
+    courier_spawn({"task":"Run `sleep 20; echo $((2 ** 10))` in the shell, capture the exact number it prints (stdout), and write exactly that number ...) -> completed
+    says: Both sub-sessions have been started with group name `numbers-halves`. I'll wait for their reports to arrive together.
+    -- turn ended (succeeded)
+  turn 2 (opened by a message from ses_…, ses_…):
+    <- <courier from="ses_…,ses_…" group="numbers-halves" reports="2"> Group "numbers-halves" is complete: 2 reports of 2 members (2 done). Each report fo...
+    says: Both halves reported done. Let me read both files to confirm their contents.
+    read({"path":"…/project/numbers/a.txt"}) -> completed
+    read({"path":"…/project/numbers/b.txt"}) -> completed
+    courier_send({"sessionID":"ses_…","status":"done","message":"Both halves completed successfully. ...) -> completed
+    -- turn ended (succeeded)
+    depth 2 ses_…:
+    turn 1 (opened by the prompt):
+      says: This is a simple, sequential task — I'll do it directly.
+      shell({"command":"mkdir -p …/project/numbers\noutput=$(sleep 20; echo $((17 * 23)))\nprintf '%s' \"$output\" > …) -> completed
+      courier_send({"sessionID":"ses_…","message":"Done. Ran `sleep 20; echo $((17 * 23))`, captured stdout `391`, and wrote exactl...) -> completed
+      -- turn ended (succeeded)
+    depth 2 ses_…:
+      ... the same for 1024 ...
+  depth 1 ses_…:
+  turn 1 (opened by the prompt):
+    shell({"command":"sleep 20; echo $((99 - 57))","timeout":30000}) -> completed
+    write({"path":"…/project/count/total.txt","content":"42"}) -> completed
+    courier_send({"sessionID":"ses_…","message":"Part \"count\" complete. Ran `sleep 20; echo $((99 - 57))` which printed 42. ...) -> completed
+    -- turn ended (succeeded)
+
+  PASS the root spawned at least two children with courier_spawn in its first turn
+  PASS the root ended its first turn after spawning, with no reports in it
+  PASS no orchestrator polled (courier_status, courier_children, courier_tree, sleep)
+  PASS at least one child spawned at least two of its own in one turn, and no session ever started exactly one
+  PASS no session went past maxDepth 3
+  PASS every spawned session reported to its parent, with a status
+  PASS each sub-orchestrator reported upward once, after its own children had reported to it
+  PASS the files hold the expected values
+  PASS the root's final reply holds every expected result
+  note: the root loaded the skill(s): courier-orchestrate
+  note: the root started 2 session(s) in group(s) results-job
+  note: session ses_… (depth 1) started 2 session(s) in group(s) numbers-halves
+  note: report from ses_… (depth 1) in group "results-job": status done
+  ...
+  note: files: numbers/a.txt=391, numbers/b.txt=1024, count/total.txt=42
+result: pass
+```
+
+**How a session finds the skill.** Nothing names it but its own description, in the skill list
+OpenCode puts in every session's system prompt: neither the role part, the brief nor a tool
+description mentions it, so that no model-facing string changed for it. In the run above the root
+loaded it before its first spawn and followed it (one group, verification by reading the files);
+in another run the root did not, and the "numbers" session loaded it instead, before its own
+split, then used a group, scheduled a check-in for itself, cancelled it once the group's message
+came, and verified both files. Either way every check passed but one in that other run, the model's
+doing: the root copied a long temporary path into its children's tasks with a typo, so the files
+were written next to the project rather than in it, and the three sessions reading them back read
+the same wrong path. Run the scenario in a plainly named directory (the default temp dir is).
+
 ## Results
 
 All runs used free models on Zen, which publishes no versions beyond the names. On the current
@@ -224,6 +334,24 @@ With the status on `courier_send` and the brief that asks for it (OpenCode 2.0.2
 passes the fan-out, the permission relay and the question relay, every child's report carrying
 `status="done"` on the brief's wording alone; one fan-out child also listed its command under
 `checks`, the other gave no artifacts.
+
+With the `courier-orchestrate` skill registered (OpenCode 2.0.26), `longcat-2.5-preview-free` passes
+the [recursive scenario](#recursive-orchestration), 9 checks of 9, in 20 model requests across
+five sessions: the root and the "numbers" session each split into two, each in a join group, each
+ended its turn and was woken once, each verified its part's files before reporting, every report
+carried `status="done"`, and the root replied `RESULTS 391 1024 42`. Which session loaded the
+skill varied between runs, on the skill's description alone. On the same scenario
+`nemotron-3-ultra-free` built the same tree, with groups at both levels, and got every file and the
+final line right, but as on the fan-out it did not end its turn: the root scheduled a one-minute
+check-in, cancelled it and called `courier_children`, three times over, until the reports had been
+steered into its open turn; and its "numbers" session reported `done` to the root twice, before its
+own halves had reported, which the group's message then found nothing left to do with, so the root
+was told of a turn without a report after it had already answered. Neither loaded the skill. The
+checker fails that run on three checks, as it should: the shape was right, the discipline was not.
+`muse-spark-1.3-contributor-free` was rate limited on its first request (inconclusive). With the
+skill listed in every session's system prompt, `longcat-2.5-preview-free` still passes the fan-out,
+the permission relay and the question relay, all checks, without loading the skill for those
+one-result tasks.
 
 With the isolated-child brief (nested isolation), `longcat-2.5-preview-free` passes the fan-out with
 `COURIER_PROMPT` asking for two `isolate: true` helpers that each create a file and commit it: both

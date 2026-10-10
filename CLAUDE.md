@@ -11,9 +11,10 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
 - `index.ts`: the plugin, an Effect plugin running the promise one. Builds the ports, registers the
   tools, starts the scheduler, the watcher and the webhook receiver; the Effect half wraps the
   question tool and binds it to its instance's member in the hub.
-- `tools.ts`: the twelve courier tools: input schemas, descriptions and results.
-- `notices.ts`: every other model-facing string (tool result texts, the child brief, the envelope,
-  the failure, permission, form, question and webhook notices), as pure functions that import
+- `tools.ts`: the twelve courier tools: input schemas, descriptions and results. `skill.ts`: the
+  `courier-orchestrate` skill, registered through the skill domain; its text is in `notices.ts`.
+- `notices.ts`: every other model-facing string (tool result texts, the child brief, the skill, the
+  envelope, the failure, permission, form, question and webhook notices), as pure functions that import
   nothing of the plugin's but `json.ts`. `test/notices.test.ts` snapshots them and the tool
   descriptions, so a wording change shows up as a diff in `test/__snapshots__/`; update it with
   `bun test --update-snapshots` and rerun the real-model smoke test.
@@ -51,10 +52,11 @@ scripted OpenAI-compatible stand-in model, with `search-plugin` as a stand-in we
 `probe-plugin` logging the events each location's instance receives, and `kv.ts` to read, remove or
 set the plugin's storage keys in OpenCode's database. New behaviour gets a scenario there.
 `two-servers.sh`, not in CI: two servers on one data directory; its findings are in
-`docs/plugin-api-notes.md`. `real-model.sh` (with `real-model.mjs`, `real-model-permission.mjs` and
-`real-model-question.mjs` for `COURIER_SCENARIO=permission` and `question`): smoke test with a real
-model, free on OpenCode Zen by default, not in CI. Re-run it after changing tool descriptions,
-results or the child brief; `docs/real-model.md` describes it and its results.
+`docs/plugin-api-notes.md`. `real-model.sh` (with `real-model.mjs`, `real-model-permission.mjs`,
+`real-model-question.mjs` and `real-model-recursive.mjs` for `COURIER_SCENARIO=permission`, `question`
+and `recursive`): smoke test with a real model, free on OpenCode Zen by default, not in CI. Re-run it
+after changing tool descriptions, results, the child brief or the skill; `docs/real-model.md`
+describes it and its results.
 
 `.github/workflows/ci.yml`: both suites on every push to `main` and every pull request, and the
 live suite once more on the `latest` OpenCode release, allowed to fail. Its `sonar` job scans

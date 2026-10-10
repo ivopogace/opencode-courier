@@ -137,6 +137,35 @@ children, never the whole roster: an entry an older copy wrote without a key is 
 load, and until then the hook takes its session for one nobody spawned; `courier_spawn` still
 enforces the limits.
 
+## The courier-orchestrate skill
+
+The tools make a tree of sessions possible; the skill is the playbook for using them. The plugin
+registers one OpenCode skill, `courier-orchestrate`, through the plugin API's skill domain, in every
+location it loads in, so it is listed among the available skills of every session there, with a
+description saying when to load it: when a task is big enough to hand parts of it to other sessions,
+or when a session was started by one and must decide whether to split its task. A model loads it
+with OpenCode's `skill` tool, which asks the `skill` permission for `courier-orchestrate` like any
+skill (a spawned session's request is relayed to its parent as any other); a person activates it
+from the TUI's `/skills` dialog, which attaches its text to the next prompt. How OpenCode lists,
+loads and injects a skill: [plugin-api-notes.md](plugin-api-notes.md#skills-v2026).
+
+Its text is short and model-facing, kept in `src/notices.ts` with the other model-facing strings and
+snapshotted with them. It names no limits (the role part and the brief give the session's own) and
+says, in order: decide whether to split or do, by [the brief's rule](#session-trees-and-their-limits);
+plan the parts so that no two edit the same files, each task complete enough to be done without the
+orchestrator; start them with one `courier_spawn` per part, all in one [join group](#join-groups),
+`isolate: true` where parts edit files in parallel; end the turn, without polling; read each
+[report](#a-childs-report) by its status and artifacts, and what to do on `done`, `partial`,
+`blocked` and `failed`; verify first-hand, never through another session; integrate by merging each
+reported branch, then `courier_cleanup`; report upward with one status for the whole, or reply to the
+person at the top. Then what to do when a part goes wrong: a [failed turn](#a-child-that-fails) or
+a [silent end](#a-child-that-ends-without-a-report), a `courier_spawn` refused by a limit (do the
+part, or wait for a report; never retry in a loop), losing track (one `courier_tree`), and a subtree
+to abandon (`courier_stop`). The real-model smoke test's recursive scenario
+([docs/real-model.md](real-model.md#recursive-orchestration)) is where the text is tried against
+free models, and the README's [Recursive orchestration](../README.md#recursive-orchestration) has
+its prompt.
+
 ## A child's report
 
 A child reports with `courier_send` to the session that started it, giving a `status`: `done`,

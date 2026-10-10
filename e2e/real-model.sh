@@ -14,7 +14,9 @@
 # the child's request is not pending. COURIER_SCENARIO=question runs the
 # question relay: one child that is to find out from the person which greeting to use, and this
 # script as the person, answering COURIER_ANSWER (default Hi) in the parent's session
-# (e2e/real-model-question.mjs).
+# (e2e/real-model-question.mjs). COURIER_SCENARIO=recursive runs the recursive orchestration: a
+# job of two parts, one of which the session that gets it splits again, checked by
+# e2e/real-model-recursive.mjs down the whole tree.
 #
 # The default model is a free one on OpenCode Zen, which needs no key. To pick another:
 #
@@ -29,6 +31,8 @@
 #   COURIER_API_KEY_ENV              for a declared provider, the variable holding its key. The
 #                                     config refers to it as {env:NAME}; the key is never written.
 #   COURIER_PROMPT, COURIER_EXPECT   the parent's prompt and the values the reports must hold.
+#   COURIER_FILES                    recursive: the files, relative to the project, that must hold them.
+#   COURIER_MAX_DEPTH                recursive: the maxDepth the checker holds the tree to (default 3).
 #   COURIER_TIMEOUT                  seconds to wait for the parent's turn and then for the
 #                                     children (default 300 each).
 #
@@ -76,7 +80,15 @@ case $SCENARIO in
     export COURIER_ANSWER=${COURIER_ANSWER:-Hi}
     CHECKER=real-model-question.mjs
     ;;
-  *) echo "COURIER_SCENARIO must be fanout, permission or question"; exit 1 ;;
+  recursive)
+    # Two parts, one of them two halves of its own: the root splits once, the session that gets that
+    # part splits again. The sleeps stand in for work, as in the fan-out; the files are what each level verifies.
+    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `sleep 20; echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `sleep 20; echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `sleep 20; echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
+    export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
+    export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
+    CHECKER=real-model-recursive.mjs
+    ;;
+  *) echo "COURIER_SCENARIO must be fanout, recursive, permission or question"; exit 1 ;;
 esac
 unset COURIER_OTHER_SERVER
 case ${COURIER_PERSON:-} in
@@ -142,7 +154,7 @@ fi
 echo "parent prompt: $PROMPT"
 
 post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
-if [ "$SCENARIO" != fanout ]; then
+if [ "$SCENARIO" != fanout ] && [ "$SCENARIO" != recursive ]; then
   # Started through the API, as a session in the TUI would be, not with opencode run: run cancels
   # any question form opened in its session while it is attached, and the child's request can wake
   # the parent before run has let go. The checker waits for the turns.

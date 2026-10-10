@@ -228,6 +228,10 @@ function decide(body) {
     return { tool: "courier_later", args: { message: "CHECK-IN", delayMinutes: later[1] === "-STRING" ? later[2] : Number(later[2]) } }
   const topic = recent.match(/COURIER-SUBSCRIBE ([\w./#-]+)/)
   if (topic) return { tool: "courier_subscribe", args: { topic: topic[1] } }
+  // COURIER-SKILL loads the courier-orchestrate skill with OpenCode's skill tool; a prompt the person
+  // attached the skill to carries its text, which the model acknowledges.
+  if (recent.includes('<skill_content name="courier-orchestrate">')) return { text: "SKILL SEEN" }
+  if (recent.includes("COURIER-SKILL")) return { tool: "skill", args: { id: "courier-orchestrate" } }
   const look = recent.match(/COURIER-STATUS (ses_\w+)/)
   if (look) return { tool: "courier_status", args: { sessionID: look[1] } }
   const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)
@@ -310,7 +314,8 @@ createServer((request, response) => {
     const session = request.headers["x-opencode-session-id"]
     const system = (body.messages ?? []).filter((message) => message.role === "system").map((message) => textOf(message.content)).join("\n")
     const role = system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf)/)?.[1] ?? null
-    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, tools: (body.tools ?? []).map((tool) => tool.function?.name), reply })}\n`)
+    const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])
+    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, skills, tools: (body.tools ?? []).map((tool) => tool.function?.name), reply })}\n`)
     if (reply.status) {
       response.writeHead(reply.status, { "content-type": "application/json" })
       response.end(JSON.stringify({ error: { message: reply.error, type: "forbidden" } }))

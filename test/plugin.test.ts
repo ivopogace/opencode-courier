@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import plugin, { courier } from "../src/index.js"
 import { hub, memberAt, OWNER_KEY, SERVER } from "../src/hub.js"
 import { DEFAULT_LIMITS } from "../src/limits.js"
-import { depthRefusal, rolePart } from "../src/notices.js"
+import { depthRefusal, rolePart, SKILL_CONTENT, SKILL_DESCRIPTION, SKILL_ID } from "../src/notices.js"
 import { builtVersions } from "../src/version.js"
 
 const cleanups: Array<() => unknown> = []
@@ -43,6 +43,7 @@ async function setUp(
 ) {
   const store = new Map(Object.entries(stored))
   const tools = new Map<string, any>()
+  const skills = new Map<string, any>()
   const hooks = new Map<string, (event: any) => Promise<void> | void>()
   const calls: { method: string; input: any }[] = []
   const record = (method: string, result: unknown) => async (input: any) => {
@@ -101,10 +102,16 @@ async function setUp(
         return { dispose: async () => {} }
       },
     },
+    skill: {
+      transform: async (callback: (editor: any) => void) => {
+        callback({ add: (skill: any) => skills.set(skill.id, skill) })
+        return { dispose: async () => {} }
+      },
+    },
   }
   const cleanup = await courier().setup(ctx as any)
   if (cleanup) cleanups.push(cleanup)
-  return { tools, hooks, calls, store, emit: events.emit, location: ctx.location, cleanup, subscriptions: () => events.counted.subscriptions }
+  return { tools, skills, hooks, calls, store, emit: events.emit, location: ctx.location, cleanup, subscriptions: () => events.counted.subscriptions }
 }
 
 test("OpenCode loads an Effect plugin, which runs the promise one and wraps the question tool", () => {
@@ -189,6 +196,16 @@ test("registers the courier tools", async () => {
     "courier_subscribe",
     "courier_unsubscribe",
   ])
+})
+
+test("registers the courier-orchestrate skill, with a description so it is listed, and the playbook as its text", async () => {
+  const { skills } = await setUp()
+
+  expect([...skills.keys()]).toEqual([SKILL_ID])
+  const skill = skills.get(SKILL_ID)
+  expect(skill).toEqual({ id: SKILL_ID, name: SKILL_ID, description: SKILL_DESCRIPTION, path: `/opencode-courier/${SKILL_ID}.md`, content: SKILL_CONTENT })
+  expect(skill.path.startsWith("/")).toBe(true)
+  expect(skill.description.length).toBeGreaterThan(0)
 })
 
 test("registers them as direct tools, not code-mode ones only reachable through execute", async () => {

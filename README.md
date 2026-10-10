@@ -118,6 +118,35 @@ Watch the child's question open in the parent's session as OpenCode's own questi
 Both recordings are real runs with a free model on [OpenCode Zen](https://opencode.ai/zen) (Muse
 Spark 1.3).
 
+## Recursive orchestration
+
+A session splits a goal across child sessions, each child decides in turn whether to split its
+part again, and the results are checked and integrated at every level on the way back up. The
+plugin ships the playbook as an OpenCode skill, `courier-orchestrate`, listed in every session with
+the plugin loaded: how to decide whether to split, plan the parts, start them in one join group,
+end the turn, read each report by its status, verify first-hand, integrate and report upward, and
+what to do when a part fails, ends quietly, blocks or hits a limit. A model loads it with the `skill`
+tool when the task fits its description; `/skills` in the TUI attaches it to your prompt. Its text:
+[the reference](docs/reference.md#the-courier-orchestrate-skill).
+
+The smoke test's recursive scenario (`COURIER_SCENARIO=recursive`, [docs/real-model.md](docs/real-model.md#recursive-orchestration))
+asks a free model:
+
+> Have this job done through helper sessions started with courier_spawn, one session per part, and
+> do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the
+> session that gets it hands to two sessions of its own: one runs `` `sleep 20; echo $((17 * 23))` ``
+> and writes the number it printed to numbers/a.txt, the other runs `` `sleep 20; echo $((2 ** 10))` ``
+> and writes the number it printed to numbers/b.txt. Part "count" runs `` `sleep 20; echo $((99 - 57))` ``
+> and writes the number it printed to count/total.txt. When the parts have reported back, read the
+> three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
+
+The root starts two sessions and ends its turn; the "numbers" session starts two of its own, ends
+its turn, checks both files when their reports wake it and reports once to the root; the "count"
+session does its part itself. The root is woken by the two reports, reads the three files and
+replies `RESULTS 391 1024 42`. The checker verifies the shape of the tree, that no session polled or
+went past `maxDepth`, that every report carries a status and each sub-orchestrator reported once,
+after its children, and the files and the final line.
+
 ## Install
 
 ### Supported OpenCode version
@@ -375,8 +404,9 @@ gets a scenario there.
 The smoke test (`e2e/real-model.sh`) runs the same server with a real model (by default a free one
 on [OpenCode Zen](https://opencode.ai/zen), no key needed) and checks that the parent spawns instead
 of doing the work, ends its turn instead of polling, and is woken by each report;
-`COURIER_SCENARIO=permission` and `COURIER_SCENARIO=question` exercise the two relays. Which models
-pass and what was tuned for them: [docs/real-model.md](docs/real-model.md).
+`COURIER_SCENARIO=permission` and `COURIER_SCENARIO=question` exercise the two relays, and
+`COURIER_SCENARIO=recursive` the [recursive orchestration](#recursive-orchestration) above. Which
+models pass and what was tuned for them: [docs/real-model.md](docs/real-model.md).
 
 CI runs both suites on every push to `main` and every pull request, with the OpenCode CLI at the
 pinned version, and the live suite once more on the newest OpenCode release, where a failure warns

@@ -155,6 +155,24 @@ check "told to report, the child did" "$([ -n "$(reply_time "$parent" "PARENT WO
 check "which settled its report" "$(kv get "report/$child/settled" | jq -r '.by == "report"')"
 check "and its reported turn was not told as one without a report" \
   "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 1')"
+
+echo "a deleted child that owes a report is forgotten"
+out=$(prompt "COURIER-SILENT")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the parent was told it ended without a report" "$([ -n "$(reply_time "$parent" "PARENT TOLD SILENT" 45)" ] && echo true || echo false)"
+check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
+check "and its report state is gone" \
+  "$(for _ in $(seq 1 20); do [ -z "$(kv get "report/$child/prompt")$(kv get "report/$child/told")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+
+echo "a child that ends its turn to wait for a message it scheduled is not reported, and reports once woken"
+out=$(prompt "COURIER-WAITING")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the scheduled message woke the child, which reported" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 75)" ] && echo true || echo false)"
+check "the child's first turn, which ended waiting, was not told" "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 0')"
+check "the child scheduled the message in its first turn" \
+  "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_later")] | length == 1')"
 # Starts a parent with COURIER-ASK ($1 is "isolate" or empty) and waits until it has been told that its
 # child asks for permission; sets parent, child, request and notice.
 ask_permission() {

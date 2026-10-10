@@ -150,8 +150,8 @@ join groups of a later release, can branch on it without parsing prose. A status
 the four is refused, since OpenCode does not check a tool's schema
 ([plugin-api-notes.md](plugin-api-notes.md)); `null` counts as none.
 
-With the status, a report may list `artifacts`: `branch`, `commits` and `files`, each a string or a
-list of strings, and `checks`, a list of `{ command, result }`. They go in the message body after
+With the status, a report may list `artifacts`: `branch`, a string, `commits` and `files`, lists of
+strings, and `checks`, a list of `{ command, result }`. They go in the message body after
 the text, in one fixed layout, so a parent finds them in the same place in every report:
 
 ```

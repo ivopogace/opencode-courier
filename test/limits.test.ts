@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { DateTime } from "effect"
 import { spawn, type CourierPorts } from "../src/courier.js"
-import { admit, DEFAULT_LIMITS, readLimits, running, shapeContext, type ContextPorts, type LimitPorts, type SpawnGate } from "../src/limits.js"
+import { admit, busy, DEFAULT_LIMITS, readLimits, shapeContext, type ContextPorts, type LimitPorts, type SpawnGate } from "../src/limits.js"
 import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/notices.js"
 import { owesReport, prompted, settled } from "../src/report.js"
 import { record } from "../src/roster.js"
@@ -68,28 +68,23 @@ describe("readLimits", () => {
   })
 })
 
-describe("running", () => {
-  const ports = (time: unknown) => ({ session: { get: async () => ({ time }) } }) as any
+describe("busy", () => {
+  const time = (value: object) => value as Parameters<typeof busy>[0]
 
-  test("a session that never finished a turn, or was reached after its last one, is running", async () => {
-    expect(await running(ports({ created: 1, updated: 2 }), "s")).toBe(true)
-    expect(await running(ports({ created: 1, updated: 9, idle: 5 }), "s")).toBe(true)
+  test("a session that never finished a turn, or was reached after its last one, is running", () => {
+    expect(busy(time({ updated: 2 }))).toBe(true)
+    expect(busy(time({ updated: 9, idle: 5 }))).toBe(true)
   })
 
-  test("one whose last turn ended after anything reached it is not", async () => {
-    expect(await running(ports({ created: 1, updated: 5, idle: 5 }), "s")).toBe(false)
-    expect(await running(ports({ created: 1, updated: 4, idle: 5 }), "s")).toBe(false)
+  test("one whose last turn ended after anything reached it is not", () => {
+    expect(busy(time({ updated: 5, idle: 5 }))).toBe(false)
+    expect(busy(time({ updated: 4, idle: 5 }))).toBe(false)
   })
 
-  test("reads OpenCode's DateTime values", async () => {
+  test("reads OpenCode's DateTime values", () => {
     const at = (ms: number) => DateTime.makeUnsafe(ms)
-    expect(await running(ports({ created: at(1), updated: at(9), idle: at(5) }), "s")).toBe(true)
-    expect(await running(ports({ created: at(1), updated: at(5), idle: at(5) }), "s")).toBe(false)
-  })
-
-  test("one OpenCode cannot find is not", async () => {
-    const gone = { session: { get: async () => Promise.reject(new Error("NotFound")) } } as any
-    expect(await running(gone, "s")).toBe(false)
+    expect(busy(time({ updated: at(9), idle: at(5) }))).toBe(true)
+    expect(busy(time({ updated: at(5), idle: at(5) }))).toBe(false)
   })
 })
 
@@ -232,6 +227,14 @@ describe("admit, with children that owe a report", () => {
     const ports = await owing("failed")
     await prompted(ports.storage, "ses_a", 200)
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(2, 2))
+  })
+
+  test("counts a child that reported early while its turn still runs", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 })
+    await child("ses_root", "ses_a")
+    await prompted(storage, "ses_a", 100)
+    await settled(storage, "ses_a", "report", 150)
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
   })
 
   test("a child OpenCode no longer knows does not count, though it owes a report; one it cannot look up now does", async () => {

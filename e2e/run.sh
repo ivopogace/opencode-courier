@@ -619,6 +619,19 @@ check "the turn got the event summary" "$([[ $summary == *"changes_requested"* &
 check "the session got the event exactly once" \
   "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic")] | length == 1')"
 
+echo "a child that subscribes to a webhook and ends its turn to wait is not reported, and reports once a delivery wakes it"
+out=$(prompt "COURIER-HOOKED")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the child subscribed and ended its turn" "$(has_text "$child" "TOOL DONE courier_subscribe" 30)"
+check "which was not told as one without a report" "$(sleep 3; notices_with "$parent" ended | jq -r 'length == 0')"
+body='{"text":"CHILD-REPORT-NOW"}'
+sig=$(printf '%s\n%s' child-ci "$body" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -r | cut -d' ' -f1)
+check "a delivery to its topic is accepted" "$([ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "x-hub-signature-256: sha256=$sig" \
+  --data-binary "$body" "http://127.0.0.1:$WEBHOOK_PORT/hook/child-ci")" = 202 ] && echo true || echo false)"
+check "the delivery woke the child, which reported" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+check "and the parent was never told it ended without a report" "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 0')"
+
 # Spawns an isolated child from a new parent and waits for its report; sets parent, child and directory.
 spawn_isolated() {
   local out

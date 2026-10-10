@@ -100,6 +100,8 @@ function decide(body) {
   if (parent && recent.includes("CHILD-SILENT")) return { text: "CHILD SILENT REPLY", delayed: true }
   // The child of COURIER-WAITING schedules a message that tells it to report, and ends its turn to wait for it.
   if (parent && recent.includes("CHILD-WAITS")) return { tool: "courier_later", args: { message: "CHILD-REPORT-NOW", delayMinutes: 0.25 } }
+  // The child of COURIER-HOOKED subscribes to a webhook topic and ends its turn to wait for a delivery.
+  if (parent && recent.includes("CHILD-HOOKED")) return { tool: "courier_subscribe", args: { topic: "child-ci" } }
   // The middle session of COURIER-DEPTH starts two leaves at once; the second's task makes the probe
   // plugin put courier_spawn back. Each leaf tries to start a session of its own.
   if (parent && recent.includes("CHILD-DEEPENS"))
@@ -171,6 +173,7 @@ function decide(body) {
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
   if (recent.includes("COURIER-SILENT")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT" } }
   if (recent.includes("COURIER-WAITING")) return { tool: "courier_spawn", args: { task: "CHILD-WAITS" } }
+  if (recent.includes("COURIER-HOOKED")) return { tool: "courier_spawn", args: { task: "CHILD-HOOKED" } }
   const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL|-REWORD|-BOTH)?(?: (isolate|nested))?/)
   if (questions)
     return {

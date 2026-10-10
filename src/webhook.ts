@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type Server } from "node:http"
 import { homedir } from "node:os"
 import { addBounded } from "./bounded.js"
-import { num, obj, str } from "./json.js"
+import { isNotFound, num, obj, str } from "./json.js"
 import { CI_EVENTS, envelope, githubSummary, hookSummary, webhookText } from "./notices.js"
 import { scanAll } from "./storage.js"
 
@@ -178,11 +178,6 @@ export function genericEvent(topic: string, body: string): Event {
     text = str(parsed.text) ?? str(parsed.summary) ?? str(parsed.message) ?? body
   } catch {}
   return { source: "hook", name: topic, topics: [topic], summary: hookSummary(text) }
-}
-
-const isNotFound = (error: unknown) => {
-  const tag = (error as { _tag?: unknown } | undefined)?._tag
-  return typeof tag === "string" && tag.includes("NotFound")
 }
 
 /**

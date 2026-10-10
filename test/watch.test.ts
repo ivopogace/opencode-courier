@@ -303,7 +303,28 @@ describe("reportSilent", () => {
     expect(sent.map((notice: any) => notice.sessionID)).toEqual(["ses_child", "ses_parent"])
   })
 
-  test("tells nothing while a scheduled message for the child is pending, but a webhook subscription, which outlives its delivery, is no wait", async () => {
+  test("forgets the children of a deleted session, whose reports can no longer be delivered", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, child())
+    await notePrompt(ports, delivered("evt_d", 100))
+
+    expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_x", 150, "ses_parent") as SessionEvent)).toEqual(["ses_child"])
+
+    expect([...store.keys()].filter((key) => key.startsWith("report/"))).toEqual([])
+  })
+
+  test("takes back that the parent was told when the notice cannot be delivered", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, child())
+    ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
+    await notePrompt(ports, delivered("evt_d", 100))
+
+    await expect(reportSilent(ports, new Set(), succeeded("evt_s", 200))).rejects.toThrow("parent is gone")
+
+    expect(store.has(toldKey("ses_child"))).toBe(false)
+  })
+
+  test("tells nothing while a scheduled message for the child is pending, or a webhook it subscribed to since its last prompt", async () => {
     const later = fakePorts()
     await record(later.ports.storage, child())
     await notePrompt(later.ports, delivered("evt_d", 100))
@@ -315,7 +336,10 @@ describe("reportSilent", () => {
     await record(hooked.ports.storage, child())
     await notePrompt(hooked.ports, delivered("evt_d", 100))
     await hooked.ports.storage.set("webhook/o%2Fr%237/ses_child", { sessionID: "ses_child", topic: "o/r#7", createdAt: 150 })
-    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s", 200))).toEqual(["ses_parent"])
+    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s1", 200))).toEqual([])
+    // The delivery it waited for came, and it ended its turn without reporting: the subscription is no wait.
+    await notePrompt(hooked.ports, delivered("evt_d2", 300))
+    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s2", 400))).toEqual(["ses_parent"])
   })
 
   test("notes the parent was told before telling it, as the notice may end the parent's turn at once", async () => {
@@ -350,8 +374,8 @@ describe("reportSilent", () => {
     await notePrompt(ports, delivered("evt_d1", 100))
     await notePrompt(ports, delivered("evt_d2", 110, "ses_grandchild"))
 
-    expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_x", 150, "ses_grandchild") as SessionEvent)).toBe(true)
-    expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_y", 150, "ses_stranger") as SessionEvent)).toBe(false)
+    expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_x", 150, "ses_grandchild") as SessionEvent)).toEqual(["ses_grandchild"])
+    expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_y", 150, "ses_stranger") as SessionEvent)).toEqual([])
 
     expect(store.has(promptKey("ses_grandchild"))).toBe(false)
     expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual(["ses_parent"])

@@ -42,13 +42,20 @@ export async function told(storage: Pick<Storage, "set">, sessionID: string, at:
 const since = (at: number | undefined, prompt: number) => at !== undefined && at >= prompt
 
 /**
- * Whether a spawned session owes its parent a report: something reached it after it last reported,
- * failed or was interrupted. Undefined when nothing is known, as for a session spawned before this was kept.
+ * What is known of a spawned session's report: when a prompt last reached it, whether it owes one,
+ * and whether its turn failed or was interrupted since. Undefined for one spawned before this was kept.
  */
-export async function owesReport(storage: Pick<Storage, "get">, sessionID: string) {
-  const [prompt, settledAt] = await Promise.all([storage.get(promptKey(sessionID)), storage.get(settledKey(sessionID))])
+export async function reportOf(storage: Pick<Storage, "get">, sessionID: string) {
+  const [prompt, settledValue] = await Promise.all([storage.get(promptKey(sessionID)), storage.get(settledKey(sessionID))])
   const promptAt = timeOf(prompt)
-  return promptAt === undefined ? undefined : !since(timeOf(settledAt), promptAt)
+  if (promptAt === undefined) return undefined
+  const done = since(timeOf(settledValue), promptAt)
+  return { prompt: promptAt, owes: !done, ended: done && obj(settledValue).by !== "report" }
+}
+
+/** Whether a spawned session owes its parent a report: something reached it after it last reported, failed or was interrupted. */
+export async function owesReport(storage: Pick<Storage, "get">, sessionID: string) {
+  return (await reportOf(storage, sessionID))?.owes
 }
 
 /**

@@ -1,8 +1,8 @@
 import type { Plugin } from "@opencode/plugin"
 import { setBounded } from "./bounded.js"
-import { obj } from "./json.js"
+import { isNotFound, obj } from "./json.js"
 import { childrenRefusal, depthRefusal, ROLE_PREFIX, rolePart, totalRefusal, type Limits } from "./notices.js"
-import { owesReport } from "./report.js"
+import { reportOf } from "./report.js"
 import { allEntries, bySession, children, indexedLineage, lineageBy, type RosterStorage } from "./roster.js"
 
 export type { Limits } from "./notices.js"
@@ -61,34 +61,24 @@ function millis(value: unknown) {
 type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
 /** Whether a session with these times runs: it has never finished a turn, or something reached it after the last one ended. */
-const busy = (time: Times) => time.idle === undefined || millis(time.updated) > millis(time.idle)
-
-/** Whether a session is running. One OpenCode no longer knows is not. */
-export async function running(ports: Pick<LimitPorts, "session">, sessionID: string) {
-  try {
-    return busy((await ports.session.get({ sessionID })).time)
-  } catch {
-    return false
-  }
-}
-
-/** Whether an error of OpenCode's says that a session does not exist (`Session.NotFoundError`). */
-const notFound = (error: unknown) => /NotFound/.test(`${String(obj(error)._tag ?? "")} ${String(obj(error).name ?? "")}`)
+export const busy = (time: Pick<Times, "updated" | "idle">) => time.idle === undefined || millis(time.updated) > millis(time.idle)
 
 /**
- * Whether a spawned session counts against the limits: it owes its parent a report, or, when nothing
- * is known of that or it cannot be read, it runs. One OpenCode no longer knows does not count.
+ * Whether a spawned session counts against the limits: it runs, unless its turn failed or was
+ * interrupted since its last prompt, or it owes its parent a report. One OpenCode no longer knows does not.
  */
 async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: string) {
-  const [time, owes] = await Promise.all([
+  const [time, report] = await Promise.all([
     ports.session.get({ sessionID }).then(
       (info) => info.time,
-      (error: unknown) => (notFound(error) ? null : undefined),
+      (error: unknown) => (isNotFound(error) ? null : undefined),
     ),
-    owesReport(ports.storage, sessionID).catch(() => undefined),
+    reportOf(ports.storage, sessionID).catch(() => undefined),
   ])
   if (time === null) return false
-  return owes ?? (time !== undefined && busy(time))
+  // One whose first prompt failed never ran, and has no idle time to tell so.
+  const runs = time !== undefined && busy(time) && !report?.ended
+  return runs || (report?.owes ?? false)
 }
 
 /**

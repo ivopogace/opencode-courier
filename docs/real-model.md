@@ -380,7 +380,11 @@ the two sessions anyway: the line's `no` meant no planning of its own, a reading
 not rule out. The third run passed, 9 of 9, in 20 model requests across five sessions: the root
 loaded the skill, stated `split: 2 parts: "numbers" (which itself spawns two sub-sessions for a.txt
 and b.txt) and "count" (for total.txt).`, scheduled and cancelled a check-in, the "numbers" session
-used a group, and every report carried `done`.
+used a group, and every report carried `done`. On the wording as shipped, with the hint `(one phrase
+per part)` in the pointer too, both passed once more, the fan-out 8 of 8 (`split: 2 parts: one
+session runs …, the other runs …`, no skill loaded) and the recursive scenario 9 of 9 (the root
+loaded the skill, used a group and a check-in; the "numbers" session split into a group of its own;
+all five sessions stated their line, `Split: no, because …` in the three that did their part).
 
 The gap the change is about was tried with two fan-out prompts that name neither helpers nor
 `courier_spawn`. *"Two shell commands each take a while: `sleep 20; echo $((17 * 23))` and `sleep 40;

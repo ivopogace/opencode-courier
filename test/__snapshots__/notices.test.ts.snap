@@ -673,6 +673,8 @@ exports[`tool results sendText 6`] = `"Recorded as your report, status done. It 
 
 exports[`tool results sendText 7`] = `"Recorded as your report, status failed. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, now, yours being the last. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
+exports[`tool results sendText 8`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported. Nothing more is needed from you for it. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+
 exports[`tool results statusText 1`] = `
 "{
   "sessionID": "ses_child",
@@ -800,7 +802,7 @@ The third needs the API.
 [3/3] ses_c "Review c.ts": failed
 Could not read it.
 
-Check and integrate each one yourself. The sessions are idle; message one with courier_send if it has more to do."
+Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
 `;
 
 exports[`join groups groupNotice 2`] = `
@@ -814,9 +816,9 @@ Artifacts:
 - checks:
   - bun test: ok
 
-Without a report, as you were told: ses_d "Review d.ts" (its turn failed), ses_e "Review e.ts" (it was deleted).
+Without a report: ses_d "Review d.ts" (its turn failed, as you were told), ses_e "Review e.ts" (it was deleted).
 
-Check and integrate each one yourself. The sessions are idle; message one with courier_send if it has more to do."
+Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
 `;
 
 exports[`permission requests REJECTED 1`] = `"Refused by the session that started you. Do without it, or report back why you cannot."`;

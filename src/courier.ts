@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
-import { holdReport, isGroupName, joinGroup, memberOf, standingOf, type Membership } from "./group.js"
+import { groupStanding, holdReport, isGroupName, joinGroup, memberOf, standingOf, type Membership } from "./group.js"
 import { admit, type Limits, type SpawnGate } from "./limits.js"
-import { childBrief, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Prompt, type Sent, type Status } from "./notices.js"
+import { childBrief, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Held, type Prompt, type Sent, type Status } from "./notices.js"
 import { progressed, progressKey, prompted, settled, settledKey } from "./report.js"
 import { current, indexedEntry, record, type RosterEntry, type RosterStorage } from "./roster.js"
 
@@ -106,13 +106,13 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
     throw new Error(`group must be a name of 1 to 60 letters, digits, dots, dashes or underscores, not ${JSON.stringify(group)}.`)
   const admitted = await admit(ports, parentID)
   try {
-    return await start(ports, parentID, input, admitted)
+    return await start(ports, parentID, input, admitted, group)
   } finally {
     admitted.release()
   }
 }
 
-async function start(ports: CourierPorts, parentID: string, input: SpawnInput, admitted: Awaited<ReturnType<typeof admit>>) {
+async function start(ports: CourierPorts, parentID: string, input: SpawnInput, admitted: Awaited<ReturnType<typeof admit>>, group: string | undefined) {
   // A failed lookup must not keep the child from starting; it then runs on OpenCode's default.
   const model = await inheritedModel(ports, parentID, input.agent).catch(() => undefined)
   const directory = input.isolate
@@ -136,8 +136,7 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
   admitted.reservation.sessionID = child.id
   // Recorded before the prompt, so a child that exists is on the roster even if prompting fails. A
   // failed write must not keep the child from its task, so it is reported instead of thrown.
-  const group = input.group ?? undefined
-  const rosterError = await record(ports.storage, {
+  const entry: RosterEntry = {
     sessionID: child.id,
     parentID,
     title,
@@ -148,19 +147,13 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     ...(directory ? { source: ports.directory, project: ports.projectID } : {}),
     ...(base ? { base } : {}),
     ...(group ? { group } : {}),
-  }).then(
+  }
+  const rosterError = await record(ports.storage, entry).then(
     () => undefined,
     (error: unknown) => describeFailure("roster", error).message,
   )
   ports.roles.delete(parentID)
-  // A member the group does not know reports on its own, like a child in no group: said in the result.
-  const groupError =
-    group && !rosterError
-      ? await joinGroup(ports.storage, parentID, group, child.id, title, ports.now()).then(
-          () => undefined,
-          (error: unknown) => describeFailure("group", error).message,
-        )
-      : undefined
+  const groupError = group && !rosterError ? await join(ports, entry, group) : undefined
   // A baseline, until OpenCode's event for the prompt's delivery moves it on; written first, so it never overtakes that.
   // Not for a child off the roster: nothing would read or remove it.
   if (!rosterError) await prompted(ports.storage, child.id, ports.now()).catch(() => undefined)
@@ -177,6 +170,21 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     ...(group && !rosterError && !groupError ? { group } : {}),
     ...(rosterError ? { rosterError } : {}),
     ...(groupError ? { groupError } : {}),
+  }
+}
+
+/**
+ * Joins a child to its group; one that cannot be joined is recorded in no group, so it reports on its own,
+ * and the result says so. Returns the error's message, if any.
+ */
+async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
+  try {
+    await joinGroup(ports.storage, entry.parentID, group, entry.sessionID, entry.title, ports.now())
+    return undefined
+  } catch (error) {
+    const { group: _, ...ungrouped } = entry
+    await record(ports.storage, ungrouped).catch(() => undefined)
+    return describeFailure("group", error).message
   }
 }
 
@@ -245,14 +253,16 @@ async function membershipOf(ports: CourierPorts, entry: RosterEntry): Promise<Me
  * Holds a member's report with its group, and has the scheduler deliver the group if that completes it.
  * Undefined when it could not be held, so the report is delivered on its own rather than lost.
  */
-async function hold(ports: CourierPorts, member: Membership, report: Parameters<typeof holdReport>[2]) {
+async function hold(ports: CourierPorts, member: Membership, report: Parameters<typeof holdReport>[2]): Promise<Held | undefined> {
   try {
-    const { reported, members, complete } = await holdReport(ports.storage, member, report)
-    if (complete) ports.nudge()
-    return { group: member.group, reported, members }
+    await holdReport(ports.storage, member, report)
   } catch {
     return undefined
   }
+  // Held whatever the count gives: the scheduler's tick finds a complete group on its own.
+  const standing = await groupStanding(ports.storage, member.parentID, member.group).catch(() => undefined)
+  if (standing?.complete) ports.nudge()
+  return { group: member.group, ...(standing ? { reported: standing.reported, members: standing.members } : {}) }
 }
 
 /** A one-off look at a session, for check-ins; not meant to be called in a loop. */
@@ -284,15 +294,15 @@ export function lastReply(messages: Awaited<ReturnType<Context["session"]["conte
 }
 
 /**
- * The sessions a parent started, each with what courier_status reports, or the error it gave; a child
- * started in a group with the group's name and its standing there: `held`, `out`, `failed`, `deleted` or `released`.
+ * The sessions a parent started, each with what courier_status reports, or the error it gave; a child in a
+ * group with the group's name and its standing there: `held`, `out`, `failed`, `deleted`, `released` or `unknown`.
  */
 export async function listChildren(ports: CourierPorts, parentID: string) {
   const entries = await current(ports.storage, parentID, ports.now())
   return Promise.all(
     entries.map(async (entry) => {
       const group = entry.group
-        ? { group: { name: entry.group, report: standingOf(await memberOf(ports.storage, parentID, entry.group, entry.sessionID).catch(() => undefined)) } }
+        ? { group: { name: entry.group, report: await memberOf(ports.storage, parentID, entry.group, entry.sessionID).then(standingOf, () => "unknown") } }
         : {}
       const roster = { directory: entry.directory, isolated: entry.isolated, created: entry.createdAt, ...group }
       try {

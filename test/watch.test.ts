@@ -514,8 +514,34 @@ describe("join groups", () => {
     expect(sent[0].text).toBe(envelope("ses_b", failureNotice("B", blocked, "pair"), { failed: "provider.auth" }))
     expect(sent[0].text).toContain('It is a member of group "pair"')
     expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 200, by: "failed" } })
-    // Before the notice, which may end the parent's turn.
-    expect(nudges).toEqual([0])
+    // After the notice, so the group's message, which says the parent was told, cannot overtake it.
+    expect(nudges).toEqual([1])
+  })
+
+  test("a member whose report is held, or whose group was released, keeps it when its turn fails, and the notice says nothing of the group", async () => {
+    const { ports, sent, nudges, store } = fakePorts()
+    await pair(ports)
+    await sendFrom(ports, "ses_a", "ses_parent", 150)
+
+    await reportFailure(ports, new Set(), failed("ses_a", "evt_1"))
+    expect(sent[0].text).toBe(envelope("ses_a", failureNotice("A", blocked), { failed: "provider.auth" }))
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toMatchObject({ report: { status: "done" } })
+
+    store.delete(memberKey("ses_parent", "pair", "ses_a"))
+    store.delete(memberKey("ses_parent", "pair", "ses_b"))
+    await reportFailure(ports, new Set(), failed("ses_b", "evt_2"))
+    expect(sent[1].text).not.toContain("group")
+    expect(nudges).toEqual([])
+  })
+
+  test("a member leaves its group even when the failure notice cannot be delivered", async () => {
+    const { ports, store } = fakePorts()
+    await pair(ports)
+    ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
+
+    await expect(reportFailure(ports, new Set(), failed("ses_b", "evt_1"))).rejects.toThrow("parent is gone")
+
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toMatchObject({ left: { by: "failed" } })
   })
 
   test("a member whose turn failed while another is still out leaves without completing the group", async () => {

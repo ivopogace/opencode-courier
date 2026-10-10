@@ -250,6 +250,8 @@ describe("spawn, into a group", () => {
       return set(key, value as never)
     }
     expect(await spawn(ports, "ses_parent", { task: "t", group: "reviews" })).toEqual({ sessionID: "ses_child", directory: "/repo", groupError: "group failed: disk full" })
+    // Recorded in no group, so courier_children does not show it as one whose report was released.
+    expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("group")
 
     ;(ports.storage as any).set = async () => {
       throw new Error("disk full")
@@ -441,6 +443,19 @@ describe("send, from a member of a group", () => {
     expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000, by: "report", status: "blocked" })
   })
 
+  test("holds the report even when the group cannot be counted after, and says so without the count", async () => {
+    const { ports, calls, store, nudges } = fakePorts()
+    await grouped(ports)
+    const scan = ports.storage.scan
+    ;(ports.storage as any).scan = async (input: { prefix: string }) => (input.prefix.startsWith("group/") ? Promise.reject(new Error("locked")) : scan(input))
+
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ status: "done", report: true, held: { group: "pair" } })
+
+    expect(calls.filter((call) => call.method === "session.synthetic")).toEqual([])
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { status: "done" } })
+    expect(nudges).toEqual([])
+  })
+
   test("delivers the report at once when the group has been released, or the child was never joined, or it cannot be held", async () => {
     const { ports, calls, store } = fakePorts()
     await grouped(ports)
@@ -560,9 +575,11 @@ describe("listChildren", () => {
     expect(await listChildren(ports, "ses_parent")).toEqual([])
   })
 
-  test("names each child's group and its standing there: held, out, failed, deleted or released", async () => {
+  test("names each child's group and its standing there: held, out, failed, deleted, released or unknown", async () => {
     const { ports } = fakePorts()
     ;(ports.session as any).get = async (input: { sessionID: string }) => ({ id: input.sessionID, time: { created: 1, updated: 2 } })
+    const get = ports.storage.get
+    ;(ports.storage as any).get = async (key: string) => (key.endsWith("/ses_unknown") ? Promise.reject(new Error("locked")) : get(key))
     const spawned = { parentID: "ses_parent", title: "t", directory: "/repo", isolated: false, createdAt: 1, reports: "status" as const, group: "pair" }
     for (const [sessionID, member] of [
       ["ses_held", { title: "t", joinedAt: 1, report: { at: 2, status: "done", message: "m" } }],
@@ -570,6 +587,7 @@ describe("listChildren", () => {
       ["ses_failed", { title: "t", joinedAt: 1, left: { at: 2, by: "failed" } }],
       ["ses_deleted", { title: "t", joinedAt: 1, left: { at: 2, by: "deleted" } }],
       ["ses_released", undefined],
+      ["ses_unknown", undefined],
     ] as const) {
       await record(ports.storage, { ...spawned, sessionID })
       if (member) await ports.storage.set(memberKey("ses_parent", "pair", sessionID), member as never)
@@ -584,9 +602,10 @@ describe("listChildren", () => {
       ["ses_failed", { name: "pair", report: "failed" }],
       ["ses_deleted", { name: "pair", report: "deleted" }],
       ["ses_released", { name: "pair", report: "released" }],
+      ["ses_unknown", { name: "pair", report: "unknown" }],
       ["ses_plain", undefined],
     ])
-    expect(listed[5]).not.toHaveProperty("group")
+    expect(listed[6]).not.toHaveProperty("group")
   })
 })
 

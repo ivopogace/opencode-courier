@@ -80,6 +80,7 @@ describe("tool results", () => {
     expect(notices.sendText("ses_other", { status: "done" })).toMatchSnapshot()
     expect(notices.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 1, members: 3 } })).toMatchSnapshot()
     expect(notices.sendText("ses_parent", { report: true, status: "failed", held: { group: "reviews", reported: 3, members: 3 } })).toMatchSnapshot()
+    expect(notices.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews" } })).toMatchSnapshot()
   })
   test("statusText", () => expect(notices.statusText({ sessionID: "ses_child", title: "Fix", idle: 3 })).toMatchSnapshot())
   test("childrenText", () => {

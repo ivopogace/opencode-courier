@@ -164,11 +164,11 @@ export function spawnText(child: {
   )
 }
 
-/** A report held with its group: which group, and how many of its members have reported so far. */
+/** A report held with its group: which group, and how many of its members have reported so far, when that could be read. */
 export interface Held {
   readonly group: string
-  readonly reported: number
-  readonly members: number
+  readonly reported?: number
+  readonly members?: number
 }
 
 /**
@@ -187,10 +187,11 @@ export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"
   const status = sent.status ? `, status ${sent.status}` : ""
   if (sent.held) {
     const { group, reported, members } = sent.held
+    const counted = reported !== undefined && members !== undefined
     const when =
-      reported < members
-        ? `once every member of the group has reported (${reported} of ${members} have). Nothing more is needed from you for it.`
-        : "now, yours being the last."
+      counted && reported >= members
+        ? "now, yours being the last."
+        : `once every member of the group has reported${counted ? ` (${reported} of ${members} have)` : ""}. Nothing more is needed from you for it.`
     return `Recorded as your report${status}. It is held with group "${group}" and goes to ${sessionID} in one message with the group's other reports, ${when} ${END_TURN}`
   }
   if (sent.report === true) return `Delivered to ${sessionID} as your report${status}. ${END_TURN}`
@@ -388,7 +389,7 @@ function statusCounts(reports: ReadonlyArray<Pick<HeldReport, "status">>) {
   }).join(", ")
 }
 
-const LEFT_HOW = { failed: "its turn failed", deleted: "it was deleted" }
+const LEFT_HOW = { failed: "its turn failed, as you were told", deleted: "it was deleted" }
 
 /**
  * What the parent gets when a group it named is released: every member's report, each with its status, text and
@@ -402,14 +403,14 @@ export function groupNotice(group: string, reports: ReadonlyArray<HeldReport & {
     reportBody(report.message, report.artifacts),
   ])
   const without = left.length
-    ? ["", `Without a report, as you were told: ${left.map((member) => `${member.sessionID} "${member.title}" (${LEFT_HOW[member.by]})`).join(", ")}.`]
+    ? ["", `Without a report: ${left.map((member) => `${member.sessionID} "${member.title}" (${LEFT_HOW[member.by]})`).join(", ")}.`]
     : []
   return [
     `Every session you started in group "${group}" has reported: ${count(reports.length, "report")} of ${count(total, "member")} (${statusCounts(reports)}). Each follows, with its status.`,
     ...listed,
     ...without,
     "",
-    "Check and integrate each one yourself. The sessions are idle; message one with courier_send if it has more to do.",
+    "Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do.",
   ].join("\n")
 }
 

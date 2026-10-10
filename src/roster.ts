@@ -75,11 +75,10 @@ function isReverse(value: unknown): value is ReverseEntry {
 }
 
 /**
- * Removes a child's roster entry, its reverse key, its report state and its group membership. Only the
- * entry's removal can fail it: a reverse key left behind leads nowhere, and the next load drops it.
+ * Removes a child's roster entry, its reverse key, its report state and, given its group, its membership. Only
+ * the entry's removal can fail it: a reverse key left behind leads nowhere, and the next load drops it.
  */
-export async function remove(storage: RosterStorage, parentID: string, sessionID: string) {
-  const group = await storage.get(rosterKey(parentID, sessionID)).then((entry) => (entry as RosterEntry | undefined)?.group, () => undefined)
+export async function remove(storage: RosterStorage, parentID: string, sessionID: string, group?: string) {
   await Promise.all([
     storage.remove(rosterKey(parentID, sessionID)),
     storage.remove(reverseKey(sessionID)).catch(() => undefined),
@@ -90,8 +89,9 @@ export async function remove(storage: RosterStorage, parentID: string, sessionID
 
 /** Removes a child from its parent's roster; false when it was not there. */
 export async function forget(storage: RosterStorage, parentID: string, sessionID: string) {
-  if ((await storage.get(rosterKey(parentID, sessionID))) === undefined) return false
-  await remove(storage, parentID, sessionID)
+  const entry = (await storage.get(rosterKey(parentID, sessionID))) as unknown as RosterEntry | undefined
+  if (entry === undefined) return false
+  await remove(storage, parentID, sessionID, entry.group)
   return true
 }
 
@@ -210,7 +210,7 @@ async function dropExpired(storage: RosterStorage, entries: RosterEntry[], now: 
   const expired = new Set(
     entries.filter((entry) => now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory))),
   )
-  await Promise.all([...expired].map((entry) => remove(storage, entry.parentID, entry.sessionID)))
+  await Promise.all([...expired].map((entry) => remove(storage, entry.parentID, entry.sessionID, entry.group)))
   return entries.filter((entry) => !expired.has(entry))
 }
 

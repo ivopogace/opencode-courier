@@ -6,10 +6,8 @@ import { scanEntries, type Storage } from "./storage.js"
 type Context = Plugin.Context
 
 /**
- * Join groups: the members of each group a parent named with courier_spawn, under
- * `group/<parentID>/<name>/<sessionID>`, each with its held report once it has one, or how it left
- * (its turn failed, or it was deleted). A group is released, delivered to the parent in one message
- * and dropped, once every member has a held report or has left; docs/reference.md, § Join groups.
+ * Join groups: each member of a parent's group under `group/<parentID>/<name>/<sessionID>`, with its
+ * held report or how it left; released and dropped once none is out. docs/reference.md, § Join groups.
  */
 const PREFIX = "group/"
 
@@ -97,41 +95,40 @@ export async function joinGroup(storage: Pick<Storage, "set">, parentID: string,
   await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt: at }))
 }
 
-/** The members of each open group of a parent, by group name, in the order they joined. */
-export async function groupsOf(storage: Pick<Storage, "scan">, parentID: string) {
-  const members = await membersUnder(storage, groupsPrefix(parentID))
-  const groups = new Map<string, Membership[]>()
-  for (const member of members.sort((a, b) => a.joinedAt - b.joinedAt)) groups.set(member.group, [...(groups.get(member.group) ?? []), member])
-  return groups
+/** Whether a parent has a group that is open: one with a member, out or not. */
+export async function hasOpenGroup(storage: Pick<Storage, "scan">, parentID: string) {
+  return (await storage.scan({ prefix: groupsPrefix(parentID), limit: 1 })).entries.length > 0
 }
 
 /** Whether every member of a group has a held report or has left, so the group is released. */
 const complete = (members: ReadonlyArray<Member>) => members.every((member) => member.report || member.left)
 
-/**
- * Holds a member's report with its group: written over its earlier one, if any, or over how it had left. Returns
- * how many members have reported and how many there are, and whether the group is complete now.
- */
-export async function holdReport(storage: Pick<Storage, "get" | "set" | "scan">, membership: Membership, report: HeldReport) {
+/** Holds a member's report with its group, in place of an earlier one, or of how it had left. */
+export async function holdReport(storage: Pick<Storage, "set">, membership: Membership, report: HeldReport) {
   const { parentID, group, sessionID, title, joinedAt } = membership
   await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt, report }))
+}
+
+/** How many members of a group have reported and how many have not left, and whether the group is complete. */
+export async function groupStanding(storage: Pick<Storage, "scan">, parentID: string, group: string) {
   const members = await membersUnder(storage, groupPrefix(parentID, group))
   return {
-    reported: members.filter((other) => other.report).length,
-    members: members.filter((other) => !other.left).length,
+    reported: members.filter((member) => member.report).length,
+    members: members.filter((member) => !member.left).length,
     complete: complete(members),
   }
 }
 
 /**
- * Notes that a member left its group without a report: its turn failed, or it was deleted. One whose report is
- * held keeps it. Returns the group's name, and whether the group is complete now; undefined when it was in none.
+ * Notes that a member left its group without a report: its turn failed, or it was deleted. Returns whether it
+ * did (one whose report is held keeps it) and whether the group is complete now; undefined when it was in none.
  */
 export async function leaveGroup(storage: Pick<Storage, "get" | "set" | "scan">, parentID: string, group: string, sessionID: string, by: LeftMember["by"], at: number) {
   const member = await memberOf(storage, parentID, group, sessionID)
   if (!member) return undefined
-  if (!member.report) await storage.set(memberKey(parentID, group, sessionID), stored({ title: member.title, joinedAt: member.joinedAt, left: { at, by } }))
-  return { complete: complete(await membersUnder(storage, groupPrefix(parentID, group))) }
+  const left = !member.report
+  if (left) await storage.set(memberKey(parentID, group, sessionID), stored({ title: member.title, joinedAt: member.joinedAt, left: { at, by } }))
+  return { left, complete: (await groupStanding(storage, parentID, group)).complete }
 }
 
 /** Drops a member from its group, with its roster entry; the group is released without it. */
@@ -156,8 +153,7 @@ const claimKey = (parentID: string, group: string) => `group:${parentID}/${group
 
 /**
  * Delivers every released group once, from the scheduler's tick: claimed in the shared `claimed`, re-read,
- * delivered and only then dropped, so a delivery that fails is tried again at the next tick, and a crash
- * in between delivers it again after a restart, not never. A group whose every member left is dropped unsent.
+ * delivered and only then dropped, so a failed delivery is tried again at the next tick, and a crash in between delivers it again.
  */
 export async function deliverReleased(ports: GroupPorts, claimed: Set<string>) {
   const groups = new Map<string, Membership[]>()
@@ -170,6 +166,8 @@ export async function deliverReleased(ports: GroupPorts, claimed: Set<string>) {
     claimed.add(key)
     try {
       await release(ports, members[0]!.parentID, members[0]!.group)
+    } catch (error) {
+      ports.log(`courier group ${members[0]!.group} of ${members[0]!.parentID}: ${String(error)}`)
     } finally {
       claimed.delete(key)
     }
@@ -199,5 +197,9 @@ async function release(ports: GroupPorts, parentID: string, group: string) {
       return
     }
   }
-  await Promise.all(members.map((member) => ports.storage.remove(memberKey(parentID, group, member.sessionID))))
+  // A member left behind here is delivered again at the next tick, as after a crash: logged, so it can be seen.
+  const dropped = await Promise.allSettled(members.map((member) => ports.storage.remove(memberKey(parentID, group, member.sessionID))))
+  for (const [index, result] of dropped.entries())
+    if (result.status === "rejected")
+      ports.log(`courier group ${group} of ${parentID}: delivered, but ${members[index]!.sessionID} could not be dropped: ${String(result.reason)}`)
 }

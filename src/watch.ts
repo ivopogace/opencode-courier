@@ -1,6 +1,6 @@
 import { addBounded, setBounded } from "./bounded.js"
 import { lastReply } from "./courier.js"
-import { dropGroups, groupsOf, leaveGroup } from "./group.js"
+import { dropGroups, hasOpenGroup, leaveGroup, memberOf } from "./group.js"
 import type { Hub, Member, WatchPorts, WatchState } from "./hub.js"
 import {
   envelope,
@@ -70,19 +70,31 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
     await settled(ports.storage, sessionID, "failed", at).catch((error: unknown) =>
       ports.log(`courier watch: could not note the failed turn of ${sessionID}: ${String(error)}`),
     )
-  await Promise.all(entries.map((entry) => leave(ports, entry, "failed", at)))
-  await Promise.all(
-    entries.map((entry) =>
-      ports.session.synthetic({
-        sessionID: entry.parentID,
-        text: envelope(sessionID, failureNotice(entry.title, error, entry.group), { failed: error.type }),
-        description: `Session ${sessionID} failed`,
-        metadata: { source: "courier", from: sessionID, failed: true },
-        delivery: "steer",
-      }),
-    ),
-  )
+  const leaving = await Promise.all(entries.map((entry) => willLeave(ports, entry)))
+  // The notice first, then the group: its release, which may follow at once, says the parent was told.
+  try {
+    await Promise.all(
+      entries.map((entry, index) =>
+        ports.session.synthetic({
+          sessionID: entry.parentID,
+          text: envelope(sessionID, failureNotice(entry.title, error, leaving[index] ? entry.group : undefined), { failed: error.type }),
+          description: `Session ${sessionID} failed`,
+          metadata: { source: "courier", from: sessionID, failed: true },
+          delivery: "steer",
+        }),
+      ),
+    )
+  } finally {
+    await Promise.all(entries.map((entry) => leave(ports, entry, "failed", at)))
+  }
   return entries.map((entry) => entry.parentID)
+}
+
+/** Whether a child is out in an open group, so that its failure takes it out of the group without a report. */
+async function willLeave(ports: WatchPorts, entry: RosterEntry) {
+  if (!entry.group) return false
+  const member = await memberOf(ports.storage, entry.parentID, entry.group, entry.sessionID).catch(() => undefined)
+  return member !== undefined && !member.report
 }
 
 /** Takes a child out of its group without a report, and has the scheduler deliver the group if that completes it. */
@@ -162,7 +174,7 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
 async function waits(ports: WatchPorts, sessionID: string, prompt: number) {
   const started = await children(ports.storage, sessionID)
   if ((await Promise.all(started.map((entry) => awaited(ports.storage, entry.sessionID)))).includes(true)) return true
-  if ((await groupsOf(ports.storage, sessionID)).size) return true
+  if (await hasOpenGroup(ports.storage, sessionID)) return true
   if ((await listEverywhere([...ports.permissions()], sessionID)).some((found) => found.requests.length)) return true
   if ((await pendingQuestions(ports.storage, sessionID)).length) return true
   const [scheduled, subscribed] = await Promise.all([scheduledFor(ports.storage, sessionID), subscriptions(ports)])

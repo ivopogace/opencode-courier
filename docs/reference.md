@@ -222,7 +222,8 @@ the parent sends it more to do, is delivered on its own, as a report of a child 
 
 **A member that leaves.** A member whose turn [fails](#a-child-that-fails), or whose session OpenCode
 deletes, leaves the group without a report: the parent is told of the failure at once, as ever, with
-a line naming the group, and the group no longer waits for it, so it is released once its other
+a line naming the group (sent before the member leaves, so the group's message, which may follow at
+once, never overtakes it), and the group no longer waits for it, so it is released once its other
 members have reported, the message naming who left and why. A member that reports after all before
 then rejoins with its report. A member that has reported keeps its held report whatever happens to
 its turn after. A member dropped from the [roster](#roster), after 14 days or by `courier_cleanup`,
@@ -236,8 +237,10 @@ group and ended its turn is not reported to its own parent as having ended witho
 the group's message has reached it and it ends a turn without reporting.
 
 **`courier_children`** lists, for a child started in a group, `group: { name, report }`, with
-`report` one of `held`, `out`, `failed`, `deleted` (it left) or `released` (the group has been
-delivered, or the child joined an earlier one of that name).
+`report` one of `held`, `out`, `failed`, `deleted` (it left), `released` (the group has been
+delivered, or the child joined an earlier one of that name) or `unknown` (its membership could not
+be read). A child whose group could not be joined when it was started is recorded in no group, and
+`courier_spawn`'s result says so: its report comes on its own.
 
 **Delivery.** The scheduler that delivers `courier_later` messages delivers released groups too,
 at each tick and at once when a report, a failure or a deletion completes a group, so the parent

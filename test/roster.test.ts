@@ -209,6 +209,9 @@ describe("roster", () => {
       expect(await forget(storage, "ses_parent", "ses_b")).toBe(true)
 
       expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_c"])
+      store.set("roster/ses_parent/ses_c", { ...entry("ses_c", "ses_parent", 3), group: "pair" })
+      await remove(storage, "ses_parent", "ses_c", "pair")
+      expect([...store.keys()]).toEqual([])
     })
 
     test("back-fills missing reverse keys and drops those whose entry is gone, once however often it runs", async () => {

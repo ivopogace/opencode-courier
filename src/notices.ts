@@ -189,7 +189,7 @@ export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"
   if (sent.held) {
     const { group, reported, members } = sent.held
     const counted = reported !== undefined && members !== undefined
-    let when = "once its turn has ended, yours being the last."
+    let when = `once ${sessionID}'s turn has ended, yours being the last.`
     if (!counted || reported < members) {
       const have = counted ? ` (${reported} of ${members} have)` : ""
       when = `once every member of the group has reported${have}. Nothing more is needed from you for it.`

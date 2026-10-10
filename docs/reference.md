@@ -624,8 +624,9 @@ stored questions) but not its memory. The plugin handles that as follows:
   servers' clocks, so they should be one machine's.
 - **A released [join group](#join-groups) is delivered by the server holding the owner key**, as a
   `courier_later` message is: the members' `courier_send` calls hold their reports in the shared
-  storage from whichever server runs them, and the owner's scheduler delivers the group at once
-  when the last report is held on that server, or at its next tick otherwise.
+  storage from whichever server runs them, and once the parent's turn has ended the owner's
+  scheduler delivers the group at once when the last report is held, or the turn ends, on that
+  server, or at its next tick otherwise.
 - **`courier_answer` passes an answer on only from a turn on that same server.** Pending requests
   live in the memory of the process running the child, and the plugin API offers no channel between
   servers. From the other server it finds no request pending and says so: the request was answered

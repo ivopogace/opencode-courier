@@ -671,7 +671,7 @@ exports[`tool results sendText 5`] = `"Delivered to ses_other."`;
 
 exports[`tool results sendText 6`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported (1 of 3 have). Nothing more is needed from you for it. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
-exports[`tool results sendText 7`] = `"Recorded as your report, status failed. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once its turn has ended, yours being the last. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+exports[`tool results sendText 7`] = `"Recorded as your report, status failed. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once ses_parent's turn has ended, yours being the last. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`tool results sendText 8`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported. Nothing more is needed from you for it. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 

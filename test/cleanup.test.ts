@@ -16,6 +16,7 @@ function fakePorts(state: WorktreeState | "gone" = clean) {
   const nudges: number[] = []
   const ports: CleanupPorts = {
     projectID: "proj_plugin",
+    now: () => 42,
     nudge: () => void nudges.push(removed.length),
     storage: {
       get: async (key) => store.get(key) as any,
@@ -192,14 +193,52 @@ describe("cleanup", () => {
     )
   })
 
-  test("refuses a child that shared the parent's directory", async () => {
-    const { ports, removed } = fakePorts()
+  test("forgets a child that shared the parent's directory, and drops it from its group", async () => {
+    const { ports, store, removed, nudges } = fakePorts()
+    await record(ports.storage, child({ isolated: false, directory: "/repo", source: undefined, group: "pair" }))
+    store.set("group/ses_parent/pair/ses_child", { title: "t", joinedAt: 1 })
+    store.set("report/ses_child/prompt", { at: 1 })
+
+    const result = await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
+
+    expect(result).toEqual({ sessionID: "ses_child", directory: "/repo", outcome: "dropped", group: "pair" })
+    expect(removed).toEqual([])
+    expect(store.has(rosterKey("ses_parent", "ses_child"))).toBe(false)
+    expect(store.has(reverseKey("ses_child"))).toBe(false)
+    expect(store.has("report/ses_child/prompt")).toBe(false)
+    // The member is marked left as `dropped`, which the group's release names, and the drop of the
+    // group's only member completes it: the scheduler is nudged to deliver it.
+    expect(store.get("group/ses_parent/pair/ses_child")).toEqual({ title: "t", joinedAt: 1, left: { at: 42, by: "dropped" } })
+    expect(nudges).toEqual([0])
+  })
+
+  test("forgets a child in no group that shared the parent's directory", async () => {
+    const { ports, store, removed, nudges } = fakePorts()
     await record(ports.storage, child({ isolated: false, directory: "/repo", source: undefined }))
 
-    await expect(cleanup(ports, "ses_parent", { sessionID: "ses_child" })).rejects.toThrow(
-      "ses_child ran in /repo, not in a worktree of its own",
-    )
+    const result = await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
+
+    expect(result).toEqual({ sessionID: "ses_child", directory: "/repo", outcome: "dropped" })
     expect(removed).toEqual([])
+    expect(store.size).toBe(0)
+    expect(nudges).toEqual([])
+  })
+
+  test("keeps the held report of a child that shared the parent's directory, which still goes to the parent", async () => {
+    const { ports, store, nudges } = fakePorts()
+    await record(ports.storage, child({ isolated: false, directory: "/repo", source: undefined, group: "pair" }))
+    store.set("group/ses_parent/pair/ses_child", { title: "t", joinedAt: 1, report: { at: 2, status: "done", message: "m" } })
+
+    const result = await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
+
+    expect(result.outcome).toBe("dropped")
+    expect(store.has(rosterKey("ses_parent", "ses_child"))).toBe(false)
+    expect(store.get("group/ses_parent/pair/ses_child")).toEqual({
+      title: "t",
+      joinedAt: 1,
+      report: { at: 2, status: "done", message: "m" },
+    })
+    expect(nudges).toEqual([])
   })
 })
 
@@ -331,7 +370,9 @@ test("forgetting a child started in a group has the scheduler deliver the group,
 
   await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
 
-  expect(store.has("group/ses_parent/pair/ses_child")).toBe(false)
+  // The member leaves as `dropped`, which the release names; the drop of the group's only member
+  // completes it, and the worktree's removal is what the nudge counts.
+  expect(store.get("group/ses_parent/pair/ses_child")).toEqual({ title: "t", joinedAt: 1, left: { at: 42, by: "dropped" } })
   expect(nudges).toEqual([1])
   await record(ports.storage, child())
   await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
@@ -340,6 +381,10 @@ test("forgetting a child started in a group has the scheduler deliver the group,
   await record(ports.storage, child({ group: "pair" }))
   store.set("group/ses_parent/pair/ses_child", { title: "t", joinedAt: 1, report: { at: 2, status: "done", message: "m" } })
   await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
-  expect(store.has("group/ses_parent/pair/ses_child")).toBe(true)
+  expect(store.get("group/ses_parent/pair/ses_child")).toEqual({
+    title: "t",
+    joinedAt: 1,
+    report: { at: 2, status: "done", message: "m" },
+  })
   expect(nudges).toEqual([1])
 })

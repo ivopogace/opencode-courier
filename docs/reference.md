@@ -260,7 +260,13 @@ the parent sends it more to do, is delivered on its own, as a report of a child 
 the person, or by OpenCode after an hour without activity; not by a shutdown, which the next start
 resumes), whose task could not be handed over as it was started, or whose session OpenCode deletes,
 leaves the group without a report, and the group no longer waits for it: it is released once its
-other members have reported and the parent's turn has ended, the message naming who left and why. The parent hears of each as of a
+other members have reported and the parent's turn has ended, the message naming who left and why. A
+member its parent drops with `courier_cleanup` — one that [ended its turn without a report](#a-child-that-ends-without-a-report),
+or one the parent has given up on — leaves the same way, as `dropped`: the group is released
+without it, the scheduler nudged so the message goes out at once if that completes it, and the
+message names it under "Without a report", with why. A dropped member that reports after all is
+delivered on its own, as a child in no group: its roster entry went with the drop, so the plugin
+holds nothing for it. The parent hears of each leave as of a
 child in no group: a failed turn at once, in a notice with a line naming the group, a task not
 handed over as `courier_spawn`'s error, and an interruption or a deletion only in the group's
 message. For a failed turn, the member is marked as left before the notice goes out, so the parent
@@ -270,16 +276,18 @@ rejoins with its report, and one whose report comes in while the group's message
 it, to go out at the next tick. A member that has reported keeps its held report whatever happens to
 its turn after, unless its next word to the parent is a `blocked` report: that passes through, and
 the stale held report is dropped, so the member is out again until it reports. A held report
-outlives the member's [roster](#roster) entry: a member dropped after 14 days or by
-`courier_cleanup` goes from its group with no trace when it has not reported, and otherwise stays
-until the group is released, which the dropping of the members still out brings about, so a group's
-keys live as long as the roster entries of its members still out; a member dropped by `courier_cleanup` while still out has the group
-delivered once the parent's turn has ended, if that completes it, with no line for it, since the parent did the dropping. A
+outlives the member's [roster](#roster) entry, so a group's keys live as long as the roster
+entries of its members still out: a member whose entry is dropped after 14 days goes from its group
+with no trace when it has not reported, and otherwise stays until the group is released, which the
+dropping of the members still out brings about. A member its parent drops by `courier_cleanup`
+while still out leaves as `dropped`, and has the group delivered once the parent's turn has
+ended, if that completes it, naming it under "Without a report", since the parent did the dropping. A
 group whose every member left is dropped unsent, with no report to carry: the parent was told of
 each failed turn and did the rest, and hears of an interruption or a deletion no more than for a
 child in no group. A member that [ends its turn without a report](#a-child-that-ends-without-a-report) is still
 out, as a child in no group would still owe its report: the silent-end notice says the group's
-other reports are held until it reports, and `courier_children` shows it. A report that cannot be
+other reports are held until it reports, and `courier_children` shows it, and the parent's way out,
+besides messaging it until it reports, is to drop it. A report that cannot be
 held, the storage failing as `courier_send` runs, is delivered on its own, and the member dropped
 from the group, which releases without it.
 
@@ -292,14 +300,16 @@ that a member ended without a report, which ends its turn without acting on it, 
 would be for a child in no group.
 
 **`courier_children`** lists, for a child started in a group, `group: { name, report }`, with
-`report` one of `held`, `out`, `failed`, `interrupted`, `deleted` (it left), `released` (the group has been
+`report` one of `held`, `out`, `failed`, `interrupted`, `deleted` (it left), `dropped` (its parent
+dropped it), `released` (the group has been
 delivered, or the child joined an earlier one of that name) or `unknown` (its membership could not
 be read). A child whose group could not be joined when it was started is recorded in no group, and
 `courier_spawn`'s result says so: its report comes on its own.
 
 **Delivery.** The scheduler that delivers `courier_later` messages delivers released groups too,
 at each tick, and at once when the parent's turn ends with a group complete, or a report, a
-failure, an interruption or a deletion completes a group whose parent's turn has ended; so once its
+failure, an interruption, a deletion or a parent's drop completes a group whose parent's turn has
+ended; so once its
 turn has ended, the parent waits no longer than for a plain report on one server; with [two servers](#two-servers-on-one-data-directory)
 on one data directory, by the one holding the owner key, within a tick of it. Each release is
 claimed once in the process, like a scheduled message, and dropped only after the message has been
@@ -352,8 +362,9 @@ owes a report, the plugin sends its parent a message from that child, marked
 (at most 2000 characters), waking the parent if it is idle. When the child has messaged the parent
 without a status since its last prompt, the notice says so: that message was progress, not the
 report. The parent decides: message the child
-with `courier_send` to have it carry on, or to report if its last reply is what it needed, or start
-a replacement. Until the child reports, it counts toward the
+with `courier_send` to have it carry on, or to report if its last reply is what it needed, start a
+replacement, or, for a member of a [join group](#join-groups) that will not report, drop it with
+`courier_cleanup`, which releases the group without it. Until the child reports, it counts toward the
 [limits](#session-trees-and-their-limits). Each turn's end is claimed once, before its notice goes
 out, so one notice is sent however many instances and copies of the plugin see it.
 
@@ -614,7 +625,10 @@ last cannot be stopped.
 An isolated child works in a git worktree under OpenCode's data directory
 (`…/opencode/worktree/<project>/<name>`, on a detached HEAD), and nothing removes it on its own.
 When the parent has what it needs from the child, it calls `courier_cleanup { sessionID }`, which
-removes the worktree and drops the child from `courier_children`.
+removes the worktree and drops the child from `courier_children`. A child started without
+`isolate: true` shares the parent's directory, so it has no worktree to remove: `courier_cleanup`
+just forgets it, which also drops it from its [join group](#join-groups) as `dropped`, so a group
+waiting on it is released without it, the message naming it under "Without a report".
 
 ### Nested isolation
 
@@ -666,6 +680,11 @@ Cleanup is explicit only. A child reporting back does not mean the parent has me
 even read its work, and the parent may still send it more to do in the same worktree, so the
 plugin never removes one on its own. Isolated children whose worktree still exists are kept on
 `courier_children` past the 14 days, so they can still be found and cleaned up.
+
+Dropping a member from its join group is explicit too: the plugin never drops one on its own, so a
+member that will not report holds its group, and every other member's report, until the parent
+drops it, its turn fails or is interrupted, it is deleted, or its roster entry expires after 14
+days.
 
 `courier_cleanup` cannot tell whether the child is still running, so call it after the child has
 reported. It works on the calling session's own children.

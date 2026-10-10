@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { isAbsolute } from "node:path"
+import { leaveGroup } from "./group.js"
 import { keepReason, type CleanupResult } from "./notices.js"
 import { remove, rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
 
@@ -25,6 +26,8 @@ export interface CleanupPorts {
   readonly projectID: string
   /** The worktree's state, or undefined when its directory no longer exists; `base` is the commit it was made from. */
   readonly inspect: (directory: string, base?: string) => Promise<WorktreeState | undefined>
+  /** The clock, for when a dropped member left its group. */
+  readonly now: () => number
   /** Has the scheduler deliver what is due now: a group the forgotten child may have been the last member out of. */
   readonly nudge: () => void
 }
@@ -40,16 +43,31 @@ export const MAX_LISTED = 50
 /**
  * Removes the worktree of an isolated child the parent started, and forgets the child. One with
  * uncommitted changes or commits found nowhere else is kept unless `force` is set; the result says so.
+ * A child that shares its parent's directory has no worktree to remove: forgetting it is all there
+ * is to clean up, which drops it from its join group, so the group is released without it.
  */
 export async function cleanup(ports: CleanupPorts, parentID: string, input: CleanupInput): Promise<CleanupResult> {
   const entry = (await ports.storage.get(rosterKey(parentID, input.sessionID))) as unknown as RosterEntry | undefined
   if (!entry) throw new Error(`${input.sessionID} is not on the courier_children list of ${parentID}.`)
-  if (!entry.isolated)
-    throw new Error(`${input.sessionID} ran in ${entry.directory}, not in a worktree of its own; there is nothing to remove.`)
   const { directory } = entry
   const forget = async () => {
-    const { droppedFromGroup } = await remove(ports.storage, parentID, input.sessionID, entry.group)
-    if (droppedFromGroup) ports.nudge()
+    // The child's group membership goes with it: one still out is marked left as `dropped`, which the
+    // group's release names under "Without a report", and one whose report is held keeps it, since that
+    // still goes to the parent. A drop that completes the group has the scheduler deliver it at once.
+    const dropped = entry.group
+      ? await leaveGroup(ports.storage, parentID, entry.group, input.sessionID, "dropped", ports.now()).catch(() => undefined)
+      : undefined
+    await remove(ports.storage, parentID, input.sessionID)
+    if (dropped) ports.nudge()
+  }
+  if (!entry.isolated) {
+    await forget()
+    return {
+      sessionID: input.sessionID,
+      directory,
+      outcome: "dropped",
+      ...(entry.group ? { group: entry.group } : {}),
+    }
   }
   // With force the state only decides whether there is anything left to remove, so a worktree git
   // can no longer read is still removed.

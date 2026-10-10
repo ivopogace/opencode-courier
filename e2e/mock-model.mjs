@@ -140,6 +140,8 @@ function decide(body) {
   }
   // The child of COURIER-SILENT ends its turn with a reply but no report, held back so the parent's turn has ended.
   if (parent && recent.includes("CHILD-SILENT")) return { text: "CHILD SILENT REPLY", delayed: true }
+  // The second child of COURIER-GROUP-DROP ends its turn the same way, so its parent can drop it from their group.
+  if (parent && recent.includes("CHILD-DROPS")) return { text: "CHILD SILENT REPLY", delayed: true }
   // A member of COURIER-GROUP-BLOCKED's group needs a decision from its parent, and reports done once nudged.
   if (parent && recent.includes("CHILD-BLOCKS")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD BLOCKED", status: "blocked" } }
   // The middle session of COURIER-GROUP-NESTED starts two quick leaves in one group.
@@ -206,6 +208,10 @@ function decide(body) {
   const form = recent.match(/<courier from="ses_\w+" asks="form" form="([^"]+)"/)
   if (form) return { text: `PARENT TOLD FORM ${form[1]}` }
   if (/<courier from="ses_\w+" (answered|settled)=/.test(recent)) return { text: "PARENT SETTLED" }
+  // COURIER-GROUP-DROP: told that a member of its group ended without a report, the parent drops it, and the group is released without it.
+  const dropQuiet = recent.match(/<courier from="(ses_\w+)" ended="without-report">/)
+  if (dropQuiet && messages.some((message) => message.role === "user" && textOf(message.content).includes("COURIER-GROUP-DROP")))
+    return { tool: "courier_cleanup", args: { sessionID: dropQuiet[1] } }
   if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
   // A group's reports, in one message, or a member's blocked report, which is not held.
   // A middle session reports its group's message on; a root parent ends its turn on it.
@@ -245,6 +251,14 @@ function decide(body) {
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
   if (recent.includes("COURIER-GROUP-NESTED")) return { tool: "courier_spawn", args: { task: "CHILD-GROUPS" } }
   if (recent.includes("COURIER-GROUP-SPLIT")) return { tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } }
+  // COURIER-GROUP-DROP starts two children in one group; the second ends its turn without a report, and the parent drops it.
+  if (recent.includes("COURIER-GROUP-DROP"))
+    return {
+      calls: [
+        { tool: "courier_spawn", args: { task: "Report back to your parent.", group: "pair" } },
+        { tool: "courier_spawn", args: { task: "CHILD-DROPS", group: "pair" } },
+      ],
+    }
   // COURIER-GROUP starts two children at once in one group; with -BLOCKED, the second needs a decision first.
   const group = recent.match(/COURIER-GROUP(-BLOCKED)?/)
   if (group)

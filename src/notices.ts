@@ -141,8 +141,9 @@ export const SKILL_CONTENT = [
   "",
   "When a part goes wrong:",
   "- A failed turn (failed=\"...\") or a silent end (ended=\"without-report\", quoting the session's last reply): message " +
-    "the session with courier_send to carry on, to report, or to try again; or start a replacement. Until it reports, it " +
-    "counts toward the limits.",
+    "the session with courier_send to carry on, to report, or to try again; start a replacement; or, for one in a join " +
+    "group that will not report, courier_cleanup it, which drops it from the group, whose other reports then reach you " +
+    "without it, naming it under \"Without a report\". Until it reports, it counts toward the limits.",
   "- A refusal from courier_spawn naming maxDepth, maxChildren or maxTotal: do that part yourself, or end your turn and " +
     "start it once a report has arrived. Do not retry it in a loop.",
   "- Lost track, after a compaction or a restart: one courier_tree shows every session under you with its depth, its " +
@@ -280,10 +281,11 @@ export const statusText = (status: unknown) => JSON.stringify(status, null, 2)
 export const childrenText = (listed: ReadonlyArray<unknown>) =>
   listed.length ? JSON.stringify(listed, null, 2) : "No sessions started with courier_spawn."
 
-/** What courier_cleanup did: removed the worktree, found it gone, or kept it and why. */
+/** What courier_cleanup did: removed the worktree, found it gone, kept it and why, or dropped a child that had none. */
 export type CleanupResult =
   | { readonly sessionID: string; readonly directory: string; readonly outcome: "removed" }
   | { readonly sessionID: string; readonly directory: string; readonly outcome: "gone" }
+  | { readonly sessionID: string; readonly directory: string; readonly outcome: "dropped"; readonly group?: string }
   | {
       readonly sessionID: string
       readonly directory: string
@@ -297,6 +299,11 @@ export function cleanupText(result: CleanupResult) {
   if (result.outcome === "removed") return `Removed the worktree ${result.directory} of ${result.sessionID}.`
   if (result.outcome === "gone")
     return `The worktree ${result.directory} of ${result.sessionID} was already gone; dropped it from courier_children.`
+  if (result.outcome === "dropped")
+    return (
+      `${result.sessionID} ran in ${result.directory}, not in a worktree of its own, so there is nothing to remove; ` +
+      `dropped it from courier_children${result.group ? ` and from its group "${result.group}"` : ""}.`
+    )
   return `Kept the worktree ${result.directory} of ${result.sessionID}: it has ${result.reason}. Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it.`
 }
 
@@ -500,11 +507,11 @@ export interface HeldReport {
   readonly artifacts?: Artifacts
 }
 
-/** A member of a group that left it without a report, and why: its turn failed or was interrupted, or it was deleted. */
+/** A member of a group that left it without a report, and why: its turn failed or was interrupted, it was deleted, or its parent dropped it. */
 export interface LeftMember {
   readonly sessionID: string
   readonly title: string
-  readonly by: "failed" | "interrupted" | "deleted"
+  readonly by: "failed" | "interrupted" | "deleted" | "dropped"
 }
 
 /** How a release names each status among its reports: `2 done, 1 failed`. */
@@ -515,7 +522,7 @@ function statusCounts(reports: ReadonlyArray<Pick<HeldReport, "status">>) {
   }).join(", ")
 }
 
-const LEFT_HOW = { failed: "its turn failed", interrupted: "its turn was interrupted", deleted: "it was deleted" }
+const LEFT_HOW = { failed: "its turn failed", interrupted: "its turn was interrupted", deleted: "it was deleted", dropped: "its parent dropped it" }
 
 /**
  * What the parent gets when a group it named is released: every report, with its status, text and artifacts in

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "../src/courier.js"
+import { cleanup } from "../src/cleanup.js"
 import { DEFAULT_LIMITS } from "../src/limits.js"
 import { childBrief, envelope, reportBody } from "../src/notices.js"
 import { joinGroup, memberKey } from "../src/group.js"
@@ -638,6 +639,46 @@ describe("send, from a member of a group", () => {
 
     expect(await send(ports, "ses_child", { sessionID: "ses_other", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done" })
     expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(1)
+  })
+
+  test("a member its parent dropped reports on its own, as a child in no group", async () => {
+    const { ports, calls, store } = fakePorts()
+    await grouped(ports)
+    const cleanupPorts = {
+      storage: ports.storage,
+      worktree: ports.worktree,
+      projectID: ports.projectID,
+      now: ports.now,
+      nudge: ports.nudge,
+      inspect: async () => ({ changes: [], commits: [] }),
+    }
+
+    // The parent drops the member, which ended silently: its roster entry goes, and it leaves its
+    // group as `dropped`, which the group's release names.
+    expect(await cleanup(cleanupPorts, "ses_parent", { sessionID: "ses_child" })).toEqual({
+      sessionID: "ses_child",
+      directory: "/repo",
+      outcome: "dropped",
+      group: "pair",
+    })
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({
+      title: "A",
+      joinedAt: 1,
+      left: { at: 1_000, by: "dropped" },
+    })
+
+    // Its report after all is delivered on its own, not held with the group, whose member it no longer
+    // is; with its roster entry gone, it settles no report state, as a child in no group would not.
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "Late.", status: "done" })).toEqual({
+      messageID: "msg_2",
+      status: "done",
+    })
+    expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(1)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({
+      title: "A",
+      joinedAt: 1,
+      left: { at: 1_000, by: "dropped" },
+    })
   })
 })
 

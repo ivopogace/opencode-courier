@@ -235,7 +235,7 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
 | `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated, when it was started and, for one started in a group, the group and whether its report is `held`, `out` or `released`. |
 | `courier_tree` | Lists the whole tree under this session (or a given `sessionID`): every session started from it with `courier_spawn`, directly or through others, depth first, each with what `courier_children` shows plus its depth, its parent, and its report state (whether it owes a report, sent progress, ended without one, and the status of its last report). Cut at `maxTotal` sessions ([reference](docs/reference.md#seeing-and-stopping-a-subtree)). |
 | `courier_stop` | Interrupts a session you started, directly or through others, and every session under it, deepest first, and cancels the `courier_later` messages scheduled for them. With `cleanup: true` it also removes their worktrees, by `courier_cleanup`'s rules (kept ones are listed). You are not told of what you stopped; a session between you and the target is, once, as `ended="stopped"` ([reference](docs/reference.md#seeing-and-stopping-a-subtree)). |
-| `courier_cleanup` | Removes the git worktree of a child started with `isolate: true` and drops the child from `courier_children`. Keeps a worktree with uncommitted changes or commits on no branch, tag or remote and lists them, unless `force: true` is passed ([reference](docs/reference.md#worktree-cleanup)). |
+| `courier_cleanup` | Removes the git worktree of a child started with `isolate: true` and drops the child from `courier_children`. Keeps a worktree with uncommitted changes or commits on no branch, tag or remote and lists them, unless `force: true` is passed. A child that shares your directory has no worktree: this just forgets it, which also drops it from its join group, so a group waiting on it is released without it ([reference](docs/reference.md#worktree-cleanup)). |
 | `courier_answer` | Passes your answer to a permission request or a question that a session started from this one waits on: `reply` (`once`, `always` or `reject`, with an optional `message`) for a permission request, `answers` for a question. |
 | `courier_later` | Schedules a message for a session (this one by default) in `delayMinutes` or `at` an ISO time, and returns an id. When due it is delivered like `courier_send`, queued behind any running turn and waking the session if idle. |
 | `courier_cancel` | Drops a message scheduled with `courier_later`, e.g. because the child it was waiting for reported first. |
@@ -261,7 +261,10 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
   in one message, marked `group="<name>"`, listing every report with its status and artifacts in
   the order the sessions were started. A `blocked` report, progress, a failed turn, a silent end, a
   permission request and a question reach you at once, as ever; a member whose turn fails or is
-  interrupted leaves the group, which is released without it. Held reports survive a restart, and the name is free again
+  interrupted leaves the group, which is released without it. A member that ended silently holds the
+  others' reports back until it reports: message it to report, or `courier_cleanup` it, which drops it
+  from the group, whose reports then reach you without it, the message naming it under "Without a
+  report"; a dropped member that reports after all reaches you on its own. Held reports survive a restart, and the name is free again
   once the group has been delivered. [More](docs/reference.md#join-groups).
 - **A child that fails** cannot report, so the plugin does: every failed turn of a spawned session
   sends its parent a message marked `failed="<error type>"`, with the error, waking it if idle.

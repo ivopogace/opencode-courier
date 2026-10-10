@@ -59,7 +59,7 @@ function readMember(value: unknown): Member | undefined {
     title,
     joinedAt,
     ...(report ? { report } : {}),
-    ...(by === "failed" || by === "interrupted" || by === "deleted" ? { left: { at: num(left.at) ?? 0, by } } : {}),
+    ...(by === "failed" || by === "interrupted" || by === "deleted" || by === "dropped" ? { left: { at: num(left.at) ?? 0, by } } : {}),
   }
 }
 
@@ -140,8 +140,9 @@ export async function membershipOf(storage: Pick<Storage, "get">, parentID: stri
 }
 
 /**
- * Notes that a member left its group without a report: its turn failed or was interrupted, or it was deleted. Read
- * again first: one whose report is held meanwhile keeps it, one that left keeps why. True when that completes the group.
+ * Notes that a member left its group without a report: its turn failed or was interrupted, it was deleted, or its
+ * parent dropped it. Read again first: one whose report is held meanwhile keeps it, one that left keeps why. True when
+ * that completes the group.
  */
 export async function markLeft(storage: Pick<Storage, "get" | "set" | "scan">, membership: Membership, by: LeftMember["by"], at: number) {
   const { parentID, group, sessionID } = membership

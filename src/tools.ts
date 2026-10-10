@@ -311,7 +311,9 @@ export function addTools(tools: ToolEditor, ports: ToolPorts) {
     description:
       "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, " +
       "and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and " +
-      "the result lists them; commit or branch what you want, or pass force: true to discard it.",
+      "the result lists them; commit or branch what you want, or pass force: true to discard it. A session that " +
+      "shares your directory has no worktree to remove: courier_cleanup just forgets it, which also drops it " +
+      "from its join group, so a group waiting on it is released without it.",
     input: CleanupInput,
     execute: async (input, context) => {
       const result = await cleanup(ports.cleanup, context.sessionID, input).catch(rethrow("courier_cleanup"))

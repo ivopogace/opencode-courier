@@ -133,6 +133,8 @@ describe("tool results", () => {
   test("cleanupText", () => {
     expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "removed" })).toMatchSnapshot()
     expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "gone" })).toMatchSnapshot()
+    expect(notices.cleanupText({ sessionID: "ses_child", directory: "/repo", outcome: "dropped" })).toMatchSnapshot()
+    expect(notices.cleanupText({ sessionID: "ses_child", directory: "/repo", outcome: "dropped", group: "pair" })).toMatchSnapshot()
     expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "kept", reason: "1 uncommitted change (a.ts)", changes: ["a.ts"], commits: [] })).toMatchSnapshot()
   })
   test("keepReason", () => {
@@ -199,6 +201,7 @@ describe("join groups", () => {
         { sessionID: "ses_d", title: "Review d.ts", by: "failed" },
         { sessionID: "ses_e", title: "Review e.ts", by: "deleted" },
         { sessionID: "ses_f", title: "Review f.ts", by: "interrupted" },
+        { sessionID: "ses_g", title: "Review g.ts", by: "dropped" },
       ]),
     ).toMatchSnapshot()
   })

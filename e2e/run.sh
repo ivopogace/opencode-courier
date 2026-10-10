@@ -282,6 +282,39 @@ check "the group's reports started a new turn within 3 s of the parent's turn en
 check "the parent got exactly one message, with both reports" "$(sleep 2; api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] |
   length == 1 and (.[0] | contains("reports=\"2\"") and (split("CHILD DONE QUICKLY") | length == 3))')"
 
+echo "a member that ended silently is dropped by its parent, and the group is released without it"
+out=$(prompt "COURIER-GROUP-DROP")
+turn_ended=$(now_ms)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
+check "two children were started in the group, and courier_spawn said their reports are held with it" \
+  "$([ "$(wc -w <<<"$members")" -eq 2 ] && tool_state courier_spawn <<<"$out" | jq -sr 'all(.metadata.metadata.group == "pair" and (.output | contains("held with group \"pair\"")))')"
+reported=$(head -1 <<<"$members")
+silent=$(tail -1 <<<"$members")
+check "the parent was told once that the child ended without a report" \
+  "$(has_text "$parent" "ended=\"without-report\"" 45 && notices_with "$parent" ended | jq -r --arg silent "$silent" 'length == 1 and (.[0] | contains("<courier from=\"" + $silent + "\" ended=\"without-report\">"))')"
+check "the other member's report is held with the group" \
+  "$(for _ in $(seq 1 30); do [ "$(kv get "group/$parent/pair/$reported" | jq -r '.report.status == "done"' 2>/dev/null)" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+check "the parent dropped the silent member with courier_cleanup" \
+  "$(has_text "$parent" "dropped it from courier_children and from its group" 45)"
+# The drop completes the group, and the scheduler is nudged, so its message goes out at once:
+# steered into the parent's running turn, or starting a new one once that turn has ended.
+group_message=""
+for _ in $(seq 1 60); do
+  group_message=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains("group=\"pair\""))] | first // empty')
+  [ -n "$group_message" ] && break
+  sleep 1
+done
+check "one message, with the report, and the dropped member named under Without a report" \
+  "$(jq -r --arg silent "$silent" 'contains("\" group=\"pair\" reports=\"1\">") and contains("[1/1] ") and contains(": done\nCHILD DONE\n") and contains("Without a report: " + $silent + " \"CHILD-DROPS\" (its parent dropped it)")' <<<"$group_message")"
+check "the reported member's report is settled with its status" "$(kv get "report/$reported/settled" | jq -r '.by == "report" and .status == "done"')"
+check "the dropped child is off the roster, and its report state is gone" \
+  "$([ -z "$(kv get "roster/$parent/$silent")" ] && [ -z "$(kv get "report/$silent/prompt")" ] && echo true || echo false)"
+check "the delivered group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
+prompt_in "$silent" "CHILD-REPORT-NOW" >/dev/null
+check "the dropped member's late report reaches the parent on its own, as a child in no group" \
+  "$(has_text "$parent" "<courier from=\"$silent\" status=\"done\">" 45)"
+
 echo "a sub-orchestrator whose group reports during its turn gets it once that turn ends, and is not told of as silent"
 out=$(prompt "COURIER-GROUP-NESTED")
 root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)

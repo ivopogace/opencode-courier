@@ -336,8 +336,8 @@ export function failureNotice(title: string, error: ExecutionError, group?: stri
     "Message it with courier_send to have it try again, start a replacement, or carry on without it.",
     ...(group
       ? [
-          `It is a member of group "${group}": the group's reports go out to you without it once its other members have reported, ` +
-            "and if it reports after all before then, its report joins them.",
+          `It is a member of group "${group}", which no longer waits for it: its other members' reports reach you once they have ` +
+            "reported, and if it reports after all before then, its report joins them.",
         ]
       : []),
   ].join("\n")

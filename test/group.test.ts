@@ -4,7 +4,7 @@ import {
   dropGroups,
   dropMember,
   groupStanding,
-  hasOpenGroup,
+  hasCompleteGroup,
   holdReport,
   isGroupName,
   joinGroup,
@@ -67,16 +67,26 @@ describe("isGroupName", () => {
 describe("joining and leaving", () => {
   test("a member joins under its parent and group, with its title, which opens the group", async () => {
     const { ports } = fakePorts()
-    expect(await hasOpenGroup(ports.storage, "ses_parent")).toBe(false)
     await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "Second", 2)
     await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "First", 1)
     await joinGroup(ports.storage, "ses_other", "pair", "ses_d", "Elsewhere", 4)
 
     expect(await memberOf(ports.storage, "ses_parent", "pair", "ses_a")).toEqual({ title: "First", joinedAt: 1 })
     expect(await memberOf(ports.storage, "ses_parent", "pair", "ses_d")).toBeUndefined()
-    expect(await hasOpenGroup(ports.storage, "ses_parent")).toBe(true)
-    expect(await hasOpenGroup(ports.storage, "ses_nobody")).toBe(false)
     expect(await groupStanding(ports.storage, "ses_parent", "pair")).toEqual({ reported: 0, members: 2, complete: false })
+  })
+
+  test("a parent has a complete group once every member of one of its groups has reported or left", async () => {
+    const { ports } = fakePorts()
+    expect(await hasCompleteGroup(ports.storage, "ses_parent")).toBe(false)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "B", 2)
+    await joinGroup(ports.storage, "ses_parent", "solo", "ses_c", "C", 3)
+    await holdReport(ports.storage, membership("ses_a", "A"), report("done"))
+    expect(await hasCompleteGroup(ports.storage, "ses_parent")).toBe(false)
+    await leaveGroup(ports.storage, "ses_parent", "pair", "ses_b", "failed", 50)
+    expect(await hasCompleteGroup(ports.storage, "ses_parent")).toBe(true)
+    expect(await hasCompleteGroup(ports.storage, "ses_nobody")).toBe(false)
   })
 
   test("holding a report counts among the members that have reported, and the last one completes the group", async () => {

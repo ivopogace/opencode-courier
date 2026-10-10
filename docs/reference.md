@@ -220,8 +220,8 @@ starts a new group, with only the sessions started since. A session started into
 still open joins it, and the release waits for it too. A member's report after the release, as when
 the parent sends it more to do, is delivered on its own, as a report of a child in no group.
 
-**A member that leaves.** A member whose turn [fails](#a-child-that-fails), or whose session OpenCode
-deletes, leaves the group without a report: the parent is told of the failure at once, as ever, with
+**A member that leaves.** A member whose turn [fails](#a-child-that-fails), whose task could not be
+handed over as it was started, or whose session OpenCode deletes, leaves the group without a report: the parent is told of the failure at once, as ever, with
 a line naming the group (sent before the member leaves, so the group's message, which may follow at
 once, never overtakes it), and the group no longer waits for it, so it is released once its other
 members have reported, the message naming who left and why. A member that reports after all before
@@ -237,10 +237,13 @@ held until it reports, and `courier_children` shows it. A report that cannot be 
 failing as `courier_send` runs, is delivered on its own, and the member dropped from the group, which
 releases without it.
 
-**The parent waits.** A session with an open group is [waiting](#a-child-that-ends-without-a-report),
-like one whose children still owe it reports, so a sub-orchestrator that has split its task into a
-group and ended its turn is not reported to its own parent as having ended without a report, until
-the group's message has reached it and it ends a turn without reporting.
+**The parent waits.** A session [waits](#a-child-that-ends-without-a-report) on a group as on any
+children: while a member still owes it a report it has not been told about, and, once the group is
+complete, for the message the scheduler is about to deliver. So a sub-orchestrator that has split
+its task into a group and ended its turn is not reported to its own parent as having ended without
+a report, until the group's message has reached it and it ends a turn without reporting; one told
+that a member ended without a report, which ends its turn without acting on it, is reported, as it
+would be for a child in no group.
 
 **`courier_children`** lists, for a child started in a group, `group: { name, report }`, with
 `report` one of `held`, `out`, `failed`, `deleted` (it left), `released` (the group has been

@@ -1,6 +1,6 @@
 import { addBounded, setBounded } from "./bounded.js"
 import { lastReply } from "./courier.js"
-import { dropGroups, hasOpenGroup, leaveGroup, memberOf } from "./group.js"
+import { dropGroups, hasCompleteGroup, leaveGroup, memberOf } from "./group.js"
 import type { Hub, Member, WatchPorts, WatchState } from "./hub.js"
 import {
   envelope,
@@ -93,8 +93,14 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
 /** Whether a child is out in an open group: its group waits for it, and its failure takes it out without a report. */
 async function willLeave(ports: WatchPorts, entry: RosterEntry) {
   if (!entry.group) return false
-  const member = await memberOf(ports.storage, entry.parentID, entry.group, entry.sessionID).catch(() => undefined)
-  return member !== undefined && !member.report
+  try {
+    const member = await memberOf(ports.storage, entry.parentID, entry.group, entry.sessionID)
+    return member !== undefined && !member.report
+  } catch (error) {
+    // Taken as out: a leave is then tried, and logged if it fails too.
+    ports.log(`courier watch: could not read ${entry.sessionID}'s place in group ${entry.group}: ${String(error)}`)
+    return true
+  }
 }
 
 /** Takes a child out of its group without a report, and has the scheduler deliver the group if that completes it. */
@@ -158,22 +164,24 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const { sessionID } = event.data
   const [entry, started] = await Promise.all([indexedEntry(ports.storage, sessionID), children(ports.storage, sessionID)])
   const forgotten = [...(entry === undefined ? [] : [sessionID]), ...started.map((child) => child.sessionID)]
+  // Its groups go whether or not it has children on the roster: a held report outlives the member's entry.
   await Promise.all([
     ...forgotten.map((id) => forgetReport(ports.storage, id)),
     entry ? leave(ports, entry, "deleted", event.created ?? ports.now()) : undefined,
-    started.length ? dropGroups(ports.storage, sessionID) : undefined,
+    dropGroups(ports.storage, sessionID),
   ])
   return forgotten
 }
 
 /**
- * Whether a session prompted at `prompt` waits: on an untold report of a session it started, an open
- * group of its, a request of its own, a scheduled message, or a webhook it subscribed to since. Cheapest first.
+ * Whether a session prompted at `prompt` waits: on an untold report of a session it started, a complete group of
+ * its about to be delivered, a request of its own, a scheduled message, or a webhook it subscribed to since. Cheapest first.
  */
 async function waits(ports: WatchPorts, sessionID: string, prompt: number) {
   const started = await children(ports.storage, sessionID)
   if ((await Promise.all(started.map((entry) => awaited(ports.storage, entry.sessionID)))).includes(true)) return true
-  if (await hasOpenGroup(ports.storage, sessionID)) return true
+  // A group with a member still out is waited on through that member, above; one whose every out member was told of is not.
+  if (await hasCompleteGroup(ports.storage, sessionID)) return true
   if ((await listEverywhere([...ports.permissions()], sessionID)).some((found) => found.requests.length)) return true
   if ((await pendingQuestions(ports.storage, sessionID)).length) return true
   const [scheduled, subscribed] = await Promise.all([scheduledFor(ports.storage, sessionID), subscriptions(ports)])

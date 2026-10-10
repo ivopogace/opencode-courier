@@ -746,7 +746,7 @@ exports[`turn failures failureNotice 3`] = `
 "This session, "Fix the bug", which you started with courier_spawn, failed: boom (unknown).
 Its turn ended without finishing, so it will not report back on its own.
 Message it with courier_send to have it try again, start a replacement, or carry on without it.
-It is a member of group "reviews": the group's reports go out to you without it once its other members have reported, and if it reports after all before then, its report joins them."
+It is a member of group "reviews", which no longer waits for it: its other members' reports reach you once they have reported, and if it reports after all before then, its report joins them."
 `;
 
 exports[`turn failures silentNotice 1`] = `

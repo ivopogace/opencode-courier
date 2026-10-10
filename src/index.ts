@@ -112,6 +112,7 @@ export const courier = () => Plugin.define({
       gate,
       roles,
       nudge,
+      log,
       session: ctx.session,
       agent: ctx.agent,
       worktree: ctx.worktree,

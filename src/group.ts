@@ -79,7 +79,7 @@ const stored = (member: Member) => ({ ...member }) as unknown as Parameters<Stor
 async function membersUnder(storage: Pick<Storage, "scan">, prefix: string): Promise<Membership[]> {
   const entries = await scanEntries<unknown>(storage, prefix)
   return entries.flatMap(({ key, value }) => {
-    const parts = `${prefix}${key}`.slice(PREFIX.length).split("/")
+    const parts = `${prefix.slice(PREFIX.length)}${key}`.split("/")
     const member = parts.length === 3 ? readMember(value) : undefined
     return member ? [{ ...member, parentID: parts[0]!, group: parts[1]!, sessionID: parts[2]! }] : []
   })
@@ -95,13 +95,25 @@ export async function joinGroup(storage: Pick<Storage, "set">, parentID: string,
   await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt: at }))
 }
 
-/** Whether a parent has a group that is open: one with a member, out or not. */
-export async function hasOpenGroup(storage: Pick<Storage, "scan">, parentID: string) {
-  return (await storage.scan({ prefix: groupsPrefix(parentID), limit: 1 })).entries.length > 0
-}
-
 /** Whether every member of a group has a held report or has left, so the group is released. */
 const complete = (members: ReadonlyArray<Member>) => members.every((member) => member.report || member.left)
+
+/** The members of each group among `members`, by the claim key of the group. */
+function byGroup(members: ReadonlyArray<Membership>) {
+  const groups = new Map<string, Membership[]>()
+  for (const member of members) {
+    const key = claimKey(member.parentID, member.group)
+    const group = groups.get(key)
+    if (group) group.push(member)
+    else groups.set(key, [member])
+  }
+  return groups
+}
+
+/** Whether a parent has a complete group, whose message the scheduler is about to deliver. */
+export async function hasCompleteGroup(storage: Pick<Storage, "scan">, parentID: string) {
+  return [...byGroup(await membersUnder(storage, groupsPrefix(parentID))).values()].some(complete)
+}
 
 /** Holds a member's report with its group, in place of an earlier one, or of how it had left. */
 export async function holdReport(storage: Pick<Storage, "set">, membership: Membership, report: HeldReport) {
@@ -163,12 +175,7 @@ const claimKey = (parentID: string, group: string) => `group:${parentID}/${group
  * delivered and only then dropped, so a failed delivery is tried again at the next tick, and a crash in between delivers it again.
  */
 export async function deliverReleased(ports: GroupPorts, claimed: Set<string>) {
-  const groups = new Map<string, Membership[]>()
-  for (const member of await membersUnder(ports.storage, PREFIX)) {
-    const key = claimKey(member.parentID, member.group)
-    groups.set(key, [...(groups.get(key) ?? []), member])
-  }
-  for (const [key, members] of groups) {
+  for (const [key, members] of byGroup(await membersUnder(ports.storage, PREFIX))) {
     if (!complete(members) || claimed.has(key)) continue
     claimed.add(key)
     try {

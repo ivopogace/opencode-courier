@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
-import { groupStanding, holdReport, isGroupName, joinGroup, memberOf, standingOf, unholdReport, type Membership } from "./group.js"
+import { groupStanding, holdReport, isGroupName, joinGroup, leaveGroup, memberOf, standingOf, unholdReport, type Membership } from "./group.js"
 import { admit, type Limits, type SpawnGate } from "./limits.js"
 import { childBrief, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Held, type Prompt, type Sent, type Status } from "./notices.js"
 import { progressed, progressKey, prompted, settled, settledKey } from "./report.js"
@@ -27,6 +27,7 @@ export interface CourierPorts {
   readonly roles: Map<string, number | null>
   /** Has the scheduler deliver what is due now rather than at its next tick: a group a report has just completed. */
   readonly nudge: () => void
+  readonly log: (message: string) => void
 }
 
 /** A request a session waits on until someone answers it: a permission request, or a question it asked. */
@@ -160,8 +161,13 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
   try {
     await ports.session.prompt({ sessionID: child.id, text: childBrief(parentID, input.task, admitted.depth, ports.limits) })
   } catch (error) {
-    // A child that never got its task will never report: it must not count against the limits.
+    // A child that never got its task will never report: it must not count against the limits, nor hold its group up.
     if (!rosterError) await settled(ports.storage, child.id, "failed", ports.now()).catch(() => undefined)
+    if (group && !rosterError && !groupError)
+      await leaveGroup(ports.storage, parentID, group, child.id, "failed", ports.now()).then(
+        (left) => left?.complete && ports.nudge(),
+        (error: unknown) => ports.log(`courier_spawn: ${child.id} could not leave group ${group}: ${String(error)}`),
+      )
     throw error
   }
   return {
@@ -254,8 +260,12 @@ async function membershipOf(ports: CourierPorts, entry: RosterEntry): Promise<Me
 async function hold(ports: CourierPorts, member: Membership, report: Parameters<typeof holdReport>[2]): Promise<Held | undefined> {
   try {
     await holdReport(ports.storage, member, report)
-  } catch {
-    await unholdReport(ports.storage, member).then(() => ports.nudge(), () => undefined)
+  } catch (error) {
+    await unholdReport(ports.storage, member).then(
+      () => ports.nudge(),
+      (dropError: unknown) =>
+        ports.log(`courier_send: ${member.sessionID}'s report could not be held with group ${member.group} (${String(error)}), nor the member dropped: ${String(dropError)}`),
+    )
     return undefined
   }
   // Held whatever the count gives: the scheduler's tick finds a complete group on its own.

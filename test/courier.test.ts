@@ -15,6 +15,7 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
   const calls: Call[] = []
   const store = new Map<string, unknown>()
   const nudges: number[] = []
+  const logs: string[] = []
   const record = (method: string, result: unknown) => async (input: any) => {
     calls.push({ method, input })
     return result
@@ -56,8 +57,9 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
     gate: { reserved: new Set(), turn: Promise.resolve() },
     roles: new Map(),
     nudge: () => void nudges.push(calls.length),
+    log: (message: string) => void logs.push(message),
   } as unknown as CourierPorts
-  return { ports, calls, store, nudges }
+  return { ports, calls, store, nudges, logs }
 }
 
 describe("spawn", () => {
@@ -241,6 +243,20 @@ describe("spawn, into a group", () => {
     expect(calls).toEqual([])
     expect(await spawn(ports, "ses_parent", { task: "t", group: null as never })).toEqual({ sessionID: "ses_child", directory: "/repo" })
     expect(await spawn(ports, "ses_parent", { task: "t", group: " " })).toEqual({ sessionID: "ses_child", directory: "/repo" })
+  })
+
+  test("a child in a group that never got its task leaves the group, so the group does not wait for it", async () => {
+    const { ports, store, nudges } = fakePorts()
+    await joinGroup(ports.storage, "ses_parent", "reviews", "ses_other", "Other", 1)
+    await ports.storage.set(memberKey("ses_parent", "reviews", "ses_other"), { title: "Other", joinedAt: 1, report: { at: 2, status: "done", message: "m" } })
+    ;(ports.session as any).prompt = async () => {
+      throw new Error("prompt failed")
+    }
+
+    await expect(spawn(ports, "ses_parent", { task: "t", group: "reviews" })).rejects.toThrow("prompt failed")
+
+    expect(store.get(memberKey("ses_parent", "reviews", "ses_child"))).toEqual({ title: "t", joinedAt: 1_000, left: { at: 1_000, by: "failed" } })
+    expect(nudges).toHaveLength(1)
   })
 
   test("starts the child in no group, and says so, when it cannot be joined; a child off the roster joins none", async () => {
@@ -458,7 +474,7 @@ describe("send, from a member of a group", () => {
   })
 
   test("delivers the report at once when the group has been released, or the child was never joined, or it cannot be held", async () => {
-    const { ports, calls, store, nudges } = fakePorts()
+    const { ports, calls, store, nudges, logs } = fakePorts()
     await grouped(ports)
     store.delete(memberKey("ses_parent", "pair", "ses_child"))
     expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done", report: true })
@@ -474,6 +490,13 @@ describe("send, from a member of a group", () => {
     // Dropped from the group, which the scheduler then finds complete without it, so the others are not held for ever.
     expect(store.has(memberKey("ses_parent", "pair", "ses_other"))).toBe(false)
     expect(nudges).toHaveLength(1)
+
+    // Neither held nor dropped: delivered on its own, and logged.
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_other", "B", 2).catch(() => undefined)
+    store.set(memberKey("ses_parent", "pair", "ses_other"), { title: "B", joinedAt: 2 })
+    ;(ports.storage as any).remove = async () => Promise.reject(new Error("locked"))
+    expect(await send(ports, "ses_other", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done", report: true })
+    expect(logs).toEqual(["courier_send: ses_other's report could not be held with group pair (Error: disk full), nor the member dropped: Error: locked"])
   })
 
   test("a message to any session but the parent is not held", async () => {

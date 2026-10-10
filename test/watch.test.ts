@@ -601,7 +601,7 @@ describe("join groups", () => {
     expect([...store.keys()].filter((key) => key.startsWith("group/"))).toEqual([])
   })
 
-  test("a session with an open group waits for it: its turn ending without a report of its own is not told", async () => {
+  test("a session waits for a group whose members still owe it reports, and for a complete one about to be delivered", async () => {
     const { ports, sent, store } = fakePorts()
     await record(ports.storage, { ...child("ses_root"), sessionID: "ses_parent", title: "Lead" })
     await pair(ports)
@@ -609,7 +609,7 @@ describe("join groups", () => {
     await notePrompt(ports, delivered("evt_d1", 100, "ses_parent"))
     await notePrompt(ports, delivered("evt_d2", 110, "ses_a"))
     await notePrompt(ports, delivered("evt_d3", 110, "ses_b"))
-    // One report held, the other member still owes: either way the parent waits.
+    // One report held, the other member still owes: the parent waits.
     await sendFrom(ports, "ses_a", "ses_parent", 150)
     expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_parent"))).toEqual([])
     // Its last member reports and the group is held complete, for the scheduler: the parent still waits.
@@ -621,6 +621,47 @@ describe("join groups", () => {
     for (const id of ["ses_a", "ses_b"]) store.delete(memberKey("ses_parent", "pair", id))
     await notePrompt(ports, delivered("evt_d4", 350, "ses_parent"))
     expect(await reportSilent(ports, seen, succeeded("evt_s3", 400, "ses_parent"))).toEqual(["ses_root"])
+  })
+
+  test("a session told that a group member ended without a report no longer waits for the group, as for a child in no group", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, { ...child("ses_root"), sessionID: "ses_parent", title: "Lead" })
+    await pair(ports)
+    const seen = new Set<string>()
+    await notePrompt(ports, delivered("evt_d1", 100, "ses_parent"))
+    await notePrompt(ports, delivered("evt_d2", 110, "ses_a"))
+    await notePrompt(ports, delivered("evt_d3", 110, "ses_b"))
+    await sendFrom(ports, "ses_a", "ses_parent", 150)
+    // ses_b ends silently: the parent is told, and prompted by that notice.
+    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_b"))).toEqual(["ses_parent"])
+    await notePrompt(ports, delivered("evt_d4", 210, "ses_parent"))
+
+    // It ends its turn without reporting, with the group open but stuck on a member it was told of: its parent is told.
+    expect(await reportSilent(ports, seen, succeeded("evt_s2", 300, "ses_parent"))).toEqual(["ses_root"])
+    expect(sent.map((notice: any) => notice.sessionID)).toEqual(["ses_parent", "ses_root"])
+  })
+
+  test("a deleted parent's groups go even when its children are off the roster, as a held report outlives its entry", async () => {
+    const { ports, store } = fakePorts()
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
+    store.set(memberKey("ses_parent", "pair", "ses_a"), { title: "A", joinedAt: 1, report: { at: 2, status: "done", message: "m" } })
+
+    expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_x", 300, "ses_parent") as SessionEvent)).toEqual([])
+    expect([...store.keys()]).toEqual([])
+  })
+
+  test("a membership that cannot be read as a child fails is logged, and the leave tried all the same", async () => {
+    const { ports, sent, logged, store } = fakePorts()
+    await pair(ports)
+    const get = ports.storage.get
+    let reads = 0
+    ;(ports.storage as any).get = async (key: string) => (key.startsWith("group/") && ++reads === 1 ? Promise.reject(new Error("locked")) : get(key))
+
+    await reportFailure(ports, new Set(), failed("ses_b", "evt_1"))
+
+    expect(sent).toHaveLength(1)
+    expect(logged).toEqual(["courier watch: could not read ses_b's place in group pair: Error: locked"])
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toMatchObject({ left: { by: "failed" } })
   })
 })
 

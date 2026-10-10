@@ -78,11 +78,8 @@ export interface WatchPorts {
   /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
   readonly now: () => number
   readonly log: (message: string) => void
-  /**
-   * Has the scheduler deliver what is due now rather than at its next tick: a group a failure or deletion
-   * has completed. Absent on the ports of a copy before the groups, which the hub's watcher may run through.
-   */
-  readonly nudge?: () => void
+  /** Has the scheduler deliver what is due now rather than at its next tick: a group a failure or deletion has completed. */
+  readonly nudge: () => void
 }
 
 /**

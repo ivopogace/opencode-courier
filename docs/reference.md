@@ -224,12 +224,13 @@ the parent sends it more to do, is delivered on its own, as a report of a child 
 **A member that leaves.** A member whose turn [fails](#a-child-that-fails) or is interrupted (by
 the person, or by OpenCode after an hour without activity; not by a shutdown, which the next start
 resumes), whose task could not be handed over as it was started, or whose session OpenCode deletes,
-leaves the group without a report: the parent is told of a failure at once, as ever, with a line
-naming the group, and the group no longer waits for it, so it is released once its other members
-have reported, the message naming who left and why. The member is marked as left before the notice
-goes out, so the parent is waiting on the group meanwhile, and the scheduler is nudged after it, so
-the group's message does not overtake the notice, unless the scheduler's own tick falls in the
-moment between the two. A member that reports after all before the release
+leaves the group without a report, and the group no longer waits for it: it is released once its
+other members have reported, the message naming who left and why. The parent hears of each as of a
+child in no group: a failed turn at once, in a notice with a line naming the group, a task not
+handed over as `courier_spawn`'s error, and an interruption or a deletion only in the group's
+message. For a failed turn, the member is marked as left before the notice goes out, so the parent
+is waiting on the group meanwhile, and the scheduler is nudged after it, so the group's message
+does not overtake the notice, unless a tick of the scheduler falls in the moment between the two. A member that reports after all before the release
 rejoins with its report, and one whose report comes in while the group's message is going out keeps
 it, to go out at the next tick. A member that has reported keeps its held report whatever happens to
 its turn after, unless its next word to the parent is a `blocked` report: that passes through, and

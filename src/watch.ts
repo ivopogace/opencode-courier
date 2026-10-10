@@ -87,7 +87,7 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
       ),
     )
   } finally {
-    if (completed.includes(true)) ports.nudge?.()
+    if (completed.includes(true)) ports.nudge()
   }
   return entries.map((entry) => entry.parentID)
 }
@@ -159,7 +159,7 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
   const at = event.created ?? ports.now()
   await settled(ports.storage, sessionID, "interrupted", at)
   const member = await outIn(ports, entry)
-  if (member && (await leave(ports, member, "interrupted", at))) ports.nudge?.()
+  if (member && (await leave(ports, member, "interrupted", at))) ports.nudge()
   return true
 }
 
@@ -179,7 +179,7 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
     ...forgotten.map((id) => forgetReport(ports.storage, id)),
     dropGroups(ports.storage, sessionID),
   ])
-  if (completed) ports.nudge?.()
+  if (completed) ports.nudge()
   return forgotten
 }
 

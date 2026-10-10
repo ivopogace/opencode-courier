@@ -25,7 +25,7 @@ export interface CleanupPorts {
   readonly projectID: string
   /** The worktree's state, or undefined when its directory no longer exists; `base` is the commit it was made from. */
   readonly inspect: (directory: string, base?: string) => Promise<WorktreeState | undefined>
-  /** Has the scheduler deliver what is due now: a group the forgotten child was the last member out of. */
+  /** Has the scheduler deliver what is due now: a group the forgotten child may have been the last member out of. */
   readonly nudge: () => void
 }
 

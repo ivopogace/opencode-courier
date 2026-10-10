@@ -348,7 +348,10 @@ steered into its open turn; and its "numbers" session reported `done` to the roo
 own halves had reported, which the group's message then found nothing left to do with, so the root
 was told of a turn without a report after it had already answered. Neither loaded the skill. The
 checker fails that run on three checks, as it should: the shape was right, the discipline was not.
-`muse-spark-1.3-contributor-free` was rate limited on its first request (inconclusive).
+`muse-spark-1.3-contributor-free` was rate limited on its first request (inconclusive). With the
+skill listed in every session's system prompt, `longcat-2.5-preview-free` still passes the fan-out,
+the permission relay and the question relay, all checks, without loading the skill for those
+one-result tasks.
 
 With the isolated-child brief (nested isolation), `longcat-2.5-preview-free` passes the fan-out with
 `COURIER_PROMPT` asking for two `isolate: true` helpers that each create a file and commit it: both

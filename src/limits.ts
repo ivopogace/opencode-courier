@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import { setBounded } from "./bounded.js"
 import { obj } from "./json.js"
 import { childrenRefusal, depthRefusal, ROLE_PREFIX, rolePart, totalRefusal, type Limits } from "./notices.js"
+import { owesReport } from "./report.js"
 import { allEntries, bySession, children, indexedLineage, lineageBy, type RosterStorage } from "./roster.js"
 
 export type { Limits } from "./notices.js"
@@ -69,6 +70,12 @@ export async function running(ports: Pick<LimitPorts, "session">, sessionID: str
   }
 }
 
+/** Whether a spawned session counts against the limits: it runs, or owes its parent a report; a failed read counts as neither. */
+async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: string) {
+  const [runs, owes] = await Promise.all([running(ports, sessionID), owesReport(ports.storage, sessionID).catch(() => false)])
+  return runs || owes
+}
+
 /**
  * Checks the limits for a spawn from `parentID`, then holds its place in `gate` until `release`;
  * throws a refusal naming the limit. Checks run one at a time, so spawns made together count each other.
@@ -93,18 +100,18 @@ async function check(ports: LimitPorts, parentID: string) {
   const top = chain.at(-1)?.parentID ?? parentID
   const chains = new Map(entries.map((entry) => [entry.sessionID, lineageBy(parents, entry.sessionID)]))
   const tree = entries.filter((entry) => chains.get(entry.sessionID)!.at(-1)?.parentID === top)
-  const runs = await Promise.all(tree.map((entry) => running(ports, entry.sessionID)))
-  // A session waiting on a running descendant is live too: the brief tells it to end its turn meanwhile.
+  const runs = await Promise.all(tree.map((entry) => live(ports, entry.sessionID)))
+  // A session waiting on a live descendant is live too: the brief tells it to end its turn meanwhile.
   const active = new Set(
     tree.filter((_, i) => runs[i]).flatMap((entry) => [entry.sessionID, ...chains.get(entry.sessionID)!.map((above) => above.parentID)]),
   )
-  const live = tree.filter((entry) => active.has(entry.sessionID))
-  // A spawn whose child is on the roster already is counted there, if it runs, not by its reservation.
+  const counted = tree.filter((entry) => active.has(entry.sessionID))
+  // A spawn whose child is on the roster already is counted there, if it is live, not by its reservation.
   const recorded = new Set(tree.map((entry) => entry.sessionID))
   const pending = [...ports.gate.reserved].filter((held) => held.top === top && !(held.sessionID && recorded.has(held.sessionID)))
-  const mine = live.filter((entry) => entry.parentID === parentID).length + pending.filter((held) => held.parentID === parentID).length
+  const mine = counted.filter((entry) => entry.parentID === parentID).length + pending.filter((held) => held.parentID === parentID).length
   if (mine >= maxChildren) throw new Error(childrenRefusal(mine, maxChildren))
-  if (live.length + pending.length >= maxTotal) throw new Error(totalRefusal(live.length + pending.length, maxTotal))
+  if (counted.length + pending.length >= maxTotal) throw new Error(totalRefusal(counted.length + pending.length, maxTotal))
   const reservation: Reservation = { parentID, top }
   ports.gate.reserved.add(reservation)
   return { depth: chain.length + 1, reservation }

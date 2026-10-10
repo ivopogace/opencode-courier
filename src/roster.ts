@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs"
+import { forgetReport } from "./report.js"
 import { scanAll, scanEntries, type Storage } from "./storage.js"
 
 /**
@@ -69,11 +70,15 @@ function isReverse(value: unknown): value is ReverseEntry {
 }
 
 /**
- * Removes a child's roster entry and its reverse key. Only the entry's removal can fail it: a
- * reverse key left behind leads nowhere, and the next load drops it.
+ * Removes a child's roster entry, its reverse key and its report state. Only the entry's removal can
+ * fail it: a reverse key left behind leads nowhere, and the next load drops it.
  */
 export async function remove(storage: RosterStorage, parentID: string, sessionID: string) {
-  await Promise.all([storage.remove(rosterKey(parentID, sessionID)), storage.remove(reverseKey(sessionID)).catch(() => undefined)])
+  await Promise.all([
+    storage.remove(rosterKey(parentID, sessionID)),
+    storage.remove(reverseKey(sessionID)).catch(() => undefined),
+    forgetReport(storage, sessionID).catch(() => undefined),
+  ])
 }
 
 /** Removes a child from its parent's roster; false when it was not there. */
@@ -101,6 +106,19 @@ export async function entriesOf(storage: RosterStorage, sessionID: string) {
     return (await scanAll<RosterEntry>(storage, PREFIX)).filter((entry) => entry.sessionID === sessionID)
   const entry = await storage.get(rosterKey(indexed.ancestors[0]!, sessionID))
   return entry === undefined ? [] : [entry as unknown as RosterEntry]
+}
+
+/** The session that started a session, by the reverse index alone, without scanning the roster. */
+export async function indexedParent(storage: RosterStorage, sessionID: string) {
+  const indexed = await storage.get(reverseKey(sessionID))
+  return isReverse(indexed) ? indexed.ancestors[0] : undefined
+}
+
+/** A session's roster entry, by the reverse index alone, without scanning the roster. */
+export async function indexedEntry(storage: RosterStorage, sessionID: string) {
+  const parentID = await indexedParent(storage, sessionID)
+  if (parentID === undefined) return undefined
+  return (await storage.get(rosterKey(parentID, sessionID))) as RosterEntry | undefined
 }
 
 /**

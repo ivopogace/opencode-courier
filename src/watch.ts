@@ -1,4 +1,5 @@
 import { addBounded, setBounded } from "./bounded.js"
+import { lastReply } from "./courier.js"
 import type { Hub, Member, WatchPorts, WatchState } from "./hub.js"
 import {
   envelope,
@@ -8,9 +9,10 @@ import {
   kindOf,
   permissionNotice,
   permissionSettledNotice,
+  silentNotice,
   type ExecutionError,
 } from "./notices.js"
-import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing } from "./question/index.js"
+import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing, pendingQuestions } from "./question/index.js"
 import {
   listEverywhere,
   QUESTION_FORM,
@@ -19,7 +21,8 @@ import {
   type PermissionAsked,
   type PermissionReplied,
 } from "./relay.js"
-import { allEntries, entriesOf, lineage, type RosterEntry } from "./roster.js"
+import { owesReport, prompted, settled } from "./report.js"
+import { allEntries, entriesOf, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
 
 export type { FormsTold, WatchPorts, WatchState } from "./hub.js"
 
@@ -32,10 +35,19 @@ const SEEN_MAX = 1_000
 /** The part of OpenCode's `session.execution.failed` event the notice is made from. */
 export interface ExecutionFailed {
   readonly id: string
+  /** When OpenCode published it, in epoch milliseconds. */
+  readonly created?: number
   readonly data: {
     readonly sessionID: string
     readonly error: ExecutionError
   }
+}
+
+/** OpenCode's events that concern one session's turns and inbox: `session.execution.succeeded` and the like. */
+export interface SessionEvent {
+  readonly id: string
+  readonly created?: number
+  readonly data: { readonly sessionID: string; readonly reason?: string }
 }
 
 /** Claims a value in one of the shared sets; false when it was claimed already. */
@@ -49,6 +61,11 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   if (!claim(seen, event.id)) return []
   const { sessionID, error } = event.data
   const entries = await entriesOf(ports.storage, sessionID)
+  // Not in the way of the notice: kept only so the limits stop counting the child.
+  if (entries.length)
+    await settled(ports.storage, sessionID, "failed", event.created ?? ports.now()).catch((error: unknown) =>
+      ports.log(`courier watch: could not note the failed turn of ${sessionID}: ${String(error)}`),
+    )
   await Promise.all(
     entries.map((entry) =>
       ports.session.synthetic({
@@ -61,6 +78,53 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
     ),
   )
   return entries.map((entry) => entry.parentID)
+}
+
+/**
+ * Notes that a prompt or message reached a spawned session, which then owes its parent a report.
+ * Every session's deliveries pass here, so it reads the reverse index alone.
+ */
+export async function notePrompt(ports: WatchPorts, seen: Set<string>, event: SessionEvent) {
+  if (!claim(seen, event.id)) return false
+  const { sessionID } = event.data
+  if ((await indexedParent(ports.storage, sessionID)) === undefined) return false
+  await prompted(ports.storage, sessionID, event.created ?? ports.now())
+  return true
+}
+
+/** Notes that a spawned session's turn was stopped; one stopped by a shutdown resumes on the next start. */
+export async function noteInterrupted(ports: WatchPorts, seen: Set<string>, event: SessionEvent) {
+  if (!claim(seen, event.id) || event.data.reason === "shutdown") return false
+  const { sessionID } = event.data
+  if ((await indexedParent(ports.storage, sessionID)) === undefined) return false
+  await settled(ports.storage, sessionID, "interrupted", event.created ?? ports.now())
+  return true
+}
+
+/**
+ * Tells the parent of a spawned session whose turn ended without reporting to it since its last
+ * prompt, unless it waits on a request; reads the reverse index alone. Returns the parents told.
+ */
+export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: SessionEvent) {
+  if (!claim(seen, event.id)) return []
+  const { sessionID } = event.data
+  const entry = await indexedEntry(ports.storage, sessionID)
+  if (!entry || !(await owesReport(ports.storage, sessionID))) return []
+  const [requests, questions] = await Promise.all([
+    listEverywhere([...ports.permissions()], sessionID),
+    pendingQuestions(ports.storage, sessionID),
+  ])
+  if (questions.length || requests.some((found) => found.requests.length)) return []
+  // The notice goes out without the reply rather than not at all.
+  const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
+  await ports.session.synthetic({
+    sessionID: entry.parentID,
+    text: envelope(sessionID, silentNotice(entry.title, lastText), { ended: "without-report" }),
+    description: `Session ${sessionID} ended without a report`,
+    metadata: { source: "courier", from: sessionID, ended: "without-report" },
+    delivery: "steer",
+  })
+  return [entry.parentID]
 }
 
 /** The session at the top of a lineage: where its permission requests go, since that is where the person is. */
@@ -201,6 +265,9 @@ const pause = (ms: number, signal: AbortSignal) =>
  */
 async function handle(ports: WatchPorts, state: WatchState, event: { readonly type: string }) {
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
+  if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent)
+  if (event.type === "session.execution.interrupted") return noteInterrupted(ports, state.seen, event as unknown as SessionEvent)
+  if (event.type === "session.inbox.delivered") return notePrompt(ports, state.seen, event as unknown as SessionEvent)
   if (event.type === "permission.asked") return reportAsked(ports, state, event as unknown as PermissionAsked)
   if (event.type === "permission.replied") return reportReplied(ports, state, event as unknown as PermissionReplied)
   if (event.type === "form.created") {
@@ -266,8 +333,8 @@ function handleLogged(ports: WatchPorts, state: WatchState, event: { readonly ty
 }
 
 /**
- * Follows OpenCode's events until `signal` aborts: tells parents of a spawned child's failed turn, its
- * pending permission or form, notes forms and shutdowns for the relay; ends after its current event.
+ * Follows OpenCode's events until `signal` aborts: tells parents of a spawned child's failed or silent
+ * turn, its pending permission or form, notes forms and shutdowns for the relay; ends after its current event.
  */
 export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
   const relaying = new Set<Promise<void>>()

@@ -1,7 +1,8 @@
 import type { Plugin } from "@opencode/plugin"
 import { admit, type Limits, type SpawnGate } from "./limits.js"
 import { childBrief, envelope, type Prompt } from "./notices.js"
-import { current, record, type RosterStorage } from "./roster.js"
+import { prompted, settled } from "./report.js"
+import { current, indexedParent, record, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
 
@@ -139,6 +140,8 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     (error: unknown) => describeFailure("roster", error).message,
   )
   ports.roles.delete(parentID)
+  // A baseline, until OpenCode's event for the prompt's delivery moves it on; written first, so it never overtakes that.
+  await prompted(ports.storage, child.id, ports.now()).catch(() => undefined)
   await ports.session.prompt({ sessionID: child.id, text: childBrief(parentID, input.task, admitted.depth, ports.limits) })
   return {
     sessionID: child.id,
@@ -147,7 +150,10 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
   }
 }
 
-/** Drops a message into another session's inbox; OpenCode wakes that session if it is idle. */
+/**
+ * Drops a message into another session's inbox; OpenCode wakes that session if it is idle. A message
+ * from a spawned session to the one that started it is its report, noted once delivered.
+ */
 export async function send(ports: CourierPorts, from: string, input: SendInput) {
   const delivered = await ports.session.synthetic({
     sessionID: input.sessionID,
@@ -156,7 +162,12 @@ export async function send(ports: CourierPorts, from: string, input: SendInput) 
     metadata: { source: "courier", from },
     delivery: input.queue ? "queue" : "steer",
   })
+  await noteReport(ports, from, input.sessionID).catch(() => undefined)
   return { messageID: delivered.id }
+}
+
+async function noteReport(ports: CourierPorts, from: string, to: string) {
+  if ((await indexedParent(ports.storage, from)) === to) await settled(ports.storage, from, "report", ports.now())
 }
 
 /** A one-off look at a session, for check-ins; not meant to be called in a loop. */
@@ -166,11 +177,7 @@ export async function status(ports: CourierPorts, input: StatusInput) {
     ports.session.context({ sessionID: input.sessionID }),
     ports.pending(input.sessionID),
   ])
-  const last = messages.findLast((message) => message.type === "assistant")
-  const lastText =
-    last?.type === "assistant"
-      ? last.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
-      : undefined
+  const lastText = lastReply(messages)
   return withoutUndefined({
     sessionID: info.id,
     title: info.title,
@@ -181,6 +188,14 @@ export async function status(ports: CourierPorts, input: StatusInput) {
     lastText,
     pending: pending.length ? pending : undefined,
   })
+}
+
+/** The text of a session's last reply, from its context's messages, or undefined when it has none. */
+export function lastReply(messages: Awaited<ReturnType<Context["session"]["context"]>>) {
+  const last = messages.findLast((message) => message.type === "assistant")
+  return last?.type === "assistant"
+    ? last.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
+    : undefined
 }
 
 /** The sessions a parent started, each with what courier_status reports, or the error it gave. */

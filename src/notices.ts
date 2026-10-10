@@ -77,13 +77,16 @@ export const depthRefusal = (depth: number, maxDepth: number) =>
   `Not started: this session is at depth ${depth} of its session tree, and the tree goes at most ${maxDepth} deep ` +
   "(maxDepth), so it cannot start sessions. Do the task yourself, and report with courier_send."
 
+/** How a refusal names sessions that count against a limit: those running, and those that have not reported yet. */
+const live = (n: number) => (n === 1 ? "is running or has not reported yet" : "are running or have not reported yet")
+
 export const childrenRefusal = (running: number, maxChildren: number) =>
-  `Not started: ${count(running, "session")} you started ${running === 1 ? "is" : "are"} still running, the most ` +
-  `allowed at once (maxChildren ${maxChildren}). Do this part yourself, or end your turn and start it once one of them has reported.`
+  `Not started: ${count(running, "session")} you started ${live(running)}, the most allowed at once ` +
+  `(maxChildren ${maxChildren}). Do this part yourself, or end your turn and start it once one of them has reported.`
 
 export const totalRefusal = (running: number, maxTotal: number) =>
-  `Not started: ${count(running, "session")} ${running === 1 ? "is" : "are"} running in this session tree, the most ` +
-  `allowed at once (maxTotal ${maxTotal}). Do this part yourself, or end your turn and try again once a report has arrived.`
+  `Not started: ${count(running, "session")} in this session tree ${live(running)}, the most allowed at once ` +
+  `(maxTotal ${maxTotal}). Do this part yourself, or end your turn and try again once a report has arrived.`
 
 export function envelope(from: string, message: string, attributes: Record<string, string> = {}) {
   const extra = Object.entries(attributes)
@@ -239,6 +242,21 @@ export function failureNotice(title: string, error: ExecutionError) {
     `This session, "${title}", which you started with courier_spawn, failed: ${error.message} (${error.type}${status}).`,
     "Its turn ended without finishing, so it will not report back on its own.",
     "Message it with courier_send to have it try again, start a replacement, or carry on without it.",
+  ].join("\n")
+}
+
+/** Longest last reply a notice that a session ended its turn without reporting quotes. */
+const MAX_REPLY = 2000
+
+/** What the parent is told when a session it started ends its turn without courier_send to it. */
+export function silentNotice(title: string, lastText: string | undefined) {
+  const reply = lastText?.trim()
+  return [
+    `This session, "${title}", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.`,
+    ...(reply ? ["Its last reply:", defuse(clipText(reply, MAX_REPLY))] : ["It ended without a reply."]),
+    "",
+    "Decide what it needs: message it with courier_send to have it carry on or report, use its last reply if that is what you needed, or start a replacement.",
+    "Until it reports, it counts toward your limits on the sessions you run at once.",
   ].join("\n")
 }
 

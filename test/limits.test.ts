@@ -3,6 +3,7 @@ import { DateTime } from "effect"
 import { spawn, type CourierPorts } from "../src/courier.js"
 import { admit, DEFAULT_LIMITS, readLimits, running, shapeContext, type ContextPorts, type LimitPorts, type SpawnGate } from "../src/limits.js"
 import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/notices.js"
+import { owesReport, prompted, settled } from "../src/report.js"
 import { record } from "../src/roster.js"
 
 function fakeStorage() {
@@ -199,6 +200,50 @@ describe("admit", () => {
   })
 })
 
+describe("admit, with children that owe a report", () => {
+  /** Three finished children of ses_root: ses_a reported, ses_b ended without reporting, ses_c is `c`. */
+  async function owing(c: "failed" | "interrupted" | "silent") {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 2, maxTotal: 2 }, {
+      ses_a: FINISHED,
+      ses_b: FINISHED,
+      ses_c: FINISHED,
+    })
+    for (const id of ["ses_a", "ses_b", "ses_c"]) {
+      await child("ses_root", id)
+      await prompted(storage, id, 100)
+    }
+    await settled(storage, "ses_a", "report", 150)
+    if (c !== "silent") await settled(storage, "ses_c", c, 150)
+    return ports
+  }
+
+  test("counts a child whose turn ended without a report, against maxChildren and maxTotal", async () => {
+    const ports = await owing("silent")
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(2, 2))
+    await expect(admit(ports, "ses_b")).rejects.toThrow(totalRefusal(2, 2))
+  })
+
+  test("but not one that reported, failed or was interrupted since its last prompt", async () => {
+    expect((await admit(await owing("failed"), "ses_root")).depth).toBe(1)
+    expect((await admit(await owing("interrupted"), "ses_root")).depth).toBe(1)
+  })
+
+  test("counts one that reported once a new prompt reached it", async () => {
+    const ports = await owing("failed")
+    await prompted(ports.storage, "ses_a", 200)
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(2, 2))
+  })
+
+  test("a child whose state cannot be read counts only if it runs", async () => {
+    const ports = await owing("silent")
+    ;(ports.storage as any).get = async () => {
+      throw new Error("disk gone")
+    }
+    expect(await owesReport(ports.storage, "ses_b").catch(() => "threw")).toBe("threw")
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+})
+
 describe("admit, with sessions waiting on their own children", () => {
   /** A tree under ses_r: ses_a and ses_b, each with one child; `running` names the sessions whose turn runs. */
   async function waitingTree(limits: Partial<typeof DEFAULT_LIMITS>, running: string[]) {
@@ -286,6 +331,15 @@ describe("spawn", () => {
     expect(gate.reserved.size).toBe(0)
     await spawn(courier, "ses_root", { task: "t" })
     expect(roles.has("ses_root")).toBe(false)
+  })
+
+  test("notes the child as owing a report before it is prompted", async () => {
+    const { courier, storage, calls } = spawnPorts()
+    ;(courier.session as any).prompt = async () => void calls.push(`prompted, owing: ${await owesReport(storage, "ses_new1")}`)
+
+    await spawn(courier, "ses_root", { task: "t" })
+
+    expect(calls).toEqual(["session.create", "prompted, owing: true"])
   })
 
   test("frees its place when the child cannot be created", async () => {

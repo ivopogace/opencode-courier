@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "../src/courier.js"
 import { DEFAULT_LIMITS } from "../src/limits.js"
 import { childBrief, envelope } from "../src/notices.js"
+import { settledKey } from "../src/report.js"
 import { record, rosterKey } from "../src/roster.js"
 
 type Call = { method: string; input: any }
@@ -227,6 +228,32 @@ describe("send", () => {
     await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", queue: true })
 
     expect(calls[0]!.input.delivery).toBe("queue")
+  })
+
+  const spawned = { sessionID: "ses_child", parentID: "ses_parent", title: "t", directory: "/repo", isolated: false, createdAt: 1 }
+
+  test("notes a spawned session's message to its parent as its report, once delivered", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, spawned)
+
+    await send(ports, "ses_child", { sessionID: "ses_other", message: "m" })
+    expect(store.has(settledKey("ses_child"))).toBe(false)
+    await send(ports, "ses_parent", { sessionID: "ses_child", message: "m" })
+    expect(store.has(settledKey("ses_parent"))).toBe(false)
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000, by: "report" })
+  })
+
+  test("notes no report when the message is not delivered, and delivers it when the report cannot be noted", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, spawned)
+    ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
+    await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).rejects.toThrow("parent is gone")
+    expect(store.has(settledKey("ses_child"))).toBe(false)
+
+    ;(ports.session as any).synthetic = async () => ({ id: "msg_3" })
+    ;(ports.storage as any).set = async () => Promise.reject(new Error("disk full"))
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).toEqual({ messageID: "msg_3" })
   })
 })
 

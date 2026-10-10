@@ -102,6 +102,23 @@ describe("spawn", () => {
     expect(child).toEqual({ sessionID: "ses_child", directory: "/repo", rosterError: "roster failed: disk full" })
   })
 
+  test("keeps no report state for a child the roster could not record, which nothing would ever remove", async () => {
+    const { ports, store } = fakePorts()
+    const set = ports.storage.set
+    ;(ports.storage as any).set = async (key: string, value: any) => {
+      if (key.startsWith("roster/")) throw new Error("disk full")
+      return set(key, value)
+    }
+
+    await spawn(ports, "ses_parent", { task: "t" })
+    ;(ports.session as any).prompt = async () => {
+      throw new Error("prompt failed")
+    }
+    await expect(spawn(ports, "ses_parent", { task: "t" })).rejects.toThrow("prompt failed")
+
+    expect([...store.keys()].filter((key) => key.startsWith("report/"))).toEqual([])
+  })
+
   test("passes the agent and title through", async () => {
     const { ports, calls: all } = fakePorts()
 

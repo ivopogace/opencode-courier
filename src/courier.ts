@@ -144,12 +144,13 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
   )
   ports.roles.delete(parentID)
   // A baseline, until OpenCode's event for the prompt's delivery moves it on; written first, so it never overtakes that.
-  await prompted(ports.storage, child.id, ports.now()).catch(() => undefined)
+  // Not for a child off the roster: nothing would read or remove it.
+  if (!rosterError) await prompted(ports.storage, child.id, ports.now()).catch(() => undefined)
   try {
     await ports.session.prompt({ sessionID: child.id, text: childBrief(parentID, input.task, admitted.depth, ports.limits) })
   } catch (error) {
     // A child that never got its task will never report: it must not count against the limits.
-    await settled(ports.storage, child.id, "failed", ports.now()).catch(() => undefined)
+    if (!rosterError) await settled(ports.storage, child.id, "failed", ports.now()).catch(() => undefined)
     throw error
   }
   return {

@@ -280,10 +280,17 @@ check "the child in between is a sub-orchestrator, with courier_spawn" \
   "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")))' "$WORK/model.log")"
 check "the root had no role part until it had started a child, then root orchestrator" \
   "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | .[0] == null and .[-1] == "root orchestrator"' "$WORK/model.log")"
-# The limits count running sessions; a finished one's last turn ended after anything reached it.
+# The limits count live sessions: a finished one's last turn ended after anything reached it, and
+# one that has reported owes no report, its report settled after its last prompt.
 finished() { api "session/$1" | jq -r '(.data // .) | .time.idle != null and .time.updated <= .time.idle'; }
-check "a leaf that has reported reads as finished, so it no longer counts against the limits" \
-  "$(for _ in $(seq 1 30); do [ "$(finished "$(jq -r '.[0]' <<<"$leaves")")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+reported() {
+  local prompted settled
+  prompted=$(kv get "report/$1/prompt" | jq -r '.at // empty')
+  settled=$(kv get "report/$1/settled" | jq -r 'select(.by == "report") | .at // empty')
+  [ -n "$prompted" ] && [ -n "$settled" ] && [ "$settled" -ge "$prompted" ] && echo true || echo false
+}
+check "a leaf that has reported reads as finished and owes no report, so it no longer counts against the limits" \
+  "$(for _ in $(seq 1 30); do leaf=$(jq -r '.[0]' <<<"$leaves"); [ "$(finished "$leaf")" = true ] && [ "$(reported "$leaf")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
 
 # The first web search of this run: no provider has been chosen, which OpenCode keeps for every session.
 echo "a child's web search asks for a provider with a form: the parent is told, and told when it is answered"

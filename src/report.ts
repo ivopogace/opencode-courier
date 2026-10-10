@@ -1,5 +1,5 @@
 import { obj } from "./json.js"
-import type { Status } from "./notices.js"
+import { isStatus, type Status } from "./notices.js"
 import type { Storage } from "./storage.js"
 
 /**
@@ -12,6 +12,7 @@ export const promptKey = (sessionID: string) => `${PREFIX}${sessionID}/prompt`
 export const settledKey = (sessionID: string) => `${PREFIX}${sessionID}/settled`
 export const progressKey = (sessionID: string) => `${PREFIX}${sessionID}/progress`
 export const toldKey = (sessionID: string) => `${PREFIX}${sessionID}/told`
+export const stoppedKey = (sessionID: string) => `${PREFIX}${sessionID}/stopped`
 
 /** How a session's wait for a report ended: it reported to its parent, or its turn failed or was interrupted. */
 export type Settled = "report" | "failed" | "interrupted"
@@ -57,6 +58,23 @@ export async function untold(storage: Pick<Storage, "get" | "remove">, sessionID
 /** Whether `at` is known and no earlier than the prompt at `prompt`. */
 const since = (at: number | undefined, prompt: number) => at !== undefined && at >= prompt
 
+/** Notes that courier_stop stopped a spawned session at `at`, so the failure and silent-end notices stay quiet for it. */
+export async function stopped(storage: Pick<Storage, "set">, sessionID: string, at: number) {
+  await storage.set(stoppedKey(sessionID), { at })
+}
+
+/** Whether courier_stop stopped a session after its last prompt, or with none noted, at all. */
+export async function stoppedSincePrompt(storage: Pick<Storage, "get">, sessionID: string) {
+  const [stoppedAt, prompt] = await Promise.all([stoppedKey, promptKey].map((key) => storage.get(key(sessionID)).then(timeOf)))
+  return stoppedAt !== undefined && (prompt === undefined || stoppedAt >= prompt)
+}
+
+/** The status of a spawned session's last report to its parent, if it has reported with one. */
+export async function lastStatus(storage: Pick<Storage, "get">, sessionID: string): Promise<Status | undefined> {
+  const status: unknown = obj(await storage.get(settledKey(sessionID))).status
+  return isStatus(status) ? status : undefined
+}
+
 /**
  * What is known of a spawned session's report: when a prompt last reached it, and whether since then it owes one, has
  * messaged its parent without a status, or failed or was interrupted. Undefined for one spawned before this was kept.
@@ -84,5 +102,5 @@ export async function awaited(storage: Pick<Storage, "get">, sessionID: string) 
 
 /** Drops what is kept about a session, with its roster entry. */
 export async function forgetReport(storage: Pick<Storage, "remove">, sessionID: string) {
-  await Promise.all([promptKey, settledKey, progressKey, toldKey].map((key) => storage.remove(key(sessionID))))
+  await Promise.all([promptKey, settledKey, progressKey, toldKey, stoppedKey].map((key) => storage.remove(key(sessionID))))
 }

@@ -1,6 +1,6 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`tools are the ten courier tools, each a direct tool 1`] = `
+exports[`tools are the twelve courier tools, each a direct tool 1`] = `
 [
   [
     "courier_spawn",
@@ -22,6 +22,18 @@ exports[`tools are the ten courier tools, each a direct tool 1`] = `
   ],
   [
     "courier_children",
+    {
+      "codemode": false,
+    },
+  ],
+  [
+    "courier_tree",
+    {
+      "codemode": false,
+    },
+  ],
+  [
+    "courier_stop",
     {
       "codemode": false,
     },
@@ -299,6 +311,59 @@ exports[`tools courier_children 1`] = `
         ],
       },
     },
+    "type": "object",
+  },
+}
+`;
+
+exports[`tools courier_tree 1`] = `
+{
+  "description": "List the whole tree of sessions under this one (or under sessionID): every session started with courier_spawn from it, directly or through others, each with its depth, what courier_children shows, and whether it still owes a report, sent progress, or ended without one. For a one-off look, not for waiting; long trees are cut at maxTotal sessions.",
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "sessionID": {
+        "anyOf": [
+          {
+            "description": "The session whose subtree to list; defaults to this one.",
+            "type": "string",
+          },
+          {
+            "type": "null",
+          },
+        ],
+      },
+    },
+    "type": "object",
+  },
+}
+`;
+
+exports[`tools courier_stop 1`] = `
+{
+  "description": "Stop a session you started, directly or through others, and every session under it: each running turn is interrupted, deepest first, and the messages scheduled for them with courier_later are cancelled. Use it when a subtree went wrong or is no longer needed. They do not report back, and you are not told of what you stopped; a session between you and the target is. A stopped session can be woken again with courier_send. With cleanup: true their worktrees are removed too, unless they hold work that is on no branch.",
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "cleanup": {
+        "anyOf": [
+          {
+            "description": "Also remove the worktrees of the stopped sessions that ran in one of their own, as courier_cleanup does: one with uncommitted changes or commits on no branch is kept and listed.",
+            "type": "boolean",
+          },
+          {
+            "type": "null",
+          },
+        ],
+      },
+      "sessionID": {
+        "description": "The session to stop, with every session under it. It must have been started, directly or through others, from this one.",
+        "type": "string",
+      },
+    },
+    "required": [
+      "sessionID",
+    ],
     "type": "object",
   },
 }
@@ -692,6 +757,78 @@ exports[`tool results childrenText 2`] = `
     "isolated": false
   }
 ]"
+`;
+
+exports[`tool results treeText 1`] = `"No sessions started with courier_spawn."`;
+
+exports[`tool results treeText 2`] = `
+"{
+  "sessions": [
+    {
+      "sessionID": "ses_child",
+      "depth": 1
+    }
+  ]
+}"
+`;
+
+exports[`tool results treeText 3`] = `
+"{
+  "sessions": [
+    {
+      "sessionID": "ses_child",
+      "depth": 1
+    }
+  ],
+  "truncated": 20
+}
+Only the first 20 sessions are listed (maxTotal); courier_tree on one of them lists what is under it."
+`;
+
+exports[`tool results stopText 1`] = `
+"Stopped ses_mid and 2 sessions under it, deepest first: 1 had a turn running and was interrupted, 1 did not run.
+- ses_leaf: interrupted
+- ses_mid: idle
+- ses_odd: failed (session.interrupt failed: boom)
+Those that failed may still run: try courier_stop again.
+No scheduled messages were pending for them."
+`;
+
+exports[`tool results stopText 2`] = `
+"Stopped ses_mid and 2 sessions under it, deepest first: 1 had a turn running and was interrupted, 1 did not run.
+- ses_leaf: interrupted
+- ses_mid: idle
+- ses_odd: failed (session.interrupt failed: boom)
+Those that failed may still run: try courier_stop again.
+Cancelled 2 scheduled messages: later_1, later_2.
+Told ses_top, which started ses_mid, that it was stopped."
+`;
+
+exports[`tool results stopText 3`] = `
+"Stopped ses_mid and 2 sessions under it, deepest first: 1 had a turn running and was interrupted, 1 did not run.
+- ses_leaf: interrupted
+- ses_mid: idle
+- ses_odd: failed (session.interrupt failed: boom)
+Those that failed may still run: try courier_stop again.
+No scheduled messages were pending for them.
+Removed the worktree /wt/leaf of ses_leaf.
+Kept the worktree /wt/mid of ses_mid: it has 1 uncommitted change (a.ts). Kept; courier_cleanup with force: true discards it.
+Worktree of ses_odd: not removed (courier_cleanup failed: git broke)."
+`;
+
+exports[`tool results stopText 4`] = `
+"Stopped ses_mid and 2 sessions under it, deepest first: 1 had a turn running and was interrupted, 1 did not run.
+- ses_leaf: interrupted
+- ses_mid: idle
+- ses_odd: failed (session.interrupt failed: boom)
+Those that failed may still run: try courier_stop again.
+No scheduled messages were pending for them.
+None of them ran in a worktree of its own."
+`;
+
+exports[`tool results stoppedNotice 1`] = `
+"This session, "Review a.ts", which you started with courier_spawn, was stopped by ses_root, a session above you, together with the sessions under it.
+It was not a failure and it will not report back. Carry on without it, or start a replacement if you still need what it was doing."
 `;
 
 exports[`tool results cleanupText 1`] = `"Removed the worktree /wt of ses_child."`;

@@ -11,7 +11,7 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
 - `index.ts`: the plugin, an Effect plugin running the promise one. Builds the ports, registers the
   tools, starts the scheduler, the watcher and the webhook receiver; the Effect half wraps the
   question tool and binds it to its instance's member in the hub.
-- `tools.ts`: the ten courier tools: input schemas, descriptions and results.
+- `tools.ts`: the twelve courier tools: input schemas, descriptions and results.
 - `notices.ts`: every other model-facing string (tool result texts, the child brief, the envelope,
   the failure, permission, form, question and webhook notices), as pure functions that import
   nothing of the plugin's but `json.ts`. `test/notices.test.ts` snapshots them and the tool
@@ -22,7 +22,8 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   `report.ts`: whether each spawned session owes its parent a report. `group.ts`: join groups, the
   reports held with them and their delivery from the scheduler's tick. `later.ts`: scheduled
   messages and their delivery. `roster.ts`: the children each parent spawned. `cleanup.ts`:
-  removing an isolated child's worktree. `webhook.ts`: the webhook receiver and subscriptions.
+  removing an isolated child's worktree. `tree.ts`: the subtree under a session, read level by level
+  from the roster (`courier_tree`). `stop.ts`: stopping a subtree (`courier_stop`). `webhook.ts`: the webhook receiver and subscriptions.
   `version.ts`: the log line on an OpenCode version other than the pinned one.
 - `watch.ts`: following OpenCode's events to tell a parent that a child's turn failed or ended
   without a report, waits for a permission, or shows a form only the person can answer. `relay.ts`: the permission and form

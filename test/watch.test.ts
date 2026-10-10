@@ -18,7 +18,7 @@ import { hub as processHub, open, resetHub, type Hub, type Member } from "../src
 import { shutdownReportedAt } from "../src/question/index.js"
 import { send, type CourierPorts } from "../src/courier.js"
 import { joinGroup, memberKey, memberOf } from "../src/group.js"
-import { reportOf, prompted, promptKey, settledKey, toldKey } from "../src/report.js"
+import { reportOf, prompted, promptKey, settledKey, stopped, toldKey } from "../src/report.js"
 import { record, remove } from "../src/roster.js"
 import {
   noteDeleted,
@@ -162,6 +162,20 @@ describe("reportFailure", () => {
     expect(sent).toHaveLength(1)
   })
 
+  test("tells nothing of a failure after courier_stop stopped the child, until it is prompted again", async () => {
+    const { ports, sent, store } = fakePorts()
+    await record(ports.storage, child())
+    await notePrompt(ports, delivered("evt_d", 100))
+    await stopped(ports.storage, "ses_child", 150)
+
+    expect(await reportFailure(ports, new Set(), failed("ses_child", "evt_1"))).toEqual([])
+    expect(sent).toEqual([])
+    expect(store.get(settledKey("ses_child"))).toMatchObject({ by: "failed" })
+
+    await notePrompt(ports, delivered("evt_d2", 300))
+    expect(await reportFailure(ports, new Set(), failed("ses_child", "evt_2"))).toEqual(["ses_parent"])
+  })
+
   test("reports each failed turn of the same child", async () => {
     const { ports, sent } = fakePorts()
     await record(ports.storage, child())
@@ -219,6 +233,16 @@ describe("reportSilent", () => {
         delivery: "steer",
       },
     ])
+  })
+
+  test("tells nothing of a turn that ended after courier_stop stopped the child, even before the interrupt was noted", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    await notePrompt(ports, delivered("evt_d", 100))
+    await stopped(ports.storage, "ses_child", 150)
+
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(sent).toEqual([])
   })
 
   test("tells nothing of a turn in which the child reported to its parent", async () => {

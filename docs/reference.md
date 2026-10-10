@@ -1,7 +1,7 @@
 # Behaviour reference
 
 How the plugin behaves beyond the happy path: what a child runs on, how deep and wide a tree of
-sessions may grow, how a child's failures, silent turns, permission requests and questions reach the
+sessions may grow, how a child's report, or a group's reports, and its failures, silent turns, permission requests and questions reach the
 session that started it, what is kept where and for how long, and what the webhook receiver does with a delivery.
 The [README](../README.md) has the short version.
 
@@ -145,8 +145,8 @@ from its parent, and the report carries a concrete ask) or `failed`. The brief t
 exactly one such report when it finishes, to send `blocked` rather than end quietly when it needs
 its parent, and that a message without a status is progress, not its report. `courier_send` carries
 the status as an attribute of the envelope the parent reads, `<courier from="<child>"
-status="done">`, and in the delivered message's metadata (`status`), so the receiving model, and the
-join groups of a later release, can branch on it without parsing prose. A status that is none of
+status="done">`, and in the delivered message's metadata (`status`), so the receiving model, and
+[join groups](#join-groups), can branch on it without parsing prose. A status that is none of
 the four is refused, since OpenCode does not check a tool's schema
 ([plugin-api-notes.md](plugin-api-notes.md)); `null` counts as none.
 
@@ -185,6 +185,69 @@ message to any session but the parent is neither. A child an earlier release of 
 was never told about statuses, so its messages without one count as its report, as before: its
 roster entry lacks the `reports: "status"` that `courier_spawn` now writes with every entry. The
 plugin acts on no status beyond settling the report; what each one means is for the parent's model.
+
+## Join groups
+
+Each report wakes the parent separately, so a parent with five children takes five turns, each
+re-reading its context, and in a tree that compounds at every level. A join group has the parent
+woken once instead: `courier_spawn` takes an optional `group`, a name scoped to the calling session,
+and the reports of the sessions started with the same name are held by the plugin until every one
+of them has reported, then delivered in one message. A name is 1 to 60 letters, digits, dots,
+dashes or underscores (`reviews`, `phase-1`); any other is refused before anything is started, and
+`null` counts as none. `courier_spawn`'s result says the child's report is held with the group.
+
+**What is held, and what is not.** A report with status `done`, `partial` or `failed` from a member
+to its parent is held: `courier_send` records it (`group/<parentID>/<name>/<sessionID>`, with the
+status, the text and the artifacts) and delivers nothing, and its result tells the child so, with
+how many members have reported, so the child does not take it for a failed delivery. A held report
+still settles the child's report as any report does: the child stops [owing one](#a-child-that-ends-without-a-report),
+stops counting against the [limits](#session-trees-and-their-limits) once its turn has ended, and gets no
+notice of a silent end. Everything the parent needs now passes through at once, as for a child in
+no group: a `blocked` report (the member stays out, and reports again once it has its answer),
+progress (a message without a status), a failed turn, a turn ended without a report, a permission
+request, a question and a form. A member that reports twice has its later report held in place of
+the earlier.
+
+**The release.** Once every member has a held report, or has left (below), the group is released:
+the parent gets one message, waking it if it is idle, wrapped in `<courier from="<members>"
+group="<name>" reports="<n>">`, `from` listing the sessions whose reports it carries, comma-separated.
+The body names the group and counts the reports by status, then lists every report in the order the
+members joined, each as `[i/n] <sessionID> "<title>": <status>` followed by its text and its
+artifacts in [the fixed layout](#a-childs-report), and after them the members that left without a
+report. The message's metadata carries `group`, `reports` and `from` (the list). The held reports
+are then dropped, and the group with them: the name is free again, and a `courier_spawn` with it
+starts a new group, with only the sessions started since. A session started into a group that is
+still open joins it, and the release waits for it too. A member's report after the release, as when
+the parent sends it more to do, is delivered on its own, as a report of a child in no group.
+
+**A member that leaves.** A member whose turn [fails](#a-child-that-fails), or whose session OpenCode
+deletes, leaves the group without a report: the parent is told of the failure at once, as ever, with
+a line naming the group, and the group no longer waits for it, so it is released once its other
+members have reported, the message naming who left and why. A member that reports after all before
+then rejoins with its report. A member that has reported keeps its held report whatever happens to
+its turn after. A member dropped from the [roster](#roster), after 14 days or by `courier_cleanup`,
+goes from its group too, with no trace. A group whose every member left is dropped unsent: the parent
+was told of each. An interrupted turn leaves nothing: the member is still out, as a child in no group
+would still owe its report, and `courier_children` shows it.
+
+**The parent waits.** A session with an open group is [waiting](#a-child-that-ends-without-a-report),
+like one whose children still owe it reports, so a sub-orchestrator that has split its task into a
+group and ended its turn is not reported to its own parent as having ended without a report, until
+the group's message has reached it and it ends a turn without reporting.
+
+**`courier_children`** lists, for a child started in a group, `group: { name, report }`, with
+`report` one of `held`, `out`, `failed`, `deleted` (it left) or `released` (the group has been
+delivered, or the child joined an earlier one of that name).
+
+**Delivery.** The scheduler that delivers `courier_later` messages delivers released groups too,
+at each tick and at once when a report, a failure or a deletion completes a group, so the parent
+waits no longer than for a plain report on one server; with [two servers](#two-servers-on-one-data-directory)
+on one data directory, by the one holding the owner key, within a tick of it. Each release is
+claimed once in the process, like a scheduled message, and dropped only after the message has been
+delivered: a delivery that fails is logged and tried again at the next tick, and nothing is lost,
+while a crash between the delivery and the drop delivers it again after a restart. Held reports live
+in the plugin's storage, so a restart loses none. The group's message is a message like any other:
+it makes a spawned parent owe a report, and a report of its own settles that.
 
 ## A child that fails
 
@@ -419,7 +482,8 @@ lost track after a compaction or a server restart can call `courier_children` to
 child that can no longer be looked up is still listed, with the error instead of its state. The
 roster is also where a session's depth and tree are read from, for the
 [limits](#session-trees-and-their-limits). Whether a child [owes its parent a
-report](#a-child-that-ends-without-a-report) is kept next to it, and dropped with its entry.
+report](#a-child-that-ends-without-a-report), and its place in a [join group](#join-groups), are
+kept next to it, and dropped with its entry.
 Entries are dropped 14 days after the child was started, when that parent's roster is read or
 the plugin is next loaded, except isolated children whose worktree is still there (see
 [Worktree cleanup](#worktree-cleanup)). If the roster cannot be written, the child still gets its
@@ -480,7 +544,8 @@ it twice after the restart; a lost check-in would be worse.
 
 OpenCode runs one instance of the plugin per location (project or worktree), all in one process, and
 after an update it loads the new copy of the package next to the old one until the old one unloads.
-All instances share one process-wide hub, where each scheduled message, OpenCode event, permission
+All instances share one process-wide hub, where each scheduled message, released join group,
+OpenCode event, permission
 request, form and question is claimed once, before any instance acts on it, so no message is
 delivered twice and no notice is sent twice, whichever instance or copy sees it first. The hub also
 runs the scheduler once per process and follows OpenCode's events through two instances, one of them
@@ -523,6 +588,10 @@ stored questions) but not its memory. The plugin handles that as follows:
   parent once**, by the server that runs the child's turn: the one that handled the `courier_spawn`,
   or the latest message, that started it. Whether a child owes a report compares the times of both
   servers' clocks, so they should be one machine's.
+- **A released [join group](#join-groups) is delivered by the server holding the owner key**, as a
+  `courier_later` message is: the members' `courier_send` calls hold their reports in the shared
+  storage from whichever server runs them, and the owner's scheduler delivers the group at once
+  when the last report is held on that server, or at its next tick otherwise.
 - **`courier_answer` passes an answer on only from a turn on that same server.** Pending requests
   live in the memory of the process running the child, and the plugin API offers no channel between
   servers. From the other server it finds no request pending and says so: the request was answered

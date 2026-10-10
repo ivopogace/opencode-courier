@@ -98,6 +98,8 @@ function decide(body) {
   }
   // The child of COURIER-SILENT ends its turn with a reply but no report, held back so the parent's turn has ended.
   if (parent && recent.includes("CHILD-SILENT")) return { text: "CHILD SILENT REPLY", delayed: true }
+  // A member of COURIER-GROUP-BLOCKED's group needs a decision from its parent, and reports done once nudged.
+  if (parent && recent.includes("CHILD-BLOCKS")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD BLOCKED", status: "blocked" } }
   // The child of COURIER-PROGRESS messages its parent without a status, then ends its turn on the tool's result.
   if (parent && recent.includes("CHILD-PROGRESSES")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD HALFWAY" } }
   // The child of COURIER-WAITING schedules a message that tells it to report, and ends its turn to wait for it.
@@ -154,6 +156,9 @@ function decide(body) {
   if (form) return { text: `PARENT TOLD FORM ${form[1]}` }
   if (/<courier from="ses_\w+" (answered|settled)=/.test(recent)) return { text: "PARENT SETTLED" }
   if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
+  // A group's reports, in one message, or a member's blocked report, which is not held.
+  if (/<courier from="[^"]*" group="/.test(recent)) return { text: "PARENT GOT GROUP" }
+  if (/<courier from="ses_\w+" status="blocked">/.test(recent)) return { text: "PARENT BLOCKED" }
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
   const nudge = recent.match(/COURIER-NUDGE(-PLAIN)? (ses_\w+)/)
   if (nudge) return { tool: "courier_send", args: { sessionID: nudge[2], message: nudge[1] ? "CHILD-REPORT-PLAIN" : "CHILD-REPORT-NOW" } }
@@ -176,6 +181,15 @@ function decide(body) {
   const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
+  // COURIER-GROUP starts two children at once in one group; with -BLOCKED, the second needs a decision first.
+  const group = recent.match(/COURIER-GROUP(-BLOCKED)?/)
+  if (group)
+    return {
+      calls: [
+        { tool: "courier_spawn", args: { task: "Report back to your parent.", group: "pair" } },
+        { tool: "courier_spawn", args: { task: group[1] ? "CHILD-BLOCKS" : "Report back to your parent.", group: "pair" } },
+      ],
+    }
   if (recent.includes("COURIER-DEPTH")) return { tool: "courier_spawn", args: { task: "CHILD-DEEPENS" } }
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
   if (recent.includes("COURIER-SILENT")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT" } }

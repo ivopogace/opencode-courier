@@ -217,6 +217,53 @@ prompt_in "$child" "PERSON-ASKS" >/dev/null
 check "the child answered the person in its own session" "$([ -n "$(reply_time "$child" "CHILD ANSWERS PERSON")" ] && echo true || echo false)"
 check "and its parent was not told it ended without a report" "$(sleep 3; notices_with "$parent" ended | jq -r 'length == 0')"
 
+echo "a join group: the parent is woken once, with both reports in one message"
+out=$(prompt "COURIER-GROUP")
+turn_ended=$(now_ms)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
+check "two children were started in the group, and courier_spawn said their reports are held with it" \
+  "$([ "$(wc -w <<<"$members")" -eq 2 ] && tool_state courier_spawn <<<"$out" | jq -sr 'all(.metadata.metadata.group == "pair" and (.output | contains("held with group \"pair\"")))')"
+woke=$(reply_time "$parent" "PARENT GOT GROUP" 45)
+check "the group's reports started a new turn after the parent's had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+notices=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "synthetic") | .text]')
+check "the parent got exactly one message" "$(jq -r 'length == 1' <<<"$notices")"
+check "with both reports, each with its status and artifacts, under the group's envelope" \
+  "$(jq -r --arg members "$(tr '\n' ',' <<<"$members" | sed 's/,$//')" '.[0] | startswith("<courier from=\"") and contains("\" group=\"pair\" reports=\"2\">") and
+    contains("Every session you started in group \"pair\" has reported: 2 reports of 2 members (2 done).") and contains("[1/2] ") and contains("[2/2] ") and
+    (split("\": done\nCHILD DONE\n\nArtifacts:\n- branch: child/work") | length == 3) and
+    ((capture("from=\"(?<from>[^\"]+)\"").from | split(",") | sort) == ($members | split(",") | sort))' <<<"$notices")"
+check "each child's courier_send result said its report was held with the group, not delivered" \
+  "$(for id in $members; do texts "$id" | grep -qF 'It is held with group "pair" and goes to' || { echo false; exit; }; done; echo true)"
+check "each member's report is settled with its status" "$(for id in $members; do [ "$(kv get "report/$id/settled" | jq -r '.by == "report" and .status == "done"')" = true ] || { echo false; exit; }; done; echo true)"
+check "the delivered group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
+check "courier_children shows each child's group as released" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
+  jq -r '.status == "completed" and ([.metadata.metadata.children[].group] == [{name: "pair", report: "released"}, {name: "pair", report: "released"}])')"
+
+echo "a member's blocked report reaches the parent at once; the other's is held until that member reports"
+out=$(prompt "COURIER-GROUP-BLOCKED")
+turn_ended=$(now_ms)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
+woke=$(reply_time "$parent" "PARENT BLOCKED" 45)
+check "the blocked report started a new turn after the parent's had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+blocked=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | capture("^<courier from=\"(?<from>ses_\\w+)\" status=\"blocked\">").from] | first // empty')
+held=$(grep -vxF "$blocked" <<<"$members" || true)
+check "it was the one message the parent got, with the blocked status and nothing held" \
+  "$([ -n "$blocked" ] && [ -n "$held" ] && api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] | length == 1 and (.[0] | contains("CHILD BLOCKED"))')"
+check "the other member's done report is held with the group, and the blocked member is still out" \
+  "$(for _ in $(seq 1 30); do [ "$(kv get "group/$parent/pair/$held" | jq -r '.report.status == "done"' 2>/dev/null)" = true ] && break; sleep 1; done
+     [ "$(kv get "group/$parent/pair/$held" | jq -r '.report.status == "done"')" = true ] && [ "$(kv get "group/$parent/pair/$blocked" | jq -r 'has("report") | not')" = true ] && echo true || echo false)"
+check "courier_children shows the group with one report held and one out" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
+  jq -r --arg held "$held" --arg blocked "$blocked" '.status == "completed" and
+    ([.metadata.metadata.children[] | select(.sessionID == $held) | .group] == [{name: "pair", report: "held"}]) and
+    ([.metadata.metadata.children[] | select(.sessionID == $blocked) | .group] == [{name: "pair", report: "out"}])')"
+prompt_in "$parent" "COURIER-NUDGE $blocked" >/dev/null
+check "answered, the blocked member reported, and the group went to the parent in one message with both reports" \
+  "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 45)" ] && notices_with "$parent" group | jq -r 'length == 1 and (.[0] |
+    contains("reports=\"2\"") and contains("CHILD DONE AFTER NUDGE") and contains("\": done\nCHILD DONE\n"))')"
+check "and the group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
+
 echo "a deleted child that owes a report is forgotten"
 out=$(prompt "COURIER-SILENT")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)

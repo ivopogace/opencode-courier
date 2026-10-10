@@ -84,19 +84,29 @@ function childOf(part) {
   const metadata = part.state.metadata ?? {}
   return metadata.sessionID ?? metadata.metadata?.sessionID ?? contentText(part.state).match(/Started session (ses_\w+)/)?.[1]
 }
-// A courier message delivered to the parent, and who sent it.
-const senderOf = (message) =>
-  message.type === "synthetic" ? message.text.match(/^<courier from="(ses_\w+)"/)?.[1] : undefined
-// The status a report carries as an attribute, when the child gave one.
-const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
+// A courier message delivered to the parent, and who sent it: one session, or, for a join group's
+// message, every member whose report it carries.
+const sendersOf = (message) =>
+  message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.[1].split(",") ?? []) : []
+const senderOf = (message) => sendersOf(message)[0]
+const groupOf = (message) => message.text?.match(/^<courier from="[^"]*" group="([^"]+)"/)?.[1]
+// The status a report carries as an attribute, when the child gave one; in a group's message, each
+// report's own line names it.
+const statusOf = (message, from) =>
+  groupOf(message)
+    ? message.text.match(new RegExp(`^\\[\\d+/\\d+\\] ${from} "[^"]*": (\\w+)$`, "m"))?.[1]
+    : message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ?? "")
 // Who sent a report with courier_send; a courier_later check-in, from whoever, is not a report.
-const reporterOf = (message) => (scheduled(message) ? undefined : senderOf(message))
+const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
+const reporterOf = (message) => reportersOf(message)[0]
 // How the timeline names a delivered message.
 function deliveryOf(message) {
   const from = senderOf(message)
   if (!from) return message.type === "synthetic" ? "a message" : undefined
   if (scheduled(message)) return `a courier_later check-in from ${from}`
+  const group = groupOf(message)
+  if (group) return `the reports of group "${group}" from ${sendersOf(message).join(", ")}`
   return children.has(from) ? `the report from ${from}` : `a message from ${from}`
 }
 
@@ -184,13 +194,15 @@ const sends = new Map(
   ]),
 )
 const reports = turns.flatMap((turn, number) =>
-  turn.flatMap((message, position) => {
-    const from = reporterOf(message)
-    if (!from || !children.has(from)) return []
-    const answered = turn.slice(position + 1).some((later) => later.type === "assistant" && !failed(later))
-    const opened = turn.slice(0, position).every((earlier) => earlier.type === "synthetic")
-    return [{ from, turn: number + 1, answered, opened, text: message.text, status: statusOf(message) }]
-  }),
+  turn.flatMap((message, position) =>
+    reportersOf(message)
+      .filter((from) => children.has(from))
+      .map((from) => {
+        const answered = turn.slice(position + 1).some((later) => later.type === "assistant" && !failed(later))
+        const opened = turn.slice(0, position).every((earlier) => earlier.type === "synthetic")
+        return { from, turn: number + 1, answered, opened, text: message.text, status: statusOf(message, from), group: groupOf(message) }
+      }),
+  ),
 )
 const reportOf = (id) => reports.find((report) => report.from === id)
 const finalText = textOf(parent.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
@@ -222,7 +234,9 @@ if (native.length) notes.push(`the parent also used OpenCode's own subagent tool
 const selfWorked = expected.filter((value) => firstText.includes(value))
 if (selfWorked.length) notes.push(`the parent's first turn already states ${selfWorked.join(", ")} (did it work them out itself?)`)
 for (const report of reports)
-  notes.push(`report from ${report.from}: turn ${report.turn}, ${report.opened ? "woke the idle parent" : "steered into a running turn"}, ${report.status ? `status ${report.status}` : "no status"}`)
+  notes.push(`report from ${report.from}${report.group ? ` (in group "${report.group}")` : ""}: turn ${report.turn}, ${report.opened ? "woke the idle parent" : "steered into a running turn"}, ${report.status ? `status ${report.status}` : "no status"}`)
+const grouped = firstTools.filter((part) => childOf(part) && part.state.input?.group)
+if (grouped.length) notes.push(`the parent started ${grouped.length} child(ren) in a join group on its own: ${[...new Set(grouped.map((part) => part.state.input.group))].join(", ")}`)
 const checkIns = parentTools.filter((part) => part.name === "courier_later" && part.state.status === "completed").length
 const cancelled = parentTools.filter((part) => part.name === "courier_cancel" && part.state.status === "completed").length
 if (checkIns) notes.push(`the parent scheduled ${checkIns} courier_later check-in(s) and cancelled ${cancelled}`)

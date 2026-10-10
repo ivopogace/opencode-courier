@@ -112,6 +112,8 @@ function decide(body) {
   // A child whose question was cut off gets the answer as a message, and reports it.
   const answered = recent.match(/<courier from="ses_\w+" answers="question_[\w-]+"( dismissed="true")?>/)
   const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
+  // A child the person prompts in its own session answers them, without a report.
+  if (startedBy && recent.includes("PERSON-ASKS")) return { text: "CHILD ANSWERS PERSON" }
   // A child its parent told to report does.
   if (startedBy && recent.includes("CHILD-REPORT-NOW"))
     return { tool: "courier_send", args: { sessionID: startedBy[1], message: "CHILD DONE AFTER NUDGE" } }

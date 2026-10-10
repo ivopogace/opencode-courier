@@ -156,6 +156,15 @@ check "which settled its report" "$(kv get "report/$child/settled" | jq -r '.by 
 check "and its reported turn was not told as one without a report" \
   "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 1')"
 
+echo "what the person types in a child that has reported does not make it owe a report"
+out=$(prompt "COURIER-TEST")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the child reported" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
+prompt_in "$child" "PERSON-ASKS" >/dev/null
+check "the child answered the person in its own session" "$([ -n "$(reply_time "$child" "CHILD ANSWERS PERSON")" ] && echo true || echo false)"
+check "and its parent was not told it ended without a report" "$(sleep 3; notices_with "$parent" ended | jq -r 'length == 0')"
+
 echo "a deleted child that owes a report is forgotten"
 out=$(prompt "COURIER-SILENT")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)

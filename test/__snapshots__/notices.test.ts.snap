@@ -85,7 +85,7 @@ exports[`tools courier_spawn 1`] = `
       "group": {
         "anyOf": [
           {
-            "description": "A join group: start the sessions of one batch with the same name, and their reports are held and delivered to you in one message once every one of them has reported, instead of one turn per report. A blocked report, a question, a permission request or a failure still reaches you at once. Letters, digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
+            "description": "A join group: start the sessions of one batch with the same name, and their reports are held and delivered to you in one message once every one of them has reported, instead of one turn per report. A blocked report, a question, a permission request or a failed turn still reaches you at once. Letters, digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
             "type": "string",
           },
           {
@@ -655,7 +655,7 @@ exports[`tool results spawnText 1`] = `"Started session ses_child in /repo. It w
 
 exports[`tool results spawnText 2`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is not on your courier_children list: roster failed: disk full"`;
 
-exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported, you get their reports in one message, which starts a new turn for you; a blocked report, a question or a failure still reaches you at once. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
+exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported, you get their reports in one message, which starts a new turn for you; a blocked report, a question or a failed turn still reaches you at once. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
 exports[`tool results spawnText 4`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is in no group, so its report comes on its own: group failed: disk full"`;
 

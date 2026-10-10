@@ -156,7 +156,7 @@ export function spawnText(child: {
     (child.groupError ? ` It is in no group, so its report comes on its own: ${child.groupError}` : "")
   const reports = child.group
     ? `Its report is held with group "${child.group}": once every session you started in that group has reported, you get ` +
-      "their reports in one message, which starts a new turn for you; a blocked report, a question or a failure still reaches you at once."
+      "their reports in one message, which starts a new turn for you; a blocked report, a question or a failed turn still reaches you at once."
     : "It will report back with courier_send, which starts a new turn for you."
   return (
     `Started session ${child.sessionID} in ${child.directory}. ${reports} Once you have started every session you need, ` +

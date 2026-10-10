@@ -120,7 +120,7 @@ const ROLES_MAX = 1000
 export interface ContextPorts {
   readonly storage: RosterStorage
   readonly limits: Limits
-  /** Each session's depth once looked up: null for one nobody spawned that has started none. */
+  /** Each session's depth once looked up: null for one nobody spawned that has started none, until it starts one. */
   readonly roles: Map<string, number | null>
   readonly log: (message: string) => void
 }
@@ -134,13 +134,13 @@ export interface Shaped {
 
 /**
  * The `context` hook: names a session's role in its tree in a system part, and hides courier_spawn
- * from one at `maxDepth`. A session nobody spawned that has started none is left as it is.
+ * from one at `maxDepth`. A session nobody spawned that has started none is pointed to the skill, if it could spawn.
  */
 export async function shapeContext(ports: ContextPorts, event: Shaped) {
   try {
     const depth = await depthOf(ports, event.sessionID)
-    if (depth === null) return
-    if (depth >= ports.limits.maxDepth) delete event.tools.courier_spawn
+    if (depth === null && !event.tools.courier_spawn) return
+    if (depth !== null && depth >= ports.limits.maxDepth) delete event.tools.courier_spawn
     if (!event.system.some((part) => part.text.startsWith(ROLE_PREFIX)))
       event.system.push({ type: "text", text: rolePart(depth, ports.limits) })
   } catch (error) {

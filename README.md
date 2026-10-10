@@ -123,10 +123,13 @@ Spark 1.3).
 A session splits a goal across child sessions, each child decides in turn whether to split its
 part again, and the results are checked and integrated at every level on the way back up. The
 plugin ships the playbook as an OpenCode skill, `courier-orchestrate`, listed in every session with
-the plugin loaded: how to decide whether to split, plan the parts, start them in one join group,
-end the turn, read each report by its status, verify first-hand, integrate and report upward, and
-what to do when a part fails, ends quietly, blocks or hits a limit. A model loads it with the `skill`
-tool when the task fits its description; `/skills` in the TUI attaches it to your prompt. Its text:
+the plugin loaded: how to decide whether to split, and to say which in one line of the reply
+(`split: no, because …` or `split: 3 parts: …`), plan the parts, start them in one join group,
+end the turn, read each report by its status, verify first-hand through the project's scripts,
+integrate and report upward, and what to do when a part fails, ends quietly, blocks or hits a
+limit. Its description asks a model to load it at the start of any implementation task that may
+have independent parts, and a session nobody spawned is pointed to it by its system prompt as well
+([Session trees](#session-trees)); `/skills` in the TUI attaches it to your prompt. Its text:
 [the reference](docs/reference.md#the-courier-orchestrate-skill).
 
 The smoke test's recursive scenario (`COURIER_SCENARIO=recursive`, [docs/real-model.md](docs/real-model.md#recursive-orchestration))
@@ -216,11 +219,17 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
    (run one web search in your own session and answer OpenCode's prompt, or use its "Third-party
    search" setting): otherwise the first child to search shows that prompt in its own session,
    which only you can answer there.
-3. Use `isolate: true` whenever children edit files in parallel. The child's worktree is made from
+3. Your own session's prompts are relayed nowhere, and each one stalls the whole tree until you
+   answer it. Before an unattended run, allow the orchestrating session's toolchain up front: the
+   repository's `bun run` and `npm run` scripts, `git`, and whatever its checks need. Prefer one rule
+   on `bun run *` or `npm run *` over a rule per binary; the skill tells a session that orchestrates
+   to run checks through the project's scripts rather than `./node_modules/.bin/<tool>`, so one rule
+   covers them.
+4. Use `isolate: true` whenever children edit files in parallel. The child's worktree is made from
    the last commit (from an isolated session, its HEAD), so an uncommitted `opencode.json` is not there and the child falls back to your
    global config: keep providers and models in the global config, or commit the file. When you are
    done with an isolated child, `courier_cleanup` it so its worktree does not linger.
-4. A child whose turn fails, or ends without `courier_send`, is reported to its parent by the
+5. A child whose turn fails, or ends without `courier_send`, is reported to its parent by the
    plugin. What the plugin cannot see, such as a server that stops while a child runs, a
    `courier_later` check-in still covers: for a long-running child, schedule one for yourself and
    `courier_cancel` it when the child reports.
@@ -321,9 +330,11 @@ itself, or wait for a child to report. A session counts while it is live: its tu
 its parent a report (its task or a message reached it after it last reported, failed or was interrupted), or a
 session below it is live. One that has reported, with nothing live below it, does not. Each
 spawned session's model is also told its role on every request: `sub-orchestrator`, which may split
-its task, or `leaf`, at `maxDepth`, which does not see `courier_spawn` at all. Your own session gets
-a `root orchestrator` part only once it has started a session; one that never does is sent exactly
-what it was before. The details: [the reference](docs/reference.md#session-trees-and-their-limits).
+its task, or `leaf`, at `maxDepth`, which does not see `courier_spawn` at all. Your own session is
+told, in one line, to load the `courier-orchestrate` skill before a task that touches several files
+or areas, decide whether to split it, and say which in one line of its reply (`split: no, because …`
+or `split: 3 parts: …`); once it has started a session, that line becomes a `root orchestrator` part
+with the limits. The details: [the reference](docs/reference.md#session-trees-and-their-limits).
 
 ## Webhooks
 

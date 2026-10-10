@@ -25,7 +25,7 @@ export default {
     }
     write({ type: "probe.loaded" })
     await ctx.session.hook("context", (event) => {
-      const role = event.system.map((part) => part.text.match(/^opencode-courier role: (root orchestrator|sub-orchestrator|leaf)/)?.[1]).find(Boolean)
+      const role = event.system.map((part) => part.text.match(/^opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/)?.[1]).find(Boolean)
       write({ type: "probe.context", sessionID: event.sessionID, tools: Object.keys(event.tools), role: role ?? null })
       if (!event.tools.courier_spawn && JSON.stringify(event.messages).includes("CHILD-FORCES"))
         event.tools.courier_spawn = {

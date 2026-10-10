@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { DateTime } from "effect"
 import { spawn, type CourierPorts } from "../src/courier.js"
 import { admit, busy, DEFAULT_LIMITS, readLimits, shapeContext, type ContextPorts, type LimitPorts, type SpawnGate } from "../src/limits.js"
-import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/notices.js"
+import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, SKILL_ID, SPLIT_LINE, totalRefusal } from "../src/notices.js"
 import { reportOf, prompted, settled } from "../src/report.js"
 import { record } from "../src/roster.js"
 
@@ -398,9 +398,22 @@ describe("the context hook", () => {
     return { ports, storage, child, shape, logged }
   }
 
-  test("leaves a session nobody spawned that has started none as it is", async () => {
+  test("points a session nobody spawned that has started none to the skill, with its tools as they are", async () => {
     const { shape } = contextPorts()
-    expect(await shape("ses_alone")).toEqual({ sessionID: "ses_alone", tools: tools(), system: [{ type: "text", text: "base" }] })
+    const event = await shape("ses_alone")
+    expect(event).toEqual({ sessionID: "ses_alone", tools: tools(), system: [{ type: "text", text: "base" }, { type: "text", text: rolePart(null, DEFAULT_LIMITS) }] })
+    expect(event.system[1]!.text).toStartWith(ROLE_PREFIX)
+    expect(event.system[1]!.text).toContain(SKILL_ID)
+    expect(event.system[1]!.text).toContain(SPLIT_LINE)
+  })
+
+  test("points no session that cannot spawn, such as one whose agent lacks the courier tools", async () => {
+    const { ports } = contextPorts()
+    const event = { sessionID: "ses_alone", tools: { courier_send: {}, read: {} }, system: [{ type: "text" as const, text: "base" }] }
+
+    await shapeContext(ports, event)
+
+    expect(event).toEqual({ sessionID: "ses_alone", tools: { courier_send: {}, read: {} }, system: [{ type: "text", text: "base" }] })
   })
 
   test("names the role per depth: root orchestrator, sub-orchestrator, leaf", async () => {
@@ -424,16 +437,18 @@ describe("the context hook", () => {
 
   test("remembers a depth, and finds a root's role once a spawn forgot it", async () => {
     const { ports, storage, shape, child } = contextPorts()
-    expect((await shape("ses_root")).system).toHaveLength(1)
+    const pointer = { type: "text" as const, text: rolePart(null, DEFAULT_LIMITS) }
+    const root = { type: "text" as const, text: rolePart(0, DEFAULT_LIMITS) }
+    expect((await shape("ses_root")).system.at(-1)).toEqual(pointer)
     await child("ses_root", "ses_a")
-    expect((await shape("ses_root")).system).toHaveLength(1)
+    expect((await shape("ses_root")).system.at(-1)).toEqual(pointer)
 
     ports.roles.delete("ses_root")
-    expect((await shape("ses_root")).system).toHaveLength(2)
+    expect((await shape("ses_root")).system).toEqual([{ type: "text", text: "base" }, root])
 
     storage.scan = async () => Promise.reject(new Error("not read again"))
     storage.get = async () => Promise.reject(new Error("not read again"))
-    expect((await shape("ses_root")).system).toHaveLength(2)
+    expect((await shape("ses_root")).system).toEqual([{ type: "text", text: "base" }, root])
   })
 
   test("a session nobody spawned costs one read and one scan of its own children, never the whole roster", async () => {
@@ -446,7 +461,9 @@ describe("the context hook", () => {
       return scan(input)
     }
 
-    expect((await shape("ses_alone")).system).toHaveLength(1)
+    expect((await shape("ses_alone")).system.at(-1)).toEqual({ type: "text", text: rolePart(null, DEFAULT_LIMITS) })
+    expect(scanned).toEqual(["roster/ses_alone/"])
+    expect((await shape("ses_alone")).system).toHaveLength(2)
     expect(scanned).toEqual(["roster/ses_alone/"])
   })
 
@@ -461,14 +478,16 @@ describe("the context hook", () => {
       expect((await shape(sessionID)).system.at(-1)).toEqual({ type: "text", text: rolePart(depth, DEFAULT_LIMITS) })
   })
 
-  test("adds no second role part, as a second copy of the plugin would", async () => {
+  test("adds no second role part or pointer, as a second copy of the plugin would", async () => {
     const { ports, child } = contextPorts()
     await child("ses_root", "ses_a")
-    const event = { sessionID: "ses_a", tools: tools(), system: [{ type: "text" as const, text: `${ROLE_PREFIX} other copy` }] }
+    for (const sessionID of ["ses_a", "ses_alone"]) {
+      const event = { sessionID, tools: tools(), system: [{ type: "text" as const, text: `${ROLE_PREFIX} other copy` }] }
 
-    await shapeContext(ports, event)
+      await shapeContext(ports, event)
 
-    expect(event.system).toHaveLength(1)
+      expect(event.system).toHaveLength(1)
+    }
   })
 
   test("logs a failed lookup and leaves the request as it is", async () => {

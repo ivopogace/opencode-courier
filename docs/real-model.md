@@ -313,13 +313,19 @@ turn 2 (opened by a message from ses_…, ses_…):
 result: pass
 ```
 
-**How a session finds the skill.** Nothing names it but its own description, in the skill list
-OpenCode puts in every session's system prompt: neither the role part, the brief nor a tool
-description mentions it, so that no model-facing string changed for it. In the run above the root
-loaded it before its first spawn and followed it (one group, verification by reading the files);
-in another run the root did not, and the "numbers" session loaded it instead, before its own
+**How a session finds the skill.** When the skill shipped, nothing named it but its own description,
+in the skill list OpenCode puts in every session's system prompt: neither the role part, the brief
+nor a tool description mentioned it, so that no model-facing string changed for it. In the run above
+the root loaded it before its first spawn and followed it (one group, verification by reading the
+files); in another run the root did not, and the "numbers" session loaded it instead, before its own
 split, then used a group, scheduled a check-in for itself, cancelled it once the group's message
-came, and verified both files. Either way every check passed but one in that other run, the model's
+came, and verified both files. A dogfood run on a real issue (#119) then showed the gap: a root
+session given one issue to implement never took its task for one "big enough" to split, so the
+description never fired and the plugin never engaged. Since then the description asks for the skill
+at the start of any implementation task that may have independent parts, a session nobody spawned
+is pointed to it by [the context hook](reference.md#session-trees-and-their-limits) before it starts,
+and the skill, the brief and the pointer each ask for the decision in one line of the reply,
+`split: no, because …` or `split: <n> parts: …`. Either way every check passed but one in that other run, the model's
 doing: the root copied a long temporary path into its children's tasks with a typo, so the files
 were written next to the project rather than in it, and the three sessions reading them back read
 the same wrong path. Run the scenario in a plainly named directory (the default temp dir is).
@@ -352,6 +358,45 @@ checker fails that run on three checks, as it should: the shape was right, the d
 skill listed in every session's system prompt, `longcat-2.5-preview-free` still passes the fan-out,
 the permission relay and the question relay, all checks, without loading the skill for those
 one-result tasks.
+
+With the root's pointer to the skill, the reworded description and the `split:` line (#119, OpenCode
+2.0.26), `longcat-2.5-preview-free` passes the fan-out, 8 of 8: its first line was `Split: 2 parts:
+two parallel helper sessions via courier_spawn (in one group so I get both reports together), plus a
+3-minute safety check-in for myself in case either never reports.`, on the pointer alone, without
+loading the skill, and the run went as before (one group, one check-in, cancelled once the group's
+message came, `RESULTS 391 1024`). The recursive scenario took three runs to pass. The first ran in a
+long, oddly named temporary directory, and every session copied the path into its tasks and tool
+calls with a different word in it, the caveat above: the files landed in three places, the
+"numbers" session went hunting for them with `courier_status` and a `sleep`, and two checks failed;
+still, the root loaded the skill and all five sessions stated their line (`split: 2 parts: …` at
+the root and in the "numbers" session, `Split: no, because …` in the three leaves). The second, in a
+plain directory, stopped on something outside the text: the "numbers" session, started without a
+group, was woken by its first half's report, ended that turn, and then had the second half's report
+land in its inbox nine seconds later without OpenCode opening a turn for it, so it never reported
+upward and the checker gave up after 300 s with three checks failed; the server log holds nothing
+for that minute. Its root had written `Split: no, because the user has already specified the exact
+split (two independent part sessions, one of which delegates its own two halves)` and then started
+the two sessions anyway: the line's `no` meant no planning of its own, a reading the wording does
+not rule out. The third run passed, 9 of 9, in 20 model requests across five sessions: the root
+loaded the skill, stated `split: 2 parts: "numbers" (which itself spawns two sub-sessions for a.txt
+and b.txt) and "count" (for total.txt).`, scheduled and cancelled a check-in, the "numbers" session
+used a group, and every report carried `done`. On the wording as shipped, with the hint `(one phrase
+per part)` in the pointer too, both passed once more, the fan-out 8 of 8 (`split: 2 parts: one
+session runs …, the other runs …`, no skill loaded) and the recursive scenario 9 of 9 (the root
+loaded the skill, used a group and a check-in; the "numbers" session split into a group of its own;
+all five sessions stated their line, `Split: no, because …` in the three that did their part).
+
+The gap the change is about was tried with two fan-out prompts that name neither helpers nor
+`courier_spawn`. *"Two shell commands each take a while: `sleep 20; echo $((17 * 23))` and `sleep 40;
+echo $((2 ** 10))`. Get the number each prints and reply with one line: RESULTS \<first\> \<second\>"*:
+the model loaded no skill, stated no decision, ran both commands itself as background shells and
+ended its turn without the RESULTS line, so every check but one failed. The same with each number
+written to its own file (`numbers/a.txt`, `numbers/b.txt`), the shape the pointer names: the model
+opened with `split: no, because both jobs are two trivial shell commands I can run in parallel
+myself.`, then did the same. So on a task that touches files the pointer makes the decision visible,
+and a reasoned `no` on two trivial commands is what the skill's own rule asks for; whether a root
+given an issue-sized task now loads the skill and splits is what the dogfood run of #114, repeated
+after #119, is to show.
 
 With the isolated-child brief (nested isolation), `longcat-2.5-preview-free` passes the fan-out with
 `COURIER_PROMPT` asking for two `isolate: true` helpers that each create a file and commit it: both

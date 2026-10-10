@@ -31,7 +31,8 @@ describe("envelope and child brief", () => {
     expect(notices.childBrief("ses_parent", "Fix the bug", 3, limits, notices.childBranch("ses_child"))).toMatchSnapshot()
   })
   test("rolePart", () => {
-    for (const depth of [0, 1, 2, 3]) expect(notices.rolePart(depth, limits)).toMatchSnapshot()
+    for (const depth of [0, 1, 2, 3, null]) expect(notices.rolePart(depth, limits)).toMatchSnapshot()
+    for (const depth of [0, 1, 2, 3, null]) expect(notices.rolePart(depth, limits)).toStartWith(notices.ROLE_PREFIX)
   })
   test("the courier-orchestrate skill", () => {
     expect(notices.SKILL_ID).toBe("courier-orchestrate")
@@ -41,6 +42,13 @@ describe("envelope and child brief", () => {
     expect(notices.SKILL_DESCRIPTION.length).toBeLessThan(400)
     expect(notices.SKILL_CONTENT).toContain("Never start exactly one session")
     expect(notices.SKILL_CONTENT).toContain("Never hand the checking to another session")
+    // The split line reads the same wherever it is asked for: the skill, the brief and the root's pointer.
+    expect(notices.SKILL_CONTENT).toContain(notices.SPLIT_LINE)
+    expect(notices.SKILL_CONTENT).toContain("bun run <script>")
+    expect(notices.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(notices.SPLIT_LINE)
+    expect(notices.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
+    expect(notices.rolePart(null, limits)).toContain(notices.SPLIT_LINE)
+    expect(notices.rolePart(null, limits)).toContain(notices.SKILL_ID)
   })
   test("refusals", () => {
     expect(notices.depthRefusal(3, 3)).toMatchSnapshot()

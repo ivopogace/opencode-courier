@@ -160,9 +160,8 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
 }
 
 /**
- * Drops a message into another session's inbox; OpenCode wakes that session if it is idle. A message
- * from a spawned session to the one that started it with a status is its report, noted unless it is
- * not delivered; one without a status is progress, unless an older release briefed the sender.
+ * Drops a message into another session's inbox; OpenCode wakes that session if it is idle. From a spawned
+ * session to the one that started it, it is its report or its progress (`noteReport`), noted unless not delivered.
  */
 export async function send(ports: CourierPorts, from: string, input: SendInput): Promise<Sent> {
   // Some models send null for an optional field they leave out.
@@ -186,8 +185,8 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
 }
 
 /**
- * Notes `from`'s message to `to` when `to` started it: as its report when it carries a status, or
- * when `from` was briefed before statuses, else as progress. Returns which, and how to take it back.
+ * Notes `from`'s message to `to` when `to` started it: as its report when it carries a status, or when an
+ * earlier release briefed `from`, else as progress. Returns which, and how to take the note back.
  */
 async function noteReport(ports: CourierPorts, from: string, to: string, status: Status | undefined) {
   const entry = await indexedEntry(ports.storage, from)

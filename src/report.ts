@@ -3,10 +3,8 @@ import type { Status } from "./notices.js"
 import type { Storage } from "./storage.js"
 
 /**
- * Whether a spawned session has reported since its last prompt, kept under `report/<sessionID>/`:
- * `prompt`, when a prompt or message last reached it; `settled`, when it last reported, failed or was
- * interrupted, with the report's status; `progress`, when it last messaged its parent without a
- * status; `told`, when its parent was last told that a turn of it ended without a report.
+ * Whether a spawned session has reported since its last prompt, under `report/<sessionID>/`: `prompt`, `settled` (with
+ * the report's status), `progress` (a message to its parent without a status) and `told`; docs/reference.md has each.
  */
 const PREFIX = "report/"
 
@@ -60,9 +58,8 @@ export async function untold(storage: Pick<Storage, "get" | "remove">, sessionID
 const since = (at: number | undefined, prompt: number) => at !== undefined && at >= prompt
 
 /**
- * What is known of a spawned session's report: when a prompt last reached it, whether it owes one,
- * whether it has messaged its parent without a status since, and whether its turn failed or was
- * interrupted since. Undefined for one spawned before this was kept.
+ * What is known of a spawned session's report: when a prompt last reached it, and whether since then it owes one, has
+ * messaged its parent without a status, or failed or was interrupted. Undefined for one spawned before this was kept.
  */
 export async function reportOf(storage: Pick<Storage, "get">, sessionID: string) {
   const [prompt, settledValue, progress] = await Promise.all(

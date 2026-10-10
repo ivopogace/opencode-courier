@@ -286,6 +286,79 @@ describe("the scheduler", () => {
     for (const leave of leaves) leave()
   })
 
+  test("delivers a released group at each tick, and at once when nudged", async () => {
+    const { timers, fire } = fakeTimers()
+    const { join: joinHub, nudge } = open({}, timers)
+    const store = new Map<string, unknown>()
+    const delivered: string[] = []
+    const later = laterPorts("/a", store, delivered)
+    ;(later.session as any).synthetic = async (input: { metadata: { scheduled?: string; group?: string } }) => {
+      delivered.push(`/a ${input.metadata.scheduled ?? input.metadata.group}`)
+      return { id: "msg_1" }
+    }
+    const leave = joinHub(member("/a", () => {}, later))
+    await settle()
+    const held = (sessionID: string) => ({ title: sessionID, joinedAt: 1, report: { at: 1, status: "done", message: "m" } })
+    store.set("group/ses_parent/pair/ses_a", held("ses_a"))
+    store.set("group/ses_parent/pair/ses_b", { title: "ses_b", joinedAt: 2 })
+    fire()
+    await settle()
+    expect(delivered).toEqual([])
+
+    store.set("group/ses_parent/pair/ses_b", held("ses_b"))
+    nudge()
+    await settle()
+    expect(delivered).toEqual(["/a pair"])
+    expect([...store.keys()]).toEqual([OWNER_KEY])
+
+    store.set("group/ses_parent/next/ses_c", held("ses_c"))
+    fire()
+    await settle()
+    expect(delivered).toEqual(["/a pair", "/a next"])
+    leave()
+  })
+
+  test("a nudge during a tick runs another once it has ended, so what fell due meanwhile is not left to the next tick", async () => {
+    const { timers } = fakeTimers()
+    const { join: joinHub, nudge } = open({}, timers)
+    const store = new Map<string, unknown>()
+    const delivered: string[] = []
+    const later = laterPorts("/a", store, delivered)
+    ;(later.session as any).synthetic = async (input: { metadata: { group: string } }) => {
+      delivered.push(input.metadata.group)
+      return { id: "msg_1" }
+    }
+    let release = () => {}
+    let scans = 0
+    const scan = later.storage.scan
+    ;(later.storage as any).scan = async (input: { prefix: string }) => {
+      // The first scan of groups waits, as a slow storage's would; a nudge comes meanwhile.
+      if (input.prefix === "group/" && ++scans === 1) await new Promise<void>((resolve) => (release = resolve))
+      return scan(input)
+    }
+    const leave = joinHub(member("/a", () => {}, later))
+    await settle()
+    expect(scans).toBe(1)
+    store.set("group/ses_parent/pair/ses_a", { title: "a", joinedAt: 1, report: { at: 1, status: "done", message: "m" } })
+    nudge()
+    await settle()
+    expect(delivered).toEqual([])
+    release()
+    await settle()
+    await settle()
+
+    expect(delivered).toEqual(["pair"])
+    expect(scans).toBe(2)
+    leave()
+  })
+
+  test("a nudge while no instance is loaded does nothing", () => {
+    const { timers, started } = fakeTimers()
+    const { nudge } = open({}, timers)
+    nudge()
+    expect(started).toEqual([])
+  })
+
   test("hands the loop over to the next instance when the one it runs through leaves", async () => {
     const { timers, started, stopped, fire } = fakeTimers()
     const { join: joinHub } = open({}, timers)

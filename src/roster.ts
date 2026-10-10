@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs"
+import { dropMember } from "./group.js"
 import { forgetReport } from "./report.js"
 import { scanAll, scanEntries, type Storage } from "./storage.js"
 
@@ -31,6 +32,8 @@ export interface RosterEntry {
   readonly base?: string
   /** `"status"` when its brief asked for a report with a status; absent for a child an earlier release briefed. */
   readonly reports?: "status"
+  /** The join group courier_spawn put it in, whose release holds its report; absent for a child in none. */
+  readonly group?: string
 }
 
 /**
@@ -72,14 +75,16 @@ function isReverse(value: unknown): value is ReverseEntry {
 }
 
 /**
- * Removes a child's roster entry, its reverse key and its report state. Only the entry's removal can
- * fail it: a reverse key left behind leads nowhere, and the next load drops it.
+ * Removes a child's roster entry, its reverse key, its report state and its group membership. Only the
+ * entry's removal can fail it: a reverse key left behind leads nowhere, and the next load drops it.
  */
 export async function remove(storage: RosterStorage, parentID: string, sessionID: string) {
+  const group = await storage.get(rosterKey(parentID, sessionID)).then((entry) => (entry as RosterEntry | undefined)?.group, () => undefined)
   await Promise.all([
     storage.remove(rosterKey(parentID, sessionID)),
     storage.remove(reverseKey(sessionID)).catch(() => undefined),
     forgetReport(storage, sessionID).catch(() => undefined),
+    group ? dropMember(storage, parentID, group, sessionID).catch(() => undefined) : undefined,
   ])
 }
 

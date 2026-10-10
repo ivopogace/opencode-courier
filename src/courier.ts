@@ -1,8 +1,9 @@
 import type { Plugin } from "@opencode/plugin"
+import { holdReport, isGroupName, joinGroup, memberOf, standingOf, type Membership } from "./group.js"
 import { admit, type Limits, type SpawnGate } from "./limits.js"
 import { childBrief, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Prompt, type Sent, type Status } from "./notices.js"
 import { progressed, progressKey, prompted, settled, settledKey } from "./report.js"
-import { current, indexedEntry, record, type RosterStorage } from "./roster.js"
+import { current, indexedEntry, record, type RosterEntry, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
 
@@ -24,6 +25,8 @@ export interface CourierPorts {
   readonly gate: SpawnGate
   /** The depths the `context` hook remembers; a parent's is dropped when it starts a child. */
   readonly roles: Map<string, number | null>
+  /** Has the scheduler deliver what is due now rather than at its next tick: a group a report has just completed. */
+  readonly nudge: () => void
 }
 
 /** A request a session waits on until someone answers it: a permission request, or a question it asked. */
@@ -48,6 +51,7 @@ export interface SpawnInput {
   readonly title?: string
   readonly agent?: string
   readonly isolate?: boolean
+  readonly group?: string
 }
 
 export interface SendInput {
@@ -96,6 +100,10 @@ async function dropWorktree(ports: CourierPorts, directory: string) {
  * courier_send. Refused past a limit, whether or not the `context` hook hid the tool.
  */
 export async function spawn(ports: CourierPorts, parentID: string, input: SpawnInput) {
+  // Some models send null for an optional field they leave out.
+  const group = input.group ?? undefined
+  if (group !== undefined && !isGroupName(group))
+    throw new Error(`group must be a name of 1 to 60 letters, digits, dots, dashes or underscores, not ${JSON.stringify(group)}.`)
   const admitted = await admit(ports, parentID)
   try {
     return await start(ports, parentID, input, admitted)
@@ -128,6 +136,7 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
   admitted.reservation.sessionID = child.id
   // Recorded before the prompt, so a child that exists is on the roster even if prompting fails. A
   // failed write must not keep the child from its task, so it is reported instead of thrown.
+  const group = input.group ?? undefined
   const rosterError = await record(ports.storage, {
     sessionID: child.id,
     parentID,
@@ -138,11 +147,20 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     reports: "status",
     ...(directory ? { source: ports.directory, project: ports.projectID } : {}),
     ...(base ? { base } : {}),
+    ...(group ? { group } : {}),
   }).then(
     () => undefined,
     (error: unknown) => describeFailure("roster", error).message,
   )
   ports.roles.delete(parentID)
+  // A member the group does not know reports on its own, like a child in no group: said in the result.
+  const groupError =
+    group && !rosterError
+      ? await joinGroup(ports.storage, parentID, group, child.id, title, ports.now()).then(
+          () => undefined,
+          (error: unknown) => describeFailure("group", error).message,
+        )
+      : undefined
   // A baseline, until OpenCode's event for the prompt's delivery moves it on; written first, so it never overtakes that.
   // Not for a child off the roster: nothing would read or remove it.
   if (!rosterError) await prompted(ports.storage, child.id, ports.now()).catch(() => undefined)
@@ -156,13 +174,15 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
   return {
     sessionID: child.id,
     directory: directory ?? child.location.directory,
-    ...(rosterError ? { rosterError } : {}),
+    ...(group && !rosterError && !groupError ? { group } : {}),
+    ...(rosterError ? { rosterError } : groupError ? { rosterError: groupError } : {}),
   }
 }
 
 /**
  * Drops a message into another session's inbox; OpenCode wakes that session if it is idle. From a spawned
- * session to the one that started it, it is its report or its progress (`noteReport`), noted unless not delivered.
+ * session to the one that started it, it is its report or its progress (`noteReport`), noted unless not
+ * delivered; a report of a group's member with a final status is held with the group instead (`hold`).
  */
 export async function send(ports: CourierPorts, from: string, input: SendInput): Promise<Sent> {
   // Some models send null for an optional field they leave out.
@@ -170,6 +190,10 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
   if (status !== undefined && !isStatus(status)) throw new Error(`status must be one of ${STATUSES.join(", ")}, not ${JSON.stringify(status)}.`)
   // Noted first: the delivery may wake the parent, whose turn may end before a later note.
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
+  if (noted?.member && status) {
+    const held = await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) })
+    if (held) return { status, report: true, held }
+  }
   try {
     const delivered = await ports.session.synthetic({
       sessionID: input.sessionID,
@@ -187,7 +211,8 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
 
 /**
  * Notes `from`'s message to `to` when `to` started it: as its report when it carries a status, or when an
- * earlier release briefed `from`, else as progress. Returns which, and how to take the note back.
+ * earlier release briefed `from`, else as progress. Returns which, when, how to take the note back, and
+ * `from`'s membership of an open group of `to`'s, if it is in one.
  */
 async function noteReport(ports: CourierPorts, from: string, to: string, status: Status | undefined) {
   const entry = await indexedEntry(ports.storage, from)
@@ -203,7 +228,30 @@ async function noteReport(ports: CourierPorts, from: string, to: string, status:
     if (now?.at !== at || (report && now.by !== "report")) return
     await (before === undefined ? ports.storage.remove(key) : ports.storage.set(key, before))
   }
-  return { report, undo }
+  // A report with a final status may be held with the sender's group; a blocked one reaches the parent at once.
+  const held = status !== undefined && status !== "blocked"
+  return { report, at, undo, member: held ? await membershipOf(ports, entry).catch(() => undefined) : undefined }
+}
+
+/** A child's membership of an open group of its parent's: its roster entry names the group, and the group lists it. */
+async function membershipOf(ports: CourierPorts, entry: RosterEntry): Promise<Membership | undefined> {
+  if (!entry.group) return undefined
+  const member = await memberOf(ports.storage, entry.parentID, entry.group, entry.sessionID)
+  return member && { ...member, parentID: entry.parentID, group: entry.group, sessionID: entry.sessionID }
+}
+
+/**
+ * Holds a member's report with its group, and has the scheduler deliver the group if that completes it.
+ * Undefined when it could not be held, so the report is delivered on its own rather than lost.
+ */
+async function hold(ports: CourierPorts, member: Membership, report: Parameters<typeof holdReport>[2]) {
+  try {
+    const { reported, members, complete } = await holdReport(ports.storage, member, report)
+    if (complete) ports.nudge()
+    return { group: member.group, reported, members }
+  } catch {
+    return undefined
+  }
 }
 
 /** A one-off look at a session, for check-ins; not meant to be called in a loop. */
@@ -234,12 +282,18 @@ export function lastReply(messages: Awaited<ReturnType<Context["session"]["conte
     : undefined
 }
 
-/** The sessions a parent started, each with what courier_status reports, or the error it gave. */
+/**
+ * The sessions a parent started, each with what courier_status reports, or the error it gave; a child
+ * started in a group with the group's name and its standing there: `held`, `out`, `failed`, `deleted` or `released`.
+ */
 export async function listChildren(ports: CourierPorts, parentID: string) {
   const entries = await current(ports.storage, parentID, ports.now())
   return Promise.all(
     entries.map(async (entry) => {
-      const roster = { directory: entry.directory, isolated: entry.isolated, created: entry.createdAt }
+      const group = entry.group
+        ? { group: { name: entry.group, report: standingOf(await memberOf(ports.storage, parentID, entry.group, entry.sessionID).catch(() => undefined)) } }
+        : {}
+      const roster = { directory: entry.directory, isolated: entry.isolated, created: entry.createdAt, ...group }
       try {
         return { ...(await status(ports, { sessionID: entry.sessionID })), ...roster }
       } catch (error) {

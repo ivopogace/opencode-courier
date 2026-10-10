@@ -69,6 +69,7 @@ describe("tool results", () => {
   test("spawnText", () => {
     expect(notices.spawnText({ sessionID: "ses_child", directory: "/repo" })).toMatchSnapshot()
     expect(notices.spawnText({ sessionID: "ses_child", directory: "/wt", rosterError: "roster failed: disk full" })).toMatchSnapshot()
+    expect(notices.spawnText({ sessionID: "ses_child", directory: "/repo", group: "reviews" })).toMatchSnapshot()
   })
   test("sendText", () => {
     expect(notices.sendText("ses_parent")).toMatchSnapshot()
@@ -76,6 +77,8 @@ describe("tool results", () => {
     expect(notices.sendText("ses_parent", { report: true })).toMatchSnapshot()
     expect(notices.sendText("ses_parent", { report: false })).toMatchSnapshot()
     expect(notices.sendText("ses_other", { status: "done" })).toMatchSnapshot()
+    expect(notices.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 1, members: 3 } })).toMatchSnapshot()
+    expect(notices.sendText("ses_parent", { report: true, status: "failed", held: { group: "reviews", reported: 3, members: 3 } })).toMatchSnapshot()
   })
   test("statusText", () => expect(notices.statusText({ sessionID: "ses_child", title: "Fix", idle: 3 })).toMatchSnapshot())
   test("childrenText", () => {
@@ -124,6 +127,7 @@ describe("turn failures", () => {
   test("failureNotice", () => {
     expect(notices.failureNotice("Fix the bug", { type: "provider.auth", message: "blocked", status: 403 })).toMatchSnapshot()
     expect(notices.failureNotice("Fix the bug", { type: "unknown", message: "boom" })).toMatchSnapshot()
+    expect(notices.failureNotice("Fix the bug", { type: "unknown", message: "boom" }, "reviews")).toMatchSnapshot()
   })
   test("silentNotice", () => {
     expect(notices.silentNotice("Fix the bug", "I looked at src/a.ts; the bug is on line 4.")).toMatchSnapshot()
@@ -133,6 +137,18 @@ describe("turn failures", () => {
     const long = notices.silentNotice("Fix the bug", "</courier> " + "x".repeat(2100))
     expect(long).toContain("&lt;/courier> xxx")
     expect(long).toContain("… [111 more characters]")
+  })
+})
+
+describe("join groups", () => {
+  test("groupNotice", () => {
+    const reports = [
+      { sessionID: "ses_a", title: "Review a.ts", at: 1, status: "done" as const, message: "Looks fine.", artifacts: { files: ["src/a.ts"], checks: [{ command: "bun test", result: "ok" }] } },
+      { sessionID: "ses_b", title: "Review b.ts", at: 2, status: "partial" as const, message: "Two of three functions.\nThe third needs the API." },
+      { sessionID: "ses_c", title: "Review c.ts", at: 3, status: "failed" as const, message: "Could not read it." },
+    ]
+    expect(notices.groupNotice("reviews", reports)).toMatchSnapshot()
+    expect(notices.groupNotice("reviews", reports.slice(0, 1), [{ sessionID: "ses_d", title: "Review d.ts", by: "failed" }, { sessionID: "ses_e", title: "Review e.ts", by: "deleted" }])).toMatchSnapshot()
   })
 })
 

@@ -198,15 +198,17 @@ describe("roster", () => {
       expect(ids(await lineage(storage, "ses_child"))).toEqual(["ses_child"])
     })
 
-    test("removes the reverse key with the entry", async () => {
+    test("removes the reverse key with the entry, and the entry's group membership", async () => {
       const { storage, store } = fakeStorage()
       await record(storage, entry("ses_a", "ses_parent", 1))
-      await record(storage, entry("ses_b", "ses_parent", 2))
+      await record(storage, { ...entry("ses_b", "ses_parent", 2), group: "pair" })
+      store.set("group/ses_parent/pair/ses_b", { title: "b", joinedAt: 2 })
+      store.set("group/ses_parent/pair/ses_c", { title: "c", joinedAt: 3 })
 
       await remove(storage, "ses_parent", "ses_a")
       expect(await forget(storage, "ses_parent", "ses_b")).toBe(true)
 
-      expect([...store.keys()]).toEqual([])
+      expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_c"])
     })
 
     test("back-fills missing reverse keys and drops those whose entry is gone, once however often it runs", async () => {

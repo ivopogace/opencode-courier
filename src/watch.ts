@@ -1,5 +1,6 @@
 import { addBounded, setBounded } from "./bounded.js"
 import { lastReply } from "./courier.js"
+import { dropGroups, groupsOf, leaveGroup } from "./group.js"
 import type { Hub, Member, WatchPorts, WatchState } from "./hub.js"
 import {
   envelope,
@@ -63,16 +64,18 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   if (!claim(seen, event.id)) return []
   const { sessionID, error } = event.data
   const entries = await entriesOf(ports.storage, sessionID)
-  // Not in the way of the notice: kept only so the limits stop counting the child.
+  const at = event.created ?? ports.now()
+  // Not in the way of the notice: kept only so the limits stop counting the child, and its group does not wait for it.
   if (entries.length)
-    await settled(ports.storage, sessionID, "failed", event.created ?? ports.now()).catch((error: unknown) =>
+    await settled(ports.storage, sessionID, "failed", at).catch((error: unknown) =>
       ports.log(`courier watch: could not note the failed turn of ${sessionID}: ${String(error)}`),
     )
+  await Promise.all(entries.map((entry) => leave(ports, entry, "failed", at)))
   await Promise.all(
     entries.map((entry) =>
       ports.session.synthetic({
         sessionID: entry.parentID,
-        text: envelope(sessionID, failureNotice(entry.title, error), { failed: error.type }),
+        text: envelope(sessionID, failureNotice(entry.title, error, entry.group), { failed: error.type }),
         description: `Session ${sessionID} failed`,
         metadata: { source: "courier", from: sessionID, failed: true },
         delivery: "steer",
@@ -80,6 +83,17 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
     ),
   )
   return entries.map((entry) => entry.parentID)
+}
+
+/** Takes a child out of its group without a report, and has the scheduler deliver the group if that completes it. */
+async function leave(ports: WatchPorts, entry: RosterEntry, by: "failed" | "deleted", at: number) {
+  if (!entry.group) return
+  try {
+    const left = await leaveGroup(ports.storage, entry.parentID, entry.group, entry.sessionID, by, at)
+    if (left?.complete) ports.nudge()
+  } catch (error) {
+    ports.log(`courier watch: could not take ${entry.sessionID} out of group ${entry.group}: ${String(error)}`)
+  }
 }
 
 /** OpenCode's `session.inbox.enqueued`: the item's type, which its `session.inbox.delivered` does not carry. */
@@ -126,23 +140,29 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
 
 /**
  * Drops the report state of a session OpenCode deleted, and of the sessions it started, whose reports
- * can no longer be delivered: neither will report. Returns the sessions forgotten.
+ * can no longer be delivered: neither will report. Its groups go too, and it leaves its own group, which
+ * no longer waits for it. Returns the sessions forgotten.
  */
 export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const { sessionID } = event.data
-  const [parentID, started] = await Promise.all([indexedParent(ports.storage, sessionID), children(ports.storage, sessionID)])
-  const forgotten = [...(parentID === undefined ? [] : [sessionID]), ...started.map((entry) => entry.sessionID)]
-  await Promise.all(forgotten.map((id) => forgetReport(ports.storage, id)))
+  const [entry, started] = await Promise.all([indexedEntry(ports.storage, sessionID), children(ports.storage, sessionID)])
+  const forgotten = [...(entry === undefined ? [] : [sessionID]), ...started.map((child) => child.sessionID)]
+  await Promise.all([
+    ...forgotten.map((id) => forgetReport(ports.storage, id)),
+    entry ? leave(ports, entry, "deleted", event.created ?? ports.now()) : undefined,
+    started.length ? dropGroups(ports.storage, sessionID) : undefined,
+  ])
   return forgotten
 }
 
 /**
- * Whether a session prompted at `prompt` waits: on an untold report of a session it started, a request
- * of its own, a scheduled message, or a webhook it subscribed to since. Cheapest first.
+ * Whether a session prompted at `prompt` waits: on an untold report of a session it started, an open
+ * group of its, a request of its own, a scheduled message, or a webhook it subscribed to since. Cheapest first.
  */
 async function waits(ports: WatchPorts, sessionID: string, prompt: number) {
   const started = await children(ports.storage, sessionID)
   if ((await Promise.all(started.map((entry) => awaited(ports.storage, entry.sessionID)))).includes(true)) return true
+  if ((await groupsOf(ports.storage, sessionID)).size) return true
   if ((await listEverywhere([...ports.permissions()], sessionID)).some((found) => found.requests.length)) return true
   if ((await pendingQuestions(ports.storage, sessionID)).length) return true
   const [scheduled, subscribed] = await Promise.all([scheduledFor(ports.storage, sessionID), subscriptions(ports)])

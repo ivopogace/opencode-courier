@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import { randomInt } from "node:crypto"
 import type { Server } from "node:http"
 import { hostname } from "node:os"
+import { deliverReleased } from "./group.js"
 import { num, obj, str } from "./json.js"
 import { deliverDue, TICK_MS, type LaterPorts } from "./later.js"
 import type { SpawnGate } from "./limits.js"
@@ -77,6 +78,8 @@ export interface WatchPorts {
   /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
   readonly now: () => number
   readonly log: (message: string) => void
+  /** Has the scheduler deliver what is due now rather than at its next tick: a group a failure or deletion has completed. */
+  readonly nudge: () => void
 }
 
 /**
@@ -309,6 +312,11 @@ export interface Opened {
   readonly gate: SpawnGate
   /** `WatchState.inbox`, under a fixed key of its own like the gate, so every hub version shares it. */
   readonly inbox: Map<string, string>
+  /**
+   * Runs a tick now, or once the tick under way has ended, so what has just fallen due (a released
+   * group) is delivered at once rather than at the next tick; nothing while no instance is loaded.
+   */
+  readonly nudge: () => void
 }
 
 /**
@@ -407,11 +415,15 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     return hub.members.has(running.member)
   }
 
+  // Whether a nudge came since the tick under way started scanning, so it ticks once more when done.
+  let nudged = false
+
   // One tick, through the first loaded member, by the server holding the owner key. The claim on each
   // delivery stays, as a second line of defence against a pre-hub copy running its own interval.
   const tick = async () => {
     const scheduler = hub.scheduler
     if (underWay()) return
+    nudged = false
     const owner = hub.members.values().next().value
     if (!owner) return
     let since: number
@@ -433,8 +445,10 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
       } catch {}
     }
     try {
-      if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner))
+      if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner)) {
         await deliverDue(owner.later, hub.claimed)
+        await deliverReleased(owner.later, hub.claimed)
+      }
     } catch (error) {
       tell(`courier_later scheduler: ${String(error)}`)
     } finally {
@@ -448,6 +462,13 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     if (scheduler.timer === undefined)
       await release(owner.later).catch((error: unknown) => tell(`courier_later scheduler: owner key not released: ${String(error)}`))
     end()
+    if (nudged && scheduler.timer !== undefined) void tick()
+  }
+
+  const nudge = () => {
+    if (hub.scheduler.timer === undefined) return
+    nudged = true
+    void tick()
   }
 
   // Subscriptions through the earliest members without one, the longest loaded, until there are
@@ -523,6 +544,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     track,
     gate: shared<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() })),
     inbox: shared("inbox", () => new Map<string, string>()),
+    nudge,
   }
 }
 
@@ -542,6 +564,9 @@ export const gate = opened.gate
 
 /** The types of the items enqueued for spawned sessions; see `Opened.inbox`. */
 export const inbox = opened.inbox
+
+/** Has this copy's scheduler deliver what is due now; see `Opened.nudge`. */
+export const nudge = opened.nudge
 
 /** The member of this copy's hub set up with `location` that joined last, while it is loaded. */
 export function memberAt(location: object) {

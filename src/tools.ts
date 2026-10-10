@@ -33,6 +33,15 @@ export const SpawnInput = Schema.Struct({
   isolate: Schema.optional(
     Schema.Boolean.annotate({ description: "Run the session in its own git worktree so parallel sessions don't share files." }),
   ),
+  group: Schema.optional(
+    Schema.String.annotate({
+      description:
+        "A join group: start the sessions of one batch with the same name, and their reports are held and delivered " +
+        "to you in one message once every one of them has reported, instead of one turn per report. A blocked report, " +
+        "a question, a permission request or a failure still reaches you at once. Letters, digits, dots, dashes and " +
+        "underscores, up to 60; the name is free again once the group has been delivered.",
+    }),
+  ),
 })
 
 export const SendInput = Schema.Struct({
@@ -186,10 +195,11 @@ export function addTools(tools: ToolEditor, ports: ToolPorts) {
     description:
       "Start a new OpenCode session on a task and return immediately. It runs on your model. The session reports " +
       "back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report " +
-      "instead, it waits for a permission or it asks a question. DO NOT poll it or call courier_status in a loop: once " +
-      "you have started the sessions you need, end your turn by replying without calling more tools; each report " +
-      "starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it " +
-      "never reports, and courier_cancel it when it does.",
+      "instead, it waits for a permission or it asks a question. Give a batch of parallel sessions one group name to " +
+      "be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_status in a " +
+      "loop: once you have started the sessions you need, end your turn by replying without calling more tools; each " +
+      "report, or each group's reports, starts a new turn in which you carry on. For long tasks, also courier_later a " +
+      "check-in for yourself in case it never reports, and courier_cancel it when it does.",
     input: SpawnInput,
     execute: async (input, context) => {
       const child = await spawn(ports.courier, context.sessionID, input).catch(rethrow("courier_spawn"))
@@ -204,7 +214,9 @@ export function addTools(tools: ToolEditor, ports: ToolPorts) {
       "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. " +
       "Use it to report back to the session that started you, with a status (done, partial, blocked or failed) and " +
       "the artifacts you produced, or to steer a session you started. The status is carried as an attribute of the " +
-      "message; without one, a message to the session that started you is progress, not your report.",
+      "message; without one, a message to the session that started you is progress, not your report. If you were " +
+      "started in a group, a report with status done, partial or failed is held and delivered with the group's other " +
+      "reports; the result says so, and nothing more is needed from you.",
     input: SendInput,
     execute: async (input, context) => {
       const delivered = await send(ports.courier, context.sessionID, input).catch(rethrow("courier_send"))
@@ -229,7 +241,8 @@ export function addTools(tools: ToolEditor, ports: ToolPorts) {
     name: "courier_children",
     options: { codemode: false },
     description:
-      "List the sessions this one started with courier_spawn, with each one's state and last reply, e.g. after a " +
+      "List the sessions this one started with courier_spawn, with each one's state and last reply, and for one " +
+      "started in a group, its group and whether its report is held, still out, or released, e.g. after a " +
       "compaction or restart. Like courier_status, for a one-off look, not for waiting.",
     input: ChildrenInput,
     execute: async (input, context) => {

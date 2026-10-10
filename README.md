@@ -404,8 +404,9 @@ gets a scenario there.
 The smoke test (`e2e/real-model.sh`) runs the same server with a real model (by default a free one
 on [OpenCode Zen](https://opencode.ai/zen), no key needed) and checks that the parent spawns instead
 of doing the work, ends its turn instead of polling, and is woken by each report;
-`COURIER_SCENARIO=permission` and `COURIER_SCENARIO=question` exercise the two relays. Which models
-pass and what was tuned for them: [docs/real-model.md](docs/real-model.md).
+`COURIER_SCENARIO=permission` and `COURIER_SCENARIO=question` exercise the two relays, and
+`COURIER_SCENARIO=recursive` the [recursive orchestration](#recursive-orchestration) above. Which
+models pass and what was tuned for them: [docs/real-model.md](docs/real-model.md).
 
 CI runs both suites on every push to `main` and every pull request, with the OpenCode CLI at the
 pinned version, and the live suite once more on the newest OpenCode release, where a failure warns

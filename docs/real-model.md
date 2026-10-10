@@ -26,8 +26,10 @@ the prompt here is trivial on purpose.
 | `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `longcat-2.5-preview-free` | The model, as OpenCode names it. |
 | `COURIER_BASE_URL` | Zen's endpoint for `opencode` | Declares the provider in `opencode.json` as an OpenAI-compatible endpoint with this URL. Set it empty to use OpenCode's catalog instead, with the provider's usual key variable, such as `ANTHROPIC_API_KEY`. |
 | `COURIER_API_KEY_ENV` | | For a declared provider, the name of the variable holding its key. The config refers to it as `{env:NAME}`, so the key is never written to a file. |
-| `COURIER_SCENARIO` | | `permission` or `question` for the two relay scenarios below; the fan-out by default. |
+| `COURIER_SCENARIO` | | `permission` or `question` for the two relay scenarios below, `recursive` for [recursive orchestration](#recursive-orchestration); the fan-out by default. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | see below | The parent's prompt, and the values the reports and the final reply must hold. |
+| `COURIER_FILES` | see below | With `recursive`: the files, relative to the project, that must hold those values, in the same order. |
+| `COURIER_MAX_DEPTH` | `3` | With `recursive`: the `maxDepth` the checker holds the tree to. |
 | `COURIER_PERSON` | | `other-server`, with `COURIER_SCENARIO=permission`: the person answers the parent through a second server on the same data directory (see below). |
 | `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, and then for the children. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |

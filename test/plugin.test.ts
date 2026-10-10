@@ -224,6 +224,7 @@ test("tool inputs decode with their schemas", async () => {
 
   const decode = (name: string, value: unknown) => Schema.decodeUnknownSync(tools.get(name).input)(value)
   expect(decode("courier_spawn", { task: "t", isolate: true })).toEqual({ task: "t", isolate: true })
+  expect(decode("courier_spawn", { task: "t", group: "reviews" })).toEqual({ task: "t", group: "reviews" })
   expect(decode("courier_send", { sessionID: "s", message: "m" })).toEqual({ sessionID: "s", message: "m" })
   expect(() => decode("courier_send", { sessionID: "s" })).toThrow()
   const report = { sessionID: "s", message: "m", status: "done", artifacts: { branch: "b", commits: ["c"], files: ["f"], checks: [{ command: "bun test", result: "ok" }] } }

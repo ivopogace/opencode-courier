@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs"
+import { dropMember } from "./group.js"
 import { forgetReport } from "./report.js"
 import { scanAll, scanEntries, type Storage } from "./storage.js"
 
@@ -31,6 +32,8 @@ export interface RosterEntry {
   readonly base?: string
   /** `"status"` when its brief asked for a report with a status; absent for a child an earlier release briefed. */
   readonly reports?: "status"
+  /** The join group courier_spawn put it in, whose release holds its report; absent for a child in none. */
+  readonly group?: string
 }
 
 /**
@@ -72,21 +75,24 @@ function isReverse(value: unknown): value is ReverseEntry {
 }
 
 /**
- * Removes a child's roster entry, its reverse key and its report state. Only the entry's removal can
- * fail it: a reverse key left behind leads nowhere, and the next load drops it.
+ * Removes a child's roster entry, its reverse key, its report state and, given its group, its membership. Only
+ * the entry's removal can fail it: a reverse key left behind leads nowhere, and the next load drops it.
  */
-export async function remove(storage: RosterStorage, parentID: string, sessionID: string) {
-  await Promise.all([
+export async function remove(storage: RosterStorage, parentID: string, sessionID: string, group?: string) {
+  const [, , , dropped] = await Promise.all([
     storage.remove(rosterKey(parentID, sessionID)),
     storage.remove(reverseKey(sessionID)).catch(() => undefined),
     forgetReport(storage, sessionID).catch(() => undefined),
+    group ? dropMember(storage, parentID, group, sessionID).catch(() => false) : false,
   ])
+  return { droppedFromGroup: dropped }
 }
 
 /** Removes a child from its parent's roster; false when it was not there. */
 export async function forget(storage: RosterStorage, parentID: string, sessionID: string) {
-  if ((await storage.get(rosterKey(parentID, sessionID))) === undefined) return false
-  await remove(storage, parentID, sessionID)
+  const entry = (await storage.get(rosterKey(parentID, sessionID))) as unknown as RosterEntry | undefined
+  if (entry === undefined) return false
+  await remove(storage, parentID, sessionID, entry.group)
   return true
 }
 
@@ -116,11 +122,15 @@ export async function indexedParent(storage: RosterStorage, sessionID: string) {
   return isReverse(indexed) ? indexed.ancestors[0] : undefined
 }
 
+/** A session's roster entry under a parent, if it is there. */
+export async function entryUnder(storage: RosterStorage, parentID: string, sessionID: string) {
+  return (await storage.get(rosterKey(parentID, sessionID))) as unknown as RosterEntry | undefined
+}
+
 /** A session's roster entry, by the reverse index alone, without scanning the roster. */
 export async function indexedEntry(storage: RosterStorage, sessionID: string) {
   const parentID = await indexedParent(storage, sessionID)
-  if (parentID === undefined) return undefined
-  return (await storage.get(rosterKey(parentID, sessionID))) as unknown as RosterEntry | undefined
+  return parentID === undefined ? undefined : entryUnder(storage, parentID, sessionID)
 }
 
 /**
@@ -205,7 +215,7 @@ async function dropExpired(storage: RosterStorage, entries: RosterEntry[], now: 
   const expired = new Set(
     entries.filter((entry) => now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory))),
   )
-  await Promise.all([...expired].map((entry) => remove(storage, entry.parentID, entry.sessionID)))
+  await Promise.all([...expired].map((entry) => remove(storage, entry.parentID, entry.sessionID, entry.group)))
   return entries.filter((entry) => !expired.has(entry))
 }
 

@@ -92,6 +92,16 @@ free model, because then the run says more about the provider than the plugin; r
 The README's [Quickstart](../README.md#quickstart) prompt is a shorter wording of the same task;
 run it here with `COURIER_PROMPT` set to it and the default `COURIER_EXPECT`.
 
+A [join group](reference.md#join-groups) is checked the same way: add to the prompt "Start them
+with courier_spawn, both in one join group named "pair", so that you are woken once with both
+reports". The checker takes the group's one message as the report of each member it lists, reads
+each report's status from its own line, and notes that the parent used a group. With the default
+model the parent then has two turns: the spawns, and one opened by the group's message, in which it
+replies `RESULTS 391 1024`. Left to itself, with the prompt above, that model at first reported
+plainly, one turn per report; with the `group` description that says a group's reports come once
+the parent's turn has ended, it started its two helpers in a group it named itself (`helpers`,
+`math-helpers`) in each of three runs, and was likewise woken once, by the group. Both runs pass, 8/8, at OpenCode 2.0.26.
+
 ## The permission relay
 
 `COURIER_SCENARIO=permission` checks a child that needs an approval. The project config adds a

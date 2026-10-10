@@ -67,7 +67,7 @@ exports[`tools are the ten courier tools, each a direct tool 1`] = `
 
 exports[`tools courier_spawn 1`] = `
 {
-  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, it waits for a permission or it asks a question. DO NOT poll it or call courier_status in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
+  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, it waits for a permission or it asks a question. Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_status in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -75,6 +75,17 @@ exports[`tools courier_spawn 1`] = `
         "anyOf": [
           {
             "description": "Agent to run the session with; defaults to the default agent.",
+            "type": "string",
+          },
+          {
+            "type": "null",
+          },
+        ],
+      },
+      "group": {
+        "anyOf": [
+          {
+            "description": "A join group: start the sessions of one batch with the same name, and their reports are held and delivered to you in one message once every one of them has reported and your turn has ended, instead of one turn per report. A blocked report, a question, a permission request or a failed turn still reaches you at once. Letters, digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
             "type": "string",
           },
           {
@@ -119,7 +130,7 @@ exports[`tools courier_spawn 1`] = `
 
 exports[`tools courier_send 1`] = `
 {
-  "description": "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. Use it to report back to the session that started you, with a status (done, partial, blocked or failed) and the artifacts you produced, or to steer a session you started. The status is carried as an attribute of the message; without one, a message to the session that started you is progress, not your report.",
+  "description": "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. Use it to report back to the session that started you, with a status (done, partial, blocked or failed) and the artifacts you produced, or to steer a session you started. The status is carried as an attribute of the message; without one, a message to the session that started you is progress, not your report. If you were started in a group, a report with status done, partial or failed is held and delivered with the group's other reports; the result says so, and nothing more is needed from you.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -272,7 +283,7 @@ exports[`tools courier_status 1`] = `
 
 exports[`tools courier_children 1`] = `
 {
-  "description": "List the sessions this one started with courier_spawn, with each one's state and last reply, e.g. after a compaction or restart. Like courier_status, for a one-off look, not for waiting.",
+  "description": "List the sessions this one started with courier_spawn, with each one's state and last reply, and for one started in a group, its group and whether its report is held, still out, or released, e.g. after a compaction or restart. Like courier_status, for a one-off look, not for waiting.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -644,6 +655,10 @@ exports[`tool results spawnText 1`] = `"Started session ses_child in /repo. It w
 
 exports[`tool results spawnText 2`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is not on your courier_children list: roster failed: disk full"`;
 
+exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a question or a failed turn still reaches you at once. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
+
+exports[`tool results spawnText 4`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is in no group, so its report comes on its own: group failed: disk full"`;
+
 exports[`tool results sendText 1`] = `"Delivered to ses_parent."`;
 
 exports[`tool results sendText 2`] = `"Delivered to ses_parent as your report, status done. If nothing else is left to do now, end your turn by replying without calling more tools."`;
@@ -653,6 +668,12 @@ exports[`tool results sendText 3`] = `"Delivered to ses_parent as your report. I
 exports[`tool results sendText 4`] = `"Delivered to ses_parent. Without a status it is progress, not your report: when you finish, send one with status done, partial, blocked or failed."`;
 
 exports[`tool results sendText 5`] = `"Delivered to ses_other."`;
+
+exports[`tool results sendText 6`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported (1 of 3 have). Nothing more is needed from you for it. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+
+exports[`tool results sendText 7`] = `"Recorded as your report, status failed. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once ses_parent's turn has ended, yours being the last. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+
+exports[`tool results sendText 8`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported. Nothing more is needed from you for it. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`tool results statusText 1`] = `
 "{
@@ -721,6 +742,13 @@ Its turn ended without finishing, so it will not report back on its own.
 Message it with courier_send to have it try again, start a replacement, or carry on without it."
 `;
 
+exports[`turn failures failureNotice 3`] = `
+"This session, "Fix the bug", which you started with courier_spawn, failed: boom (unknown).
+Its turn ended without finishing, so it will not report back on its own.
+Message it with courier_send to have it try again, start a replacement, or carry on without it.
+It is a member of group "reviews", which no longer waits for it: its other members' reports reach you once they have reported and your turn has ended, and if it reports after all before then, its report joins them."
+`;
+
 exports[`turn failures silentNotice 1`] = `
 "This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
 Its last reply:
@@ -754,6 +782,53 @@ Halfway there.
 
 Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
 Until it reports, it counts toward your limits on the sessions you run at once."
+`;
+
+exports[`turn failures silentNotice 5`] = `
+"This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
+Its last reply:
+Done, I think.
+
+Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
+Until it reports, it counts toward your limits on the sessions you run at once.
+It is a member of group "reviews", whose other reports are held until it reports: have it report, as above, so the group reaches you."
+`;
+
+exports[`join groups groupNotice 1`] = `
+"Group "reviews" is complete: 3 reports of 3 members (1 done, 1 partial, 1 failed). Each report follows, with its status.
+
+[1/3] ses_a "Review a.ts": done
+Looks fine.
+
+Artifacts:
+- files: src/a.ts
+- checks:
+  - bun test: ok
+
+[2/3] ses_b "Review b.ts": partial
+Two of three functions.
+The third needs the API.
+
+[3/3] ses_c "Review c.ts": failed
+Could not read it.
+
+Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
+`;
+
+exports[`join groups groupNotice 2`] = `
+"Group "reviews" is complete: 1 report of 4 members (1 done), 3 members without a report, named at the end. Each report follows, with its status.
+
+[1/1] ses_a "Review a.ts": done
+Looks fine.
+
+Artifacts:
+- files: src/a.ts
+- checks:
+  - bun test: ok
+
+Without a report: ses_d "Review d.ts" (its turn failed), ses_e "Review e.ts" (it was deleted), ses_f "Review f.ts" (its turn was interrupted).
+
+Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
 `;
 
 exports[`permission requests REJECTED 1`] = `"Refused by the session that started you. Do without it, or report back why you cannot."`;

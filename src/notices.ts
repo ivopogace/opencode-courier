@@ -144,25 +144,58 @@ export function reportBody(message: string, artifacts: Artifacts | undefined) {
 
 // Tool results.
 
-export function spawnText(child: { readonly sessionID: string; readonly directory: string; readonly rosterError?: string }) {
-  const warning = child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : ""
+export function spawnText(child: {
+  readonly sessionID: string
+  readonly directory: string
+  readonly group?: string
+  readonly rosterError?: string
+  readonly groupError?: string
+}) {
+  const warning =
+    (child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : "") +
+    (child.groupError ? ` It is in no group, so its report comes on its own: ${child.groupError}` : "")
+  const reports = child.group
+    ? `Its report is held with group "${child.group}": once every session you started in that group has reported and your ` +
+      "turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a question " +
+      "or a failed turn still reaches you at once."
+    : "It will report back with courier_send, which starts a new turn for you."
   return (
-    `Started session ${child.sessionID} in ${child.directory}. It will report back with courier_send, which ` +
-    "starts a new turn for you. Once you have started every session you need, end your turn: reply without " +
-    `calling more tools. That does not drop the task; you carry on with it when the reports arrive.${warning}`
+    `Started session ${child.sessionID} in ${child.directory}. ${reports} Once you have started every session you need, ` +
+    `end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive.${warning}`
   )
 }
 
-/** What courier_send did; `report` says whether the message was noted as the sender's report to the session that started it. */
+/** A report held with its group: which group, and how many of its members have reported so far, when that could be read. */
+export interface Held {
+  readonly group: string
+  readonly reported?: number
+  readonly members?: number
+}
+
+/**
+ * What courier_send did; `report` says whether the message was noted as the sender's report to the session
+ * that started it, and `held` that it was held with the sender's group rather than delivered, with no `messageID`.
+ */
 export interface Sent {
-  readonly messageID: string
+  readonly messageID?: string
   readonly status?: Status
   readonly report?: boolean
+  readonly held?: Held
 }
 
 /** courier_send's result: for a message to the session that started the sender, whether it was its report. */
-export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"> = {}) {
+export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report" | "held"> = {}) {
   const status = sent.status ? `, status ${sent.status}` : ""
+  if (sent.held) {
+    const { group, reported, members } = sent.held
+    const counted = reported !== undefined && members !== undefined
+    let when = `once ${sessionID}'s turn has ended, yours being the last.`
+    if (!counted || reported < members) {
+      const have = counted ? ` (${reported} of ${members} have)` : ""
+      when = `once every member of the group has reported${have}. Nothing more is needed from you for it.`
+    }
+    return `Recorded as your report${status}. It is held with group "${group}" and goes to ${sessionID} in one message with the group's other reports, ${when} ${END_TURN}`
+  }
   if (sent.report === true) return `Delivered to ${sessionID} as your report${status}. ${END_TURN}`
   if (sent.report === false)
     return `Delivered to ${sessionID}. Without a status it is progress, not your report: when you finish, send one with status ${STATUS_LIST}.`
@@ -297,12 +330,18 @@ export interface ExecutionError {
   readonly status?: number
 }
 
-export function failureNotice(title: string, error: ExecutionError) {
+export function failureNotice(title: string, error: ExecutionError, group?: string) {
   const status = error.status === undefined ? "" : `, status ${error.status}`
   return [
     `This session, "${title}", which you started with courier_spawn, failed: ${error.message} (${error.type}${status}).`,
     "Its turn ended without finishing, so it will not report back on its own.",
     "Message it with courier_send to have it try again, start a replacement, or carry on without it.",
+    ...(group
+      ? [
+          `It is a member of group "${group}", which no longer waits for it: its other members' reports reach you once they have ` +
+            "reported and your turn has ended, and if it reports after all before then, its report joins them.",
+        ]
+      : []),
   ].join("\n")
 }
 
@@ -313,7 +352,7 @@ const MAX_REPLY = 2000
  * What the parent is told when a session it started ends its turn without a report to it;
  * `progressed` when it messaged the parent without a status since its last prompt.
  */
-export function silentNotice(title: string, lastText: string | undefined, progressed = false) {
+export function silentNotice(title: string, lastText: string | undefined, progressed = false, group?: string) {
   const reply = lastText?.trim()
   return [
     `This session, "${title}", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.`,
@@ -324,6 +363,59 @@ export function silentNotice(title: string, lastText: string | undefined, progre
     "",
     "Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.",
     "Until it reports, it counts toward your limits on the sessions you run at once.",
+    ...(group
+      ? [`It is a member of group "${group}", whose other reports are held until it reports: have it report, as above, so the group reaches you.`]
+      : []),
+  ].join("\n")
+}
+
+// Join groups.
+
+/** A report held with its group: its status, text and artifacts, as courier_send was given them, and when. */
+export interface HeldReport {
+  readonly at: number
+  readonly status: Status
+  readonly message: string
+  readonly artifacts?: Artifacts
+}
+
+/** A member of a group that left it without a report, and why: its turn failed or was interrupted, or it was deleted. */
+export interface LeftMember {
+  readonly sessionID: string
+  readonly title: string
+  readonly by: "failed" | "interrupted" | "deleted"
+}
+
+/** How a release names each status among its reports: `2 done, 1 failed`. */
+function statusCounts(reports: ReadonlyArray<Pick<HeldReport, "status">>) {
+  return STATUSES.flatMap((status) => {
+    const n = reports.filter((report) => report.status === status).length
+    return n ? [`${n} ${status}`] : []
+  }).join(", ")
+}
+
+const LEFT_HOW = { failed: "its turn failed", interrupted: "its turn was interrupted", deleted: "it was deleted" }
+
+/**
+ * What the parent gets when a group it named is released: every report, with its status, text and artifacts in
+ * `reportBody`'s layout, and the members that left without one, in the order they joined.
+ */
+export function groupNotice(group: string, reports: ReadonlyArray<HeldReport & { readonly sessionID: string; readonly title: string }>, left: ReadonlyArray<LeftMember> = []) {
+  const total = reports.length + left.length
+  const listed = reports.flatMap((report, index) => [
+    "",
+    `[${index + 1}/${reports.length}] ${report.sessionID} "${report.title}": ${report.status}`,
+    reportBody(report.message, report.artifacts),
+  ])
+  const named = left.map((member) => `${member.sessionID} "${member.title}" (${LEFT_HOW[member.by]})`).join(", ")
+  const without = left.length ? ["", `Without a report: ${named}.`] : []
+  const missing = left.length ? `, ${count(left.length, "member")} without a report, named at the end` : ""
+  return [
+    `Group "${group}" is complete: ${count(reports.length, "report")} of ${count(total, "member")} (${statusCounts(reports)})${missing}. Each report follows, with its status.`,
+    ...listed,
+    ...without,
+    "",
+    "Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do.",
   ].join("\n")
 }
 

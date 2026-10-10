@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
 import type { CourierPorts } from "./courier.js"
 import { headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
-import { gate, hub, inbox, join, permissions, portsAt, track, type Member, type Receiver } from "./hub.js"
+import { gate, hub, inbox, join, nudge, permissions, portsAt, track, type Member, type Receiver } from "./hub.js"
 import type { LaterPorts } from "./later.js"
 import { readLimits, shapeContext } from "./limits.js"
 import { pendingOf, type AnswerPorts } from "./relay.js"
@@ -111,6 +111,8 @@ export const courier = () => Plugin.define({
       limits,
       gate,
       roles,
+      nudge,
+      log,
       session: ctx.session,
       agent: ctx.agent,
       worktree: ctx.worktree,
@@ -170,6 +172,7 @@ export const courier = () => Plugin.define({
       permissions,
       now: questionPorts.now,
       log: later.log,
+      nudge,
     }
     // The hub's subscriptions to OpenCode's events, one and a standby, start with this copy's watcher.
     watchFromHub(hub, watchState)

@@ -198,10 +198,10 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
 
 | Tool | Does |
 |---|---|
-| `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`) on the parent's model, sends it the task plus a brief naming the parent, how to report back and when to split the task further, and returns at once. Refused past the [session tree limits](#session-trees). |
-| `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. From a child to its parent, a `status` (`done`, `partial`, `blocked` or `failed`) makes it the child's report, carried as an attribute of the message (`<courier from="…" status="done">`), and `artifacts` (`branch`, `commits`, `files`, `checks`) are listed in its body in a fixed layout; a message without a status is progress, not the report ([reference](docs/reference.md#a-childs-report)). |
+| `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`) on the parent's model, sends it the task plus a brief naming the parent, how to report back and when to split the task further, and returns at once. With a `group` name, the reports of every session started under that name are held and delivered together, in one message ([reference](docs/reference.md#join-groups)). Refused past the [session tree limits](#session-trees). |
+| `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. From a child to its parent, a `status` (`done`, `partial`, `blocked` or `failed`) makes it the child's report, carried as an attribute of the message (`<courier from="…" status="done">`), and `artifacts` (`branch`, `commits`, `files`, `checks`) are listed in its body in a fixed layout; a message without a status is progress, not the report ([reference](docs/reference.md#a-childs-report)). From a member of a join group, a report with `done`, `partial` or `failed` is held with the group instead, and the result says so. |
 | `courier_status` | One look at a session: outcome, idle time, last reply and the permission requests and questions it waits on. For check-ins, not for waiting. |
-| `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated and when it was started. |
+| `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated, when it was started and, for one started in a group, the group and whether its report is `held`, `out` or `released`. |
 | `courier_cleanup` | Removes the git worktree of a child started with `isolate: true` and drops the child from `courier_children`. Keeps a worktree with uncommitted changes or commits on no branch, tag or remote and lists them, unless `force: true` is passed ([reference](docs/reference.md#worktree-cleanup)). |
 | `courier_answer` | Passes your answer to a permission request or a question that a session started from this one waits on: `reply` (`once`, `always` or `reject`, with an optional `message`) for a permission request, `answers` for a question. |
 | `courier_later` | Schedules a message for a session (this one by default) in `delayMinutes` or `at` an ISO time, and returns an id. When due it is delivered like `courier_send`, queued behind any running turn and waking the session if idle. |
@@ -223,6 +223,13 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
   its parent, and says what) or `failed`, as an attribute of the message, with its artifacts listed
   in the body. A message without a status is progress, so a child that sends "halfway" and then
   stops is still reported as ending without a report. [More](docs/reference.md#a-childs-report).
+- **A join group wakes you once.** Start a batch of sessions with the same `group` name, and
+  their `done`, `partial` and `failed` reports are held until the last one is in and your turn has ended, then delivered
+  in one message, marked `group="<name>"`, listing every report with its status and artifacts in
+  the order the sessions were started. A `blocked` report, progress, a failed turn, a silent end, a
+  permission request and a question reach you at once, as ever; a member whose turn fails or is
+  interrupted leaves the group, which is released without it. Held reports survive a restart, and the name is free again
+  once the group has been delivered. [More](docs/reference.md#join-groups).
 - **A child that fails** cannot report, so the plugin does: every failed turn of a spawned session
   sends its parent a message marked `failed="<error type>"`, with the error, waking it if idle.
   [More](docs/reference.md#a-child-that-fails).
@@ -245,11 +252,11 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
   for a provider, has the top session told, marked `asks="form"`, with the form's choices: only you
   can answer it, in the child's session. [More](docs/reference.md#a-child-that-shows-a-form).
 - **The plugin remembers.** Each parent's children (`courier_children`) and whether each owes a
-  report, pending `courier_later` messages and open questions survive a compaction or a restart; entries are dropped after 14 days.
+  report, held group reports, pending `courier_later` messages and open questions survive a compaction or a restart; entries are dropped after 14 days.
   [Roster](docs/reference.md#roster), [Scheduled messages](docs/reference.md#scheduled-messages).
 - **One OpenCode server per data directory, preferably.** A second server on the same one, such as
   `opencode serve` next to `opencode service`, shares the plugin's storage: one of the two delivers
-  `courier_later` messages, but a child's permission request can only be answered from the server
+  `courier_later` messages and released groups, but a child's permission request can only be answered from the server
   that runs the child. [More](docs/reference.md#two-servers-on-one-data-directory).
 - **Worktrees are yours to remove.** An isolated child's worktree is kept until `courier_cleanup`,
   which refuses to drop uncommitted changes or unbranched commits unless told to.

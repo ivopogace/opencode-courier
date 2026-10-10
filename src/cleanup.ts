@@ -25,6 +25,8 @@ export interface CleanupPorts {
   readonly projectID: string
   /** The worktree's state, or undefined when its directory no longer exists; `base` is the commit it was made from. */
   readonly inspect: (directory: string, base?: string) => Promise<WorktreeState | undefined>
+  /** Has the scheduler deliver what is due now: a group the forgotten child may have been the last member out of. */
+  readonly nudge: () => void
 }
 
 export interface CleanupInput {
@@ -45,7 +47,10 @@ export async function cleanup(ports: CleanupPorts, parentID: string, input: Clea
   if (!entry.isolated)
     throw new Error(`${input.sessionID} ran in ${entry.directory}, not in a worktree of its own; there is nothing to remove.`)
   const { directory } = entry
-  const forget = () => remove(ports.storage, parentID, input.sessionID)
+  const forget = async () => {
+    const { droppedFromGroup } = await remove(ports.storage, parentID, input.sessionID, entry.group)
+    if (droppedFromGroup) ports.nudge()
+  }
   // With force the state only decides whether there is anything left to remove, so a worktree git
   // can no longer read is still removed.
   const state = await ports

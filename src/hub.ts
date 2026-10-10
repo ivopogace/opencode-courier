@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import { randomInt } from "node:crypto"
 import type { Server } from "node:http"
 import { hostname } from "node:os"
+import { deliverReleased } from "./group.js"
 import { num, obj, str } from "./json.js"
 import { deliverDue, TICK_MS, type LaterPorts } from "./later.js"
 import type { SpawnGate } from "./limits.js"
@@ -17,7 +18,7 @@ type Context = Plugin.Context
  * The plugin's process-wide state on `globalThis`, shared by every loaded copy; only this module puts
  * it there. `HUB_VERSION`, the fixed claim keys and version skew: docs/reference.md, § Several copies.
  */
-export const HUB_VERSION = 1
+export const HUB_VERSION = 2
 
 /** The key of the hub; a copy that finds another version there keeps its own under `${HUB_KEY}@<version>`. */
 export const HUB_KEY = "opencode-courier.hub"
@@ -77,6 +78,8 @@ export interface WatchPorts {
   /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
   readonly now: () => number
   readonly log: (message: string) => void
+  /** Has the scheduler deliver what is due now rather than at its next tick: a group completed, or its parent's turn ended. */
+  readonly nudge: () => void
 }
 
 /**
@@ -192,6 +195,8 @@ export interface Scheduler {
   ticking?: Member
   /** One tick, by the copy of the plugin that joined last, so a copy loaded after an update runs its own code. */
   tick?: () => Promise<void>
+  /** Whether a nudge came since the tick under way started, whichever copy's, so it ticks once more when done. */
+  nudged?: boolean
 }
 
 /** How the hub starts and stops the scheduler's loop, and waits before re-reading the owner key; tests pass their own. */
@@ -309,6 +314,11 @@ export interface Opened {
   readonly gate: SpawnGate
   /** `WatchState.inbox`, under a fixed key of its own like the gate, so every hub version shares it. */
   readonly inbox: Map<string, string>
+  /**
+   * Runs a tick now, or once the tick under way has ended, so what has just fallen due (a released
+   * group) is delivered at once rather than at the next tick; nothing while no instance is loaded.
+   */
+  readonly nudge: () => void
 }
 
 /**
@@ -393,18 +403,23 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
   }
 
   /**
-   * Whether the tick under way still holds the next up: within a minute of its start it does, and the
-   * key is renewed for it; past that it is taken to hang, holding up only while its member is loaded.
+   * Whether the tick under way still holds the next up: within a minute of its start it does; past
+   * that it is taken to hang, holding up only while its member is loaded. `recent` says which.
    */
-  const underWay = () => {
+  const busy = () => {
     const { running, ticking } = hub.scheduler
-    if (!running) return ticking !== undefined && hub.members.has(ticking)
+    if (!running) return { busy: ticking !== undefined && hub.members.has(ticking), recent: false }
     const first = hub.members.values().next().value
-    if (first && holds(running.since, first.later.now(), OWNER_EXPIRY_MS)) {
-      void renew(first.later).catch((error: unknown) => first.log(`courier_later scheduler: ${String(error)}`))
-      return true
-    }
-    return hub.members.has(running.member)
+    if (first && holds(running.since, first.later.now(), OWNER_EXPIRY_MS)) return { busy: true, recent: true }
+    return { busy: hub.members.has(running.member), recent: false }
+  }
+
+  /** `busy`, renewing the key for a recent tick under way, as each tick falling due meanwhile does. */
+  const underWay = () => {
+    const state = busy()
+    const first = hub.members.values().next().value
+    if (state.recent && first) void renew(first.later).catch((error: unknown) => first.log(`courier_later scheduler: ${String(error)}`))
+    return state.busy
   }
 
   // One tick, through the first loaded member, by the server holding the owner key. The claim on each
@@ -412,6 +427,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
   const tick = async () => {
     const scheduler = hub.scheduler
     if (underWay()) return
+    scheduler.nudged = false
     const owner = hub.members.values().next().value
     if (!owner) return
     let since: number
@@ -433,8 +449,10 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
       } catch {}
     }
     try {
-      if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner))
+      if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner)) {
         await deliverDue(owner.later, hub.claimed)
+        await deliverReleased(owner.later, hub.claimed)
+      }
     } catch (error) {
       tell(`courier_later scheduler: ${String(error)}`)
     } finally {
@@ -448,6 +466,16 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     if (scheduler.timer === undefined)
       await release(owner.later).catch((error: unknown) => tell(`courier_later scheduler: owner key not released: ${String(error)}`))
     end()
+    if (scheduler.nudged && scheduler.timer !== undefined) void scheduler.tick?.()
+  }
+
+  // Through the hub's tick, the copy loaded last's, like the loop's; this copy's only before one joined. A
+  // tick under way runs once more when it ends, so nothing is started here meanwhile.
+  const nudge = () => {
+    const scheduler = hub.scheduler
+    if (scheduler.timer === undefined) return
+    scheduler.nudged = true
+    if (!busy().busy) void (scheduler.tick ?? tick)()
   }
 
   // Subscriptions through the earliest members without one, the longest loaded, until there are
@@ -523,6 +551,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     track,
     gate: shared<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() })),
     inbox: shared("inbox", () => new Map<string, string>()),
+    nudge,
   }
 }
 
@@ -542,6 +571,9 @@ export const gate = opened.gate
 
 /** The types of the items enqueued for spawned sessions; see `Opened.inbox`. */
 export const inbox = opened.inbox
+
+/** Has this copy's scheduler deliver what is due now; see `Opened.nudge`. */
+export const nudge = opened.nudge
 
 /** The member of this copy's hub set up with `location` that joined last, while it is loaded. */
 export function memberAt(location: object) {

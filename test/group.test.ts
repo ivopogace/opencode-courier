@@ -1,0 +1,458 @@
+import { describe, expect, test } from "bun:test"
+import { DateTime } from "effect"
+import {
+  deliverReleased,
+  dropGroups,
+  dropMember,
+  groupStanding,
+  hasCompleteGroup,
+  holdReport,
+  isGroupName,
+  joinGroup,
+  leaveGroup,
+  markLeft,
+  memberKey,
+  memberOf,
+  membershipOf,
+  standingOf,
+  unholdForBlocked,
+  type GroupPorts,
+  type Membership,
+} from "../src/group.js"
+import { envelope, groupNotice } from "../src/notices.js"
+
+function fakePorts(options: { pageSize?: number; store?: Map<string, unknown> } = {}) {
+  const store = options.store ?? new Map<string, unknown>()
+  // When the parent's last turn ended; past every join unless a test moves it.
+  const parent = { idle: 1_000 as number | undefined }
+  const delivered: any[] = []
+  const logs: string[] = []
+  const ports: GroupPorts = {
+    storage: {
+      get: async (key) => store.get(key) as any,
+      set: async (key, value) => void store.set(key, value),
+      remove: async (key) => void store.delete(key),
+      scan: async ({ prefix, after, limit }) => {
+        const keys = [...store.keys()].filter((key) => key.startsWith(prefix)).sort()
+        const start = after === undefined ? 0 : keys.indexOf(after) + 1
+        const size = limit ?? options.pageSize ?? keys.length
+        const page = keys.slice(start, start + size)
+        const entries = page.map((key) => ({ key, value: store.get(key) as any }))
+        return start + size < keys.length ? { entries, next: page.at(-1) } : { entries }
+      },
+    },
+    session: {
+      synthetic: (async (input: any) => {
+        // Yield first, like a real call, so concurrent deliveries interleave.
+        await Promise.resolve()
+        delivered.push(input)
+        return { id: `msg_${delivered.length}` }
+      }) as any,
+      get: (async () => ({ time: { idle: parent.idle } })) as any,
+    },
+    log: (message) => logs.push(message),
+  }
+  return { ports, store, delivered, logs, parent }
+}
+
+const membership = (sessionID: string, title = sessionID, group = "pair", parentID = "ses_parent"): Membership => ({
+  parentID,
+  group,
+  sessionID,
+  title,
+  joinedAt: 1,
+})
+const report = (status: "done" | "partial" | "failed", message = `${status} by me`, at = 100) => ({ at, status, message })
+
+describe("isGroupName", () => {
+  test("takes a short name of letters, digits, dots, dashes and underscores, and nothing else", () => {
+    expect(["reviews", "phase-1", "wave_2.b", "x".repeat(60)].every(isGroupName)).toBe(true)
+    expect(["", " reviews", "a/b", 'a"b', "x".repeat(61), 7, null].some(isGroupName)).toBe(false)
+  })
+})
+
+describe("joining and leaving", () => {
+  test("a member joins under its parent and group, with its title, which opens the group", async () => {
+    const { ports } = fakePorts()
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "Second", 2)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "First", 1)
+    await joinGroup(ports.storage, "ses_other", "pair", "ses_d", "Elsewhere", 4)
+
+    expect(await memberOf(ports.storage, "ses_parent", "pair", "ses_a")).toEqual({ title: "First", joinedAt: 1 })
+    expect(await memberOf(ports.storage, "ses_parent", "pair", "ses_d")).toBeUndefined()
+    expect(await groupStanding(ports.storage, "ses_parent", "pair")).toEqual({ reported: 0, members: 2, complete: false })
+  })
+
+  test("a parent has a complete group once every member of one of its groups has reported or left", async () => {
+    const { ports } = fakePorts()
+    expect(await hasCompleteGroup(ports.storage, "ses_parent")).toBe(false)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "B", 2)
+    await joinGroup(ports.storage, "ses_parent", "solo", "ses_c", "C", 3)
+    await holdReport(ports.storage, membership("ses_a", "A"), report("done"))
+    expect(await hasCompleteGroup(ports.storage, "ses_parent")).toBe(false)
+    await leaveGroup(ports.storage, "ses_parent", "pair", "ses_b", "failed", 50)
+    expect(await hasCompleteGroup(ports.storage, "ses_parent")).toBe(true)
+    expect(await hasCompleteGroup(ports.storage, "ses_nobody")).toBe(false)
+    // A group whose every member left has no message coming: not one about to be delivered.
+    await ports.storage.set(memberKey("ses_parent", "pair", "ses_a"), { title: "A", joinedAt: 1, left: { at: 60, by: "deleted" } })
+    expect(await hasCompleteGroup(ports.storage, "ses_parent")).toBe(false)
+  })
+
+  test("a membership read says whether the member is still out, and marking it left writes nothing over a held report", async () => {
+    const { ports, store } = fakePorts()
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "B", 2)
+    await holdReport(ports.storage, membership("ses_a", "A"), report("done"))
+
+    const a = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_a"))!
+    const b = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_b"))!
+    expect([a.out, b.out]).toEqual([false, true])
+    expect(await membershipOf(ports.storage, "ses_parent", "pair", "ses_c")).toBeUndefined()
+    expect(await markLeft(ports.storage, a, "interrupted", 50)).toBe(false)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toMatchObject({ report: { status: "done" } })
+    expect(await markLeft(ports.storage, b, "interrupted", 50)).toBe(true)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 50, by: "interrupted" } })
+    // One that left is no longer out, and keeps why it left; nothing written, nothing to deliver anew.
+    const left = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_b"))!
+    expect(left.out).toBe(false)
+    expect(await markLeft(ports.storage, left, "deleted", 60)).toBe(false)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 50, by: "interrupted" } })
+  })
+
+  test("marking a member left reads it again: a report held since it was read is kept, and a member gone is left alone", async () => {
+    const { ports, store } = fakePorts()
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
+    const read = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_a"))!
+    await holdReport(ports.storage, membership("ses_a", "A"), report("done"))
+
+    expect(await markLeft(ports.storage, read, "failed", 50)).toBe(false)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toMatchObject({ report: { status: "done" } })
+
+    store.delete(memberKey("ses_parent", "pair", "ses_a"))
+    expect(await markLeft(ports.storage, read, "failed", 50)).toBe(false)
+    expect(store.size).toBe(0)
+    expect(await dropMember(ports.storage, "ses_parent", "pair", "ses_a")).toBe(false)
+  })
+
+  test("holding a report counts among the members that have reported, and the last one completes the group", async () => {
+    const { ports, store } = fakePorts()
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "B", 2)
+    const standing = () => groupStanding(ports.storage, "ses_parent", "pair")
+
+    await holdReport(ports.storage, membership("ses_a", "A"), report("done"))
+    expect(await standing()).toEqual({ reported: 1, members: 2, complete: false })
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toEqual({ title: "A", joinedAt: 1, report: report("done") })
+    // A second report of the same member replaces the first.
+    await holdReport(ports.storage, membership("ses_a", "A"), report("partial"))
+    expect(await standing()).toEqual({ reported: 1, members: 2, complete: false })
+    await holdReport(ports.storage, membership("ses_b", "B"), { ...report("failed"), artifacts: { files: ["a.ts"] } })
+    expect(await standing()).toEqual({ reported: 2, members: 2, complete: true })
+    expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_b"))).toBe("held")
+  })
+
+  test("a member whose turn failed or that was deleted leaves without a report, and the group completes without it", async () => {
+    const { ports } = fakePorts()
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "B", 2)
+
+    expect(await leaveGroup(ports.storage, "ses_parent", "pair", "ses_a", "failed", 50)).toBe(false)
+    expect(await memberOf(ports.storage, "ses_parent", "pair", "ses_a")).toEqual({ title: "A", joinedAt: 1, left: { at: 50, by: "failed" } })
+    expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_a"))).toBe("failed")
+    // Not a member: nothing to leave.
+    expect(await leaveGroup(ports.storage, "ses_parent", "pair", "ses_c", "deleted", 50)).toBeUndefined()
+    // The last member's report completes the group: the one that left counts no more among its members.
+    await holdReport(ports.storage, membership("ses_b", "B"), report("done"))
+    expect(await groupStanding(ports.storage, "ses_parent", "pair")).toEqual({ reported: 1, members: 1, complete: true })
+  })
+
+  test("a member that reports after it left rejoins with its report, and one whose report is held keeps it when its turn fails later", async () => {
+    const { ports } = fakePorts()
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "B", 2)
+    await leaveGroup(ports.storage, "ses_parent", "pair", "ses_a", "failed", 50)
+
+    await holdReport(ports.storage, membership("ses_a", "A"), report("done"))
+    expect(await groupStanding(ports.storage, "ses_parent", "pair")).toEqual({ reported: 1, members: 2, complete: false })
+    expect(await leaveGroup(ports.storage, "ses_parent", "pair", "ses_a", "failed", 60)).toBe(false)
+    expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_a"))).toBe("held")
+  })
+
+  test("a member dropped with its roster entry is gone, unless its report is held; a parent's groups go with it", async () => {
+    const { ports, store } = fakePorts()
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "B", 2)
+    await joinGroup(ports.storage, "ses_other", "pair", "ses_c", "C", 3)
+    await holdReport(ports.storage, membership("ses_b", "B"), report("done"))
+
+    expect(await dropMember(ports.storage, "ses_parent", "pair", "ses_a")).toBe(true)
+    expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_a"))).toBe("released")
+    expect(await dropMember(ports.storage, "ses_parent", "pair", "ses_b")).toBe(false)
+    expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_b"))).toBe("held")
+    await dropGroups(ports.storage, "ses_parent")
+    expect([...store.keys()]).toEqual([memberKey("ses_other", "pair", "ses_c")])
+  })
+})
+
+describe("deliverReleased", () => {
+  const artifacts = { branch: "b/work", checks: [{ command: "bun test", result: "ok" }] }
+
+  async function pair(ports: GroupPorts) {
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "First", 1)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "Second", 2)
+  }
+
+  test("delivers a group whose every member has reported, in one message listing each report in the order joined, then drops it", async () => {
+    const { ports, store, delivered } = fakePorts()
+    await pair(ports)
+    await joinGroup(ports.storage, "ses_parent", "open", "ses_c", "Third", 3)
+    await holdReport(ports.storage, membership("ses_b", "Second"), { ...report("failed", "Could not."), artifacts })
+    await holdReport(ports.storage, membership("ses_a", "First"), report("done", "Did it."))
+
+    await deliverReleased(ports, new Set())
+
+    const reports = [
+      { sessionID: "ses_a", title: "First", ...report("done", "Did it.") },
+      { sessionID: "ses_b", title: "Second", ...report("failed", "Could not."), artifacts },
+    ]
+    expect(delivered).toEqual([
+      {
+        sessionID: "ses_parent",
+        text: envelope("ses_a,ses_b", groupNotice("pair", reports), { group: "pair", reports: "2" }),
+        description: "Reports of group pair",
+        metadata: { source: "courier", from: "ses_a,ses_b", group: "pair", reports: 2 },
+        delivery: "steer",
+      },
+    ])
+    expect(delivered[0].text).toContain('[1/2] ses_a "First": done\nDid it.\n\n[2/2] ses_b "Second": failed\nCould not.\n\nArtifacts:\n- branch: b/work\n- checks:\n  - bun test: ok')
+    expect([...store.keys()]).toEqual([memberKey("ses_parent", "open", "ses_c")])
+  })
+
+  test("delivers nothing while a member is out, and names a member that left without a report", async () => {
+    const { ports, delivered, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a", "First"), report("done"))
+    await deliverReleased(ports, new Set())
+    expect(delivered).toEqual([])
+
+    await leaveGroup(ports.storage, "ses_parent", "pair", "ses_b", "failed", 50)
+    await deliverReleased(ports, new Set())
+
+    expect(delivered).toHaveLength(1)
+    expect(delivered[0].text).toContain('1 report of 2 members (1 done)')
+    expect(delivered[0].text).toContain('Without a report: ses_b "Second" (its turn failed).')
+    expect(delivered[0].metadata.from).toBe("ses_a")
+    expect(store.size).toBe(0)
+  })
+
+  test("holds a complete group until the parent's turn that started its last member has ended", async () => {
+    const { ports, delivered, store, parent } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a"), report("done"))
+    await holdReport(ports.storage, membership("ses_b"), report("done"))
+
+    parent.idle = undefined
+    await deliverReleased(ports, new Set())
+    parent.idle = 0
+    await deliverReleased(ports, new Set())
+    expect(delivered).toEqual([])
+    expect(store.size).toBe(2)
+
+    // As OpenCode's API gives it: a DateTime.
+    parent.idle = DateTime.makeUnsafe(1) as never
+    await deliverReleased(ports, new Set())
+    expect(delivered).toHaveLength(1)
+    expect(store.size).toBe(0)
+  })
+
+  test("keeps a group whose parent cannot be looked up for the next tick, and drops it once the parent is gone", async () => {
+    const { ports, delivered, logs, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a"), report("done"))
+    await markLeft(ports.storage, membership("ses_b"), "deleted", 3)
+
+    ;(ports.session as any).get = async () => Promise.reject(new Error("busy"))
+    await deliverReleased(ports, new Set())
+    expect(store.size).toBe(2)
+    expect(logs).toEqual(["courier group pair of ses_parent: Error: busy"])
+
+    ;(ports.session as any).get = async () => Promise.reject(Object.assign(new Error(""), { _tag: "Session.NotFoundError" }))
+    await deliverReleased(ports, new Set())
+    expect(delivered).toEqual([])
+    expect(store.size).toBe(0)
+    expect(logs.at(-1)).toBe("courier group pair of ses_parent dropped: the session is gone")
+  })
+
+  test("drops a group whose parent OpenCode no longer knows, unsent, and says so once", async () => {
+    const { ports, delivered, logs, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a"), report("done"))
+    await holdReport(ports.storage, membership("ses_b"), report("done"))
+    ;(ports.session as any).synthetic = async () => Promise.reject(Object.assign(new Error(""), { _tag: "Session.NotFoundError", sessionID: "ses_parent" }))
+
+    await deliverReleased(ports, new Set())
+
+    expect(delivered).toEqual([])
+    expect(store.size).toBe(0)
+    expect(logs).toEqual(["courier group pair of ses_parent dropped: the session is gone (Error)"])
+  })
+
+  test("a blocked report puts a member whose report was held back among those out", async () => {
+    const { ports, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a", "First"), report("done"))
+    const held = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_a"))!
+    const out = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_b"))!
+
+    await unholdForBlocked(ports.storage, held)
+    await unholdForBlocked(ports.storage, out)
+
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toEqual({ title: "First", joinedAt: 1 })
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "Second", joinedAt: 2 })
+  })
+
+  test("a blocked report opens no group released meanwhile, and keeps a report held since", async () => {
+    const { ports, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a", "First"), report("done"))
+    const stale = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_a"))!
+
+    await holdReport(ports.storage, membership("ses_a", "First"), report("partial", "again", 200))
+    await unholdForBlocked(ports.storage, stale)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toMatchObject({ report: { status: "partial" } })
+
+    store.clear()
+    await unholdForBlocked(ports.storage, stale)
+    expect(store.size).toBe(0)
+  })
+
+  test("drops a group whose every member left, unsent: it carries no report", async () => {
+    const { ports, delivered, store } = fakePorts()
+    await pair(ports)
+    await leaveGroup(ports.storage, "ses_parent", "pair", "ses_a", "failed", 50)
+    await leaveGroup(ports.storage, "ses_parent", "pair", "ses_b", "deleted", 60)
+
+    await deliverReleased(ports, new Set())
+
+    expect(delivered).toEqual([])
+    expect(store.size).toBe(0)
+  })
+
+  test("two plugin instances sharing storage and claims deliver a group once", async () => {
+    const { ports, delivered } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a"), report("done"))
+    await holdReport(ports.storage, membership("ses_b"), report("done"))
+    const claimed = new Set<string>()
+
+    await Promise.all([deliverReleased(ports, claimed), deliverReleased(ports, claimed), deliverReleased(ports, claimed)])
+
+    expect(delivered).toHaveLength(1)
+    expect(claimed.size).toBe(0)
+  })
+
+  test("an instance that scanned before another delivered does not deliver again", async () => {
+    const { ports, delivered } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a"), report("done"))
+    await holdReport(ports.storage, membership("ses_b"), report("done"))
+    const stale = { ...ports, storage: { ...ports.storage } }
+    const firstScan = ports.storage.scan({ prefix: "group/" })
+    let scans = 0
+    stale.storage.scan = (input) => (scans++ ? ports.storage.scan(input) : firstScan)
+
+    await deliverReleased(ports, new Set())
+    await deliverReleased(stale, new Set())
+
+    expect(delivered).toHaveLength(1)
+  })
+
+  test("keeps a group whose delivery failed, logs it, and delivers it at a later tick", async () => {
+    const { ports, delivered, logs, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a"), report("done"))
+    await holdReport(ports.storage, membership("ses_b"), report("done"))
+    const synthetic = ports.session.synthetic
+    ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
+
+    await deliverReleased(ports, new Set())
+    expect(delivered).toEqual([])
+    expect(store.size).toBe(2)
+    expect(logs).toEqual(["courier group pair of ses_parent not delivered, held for another try: Error: parent is gone"])
+
+    ;(ports.session as any).synthetic = synthetic
+    await deliverReleased(ports, new Set())
+    expect(delivered).toHaveLength(1)
+    expect(store.size).toBe(0)
+  })
+
+  test("keeps a member whose report came in during the delivery, so it is delivered at the next tick", async () => {
+    const { ports, delivered, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a", "First"), report("done"))
+    await leaveGroup(ports.storage, "ses_parent", "pair", "ses_b", "failed", 50)
+    const synthetic = ports.session.synthetic
+    ;(ports.session as any).synthetic = async (input: unknown) => {
+      // The member that left reports after all, while the group's message goes out without it.
+      await holdReport(ports.storage, membership("ses_b", "Second"), report("done", "Late."))
+      return synthetic(input as never)
+    }
+
+    await deliverReleased(ports, new Set())
+    expect(delivered).toHaveLength(1)
+    expect([...store.keys()]).toEqual([memberKey("ses_parent", "pair", "ses_b")])
+
+    ;(ports.session as any).synthetic = synthetic
+    await deliverReleased(ports, new Set())
+    expect(delivered).toHaveLength(2)
+    expect(delivered[1].text).toContain('[1/1] ses_b "Second": done\nLate.')
+    expect(store.size).toBe(0)
+  })
+
+  test("a member that cannot be dropped after the delivery is logged, and the others are dropped", async () => {
+    const { ports, delivered, logs, store } = fakePorts()
+    await pair(ports)
+    await joinGroup(ports.storage, "ses_parent", "next", "ses_c", "Third", 3)
+    await holdReport(ports.storage, membership("ses_a"), report("done"))
+    await holdReport(ports.storage, membership("ses_b"), report("done"))
+    await holdReport(ports.storage, membership("ses_c", "Third", "next"), report("done"))
+    const remove = ports.storage.remove
+    ;(ports.storage as any).remove = async (key: string) => (key.endsWith("/ses_b") ? Promise.reject(new Error("locked")) : remove(key))
+
+    await deliverReleased(ports, new Set())
+
+    expect(delivered.map((message: any) => message.metadata.group).sort()).toEqual(["next", "pair"])
+    expect([...store.keys()]).toEqual([memberKey("ses_parent", "pair", "ses_b")])
+    expect(logs).toEqual(["courier group pair of ses_parent: delivered, but ses_b could not be dropped: Error: locked"])
+  })
+
+  test("what it keeps survives a restart: a new instance over the same storage delivers it", async () => {
+    const before = fakePorts()
+    await pair(before.ports)
+    await holdReport(before.ports.storage, membership("ses_a"), report("done"))
+    await holdReport(before.ports.storage, membership("ses_b"), report("done"))
+
+    const after = fakePorts({ store: before.store })
+    await deliverReleased(after.ports, new Set())
+
+    expect(after.delivered).toHaveLength(1)
+    expect(before.delivered).toEqual([])
+  })
+
+  test("reads every page of members, and leaves out what is not a member", async () => {
+    const { ports, delivered, store } = fakePorts({ pageSize: 2 })
+    for (const id of ["a", "b", "c", "d", "e"]) {
+      await joinGroup(ports.storage, "ses_parent", "five", `ses_${id}`, id, 1)
+      await holdReport(ports.storage, membership(`ses_${id}`, id, "five"), report("done"))
+    }
+    store.set("group/ses_parent/five", { stray: true })
+    store.set("group/ses_parent/odd/ses_x", "not a member")
+
+    await deliverReleased(ports, new Set())
+
+    expect(delivered).toHaveLength(1)
+    expect(delivered[0].metadata.reports).toBe(5)
+    expect([...store.keys()].sort()).toEqual(["group/ses_parent/five", "group/ses_parent/odd/ses_x"])
+  })
+})

@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 import { setBounded } from "./bounded.js"
-import { isNotFound, obj } from "./json.js"
+import { isNotFound, millis, obj } from "./json.js"
 import { childrenRefusal, depthRefusal, ROLE_PREFIX, rolePart, totalRefusal, type Limits } from "./notices.js"
 import { reportOf } from "./report.js"
 import { allEntries, bySession, children, indexedLineage, lineageBy, type RosterStorage } from "./roster.js"
@@ -47,14 +47,6 @@ export interface LimitPorts {
   readonly session: Pick<Context["session"], "get">
   readonly limits: Limits
   readonly gate: SpawnGate
-}
-
-/** Epoch milliseconds from a session time, a `DateTime` in OpenCode's API and a number in tests. */
-function millis(value: unknown) {
-  if (typeof value === "number") return value
-  if (typeof value === "string") return Date.parse(value)
-  const epoch: unknown = obj(value).epochMilliseconds
-  return typeof epoch === "number" ? epoch : Number.NaN
 }
 
 /** A session's times, as `session.get` gives them. */

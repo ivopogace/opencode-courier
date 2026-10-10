@@ -115,17 +115,17 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
 }
 
 /**
- * Whether a session prompted at `prompt` waits: on a report from a session it started that it has not
- * been told about, on a request of its own, or for a scheduled message or, subscribed since, a webhook
- * to wake it. Cheapest first; an older subscription is not waiting, as a delivery has come since.
+ * Whether a session prompted at `prompt` waits: on an untold report of a session it started, a request
+ * of its own, a scheduled message, or a webhook it subscribed to since. Cheapest first.
  */
 async function waits(ports: WatchPorts, sessionID: string, prompt: number) {
   const started = await children(ports.storage, sessionID)
   if ((await Promise.all(started.map((entry) => awaited(ports.storage, entry.sessionID)))).includes(true)) return true
   if ((await listEverywhere([...ports.permissions()], sessionID)).some((found) => found.requests.length)) return true
   if ((await pendingQuestions(ports.storage, sessionID)).length) return true
-  const [scheduled, subscribed] = await Promise.all([scheduledFor(ports.storage, sessionID), subscriptions(ports)])
-  return scheduled.length > 0 || subscribed.some((subscription) => subscription.sessionID === sessionID && subscription.createdAt >= prompt)
+  if ((await scheduledFor(ports.storage, sessionID)).length) return true
+  // An older subscription is no wait: a prompt, most likely its delivery, has come since.
+  return (await subscriptions(ports)).some((subscription) => subscription.sessionID === sessionID && subscription.createdAt >= prompt)
 }
 
 /**
@@ -141,7 +141,8 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   // The notice goes out without the reply rather than not at all.
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
   // Before the notice, which may end the parent's turn at once: once told, it no longer waits for this one.
-  await told(ports.storage, sessionID, event.created ?? ports.now()).catch((error: unknown) =>
+  const toldAt = event.created ?? ports.now()
+  await told(ports.storage, sessionID, toldAt).catch((error: unknown) =>
     ports.log(`courier watch: could not note that the parent of ${sessionID} was told: ${String(error)}`),
   )
   await ports.session
@@ -153,8 +154,9 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
       delivery: "steer",
     })
     .catch(async (error: unknown) => {
-      // Not told after all: the parent still waits for it.
-      await ports.storage.remove(toldKey(sessionID)).catch(() => undefined)
+      // Not told after all: the parent still waits for it, unless a later notice has told it since.
+      const stored: unknown = await ports.storage.get(toldKey(sessionID)).catch(() => undefined)
+      if ((stored as { at?: unknown } | undefined)?.at === toldAt) await ports.storage.remove(toldKey(sessionID)).catch(() => undefined)
       throw error
     })
   return [entry.parentID]

@@ -53,11 +53,6 @@ export async function reportOf(storage: Pick<Storage, "get">, sessionID: string)
   return { prompt: promptAt, owes: !done, ended: done && obj(settledValue).by !== "report" }
 }
 
-/** Whether a spawned session owes its parent a report: something reached it after it last reported, failed or was interrupted. */
-export async function owesReport(storage: Pick<Storage, "get">, sessionID: string) {
-  return (await reportOf(storage, sessionID))?.owes
-}
-
 /**
  * Whether its parent still waits on a spawned session's report: it owes one, and the parent has not
  * been told since its last prompt that it ended a turn without one.

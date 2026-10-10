@@ -17,7 +17,7 @@ import {
 import { hub as processHub, open, resetHub, type Hub, type Member } from "../src/hub.js"
 import { shutdownReportedAt } from "../src/question/index.js"
 import { send, type CourierPorts } from "../src/courier.js"
-import { owesReport, promptKey, settledKey, toldKey } from "../src/report.js"
+import { reportOf, promptKey, settledKey, toldKey } from "../src/report.js"
 import { record, remove } from "../src/roster.js"
 import {
   noteDeleted,
@@ -36,6 +36,9 @@ import {
   type SessionEvent,
   type WatchPorts,
 } from "../src/watch.js"
+
+/** Whether a spawned session owes its parent a report, as `reportOf` reads it. */
+const owesReport = async (storage: Parameters<typeof reportOf>[0], sessionID: string) => (await reportOf(storage, sessionID))?.owes
 
 const blocked = { type: "provider.auth", message: "This model is not available in your country", status: 403 }
 
@@ -320,8 +323,15 @@ describe("reportSilent", () => {
     await notePrompt(ports, delivered("evt_d", 100))
 
     await expect(reportSilent(ports, new Set(), succeeded("evt_s", 200))).rejects.toThrow("parent is gone")
-
     expect(store.has(toldKey("ses_child"))).toBe(false)
+
+    // A later notice told the parent meanwhile: that stays.
+    ;(ports.session as any).synthetic = async () => {
+      store.set(toldKey("ses_child"), { at: 400 })
+      throw new Error("parent is gone")
+    }
+    await expect(reportSilent(ports, new Set(), succeeded("evt_s2", 300))).rejects.toThrow("parent is gone")
+    expect(store.get(toldKey("ses_child"))).toEqual({ at: 400 })
   })
 
   test("tells nothing while a scheduled message for the child is pending, or a webhook it subscribed to since its last prompt", async () => {

@@ -3,8 +3,11 @@ import { DateTime } from "effect"
 import { spawn, type CourierPorts } from "../src/courier.js"
 import { admit, busy, DEFAULT_LIMITS, readLimits, shapeContext, type ContextPorts, type LimitPorts, type SpawnGate } from "../src/limits.js"
 import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/notices.js"
-import { owesReport, prompted, settled } from "../src/report.js"
+import { reportOf, prompted, settled } from "../src/report.js"
 import { record } from "../src/roster.js"
+
+/** Whether a spawned session owes its parent a report, as `reportOf` reads it. */
+const owesReport = async (storage: Parameters<typeof reportOf>[0], sessionID: string) => (await reportOf(storage, sessionID))?.owes
 
 function fakeStorage() {
   const store = new Map<string, unknown>()

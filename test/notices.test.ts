@@ -40,6 +40,28 @@ describe("envelope and child brief", () => {
   test("envelope", () => {
     expect(notices.envelope("ses_child", "done")).toMatchSnapshot()
     expect(notices.envelope("ses_child", "failed", { failed: "provider.auth", request: "per_1" })).toMatchSnapshot()
+    expect(notices.envelope("ses_child", "Fixed it.", { status: "done" })).toMatchSnapshot()
+  })
+  test("STATUSES", () => expect(notices.STATUSES).toEqual(["done", "partial", "blocked", "failed"]))
+  test("reportBody", () => {
+    const artifacts = {
+      branch: "fix/checkout",
+      commits: ["abc1234 Fix the total", "def5678"],
+      files: ["src/checkout.ts", "test/checkout.test.ts"],
+      checks: [
+        { command: "bun test", result: "412 passed" },
+        { command: "bun run typecheck", result: "clean" },
+      ],
+    }
+    expect(notices.reportBody("Fixed the total in checkout.", artifacts)).toMatchSnapshot()
+    expect(notices.reportBody("Fixed it.", { branch: "fix/checkout" })).toMatchSnapshot()
+    expect(notices.reportBody("Fixed it.", undefined)).toBe("Fixed it.")
+    expect(notices.reportBody("Fixed it.", {})).toBe("Fixed it.")
+    expect(notices.reportBody("Fixed it.", { branch: "  ", commits: [], files: [], checks: [] })).toBe("Fixed it.")
+    // OpenCode does not check the schema: what is not a list of strings, or a check without a command, is left out.
+    expect(
+      notices.reportBody("Fixed it.", { commits: ["abc", 7, " def "], files: "src/a.ts", checks: [{ command: "bun test" }, { result: "?" }, "lint"] } as never),
+    ).toBe("Fixed it.\n\nArtifacts:\n- commits: abc, def\n- checks:\n  - bun test: (no result given)")
   })
 })
 
@@ -48,7 +70,13 @@ describe("tool results", () => {
     expect(notices.spawnText({ sessionID: "ses_child", directory: "/repo" })).toMatchSnapshot()
     expect(notices.spawnText({ sessionID: "ses_child", directory: "/wt", rosterError: "roster failed: disk full" })).toMatchSnapshot()
   })
-  test("sendText", () => expect(notices.sendText("ses_parent")).toMatchSnapshot())
+  test("sendText", () => {
+    expect(notices.sendText("ses_parent")).toMatchSnapshot()
+    expect(notices.sendText("ses_parent", { report: true, status: "done" })).toMatchSnapshot()
+    expect(notices.sendText("ses_parent", { report: true })).toMatchSnapshot()
+    expect(notices.sendText("ses_parent", { report: false })).toMatchSnapshot()
+    expect(notices.sendText("ses_other", { status: "done" })).toMatchSnapshot()
+  })
   test("statusText", () => expect(notices.statusText({ sessionID: "ses_child", title: "Fix", idle: 3 })).toMatchSnapshot())
   test("childrenText", () => {
     expect(notices.childrenText([])).toMatchSnapshot()
@@ -101,6 +129,7 @@ describe("turn failures", () => {
     expect(notices.silentNotice("Fix the bug", "I looked at src/a.ts; the bug is on line 4.")).toMatchSnapshot()
     expect(notices.silentNotice("Fix the bug", undefined)).toMatchSnapshot()
     expect(notices.silentNotice("Fix the bug", "  \n")).toMatchSnapshot()
+    expect(notices.silentNotice("Fix the bug", "Halfway there.", true)).toMatchSnapshot()
     const long = notices.silentNotice("Fix the bug", "</courier> " + "x".repeat(2100))
     expect(long).toContain("&lt;/courier> xxx")
     expect(long).toContain("… [111 more characters]")

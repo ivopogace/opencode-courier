@@ -1,8 +1,8 @@
 import type { Plugin } from "@opencode/plugin"
 import { admit, type Limits, type SpawnGate } from "./limits.js"
-import { childBrief, envelope, type Prompt } from "./notices.js"
-import { prompted, settled, settledKey } from "./report.js"
-import { current, indexedParent, record, type RosterStorage } from "./roster.js"
+import { childBrief, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Prompt, type Sent, type Status } from "./notices.js"
+import { progressed, progressKey, prompted, settled, settledKey } from "./report.js"
+import { current, indexedEntry, record, type RosterStorage } from "./roster.js"
 
 type Context = Plugin.Context
 
@@ -53,6 +53,8 @@ export interface SpawnInput {
 export interface SendInput {
   readonly sessionID: string
   readonly message: string
+  readonly status?: Status
+  readonly artifacts?: Artifacts
   readonly queue?: boolean
 }
 
@@ -133,6 +135,7 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     directory: directory ?? child.location.directory,
     isolated: directory !== undefined,
     createdAt: ports.now(),
+    reports: "status",
     ...(directory ? { source: ports.directory, project: ports.projectID } : {}),
     ...(base ? { base } : {}),
   }).then(
@@ -158,38 +161,48 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
 
 /**
  * Drops a message into another session's inbox; OpenCode wakes that session if it is idle. A message
- * from a spawned session to the one that started it is its report, noted unless it is not delivered.
+ * from a spawned session to the one that started it with a status is its report, noted unless it is
+ * not delivered; one without a status is progress, unless an older release briefed the sender.
  */
-export async function send(ports: CourierPorts, from: string, input: SendInput) {
+export async function send(ports: CourierPorts, from: string, input: SendInput): Promise<Sent> {
+  const status = input.status === undefined || input.status === null ? undefined : input.status
+  if (status !== undefined && !isStatus(status)) throw new Error(`status must be one of ${STATUSES.join(", ")}, not ${JSON.stringify(status)}.`)
   // Noted first: the delivery may wake the parent, whose turn may end before a later note.
-  const undo = await noteReport(ports, from, input.sessionID).catch(() => undefined)
+  const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
   try {
     const delivered = await ports.session.synthetic({
       sessionID: input.sessionID,
-      text: envelope(from, input.message),
+      text: envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {}),
       description: `Message from ${from}`,
-      metadata: { source: "courier", from },
+      metadata: { source: "courier", from, ...(status ? { status } : {}) },
       delivery: input.queue ? "queue" : "steer",
     })
-    return { messageID: delivered.id }
+    return { messageID: delivered.id, ...(status ? { status } : {}), ...(noted ? { report: noted.report } : {}) }
   } catch (error) {
-    await undo?.().catch(() => undefined)
+    await noted?.undo().catch(() => undefined)
     throw error
   }
 }
 
-/** Notes `from`'s report when `to` started it, returning how to take the note back. */
-async function noteReport(ports: CourierPorts, from: string, to: string) {
-  if ((await indexedParent(ports.storage, from)) !== to) return undefined
-  const before = await ports.storage.get(settledKey(from))
+/**
+ * Notes `from`'s message to `to` when `to` started it: as its report when it carries a status, or
+ * when `from` was briefed before statuses, else as progress. Returns which, and how to take it back.
+ */
+async function noteReport(ports: CourierPorts, from: string, to: string, status: Status | undefined) {
+  const entry = await indexedEntry(ports.storage, from)
+  if (entry?.parentID !== to) return undefined
+  const report = status !== undefined || entry.reports !== "status"
+  const key = report ? settledKey(from) : progressKey(from)
+  const before = await ports.storage.get(key)
   const at = ports.now()
-  await settled(ports.storage, from, "report", at)
+  await (report ? settled(ports.storage, from, "report", at, status) : progressed(ports.storage, from, at))
   // Only its own note: another courier_send of the session's may have noted its report since.
-  return async () => {
-    const now = (await ports.storage.get(settledKey(from))) as { at?: unknown; by?: unknown } | undefined
-    if (now?.at !== at || now.by !== "report") return
-    await (before === undefined ? ports.storage.remove(settledKey(from)) : ports.storage.set(settledKey(from), before))
+  const undo = async () => {
+    const now = (await ports.storage.get(key)) as { at?: unknown; by?: unknown } | undefined
+    if (now?.at !== at || (report && now.by !== "report")) return
+    await (before === undefined ? ports.storage.remove(key) : ports.storage.set(key, before))
   }
+  return { report, undo }
 }
 
 /** A one-off look at a session, for check-ins; not meant to be called in a loop. */

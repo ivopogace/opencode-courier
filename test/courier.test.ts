@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "../src/courier.js"
 import { DEFAULT_LIMITS } from "../src/limits.js"
-import { childBrief, envelope } from "../src/notices.js"
-import { settledKey } from "../src/report.js"
+import { childBrief, envelope, reportBody } from "../src/notices.js"
+import { progressKey, settledKey } from "../src/report.js"
 import { record, rosterKey } from "../src/roster.js"
 
 type Call = { method: string; input: any }
@@ -85,6 +85,7 @@ describe("spawn", () => {
       directory: "/repo",
       isolated: false,
       createdAt: 1_000,
+      reports: "status",
     })
   })
 
@@ -208,6 +209,7 @@ describe("send", () => {
 
     const result = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done: PR #4" })
 
+    // Not a spawned session: neither a report nor progress.
     expect(result).toEqual({ messageID: "msg_2" })
     expect(calls[0]).toEqual({
       method: "session.synthetic",
@@ -230,18 +232,69 @@ describe("send", () => {
     expect(calls[0]!.input.delivery).toBe("queue")
   })
 
-  const spawned = { sessionID: "ses_child", parentID: "ses_parent", title: "t", directory: "/repo", isolated: false, createdAt: 1 }
+  const spawned = { sessionID: "ses_child", parentID: "ses_parent", title: "t", directory: "/repo", isolated: false, createdAt: 1, reports: "status" as const }
+  const report = { sessionID: "ses_parent", message: "m", status: "done" as const }
 
-  test("notes a spawned session's message to its parent, and only that, as its report", async () => {
+  test("notes a spawned session's message with a status to its parent, and only that, as its report, with the status", async () => {
     const { ports, store } = fakePorts()
     await record(ports.storage, spawned)
 
-    await send(ports, "ses_child", { sessionID: "ses_other", message: "m" })
+    await send(ports, "ses_child", { sessionID: "ses_other", message: "m", status: "done" })
     expect(store.has(settledKey("ses_child"))).toBe(false)
-    await send(ports, "ses_parent", { sessionID: "ses_child", message: "m" })
+    await send(ports, "ses_parent", { sessionID: "ses_child", message: "m", status: "done" })
     expect(store.has(settledKey("ses_parent"))).toBe(false)
-    await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", status: "blocked" })).toEqual({ messageID: "msg_2", status: "blocked", report: true })
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000, by: "report", status: "blocked" })
+  })
+
+  test("carries the status as an attribute of the envelope and in the metadata, and the artifacts in the body", async () => {
+    const { ports, calls } = fakePorts()
+    const artifacts = { branch: "fix/checkout", commits: ["abc1234"], files: ["src/a.ts"], checks: [{ command: "bun test", result: "412 passed" }] }
+
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "Fixed it.", status: "done", artifacts })
+
+    expect(calls[0]!.input).toEqual({
+      sessionID: "ses_parent",
+      text: envelope("ses_child", reportBody("Fixed it.", artifacts), { status: "done" }),
+      description: "Message from ses_child",
+      metadata: { source: "courier", from: "ses_child", status: "done" },
+      delivery: "steer",
+    })
+    expect(calls[0]!.input.text).toStartWith('<courier from="ses_child" status="done">\nFixed it.\n\nArtifacts:\n- branch: fix/checkout\n')
+  })
+
+  test("refuses a status that is none of the four, since OpenCode does not check the schema", async () => {
+    const { ports, calls } = fakePorts()
+
+    await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m", status: "finished" as never })).rejects.toThrow(
+      'status must be one of done, partial, blocked, failed, not "finished".',
+    )
+    expect(calls).toEqual([])
+    // Some models send null for an optional field they leave out.
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", status: null as never })).toEqual({ messageID: "msg_2" })
+  })
+
+  test("notes a message without a status to the parent as progress, not as the report, and says so", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, spawned)
+
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "halfway" })).toEqual({ messageID: "msg_2", report: false })
+
+    expect(store.has(settledKey("ses_child"))).toBe(false)
+    expect(store.get(progressKey("ses_child"))).toEqual({ at: 1_000 })
+    await send(ports, "ses_child", { sessionID: "ses_other", message: "m" })
+    expect(store.has(progressKey("ses_other"))).toBe(false)
+  })
+
+  test("takes a message without a status from a child an older release briefed as its report, as before", async () => {
+    const { ports, store } = fakePorts()
+    const { reports, ...older } = spawned
+    await record(ports.storage, older)
+
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).toEqual({ messageID: "msg_2", report: true })
+
     expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000, by: "report" })
+    expect(store.has(progressKey("ses_child"))).toBe(false)
   })
 
   test("notes the report before delivering it, which may end the parent's turn at once", async () => {
@@ -252,31 +305,34 @@ describe("send", () => {
       noted = store.get(settledKey("ses_child"))
       return { id: "msg_3" }
     }
-    await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })
-    expect(noted).toEqual({ at: 1_000, by: "report" })
+    await send(ports, "ses_child", report)
+    expect(noted).toEqual({ at: 1_000, by: "report", status: "done" })
   })
 
   test("takes the note back when the message is not delivered, and delivers it when the report cannot be noted", async () => {
     const { ports, store } = fakePorts()
     await record(ports.storage, spawned)
     ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
-    await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).rejects.toThrow("parent is gone")
+    await expect(send(ports, "ses_child", report)).rejects.toThrow("parent is gone")
     expect(store.has(settledKey("ses_child"))).toBe(false)
-    store.set(settledKey("ses_child"), { at: 5, by: "failed" })
     await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).rejects.toThrow("parent is gone")
+    expect(store.has(progressKey("ses_child"))).toBe(false)
+    store.set(settledKey("ses_child"), { at: 5, by: "failed" })
+    await expect(send(ports, "ses_child", report)).rejects.toThrow("parent is gone")
     expect(store.get(settledKey("ses_child"))).toEqual({ at: 5, by: "failed" })
 
     // Another courier_send of the child's noted its report meanwhile: that note stays.
     ;(ports.session as any).synthetic = async () => {
-      store.set(settledKey("ses_child"), { at: 2_000, by: "report" })
+      store.set(settledKey("ses_child"), { at: 2_000, by: "report", status: "done" })
       throw new Error("parent is gone")
     }
-    await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).rejects.toThrow("parent is gone")
-    expect(store.get(settledKey("ses_child"))).toEqual({ at: 2_000, by: "report" })
+    await expect(send(ports, "ses_child", report)).rejects.toThrow("parent is gone")
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 2_000, by: "report", status: "done" })
 
+    store.delete(settledKey("ses_child"))
     ;(ports.session as any).synthetic = async () => ({ id: "msg_3" })
     ;(ports.storage as any).set = async () => Promise.reject(new Error("disk full"))
-    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).toEqual({ messageID: "msg_3" })
+    expect(await send(ports, "ses_child", report)).toEqual({ messageID: "msg_3", status: "done" })
   })
 })
 

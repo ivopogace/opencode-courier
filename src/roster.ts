@@ -29,6 +29,8 @@ export interface RosterEntry {
   readonly project?: string
   /** For an isolated child, the commit its worktree was made from; its own work is what came after. */
   readonly base?: string
+  /** `"status"` when its brief asked for a report with a status; absent for a child an earlier release briefed. */
+  readonly reports?: "status"
 }
 
 /**

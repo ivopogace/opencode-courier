@@ -467,6 +467,11 @@ describe("send, from a member of a group", () => {
     await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done.", status: "done" })
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { status: "done" } })
 
+    // Only once the blocked report is delivered: one that is not leaves the held report in place.
+    ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
+    await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "Which?", status: "blocked" })).rejects.toThrow("parent is gone")
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { status: "done" } })
+    ;(ports.session as any).synthetic = async () => ({ id: "msg_3" })
     await send(ports, "ses_child", { sessionID: "ses_parent", message: "On second thought, which?", status: "blocked" })
 
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({ title: "A", joinedAt: 1 })
@@ -482,7 +487,8 @@ describe("send, from a member of a group", () => {
 
     expect(calls.filter((call) => call.method === "session.synthetic")).toEqual([])
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { status: "done" } })
-    expect(nudges).toEqual([])
+    // Nudged all the same: the group may be complete, and a tick that finds nothing due is cheap.
+    expect(nudges).toHaveLength(1)
   })
 
   test("delivers the report at once when the group has been released, or the child was never joined, or it cannot be held", async () => {

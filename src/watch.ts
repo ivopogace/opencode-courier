@@ -71,8 +71,8 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
       ports.log(`courier watch: could not note the failed turn of ${sessionID}: ${String(error)}`),
     )
   const out = await Promise.all(entries.map((entry) => outIn(ports, entry)))
-  // Left before the notice, so the parent waits on the group meanwhile; delivered after it, so the
-  // group's message does not overtake the notice.
+  // Left before the notice, so the parent waits on the group meanwhile; nudged after it, so the group's
+  // message does not overtake the notice, short of an interval tick falling in between.
   const completed = await Promise.all(out.map((member) => member && leave(ports, member, "failed", at)))
   try {
     await Promise.all(
@@ -190,9 +190,9 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
 async function waits(ports: WatchPorts, sessionID: string, prompt: number) {
   const started = await children(ports.storage, sessionID)
   if ((await Promise.all(started.map((entry) => awaited(ports.storage, entry.sessionID)))).includes(true)) return true
-  // A group with a member still out is waited on through that member, above; one whose every out member was told of is not.
-  if (await hasCompleteGroup(ports.storage, sessionID)) return true
   if ((await listEverywhere([...ports.permissions()], sessionID)).some((found) => found.requests.length)) return true
+  // A group with a member still out is waited on through that member, above; one whose every out member was told of is not.
+  if (started.some((entry) => entry.group) && (await hasCompleteGroup(ports.storage, sessionID))) return true
   if ((await pendingQuestions(ports.storage, sessionID)).length) return true
   const [scheduled, subscribed] = await Promise.all([scheduledFor(ports.storage, sessionID), subscriptions(ports)])
   // An older subscription is no wait: a prompt, most likely its delivery, has come since.

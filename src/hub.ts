@@ -18,7 +18,7 @@ type Context = Plugin.Context
  * The plugin's process-wide state on `globalThis`, shared by every loaded copy; only this module puts
  * it there. `HUB_VERSION`, the fixed claim keys and version skew: docs/reference.md, § Several copies.
  */
-export const HUB_VERSION = 1
+export const HUB_VERSION = 2
 
 /** The key of the hub; a copy that finds another version there keeps its own under `${HUB_KEY}@<version>`. */
 export const HUB_KEY = "opencode-courier.hub"

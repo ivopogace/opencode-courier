@@ -213,8 +213,6 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
     )
     if (held) return { status, report: true, held }
   }
-  // A blocked report is the member's latest word: an earlier report held for it would be stale.
-  if (noted?.member && status === "blocked") await unholdForBlocked(ports.storage, noted.member).catch(() => undefined)
   try {
     const delivered = await ports.session.synthetic({
       sessionID: input.sessionID,
@@ -223,6 +221,8 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
       metadata: { source: "courier", from, ...(status ? { status } : {}) },
       delivery: input.queue ? "queue" : "steer",
     })
+    // A blocked report, once delivered, is the member's latest word: an earlier report held for it would be stale.
+    if (noted?.member && status === "blocked") await unholdForBlocked(ports.storage, noted.member).catch(() => undefined)
     return { messageID: delivered.id, ...(status ? { status } : {}), ...(noted ? { report: noted.report } : {}) }
   } catch (error) {
     await noted?.undo().catch(() => undefined)
@@ -281,9 +281,9 @@ async function hold(ports: CourierPorts, member: Membership, report: HeldReport)
     ports.nudge()
     return undefined
   }
-  // Held whatever the count gives: the scheduler's tick finds a complete group on its own.
+  // Held whatever the count gives; a count that cannot be read gets the nudge, as a tick that finds nothing due is cheap.
   const standing = await groupStanding(ports.storage, member.parentID, member.group).catch(() => undefined)
-  if (standing?.complete) ports.nudge()
+  if (standing?.complete !== false) ports.nudge()
   return { group: member.group, ...(standing ? { reported: standing.reported, members: standing.members } : {}) }
 }
 

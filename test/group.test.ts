@@ -109,11 +109,26 @@ describe("joining and leaving", () => {
     expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toMatchObject({ report: { status: "done" } })
     expect(await markLeft(ports.storage, b, "interrupted", 50)).toBe(true)
     expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 50, by: "interrupted" } })
-    // One that left is no longer out, and keeps why it left.
+    // One that left is no longer out, and keeps why it left; nothing written, nothing to deliver anew.
     const left = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_b"))!
     expect(left.out).toBe(false)
-    expect(await markLeft(ports.storage, left, "deleted", 60)).toBe(true)
+    expect(await markLeft(ports.storage, left, "deleted", 60)).toBe(false)
     expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 50, by: "interrupted" } })
+  })
+
+  test("marking a member left reads it again: a report held since it was read is kept, and a member gone is left alone", async () => {
+    const { ports, store } = fakePorts()
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
+    const read = (await membershipOf(ports.storage, "ses_parent", "pair", "ses_a"))!
+    await holdReport(ports.storage, membership("ses_a", "A"), report("done"))
+
+    expect(await markLeft(ports.storage, read, "failed", 50)).toBe(false)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toMatchObject({ report: { status: "done" } })
+
+    store.delete(memberKey("ses_parent", "pair", "ses_a"))
+    expect(await markLeft(ports.storage, read, "failed", 50)).toBe(false)
+    expect(store.size).toBe(0)
+    expect(await dropMember(ports.storage, "ses_parent", "pair", "ses_a")).toBe(false)
   })
 
   test("holding a report counts among the members that have reported, and the last one completes the group", async () => {

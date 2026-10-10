@@ -228,14 +228,16 @@ leaves the group without a report: the parent is told of a failure at once, as e
 naming the group, and the group no longer waits for it, so it is released once its other members
 have reported, the message naming who left and why. The member is marked as left before the notice
 goes out, so the parent is waiting on the group meanwhile, and the scheduler is nudged after it, so
-the group's message does not overtake the notice. A member that reports after all before the release
+the group's message does not overtake the notice, unless the scheduler's own tick falls in the
+moment between the two. A member that reports after all before the release
 rejoins with its report, and one whose report comes in while the group's message is going out keeps
 it, to go out at the next tick. A member that has reported keeps its held report whatever happens to
 its turn after, unless its next word to the parent is a `blocked` report: that passes through, and
 the stale held report is dropped, so the member is out again until it reports. A held report
 outlives the member's [roster](#roster) entry: a member dropped after 14 days or by
 `courier_cleanup` goes from its group with no trace when it has not reported, and otherwise stays
-until the group is released; a member dropped by `courier_cleanup` while still out has the group
+until the group is released, which the dropping of the members still out brings about, so a group's
+keys live as long as the roster entries of its members still out; a member dropped by `courier_cleanup` while still out has the group
 delivered at once if that completes it, with no line for it, since the parent did the dropping. A
 group whose every member left is dropped unsent: the parent was told of each failure, and did the
 rest. A member that [ends its turn without a report](#a-child-that-ends-without-a-report) is still
@@ -579,7 +581,8 @@ the limits; so are the types of the items entering spawned sessions' inboxes, so
 instance or copy sees an item's delivery knows what it was.
 
 The hub carries a version, which changes only when its shape or the meaning of a field does, not
-with every release. A copy that finds a hub of another version in the process runs its own, under a
+with every release (it is 2 since the join groups: the scheduler's tick delivers released groups
+too, and takes a nudge to run at once). A copy that finds a hub of another version in the process runs its own, under a
 key of its version, and logs one line saying so. The claim sets themselves are shared across hub
 versions, under keys whose shape and meaning are fixed for good, so an old and a new copy of the
 plugin loaded together still never both deliver or tell the same thing; a change that needed

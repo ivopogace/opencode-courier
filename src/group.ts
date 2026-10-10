@@ -140,12 +140,14 @@ export async function membershipOf(storage: Pick<Storage, "get">, parentID: stri
 }
 
 /**
- * Notes that a member, read already, left its group without a report: its turn failed or was interrupted, or it was
- * deleted. One whose report is held keeps it, and one that left keeps why. Returns whether the group is complete now.
+ * Notes that a member left its group without a report: its turn failed or was interrupted, or it was deleted. Read
+ * again first: one whose report is held meanwhile keeps it, one that left keeps why. True when that completes the group.
  */
-export async function markLeft(storage: Pick<Storage, "set" | "scan">, membership: Membership, by: LeftMember["by"], at: number) {
-  const { parentID, group, sessionID, title, joinedAt } = membership
-  if (standingOf(membership) === "out") await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt, left: { at, by } }))
+export async function markLeft(storage: Pick<Storage, "get" | "set" | "scan">, membership: Membership, by: LeftMember["by"], at: number) {
+  const { parentID, group, sessionID } = membership
+  const current = await memberOf(storage, parentID, group, sessionID)
+  if (!current || standingOf(current) !== "out") return false
+  await storage.set(memberKey(parentID, group, sessionID), stored({ title: current.title, joinedAt: current.joinedAt, left: { at, by } }))
   return (await groupStanding(storage, parentID, group)).complete
 }
 
@@ -163,7 +165,8 @@ export async function unholdForBlocked(storage: Pick<Storage, "set">, membership
 
 /** Drops a member from its group, with its roster entry, unless its report is held: that still goes to the parent. True when dropped. */
 export async function dropMember(storage: Pick<Storage, "get" | "remove">, parentID: string, group: string, sessionID: string) {
-  if ((await memberOf(storage, parentID, group, sessionID))?.report) return false
+  const member = await memberOf(storage, parentID, group, sessionID)
+  if (!member || member.report) return false
   await storage.remove(memberKey(parentID, group, sessionID))
   return true
 }

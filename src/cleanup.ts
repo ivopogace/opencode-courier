@@ -133,6 +133,14 @@ export function headOf(directory: string) {
   )
 }
 
+/** Whether a worktree has uncommitted changes, untracked files included; undefined when git cannot tell. */
+export function dirtyOf(directory: string) {
+  return git(directory, ["status", "--porcelain"]).then(
+    (out) => out.trim().length > 0,
+    () => undefined,
+  )
+}
+
 /**
  * Reads a worktree's state with git; undefined when the directory is gone. Commits reachable from
  * `base`, the commit the worktree was made from, are not its own work and are not listed.

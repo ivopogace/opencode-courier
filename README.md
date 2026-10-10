@@ -73,7 +73,9 @@ it adds:
 - **Webhooks:** GitHub reviews, comments and CI runs, or any signed POST, wake the
   [subscribed](#webhooks) session.
 - **Worktree isolation:** `isolate: true` gives a child its own git worktree, so children can edit
-  files in parallel.
+  files in parallel. An isolated child that splits hands its committed work down: its isolated
+  children start from its HEAD, and each isolated child commits on `courier/<its session ID>` and
+  reports that branch for its parent to merge ([nested isolation](docs/reference.md#nested-isolation)).
 - **Relaying to you:** a child's permission requests and questions reach you through the parent,
   and your answers go back; a form only you can answer is pointed out to you.
 
@@ -186,7 +188,7 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
    search" setting): otherwise the first child to search shows that prompt in its own session,
    which only you can answer there.
 3. Use `isolate: true` whenever children edit files in parallel. The child's worktree is made from
-   the last commit, so an uncommitted `opencode.json` is not there and the child falls back to your
+   the last commit (from an isolated session, its HEAD), so an uncommitted `opencode.json` is not there and the child falls back to your
    global config: keep providers and models in the global config, or commit the file. When you are
    done with an isolated child, `courier_cleanup` it so its worktree does not linger.
 4. A child whose turn fails, or ends without `courier_send`, is reported to its parent by the
@@ -198,7 +200,7 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
 
 | Tool | Does |
 |---|---|
-| `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`) on the parent's model, sends it the task plus a brief naming the parent, how to report back and when to split the task further, and returns at once. With a `group` name, the reports of every session started under that name are held and delivered together, in one message ([reference](docs/reference.md#join-groups)). Refused past the [session tree limits](#session-trees). |
+| `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`, which from an isolated session starts at its HEAD, [nested isolation](docs/reference.md#nested-isolation)) on the parent's model, sends it the task plus a brief naming the parent, how to report back and when to split the task further, and returns at once. With a `group` name, the reports of every session started under that name are held and delivered together, in one message ([reference](docs/reference.md#join-groups)). Refused past the [session tree limits](#session-trees). |
 | `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. From a child to its parent, a `status` (`done`, `partial`, `blocked` or `failed`) makes it the child's report, carried as an attribute of the message (`<courier from="…" status="done">`), and `artifacts` (`branch`, `commits`, `files`, `checks`) are listed in its body in a fixed layout; a message without a status is progress, not the report ([reference](docs/reference.md#a-childs-report)). From a member of a join group, a report with `done`, `partial` or `failed` is held with the group instead, and the result says so. |
 | `courier_status` | One look at a session: outcome, idle time, last reply and the permission requests and questions it waits on. For check-ins, not for waiting. |
 | `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated, when it was started and, for one started in a group, the group and whether its report is `held`, `out` or `released`. |

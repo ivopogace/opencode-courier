@@ -27,6 +27,8 @@ describe("envelope and child brief", () => {
   test("childBrief", () => {
     expect(notices.childBrief("ses_parent", "Fix the bug\nin src/a.ts", 1, limits)).toMatchSnapshot()
     expect(notices.childBrief("ses_parent", "Fix the bug\nin src/a.ts", 3, limits)).toMatchSnapshot()
+    expect(notices.childBrief("ses_parent", "Fix the bug", 1, limits, notices.childBranch("ses_child"))).toMatchSnapshot()
+    expect(notices.childBrief("ses_parent", "Fix the bug", 3, limits, notices.childBranch("ses_child"))).toMatchSnapshot()
   })
   test("rolePart", () => {
     for (const depth of [0, 1, 2, 3]) expect(notices.rolePart(depth, limits)).toMatchSnapshot()
@@ -71,6 +73,10 @@ describe("tool results", () => {
     expect(notices.spawnText({ sessionID: "ses_child", directory: "/wt", rosterError: "roster failed: disk full" })).toMatchSnapshot()
     expect(notices.spawnText({ sessionID: "ses_child", directory: "/repo", group: "reviews" })).toMatchSnapshot()
     expect(notices.spawnText({ sessionID: "ses_child", directory: "/repo", groupError: "group failed: disk full" })).toMatchSnapshot()
+  })
+  test("spawnText for a child started from its parent's HEAD", () => {
+    expect(notices.spawnText({ sessionID: "ses_child", directory: "/wt", fromParent: true })).toMatchSnapshot()
+    expect(notices.spawnText({ sessionID: "ses_child", directory: "/wt", fromParent: true, uncommitted: true })).toMatchSnapshot()
   })
   test("sendText", () => {
     expect(notices.sendText("ses_parent")).toMatchSnapshot()

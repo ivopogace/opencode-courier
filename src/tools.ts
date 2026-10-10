@@ -31,7 +31,11 @@ export const SpawnInput = Schema.Struct({
   title: Schema.optional(Schema.String.annotate({ description: "Session title; defaults to the task's first line." })),
   agent: Schema.optional(Schema.String.annotate({ description: "Agent to run the session with; defaults to the default agent." })),
   isolate: Schema.optional(
-    Schema.Boolean.annotate({ description: "Run the session in its own git worktree so parallel sessions don't share files." }),
+    Schema.Boolean.annotate({ description:
+        "Run the session in its own git worktree so parallel sessions don't share files. From a session that is itself " +
+        "isolated, the worktree starts from your current commit, not your uncommitted changes: commit first. The session " +
+        "commits on a branch named courier/<its session ID> and names it in its report; merge that branch yourself.",
+    }),
   ),
   group: Schema.optional(
     Schema.String.annotate({

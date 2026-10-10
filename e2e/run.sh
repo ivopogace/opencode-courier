@@ -796,6 +796,25 @@ cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child force" | tool_state courie
 check "with force, courier_cleanup removed it" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
 check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
 
+echo "nested isolation: a grandchild starts from its isolated parent's HEAD"
+out=$(prompt "COURIER-NEST")
+nest_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+nest_mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the child's report, after it merged its grandchild's branch, woke the parent" "$(has_text "$nest_parent" "MID MERGED leaf.txt" 90)"
+nest_leaf=$(texts "$nest_mid" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
+check "the child started an isolated grandchild" "$([ -n "$nest_leaf" ] && echo true || echo false)"
+mid_dir=$(kv get "roster/$nest_parent/$nest_mid" | jq -r '.directory')
+leaf_entry=$(kv get "roster/$nest_mid/$nest_leaf")
+leaf_dir=$(jq -r '.directory' <<<"$leaf_entry")
+check "the grandchild has a worktree of its own" "$([[ $leaf_dir == */worktree/* && $leaf_dir != "$mid_dir" ]] && echo true || echo false)"
+mid_commit=$(git -C "$WORK/project" log --grep='^mid work$' --format=%H "courier/$nest_mid" 2>/dev/null | head -1 || true)
+check "the child committed on courier/<its session>" "$([ -n "$mid_commit" ] && echo true || echo false)"
+check "the grandchild's recorded base is the child's commit" "$([ -n "$mid_commit" ] && [ "$(jq -r '.base' <<<"$leaf_entry")" = "$mid_commit" ] && echo true || echo false)"
+check "its worktree contains the child's file" "$([ -f "$leaf_dir/leaf-saw-mid.txt" ] && echo true || echo false)"
+check "and the child's commit is in its history" "$(git -C "$leaf_dir" log --format=%s | grep -qx 'mid work' && echo true || echo false)"
+check "the grandchild committed on courier/<its session>" "$(git -C "$WORK/project" log -1 --format=%s "courier/$nest_leaf" 2>/dev/null | grep -qx 'leaf work' && echo true || echo false)"
+check "the child merged it into its own worktree" "$([ -f "$mid_dir/leaf.txt" ] && echo true || echo false)"
+
 # Last, because it swaps the local plugin for the installed one.
 echo "opencode plugin add installs the packed package and its tools load"
 stop_server

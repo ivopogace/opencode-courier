@@ -96,7 +96,7 @@ exports[`tools courier_spawn 1`] = `
       "isolate": {
         "anyOf": [
           {
-            "description": "Run the session in its own git worktree so parallel sessions don't share files.",
+            "description": "Run the session in its own git worktree so parallel sessions don't share files. From a session that is itself isolated, the worktree starts from your current commit, not your uncommitted changes: commit first. The session commits on a branch named courier/<its session ID> and names it in its report; merge that branch yourself.",
             "type": "boolean",
           },
           {
@@ -598,6 +598,42 @@ Fix the bug
 in src/a.ts"
 `;
 
+exports[`envelope and child brief childBrief 3`] = `
+"You were started by session ses_parent through opencode-courier.
+
+When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result).
+If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
+A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
+If you need the person to decide something, use your question tool; it reaches them through the session that started you.
+
+You work in a git worktree of your own, on a detached HEAD. Commit your work on the branch courier/ses_child: create it first (git switch -c courier/ses_child), and name it in the branch of your report's artifacts, so the session that started you can merge it. Uncommitted work is not in your report.
+If you split your task and start a session with isolate: true, commit first: its worktree starts from your current HEAD, not from your uncommitted changes. Merge each branch it reports into yours before you report.
+
+You are at depth 1 of a session tree that goes at most 3 deep. Split your task or do it yourself:
+- Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
+- Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session.
+- If you split, you orchestrate: end your turn while they work, check and integrate each part yourself when it reports (never hand that checking to another session), then send ses_parent one combined report.
+
+Task:
+Fix the bug"
+`;
+
+exports[`envelope and child brief childBrief 4`] = `
+"You were started by session ses_parent through opencode-courier.
+
+When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result).
+If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
+A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
+If you need the person to decide something, use your question tool; it reaches them through the session that started you.
+
+You work in a git worktree of your own, on a detached HEAD. Commit your work on the branch courier/ses_child: create it first (git switch -c courier/ses_child), and name it in the branch of your report's artifacts, so the session that started you can merge it. Uncommitted work is not in your report.
+
+You are at depth 3, the deepest the session tree goes, so you cannot start sessions: do the task yourself.
+
+Task:
+Fix the bug"
+`;
+
 exports[`envelope and child brief rolePart 1`] = `"opencode-courier role: root orchestrator. You started sessions with courier_spawn, and they may start their own, down to 3 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree. Check and integrate what each one reports yourself."`;
 
 exports[`envelope and child brief rolePart 2`] = `"opencode-courier role: sub-orchestrator, at depth 1 of at most 3. Split your task with courier_spawn or do it yourself, as your brief says; sessions can be started 2 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree."`;
@@ -658,6 +694,10 @@ exports[`tool results spawnText 2`] = `"Started session ses_child in /wt. It wil
 exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a question or a failed turn still reaches you at once. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
 exports[`tool results spawnText 4`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is in no group, so its report comes on its own: group failed: disk full"`;
+
+exports[`tool results spawnText for a child started from its parent's HEAD 1`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. Its worktree starts from the commit your own worktree is on."`;
+
+exports[`tool results spawnText for a child started from its parent's HEAD 2`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. Its worktree starts from the commit your own worktree is on. Your worktree has uncommitted changes, which it does not see: commit them and tell it, or send them to it, if it needs them."`;
 
 exports[`tool results sendText 1`] = `"Delivered to ses_parent."`;
 

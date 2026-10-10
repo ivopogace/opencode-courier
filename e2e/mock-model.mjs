@@ -50,16 +50,16 @@ function decide(body) {
     const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
     // A leaf of COURIER-DEPTH reports what its courier_spawn call gave.
     if (call?.function?.name === "courier_spawn" && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-LEAF"))
-      return { tool: "courier_send", args: { sessionID: startedBy[1], message: `LEAF GOT ${result}` } }
+      return { tool: "courier_send", args: { sessionID: startedBy[1], message: `LEAF GOT ${result}`, status: "done" } }
     // The child of COURIER-ASK reports what its shell call gave, run or refused, once it has the answer.
     if ((call?.function?.name === "shell" || call?.function?.name === "websearch") && startedBy)
-      return { tool: "courier_send", args: { sessionID: startedBy[1], message: `CHILD DONE ${call.function.name}: ${result}` } }
+      return { tool: "courier_send", args: { sessionID: startedBy[1], message: `CHILD DONE ${call.function.name}: ${result}`, status: "done" } }
     if (call?.function?.name === "question") {
       // The child of COURIER-QUESTION reports what its question call gave.
       if (startedBy)
         return {
           tool: "courier_send",
-          args: { sessionID: startedBy[1], message: /dismissed this question/.test(result) ? "CHILD DISMISSED" : `CHILD GOT ${JSON.stringify(answersIn(result))}` },
+          args: { sessionID: startedBy[1], message: /dismissed this question/.test(result) ? "CHILD DISMISSED" : `CHILD GOT ${JSON.stringify(answersIn(result))}`, status: "done" },
         }
       // A parent whose question was linked to its child's has nothing left to do.
       if (/do not call courier_answer|nothing to pass on|not passed on; tell the person/i.test(result)) return { text: `PARENT RELAYED: ${result}` }
@@ -98,6 +98,8 @@ function decide(body) {
   }
   // The child of COURIER-SILENT ends its turn with a reply but no report, held back so the parent's turn has ended.
   if (parent && recent.includes("CHILD-SILENT")) return { text: "CHILD SILENT REPLY", delayed: true }
+  // The child of COURIER-PROGRESS messages its parent without a status, then ends its turn on the tool's result.
+  if (parent && recent.includes("CHILD-PROGRESSES")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD HALFWAY" } }
   // The child of COURIER-WAITING schedules a message that tells it to report, and ends its turn to wait for it.
   if (parent && recent.includes("CHILD-WAITS")) return { tool: "courier_later", args: { message: "CHILD-REPORT-NOW", delayMinutes: 0.25 } }
   // The child of COURIER-HOOKED subscribes to a webhook topic and ends its turn to wait for a delivery.
@@ -114,15 +116,18 @@ function decide(body) {
   const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
   // A child the person prompts in its own session answers them, without a report.
   if (startedBy && recent.includes("PERSON-ASKS")) return { text: "CHILD ANSWERS PERSON" }
-  // A child its parent told to report does.
+  // A child its parent told to report does; CHILD-REPORT-PLAIN asks for one without a status, as an older brief would get.
   if (startedBy && recent.includes("CHILD-REPORT-NOW"))
-    return { tool: "courier_send", args: { sessionID: startedBy[1], message: "CHILD DONE AFTER NUDGE" } }
+    return { tool: "courier_send", args: { sessionID: startedBy[1], message: "CHILD DONE AFTER NUDGE", status: "done" } }
+  if (startedBy && recent.includes("CHILD-REPORT-PLAIN"))
+    return { tool: "courier_send", args: { sessionID: startedBy[1], message: "CHILD DONE WITHOUT STATUS" } }
   if (answered && startedBy)
     return {
       tool: "courier_send",
-      args: { sessionID: startedBy[1], message: answered[1] ? "CHILD DISMISSED" : `CHILD GOT ${JSON.stringify(answersIn(recent))}` },
+      args: { sessionID: startedBy[1], message: answered[1] ? "CHILD DISMISSED" : `CHILD GOT ${JSON.stringify(answersIn(recent))}`, status: "done" },
     }
-  if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE" } }
+  // Any other child reports done, with every kind of artifact.
+  if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE", status: "done", artifacts: ARTIFACTS } }
   // A parent told of its child's question asks the person the same with its own question tool; the
   // RELABEL, REWORD and BOTH variants relabel, reword, or also call courier_answer in the same step.
   const notice = recent.match(QUESTION_NOTICE)
@@ -150,8 +155,8 @@ function decide(body) {
   if (/<courier from="ses_\w+" (answered|settled)=/.test(recent)) return { text: "PARENT SETTLED" }
   if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
-  const nudge = recent.match(/COURIER-NUDGE (ses_\w+)/)
-  if (nudge) return { tool: "courier_send", args: { sessionID: nudge[1], message: "CHILD-REPORT-NOW" } }
+  const nudge = recent.match(/COURIER-NUDGE(-PLAIN)? (ses_\w+)/)
+  if (nudge) return { tool: "courier_send", args: { sessionID: nudge[2], message: nudge[1] ? "CHILD-REPORT-PLAIN" : "CHILD-REPORT-NOW" } }
   const answer = recent.match(/COURIER-ANSWER (once|always|reject)(?: (.+))?/)
   if (answer) {
     const notices = messages.flatMap((message) => [...textOf(message.content).matchAll(/<courier from="(ses_\w+)" asks="permission" request="([^"]+)">/g)])
@@ -174,6 +179,7 @@ function decide(body) {
   if (recent.includes("COURIER-DEPTH")) return { tool: "courier_spawn", args: { task: "CHILD-DEEPENS" } }
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
   if (recent.includes("COURIER-SILENT")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT" } }
+  if (recent.includes("COURIER-PROGRESS")) return { tool: "courier_spawn", args: { task: "CHILD-PROGRESSES" } }
   if (recent.includes("COURIER-WAITING")) return { tool: "courier_spawn", args: { task: "CHILD-WAITS" } }
   if (recent.includes("COURIER-HOOKED")) return { tool: "courier_spawn", args: { task: "CHILD-HOOKED" } }
   const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL|-REWORD|-BOTH)?(?: (isolate|nested))?/)
@@ -192,6 +198,14 @@ function decide(body) {
   const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)
   if (spawn) return spawnChild(spawn[1] === "isolate")
   return { text: "ok" }
+}
+
+// What a child reports as artifacts: one of each kind, so the test sees the whole layout.
+const ARTIFACTS = {
+  branch: "child/work",
+  commits: ["abc1234 Do the task"],
+  files: ["README.md"],
+  checks: [{ command: "echo ok", result: "ok" }],
 }
 
 function spawnChild(isolate) {

@@ -87,6 +87,8 @@ function childOf(part) {
 // A courier message delivered to the parent, and who sent it.
 const senderOf = (message) =>
   message.type === "synthetic" ? message.text.match(/^<courier from="(ses_\w+)"/)?.[1] : undefined
+// The status a report carries as an attribute, when the child gave one.
+const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ?? "")
 // Who sent a report with courier_send; a courier_later check-in, from whoever, is not a report.
 const reporterOf = (message) => (scheduled(message) ? undefined : senderOf(message))
@@ -187,7 +189,7 @@ const reports = turns.flatMap((turn, number) =>
     if (!from || !children.has(from)) return []
     const answered = turn.slice(position + 1).some((later) => later.type === "assistant" && !failed(later))
     const opened = turn.slice(0, position).every((earlier) => earlier.type === "synthetic")
-    return [{ from, turn: number + 1, answered, opened, text: message.text }]
+    return [{ from, turn: number + 1, answered, opened, text: message.text, status: statusOf(message) }]
   }),
 )
 const reportOf = (id) => reports.find((report) => report.from === id)
@@ -203,6 +205,7 @@ const checks = [
   ["the parent did not poll its children (courier_status, courier_children, sleep)", !polled],
   ["both children called courier_send to the parent", spawned.length >= 2 && spawned.every((id) => sends.get(id).length > 0)],
   ["both reports woke the parent: each arrived after its first turn and got a reply", spawned.length >= 2 && spawned.every((id) => reportOf(id)?.turn > 1 && reportOf(id)?.answered)],
+  ["each report carries a status, as the brief asks", spawned.length >= 2 && spawned.every((id) => reportOf(id)?.status !== undefined)],
   [
     "each report holds its child's answer",
     spawned.length >= 2 &&
@@ -219,7 +222,7 @@ if (native.length) notes.push(`the parent also used OpenCode's own subagent tool
 const selfWorked = expected.filter((value) => firstText.includes(value))
 if (selfWorked.length) notes.push(`the parent's first turn already states ${selfWorked.join(", ")} (did it work them out itself?)`)
 for (const report of reports)
-  notes.push(`report from ${report.from}: turn ${report.turn}, ${report.opened ? "woke the idle parent" : "steered into a running turn"}`)
+  notes.push(`report from ${report.from}: turn ${report.turn}, ${report.opened ? "woke the idle parent" : "steered into a running turn"}, ${report.status ? `status ${report.status}` : "no status"}`)
 const checkIns = parentTools.filter((part) => part.name === "courier_later" && part.state.status === "completed").length
 const cancelled = parentTools.filter((part) => part.name === "courier_cancel" && part.state.status === "completed").length
 if (checkIns) notes.push(`the parent scheduled ${checkIns} courier_later check-in(s) and cancelled ${cancelled}`)

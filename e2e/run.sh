@@ -52,6 +52,25 @@ reply_time() {
   done
 }
 
+tool_state() { jq -c --arg tool "$1" 'select(.type == "tool_use" and .part.tool == $tool) | .part.state'; }
+# The parent's synthetic messages whose envelope carries attribute $2, from session $1.
+notices_with() { api "session/$1/message" | jq -c --arg attribute " $2=" '[.data[] | select(.type == "synthetic") | .text | select(contains($attribute))]'; }
+kv() { XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" "$@"; }
+# The texts of session $1: what it was sent, what it replied and what its tools returned.
+texts() {
+  api "session/$1/message" |
+    jq -r '.data[] | (.text // empty), (.content[]? | (.text // empty), (.state.content[]?.text // empty),
+      (.state.output? // empty | if type == "string" then . else tojson end))'
+}
+# Whether session $1 has a text containing $2, waiting up to $3 (default 30) s.
+has_text() {
+  for _ in $(seq 1 "${3:-30}"); do
+    if texts "$1" | grep -qF -- "$2"; then echo true; return; fi
+    sleep 1
+  done
+  echo false
+}
+
 mkdir -p "$WORK/project" "$HOME"
 WEBHOOK_SECRET=courier-e2e-webhook-secret
 printf '%s\n' "$WEBHOOK_SECRET" >"$WORK/webhook-secret"
@@ -96,12 +115,17 @@ for mode in shared isolate; do
   spawn=$(jq -c 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state' <<<"$out")
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   directory=$(jq -r '.metadata.metadata.directory // empty' <<<"$spawn")
+  child=$(jq -r '.metadata.metadata.sessionID' <<<"$spawn")
   check "courier_spawn completed" "$(jq -r '.status == "completed"' <<<"$spawn")"
   if [ "$mode" = isolate ]; then
     check "child runs in its own worktree" "$([[ $directory == */worktree/* ]] && echo true || echo false)"
   fi
   woke=$(reply_time "$parent" "PARENT WOKE")
   check "parent got a new turn after its own had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+  check "the report carries its status as an attribute, and its artifacts in the body" \
+    "$(api "session/$parent/message" | jq -r --arg child "$child" '[.data[] | select(.type == "synthetic") | .text] | any(. ==
+      "<courier from=\"" + $child + "\" status=\"done\">\nCHILD DONE\n\nArtifacts:\n- branch: child/work\n- commits: abc1234 Do the task\n- files: README.md\n- checks:\n  - echo ok: ok\n</courier>")')"
+  check "which settled the child's report, with the status" "$(kv get "report/$child/settled" | jq -r '.by == "report" and .status == "done"')"
   check "and no notice of a turn without a report, since the child reported" \
     "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains(" ended="))] | length == 0')"
 done
@@ -111,8 +135,6 @@ out=$(prompt "COURIER-STATUS $parent")
 check "reports the parent's last reply" "$(jq -r 'select(.type == "tool_use") | .part.state | .status == "completed" and (.output | contains("PARENT WOKE"))' <<<"$out")"
 out=$(prompt "COURIER-STATUS ses_missing")
 check "names the error for an unknown session" "$(jq -r 'select(.type == "tool_use") | .part.state.error | contains("NotFoundError")' <<<"$out")"
-
-tool_state() { jq -c --arg tool "$1" 'select(.type == "tool_use" and .part.tool == $tool) | .part.state'; }
 
 echo "a child runs on its parent's model, not the default one"
 out=$(cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --model mock/other "COURIER-TEST" </dev/null)
@@ -133,9 +155,6 @@ notices=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "syn
 check "the parent was told once" "$(jq -r 'length == 1' <<<"$notices")"
 check "which child failed, and with what error"   "$(jq -r --arg child "$child" 'join("") | contains("<courier from=\"" + $child + "\" failed=") and contains("not available in your country")' <<<"$notices")"
 
-# The parent's synthetic messages whose envelope carries attribute $2, from session $1.
-notices_with() { api "session/$1/message" | jq -c --arg attribute " $2=" '[.data[] | select(.type == "synthetic") | .text | select(contains($attribute))]'; }
-kv() { XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" "$@"; }
 
 echo "a child whose turn ends without a report is reported to its idle parent"
 out=$(prompt "COURIER-SILENT")
@@ -155,6 +174,39 @@ check "told to report, the child did" "$([ -n "$(reply_time "$parent" "PARENT WO
 check "which settled its report" "$(kv get "report/$child/settled" | jq -r '.by == "report"')"
 check "and its reported turn was not told as one without a report" \
   "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 1')"
+
+echo "a message without a status is progress: a child that then ends its turn is reported, and the notice says so"
+out=$(prompt "COURIER-PROGRESS")
+turn_ended=$(now_ms)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+woke=$(reply_time "$parent" "PARENT WOKE" 45)
+check "the message started a new turn after the parent's had ended" \
+  "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+check "without a status attribute" "$(api "session/$parent/message" | jq -r --arg child "$child" \
+  '[.data[] | select(.type == "synthetic") | .text | select(startswith("<courier from=\"" + $child + "\">") and contains("CHILD HALFWAY"))] | length == 1')"
+check "then the parent was told the child ended without a report, and that its last message had no status" \
+  "$([ -n "$(reply_time "$parent" "PARENT TOLD SILENT" 45)" ] && notices_with "$parent" ended | jq -r --arg child "$child" 'length == 1 and (.[0] |
+  contains("<courier from=\"" + $child + "\" ended=\"without-report\">") and contains("Its last message to you had no status"))')"
+check "the child owes its parent a report, its message noted as progress" \
+  "$([ -z "$(kv get "report/$child/settled")" ] && [ "$(kv get "report/$child/progress" | jq -r '.at | type == "number"')" = true ] && echo true || echo false)"
+prompt_in "$parent" "COURIER-NUDGE $child" >/dev/null
+check "told to report, the child did, with a status" "$(has_text "$parent" "<courier from=\"$child\" status=\"done\">" 45)"
+check "which settled its report, with the status" "$(kv get "report/$child/settled" | jq -r '.by == "report" and .status == "done"')"
+check "and its reported turn was not told as one without a report" "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 1')"
+
+echo "a child an older release briefed, whose roster entry says nothing of statuses, reports without one, as before"
+out=$(prompt "COURIER-SILENT")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the parent was told it ended without a report" "$([ -n "$(reply_time "$parent" "PARENT TOLD SILENT" 45)" ] && echo true || echo false)"
+entry=$(kv get "roster/$parent/$child")
+check "its roster entry is rewritten as an older release wrote it, without reports" \
+  "$([ "$(jq -r '.reports' <<<"$entry")" = status ] && kv set "roster/$parent/$child" "$(jq -c 'del(.reports)' <<<"$entry")" "roster/$parent/$child" && echo true || echo false)"
+prompt_in "$parent" "COURIER-NUDGE-PLAIN $child" >/dev/null
+check "told to report, the child did, without a status" "$(has_text "$parent" "CHILD DONE WITHOUT STATUS" 45)"
+check "which settled its report, with no status" "$(kv get "report/$child/settled" | jq -r '.by == "report" and (has("status") | not)')"
+check "and its parent was not told again" "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 1')"
 
 echo "what the person types in a child that has reported does not make it owe a report"
 out=$(prompt "COURIER-TEST")
@@ -233,20 +285,6 @@ check "a late courier_answer passes nothing on" \
   "$(jq -r '.status == "completed" and .metadata.metadata.answered == false and (.output | contains("is pending in this OpenCode server") and contains("another OpenCode server on the same data directory"))' <<<"$answered")"
 check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
 
-# The texts of session $1: what it was sent, what it replied and what its tools returned.
-texts() {
-  api "session/$1/message" |
-    jq -r '.data[] | (.text // empty), (.content[]? | (.text // empty), (.state.content[]?.text // empty),
-      (.state.output? // empty | if type == "string" then . else tojson end))'
-}
-# Whether session $1 has a text containing $2, waiting up to $3 (default 30) s.
-has_text() {
-  for _ in $(seq 1 "${3:-30}"); do
-    if texts "$1" | grep -qF -- "$2"; then echo true; return; fi
-    sleep 1
-  done
-  echo false
-}
 # The id of the pending form of session $1 that is not $2, waiting up to $3 (default 30) s.
 form_of() {
   for _ in $(seq 1 "${3:-30}"); do

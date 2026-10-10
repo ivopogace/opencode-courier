@@ -49,7 +49,9 @@ const childOf = (part) =>
   part.name === "courier_spawn" && part.state.status === "completed"
     ? (part.state.metadata?.sessionID ?? part.state.metadata?.metadata?.sessionID)
     : undefined
-const isReport = (message, child) => message.type === "synthetic" && message.text.startsWith(`<courier from="${child}">`)
+// A message the child sent its parent with courier_send: its envelope carries the status, when it gave one, and nothing else.
+const isReport = (message, child) => message.type === "synthetic" && new RegExp(`^<courier from="${child}"( status="\\w+")?>`).test(message.text)
+const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 
 /** Polls until `ready` returns something, or gives up after the timeout. */
 async function until(what, ready) {
@@ -210,6 +212,7 @@ const checks = [
   ["the parent's final reply holds it", expected !== "" && finalText.includes(expected)],
 ]
 const notes = [`the parent ${how}`]
+if (report) notes.push(`the child's report carried ${statusOf(report) ? `status ${statusOf(report)}` : "no status"}`)
 if (other) notes.push(`after courier_answer on the other server, the parent said: ${short(elsewhereSaid, 600)}`)
 const asChecked = (other ? notPending : passedOn).length
 if (answers.length > asChecked) notes.push(`courier_answer was called ${answers.length} time(s), ${asChecked} of them as checked`)

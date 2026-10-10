@@ -49,7 +49,9 @@ const metadataOf = (part) => part.state.metadata?.metadata ?? part.state.metadat
 const childOf = (part) => (part.name === "courier_spawn" && part.state.status === "completed" ? metadataOf(part).sessionID : undefined)
 const labels = (form) => JSON.stringify(form.fields.map((field) => (field.options ?? []).map((option) => option.label).sort()))
 const isNotice = (message) => message.type === "synthetic" && /^<courier from="ses_\w+" asks="question"/.test(message.text)
-const isReport = (message, child) => message.type === "synthetic" && message.text.startsWith(`<courier from="${child}">`)
+// A message the child sent its parent with courier_send: its envelope carries the status, when it gave one, and nothing else.
+const isReport = (message, child) => message.type === "synthetic" && new RegExp(`^<courier from="${child}"( status="\\w+")?>`).test(message.text)
+const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 
 /** Polls until `ready` returns something, or gives up after the timeout. */
 async function until(what, ready) {
@@ -186,6 +188,7 @@ if (route === "question tool") {
   notes.push(`the child's question call ended ${question?.state.status}: ${short(result, 200)}`)
 }
 notes.push(`passed on with: ${[...new Set(passedOn.map((part) => (part.name === "question" ? "the linked question" : part.name)))].join(", ") || "nothing"}`)
+if (report) notes.push(`the child's report carried ${statusOf(report) ? `status ${statusOf(report)}` : "no status"}`)
 if (personAt !== Infinity && report) notes.push(`from the person's answer to the child's report: ${Math.round((report.time.created - personAt) / 1000)} s`)
 // Failed model requests, or a turn whose idle marker (2.0.22) says it failed: a run that fails its
 // checks with any is inconclusive rather than failed. The two are counted apart.

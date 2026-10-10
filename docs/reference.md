@@ -114,7 +114,9 @@ dropped after 14 days, starts its children as if it were the top of a tree.
 **The brief says when to split.** A spawned session is told its depth and the limits. Below
 `maxDepth` it is given a rule: split the task when it has 2 or more independent, substantial parts
 touching separate files or areas, one session per part; do it itself when it is small, sequential or
-tightly coupled, and never start exactly one session. A session that splits orchestrates: it ends its
+tightly coupled, and never start exactly one session; and say which in one line of its reply,
+`split: no, because …` or `split: <n> parts: …`, so that a transcript tells a reasoned decision to
+do the task itself from one never made. A session that splits orchestrates: it ends its
 turn while its children work, checks and integrates each part itself, never handing that checking
 to another session, and sends its parent one combined report. At `maxDepth` it is told to do the
 task itself. Every spawned session is told how to [report](#a-childs-report): once, with a status
@@ -127,12 +129,19 @@ request also goes without `courier_spawn` in its tool list, so its model does no
 is guidance and `courier_spawn` the guarantee: another plugin's hook can put the tool back, and the
 call is still refused.
 
-A session nobody spawned gets nothing from the hook until it has started a session, so one that
-never uses the courier sends exactly the request it did before. From the request after its first
-spawn on, it gets a `root orchestrator` part with the limits. Each part is the same on every request
-of its session, so it changes the session's prompt once and the provider's prompt cache holds after
-that. Each instance remembers the depths it has looked up, so the hook reads the roster once per
-session, not per request. It reads only the session's [reverse index](#roster) key and its own
+A session nobody spawned that has started none gets one part too, `opencode-courier role: root, no
+sessions started yet`, which is a pointer rather than a role: before a task that touches several
+files or areas, load the `courier-orchestrate` skill and decide whether to split it across sessions,
+doing it itself being fine, and say which in one line of the reply (`split: no, because …` or
+`split: <n> parts: …`). The [skill's description](#the-courier-orchestrate-skill) alone fires only
+once a model already takes its task for a big one; the pointer reaches it before it starts
+working, and asks for the decision to be visible either way. From the request after its first
+spawn on, the session gets a `root orchestrator` part with the limits instead. Every part the hook
+adds begins with the same `opencode-courier role:` prefix, and the hook adds none when one is there
+already, so a second copy of the plugin loaded next to it does not add its own. Each part is the same
+on every request of its session, so a session's prompt changes once, at its first spawn, and the
+provider's prompt cache holds otherwise. Each instance remembers the depths it has looked up, so
+the hook reads the roster once per session, not per request. It reads only the session's [reverse index](#roster) key and its own
 children, never the whole roster: an entry an older copy wrote without a key is indexed on the next
 load, and until then the hook takes its session for one nobody spawned; `courier_spawn` still
 enforces the limits.
@@ -142,21 +151,29 @@ enforces the limits.
 The tools make a tree of sessions possible; the skill is the playbook for using them. The plugin
 registers one OpenCode skill, `courier-orchestrate`, through the plugin API's skill domain, in every
 location it loads in, so it is listed among the available skills of every session there, with a
-description saying when to load it: when a task is big enough to hand parts of it to other sessions,
-or when a session was started by one and must decide whether to split its task. A model loads it
-with OpenCode's `skill` tool, which asks the `skill` permission for `courier-orchestrate` like any
+description saying when to load it: at the start of any implementation task that may have
+independent parts, or when a session was started by one, to decide whether to split the task across
+sessions and state the decision. It triggers on the task's shape, not on the conclusion that the
+task is big, which a model working alone on one issue never reaches; a session nobody spawned is
+also pointed to the skill by [the context hook](#session-trees-and-their-limits) before it starts.
+A model loads it with OpenCode's `skill` tool, which asks the `skill` permission for `courier-orchestrate` like any
 skill (a spawned session's request is relayed to its parent as any other); a person activates it
 from the TUI's `/skills` dialog, which attaches its text to the next prompt. How OpenCode lists,
 loads and injects a skill: [plugin-api-notes.md](plugin-api-notes.md#skills-v2026).
 
 Its text is short and model-facing, kept in `src/notices.ts` with the other model-facing strings and
 snapshotted with them. It names no limits (the role part and the brief give the session's own) and
-says, in order: decide whether to split or do, by [the brief's rule](#session-trees-and-their-limits);
+says, in order: decide whether to split or do, by [the brief's rule](#session-trees-and-their-limits),
+and say which in one line of the reply before starting, `split: no, because …` or `split: <n>
+parts: …`, so that a reasoned decision to do the task alone can be told from one never made;
 plan the parts so that no two edit the same files, each task complete enough to be done without the
 orchestrator; start them with one `courier_spawn` per part, all in one [join group](#join-groups),
 `isolate: true` where parts edit files in parallel; end the turn, without polling; read each
 [report](#a-childs-report) by its status and artifacts, and what to do on `done`, `partial`,
-`blocked` and `failed`; verify first-hand, never through another session; integrate by merging each
+`blocked` and `failed`; verify first-hand, never through another session, running checks through
+the project's scripts (`bun run <script>`, `npm run <script>`) rather than `./node_modules/.bin/<tool>`,
+so that one permission rule covers them, since the orchestrating session's own permission prompts
+are relayed nowhere and each one stalls the whole tree; integrate by merging each
 reported branch, then `courier_cleanup`; report upward with one status for the whole, or reply to the
 person at the top. Then what to do when a part goes wrong: a [failed turn](#a-child-that-fails) or
 a [silent end](#a-child-that-ends-without-a-report), a `courier_spawn` refused by a limit (do the

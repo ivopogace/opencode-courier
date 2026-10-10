@@ -313,13 +313,19 @@ turn 2 (opened by a message from ses_…, ses_…):
 result: pass
 ```
 
-**How a session finds the skill.** Nothing names it but its own description, in the skill list
-OpenCode puts in every session's system prompt: neither the role part, the brief nor a tool
-description mentions it, so that no model-facing string changed for it. In the run above the root
-loaded it before its first spawn and followed it (one group, verification by reading the files);
-in another run the root did not, and the "numbers" session loaded it instead, before its own
+**How a session finds the skill.** When the skill shipped, nothing named it but its own description,
+in the skill list OpenCode puts in every session's system prompt: neither the role part, the brief
+nor a tool description mentioned it, so that no model-facing string changed for it. In the run above
+the root loaded it before its first spawn and followed it (one group, verification by reading the
+files); in another run the root did not, and the "numbers" session loaded it instead, before its own
 split, then used a group, scheduled a check-in for itself, cancelled it once the group's message
-came, and verified both files. Either way every check passed but one in that other run, the model's
+came, and verified both files. A dogfood run on a real issue (#119) then showed the gap: a root
+session given one issue to implement never took its task for one "big enough" to split, so the
+description never fired and the plugin never engaged. Since then the description asks for the skill
+at the start of any implementation task that may have independent parts, a session nobody spawned
+is pointed to it by [the context hook](reference.md#session-trees-and-their-limits) before it starts,
+and the skill, the brief and the pointer each ask for the decision in one line of the reply,
+`split: no, because …` or `split: <n> parts: …`. Either way every check passed but one in that other run, the model's
 doing: the root copied a long temporary path into its children's tasks with a typo, so the files
 were written next to the project rather than in it, and the three sessions reading them back read
 the same wrong path. Run the scenario in a plainly named directory (the default temp dir is).

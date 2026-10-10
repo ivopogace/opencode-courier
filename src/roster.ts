@@ -79,12 +79,13 @@ function isReverse(value: unknown): value is ReverseEntry {
  * the entry's removal can fail it: a reverse key left behind leads nowhere, and the next load drops it.
  */
 export async function remove(storage: RosterStorage, parentID: string, sessionID: string, group?: string) {
-  await Promise.all([
+  const [, , , dropped] = await Promise.all([
     storage.remove(rosterKey(parentID, sessionID)),
     storage.remove(reverseKey(sessionID)).catch(() => undefined),
     forgetReport(storage, sessionID).catch(() => undefined),
-    group ? dropMember(storage, parentID, group, sessionID).catch(() => undefined) : undefined,
+    group ? dropMember(storage, parentID, group, sessionID).catch(() => false) : false,
   ])
+  return { droppedFromGroup: dropped }
 }
 
 /** Removes a child from its parent's roster; false when it was not there. */
@@ -121,11 +122,15 @@ export async function indexedParent(storage: RosterStorage, sessionID: string) {
   return isReverse(indexed) ? indexed.ancestors[0] : undefined
 }
 
+/** A session's roster entry under a parent, if it is there. */
+export async function entryUnder(storage: RosterStorage, parentID: string, sessionID: string) {
+  return (await storage.get(rosterKey(parentID, sessionID))) as unknown as RosterEntry | undefined
+}
+
 /** A session's roster entry, by the reverse index alone, without scanning the roster. */
 export async function indexedEntry(storage: RosterStorage, sessionID: string) {
   const parentID = await indexedParent(storage, sessionID)
-  if (parentID === undefined) return undefined
-  return (await storage.get(rosterKey(parentID, sessionID))) as unknown as RosterEntry | undefined
+  return parentID === undefined ? undefined : entryUnder(storage, parentID, sessionID)
 }
 
 /**

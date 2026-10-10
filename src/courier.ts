@@ -205,7 +205,12 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
   // Noted first: the delivery may wake the parent, whose turn may end before a later note.
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
   if (noted?.member && status && status !== "blocked") {
-    const held = await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) })
+    const held = await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) }).catch(
+      async (error: unknown) => {
+        await noted.undo().catch(() => undefined)
+        throw error
+      },
+    )
     if (held) return { status, report: true, held }
   }
   // A blocked report is the member's latest word: an earlier report held for it would be stale.
@@ -269,11 +274,11 @@ async function hold(ports: CourierPorts, member: Membership, report: HeldReport)
   try {
     await holdReport(ports.storage, member, report)
   } catch (error) {
-    await unholdReport(ports.storage, member).then(
-      () => ports.nudge(),
-      (dropError: unknown) =>
-        ports.log(`courier_send: ${member.sessionID}'s report could not be held with group ${member.group} (${String(error)}), nor the member dropped: ${String(dropError)}`),
-    )
+    // Neither held nor dropped, the group would wait for ever: the call fails, and the sender sends it again.
+    await unholdReport(ports.storage, member).catch((dropError: unknown) => {
+      throw new Error(`the report could not be held with group ${member.group} (${String(error)}), nor the member dropped from it (${String(dropError)}); send it again.`)
+    })
+    ports.nudge()
     return undefined
   }
   // Held whatever the count gives: the scheduler's tick finds a complete group on its own.

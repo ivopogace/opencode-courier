@@ -668,6 +668,19 @@ describe("join groups", () => {
     expect(sent.map((notice: any) => notice.sessionID)).toEqual(["ses_parent", "ses_root"])
   })
 
+  test("a member that left, re-prompted and ending without a report, is not said to hold the group up", async () => {
+    const { ports, sent, store } = fakePorts()
+    await pair(ports)
+    await reportFailure(ports, new Set(), { ...failed("ses_b", "evt_1"), created: 100 })
+    await notePrompt(ports, delivered("evt_d", 200, "ses_b"))
+
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 300, "ses_b"))).toEqual(["ses_parent"])
+
+    expect(sent[1].text).not.toContain("group")
+    expect(await noteInterrupted(ports, sessionEvent("session.execution.interrupted", "evt_i", 400, "ses_b", "user") as SessionEvent)).toBe(true)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 100, by: "failed" } })
+  })
+
   test("a member whose turn is interrupted leaves its group, unless a shutdown stopped it, or its report is held", async () => {
     const { ports, store, nudges } = fakePorts()
     await pair(ports)

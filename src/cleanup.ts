@@ -48,8 +48,8 @@ export async function cleanup(ports: CleanupPorts, parentID: string, input: Clea
     throw new Error(`${input.sessionID} ran in ${entry.directory}, not in a worktree of its own; there is nothing to remove.`)
   const { directory } = entry
   const forget = async () => {
-    await remove(ports.storage, parentID, input.sessionID, entry.group)
-    if (entry.group) ports.nudge()
+    const { droppedFromGroup } = await remove(ports.storage, parentID, input.sessionID, entry.group)
+    if (droppedFromGroup) ports.nudge()
   }
   // With force the state only decides whether there is anything left to remove, so a worktree git
   // can no longer read is still removed.

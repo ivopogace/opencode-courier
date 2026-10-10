@@ -133,19 +133,19 @@ export async function groupStanding(storage: Pick<Storage, "scan">, parentID: st
   }
 }
 
-/** A session's membership of a parent's group, if it is a member; `out` says whether it still owes the group a report. */
+/** A session's membership of a parent's group, if it is a member; `out` says whether the group still waits for its report. */
 export async function membershipOf(storage: Pick<Storage, "get">, parentID: string, group: string, sessionID: string) {
   const member = await memberOf(storage, parentID, group, sessionID)
-  return member && { ...member, parentID, group, sessionID, out: !member.report }
+  return member && { ...member, parentID, group, sessionID, out: standingOf(member) === "out" }
 }
 
 /**
  * Notes that a member, read already, left its group without a report: its turn failed or was interrupted, or it was
- * deleted. One whose report is held keeps it. Returns whether the group is complete now.
+ * deleted. One whose report is held keeps it, and one that left keeps why. Returns whether the group is complete now.
  */
 export async function markLeft(storage: Pick<Storage, "set" | "scan">, membership: Membership, by: LeftMember["by"], at: number) {
   const { parentID, group, sessionID, title, joinedAt } = membership
-  if (!membership.report) await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt, left: { at, by } }))
+  if (standingOf(membership) === "out") await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt, left: { at, by } }))
   return (await groupStanding(storage, parentID, group)).complete
 }
 
@@ -161,7 +161,7 @@ export async function unholdForBlocked(storage: Pick<Storage, "set">, membership
   if (membership.report) await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt }))
 }
 
-/** Drops a member from its group, with its roster entry, unless its report is held: that still goes to the parent. */
+/** Drops a member from its group, with its roster entry, unless its report is held: that still goes to the parent. True when dropped. */
 export async function dropMember(storage: Pick<Storage, "get" | "remove">, parentID: string, group: string, sessionID: string) {
   if ((await memberOf(storage, parentID, group, sessionID))?.report) return false
   await storage.remove(memberKey(parentID, group, sessionID))

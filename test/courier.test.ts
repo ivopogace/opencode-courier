@@ -503,12 +503,17 @@ describe("send, from a member of a group", () => {
     expect(store.has(memberKey("ses_parent", "pair", "ses_other"))).toBe(false)
     expect(nudges).toHaveLength(1)
 
-    // Neither held nor dropped: delivered on its own, and logged.
-    await joinGroup(ports.storage, "ses_parent", "pair", "ses_other", "B", 2).catch(() => undefined)
+    // Neither held nor dropped: the call fails, its note taken back, so the sender sends it again rather than the group waiting for ever.
     store.set(memberKey("ses_parent", "pair", "ses_other"), { title: "B", joinedAt: 2 })
-    ;(ports.storage as any).remove = async () => Promise.reject(new Error("locked"))
-    expect(await send(ports, "ses_other", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done", report: true })
-    expect(logs).toEqual(["courier_send: ses_other's report could not be held with group pair (Error: disk full), nor the member dropped: Error: locked"])
+    store.delete(settledKey("ses_other"))
+    const remove = ports.storage.remove
+    ;(ports.storage as any).remove = async (key: string) => (key.startsWith("group/") ? Promise.reject(new Error("locked")) : remove(key))
+    await expect(send(ports, "ses_other", { sessionID: "ses_parent", message: "m", status: "done" })).rejects.toThrow(
+      "the report could not be held with group pair (Error: disk full), nor the member dropped from it (Error: locked); send it again.",
+    )
+    expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(2)
+    expect(store.has(settledKey("ses_other"))).toBe(false)
+    expect(logs).toEqual([])
   })
 
   test("a member whose place in the group cannot be read reports on its own, and is dropped from the group, which is logged", async () => {

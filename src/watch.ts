@@ -24,7 +24,7 @@ import {
 } from "./relay.js"
 import { scheduledFor } from "./later.js"
 import { awaited, forgetReport, prompted, reportOf, settled, told, untold } from "./report.js"
-import { allEntries, children, entriesOf, indexedEntry, indexedParent, lineage, rosterKey, type RosterEntry } from "./roster.js"
+import { allEntries, children, entriesOf, entryUnder, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
 import { subscriptions } from "./webhook.js"
 
 export type { FormsTold, WatchPorts, WatchState } from "./hub.js"
@@ -87,7 +87,7 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
       ),
     )
   } finally {
-    if (completed.includes(true)) ports.nudge()
+    if (completed.includes(true)) ports.nudge?.()
   }
   return entries.map((entry) => entry.parentID)
 }
@@ -159,7 +159,7 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
   const at = event.created ?? ports.now()
   await settled(ports.storage, sessionID, "interrupted", at)
   const member = await outIn(ports, entry)
-  if (member && (await leave(ports, member, "interrupted", at))) ports.nudge()
+  if (member && (await leave(ports, member, "interrupted", at))) ports.nudge?.()
   return true
 }
 
@@ -171,7 +171,7 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const { sessionID } = event.data
   const [parentID, started] = await Promise.all([indexedParent(ports.storage, sessionID), children(ports.storage, sessionID)])
   const forgotten = [...(parentID === undefined ? [] : [sessionID]), ...started.map((child) => child.sessionID)]
-  const entry = parentID === undefined ? undefined : ((await ports.storage.get(rosterKey(parentID, sessionID))) as RosterEntry | undefined)
+  const entry = parentID === undefined ? undefined : await entryUnder(ports.storage, parentID, sessionID)
   const member = entry && (await outIn(ports, entry))
   // Its groups go whether or not it has children on the roster: a held report outlives the member's entry.
   const [completed] = await Promise.all([
@@ -179,7 +179,7 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
     ...forgotten.map((id) => forgetReport(ports.storage, id)),
     dropGroups(ports.storage, sessionID),
   ])
-  if (completed) ports.nudge()
+  if (completed) ports.nudge?.()
   return forgotten
 }
 

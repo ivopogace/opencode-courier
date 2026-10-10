@@ -336,4 +336,10 @@ test("forgetting a child started in a group has the scheduler deliver the group,
   await record(ports.storage, child())
   await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
   expect(nudges).toEqual([1])
+  // A member whose report is held is kept in its group, which did not change: no nudge.
+  await record(ports.storage, child({ group: "pair" }))
+  store.set("group/ses_parent/pair/ses_child", { title: "t", joinedAt: 1, report: { at: 2, status: "done", message: "m" } })
+  await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
+  expect(store.has("group/ses_parent/pair/ses_child")).toBe(true)
+  expect(nudges).toEqual([1])
 })

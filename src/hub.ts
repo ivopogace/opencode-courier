@@ -78,8 +78,11 @@ export interface WatchPorts {
   /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
   readonly now: () => number
   readonly log: (message: string) => void
-  /** Has the scheduler deliver what is due now rather than at its next tick: a group a failure or deletion has completed. */
-  readonly nudge: () => void
+  /**
+   * Has the scheduler deliver what is due now rather than at its next tick: a group a failure or deletion
+   * has completed. Absent on the ports of a copy before the groups, which the hub's watcher may run through.
+   */
+  readonly nudge?: () => void
 }
 
 /**
@@ -403,18 +406,23 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
   }
 
   /**
-   * Whether the tick under way still holds the next up: within a minute of its start it does, and the
-   * key is renewed for it; past that it is taken to hang, holding up only while its member is loaded.
+   * Whether the tick under way still holds the next up: within a minute of its start it does; past
+   * that it is taken to hang, holding up only while its member is loaded. `recent` says which.
    */
-  const underWay = () => {
+  const busy = () => {
     const { running, ticking } = hub.scheduler
-    if (!running) return ticking !== undefined && hub.members.has(ticking)
+    if (!running) return { busy: ticking !== undefined && hub.members.has(ticking), recent: false }
     const first = hub.members.values().next().value
-    if (first && holds(running.since, first.later.now(), OWNER_EXPIRY_MS)) {
-      void renew(first.later).catch((error: unknown) => first.log(`courier_later scheduler: ${String(error)}`))
-      return true
-    }
-    return hub.members.has(running.member)
+    if (first && holds(running.since, first.later.now(), OWNER_EXPIRY_MS)) return { busy: true, recent: true }
+    return { busy: hub.members.has(running.member), recent: false }
+  }
+
+  /** `busy`, renewing the key for a recent tick under way, as each tick falling due meanwhile does. */
+  const underWay = () => {
+    const state = busy()
+    const first = hub.members.values().next().value
+    if (state.recent && first) void renew(first.later).catch((error: unknown) => first.log(`courier_later scheduler: ${String(error)}`))
+    return state.busy
   }
 
   // One tick, through the first loaded member, by the server holding the owner key. The claim on each
@@ -470,7 +478,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     const scheduler = hub.scheduler
     if (scheduler.timer === undefined) return
     scheduler.nudged = true
-    if (!scheduler.running && !scheduler.ticking) void (scheduler.tick ?? tick)()
+    if (!busy().busy) void (scheduler.tick ?? tick)()
   }
 
   // Subscriptions through the earliest members without one, the longest loaded, until there are

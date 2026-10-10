@@ -1,8 +1,5 @@
-// The recursive scenario of e2e/real-model.sh (node e2e/real-model-recursive.mjs <rootSessionID>, or
-// --saved to re-read WORK): a job of two parts, one of them two halves of its own, so the root splits
-// once and one of its children splits again. Waits for the whole tree to settle, saves every
-// session's transcript to WORK and checks the shape of the tree, the reports up it and the result.
-// Exit 2 means inconclusive: checks failed, but model requests failed too.
+// Waits for a real model's recursive split to settle, saves every session's transcript to WORK and checks the tree
+// (node e2e/real-model-recursive.mjs <rootSessionID>, or --saved to re-read WORK). Exit 2 means inconclusive.
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -88,9 +85,11 @@ const statusOf = (message, from) =>
   groupOf(message)
     ? message.text.match(new RegExp(`^\\[\\d+/\\d+\\] ${from} "[^"]*": (\\w+)$`, "m"))?.[1]
     : message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
+// Who sent a report with courier_send; a courier_later check-in, from whoever, is not a report.
+const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
 // The reports of `child` delivered to its parent's transcript, in order: a message with its status.
 const deliveriesFrom = (list, child) =>
-  list.flatMap((message, index) => (!scheduled(message) && sendersOf(message).includes(child) && statusOf(message, child) ? [{ index, message }] : []))
+  list.flatMap((message, index) => (reportersOf(message).includes(child) && statusOf(message, child) ? [{ index, message }] : []))
 // A session's reports to its parent: its completed courier_send calls to it with a status, each with the index of its message.
 const reportsTo = (list, parentID) =>
   list.flatMap((message, index) =>
@@ -113,8 +112,9 @@ async function readTree() {
   return sessions
 }
 
-// How long everything must have been quiet, with a report missing, before giving up on it.
-const GRACE_MS = 15_000
+// How long everything must have been quiet, with a report missing, before giving up on it: two of the
+// scheduler's ticks, since a group's release at each level can wait for one.
+const GRACE_MS = 30_000
 const started = Date.now()
 let quietSince
 let tree = new Map()
@@ -180,7 +180,11 @@ const subOrchestrators = orchestrators.filter(([id]) => id !== rootID)
 const looksIn = (turn) =>
   toolsOf(turn).filter((part) => LOOKS.has(part.name) || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input)))).length
 // Any look in the first turn, right after spawning, is polling; later, more than one look a turn is a loop.
-const polled = looksIn(first) > 0 || rootTurns.slice(1).some((turn) => looksIn(turn) > 1)
+const polledIn = (turns) => looksIn(turns[0] ?? []) > 0 || turns.slice(1).some((turn) => looksIn(turn) > 1)
+const pollers = orchestrators.filter(([, entry]) => polledIn(turnsOf(entry.list))).map(([id]) => id)
+// The sessions a turn started; an orchestrator starts its batch in one turn, never one session alone.
+const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length
+const splitOnce = (list) => turnsOf(list).every((turn) => spawnsIn(turn) !== 1)
 const finalText = textOf(root.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
 // A session's report, as its parent got it; the first one, since the brief asks for exactly one.
 const reportOf = (id) => deliveriesFrom(tree.get(tree.get(id).parentID).list, id)[0]
@@ -200,10 +204,13 @@ const fileText = (file) => {
 const fileTexts = files.map(fileText)
 
 const checks = [
-  ["the root spawned at least two children with courier_spawn", spawnsOf(root).length >= 2],
-  ["the root ended its first turn after spawning, with no reports in it", ended(first.at(-1)) && !failed(first.at(-1)) && !first.some((message) => sendersOf(message).some((from) => tree.has(from)))],
-  ["the root did not poll (courier_status, courier_children, courier_tree, sleep)", !polled],
-  ["at least one child spawned at least two of its own, and no session started exactly one", subOrchestrators.length >= 1 && orchestrators.every(([, entry]) => spawnsOf(entry.list).length >= 2)],
+  ["the root spawned at least two children with courier_spawn in its first turn", spawnsIn(first) >= 2],
+  ["the root ended its first turn after spawning, with no reports in it", ended(first.at(-1)) && !failed(first.at(-1)) && !first.some((message) => reportersOf(message).some((from) => tree.has(from)))],
+  ["no orchestrator polled (courier_status, courier_children, courier_tree, sleep)", pollers.length === 0],
+  [
+    "at least one child spawned at least two of its own in one turn, and no session ever started exactly one",
+    subOrchestrators.some(([, entry]) => spawnsIn(turnsOf(entry.list)[0] ?? []) >= 2) && orchestrators.every(([, entry]) => splitOnce(entry.list)),
+  ],
   [`no session went past maxDepth ${maxDepth}`, [...tree.values()].every((entry) => entry.depth <= maxDepth)],
   ["every spawned session reported to its parent, with a status", spawned.length > 0 && spawned.every(([id]) => reportOf(id) !== undefined)],
   ["each sub-orchestrator reported upward once, after its own children had reported to it", subOrchestrators.length >= 1 && subOrchestrators.every(reportedAfterChildren)],
@@ -227,6 +234,7 @@ for (const [id, entry] of orchestrators) {
   const refused = toolsOf(entry.list).filter((part) => part.name === "courier_spawn" && part.state.status === "error")
   if (refused.length) notes.push(`${id === rootID ? "the root" : `session ${id}`} had ${refused.length} courier_spawn call(s) refused: ${short(refused[0].state.error, 100)}`)
 }
+if (pollers.length) notes.push(`polled: ${pollers.map((id) => (id === rootID ? "the root" : id)).join(", ")}`)
 for (const [id, entry] of spawned) {
   const report = reportOf(id)
   if (report) notes.push(`report from ${id} (depth ${entry.depth})${groupOf(report.message) ? ` in group "${groupOf(report.message)}"` : ""}: status ${statusOf(report.message, id)}`)

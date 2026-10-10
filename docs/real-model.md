@@ -236,10 +236,10 @@ directly; the sleeps stand in for real work, as in the fan-out, and the files ar
 verifies first-hand. The checker (`e2e/real-model-recursive.mjs`) reads every session reached from
 the root through its `courier_spawn` calls, waits until the whole tree has settled and every
 spawned session has reported, saves each transcript (`parent.json`, `child-<id>.json`), prints the
-tree's timeline and nine checks: the root spawned at least two children; it ended its first turn
-after spawning, with no reports in it; it did not poll (`courier_status`, `courier_children`,
-`courier_tree`, `sleep`); at least one child spawned at least two of its own, and no session started
-exactly one; no session went past `maxDepth` (`COURIER_MAX_DEPTH`, default 3); every spawned session
+tree's timeline and nine checks: the root spawned at least two children in its first turn; it ended
+that turn with no reports in it; no orchestrator polled (`courier_status`, `courier_children`,
+`courier_tree`, `sleep`, by the fan-out's rule); at least one child spawned at least two of its own
+in one turn, and no session ever started exactly one in a turn; no session went past `maxDepth` (`COURIER_MAX_DEPTH`, default 3); every spawned session
 reported to its parent with a status; each sub-orchestrator reported upward once, after every report
 of its own children had reached it; the files (`COURIER_FILES`) hold the expected values
 (`COURIER_EXPECT`); and the root's final reply holds every one of them. Its notes say which
@@ -295,10 +295,10 @@ turn 2 (opened by a message from ses_…, ses_…):
     courier_send({"sessionID":"ses_…","message":"Part \"count\" complete. Ran `sleep 20; echo $((99 - 57))` which printed 42. ...) -> completed
     -- turn ended (succeeded)
 
-  PASS the root spawned at least two children with courier_spawn
+  PASS the root spawned at least two children with courier_spawn in its first turn
   PASS the root ended its first turn after spawning, with no reports in it
-  PASS the root did not poll (courier_status, courier_children, courier_tree, sleep)
-  PASS at least one child spawned at least two of its own, and no session started exactly one
+  PASS no orchestrator polled (courier_status, courier_children, courier_tree, sleep)
+  PASS at least one child spawned at least two of its own in one turn, and no session ever started exactly one
   PASS no session went past maxDepth 3
   PASS every spawned session reported to its parent, with a status
   PASS each sub-orchestrator reported upward once, after its own children had reported to it

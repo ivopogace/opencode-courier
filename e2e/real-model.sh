@@ -81,9 +81,8 @@ case $SCENARIO in
     CHECKER=real-model-question.mjs
     ;;
   recursive)
-    # A task with a recursive shape: two parts, one of them two halves of its own, so the root splits
-    # once and the session that gets the first part splits again; each half is a leaf's work. The
-    # sleeps stand in for real work, as in the fan-out. The files are what the root verifies itself.
+    # Two parts, one of them two halves of its own: the root splits once, the session that gets that
+    # part splits again. The sleeps stand in for work, as in the fan-out; the files are what each level verifies.
     PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `sleep 20; echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `sleep 20; echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `sleep 20; echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
     export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}

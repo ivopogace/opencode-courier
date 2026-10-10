@@ -85,12 +85,12 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
       ),
     )
   } finally {
-    await Promise.all(entries.map((entry) => leave(ports, entry, "failed", at)))
+    await Promise.all(entries.map((entry, index) => (leaving[index] ? leave(ports, entry, "failed", at) : undefined)))
   }
   return entries.map((entry) => entry.parentID)
 }
 
-/** Whether a child is out in an open group, so that its failure takes it out of the group without a report. */
+/** Whether a child is out in an open group: its group waits for it, and its failure takes it out without a report. */
 async function willLeave(ports: WatchPorts, entry: RosterEntry) {
   if (!entry.group) return false
   const member = await memberOf(ports.storage, entry.parentID, entry.group, entry.sessionID).catch(() => undefined)
@@ -151,9 +151,8 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
 }
 
 /**
- * Drops the report state of a session OpenCode deleted, and of the sessions it started, whose reports
- * can no longer be delivered: neither will report. Its groups go too, and it leaves its own group, which
- * no longer waits for it. Returns the sessions forgotten.
+ * Drops the report state, and the groups, of a session OpenCode deleted, and the report state of the sessions it
+ * started, whose reports can no longer be delivered; it leaves its own group. Returns the sessions forgotten.
  */
 export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const { sessionID } = event.data
@@ -195,6 +194,7 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   if (!report?.owes || (await waits(ports, sessionID, report.prompt))) return []
   // The notice goes out without the reply rather than not at all.
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
+  const group = await willLeave(ports, entry).then((out) => (out ? entry.group : undefined))
   // Before the notice, which may end the parent's turn at once: once told, it no longer waits for this one.
   const toldAt = event.created ?? ports.now()
   await told(ports.storage, sessionID, toldAt).catch((error: unknown) =>
@@ -203,7 +203,7 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   try {
     await ports.session.synthetic({
       sessionID: entry.parentID,
-      text: envelope(sessionID, silentNotice(entry.title, lastText, report.progressed), { ended: "without-report" }),
+      text: envelope(sessionID, silentNotice(entry.title, lastText, report.progressed, group), { ended: "without-report" }),
       description: `Session ${sessionID} ended without a report`,
       metadata: { source: "courier", from: sessionID, ended: "without-report" },
       delivery: "steer",

@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
-import { groupStanding, holdReport, isGroupName, joinGroup, memberOf, standingOf, type Membership } from "./group.js"
+import { groupStanding, holdReport, isGroupName, joinGroup, memberOf, standingOf, unholdReport, type Membership } from "./group.js"
 import { admit, type Limits, type SpawnGate } from "./limits.js"
 import { childBrief, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Held, type Prompt, type Sent, type Status } from "./notices.js"
 import { progressed, progressKey, prompted, settled, settledKey } from "./report.js"
@@ -100,8 +100,8 @@ async function dropWorktree(ports: CourierPorts, directory: string) {
  * courier_send. Refused past a limit, whether or not the `context` hook hid the tool.
  */
 export async function spawn(ports: CourierPorts, parentID: string, input: SpawnInput) {
-  // Some models send null for an optional field they leave out.
-  const group = input.group ?? undefined
+  // Some models send null, or an empty string, for an optional field they leave out.
+  const group = typeof input.group === "string" && !input.group.trim() ? undefined : (input.group ?? undefined)
   if (group !== undefined && !isGroupName(group))
     throw new Error(`group must be a name of 1 to 60 letters, digits, dots, dashes or underscores, not ${JSON.stringify(group)}.`)
   const admitted = await admit(ports, parentID)
@@ -189,9 +189,8 @@ async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
 }
 
 /**
- * Drops a message into another session's inbox; OpenCode wakes that session if it is idle. From a spawned
- * session to the one that started it, it is its report or its progress (`noteReport`), noted unless not
- * delivered; a report of a group's member with a final status is held with the group instead (`hold`).
+ * Drops a message into another session's inbox; OpenCode wakes that session if it is idle. From a spawned session
+ * to the one that started it, it is its report or its progress (`noteReport`); a group member's final report is held (`hold`).
  */
 export async function send(ports: CourierPorts, from: string, input: SendInput): Promise<Sent> {
   // Some models send null for an optional field they leave out.
@@ -219,9 +218,8 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
 }
 
 /**
- * Notes `from`'s message to `to` when `to` started it: as its report when it carries a status, or when an
- * earlier release briefed `from`, else as progress. Returns which, when, how to take the note back, and
- * `from`'s membership of an open group of `to`'s, if it is in one.
+ * Notes `from`'s message to `to` when `to` started it: as its report when it carries a status, or when an earlier
+ * release briefed `from`, else as progress. Returns which, when, how to take the note back, and `from`'s group membership.
  */
 async function noteReport(ports: CourierPorts, from: string, to: string, status: Status | undefined) {
   const entry = await indexedEntry(ports.storage, from)
@@ -250,13 +248,14 @@ async function membershipOf(ports: CourierPorts, entry: RosterEntry): Promise<Me
 }
 
 /**
- * Holds a member's report with its group, and has the scheduler deliver the group if that completes it.
- * Undefined when it could not be held, so the report is delivered on its own rather than lost.
+ * Holds a member's report with its group, and has the scheduler deliver the group if that completes it. Undefined
+ * when it could not be held: the member is dropped from the group, which releases without it, and reports on its own.
  */
 async function hold(ports: CourierPorts, member: Membership, report: Parameters<typeof holdReport>[2]): Promise<Held | undefined> {
   try {
     await holdReport(ports.storage, member, report)
   } catch {
+    await unholdReport(ports.storage, member).then(() => ports.nudge(), () => undefined)
     return undefined
   }
   // Held whatever the count gives: the scheduler's tick finds a complete group on its own.

@@ -534,6 +534,25 @@ describe("join groups", () => {
     expect(nudges).toEqual([])
   })
 
+  test("a member that ends its turn without a report stays out, and the notice says the group waits for it", async () => {
+    const { ports, sent, store } = fakePorts()
+    await pair(ports)
+    const seen = new Set<string>()
+    await notePrompt(ports, delivered("evt_d1", 100, "ses_a"))
+    await notePrompt(ports, delivered("evt_d2", 100, "ses_b"))
+    await sendFrom(ports, "ses_a", "ses_parent", 150)
+
+    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_b"))).toEqual(["ses_parent"])
+    expect(sent[0].text).toBe(envelope("ses_b", silentNotice("B", "Looked at it; line 4 is wrong.", false, "pair"), { ended: "without-report" }))
+    expect(sent[0].text).toContain('It is a member of group "pair", whose other reports are held until it reports')
+    expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2 })
+
+    // One whose report is held, told after a later turn of its own, is not said to hold the group up.
+    await notePrompt(ports, delivered("evt_d3", 300, "ses_a"))
+    expect(await reportSilent(ports, seen, succeeded("evt_s2", 400, "ses_a"))).toEqual(["ses_parent"])
+    expect(sent[1].text).not.toContain("group")
+  })
+
   test("a member leaves its group even when the failure notice cannot be delivered", async () => {
     const { ports, store } = fakePorts()
     await pair(ports)

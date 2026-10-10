@@ -350,7 +350,7 @@ const MAX_REPLY = 2000
  * What the parent is told when a session it started ends its turn without a report to it;
  * `progressed` when it messaged the parent without a status since its last prompt.
  */
-export function silentNotice(title: string, lastText: string | undefined, progressed = false) {
+export function silentNotice(title: string, lastText: string | undefined, progressed = false, group?: string) {
   const reply = lastText?.trim()
   return [
     `This session, "${title}", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.`,
@@ -361,6 +361,9 @@ export function silentNotice(title: string, lastText: string | undefined, progre
     "",
     "Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.",
     "Until it reports, it counts toward your limits on the sessions you run at once.",
+    ...(group
+      ? [`It is a member of group "${group}", whose other reports are held until it reports: have it report, as above, so the group reaches you.`]
+      : []),
   ].join("\n")
 }
 
@@ -389,11 +392,11 @@ function statusCounts(reports: ReadonlyArray<Pick<HeldReport, "status">>) {
   }).join(", ")
 }
 
-const LEFT_HOW = { failed: "its turn failed, as you were told", deleted: "it was deleted" }
+const LEFT_HOW = { failed: "its turn failed", deleted: "it was deleted" }
 
 /**
- * What the parent gets when a group it named is released: every member's report, each with its status, text and
- * artifacts in `reportBody`'s layout, and the members that left without one, in the order they joined.
+ * What the parent gets when a group it named is released: every report, with its status, text and artifacts in
+ * `reportBody`'s layout, and the members that left without one, in the order they joined.
  */
 export function groupNotice(group: string, reports: ReadonlyArray<HeldReport & { readonly sessionID: string; readonly title: string }>, left: ReadonlyArray<LeftMember> = []) {
   const total = reports.length + left.length

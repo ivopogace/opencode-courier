@@ -784,6 +784,16 @@ Decide what it needs: message it with courier_send to have it carry on, or to re
 Until it reports, it counts toward your limits on the sessions you run at once."
 `;
 
+exports[`turn failures silentNotice 5`] = `
+"This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
+Its last reply:
+Done, I think.
+
+Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
+Until it reports, it counts toward your limits on the sessions you run at once.
+It is a member of group "reviews", whose other reports are held until it reports: have it report, as above, so the group reaches you."
+`;
+
 exports[`join groups groupNotice 1`] = `
 "Every session you started in group "reviews" has reported: 3 reports of 3 members (1 done, 1 partial, 1 failed). Each follows, with its status.
 
@@ -816,7 +826,7 @@ Artifacts:
 - checks:
   - bun test: ok
 
-Without a report: ses_d "Review d.ts" (its turn failed, as you were told), ses_e "Review e.ts" (it was deleted).
+Without a report: ses_d "Review d.ts" (its turn failed), ses_e "Review e.ts" (it was deleted).
 
 Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
 `;

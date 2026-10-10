@@ -195,6 +195,8 @@ export interface Scheduler {
   ticking?: Member
   /** One tick, by the copy of the plugin that joined last, so a copy loaded after an update runs its own code. */
   tick?: () => Promise<void>
+  /** Whether a nudge came since the tick under way started, whichever copy's, so it ticks once more when done. */
+  nudged?: boolean
 }
 
 /** How the hub starts and stops the scheduler's loop, and waits before re-reading the owner key; tests pass their own. */
@@ -415,15 +417,12 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     return hub.members.has(running.member)
   }
 
-  // Whether a nudge came since the tick under way started scanning, so it ticks once more when done.
-  let nudged = false
-
   // One tick, through the first loaded member, by the server holding the owner key. The claim on each
   // delivery stays, as a second line of defence against a pre-hub copy running its own interval.
   const tick = async () => {
     const scheduler = hub.scheduler
     if (underWay()) return
-    nudged = false
+    scheduler.nudged = false
     const owner = hub.members.values().next().value
     if (!owner) return
     let since: number
@@ -462,12 +461,12 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     if (scheduler.timer === undefined)
       await release(owner.later).catch((error: unknown) => tell(`courier_later scheduler: owner key not released: ${String(error)}`))
     end()
-    if (nudged && scheduler.timer !== undefined) void tick()
+    if (scheduler.nudged && scheduler.timer !== undefined) void tick()
   }
 
   const nudge = () => {
     if (hub.scheduler.timer === undefined) return
-    nudged = true
+    hub.scheduler.nudged = true
     void tick()
   }
 

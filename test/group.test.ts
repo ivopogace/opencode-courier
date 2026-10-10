@@ -123,14 +123,17 @@ describe("joining and leaving", () => {
     expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_a"))).toBe("held")
   })
 
-  test("a member dropped with its roster entry, or a parent's groups dropped with it, are gone", async () => {
+  test("a member dropped with its roster entry is gone, unless its report is held; a parent's groups go with it", async () => {
     const { ports, store } = fakePorts()
     await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
     await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "B", 2)
     await joinGroup(ports.storage, "ses_other", "pair", "ses_c", "C", 3)
+    await holdReport(ports.storage, membership("ses_b", "B"), report("done"))
 
-    await dropMember(ports.storage, "ses_parent", "pair", "ses_a")
+    expect(await dropMember(ports.storage, "ses_parent", "pair", "ses_a")).toBe(true)
     expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_a"))).toBe("released")
+    expect(await dropMember(ports.storage, "ses_parent", "pair", "ses_b")).toBe(false)
+    expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_b"))).toBe("held")
     await dropGroups(ports.storage, "ses_parent")
     expect([...store.keys()]).toEqual([memberKey("ses_other", "pair", "ses_c")])
   })
@@ -182,7 +185,7 @@ describe("deliverReleased", () => {
 
     expect(delivered).toHaveLength(1)
     expect(delivered[0].text).toContain('1 report of 2 members (1 done)')
-    expect(delivered[0].text).toContain('Without a report: ses_b "Second" (its turn failed, as you were told).')
+    expect(delivered[0].text).toContain('Without a report: ses_b "Second" (its turn failed).')
     expect(delivered[0].metadata.from).toEqual(["ses_a"])
     expect(store.size).toBe(0)
   })
@@ -244,6 +247,29 @@ describe("deliverReleased", () => {
     ;(ports.session as any).synthetic = synthetic
     await deliverReleased(ports, new Set())
     expect(delivered).toHaveLength(1)
+    expect(store.size).toBe(0)
+  })
+
+  test("keeps a member whose report came in during the delivery, so it is delivered at the next tick", async () => {
+    const { ports, delivered, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a", "First"), report("done"))
+    await leaveGroup(ports.storage, "ses_parent", "pair", "ses_b", "failed", 50)
+    const synthetic = ports.session.synthetic
+    ;(ports.session as any).synthetic = async (input: unknown) => {
+      // The member that left reports after all, while the group's message goes out without it.
+      await holdReport(ports.storage, membership("ses_b", "Second"), report("done", "Late."))
+      return synthetic(input as never)
+    }
+
+    await deliverReleased(ports, new Set())
+    expect(delivered).toHaveLength(1)
+    expect([...store.keys()]).toEqual([memberKey("ses_parent", "pair", "ses_b")])
+
+    ;(ports.session as any).synthetic = synthetic
+    await deliverReleased(ports, new Set())
+    expect(delivered).toHaveLength(2)
+    expect(delivered[1].text).toContain('[1/1] ses_b "Second": done\nLate.')
     expect(store.size).toBe(0)
   })
 

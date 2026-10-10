@@ -212,6 +212,11 @@ describe("roster", () => {
       store.set("roster/ses_parent/ses_c", { ...entry("ses_c", "ses_parent", 3), group: "pair" })
       await remove(storage, "ses_parent", "ses_c", "pair")
       expect([...store.keys()]).toEqual([])
+      // A held report outlives the entry: the group still delivers it.
+      store.set("group/ses_parent/pair/ses_d", { title: "d", joinedAt: 4, report: { at: 5, status: "done", message: "m" } })
+      store.set("roster/ses_parent/ses_d", { ...entry("ses_d", "ses_parent", 4), group: "pair" })
+      expect(await forget(storage, "ses_parent", "ses_d")).toBe(true)
+      expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_d"])
     })
 
     test("back-fills missing reverse keys and drops those whose entry is gone, once however often it runs", async () => {

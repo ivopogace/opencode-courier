@@ -131,9 +131,16 @@ export async function leaveGroup(storage: Pick<Storage, "get" | "set" | "scan">,
   return { left, complete: (await groupStanding(storage, parentID, group)).complete }
 }
 
-/** Drops a member from its group, with its roster entry; the group is released without it. */
-export async function dropMember(storage: Pick<Storage, "remove">, parentID: string, group: string, sessionID: string) {
+/** Drops a member from its group, with its roster entry, unless its report is held: that still goes to the parent. */
+export async function dropMember(storage: Pick<Storage, "get" | "remove">, parentID: string, group: string, sessionID: string) {
+  if ((await memberOf(storage, parentID, group, sessionID))?.report) return false
   await storage.remove(memberKey(parentID, group, sessionID))
+  return true
+}
+
+/** Drops a member from its group whatever it holds: its report could not be held after all, so it goes on its own. */
+export async function unholdReport(storage: Pick<Storage, "remove">, membership: Membership) {
+  await storage.remove(memberKey(membership.parentID, membership.group, membership.sessionID))
 }
 
 /** Drops every group of a parent, whose members' reports can no longer be delivered. */
@@ -198,8 +205,16 @@ async function release(ports: GroupPorts, parentID: string, group: string) {
     }
   }
   // A member left behind here is delivered again at the next tick, as after a crash: logged, so it can be seen.
-  const dropped = await Promise.allSettled(members.map((member) => ports.storage.remove(memberKey(parentID, group, member.sessionID))))
+  const dropped = await Promise.allSettled(members.map((member) => dropDelivered(ports.storage, member)))
   for (const [index, result] of dropped.entries())
     if (result.status === "rejected")
       ports.log(`courier group ${group} of ${parentID}: delivered, but ${members[index]!.sessionID} could not be dropped: ${String(result.reason)}`)
+}
+
+/** Drops a delivered member's key, unless it was written again since it was read: that report is still to deliver. */
+async function dropDelivered(storage: Pick<Storage, "get" | "remove">, delivered: Membership) {
+  const key = memberKey(delivered.parentID, delivered.group, delivered.sessionID)
+  const { parentID, group, sessionID, ...read } = delivered
+  if (JSON.stringify(readMember(await storage.get(key))) !== JSON.stringify(read)) return
+  await storage.remove(key)
 }

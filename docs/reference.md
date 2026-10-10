@@ -225,11 +225,17 @@ deletes, leaves the group without a report: the parent is told of the failure at
 a line naming the group (sent before the member leaves, so the group's message, which may follow at
 once, never overtakes it), and the group no longer waits for it, so it is released once its other
 members have reported, the message naming who left and why. A member that reports after all before
-then rejoins with its report. A member that has reported keeps its held report whatever happens to
-its turn after. A member dropped from the [roster](#roster), after 14 days or by `courier_cleanup`,
-goes from its group too, with no trace. A group whose every member left is dropped unsent: the parent
-was told of each. An interrupted turn leaves nothing: the member is still out, as a child in no group
-would still owe its report, and `courier_children` shows it.
+then rejoins with its report, and one whose report comes in while the group's message is going out
+keeps it, to go out at the next tick. A member that has reported keeps its held report whatever
+happens to its turn after, and a held report outlives the member's [roster](#roster) entry: a
+member dropped after 14 days or by `courier_cleanup` goes from its group with no trace when it has
+not reported, and otherwise stays until the group is released. A group whose every member left is
+dropped unsent: the parent was told of each. A member that [ends its turn without a
+report](#a-child-that-ends-without-a-report), or whose turn is interrupted, is still out, as a child
+in no group would still owe its report: the silent-end notice says the group's other reports are
+held until it reports, and `courier_children` shows it. A report that cannot be held, the storage
+failing as `courier_send` runs, is delivered on its own, and the member dropped from the group, which
+releases without it.
 
 **The parent waits.** A session with an open group is [waiting](#a-child-that-ends-without-a-report),
 like one whose children still owe it reports, so a sub-orchestrator that has split its task into a

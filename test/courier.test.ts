@@ -240,6 +240,7 @@ describe("spawn, into a group", () => {
     await expect(spawn(ports, "ses_parent", { task: "t", group: "a/b" })).rejects.toThrow('group must be a name of 1 to 60 letters, digits, dots, dashes or underscores, not "a/b".')
     expect(calls).toEqual([])
     expect(await spawn(ports, "ses_parent", { task: "t", group: null as never })).toEqual({ sessionID: "ses_child", directory: "/repo" })
+    expect(await spawn(ports, "ses_parent", { task: "t", group: " " })).toEqual({ sessionID: "ses_child", directory: "/repo" })
   })
 
   test("starts the child in no group, and says so, when it cannot be joined; a child off the roster joins none", async () => {
@@ -457,7 +458,7 @@ describe("send, from a member of a group", () => {
   })
 
   test("delivers the report at once when the group has been released, or the child was never joined, or it cannot be held", async () => {
-    const { ports, calls, store } = fakePorts()
+    const { ports, calls, store, nudges } = fakePorts()
     await grouped(ports)
     store.delete(memberKey("ses_parent", "pair", "ses_child"))
     expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done", report: true })
@@ -470,6 +471,9 @@ describe("send, from a member of a group", () => {
     expect(await send(ports, "ses_other", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done", report: true })
     expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(2)
     expect(store.get(settledKey("ses_other"))).toEqual({ at: 1_000, by: "report", status: "done" })
+    // Dropped from the group, which the scheduler then finds complete without it, so the others are not held for ever.
+    expect(store.has(memberKey("ses_parent", "pair", "ses_other"))).toBe(false)
+    expect(nudges).toHaveLength(1)
   })
 
   test("a message to any session but the parent is not held", async () => {

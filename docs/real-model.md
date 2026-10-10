@@ -210,6 +210,10 @@ All runs used free models on Zen, which publishes no versions beyond the names. 
 code and OpenCode 2.0.24, `longcat-2.5-preview-free` passes the fan-out (the README quickstart
 prompt included), the permission relay (on one server and with `COURIER_PERSON=other-server`) and
 the question relay. A passing fan-out run is 10 to 12 model requests; the relay runs are smaller.
+With the status on `courier_send` and the brief that asks for it (OpenCode 2.0.26), the same model
+passes the fan-out, the permission relay and the question relay, every child's report carrying
+`status="done"` on the brief's wording alone; one fan-out child also listed its command under
+`checks`, the other gave no artifacts.
 
 What the models did on the fan-out, over some 30 runs while the tool wording was tuned:
 

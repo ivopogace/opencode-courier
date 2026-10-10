@@ -113,6 +113,7 @@ const child = (parentID = "ses_parent") => ({
   directory: "/repo",
   isolated: false,
   createdAt: 1,
+  reports: "status" as const,
 })
 
 describe("reportFailure", () => {
@@ -190,10 +191,10 @@ const enqueued = (id: string, inboxID: string, type: string, sessionID = "ses_ch
 })
 const succeeded = (id: string, created: number, sessionID = "ses_child") => sessionEvent("session.execution.succeeded", id, created, sessionID)
 
-/** courier_send through the courier's own ports, over the watcher's storage, at `now`. */
-function sendFrom(ports: WatchPorts, from: string, to: string, now: number) {
+/** courier_send through the courier's own ports, over the watcher's storage, at `now`: a report with `status`, or progress with "none". */
+function sendFrom(ports: WatchPorts, from: string, to: string, now: number, status: "done" | "blocked" | "none" = "done") {
   const courier = { session: { synthetic: async () => ({ id: "msg_r" }) }, storage: ports.storage, now: () => now } as unknown as CourierPorts
-  return send(courier, from, { sessionID: to, message: "done" })
+  return send(courier, from, { sessionID: to, message: "done", ...(status === "none" ? {} : { status }) })
 }
 
 describe("reportSilent", () => {
@@ -222,6 +223,40 @@ describe("reportSilent", () => {
     await record(ports.storage, child())
     await notePrompt(ports, delivered("evt_d", 100))
     await sendFrom(ports, "ses_child", "ses_parent", 150)
+
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(sent).toEqual([])
+  })
+
+  test("tells of a turn after a message to the parent without a status, which is progress, and says so", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    await notePrompt(ports, delivered("evt_d", 100))
+    await sendFrom(ports, "ses_child", "ses_parent", 150, "none")
+
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual(["ses_parent"])
+
+    expect(sent[0].text).toBe(envelope("ses_child", silentNotice("Fix the bug", "Looked at it; line 4 is wrong.", true), { ended: "without-report" }))
+    expect(sent[0].text).toContain("Its last message to you had no status")
+  })
+
+  test("a blocked report settles the report too: the parent has been told and must act", async () => {
+    const { ports, sent } = fakePorts()
+    await record(ports.storage, child())
+    await notePrompt(ports, delivered("evt_d", 100))
+    await sendFrom(ports, "ses_child", "ses_parent", 150, "blocked")
+
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(sent).toEqual([])
+    expect(await owesReport(ports.storage, "ses_child")).toBe(false)
+  })
+
+  test("takes a message without a status from a child an older release briefed as its report, and tells nothing", async () => {
+    const { ports, sent } = fakePorts()
+    const { reports, ...older } = child()
+    await record(ports.storage, older)
+    await notePrompt(ports, delivered("evt_d", 100))
+    await sendFrom(ports, "ses_child", "ses_parent", 150, "none")
 
     expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual([])
     expect(sent).toEqual([])
@@ -385,7 +420,7 @@ describe("reportSilent", () => {
 
     await sendFrom(ports, "ses_child", "ses_parent", 200)
     await noteInterrupted(ports, sessionEvent("session.execution.interrupted", "evt_i", 150, "ses_child", "user") as SessionEvent)
-    expect(store.get(settledKey("ses_child"))).toEqual({ at: 200, by: "report" })
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 200, by: "report", status: "done" })
   })
 
   test("forgets a deleted child, so its parent no longer waits for it", async () => {
@@ -542,8 +577,10 @@ describe("what settles a child's report", () => {
     await record(ports.storage, child())
     await notePrompt(ports, delivered("evt_d", 100))
     await reportSilent(ports, new Set(), succeeded("evt_s", 120))
+    await sendFrom(ports, "ses_child", "ses_parent", 130, "none")
     await sendFrom(ports, "ses_child", "ses_parent", 150)
     expect([...store.keys()].filter((key) => key.startsWith("report/")).sort()).toEqual([
+      "report/ses_child/progress",
       "report/ses_child/prompt",
       "report/ses_child/settled",
       "report/ses_child/told",

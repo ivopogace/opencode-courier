@@ -226,6 +226,10 @@ test("tool inputs decode with their schemas", async () => {
   expect(decode("courier_spawn", { task: "t", isolate: true })).toEqual({ task: "t", isolate: true })
   expect(decode("courier_send", { sessionID: "s", message: "m" })).toEqual({ sessionID: "s", message: "m" })
   expect(() => decode("courier_send", { sessionID: "s" })).toThrow()
+  const report = { sessionID: "s", message: "m", status: "done", artifacts: { branch: "b", commits: ["c"], files: ["f"], checks: [{ command: "bun test", result: "ok" }] } }
+  expect(decode("courier_send", report)).toEqual(report)
+  expect(() => decode("courier_send", { ...report, status: "finished" })).toThrow()
+  expect(() => decode("courier_send", { ...report, artifacts: { checks: ["bun test"] } })).toThrow()
   const answer = { sessionID: "s", requestID: "per_1", reply: "reject", message: "no" }
   expect(decode("courier_answer", answer)).toEqual(answer)
   expect(() => decode("courier_answer", { ...answer, reply: "yes" })).toThrow()
@@ -418,12 +422,16 @@ test("courier_cleanup reports the worktree of an isolated child that is already 
   )
 })
 
-test("courier_send signs the message with the calling session", async () => {
+test("courier_send signs the message with the calling session, and carries the status", async () => {
   const { tools, calls } = await setUp()
 
   await tools.get("courier_send").execute({ sessionID: "ses_parent", message: "done" }, { sessionID: "ses_child" })
+  const result = await tools.get("courier_send").execute({ sessionID: "ses_parent", message: "done", status: "done" }, { sessionID: "ses_child" })
 
   expect(calls[0]!.input.metadata).toEqual({ source: "courier", from: "ses_child" })
+  expect(calls[1]!.input.metadata).toEqual({ source: "courier", from: "ses_child", status: "done" })
+  expect(calls[1]!.input.text).toStartWith('<courier from="ses_child" status="done">')
+  expect(result.metadata).toEqual({ messageID: "msg_2", status: "done" })
 })
 
 test("courier_later schedules for the calling session and courier_cancel drops it", async () => {

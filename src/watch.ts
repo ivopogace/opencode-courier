@@ -170,7 +170,7 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   try {
     await ports.session.synthetic({
       sessionID: entry.parentID,
-      text: envelope(sessionID, silentNotice(entry.title, lastText), { ended: "without-report" }),
+      text: envelope(sessionID, silentNotice(entry.title, lastText, report.progressed), { ended: "without-report" }),
       description: `Session ${sessionID} ended without a report`,
       metadata: { source: "courier", from: sessionID, ended: "without-report" },
       delivery: "steer",

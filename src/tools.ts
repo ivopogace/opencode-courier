@@ -12,6 +12,7 @@ import {
   REPLIES,
   sendText,
   spawnText,
+  STATUSES,
   statusText,
   subscribeText,
   unsubscribeText,
@@ -37,6 +38,28 @@ export const SpawnInput = Schema.Struct({
 export const SendInput = Schema.Struct({
   sessionID: Schema.String.annotate({ description: "The session to deliver to." }),
   message: Schema.String.annotate({ description: "The message text." }),
+  status: Schema.optional(
+    Schema.Literals(STATUSES).annotate({
+      description:
+        "For a report to the session that started you: done, partial (some of the task is left), blocked (you need a " +
+        "decision from it; say what) or failed. A message without a status is progress, not your report.",
+    }),
+  ),
+  artifacts: Schema.optional(
+    Schema.Struct({
+      branch: Schema.optional(Schema.String.annotate({ description: "The branch your work is on." })),
+      commits: Schema.optional(Schema.Array(Schema.String).annotate({ description: "The commits you made, as short hashes or subjects." })),
+      files: Schema.optional(Schema.Array(Schema.String).annotate({ description: "The files you changed." })),
+      checks: Schema.optional(
+        Schema.Array(
+          Schema.Struct({
+            command: Schema.String.annotate({ description: "A command you ran, such as a test suite or a linter." }),
+            result: Schema.String.annotate({ description: "What it gave, in a few words." }),
+          }),
+        ).annotate({ description: "The checks you ran and their results." }),
+      ),
+    }).annotate({ description: "With a report: what you produced, listed in the message after your text in a fixed layout." }),
+  ),
   queue: Schema.optional(
     Schema.Boolean.annotate({ description: "Wait until the target's current turn ends instead of steering it now." }),
   ),
@@ -179,11 +202,13 @@ export function addTools(tools: ToolEditor, ports: ToolPorts) {
     options: { codemode: false },
     description:
       "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. " +
-      "Use it to report back to the session that started you, or to steer a session you started.",
+      "Use it to report back to the session that started you, with a status (done, partial, blocked or failed) and " +
+      "the artifacts you produced, or to steer a session you started. The status is carried as an attribute of the " +
+      "message; without one, a message to the session that started you is progress, not your report.",
     input: SendInput,
     execute: async (input, context) => {
       const delivered = await send(ports.courier, context.sessionID, input).catch(rethrow("courier_send"))
-      return { content: sendText(input.sessionID), metadata: delivered }
+      return { content: sendText(input.sessionID, delivered), metadata: delivered }
     },
   })
 

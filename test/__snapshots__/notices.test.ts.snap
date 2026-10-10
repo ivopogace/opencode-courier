@@ -119,10 +119,92 @@ exports[`tools courier_spawn 1`] = `
 
 exports[`tools courier_send 1`] = `
 {
-  "description": "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. Use it to report back to the session that started you, or to steer a session you started.",
+  "description": "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. Use it to report back to the session that started you, with a status (done, partial, blocked or failed) and the artifacts you produced, or to steer a session you started. The status is carried as an attribute of the message; without one, a message to the session that started you is progress, not your report.",
   "input": {
     "additionalProperties": false,
     "properties": {
+      "artifacts": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "description": "With a report: what you produced, listed in the message after your text in a fixed layout.",
+            "properties": {
+              "branch": {
+                "anyOf": [
+                  {
+                    "description": "The branch your work is on.",
+                    "type": "string",
+                  },
+                  {
+                    "type": "null",
+                  },
+                ],
+              },
+              "checks": {
+                "anyOf": [
+                  {
+                    "description": "The checks you ran and their results.",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "command": {
+                          "description": "A command you ran, such as a test suite or a linter.",
+                          "type": "string",
+                        },
+                        "result": {
+                          "description": "What it gave, in a few words.",
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "command",
+                        "result",
+                      ],
+                      "type": "object",
+                    },
+                    "type": "array",
+                  },
+                  {
+                    "type": "null",
+                  },
+                ],
+              },
+              "commits": {
+                "anyOf": [
+                  {
+                    "description": "The commits you made, as short hashes or subjects.",
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                  {
+                    "type": "null",
+                  },
+                ],
+              },
+              "files": {
+                "anyOf": [
+                  {
+                    "description": "The files you changed.",
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                  {
+                    "type": "null",
+                  },
+                ],
+              },
+            },
+            "type": "object",
+          },
+          {
+            "type": "null",
+          },
+        ],
+      },
       "message": {
         "description": "The message text.",
         "type": "string",
@@ -141,6 +223,23 @@ exports[`tools courier_send 1`] = `
       "sessionID": {
         "description": "The session to deliver to.",
         "type": "string",
+      },
+      "status": {
+        "anyOf": [
+          {
+            "description": "For a report to the session that started you: done, partial (some of the task is left), blocked (you need a decision from it; say what) or failed. A message without a status is progress, not your report.",
+            "enum": [
+              "done",
+              "partial",
+              "blocked",
+              "failed",
+            ],
+            "type": "string",
+          },
+          {
+            "type": "null",
+          },
+        ],
       },
     },
     "required": [
@@ -458,8 +557,9 @@ exports[`envelope and child brief END_TURN 1`] = `"If nothing else is left to do
 exports[`envelope and child brief childBrief 1`] = `
 "You were started by session ses_parent through opencode-courier.
 
-When you finish, or need a decision you cannot make yourself, call courier_send with sessionID "ses_parent" and a short report.
-That message wakes the parent. It is the only way the parent hears from you, so do not end without sending it.
+When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result).
+If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
+A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you need the person to decide something, use your question tool; it reaches them through the session that started you.
 
 You are at depth 1 of a session tree that goes at most 3 deep. Split your task or do it yourself:
@@ -475,8 +575,9 @@ in src/a.ts"
 exports[`envelope and child brief childBrief 2`] = `
 "You were started by session ses_parent through opencode-courier.
 
-When you finish, or need a decision you cannot make yourself, call courier_send with sessionID "ses_parent" and a short report.
-That message wakes the parent. It is the only way the parent hears from you, so do not end without sending it.
+When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result).
+If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
+A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you need the person to decide something, use your question tool; it reaches them through the session that started you.
 
 You are at depth 3, the deepest the session tree goes, so you cannot start sessions: do the task yourself.
@@ -514,11 +615,44 @@ failed
 </courier>"
 `;
 
+exports[`envelope and child brief envelope 3`] = `
+"<courier from="ses_child" status="done">
+Fixed it.
+</courier>"
+`;
+
+exports[`envelope and child brief reportBody 1`] = `
+"Fixed the total in checkout.
+
+Artifacts:
+- branch: fix/checkout
+- commits: abc1234 Fix the total, def5678
+- files: src/checkout.ts, test/checkout.test.ts
+- checks:
+  - bun test: 412 passed
+  - bun run typecheck: clean"
+`;
+
+exports[`envelope and child brief reportBody 2`] = `
+"Fixed it.
+
+Artifacts:
+- branch: fix/checkout"
+`;
+
 exports[`tool results spawnText 1`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
 exports[`tool results spawnText 2`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is not on your courier_children list: roster failed: disk full"`;
 
 exports[`tool results sendText 1`] = `"Delivered to ses_parent."`;
+
+exports[`tool results sendText 2`] = `"Delivered to ses_parent as your report, status done. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+
+exports[`tool results sendText 3`] = `"Delivered to ses_parent as your report. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+
+exports[`tool results sendText 4`] = `"Delivered to ses_parent. Without a status it is progress, not your report: when you finish, send one with status done, partial, blocked or failed."`;
+
+exports[`tool results sendText 5`] = `"Delivered to ses_other."`;
 
 exports[`tool results statusText 1`] = `
 "{
@@ -607,6 +741,16 @@ Until it reports, it counts toward your limits on the sessions you run at once."
 exports[`turn failures silentNotice 3`] = `
 "This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
 It ended without a reply.
+
+Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
+Until it reports, it counts toward your limits on the sessions you run at once."
+`;
+
+exports[`turn failures silentNotice 4`] = `
+"This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
+Its last message to you had no status, so it was progress, not its report: a report carries status done, partial, blocked or failed.
+Its last reply:
+Halfway there.
 
 Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
 Until it reports, it counts toward your limits on the sessions you run at once."

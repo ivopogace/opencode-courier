@@ -16,13 +16,27 @@ export interface Limits {
   readonly maxTotal: number
 }
 
+/** The statuses a report carries: the task is done, partly done, waits on the parent, or failed. */
+export const STATUSES = ["done", "partial", "blocked", "failed"] as const
+export type Status = (typeof STATUSES)[number]
+
+export const isStatus = (value: unknown): value is Status => typeof value === "string" && (STATUSES as readonly string[]).includes(value)
+
+/** How a text names the statuses a report may carry. */
+const STATUS_LIST = `${STATUSES.slice(0, -1).join(", ")} or ${STATUSES.at(-1)}`
+
 /** What a spawned session at `depth` is told; `depth` 1 is a child of a session nobody spawned. */
 export function childBrief(parentID: string, task: string, depth: number, limits: Limits) {
   return [
     `You were started by session ${parentID} through opencode-courier.`,
     "",
-    `When you finish, or need a decision you cannot make yourself, call courier_send with sessionID "${parentID}" and a short report.`,
-    "That message wakes the parent. It is the only way the parent hears from you, so do not end without sending it.",
+    `When you finish, send exactly one report: call courier_send with sessionID "${parentID}", a short account of what you did and ` +
+      "status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: " +
+      "branch, commits, files, checks (each command you ran and its result).",
+    "If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a " +
+      "concrete ask, then end your turn and wait for its answer; never end quietly.",
+    "A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. " +
+      "A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.",
     "If you need the person to decide something, use your question tool; it reaches them through the session that started you.",
     "",
     ...splitRule(parentID, depth, limits),
@@ -95,6 +109,39 @@ export function envelope(from: string, message: string, attributes: Record<strin
   return `<courier from="${from}"${extra}>\n${message}\n</courier>`
 }
 
+/** What a report lists besides its text; `checks` are the commands the session ran and what each gave. */
+export interface Artifacts {
+  readonly branch?: string
+  readonly commits?: ReadonlyArray<string>
+  readonly files?: ReadonlyArray<string>
+  readonly checks?: ReadonlyArray<{ readonly command: string; readonly result: string }>
+}
+
+/** The strings of a list given as artifacts, whatever else the model put in it. */
+const strings = (value: unknown) => (Array.isArray(value) ? value.flatMap((item) => (typeof item === "string" ? [item.trim()] : [])) : []).filter(Boolean)
+
+/** A list's line in the artifacts block, or none when it is empty. */
+const listed = (name: string, items: readonly string[]) => (items.length ? [`- ${name}: ${items.join(", ")}`] : [])
+
+/**
+ * The body of a report: its text, then the artifacts in a fixed layout, the same for every report,
+ * so a parent finds the branch, the commits, the files and the checks without reading prose.
+ */
+export function reportBody(message: string, artifacts: Artifacts | undefined) {
+  const given = obj(artifacts)
+  const checks = (Array.isArray(given.checks) ? given.checks : []).flatMap((check: unknown) => {
+    const command = str(obj(check).command)?.trim()
+    return command ? [`  - ${command}: ${str(obj(check).result)?.trim() || "(no result given)"}`] : []
+  })
+  const lines = [
+    ...listed("branch", strings([given.branch])),
+    ...listed("commits", strings(given.commits)),
+    ...listed("files", strings(given.files)),
+    ...(checks.length ? ["- checks:", ...checks] : []),
+  ]
+  return lines.length ? [message, "", "Artifacts:", ...lines].join("\n") : message
+}
+
 // Tool results.
 
 export function spawnText(child: { readonly sessionID: string; readonly directory: string; readonly rosterError?: string }) {
@@ -106,7 +153,21 @@ export function spawnText(child: { readonly sessionID: string; readonly director
   )
 }
 
-export const sendText = (sessionID: string) => `Delivered to ${sessionID}.`
+/** What courier_send did; `report` says whether the message was noted as the sender's report to the session that started it. */
+export interface Sent {
+  readonly messageID: string
+  readonly status?: Status
+  readonly report?: boolean
+}
+
+/** courier_send's result: for a message to the session that started the sender, whether it was its report. */
+export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"> = {}) {
+  const status = sent.status ? `, status ${sent.status}` : ""
+  if (sent.report === true) return `Delivered to ${sessionID} as your report${status}. ${END_TURN}`
+  if (sent.report === false)
+    return `Delivered to ${sessionID}. Without a status it is progress, not your report: when you finish, send one with status ${STATUS_LIST}.`
+  return `Delivered to ${sessionID}.`
+}
 
 /** courier_status's result: the session's state, as JSON. */
 export const statusText = (status: unknown) => JSON.stringify(status, null, 2)
@@ -248,11 +309,17 @@ export function failureNotice(title: string, error: ExecutionError) {
 /** Longest last reply a notice that a session ended its turn without reporting quotes. */
 const MAX_REPLY = 2000
 
-/** What the parent is told when a session it started ends its turn without courier_send to it. */
-export function silentNotice(title: string, lastText: string | undefined) {
+/**
+ * What the parent is told when a session it started ends its turn without a report to it;
+ * `progressed` when it messaged the parent without a status since its last prompt.
+ */
+export function silentNotice(title: string, lastText: string | undefined, progressed = false) {
   const reply = lastText?.trim()
   return [
     `This session, "${title}", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.`,
+    ...(progressed
+      ? [`Its last message to you had no status, so it was progress, not its report: a report carries status ${STATUS_LIST}.`]
+      : []),
     ...(reply ? ["Its last reply:", defuse(clipText(reply, MAX_REPLY))] : ["It ended without a reply."]),
     "",
     "Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.",

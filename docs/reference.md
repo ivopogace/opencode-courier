@@ -198,7 +198,7 @@ it over fails. Each key keeps the later of two times, since both of the hub's su
 every event and one may be behind. The keys go with the child's roster entry, and when OpenCode
 deletes the session (`session.deleted`), so its parent no longer waits for it; deleting a session
 drops those of the sessions it started too, whose reports can no longer be delivered. If the notice
-cannot be delivered, `told` is taken back.
+cannot be delivered, its `told` is taken back, unless a later notice has told the parent since.
 
 What the plugin cannot see, it cannot judge: a prompt delivered while the server is down or the
 plugin not loaded leaves the earlier one in place, so a turn after it that ends without a report

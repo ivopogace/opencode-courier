@@ -22,7 +22,7 @@ import {
   type PermissionReplied,
 } from "./relay.js"
 import { scheduledFor } from "./later.js"
-import { awaited, forgetReport, prompted, reportOf, settled, told, toldKey } from "./report.js"
+import { awaited, forgetReport, prompted, reportOf, settled, told, untold } from "./report.js"
 import { allEntries, children, entriesOf, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
 import { subscriptions } from "./webhook.js"
 
@@ -123,9 +123,9 @@ async function waits(ports: WatchPorts, sessionID: string, prompt: number) {
   if ((await Promise.all(started.map((entry) => awaited(ports.storage, entry.sessionID)))).includes(true)) return true
   if ((await listEverywhere([...ports.permissions()], sessionID)).some((found) => found.requests.length)) return true
   if ((await pendingQuestions(ports.storage, sessionID)).length) return true
-  if ((await scheduledFor(ports.storage, sessionID)).length) return true
+  const [scheduled, subscribed] = await Promise.all([scheduledFor(ports.storage, sessionID), subscriptions(ports)])
   // An older subscription is no wait: a prompt, most likely its delivery, has come since.
-  return (await subscriptions(ports)).some((subscription) => subscription.sessionID === sessionID && subscription.createdAt >= prompt)
+  return scheduled.length > 0 || subscribed.some((subscription) => subscription.sessionID === sessionID && subscription.createdAt >= prompt)
 }
 
 /**
@@ -154,9 +154,8 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
       delivery: "steer",
     })
     .catch(async (error: unknown) => {
-      // Not told after all: the parent still waits for it, unless a later notice has told it since.
-      const stored: unknown = await ports.storage.get(toldKey(sessionID)).catch(() => undefined)
-      if ((stored as { at?: unknown } | undefined)?.at === toldAt) await ports.storage.remove(toldKey(sessionID)).catch(() => undefined)
+      // Not told after all: the parent still waits for it.
+      await untold(ports.storage, sessionID, toldAt).catch(() => undefined)
       throw error
     })
   return [entry.parentID]

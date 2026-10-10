@@ -33,9 +33,15 @@ export async function settled(storage: Pick<Storage, "get" | "set">, sessionID: 
   if ((timeOf(await storage.get(settledKey(sessionID))) ?? -Infinity) <= at) await storage.set(settledKey(sessionID), { at, by })
 }
 
-/** Notes that a spawned session's parent was told, at `at`, that a turn of it ended without a report. */
-export async function told(storage: Pick<Storage, "set">, sessionID: string, at: number) {
-  await storage.set(toldKey(sessionID), { at })
+/** Notes that a spawned session's parent was told, at `at`, that a turn of it ended without a report, unless a later telling is noted. */
+export async function told(storage: Pick<Storage, "get" | "set">, sessionID: string, at: number) {
+  if ((timeOf(await storage.get(toldKey(sessionID))) ?? -Infinity) <= at) await storage.set(toldKey(sessionID), { at })
+}
+
+/** Takes back the note `told` made at `at`, whose notice did not go out; a later one stays, and one that cannot be read goes. */
+export async function untold(storage: Pick<Storage, "get" | "remove">, sessionID: string, at: number) {
+  const stored = await storage.get(toldKey(sessionID)).then(timeOf, () => at)
+  if (stored === at) await storage.remove(toldKey(sessionID))
 }
 
 /** Whether `at` is known and no earlier than the prompt at `prompt`. */

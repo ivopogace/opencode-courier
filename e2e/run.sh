@@ -309,9 +309,11 @@ reported() {
 }
 check "a leaf that has reported reads as finished and owes no report, so it no longer counts against the limits" \
   "$(for _ in $(seq 1 30); do leaf=$(jq -r '.[0]' <<<"$leaves"); [ "$(finished "$leaf")" = true ] && [ "$(reported "$leaf")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
-check "deleting the session in between forgets the report state of the leaves it started" \
-  "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$middle") == 20* ]] &&
-    for _ in $(seq 1 20); do [ -z "$(jq -r '.[]' <<<"$leaves" | while read -r leaf; do kv get "report/$leaf/prompt"; done)" ] && { echo true; exit; }; sleep 1; done; echo false)"
+leaf=$(jq -r '.[0]' <<<"$leaves")
+check "deleting the session in between forgets the report state of the leaf that reported to it" \
+  "$([ -n "$(kv get "report/$leaf/settled")" ] &&
+    [[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$middle") == 20* ]] &&
+    for _ in $(seq 1 20); do [ -z "$(kv get "report/$leaf/prompt")$(kv get "report/$leaf/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
 
 # The first web search of this run: no provider has been chosen, which OpenCode keeps for every session.
 echo "a child's web search asks for a provider with a form: the parent is told, and told when it is answered"

@@ -72,21 +72,29 @@ function splitRule(parentID: string, depth: number, limits: Limits) {
     "- Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one " +
       `session per part with courier_spawn, at most ${limits.maxChildren} of yours running at once and ${limits.maxTotal} in the whole tree.`,
     "- Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session.",
+    "- Say which in one line of your reply: split: no, because … or split: <n> parts: … (one phrase per part).",
     "- If you split, you orchestrate: end your turn while they work, check and integrate each part yourself when it " +
       `reports (never hand that checking to another session), then send ${parentID} one combined report.`,
   ]
 }
 
-/** How every role part begins, so a second copy of the plugin does not add its own. */
+/** How every part the context hook adds begins, so a second copy of the plugin does not add its own. */
 export const ROLE_PREFIX = "opencode-courier role:"
 
 /**
  * The system part naming a session's place in its tree: `depth` 0 for a session nobody spawned that
- * has started one. The same on every request, so a session's prompt changes at most once.
+ * has started one, and `null` for one that has started none, which is pointed to the skill and
+ * asked to state its split decision. The same on every request, so a session's prompt changes once, at its first spawn.
  */
-export function rolePart(depth: number, limits: Limits) {
+export function rolePart(depth: number | null, limits: Limits) {
   const { maxDepth, maxChildren, maxTotal } = limits
   const budget = `At most ${maxChildren} of the sessions you start run at once, and ${maxTotal} in the whole tree.`
+  if (depth === null)
+    return (
+      `${ROLE_PREFIX} root, no sessions started yet. Before a task that touches several files or areas, load the ` +
+      "courier-orchestrate skill and decide whether to split it across sessions (doing it yourself is fine), and say " +
+      "which in one line of your reply: split: no, because … or split: <n> parts: …"
+    )
   if (depth === 0)
     return (
       `${ROLE_PREFIX} root orchestrator. You started sessions with courier_spawn, and they may start their own, ` +
@@ -109,9 +117,10 @@ export const SKILL_ID = "courier-orchestrate"
 
 /** Why a model loads the skill, listed with every session's available skills. */
 export const SKILL_DESCRIPTION =
-  "Use when a task is big enough to hand parts of it to other OpenCode sessions with courier_spawn, or when you were " +
-  "started by one and must decide whether to split your task: how to decide, plan the parts, start them, end your turn, " +
-  "read the reports, verify the work, integrate it and report upward, and what to do when a part goes wrong."
+  "Load at the start of any implementation task that may have independent parts, or when a session started you, to " +
+  "decide whether to split it across OpenCode sessions with courier_spawn and state the decision, and how: plan the " +
+  "parts, start them, end your turn, read the reports, verify the work, integrate it and report upward, and what to do " +
+  "when a part goes wrong."
 
 /** The skill's text; it names no limits, which the role part and the brief give for the session's own tree. */
 export const SKILL_CONTENT = [
@@ -120,7 +129,9 @@ export const SKILL_CONTENT = [
   "",
   "1. Decide: split or do. Split when the task has 2 or more independent, substantial parts touching separate files or " +
     "areas; do it yourself when it is small, sequential or tightly coupled. Never start exactly one session. A part that is " +
-    "itself big and divisible is split again by the session that gets it; at the deepest level a session does its part itself.",
+    "itself big and divisible is split again by the session that gets it; at the deepest level a session does its part itself. " +
+    "Say which in one line of your reply, before you start: split: no, because … or split: <n> parts: … (one phrase per " +
+    "part), so that a reasoned decision to do it yourself can be told from one never made.",
   "2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to " +
     "produce and where, how to check it, what to report. Say if it may split its part further.",
   "3. Start them: one courier_spawn per part, all with the same group name, so you are woken once with every report; " +
@@ -133,7 +144,9 @@ export const SKILL_CONTENT = [
     "left and why; have the session finish it with a courier_send, or do it yourself. blocked: make the decision it asks for " +
     "and send it with courier_send; if only the person can make it, ask them with your question tool and pass the answer on. " +
     "failed: read the error; message the session to try again, start a replacement, or carry on without it.",
-  "6. Verify first-hand: open the files, run the checks. Never hand the checking to another session.",
+  "6. Verify first-hand: open the files, run the checks. Never hand the checking to another session. Run checks through " +
+    "the project's scripts (bun run <script>, npm run <script>), not ./node_modules/.bin/<tool>, so that one permission " +
+    "rule covers them: your own permission prompts are relayed nowhere, and each one stalls the whole tree.",
   "7. Integrate: merge each reported branch into your own checkout (git merge courier/<session>), resolve conflicts " +
     "yourself, run the checks once more, then courier_cleanup the isolated sessions you are done with.",
   "8. Report upward if a session started you: one courier_send to it, with one status for the whole (done only when every " +

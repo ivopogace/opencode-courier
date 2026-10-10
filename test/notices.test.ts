@@ -31,7 +31,8 @@ describe("envelope and child brief", () => {
     expect(notices.childBrief("ses_parent", "Fix the bug", 3, limits, notices.childBranch("ses_child"))).toMatchSnapshot()
   })
   test("rolePart", () => {
-    for (const depth of [0, 1, 2, 3]) expect(notices.rolePart(depth, limits)).toMatchSnapshot()
+    for (const depth of [0, 1, 2, 3, null]) expect(notices.rolePart(depth, limits)).toMatchSnapshot()
+    for (const depth of [0, 1, 2, 3, null]) expect(notices.rolePart(depth, limits)).toStartWith(notices.ROLE_PREFIX)
   })
   test("the courier-orchestrate skill", () => {
     expect(notices.SKILL_ID).toBe("courier-orchestrate")
@@ -41,6 +42,10 @@ describe("envelope and child brief", () => {
     expect(notices.SKILL_DESCRIPTION.length).toBeLessThan(400)
     expect(notices.SKILL_CONTENT).toContain("Never start exactly one session")
     expect(notices.SKILL_CONTENT).toContain("Never hand the checking to another session")
+    expect(notices.SKILL_CONTENT).toContain("split: no, because")
+    expect(notices.SKILL_CONTENT).toContain("bun run <script>")
+    expect(notices.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("split: no, because")
+    expect(notices.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
   })
   test("refusals", () => {
     expect(notices.depthRefusal(3, 3)).toMatchSnapshot()

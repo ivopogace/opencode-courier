@@ -310,10 +310,10 @@ createServer((request, response) => {
     if (reply.hold) await new Promise((resolve) => setTimeout(resolve, holdMs))
     if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status || reply.delayed) && !reply.quick && childDelay)
       await new Promise((resolve) => setTimeout(resolve, childDelay))
-    // The session, and the courier role its system prompt names, for the recursion scenario.
+    // The session, and the courier role its system prompt names (`root` is the pointer to the skill), for the recursion scenario.
     const session = request.headers["x-opencode-session-id"]
     const system = (body.messages ?? []).filter((message) => message.role === "system").map((message) => textOf(message.content)).join("\n")
-    const role = system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf)/)?.[1] ?? null
+    const role = system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/)?.[1] ?? null
     const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])
     if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, skills, tools: (body.tools ?? []).map((tool) => tool.function?.name), reply })}\n`)
     if (reply.status) {

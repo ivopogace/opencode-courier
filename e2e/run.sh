@@ -417,8 +417,10 @@ check "the model saw no courier_spawn in a leaf's tool list unless the probe put
     | map(any(.tools | index("courier_spawn"))) | sort == [false, true]' "$WORK/model.log")"
 check "the child in between is a sub-orchestrator, with courier_spawn" \
   "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")))' "$WORK/model.log")"
-check "the root had no role part until it had started a child, then root orchestrator" \
-  "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | .[0] == null and .[-1] == "root orchestrator"' "$WORK/model.log")"
+# A root's prompt changes once, at its first spawn: the pointer to the skill before, the role part after.
+check "the root was pointed to the skill until it had started a child, then named root orchestrator" \
+  "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | index("root orchestrator") as $i
+    | $i > 0 and (.[:$i] | all(. == "root")) and (.[$i:] | all(. == "root orchestrator"))' "$WORK/model.log")"
 # The limits count live sessions: a finished one's last turn ended after anything reached it, and
 # one that has reported owes no report, its report settled after its last prompt.
 finished() { api "session/$1" | jq -r '(.data // .) | .time.idle != null and .time.updated <= .time.idle'; }

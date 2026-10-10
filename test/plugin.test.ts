@@ -228,6 +228,16 @@ test("its context hook, with the limits from the options, hides courier_spawn fr
   )
 })
 
+test("its context hook points a session nobody spawned, with no children, to the skill", async () => {
+  const { hooks } = await setUp()
+  const event = { sessionID: "ses_alone", tools: { courier_spawn: {}, courier_send: {} }, system: [] as any[] }
+
+  await hooks.get("context")!(event)
+
+  expect(Object.keys(event.tools)).toEqual(["courier_spawn", "courier_send"])
+  expect(event.system).toEqual([{ type: "text", text: rolePart(null, DEFAULT_LIMITS) }])
+})
+
 test("logs a limit option it cannot use, and keeps that limit's default", async () => {
   const logged = spyOn(console, "error").mockImplementation(() => {})
   try {

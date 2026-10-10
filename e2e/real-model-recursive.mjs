@@ -224,6 +224,11 @@ for (const [id, entry] of tree) {
   if (loads.length) notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} loaded the skill(s): ${loads.join(", ")}`)
 }
 if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.name === "skill"))) notes.push("no session loaded a skill")
+// The split decision each orchestrator states, as the pointer, the brief and the skill ask (#119).
+for (const [id, entry] of tree) {
+  const decision = entry.list.filter((message) => message.type === "assistant").map(textOf).join("\n").match(/^.*\bsplit:.*$/m)?.[0].trim()
+  if (decision) notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} stated: ${decision.slice(0, 160)}`)
+}
 for (const [id, entry] of orchestrators) {
   const groups = [...new Set(toolsOf(entry.list).filter((part) => childOf(part) && part.state.input?.group).map((part) => part.state.input.group))]
   const isolated = toolsOf(entry.list).filter((part) => childOf(part) && part.state.input?.isolate).length

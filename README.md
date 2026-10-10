@@ -80,9 +80,9 @@ it adds:
 ## How it works
 
 A parent session calls `courier_spawn`, gets a session id back immediately and ends its turn. The
-child works on its own and, when it is done or stuck, calls `courier_send` with the parent's id.
-That message lands in the parent's inbox and OpenCode starts a new turn for the parent if it is
-idle. A child whose turn fails instead, so that it cannot report, or ends without reporting, is
+child works on its own and, when it is done or stuck, calls `courier_send` with the parent's id, a
+status and what it produced. That message lands in the parent's inbox and OpenCode starts a new
+turn for the parent if it is idle. A child whose turn fails instead, so that it cannot report, or ends without reporting, is
 reported by the plugin, and a child that waits for a permission or asks a question has it passed to the parent, who asks you and
 passes your answer back. A child that waits on a form only you can answer, such as OpenCode asking
 which web search provider to use, has its parent told so.
@@ -199,7 +199,7 @@ Then list it in `opencode.json` (V2 uses `plugins`, plural). A local plugin path
 | Tool | Does |
 |---|---|
 | `courier_spawn` | Creates a session (optionally in its own git worktree with `isolate: true`) on the parent's model, sends it the task plus a brief naming the parent, how to report back and when to split the task further, and returns at once. Refused past the [session tree limits](#session-trees). |
-| `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. |
+| `courier_send` | Delivers a message to a session, signed with the sender's id, waking it if idle. From a child to its parent, a `status` (`done`, `partial`, `blocked` or `failed`) makes it the child's report, carried as an attribute of the message (`<courier from="…" status="done">`), and `artifacts` (`branch`, `commits`, `files`, `checks`) are listed in its body in a fixed layout; a message without a status is progress, not the report ([reference](docs/reference.md#a-childs-report)). |
 | `courier_status` | One look at a session: outcome, idle time, last reply and the permission requests and questions it waits on. For check-ins, not for waiting. |
 | `courier_children` | Lists the sessions this one (or a given `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated and when it was started. |
 | `courier_cleanup` | Removes the git worktree of a child started with `isolate: true` and drops the child from `courier_children`. Keeps a worktree with uncommitted changes or commits on no branch, tag or remote and lists them, unless `force: true` is passed ([reference](docs/reference.md#worktree-cleanup)). |
@@ -219,6 +219,10 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
 - **A child can split its task** with `courier_spawn` of its own, within the [limits](#session-trees):
   its brief says when to split and when to do the work itself, and a session that splits checks
   its children's work and sends one combined report. [More](docs/reference.md#session-trees-and-their-limits).
+- **A child reports once, with a status**: `done`, `partial`, `blocked` (it needs a decision from
+  its parent, and says what) or `failed`, as an attribute of the message, with its artifacts listed
+  in the body. A message without a status is progress, so a child that sends "halfway" and then
+  stops is still reported as ending without a report. [More](docs/reference.md#a-childs-report).
 - **A child that fails** cannot report, so the plugin does: every failed turn of a spawned session
   sends its parent a message marked `failed="<error type>"`, with the error, waking it if idle.
   [More](docs/reference.md#a-child-that-fails).

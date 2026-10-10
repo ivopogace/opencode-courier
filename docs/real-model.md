@@ -2,8 +2,8 @@
 
 `e2e/run.sh` proves the plumbing with a scripted model. `e2e/real-model.sh` checks that a real
 model uses the tools as intended: the parent spawns sessions instead of doing the work itself, it
-ends its turn instead of waiting or polling, each child calls `courier_send` before it stops, and
-each report wakes the idle parent. It is not part of CI. Re-run it after changing a tool
+ends its turn instead of waiting or polling, each child calls `courier_send` with a status before
+it stops, and each report wakes the idle parent. It is not part of CI. Re-run it after changing a tool
 description, a tool result or the child brief.
 
 ## Running it
@@ -45,7 +45,8 @@ was never tested. With them, each report should find the parent idle, 20 seconds
 
 After the parent's first turn, the script waits until both children have reported and the parent
 has finished with them (or every child has stopped), saves the transcripts, and prints a timeline
-and seven checks:
+and eight checks (the status check, and the note of each report's status, came with the status on
+`courier_send`; the transcript below is from before it):
 
 ```
 turn 1 (opened by the prompt):
@@ -71,6 +72,7 @@ turn 3 (opened by the report from ses_…):
   PASS the parent did not poll its children (courier_status, courier_children, sleep)
   PASS both children called courier_send to the parent
   PASS both reports woke the parent: each arrived after its first turn and got a reply
+  PASS each report carries a status, as the brief asks
   PASS each report holds its child's answer
   PASS the parent's final reply holds both answers
   usage: 12 model requests, 25460 input / 891 output / 662 reasoning tokens, 75136 cache reads, ...
@@ -81,8 +83,8 @@ Turns are read from the transcript: OpenCode records an `idle` message when a tu
 delivered message opens a new turn when it arrived after that marker; otherwise it was steered into
 the running turn. Polling means any `courier_status`, `courier_children` or `sleep` in the first
 turn, right after spawning, or more than one in a later turn; a single look after being woken is
-what `courier_status` is for, and is only noted. A report is a `courier_send` from a child; a
-`courier_later` check-in does not count. The work directory keeps `parent.json`, `child-<id>.json`,
+what `courier_status` is for, and is only noted. A report is a `courier_send` from a child, and
+should carry a status as its brief asks; a `courier_later` check-in does not count. The work directory keeps `parent.json`, `child-<id>.json`,
 `timeline.txt`, `summary.json` and the server log. The exit code is 0 when every check passes and
 1 when one fails. It is 2 when checks fail and model requests failed too, usually HTTP 429 from a
 free model, because then the run says more about the provider than the plugin; run it again.

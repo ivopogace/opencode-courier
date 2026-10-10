@@ -102,7 +102,7 @@ state, or cannot be read, the session counts while its turn runs, and a `session
 otherwise counts it as not running.
 
 Each check reads the whole roster once, to find the calling session's tree, and looks up every
-session in that tree with `session.get` and its two report keys. The checks run one at a time in the process,
+session in that tree with `session.get` and its report keys. The checks run one at a time in the process,
 and a spawn under way counts until its child is on the roster, so several `courier_spawn` calls made
 at once cannot get past a limit together, whichever locations or copies of the plugin make them.
 Two servers on one data directory do not see each other's spawns under way. A failed roster read
@@ -117,7 +117,8 @@ touching separate files or areas, one session per part; do it itself when it is 
 tightly coupled, and never start exactly one session. A session that splits orchestrates: it ends its
 turn while its children work, checks and integrates each part itself, never handing that checking
 to another session, and sends its parent one combined report. At `maxDepth` it is told to do the
-task itself.
+task itself. Every spawned session is told how to [report](#a-childs-report): once, with a status
+and its artifacts, and with `blocked` and a concrete ask when it needs a decision from its parent.
 
 **A `context` hook names the role on every model request.** For a spawned session the plugin adds
 one system part, `opencode-courier role: …`, naming its role and depth: `sub-orchestrator` below
@@ -135,6 +136,55 @@ session, not per request. It reads only the session's [reverse index](#roster) k
 children, never the whole roster: an entry an older copy wrote without a key is indexed on the next
 load, and until then the hook takes its session for one nobody spawned; `courier_spawn` still
 enforces the limits.
+
+## A child's report
+
+A child reports with `courier_send` to the session that started it, giving a `status`: `done`,
+`partial` (some of the task is left; the report says what and why), `blocked` (it needs a decision
+from its parent, and the report carries a concrete ask) or `failed`. The brief tells it to send
+exactly one such report when it finishes, to send `blocked` rather than end quietly when it needs
+its parent, and that a message without a status is progress, not its report. `courier_send` carries
+the status as an attribute of the envelope the parent reads, `<courier from="<child>"
+status="done">`, and in the delivered message's metadata (`status`), so the receiving model, and the
+join groups of a later release, can branch on it without parsing prose. A status that is none of
+the four is refused, since OpenCode does not check a tool's schema
+([plugin-api-notes.md](plugin-api-notes.md)); `null` counts as none.
+
+With the status, a report may list `artifacts`: `branch`, `commits` and `files`, each a string or a
+list of strings, and `checks`, a list of `{ command, result }`. They go in the message body after
+the text, in one fixed layout, so a parent finds them in the same place in every report:
+
+```
+<courier from="ses_child" status="done">
+Fixed the total in checkout.
+
+Artifacts:
+- branch: fix/checkout
+- commits: abc1234 Fix the total
+- files: src/checkout.ts, test/checkout.test.ts
+- checks:
+  - bun test: 412 passed
+  - bun run typecheck: clean
+</courier>
+```
+
+A field that is empty or not of its type is left out, and a check without a command too; nothing is
+listed when no artifact is given. The status and the artifacts are `courier_send`'s rather than a
+`courier_report` tool's: a child reports the same way it sends anything else, with the tool its
+brief already names, and the tool count, and what a leaf's tool list looks like, stay as they are.
+
+**A status settles the report; a message without one is progress.** A message with a status from a
+child to its parent settles the child's report (`report/<sessionID>/settled`, `by: "report"` with
+the `status`), whatever the status: `blocked` too, since the parent has been told and must act. A
+message from the child to its parent without a status is noted as progress
+(`report/<sessionID>/progress`) and settles nothing, so a child that sends "halfway there" and then
+ends its turn without a report is [told to its parent](#a-child-that-ends-without-a-report), and
+the notice says that its last message had no status. The tool's result tells the child which it
+was: a report, with the usual line on ending its turn, or progress, with what a report needs. A
+message to any session but the parent is neither. A child an earlier release of the plugin briefed
+was never told about statuses, so its messages without one count as its report, as before: its
+roster entry lacks the `reports: "status"` that `courier_spawn` now writes with every entry. The
+plugin acts on no status beyond settling the report; what each one means is for the parent's model.
 
 ## A child that fails
 
@@ -158,7 +208,8 @@ never comes, and in a tree, every session above it with it. So the plugin keeps,
 session, whether it owes its parent a report: from the moment its task or a message delivered
 through courier or the plugin reaches it (OpenCode's `session.inbox.delivered` event: a message
 from any session, a scheduled message, a webhook delivery, or one of the plugin's notices) until it
-calls `courier_send` with its parent's id, or its turn fails or is interrupted. What the person
+calls `courier_send` with its parent's id and a [status](#a-childs-report), or its turn fails or is
+interrupted. What the person
 types in the child's own session, and a compaction or move of it, is between the person and the
 child: it does not make the child owe a report, so a child that has reported and then answers the
 person is not told to its parent. The plugin tells these apart by the type OpenCode gives each item
@@ -167,13 +218,15 @@ remembered in memory for the last 1000 items of spawned sessions, since the deli
 carry it. A delivery whose item it did not see enter, such as one queued before a restart, counts as
 a message, so the parent is told rather than left waiting. The task, which `courier_spawn` hands
 over as a prompt like the person's, is noted by `courier_spawn` itself (below). Only a message to the
-session that started it is a report; one to a sibling, or to the session at the top, is not, since
-the parent is the one waiting for it.
+session that started it, with a status, is a report; one without a status is progress, and one to
+a sibling, or to the session at the top, is neither, since the parent is the one waiting for it.
 
 When a turn of a spawned session ends without failing (`session.execution.succeeded`) while it
 owes a report, the plugin sends its parent a message from that child, marked
 `ended="without-report"`, with the child's title and its last reply as `courier_status` gives it
-(at most 2000 characters), waking the parent if it is idle. The parent decides: message the child
+(at most 2000 characters), waking the parent if it is idle. When the child has messaged the parent
+without a status since its last prompt, the notice says so: that message was progress, not the
+report. The parent decides: message the child
 with `courier_send` to have it carry on, or to report if its last reply is what it needed, or start
 a replacement. Until the child reports, it counts toward the
 [limits](#session-trees-and-their-limits). Each turn's end is claimed once, before its notice goes
@@ -193,13 +246,15 @@ stopped otherwise (by the person, or by OpenCode after an hour without activity)
 and is not told, as before.
 
 The state is kept in the plugin's storage, so a restart does not lose it: `report/<sessionID>/prompt`
-holds when a prompt last reached the session (`{ at }`, epoch milliseconds), and
-`report/<sessionID>/settled` when it last reported, failed or was interrupted (`{ at, by }`, `by`
-being `report`, `failed` or `interrupted`), and `report/<sessionID>/told` when its parent was last
+holds when a prompt last reached the session (`{ at }`, epoch milliseconds),
+`report/<sessionID>/settled` when it last reported, failed or was interrupted (`{ at, by, status }`,
+`by` being `report`, `failed` or `interrupted`, and `status` the report's, `done`, `partial`,
+`blocked` or `failed`, when it carried one), `report/<sessionID>/progress` when it last messaged its
+parent without a status (`{ at }`), and `report/<sessionID>/told` when its parent was last
 told that it ended a turn without one (`{ at }`). It owes a report while `prompt` is later than
 `settled`, and its parent waits for it while `prompt` is later than `told` too.
 The prompt's time is the one OpenCode published its delivery at, not when the plugin handled the
-event, and the report's is the server's clock as `courier_send` runs, before it delivers, so an event
+event, and the report's, or the progress's, is the server's clock as `courier_send` runs, before it delivers, so an event
 handled late cannot make a report look older than the prompt it answers. `courier_spawn` writes the
 first `prompt` itself, just before it hands the child its task, and settles it as failed if handing
 it over fails. Each key keeps the later of two times, since both of the hub's subscriptions note
@@ -210,7 +265,8 @@ cannot be delivered, its `told` is taken back, unless a later notice has told th
 
 What the plugin cannot see, it cannot judge: a prompt delivered while the server is down or the
 plugin not loaded leaves the earlier one in place, so a turn after it that ends without a report
-may not be told, and a `courier_send` whose note could not be written is taken for no report. A
+may not be told, and a `courier_send` whose note could not be written is taken for no report, and
+for no progress. A
 prompt the person types, a compaction someone asks for (OpenCode's compact command) or a move of
 the session, which OpenCode delivers like a message, counts as one only when the plugin did not see
 it enter the inbox; the compactions OpenCode makes on its own as the context fills never do.

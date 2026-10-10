@@ -28,10 +28,7 @@ const STATUS_LIST = `${STATUSES.slice(0, -1).join(", ")} or ${STATUSES.at(-1)}`
 /** The branch an isolated child commits its work on, and names in the `branch` of its report. */
 export const childBranch = (sessionID: string) => `courier/${sessionID}`
 
-/**
- * What a spawned session at `depth` is told; `depth` 1 is a child of a session nobody spawned. `branch`
- * is given to an isolated one, which works on a detached HEAD in a worktree of its own.
- */
+/** What a spawned session at `depth` is told; `depth` 1 is a child of a session nobody spawned. `branch` is for an isolated one. */
 export function childBrief(parentID: string, task: string, depth: number, limits: Limits, branch?: string) {
   return [
     `You were started by session ${parentID} through opencode-courier.`,

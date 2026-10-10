@@ -168,10 +168,8 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
 }
 
 /**
- * What an isolated parent hands its isolated child: its worktree and the commit it is on, so the child's worktree starts
- * there rather than at the project's last commit. Undefined for a parent that is not an isolated child on the roster (found
- * by the reverse index alone), whose children start from the project as before. A HEAD that cannot be read fails the
- * spawn: starting from the project instead would hand the child code without the parent's work, unannounced.
+ * The worktree and HEAD an isolated parent hands its isolated child, by the reverse index alone; undefined for any
+ * other parent. An unreadable HEAD fails the spawn rather than start the child without the parent's work.
  */
 async function parentWork(ports: CourierPorts, parentID: string) {
   const parent = await indexedEntry(ports.storage, parentID)

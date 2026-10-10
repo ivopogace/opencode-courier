@@ -236,7 +236,7 @@ if (selfWorked.length) notes.push(`the parent's first turn already states ${self
 for (const report of reports)
   notes.push(`report from ${report.from}${report.group ? ` (in group "${report.group}")` : ""}: turn ${report.turn}, ${report.opened ? "woke the idle parent" : "steered into a running turn"}, ${report.status ? `status ${report.status}` : "no status"}`)
 const grouped = firstTools.filter((part) => childOf(part) && part.state.input?.group)
-if (grouped.length) notes.push(`the parent started ${grouped.length} child(ren) in a join group on its own: ${[...new Set(grouped.map((part) => part.state.input.group))].join(", ")}`)
+if (grouped.length) notes.push(`the parent started ${grouped.length} child(ren) in a join group: ${[...new Set(grouped.map((part) => part.state.input.group))].join(", ")}`)
 const checkIns = parentTools.filter((part) => part.name === "courier_later" && part.state.status === "completed").length
 const cancelled = parentTools.filter((part) => part.name === "courier_cancel" && part.state.status === "completed").length
 if (checkIns) notes.push(`the parent scheduled ${checkIns} courier_later check-in(s) and cancelled ${cancelled}`)

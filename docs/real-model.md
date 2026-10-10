@@ -97,8 +97,10 @@ with courier_spawn, both in one join group named "pair", so that you are woken o
 reports". The checker takes the group's one message as the report of each member it lists, reads
 each report's status from its own line, and notes that the parent used a group. With the default
 model the parent then has two turns: the spawns, and one opened by the group's message, in which it
-replies `RESULTS 391 1024`. Left to itself, with the prompt above, that model reports plainly, one
-turn per report, as before.
+replies `RESULTS 391 1024`. Left to itself, with the prompt above, that model at first reported
+plainly, one turn per report; with the `group` description that says a group's reports come once
+the parent's turn has ended, it started its two helpers in a group it named itself (`helpers`,
+`math-helpers`) in each of three runs, and was likewise woken once, by the group. Both runs pass, 8/8, at OpenCode 2.0.26.
 
 ## The permission relay
 

@@ -55,6 +55,9 @@ function decide(body) {
       return { text: "PARENT SPAWNED BOTH", delayed: true }
     }
     const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
+    // The middle session of COURIER-GROUP-NESTED ends its turn a while after starting its group, which has reported by then.
+    if (call?.function?.name === "courier_spawn" && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-GROUPS"))
+      return { text: "MIDDLE SPAWNED", delayed: true }
     // A leaf of COURIER-DEPTH reports what its courier_spawn call gave.
     if (call?.function?.name === "courier_spawn" && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-LEAF"))
       return { tool: "courier_send", args: { sessionID: startedBy[1], message: `LEAF GOT ${result}`, status: "done" } }
@@ -107,6 +110,9 @@ function decide(body) {
   if (parent && recent.includes("CHILD-SILENT")) return { text: "CHILD SILENT REPLY", delayed: true }
   // A member of COURIER-GROUP-BLOCKED's group needs a decision from its parent, and reports done once nudged.
   if (parent && recent.includes("CHILD-BLOCKS")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD BLOCKED", status: "blocked" } }
+  // The middle session of COURIER-GROUP-NESTED starts two quick leaves in one group.
+  if (parent && recent.includes("CHILD-GROUPS"))
+    return { calls: [0, 1].map(() => ({ tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } })) }
   // A member of COURIER-GROUP-SPLIT's group reports at once, before its parent's turn has ended.
   if (parent && recent.includes("CHILD-QUICK"))
     return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE QUICKLY", status: "done" }, quick: true }
@@ -167,6 +173,9 @@ function decide(body) {
   if (/<courier from="ses_\w+" (answered|settled)=/.test(recent)) return { text: "PARENT SETTLED" }
   if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
   // A group's reports, in one message, or a member's blocked report, which is not held.
+  // A middle session reports its group's message on; a root parent ends its turn on it.
+  if (/<courier from="[^"]*" group="/.test(recent) && startedBy)
+    return { tool: "courier_send", args: { sessionID: startedBy[1], message: "MIDDLE GOT GROUP", status: "done" } }
   if (/<courier from="[^"]*" group="/.test(recent)) return { text: "PARENT GOT GROUP" }
   if (/<courier from="ses_\w+" status="blocked">/.test(recent)) return { text: "PARENT BLOCKED" }
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
@@ -191,6 +200,7 @@ function decide(body) {
   const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
+  if (recent.includes("COURIER-GROUP-NESTED")) return { tool: "courier_spawn", args: { task: "CHILD-GROUPS" } }
   if (recent.includes("COURIER-GROUP-SPLIT")) return { tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } }
   // COURIER-GROUP starts two children at once in one group; with -BLOCKED, the second needs a decision first.
   const group = recent.match(/COURIER-GROUP(-BLOCKED)?/)

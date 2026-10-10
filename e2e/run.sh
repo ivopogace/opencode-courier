@@ -282,6 +282,15 @@ check "the group's reports started a new turn within 3 s of the parent's turn en
 check "the parent got exactly one message, with both reports" "$(sleep 2; api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] |
   length == 1 and (.[0] | contains("reports=\"2\"") and (split("CHILD DONE QUICKLY") | length == 3))')"
 
+echo "a sub-orchestrator whose group reports during its turn gets it once that turn ends, and is not told of as silent"
+out=$(prompt "COURIER-GROUP-NESTED")
+root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the middle session reported its group's message on to the root" "$(has_text "$root" "MIDDLE GOT GROUP" 60)"
+check "it got exactly one message, with both of its leaves' reports" "$(api "session/$middle/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] |
+  length == 1 and (.[0] | contains("reports=\"2\"") and (split("CHILD DONE QUICKLY") | length == 3))')"
+check "and the root was not told it ended without a report" "$(sleep 3; notices_with "$root" ended | jq -r 'length == 0')"
+
 echo "a deleted child that owes a report is forgotten"
 out=$(prompt "COURIER-SILENT")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)

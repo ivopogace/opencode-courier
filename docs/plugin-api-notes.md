@@ -367,3 +367,42 @@ Read in OpenCode's source at tag `v2.0.26` (`packages/core/src/worktree.ts`, `wo
 
 `courier_spawn` uses it for a nested isolated child: `from` is the isolated parent's worktree and
 `branch` the commit its HEAD is on, which is also what the child's roster entry records as `base`.
+
+## Skills (v2.0.26)
+
+Read in the plugin API's types (`@opencode/plugin/dist/promise/skill.d.ts`, `@opencode/schema/skill`) and
+in OpenCode's source at tag `v2.0.26` (`packages/core/src/skill.ts`, `skill/instructions.ts`,
+`plugin/skill.ts`, `tool/plugin/skill.ts`, `session/session.ts`, `session/prompt.ts`,
+`session/runner/to-llm-message.ts`, `packages/tui/src/component/prompt/index.tsx`), and checked by the
+live suite's skill scenario:
+
+- **Registering.** `ctx.skill.transform((editor) => editor.add(info))`, with `info` a `Skill.Info`:
+  `id`, `name`, `description` (optional), `autoinvoke` (optional), `path` and `content`. The host
+  decodes it with the schema, so a wrong shape throws from `add`. `path` is typed as an absolute
+  path but checked as a string; it is where OpenCode would look for the skill's files, and its
+  directory is named to the model (below), so a plugin without files gives a path of its own, as
+  OpenCode's built-in skills do with `/builtin/opencode.md`. The editor also has `list`, `get`,
+  `update` and `remove`. Registrations are scoped: an instance's are dropped when it unloads, and the
+  list is rebuilt from the registrations left. Instances of several locations each add the same
+  skill under one id, which is one entry.
+- **Listing.** Every skill with a `description`, with `autoinvoke` not `false`, and not denied by a
+  `skill` permission rule for its id, is listed in every session's system prompt, under the
+  instruction key `core/skill-guidance`: "Skills provide specialized instructions and workflows for
+  specific tasks. Use the skill tool to load a skill when a task matches its description. …" and an
+  `<available_skills>` block with one `<skill>` of `<id>`, `<name>` and `<description>` per skill,
+  sorted by id. A change to the list reaches a running session as a delta. `GET /api/skill?directory=…`
+  lists them for a location.
+- **The model loads one** with OpenCode's `skill` tool (`skill({ id })`), a direct tool whose
+  permission check asks the `skill` action for the id (with `save: [id]`, so OpenCode's prompt offers
+  "always"); a spawned session's request is relayed like any other. Its result is
+  `<skill_content name="…">`: `# Skill: <name>`, the content, `Base directory for this skill:
+  <dirname(path)>`, a note that relative paths are relative to it, and a `<skill_files>` list, which is
+  read from disk only when the path's basename is `SKILL.md`, and is empty otherwise.
+- **The person activates one** in the TUI's `/skills` dialog, which inserts `@<id>` into the prompt and
+  attaches `skills: [{ id }]` to it (`POST /api/session/:id/prompt`); the skill's text, in the same
+  `<skill_content>` shape, goes to the model as the first part of that user message, before the
+  prompt's text. The experimental `POST /api/experimental/session/:id/skill { id, resume? }` instead
+  publishes `session.skill.activated` (a durable session event: `id`, `name`, `text`), projected as a
+  `skill` message in the transcript, sent to the model as a user message carrying the raw `content`,
+  and resumes the session unless `resume` is `false`. A compaction keeps `[Skill activated: <name>]`
+  and the text.

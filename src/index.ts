@@ -11,6 +11,7 @@ import { readLimits, shapeContext } from "./limits.js"
 import { pendingOf, type AnswerPorts } from "./relay.js"
 import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question/index.js"
 import { pruneExpired } from "./roster.js"
+import { addSkill } from "./skill.js"
 import { addTools, type ToolPorts } from "./tools.js"
 import { watchFromHub, type WatchPorts, type WatchState } from "./watch.js"
 import { builtVersions, versionNotice } from "./version.js"
@@ -159,6 +160,7 @@ export const courier = () => Plugin.define({
       receiving: async () => (await receivers.current?.server) !== undefined,
     }
     await ctx.tool.transform((tools) => addTools(tools, toolPorts))
+    await ctx.skill.transform(addSkill)
     await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, log }, event))
 
     const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))

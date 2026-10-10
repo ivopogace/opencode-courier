@@ -17,11 +17,12 @@ import {
 import { hub as processHub, open, resetHub, type Hub, type Member } from "../src/hub.js"
 import { shutdownReportedAt } from "../src/question/index.js"
 import { send, type CourierPorts } from "../src/courier.js"
-import { reportOf, promptKey, settledKey, toldKey } from "../src/report.js"
+import { reportOf, prompted, promptKey, settledKey, toldKey } from "../src/report.js"
 import { record, remove } from "../src/roster.js"
 import {
   noteDeleted,
   noteInterrupted,
+  noteEnqueued,
   notePrompt,
   reportAsked,
   reportFailure,
@@ -62,7 +63,7 @@ const replied = (id = "evt_r", reply: PermissionReplied["data"]["reply"] = "once
   data: { sessionID: "ses_child", requestID: "per_1", reply },
 })
 
-const fresh = () => ({ seen: new Set<string>(), waiting: new Set<string>(), answered: new Set<string>(), forms: { told: new Map<string, Promise<unknown>>(), settled: new Set<string>() } })
+const fresh = () => ({ seen: new Set<string>(), waiting: new Set<string>(), answered: new Set<string>(), forms: { told: new Map<string, Promise<unknown>>(), settled: new Set<string>() }, inbox: new Map<string, string>() })
 
 function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["data"][] = [], store = new Map<string, unknown>()) {
   const sent: any[] = []
@@ -176,7 +177,17 @@ const sessionEvent = (type: string, id: string, created: number, sessionID = "se
   created,
   data: { sessionID, ...(reason ? { reason } : {}) },
 })
-const delivered = (id: string, created: number, sessionID = "ses_child") => sessionEvent("session.inbox.delivered", id, created, sessionID)
+const delivered = (id: string, created: number, sessionID = "ses_child", inboxID?: string) => {
+  const event = sessionEvent("session.inbox.delivered", id, created, sessionID)
+  return inboxID ? { ...event, data: { ...event.data, inboxID } } : event
+}
+/** OpenCode's `session.inbox.enqueued` of an item of type `type`, which a `delivered` with `inboxID` later delivers. */
+const enqueued = (id: string, inboxID: string, type: string, sessionID = "ses_child") => ({
+  id,
+  type: "session.inbox.enqueued",
+  created: 1,
+  data: { sessionID, inboxID, item: { type, payload: {}, delivery: "steer" } },
+})
 const succeeded = (id: string, created: number, sessionID = "ses_child") => sessionEvent("session.execution.succeeded", id, created, sessionID)
 
 /** courier_send through the courier's own ports, over the watcher's storage, at `now`. */
@@ -428,6 +439,60 @@ describe("reportSilent", () => {
     expect(sent).toEqual([])
     expect(scanned).toEqual([])
     expect(store.has(promptKey("ses_parent"))).toBe(false)
+  })
+})
+
+describe("what makes a child owe a report", () => {
+  /** Runs `events` through a watcher of a child that reported at 150, returning the notices sent. */
+  async function afterReport(events: unknown[]) {
+    const watching = new AbortController()
+    const { ports, sent } = fakePorts([events])
+    ;(ports as any).log = () => watching.abort()
+    await record(ports.storage, child())
+    await notePrompt(ports, delivered("evt_d0", 100))
+    await sendFrom(ports, "ses_child", "ses_parent", 150)
+    await watchChildren(ports, fresh(), watching.signal, 1)
+    return sent
+  }
+  const exchange = (type: string) => [enqueued("evt_e", "inb_1", type), delivered("evt_d", 160, "ses_child", "inb_1"), succeeded("evt_s", 200)]
+
+  test("what the person types in the child's session does not", async () => {
+    expect(await afterReport(exchange("user"))).toEqual([])
+  })
+
+  test("a compaction or a move of the child does not", async () => {
+    expect(await afterReport(exchange("compaction"))).toEqual([])
+    expect(await afterReport(exchange("move"))).toEqual([])
+  })
+
+  test("a message through courier or the plugin does", async () => {
+    expect(await afterReport(exchange("synthetic"))).toHaveLength(1)
+  })
+
+  test("a delivery whose item was not seen enqueued does, failing toward telling the parent", async () => {
+    expect(await afterReport([delivered("evt_d", 160, "ses_child", "inb_unknown"), succeeded("evt_s", 200)])).toHaveLength(1)
+  })
+
+  test("its task does, by the note courier_spawn writes before handing it over as a user prompt", async () => {
+    const watching = new AbortController()
+    const { ports, sent } = fakePorts([exchange("user")])
+    ;(ports as any).log = () => watching.abort()
+    await record(ports.storage, child())
+    // What courier_spawn writes before `session.prompt`.
+    await prompted(ports.storage, "ses_child", 100)
+    await watchChildren(ports, fresh(), watching.signal, 1)
+    expect(sent.map((notice: any) => notice.metadata.ended)).toEqual(["without-report"])
+  })
+
+  test("remembers the item types of spawned sessions only, reading nothing but the reverse index for others", async () => {
+    const { ports, scanned } = fakePorts()
+    await record(ports.storage, child())
+    scanned.length = 0
+    const inbox = new Map<string, string>()
+    expect(await noteEnqueued(ports, inbox, enqueued("evt_e1", "inb_1", "user", "ses_parent"))).toBe(false)
+    expect(await noteEnqueued(ports, inbox, enqueued("evt_e2", "inb_2", "user"))).toBe(true)
+    expect([...inbox]).toEqual([["inb_2", "user"]])
+    expect(scanned).toEqual([])
   })
 })
 

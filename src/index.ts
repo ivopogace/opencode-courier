@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
 import type { CourierPorts } from "./courier.js"
 import { headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
-import { gate, hub, join, permissions, portsAt, track, type Member, type Receiver } from "./hub.js"
+import { gate, hub, inbox, join, permissions, portsAt, track, type Member, type Receiver } from "./hub.js"
 import type { LaterPorts } from "./later.js"
 import { readLimits, shapeContext } from "./limits.js"
 import { pendingOf, type AnswerPorts } from "./relay.js"
@@ -77,7 +77,7 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 // One set of handled events and of told permission requests for every instance in the process, since
 // several subscriptions and copies see the same events. The scheduler's claim set is the hub's own.
 const { watched } = hub
-const watchState: WatchState = { ...watched, forms: hub.forms }
+const watchState: WatchState = { ...watched, forms: hub.forms, inbox }
 
 /**
  * The courier tools and webhook receiver, as a promise plugin joining the hub that runs the scheduler

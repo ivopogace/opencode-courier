@@ -165,7 +165,8 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
  * not delivered; one without a status is progress, unless an older release briefed the sender.
  */
 export async function send(ports: CourierPorts, from: string, input: SendInput): Promise<Sent> {
-  const status = input.status === undefined || input.status === null ? undefined : input.status
+  // Some models send null for an optional field they leave out.
+  const status = input.status ?? undefined
   if (status !== undefined && !isStatus(status)) throw new Error(`status must be one of ${STATUSES.join(", ")}, not ${JSON.stringify(status)}.`)
   // Noted first: the delivery may wake the parent, whose turn may end before a later note.
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)

@@ -162,7 +162,8 @@ export interface Sent {
 
 /** courier_send's result: for a message to the session that started the sender, whether it was its report. */
 export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"> = {}) {
-  if (sent.report === true) return `Delivered to ${sessionID} as your report${sent.status ? `, status ${sent.status}` : ""}. ${END_TURN}`
+  const status = sent.status ? `, status ${sent.status}` : ""
+  if (sent.report === true) return `Delivered to ${sessionID} as your report${status}. ${END_TURN}`
   if (sent.report === false)
     return `Delivered to ${sessionID}. Without a status it is progress, not your report: when you finish, send one with status ${STATUS_LIST}.`
   return `Delivered to ${sessionID}.`

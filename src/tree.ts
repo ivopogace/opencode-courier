@@ -16,21 +16,21 @@ export async function subtree(storage: RosterStorage, rootID: string, max = Numb
   const byParent = new Map<string, Below[]>()
   const seen = new Set([rootID])
   let truncated = false
-  let level = [rootID]
-  for (let depth = 1; level.length && !truncated; depth++) {
+  const expand = async (level: string[], depth: number): Promise<void> => {
+    if (!level.length || truncated) return
     const found = await Promise.all(level.map((parentID) => children(storage, parentID)))
     const next: string[] = []
     for (const [index, entries] of found.entries()) {
       const fresh = entries.filter((entry) => !seen.has(entry.sessionID))
-      const room = Math.max(0, max - (seen.size - 1))
-      const kept = fresh.slice(0, room)
+      const kept = fresh.slice(0, Math.max(0, max - (seen.size - 1)))
       truncated ||= kept.length < fresh.length
       for (const entry of kept) seen.add(entry.sessionID)
       if (kept.length) byParent.set(level[index]!, kept.map((entry) => ({ entry, depth })))
       next.push(...kept.map((entry) => entry.sessionID))
     }
-    level = next
+    return expand(next, depth + 1)
   }
+  await expand([rootID], 1)
   return { nodes: drawn(byParent, rootID), truncated }
 }
 

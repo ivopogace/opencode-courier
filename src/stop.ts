@@ -142,18 +142,18 @@ async function tell(ports: StopPorts, callerID: string, target: Below["entry"]) 
 
 /** Removes the isolated sessions' worktrees, deepest first, through courier_cleanup's checks; a failure is reported, not thrown. */
 async function removeWorktrees(ports: StopPorts, nodes: ReadonlyArray<Below>) {
-  const isolated = nodes.filter((node) => node.entry.isolated).sort((a, b) => b.depth - a.depth)
+  type Removed = NonNullable<StopResult["cleanup"]>[number]
   // One at a time: git locks the repository's worktree list while it removes one.
-  return isolated.reduce(
-    (before, { entry }) =>
-      before.then(async (done) => [
-        ...done,
-        await cleanup(ports.cleanup, entry.parentID, { sessionID: entry.sessionID }).catch((error: unknown) => ({
-          sessionID: entry.sessionID,
-          outcome: "failed" as const,
-          error: describeFailure("courier_cleanup", error).message,
-        })),
-      ]),
-    Promise.resolve<NonNullable<StopResult["cleanup"]>[number][]>([]),
-  )
+  const removeNext = async (queue: ReadonlyArray<Below>, done: Removed[]): Promise<Removed[]> => {
+    const [next, ...rest] = queue
+    if (!next) return done
+    const { entry } = next
+    const result: Removed = await cleanup(ports.cleanup, entry.parentID, { sessionID: entry.sessionID }).catch((error: unknown) => ({
+      sessionID: entry.sessionID,
+      outcome: "failed" as const,
+      error: describeFailure("courier_cleanup", error).message,
+    }))
+    return removeNext(rest, [...done, result])
+  }
+  return removeNext(nodes.filter((node) => node.entry.isolated).sort((a, b) => b.depth - a.depth), [])
 }

@@ -145,19 +145,19 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   await told(ports.storage, sessionID, toldAt).catch((error: unknown) =>
     ports.log(`courier watch: could not note that the parent of ${sessionID} was told: ${String(error)}`),
   )
-  await ports.session
-    .synthetic({
+  try {
+    await ports.session.synthetic({
       sessionID: entry.parentID,
       text: envelope(sessionID, silentNotice(entry.title, lastText), { ended: "without-report" }),
       description: `Session ${sessionID} ended without a report`,
       metadata: { source: "courier", from: sessionID, ended: "without-report" },
       delivery: "steer",
     })
-    .catch(async (error: unknown) => {
-      // Not told after all: the parent still waits for it.
-      await untold(ports.storage, sessionID, toldAt).catch(() => undefined)
-      throw error
-    })
+  } catch (error) {
+    // Not told after all: the parent still waits for it.
+    await untold(ports.storage, sessionID, toldAt).catch(() => undefined)
+    throw error
+  }
   return [entry.parentID]
 }
 

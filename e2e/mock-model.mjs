@@ -47,6 +47,13 @@ function decide(body) {
       const options = ["Hello", "Hi", "Hey"].map((label) => ({ label, description: `Say ${label}` }))
       return { tool: "question", args: { questions: [{ header: "Greeting", question: "Which greeting?", options, multiple: false }] }, delayed: true }
     }
+    // COURIER-GROUP-SPLIT starts its second member a while after the first, which has reported by then,
+    // and ends its turn a while after that, when both have.
+    if (call?.function?.name === "courier_spawn" && prompt.includes("COURIER-GROUP-SPLIT")) {
+      const spawned = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_spawn")
+      if (spawned.length < 2) return { tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" }, delayed: true }
+      return { text: "PARENT SPAWNED BOTH", delayed: true }
+    }
     const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
     // A leaf of COURIER-DEPTH reports what its courier_spawn call gave.
     if (call?.function?.name === "courier_spawn" && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-LEAF"))
@@ -100,6 +107,9 @@ function decide(body) {
   if (parent && recent.includes("CHILD-SILENT")) return { text: "CHILD SILENT REPLY", delayed: true }
   // A member of COURIER-GROUP-BLOCKED's group needs a decision from its parent, and reports done once nudged.
   if (parent && recent.includes("CHILD-BLOCKS")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD BLOCKED", status: "blocked" } }
+  // A member of COURIER-GROUP-SPLIT's group reports at once, before its parent's turn has ended.
+  if (parent && recent.includes("CHILD-QUICK"))
+    return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE QUICKLY", status: "done" }, quick: true }
   // The child of COURIER-PROGRESS messages its parent without a status, then ends its turn on the tool's result.
   if (parent && recent.includes("CHILD-PROGRESSES")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD HALFWAY" } }
   // The child of COURIER-WAITING schedules a message that tells it to report, and ends its turn to wait for it.
@@ -181,6 +191,7 @@ function decide(body) {
   const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
+  if (recent.includes("COURIER-GROUP-SPLIT")) return { tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } }
   // COURIER-GROUP starts two children at once in one group; with -BLOCKED, the second needs a decision first.
   const group = recent.match(/COURIER-GROUP(-BLOCKED)?/)
   if (group)
@@ -243,7 +254,7 @@ createServer((request, response) => {
   request.on("end", async () => {
     const body = raw ? JSON.parse(raw) : {}
     const reply = decide(body)
-    if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status || reply.delayed) && childDelay)
+    if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status || reply.delayed) && !reply.quick && childDelay)
       await new Promise((resolve) => setTimeout(resolve, childDelay))
     // The session, and the courier role its system prompt names, for the recursion scenario.
     const session = request.headers["x-opencode-session-id"]

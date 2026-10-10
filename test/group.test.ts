@@ -22,6 +22,8 @@ import { envelope, groupNotice } from "../src/notices.js"
 
 function fakePorts(options: { pageSize?: number; store?: Map<string, unknown> } = {}) {
   const store = options.store ?? new Map<string, unknown>()
+  // When the parent's last turn ended; past every join unless a test moves it.
+  const parent = { idle: 1_000 as number | undefined }
   const delivered: any[] = []
   const logs: string[] = []
   const ports: GroupPorts = {
@@ -45,10 +47,11 @@ function fakePorts(options: { pageSize?: number; store?: Map<string, unknown> } 
         delivered.push(input)
         return { id: `msg_${delivered.length}` }
       }) as any,
+      get: (async () => ({ time: { idle: parent.idle } })) as any,
     },
     log: (message) => logs.push(message),
   }
-  return { ports, store, delivered, logs }
+  return { ports, store, delivered, logs, parent }
 }
 
 const membership = (sessionID: string, title = sessionID, group = "pair", parentID = "ses_parent"): Membership => ({
@@ -240,6 +243,43 @@ describe("deliverReleased", () => {
     expect(delivered[0].text).toContain('Without a report: ses_b "Second" (its turn failed).')
     expect(delivered[0].metadata.from).toBe("ses_a")
     expect(store.size).toBe(0)
+  })
+
+  test("holds a complete group until the parent's turn that started its last member has ended", async () => {
+    const { ports, delivered, store, parent } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a"), report("done"))
+    await holdReport(ports.storage, membership("ses_b"), report("done"))
+
+    parent.idle = undefined
+    await deliverReleased(ports, new Set())
+    parent.idle = 0
+    await deliverReleased(ports, new Set())
+    expect(delivered).toEqual([])
+    expect(store.size).toBe(2)
+
+    parent.idle = 1
+    await deliverReleased(ports, new Set())
+    expect(delivered).toHaveLength(1)
+    expect(store.size).toBe(0)
+  })
+
+  test("keeps a group whose parent cannot be looked up for the next tick, and drops it once the parent is gone", async () => {
+    const { ports, delivered, logs, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a"), report("done"))
+    await markLeft(ports.storage, membership("ses_b"), "deleted", 3)
+
+    ;(ports.session as any).get = async () => Promise.reject(new Error("busy"))
+    await deliverReleased(ports, new Set())
+    expect(store.size).toBe(2)
+    expect(logs).toEqual(["courier group pair of ses_parent: Error: busy"])
+
+    ;(ports.session as any).get = async () => Promise.reject(Object.assign(new Error(""), { _tag: "Session.NotFoundError" }))
+    await deliverReleased(ports, new Set())
+    expect(delivered).toEqual([])
+    expect(store.size).toBe(0)
+    expect(logs.at(-1)).toBe("courier group pair of ses_parent dropped: the session is gone")
   })
 
   test("drops a group whose parent OpenCode no longer knows, unsent, and says so once", async () => {

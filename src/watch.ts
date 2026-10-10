@@ -366,11 +366,24 @@ const pause = (ms: number, signal: AbortSignal) =>
     signal.addEventListener("abort", done)
   })
 
+const TURN_ENDS = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
+
+/** A session's turn ended, sealing its groups: one that is complete has the scheduler deliver it now. */
+async function sealGroups(ports: WatchPorts, event: SessionEvent) {
+  if (event.data.reason === "shutdown") return
+  try {
+    if (await hasCompleteGroup(ports.storage, event.data.sessionID)) ports.nudge()
+  } catch (error) {
+    ports.log(`courier watch: could not read the groups of ${event.data.sessionID}: ${String(error)}`)
+  }
+}
+
 /**
  * Handles one event of OpenCode's stream; those that cannot concern a spawned child, or a question
  * relayed for one, are ignored.
  */
 async function handle(ports: WatchPorts, state: WatchState, event: { readonly type: string }) {
+  if (TURN_ENDS.has(event.type)) await sealGroups(ports, event as unknown as SessionEvent)
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent)
   if (event.type === "session.execution.interrupted") return noteInterrupted(ports, event as unknown as SessionEvent)

@@ -264,6 +264,24 @@ check "answered, the blocked member reported, and the group went to the parent i
     contains("reports=\"2\"") and contains("CHILD DONE AFTER NUDGE") and contains("\": done\nCHILD DONE\n"))')"
 check "and the group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
 
+echo "a group whose members report before the parent's turn has ended goes out once it has, in one message"
+out=$(prompt "COURIER-GROUP-SPLIT")
+turn_ended=$(now_ms)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
+first=$(head -1 <<<"$members")
+second=$(sed -n 2p <<<"$members")
+check "the first member reported before the second was started" \
+  "$([ -n "$second" ] && [ "$(kv get "report/$first/settled" | jq -r '.at')" -lt "$(kv get "roster/$parent/$second" | jq -r '.createdAt')" ] && echo true || echo false)"
+woke=$(reply_time "$parent" "PARENT GOT GROUP" 45)
+check "both had reported before the parent's turn ended" \
+  "$([ "$(kv get "report/$second/settled" | jq -r '.at')" -lt "$turn_ended" ] && echo true || echo false)"
+ended=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "idle") | .time.created] | min // empty')
+check "the group's reports started a new turn within 3 s of the parent's turn ending, not at the next tick" \
+  "$([ -n "$woke" ] && [ -n "$ended" ] && [ "$woke" -gt "$ended" ] && [ $((woke - ended)) -lt 3000 ] && echo true || echo false)"
+check "the parent got exactly one message, with both reports" "$(sleep 2; api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] |
+  length == 1 and (.[0] | contains("reports=\"2\"") and (split("CHILD DONE QUICKLY") | length == 3))')"
+
 echo "a deleted child that owes a report is forgotten"
 out=$(prompt "COURIER-SILENT")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)

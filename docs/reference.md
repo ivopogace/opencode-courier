@@ -192,7 +192,8 @@ Each report wakes the parent separately, so a parent with five children takes fi
 re-reading its context, and in a tree that compounds at every level. A join group has the parent
 woken once instead: `courier_spawn` takes an optional `group`, a name scoped to the calling session,
 and the reports of the sessions started with the same name are held by the plugin until every one
-of them has reported, then delivered in one message. A name is 1 to 60 letters, digits, dots,
+of them has reported and the parent's turn that started them has ended, then delivered in one
+message. A name is 1 to 60 letters, digits, dots,
 dashes or underscores (`reviews`, `phase-1`); any other is refused before anything is started, and
 `null` counts as none. `courier_spawn`'s result says the child's report is held with the group.
 
@@ -208,8 +209,13 @@ progress (a message without a status), a failed turn, a turn ended without a rep
 request, a question and a form. A member that reports twice has its later report held in place of
 the earlier.
 
-**The release.** Once every member has a held report, or has left (below), the group is released:
-the parent gets one message, waking it if it is idle, wrapped in `<courier from="<members>"
+**The release.** Once every member has a held report, or has left (below), and the parent's turn
+that started the last of them has ended, the group is released. A turn ends when it succeeds, fails
+or is interrupted, but not when a shutdown stops it, which the next start resumes: OpenCode records
+the end as the session's `time.idle`, which the release compares with when the last member joined.
+So a member that reports while that turn is still running, even before its siblings are started,
+waits for them, and the parent is woken once, by the group, not once per batch of members it
+started in that turn. The parent gets one message, waking it if it is idle, wrapped in `<courier from="<members>"
 group="<name>" reports="<n>">`, `from` listing the sessions whose reports it carries, comma-separated.
 The body names the group and counts the reports by status, and the members without one, then lists
 every report in the order the members joined, each as `[i/n] <sessionID> "<title>": <status>`
@@ -263,8 +269,9 @@ be read). A child whose group could not be joined when it was started is recorde
 `courier_spawn`'s result says so: its report comes on its own.
 
 **Delivery.** The scheduler that delivers `courier_later` messages delivers released groups too,
-at each tick and at once when a report, a failure or a deletion completes a group, so the parent
-waits no longer than for a plain report on one server; with [two servers](#two-servers-on-one-data-directory)
+at each tick and at once when a report, a failure, an interruption or a deletion completes a group
+or the parent's turn ends with one complete, so the parent waits no longer than for a plain report
+on one server; with [two servers](#two-servers-on-one-data-directory)
 on one data directory, by the one holding the owner key, within a tick of it. Each release is
 claimed once in the process, like a scheduled message, and dropped only after the message has been
 delivered: a delivery that fails is logged and tried again at the next tick, and nothing is lost,

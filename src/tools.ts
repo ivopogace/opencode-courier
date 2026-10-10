@@ -37,9 +37,9 @@ export const SpawnInput = Schema.Struct({
     Schema.String.annotate({
       description:
         "A join group: start the sessions of one batch with the same name, and their reports are held and delivered " +
-        "to you in one message once every one of them has reported, instead of one turn per report. A blocked report, " +
-        "a question, a permission request or a failed turn still reaches you at once. Letters, digits, dots, dashes and " +
-        "underscores, up to 60; the name is free again once the group has been delivered.",
+        "to you in one message once every one of them has reported and your turn has ended, instead of one turn per " +
+        "report. A blocked report, a question, a permission request or a failed turn still reaches you at once. Letters, " +
+        "digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
     }),
   ),
 })

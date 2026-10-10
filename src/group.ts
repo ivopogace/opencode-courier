@@ -190,7 +190,7 @@ export async function dropGroups(storage: Pick<Storage, "scan" | "remove">, pare
 
 export interface GroupPorts {
   readonly storage: Storage
-  readonly session: Pick<Context["session"], "synthetic">
+  readonly session: Pick<Context["session"], "synthetic" | "get">
   readonly log: (message: string) => void
 }
 
@@ -218,10 +218,28 @@ async function releaseClaimed(ports: GroupPorts, claimed: Set<string>, key: stri
   }
 }
 
+/**
+ * Whether the parent's turn that started a group's last member has ended, so no more join it; `gone` when OpenCode no
+ * longer knows the parent. A turn ending stamps the session's `time.idle`, which a shutdown does not.
+ */
+async function sealed(ports: GroupPorts, parentID: string, members: ReadonlyArray<Member>) {
+  const joined = Math.max(...members.map((member) => member.joinedAt))
+  try {
+    const { time } = await ports.session.get({ sessionID: parentID })
+    return (num(time.idle) ?? 0) >= joined
+  } catch (error) {
+    if (isNotFound(error)) return "gone"
+    throw error
+  }
+}
+
 async function release(ports: GroupPorts, parentID: string, group: string) {
   // Re-read: another server may have delivered and dropped it since the scan.
   const members = (await membersUnder(ports.storage, groupPrefix(parentID, group))).sort((a, b) => a.joinedAt - b.joinedAt)
   if (!members.length || !complete(members)) return
+  const seal = await sealed(ports, parentID, members)
+  if (!seal) return
+  if (seal === "gone") return drop(ports, parentID, group, members, "the session is gone")
   const reports = members.flatMap((member) => (member.report ? [{ sessionID: member.sessionID, title: member.title, ...member.report }] : []))
   const left = members.flatMap((member) => (member.left ? [{ sessionID: member.sessionID, title: member.title, by: member.left.by }] : []))
   if (reports.length) {
@@ -242,9 +260,15 @@ async function release(ports: GroupPorts, parentID: string, group: string) {
         ports.log(`courier group ${group} of ${parentID} not delivered, held for another try: ${String(error)}`)
         return
       }
-      ports.log(`courier group ${group} of ${parentID} dropped: the session is gone (${String(error)})`)
+      return drop(ports, parentID, group, members, `the session is gone (${String(error)})`)
     }
   }
+  await drop(ports, parentID, group, members)
+}
+
+/** Drops a group's members once delivered, or unsent, saying why. */
+async function drop(ports: GroupPorts, parentID: string, group: string, members: ReadonlyArray<Membership>, unsent?: string) {
+  if (unsent) ports.log(`courier group ${group} of ${parentID} dropped: ${unsent}`)
   // A member left behind here is delivered again at the next tick, as after a crash: logged, so it can be seen.
   const dropped = await Promise.allSettled(members.map((member) => dropDelivered(ports.storage, member)))
   for (const [index, result] of dropped.entries())

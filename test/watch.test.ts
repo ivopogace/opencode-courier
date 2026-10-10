@@ -1222,6 +1222,28 @@ describe("watchChildren", () => {
     ])
   })
 
+  test("a parent's turn that ends, not by a shutdown, has a complete group of its delivered at once", async () => {
+    const watching = new AbortController()
+    const { ports, nudges } = fakePorts([
+      [
+        succeeded("evt_o", 100, "ses_other"),
+        sessionEvent("session.execution.interrupted", "evt_i", 150, "ses_parent", "shutdown"),
+        succeeded("evt_p", 200, "ses_parent"),
+      ],
+    ])
+    await joinGroup(ports.storage, "ses_other", "pair", "ses_x", "X", 1)
+    await joinGroup(ports.storage, "ses_parent", "pair", "ses_child", "A", 1)
+    await ports.storage.set(memberKey("ses_parent", "pair", "ses_child"), { title: "A", joinedAt: 1, report: { at: 2, status: "done", message: "m" } })
+    ;(ports as any).nudge = () => {
+      nudges.push(1)
+      watching.abort()
+    }
+
+    await watchChildren(ports, fresh(), watching.signal, 1)
+
+    expect(nudges).toEqual([1])
+  })
+
   test("tells of a child's turn that ended without a report from the event stream", async () => {
     const watching = new AbortController()
     const { ports, sent } = fakePorts([[delivered("evt_d", 100), succeeded("evt_s", 200)]])

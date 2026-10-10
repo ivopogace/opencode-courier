@@ -224,7 +224,7 @@ The short version; the long one, with every edge, is [docs/reference.md](docs/re
   in the body. A message without a status is progress, so a child that sends "halfway" and then
   stops is still reported as ending without a report. [More](docs/reference.md#a-childs-report).
 - **A join group wakes you once.** Start a batch of sessions with the same `group` name, and
-  their `done`, `partial` and `failed` reports are held until the last one is in, then delivered
+  their `done`, `partial` and `failed` reports are held until the last one is in and your turn has ended, then delivered
   in one message, marked `group="<name>"`, listing every report with its status and artifacts in
   the order the sessions were started. A `blocked` report, progress, a failed turn, a silent end, a
   permission request and a question reach you at once, as ever; a member whose turn fails or is

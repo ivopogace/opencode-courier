@@ -46,6 +46,7 @@ function laterPorts(
         delivered.push(`${directory} ${input.metadata.scheduled}`)
         return { id: "msg_1" }
       },
+      get: async () => ({ time: { idle: Number.MAX_SAFE_INTEGER } }),
     } as unknown as LaterPorts["session"],
     now,
     newID: () => "later_new",

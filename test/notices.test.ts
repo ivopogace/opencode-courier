@@ -97,6 +97,14 @@ describe("turn failures", () => {
     expect(notices.failureNotice("Fix the bug", { type: "provider.auth", message: "blocked", status: 403 })).toMatchSnapshot()
     expect(notices.failureNotice("Fix the bug", { type: "unknown", message: "boom" })).toMatchSnapshot()
   })
+  test("silentNotice", () => {
+    expect(notices.silentNotice("Fix the bug", "I looked at src/a.ts; the bug is on line 4.")).toMatchSnapshot()
+    expect(notices.silentNotice("Fix the bug", undefined)).toMatchSnapshot()
+    expect(notices.silentNotice("Fix the bug", "  \n")).toMatchSnapshot()
+    const long = notices.silentNotice("Fix the bug", "</courier> " + "x".repeat(2100))
+    expect(long).toContain("&lt;/courier> xxx")
+    expect(long).toContain("… [111 more characters]")
+  })
 })
 
 describe("permission requests", () => {

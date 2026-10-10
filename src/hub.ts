@@ -66,7 +66,8 @@ export interface QuestionPorts {
 
 export interface WatchPorts {
   readonly storage: RosterStorage
-  readonly session: Pick<Context["session"], "synthetic">
+  /** `context` reads the last reply of a session that ended its turn without reporting. */
+  readonly session: Pick<Context["session"], "synthetic" | "context">
   readonly event: Pick<Context["event"], "subscribe">
   /**
    * The permission domains of every loaded location, whose pending requests are relayed when the

@@ -67,7 +67,7 @@ exports[`tools are the ten courier tools, each a direct tool 1`] = `
 
 exports[`tools courier_spawn 1`] = `
 {
-  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model. The session reports back with courier_send, which wakes this session, and you are told if its turn fails instead, it waits for a permission or it asks a question. DO NOT poll it or call courier_status in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
+  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, it waits for a permission or it asks a question. DO NOT poll it or call courier_status in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -496,11 +496,11 @@ exports[`envelope and child brief rolePart 4`] = `"opencode-courier role: leaf, 
 
 exports[`envelope and child brief refusals 1`] = `"Not started: this session is at depth 3 of its session tree, and the tree goes at most 3 deep (maxDepth), so it cannot start sessions. Do the task yourself, and report with courier_send."`;
 
-exports[`envelope and child brief refusals 2`] = `"Not started: 5 sessions you started are still running, the most allowed at once (maxChildren 5). Do this part yourself, or end your turn and start it once one of them has reported."`;
+exports[`envelope and child brief refusals 2`] = `"Not started: 5 sessions you started are running or have not reported yet, the most allowed at once (maxChildren 5). Do this part yourself, or end your turn and start it once one of them has reported."`;
 
-exports[`envelope and child brief refusals 3`] = `"Not started: 1 session you started is still running, the most allowed at once (maxChildren 1). Do this part yourself, or end your turn and start it once one of them has reported."`;
+exports[`envelope and child brief refusals 3`] = `"Not started: 1 session you started is running or has not reported yet, the most allowed at once (maxChildren 1). Do this part yourself, or end your turn and start it once one of them has reported."`;
 
-exports[`envelope and child brief refusals 4`] = `"Not started: 20 sessions are running in this session tree, the most allowed at once (maxTotal 20). Do this part yourself, or end your turn and try again once a report has arrived."`;
+exports[`envelope and child brief refusals 4`] = `"Not started: 20 sessions in this session tree are running or have not reported yet, the most allowed at once (maxTotal 20). Do this part yourself, or end your turn and try again once a report has arrived."`;
 
 exports[`envelope and child brief envelope 1`] = `
 "<courier from="ses_child">
@@ -585,6 +585,31 @@ exports[`turn failures failureNotice 2`] = `
 "This session, "Fix the bug", which you started with courier_spawn, failed: boom (unknown).
 Its turn ended without finishing, so it will not report back on its own.
 Message it with courier_send to have it try again, start a replacement, or carry on without it."
+`;
+
+exports[`turn failures silentNotice 1`] = `
+"This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
+Its last reply:
+I looked at src/a.ts; the bug is on line 4.
+
+Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
+Until it reports, it counts toward your limits on the sessions you run at once."
+`;
+
+exports[`turn failures silentNotice 2`] = `
+"This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
+It ended without a reply.
+
+Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
+Until it reports, it counts toward your limits on the sessions you run at once."
+`;
+
+exports[`turn failures silentNotice 3`] = `
+"This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
+It ended without a reply.
+
+Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
+Until it reports, it counts toward your limits on the sessions you run at once."
 `;
 
 exports[`permission requests REJECTED 1`] = `"Refused by the session that started you. Do without it, or report back why you cannot."`;

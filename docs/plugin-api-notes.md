@@ -33,6 +33,15 @@ pin moved, and what was found out about OpenCode's behaviour on the way. For con
   plugin instance's `permission` domain answers from its own location's, so a request of an
   isolated child is answered through the instance loaded in the child's worktree. The plugin keeps
   the domain of every loaded instance and answers through the one that holds the request.
+- `session.execution.started`, `.succeeded`, `.failed` and `.interrupted` frame a session's busy
+  period, one terminal event however many prompts were steered into it; `.interrupted` carries a
+  `reason`, and one of `shutdown` resumes the turn on the next start. `session.inbox.delivered`
+  (`data.inboxID` only) is published as each prompt, synthetic message, requested compaction or
+  move reaches the session (the runner compacts on its own without the inbox), and the message it makes is stamped with that event's `created`, not with the time
+  a queued item was admitted to the inbox. Every event carries `created`, the epoch
+  milliseconds OpenCode published it at, which the report state compares with the clock at
+  `courier_send`. `session.context()` returns the session's stored messages
+  (`SessionMessage.Info[]`), not the model-facing ones the `context` hook sees.
 - A permission request rejected without a message ends the asking session's turn ("The user
   declined this tool call"); with a message, only the tool call fails, and its model is told that
   the call could not be run, not the message.

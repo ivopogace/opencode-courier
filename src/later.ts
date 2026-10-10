@@ -86,8 +86,13 @@ export async function cancel(ports: LaterPorts, id: string) {
   return true
 }
 
-function pending(ports: LaterPorts) {
+function pending(ports: Pick<LaterPorts, "storage">) {
   return scanAll<LaterEntry>(ports.storage, PREFIX)
+}
+
+/** The messages scheduled for a session that have not been delivered yet. */
+export async function scheduledFor(storage: Pick<Storage, "scan">, sessionID: string) {
+  return (await pending({ storage: storage as Storage })).filter((entry) => entry.sessionID === sessionID)
 }
 
 /**

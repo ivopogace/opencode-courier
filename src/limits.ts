@@ -1,7 +1,8 @@
 import type { Plugin } from "@opencode/plugin"
 import { setBounded } from "./bounded.js"
-import { obj } from "./json.js"
+import { isNotFound, obj } from "./json.js"
 import { childrenRefusal, depthRefusal, ROLE_PREFIX, rolePart, totalRefusal, type Limits } from "./notices.js"
+import { reportOf } from "./report.js"
 import { allEntries, bySession, children, indexedLineage, lineageBy, type RosterStorage } from "./roster.js"
 
 export type { Limits } from "./notices.js"
@@ -56,17 +57,28 @@ function millis(value: unknown) {
   return typeof epoch === "number" ? epoch : Number.NaN
 }
 
+/** A session's times, as `session.get` gives them. */
+type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
+
+/** Whether a session with these times runs: it has never finished a turn, or something reached it after the last one ended. */
+export const busy = (time: Pick<Times, "updated" | "idle">) => time.idle === undefined || millis(time.updated) > millis(time.idle)
+
 /**
- * Whether a session is running: it has never finished a turn, or something reached it after the last
- * one ended. One OpenCode no longer knows is not.
+ * Whether a spawned session counts against the limits: it runs, unless its turn failed or was
+ * interrupted since its last prompt, or it owes its parent a report. One OpenCode no longer knows does not.
  */
-export async function running(ports: Pick<LimitPorts, "session">, sessionID: string) {
-  try {
-    const { time } = await ports.session.get({ sessionID })
-    return time.idle === undefined || millis(time.updated) > millis(time.idle)
-  } catch {
-    return false
-  }
+async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: string) {
+  const [time, report] = await Promise.all([
+    ports.session.get({ sessionID }).then(
+      (info) => info.time,
+      (error: unknown) => (isNotFound(error) ? null : undefined),
+    ),
+    reportOf(ports.storage, sessionID).catch(() => undefined),
+  ])
+  if (time === null) return false
+  // One whose first prompt failed never ran, and has no idle time to tell so.
+  const runs = time !== undefined && busy(time) && !report?.ended
+  return runs || (report?.owes ?? false)
 }
 
 /**
@@ -93,18 +105,18 @@ async function check(ports: LimitPorts, parentID: string) {
   const top = chain.at(-1)?.parentID ?? parentID
   const chains = new Map(entries.map((entry) => [entry.sessionID, lineageBy(parents, entry.sessionID)]))
   const tree = entries.filter((entry) => chains.get(entry.sessionID)!.at(-1)?.parentID === top)
-  const runs = await Promise.all(tree.map((entry) => running(ports, entry.sessionID)))
-  // A session waiting on a running descendant is live too: the brief tells it to end its turn meanwhile.
+  const runs = await Promise.all(tree.map((entry) => live(ports, entry.sessionID)))
+  // A session waiting on a live descendant is live too: the brief tells it to end its turn meanwhile.
   const active = new Set(
     tree.filter((_, i) => runs[i]).flatMap((entry) => [entry.sessionID, ...chains.get(entry.sessionID)!.map((above) => above.parentID)]),
   )
-  const live = tree.filter((entry) => active.has(entry.sessionID))
-  // A spawn whose child is on the roster already is counted there, if it runs, not by its reservation.
+  const counted = tree.filter((entry) => active.has(entry.sessionID))
+  // A spawn whose child is on the roster already is counted there, if it is live, not by its reservation.
   const recorded = new Set(tree.map((entry) => entry.sessionID))
   const pending = [...ports.gate.reserved].filter((held) => held.top === top && !(held.sessionID && recorded.has(held.sessionID)))
-  const mine = live.filter((entry) => entry.parentID === parentID).length + pending.filter((held) => held.parentID === parentID).length
+  const mine = counted.filter((entry) => entry.parentID === parentID).length + pending.filter((held) => held.parentID === parentID).length
   if (mine >= maxChildren) throw new Error(childrenRefusal(mine, maxChildren))
-  if (live.length + pending.length >= maxTotal) throw new Error(totalRefusal(live.length + pending.length, maxTotal))
+  if (counted.length + pending.length >= maxTotal) throw new Error(totalRefusal(counted.length + pending.length, maxTotal))
   const reservation: Reservation = { parentID, top }
   ports.gate.reserved.add(reservation)
   return { depth: chain.length + 1, reservation }

@@ -96,6 +96,12 @@ function decide(body) {
       delayed: true,
     }
   }
+  // The child of COURIER-SILENT ends its turn with a reply but no report, held back so the parent's turn has ended.
+  if (parent && recent.includes("CHILD-SILENT")) return { text: "CHILD SILENT REPLY", delayed: true }
+  // The child of COURIER-WAITING schedules a message that tells it to report, and ends its turn to wait for it.
+  if (parent && recent.includes("CHILD-WAITS")) return { tool: "courier_later", args: { message: "CHILD-REPORT-NOW", delayMinutes: 0.25 } }
+  // The child of COURIER-HOOKED subscribes to a webhook topic and ends its turn to wait for a delivery.
+  if (parent && recent.includes("CHILD-HOOKED")) return { tool: "courier_subscribe", args: { topic: "child-ci" } }
   // The middle session of COURIER-DEPTH starts two leaves at once; the second's task makes the probe
   // plugin put courier_spawn back. Each leaf tries to start a session of its own.
   if (parent && recent.includes("CHILD-DEEPENS"))
@@ -106,6 +112,9 @@ function decide(body) {
   // A child whose question was cut off gets the answer as a message, and reports it.
   const answered = recent.match(/<courier from="ses_\w+" answers="question_[\w-]+"( dismissed="true")?>/)
   const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
+  // A child its parent told to report does.
+  if (startedBy && recent.includes("CHILD-REPORT-NOW"))
+    return { tool: "courier_send", args: { sessionID: startedBy[1], message: "CHILD DONE AFTER NUDGE" } }
   if (answered && startedBy)
     return {
       tool: "courier_send",
@@ -137,7 +146,10 @@ function decide(body) {
   const form = recent.match(/<courier from="ses_\w+" asks="form" form="([^"]+)"/)
   if (form) return { text: `PARENT TOLD FORM ${form[1]}` }
   if (/<courier from="ses_\w+" (answered|settled)=/.test(recent)) return { text: "PARENT SETTLED" }
+  if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
+  const nudge = recent.match(/COURIER-NUDGE (ses_\w+)/)
+  if (nudge) return { tool: "courier_send", args: { sessionID: nudge[1], message: "CHILD-REPORT-NOW" } }
   const answer = recent.match(/COURIER-ANSWER (once|always|reject)(?: (.+))?/)
   if (answer) {
     const notices = messages.flatMap((message) => [...textOf(message.content).matchAll(/<courier from="(ses_\w+)" asks="permission" request="([^"]+)">/g)])
@@ -159,6 +171,9 @@ function decide(body) {
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
   if (recent.includes("COURIER-DEPTH")) return { tool: "courier_spawn", args: { task: "CHILD-DEEPENS" } }
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
+  if (recent.includes("COURIER-SILENT")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT" } }
+  if (recent.includes("COURIER-WAITING")) return { tool: "courier_spawn", args: { task: "CHILD-WAITS" } }
+  if (recent.includes("COURIER-HOOKED")) return { tool: "courier_spawn", args: { task: "CHILD-HOOKED" } }
   const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL|-REWORD|-BOTH)?(?: (isolate|nested))?/)
   if (questions)
     return {

@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { DateTime } from "effect"
 import { spawn, type CourierPorts } from "../src/courier.js"
-import { admit, DEFAULT_LIMITS, readLimits, running, shapeContext, type ContextPorts, type LimitPorts, type SpawnGate } from "../src/limits.js"
+import { admit, busy, DEFAULT_LIMITS, readLimits, shapeContext, type ContextPorts, type LimitPorts, type SpawnGate } from "../src/limits.js"
 import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/notices.js"
+import { reportOf, prompted, settled } from "../src/report.js"
 import { record } from "../src/roster.js"
+
+/** Whether a spawned session owes its parent a report, as `reportOf` reads it. */
+const owesReport = async (storage: Parameters<typeof reportOf>[0], sessionID: string) => (await reportOf(storage, sessionID))?.owes
 
 function fakeStorage() {
   const store = new Map<string, unknown>()
@@ -67,28 +71,23 @@ describe("readLimits", () => {
   })
 })
 
-describe("running", () => {
-  const ports = (time: unknown) => ({ session: { get: async () => ({ time }) } }) as any
+describe("busy", () => {
+  const time = (value: object) => value as Parameters<typeof busy>[0]
 
-  test("a session that never finished a turn, or was reached after its last one, is running", async () => {
-    expect(await running(ports({ created: 1, updated: 2 }), "s")).toBe(true)
-    expect(await running(ports({ created: 1, updated: 9, idle: 5 }), "s")).toBe(true)
+  test("a session that never finished a turn, or was reached after its last one, is running", () => {
+    expect(busy(time({ updated: 2 }))).toBe(true)
+    expect(busy(time({ updated: 9, idle: 5 }))).toBe(true)
   })
 
-  test("one whose last turn ended after anything reached it is not", async () => {
-    expect(await running(ports({ created: 1, updated: 5, idle: 5 }), "s")).toBe(false)
-    expect(await running(ports({ created: 1, updated: 4, idle: 5 }), "s")).toBe(false)
+  test("one whose last turn ended after anything reached it is not", () => {
+    expect(busy(time({ updated: 5, idle: 5 }))).toBe(false)
+    expect(busy(time({ updated: 4, idle: 5 }))).toBe(false)
   })
 
-  test("reads OpenCode's DateTime values", async () => {
+  test("reads OpenCode's DateTime values", () => {
     const at = (ms: number) => DateTime.makeUnsafe(ms)
-    expect(await running(ports({ created: at(1), updated: at(9), idle: at(5) }), "s")).toBe(true)
-    expect(await running(ports({ created: at(1), updated: at(5), idle: at(5) }), "s")).toBe(false)
-  })
-
-  test("one OpenCode cannot find is not", async () => {
-    const gone = { session: { get: async () => Promise.reject(new Error("NotFound")) } } as any
-    expect(await running(gone, "s")).toBe(false)
+    expect(busy(time({ updated: at(9), idle: at(5) }))).toBe(true)
+    expect(busy(time({ updated: at(5), idle: at(5) }))).toBe(false)
   })
 })
 
@@ -199,6 +198,72 @@ describe("admit", () => {
   })
 })
 
+describe("admit, with children that owe a report", () => {
+  /** Three finished children of ses_root: ses_a reported, ses_b ended without reporting, ses_c is `c`. */
+  async function owing(c: "failed" | "interrupted" | "silent") {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 2, maxTotal: 2 }, {
+      ses_a: FINISHED,
+      ses_b: FINISHED,
+      ses_c: FINISHED,
+    })
+    for (const id of ["ses_a", "ses_b", "ses_c"]) {
+      await child("ses_root", id)
+      await prompted(storage, id, 100)
+    }
+    await settled(storage, "ses_a", "report", 150)
+    if (c !== "silent") await settled(storage, "ses_c", c, 150)
+    return ports
+  }
+
+  test("counts a child whose turn ended without a report, against maxChildren and maxTotal", async () => {
+    const ports = await owing("silent")
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(2, 2))
+    await expect(admit(ports, "ses_b")).rejects.toThrow(totalRefusal(2, 2))
+  })
+
+  test("but not one that reported, failed or was interrupted since its last prompt", async () => {
+    expect((await admit(await owing("failed"), "ses_root")).depth).toBe(1)
+    expect((await admit(await owing("interrupted"), "ses_root")).depth).toBe(1)
+  })
+
+  test("counts one that reported once a new prompt reached it", async () => {
+    const ports = await owing("failed")
+    await prompted(ports.storage, "ses_a", 200)
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(2, 2))
+  })
+
+  test("counts a child that reported early while its turn still runs", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 })
+    await child("ses_root", "ses_a")
+    await prompted(storage, "ses_a", 100)
+    await settled(storage, "ses_a", "report", 150)
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+  })
+
+  test("a child OpenCode no longer knows does not count, though it owes a report; one it cannot look up now does", async () => {
+    const ports = await owing("silent")
+    const get = ports.session.get
+    let error: unknown = Object.assign(new Error(""), { _tag: "Session.NotFoundError" })
+    ;(ports.session as any).get = async (input: { sessionID: string }) => {
+      if (input.sessionID === "ses_b") throw error
+      return get(input as never)
+    }
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+    ports.gate.reserved.clear()
+    error = new Error("database is locked")
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(2, 2))
+  })
+
+  test("a child whose state cannot be read counts only if it runs", async () => {
+    const ports = await owing("silent")
+    ;(ports.storage as any).get = async () => {
+      throw new Error("disk gone")
+    }
+    expect(await owesReport(ports.storage, "ses_b").catch(() => "threw")).toBe("threw")
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+})
+
 describe("admit, with sessions waiting on their own children", () => {
   /** A tree under ses_r: ses_a and ses_b, each with one child; `running` names the sessions whose turn runs. */
   async function waitingTree(limits: Partial<typeof DEFAULT_LIMITS>, running: string[]) {
@@ -286,6 +351,26 @@ describe("spawn", () => {
     expect(gate.reserved.size).toBe(0)
     await spawn(courier, "ses_root", { task: "t" })
     expect(roles.has("ses_root")).toBe(false)
+  })
+
+  test("notes the child as owing a report before it is prompted", async () => {
+    const { courier, storage, calls } = spawnPorts()
+    ;(courier.session as any).prompt = async () => void calls.push(`prompted, owing: ${await owesReport(storage, "ses_new1")}`)
+
+    await spawn(courier, "ses_root", { task: "t" })
+
+    expect(calls).toEqual(["session.create", "prompted, owing: true"])
+  })
+
+  test("a child that cannot be prompted owes no report and does not count, since it never got its task", async () => {
+    const { courier, storage } = spawnPorts({ ...DEFAULT_LIMITS, maxChildren: 1 })
+    ;(courier.session as any).prompt = async () => Promise.reject(new Error("session gone"))
+
+    await expect(spawn(courier, "ses_root", { task: "t" })).rejects.toThrow("session gone")
+
+    expect(await owesReport(storage, "ses_new1")).toBe(false)
+    // OpenCode still knows it, and it never finished a turn: by its times alone it would run.
+    expect((await admit(courier, "ses_root")).depth).toBe(1)
   })
 
   test("frees its place when the child cannot be created", async () => {

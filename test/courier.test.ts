@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "../src/courier.js"
 import { DEFAULT_LIMITS } from "../src/limits.js"
 import { childBrief, envelope } from "../src/notices.js"
+import { settledKey } from "../src/report.js"
 import { record, rosterKey } from "../src/roster.js"
 
 type Call = { method: string; input: any }
@@ -227,6 +228,55 @@ describe("send", () => {
     await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", queue: true })
 
     expect(calls[0]!.input.delivery).toBe("queue")
+  })
+
+  const spawned = { sessionID: "ses_child", parentID: "ses_parent", title: "t", directory: "/repo", isolated: false, createdAt: 1 }
+
+  test("notes a spawned session's message to its parent, and only that, as its report", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, spawned)
+
+    await send(ports, "ses_child", { sessionID: "ses_other", message: "m" })
+    expect(store.has(settledKey("ses_child"))).toBe(false)
+    await send(ports, "ses_parent", { sessionID: "ses_child", message: "m" })
+    expect(store.has(settledKey("ses_parent"))).toBe(false)
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000, by: "report" })
+  })
+
+  test("notes the report before delivering it, which may end the parent's turn at once", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, spawned)
+    let noted: unknown
+    ;(ports.session as any).synthetic = async () => {
+      noted = store.get(settledKey("ses_child"))
+      return { id: "msg_3" }
+    }
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })
+    expect(noted).toEqual({ at: 1_000, by: "report" })
+  })
+
+  test("takes the note back when the message is not delivered, and delivers it when the report cannot be noted", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, spawned)
+    ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
+    await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).rejects.toThrow("parent is gone")
+    expect(store.has(settledKey("ses_child"))).toBe(false)
+    store.set(settledKey("ses_child"), { at: 5, by: "failed" })
+    await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).rejects.toThrow("parent is gone")
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 5, by: "failed" })
+
+    // Another courier_send of the child's noted its report meanwhile: that note stays.
+    ;(ports.session as any).synthetic = async () => {
+      store.set(settledKey("ses_child"), { at: 2_000, by: "report" })
+      throw new Error("parent is gone")
+    }
+    await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).rejects.toThrow("parent is gone")
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 2_000, by: "report" })
+
+    ;(ports.session as any).synthetic = async () => ({ id: "msg_3" })
+    ;(ports.storage as any).set = async () => Promise.reject(new Error("disk full"))
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).toEqual({ messageID: "msg_3" })
   })
 })
 

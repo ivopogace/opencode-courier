@@ -102,6 +102,8 @@ for mode in shared isolate; do
   fi
   woke=$(reply_time "$parent" "PARENT WOKE")
   check "parent got a new turn after its own had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+  check "and no notice of a turn without a report, since the child reported" \
+    "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains(" ended="))] | length == 0')"
 done
 
 echo "courier_status"
@@ -133,6 +135,44 @@ check "which child failed, and with what error"   "$(jq -r --arg child "$child" 
 
 # The parent's synthetic messages whose envelope carries attribute $2, from session $1.
 notices_with() { api "session/$1/message" | jq -c --arg attribute " $2=" '[.data[] | select(.type == "synthetic") | .text | select(contains($attribute))]'; }
+kv() { XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" "$@"; }
+
+echo "a child whose turn ends without a report is reported to its idle parent"
+out=$(prompt "COURIER-SILENT")
+turn_ended=$(now_ms)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+woke=$(reply_time "$parent" "PARENT TOLD SILENT" 45)
+check "the silent end started a new turn after the parent's had ended" \
+  "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+notice=$(notices_with "$parent" ended)
+check "the parent was told once, which child it was, and its last reply" "$(jq -r --arg child "$child" 'length == 1 and (.[0] |
+  contains("<courier from=\"" + $child + "\" ended=\"without-report\">") and contains("CHILD SILENT REPLY") and contains("Decide what it needs"))' <<<"$notice")"
+check "the child owes its parent a report" \
+  "$([ "$(kv get "report/$child/prompt" | jq -r '.at | type == "number"')" = true ] && [ -z "$(kv get "report/$child/settled")" ] && echo true || echo false)"
+prompt_in "$parent" "COURIER-NUDGE $child" >/dev/null
+check "told to report, the child did" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+check "which settled its report" "$(kv get "report/$child/settled" | jq -r '.by == "report"')"
+check "and its reported turn was not told as one without a report" \
+  "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 1')"
+
+echo "a deleted child that owes a report is forgotten"
+out=$(prompt "COURIER-SILENT")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the parent was told it ended without a report" "$([ -n "$(reply_time "$parent" "PARENT TOLD SILENT" 45)" ] && echo true || echo false)"
+check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
+check "and its report state is gone" \
+  "$(for _ in $(seq 1 20); do [ -z "$(kv get "report/$child/prompt")$(kv get "report/$child/told")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+
+echo "a child that ends its turn to wait for a message it scheduled is not reported, and reports once woken"
+out=$(prompt "COURIER-WAITING")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the scheduled message woke the child, which reported" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 75)" ] && echo true || echo false)"
+check "the child's first turn, which ended waiting, was not told" "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 0')"
+check "the child scheduled the message in its first turn" \
+  "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_later")] | length == 1')"
 # Starts a parent with COURIER-ASK ($1 is "isolate" or empty) and waits until it has been told that its
 # child asks for permission; sets parent, child, request and notice.
 ask_permission() {
@@ -245,6 +285,9 @@ check "the leaf that called it anyway was refused by courier_spawn, naming maxDe
   "$(has_text "$middle" "Not started: this session is at depth 2 of its session tree, and the tree goes at most 2 deep (maxDepth)" 60)"
 leaves=$(jq -sc '[.[] | select(.reply.args.task? == "CHILD-TOO-DEEP") | .session] | unique' "$WORK/model.log")
 check "two leaves tried" "$(jq -r 'length == 2' <<<"$leaves")"
+# The child in between never reports: its turns end while its leaves owe it reports, and once more after.
+check "the root was told once that the child in between ended without a report, once its leaves had reported" \
+  "$(has_text "$root" "PARENT TOLD SILENT" 60 >/dev/null; sleep 2; notices_with "$root" ended | jq -r --arg middle "$middle" 'length == 1 and (.[0] | contains("<courier from=\"" + $middle + "\" ended="))')"
 check "every request of a leaf was named a leaf, and the courier's hook left it no courier_spawn" \
   "$(jq -sr --argjson leaves "$leaves" '[.[] | select(.type == "probe.context" and (.sessionID | IN($leaves[])))]
     | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_send")))' "$WORK/probe.log")"
@@ -255,10 +298,22 @@ check "the child in between is a sub-orchestrator, with courier_spawn" \
   "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")))' "$WORK/model.log")"
 check "the root had no role part until it had started a child, then root orchestrator" \
   "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | .[0] == null and .[-1] == "root orchestrator"' "$WORK/model.log")"
-# The limits count running sessions; a finished one's last turn ended after anything reached it.
+# The limits count live sessions: a finished one's last turn ended after anything reached it, and
+# one that has reported owes no report, its report settled after its last prompt.
 finished() { api "session/$1" | jq -r '(.data // .) | .time.idle != null and .time.updated <= .time.idle'; }
-check "a leaf that has reported reads as finished, so it no longer counts against the limits" \
-  "$(for _ in $(seq 1 30); do [ "$(finished "$(jq -r '.[0]' <<<"$leaves")")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+reported() {
+  local prompted settled
+  prompted=$(kv get "report/$1/prompt" | jq -r '.at // empty')
+  settled=$(kv get "report/$1/settled" | jq -r 'select(.by == "report") | .at // empty')
+  [ -n "$prompted" ] && [ -n "$settled" ] && [ "$settled" -ge "$prompted" ] && echo true || echo false
+}
+check "a leaf that has reported reads as finished and owes no report, so it no longer counts against the limits" \
+  "$(for _ in $(seq 1 30); do leaf=$(jq -r '.[0]' <<<"$leaves"); [ "$(finished "$leaf")" = true ] && [ "$(reported "$leaf")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+leaf=$(jq -r '.[0]' <<<"$leaves")
+check "deleting the session in between forgets the report state of the leaf that reported to it" \
+  "$([ -n "$(kv get "report/$leaf/settled")" ] &&
+    [[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$middle") == 20* ]] &&
+    for _ in $(seq 1 20); do [ -z "$(kv get "report/$leaf/prompt")$(kv get "report/$leaf/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
 
 # The first web search of this run: no provider has been chosen, which OpenCode keeps for every session.
 echo "a child's web search asks for a provider with a form: the parent is told, and told when it is answered"
@@ -507,7 +562,6 @@ listed=$(tool_state courier_children <<<"$out" | jq -r 'select(.status == "compl
 check "courier_children lists both" "$(for id in $spawned; do grep -q "$id" <<<"$listed" || { echo false; exit; }; done; echo true)"
 check "the parent was woken by its children" "$([ -n "$(reply_time "$roster_parent" "PARENT WOKE")" ] && echo true || echo false)"
 # The roster's reverse index, read straight from OpenCode's database.
-kv() { XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" "$@"; }
 indexed_under() { kv get "roster-by-child/$1" | jq -r '.ancestors[0] // empty'; }
 check "each child is indexed under its parent" \
   "$(for id in $spawned; do [ "$(indexed_under "$id")" = "$roster_parent" ] || { echo false; exit; }; done; echo true)"
@@ -569,6 +623,19 @@ summary=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "syn
 check "the turn got the event summary" "$([[ $summary == *"changes_requested"* && $summary == *"Hello-World#2"* ]] && echo true || echo false)"
 check "the session got the event exactly once" \
   "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic")] | length == 1')"
+
+echo "a child that subscribes to a webhook and ends its turn to wait is not reported, and reports once a delivery wakes it"
+out=$(prompt "COURIER-HOOKED")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "the child subscribed and ended its turn" "$(has_text "$child" "TOOL DONE courier_subscribe" 30)"
+check "which was not told as one without a report" "$(sleep 3; notices_with "$parent" ended | jq -r 'length == 0')"
+body='{"text":"CHILD-REPORT-NOW"}'
+sig=$(printf '%s\n%s' child-ci "$body" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -r | cut -d' ' -f1)
+check "a delivery to its topic is accepted" "$([ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "x-hub-signature-256: sha256=$sig" \
+  --data-binary "$body" "http://127.0.0.1:$WEBHOOK_PORT/hook/child-ci")" = 202 ] && echo true || echo false)"
+check "the delivery woke the child, which reported" "$(has_text "$parent" "CHILD DONE AFTER NUDGE" 45)"
+check "and the parent was never told it ended without a report" "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 0')"
 
 # Spawns an isolated child from a new parent and waits for its report; sets parent, child and directory.
 spawn_isolated() {

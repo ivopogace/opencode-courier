@@ -20,14 +20,17 @@ const timeOf = (value: unknown) => {
   return typeof at === "number" && Number.isFinite(at) ? at : undefined
 }
 
-/** Notes that a prompt or message reached a spawned session at `at`, in epoch milliseconds. */
-export async function prompted(storage: Pick<Storage, "set">, sessionID: string, at: number) {
-  await storage.set(promptKey(sessionID), { at })
+/**
+ * Notes that a prompt or message reached a spawned session at `at`, in epoch milliseconds, unless a
+ * later one is noted: both of the hub's subscriptions note each event, one of them maybe behind.
+ */
+export async function prompted(storage: Pick<Storage, "get" | "set">, sessionID: string, at: number) {
+  if ((timeOf(await storage.get(promptKey(sessionID))) ?? -Infinity) < at) await storage.set(promptKey(sessionID), { at })
 }
 
-/** Notes that a spawned session reported to its parent, or its turn failed or was interrupted, at `at`. */
-export async function settled(storage: Pick<Storage, "set">, sessionID: string, by: Settled, at: number) {
-  await storage.set(settledKey(sessionID), { at, by })
+/** Notes that a spawned session reported to its parent, or its turn failed or was interrupted, at `at`, unless a later end is noted. */
+export async function settled(storage: Pick<Storage, "get" | "set">, sessionID: string, by: Settled, at: number) {
+  if ((timeOf(await storage.get(settledKey(sessionID))) ?? -Infinity) <= at) await storage.set(settledKey(sessionID), { at, by })
 }
 
 /** Notes that a spawned session's parent was told, at `at`, that a turn of it ended without a report. */
@@ -40,12 +43,12 @@ const since = (at: number | undefined, prompt: number) => at !== undefined && at
 
 /**
  * Whether a spawned session owes its parent a report: something reached it after it last reported,
- * failed or was interrupted. False when nothing is known, as for a session spawned before this was kept.
+ * failed or was interrupted. Undefined when nothing is known, as for a session spawned before this was kept.
  */
 export async function owesReport(storage: Pick<Storage, "get">, sessionID: string) {
   const [prompt, settledAt] = await Promise.all([storage.get(promptKey(sessionID)), storage.get(settledKey(sessionID))])
   const promptAt = timeOf(prompt)
-  return promptAt !== undefined && !since(timeOf(settledAt), promptAt)
+  return promptAt === undefined ? undefined : !since(timeOf(settledAt), promptAt)
 }
 
 /**

@@ -101,10 +101,11 @@ export async function allEntries(storage: RosterStorage) {
 
 /** A session's roster entries: one for the parent that started it, none if courier_spawn did not. */
 export async function entriesOf(storage: RosterStorage, sessionID: string) {
-  if ((await indexedParent(storage, sessionID)) === undefined)
+  const parentID = await indexedParent(storage, sessionID)
+  if (parentID === undefined)
     return (await scanAll<RosterEntry>(storage, PREFIX)).filter((entry) => entry.sessionID === sessionID)
-  const entry = await indexedEntry(storage, sessionID)
-  return entry === undefined ? [] : [entry]
+  const entry = await storage.get(rosterKey(parentID, sessionID))
+  return entry === undefined ? [] : [entry as unknown as RosterEntry]
 }
 
 /** The session that started a session, by the reverse index alone, without scanning the roster. */

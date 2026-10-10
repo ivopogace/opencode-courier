@@ -22,9 +22,8 @@ import {
   type PermissionReplied,
 } from "./relay.js"
 import { scheduledFor } from "./later.js"
-import { awaited, owesReport, prompted, settled, told } from "./report.js"
+import { awaited, forgetReport, owesReport, prompted, settled, told } from "./report.js"
 import { allEntries, children, entriesOf, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
-import { subscriptions } from "./webhook.js"
 
 export type { FormsTold, WatchPorts, WatchState } from "./hub.js"
 
@@ -102,17 +101,25 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
   return true
 }
 
+/** Drops the report state of a spawned session OpenCode deleted, which will never report. */
+export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
+  const { sessionID } = event.data
+  if ((await indexedParent(ports.storage, sessionID)) === undefined) return false
+  await forgetReport(ports.storage, sessionID)
+  return true
+}
+
 /**
  * Whether a session waits: on a report from a session it started that it has not been told about, on
- * a request of its own, or for a scheduled message or a webhook to wake it. Cheapest first.
+ * a request of its own, or for a scheduled message to wake it. Cheapest first. A webhook subscription
+ * is not waiting: it outlives the delivery it was made for.
  */
 async function waits(ports: WatchPorts, sessionID: string) {
   const started = await children(ports.storage, sessionID)
   if ((await Promise.all(started.map((entry) => awaited(ports.storage, entry.sessionID)))).includes(true)) return true
   if ((await listEverywhere([...ports.permissions()], sessionID)).some((found) => found.requests.length)) return true
   if ((await pendingQuestions(ports.storage, sessionID)).length) return true
-  const [scheduled, subscribed] = await Promise.all([scheduledFor(ports.storage, sessionID), subscriptions(ports)])
-  return scheduled.length > 0 || subscribed.some((subscription) => subscription.sessionID === sessionID)
+  return (await scheduledFor(ports.storage, sessionID)).length > 0
 }
 
 /**
@@ -126,6 +133,10 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   if (!entry || !(await owesReport(ports.storage, sessionID)) || (await waits(ports, sessionID))) return []
   // The notice goes out without the reply rather than not at all.
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
+  // Before the notice, which may end the parent's turn at once: once told, it no longer waits for this one.
+  await told(ports.storage, sessionID, event.created ?? ports.now()).catch((error: unknown) =>
+    ports.log(`courier watch: could not note that the parent of ${sessionID} was told: ${String(error)}`),
+  )
   await ports.session.synthetic({
     sessionID: entry.parentID,
     text: envelope(sessionID, silentNotice(entry.title, lastText), { ended: "without-report" }),
@@ -133,10 +144,6 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
     metadata: { source: "courier", from: sessionID, ended: "without-report" },
     delivery: "steer",
   })
-  // So the parent, once told, no longer counts as waiting for it.
-  await told(ports.storage, sessionID, event.created ?? ports.now()).catch((error: unknown) =>
-    ports.log(`courier watch: could not note that the parent of ${sessionID} was told: ${String(error)}`),
-  )
   return [entry.parentID]
 }
 
@@ -281,6 +288,7 @@ async function handle(ports: WatchPorts, state: WatchState, event: { readonly ty
   if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent)
   if (event.type === "session.execution.interrupted") return noteInterrupted(ports, event as unknown as SessionEvent)
   if (event.type === "session.inbox.delivered") return notePrompt(ports, event as unknown as SessionEvent)
+  if (event.type === "session.deleted") return noteDeleted(ports, event as unknown as SessionEvent)
   if (event.type === "permission.asked") return reportAsked(ports, state, event as unknown as PermissionAsked)
   if (event.type === "permission.replied") return reportReplied(ports, state, event as unknown as PermissionReplied)
   if (event.type === "form.created") {

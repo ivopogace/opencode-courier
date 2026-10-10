@@ -17,9 +17,10 @@ import {
 import { hub as processHub, open, resetHub, type Hub, type Member } from "../src/hub.js"
 import { shutdownReportedAt } from "../src/question/index.js"
 import { send, type CourierPorts } from "../src/courier.js"
-import { owesReport, promptKey, settledKey } from "../src/report.js"
+import { owesReport, promptKey, settledKey, toldKey } from "../src/report.js"
 import { record, remove } from "../src/roster.js"
 import {
+  noteDeleted,
   noteInterrupted,
   notePrompt,
   reportAsked,
@@ -302,19 +303,59 @@ describe("reportSilent", () => {
     expect(sent.map((notice: any) => notice.sessionID)).toEqual(["ses_child", "ses_parent"])
   })
 
-  test("tells nothing while the child waits for a message it scheduled, or for a webhook", async () => {
+  test("tells nothing while a scheduled message for the child is pending, but a webhook subscription, which outlives its delivery, is no wait", async () => {
     const later = fakePorts()
     await record(later.ports.storage, child())
     await notePrompt(later.ports, delivered("evt_d", 100))
     await later.ports.storage.set("later/later_1", { id: "later_1", sessionID: "ses_child", from: "ses_child", message: "m", fireAt: 500, createdAt: 150 })
     expect(await reportSilent(later.ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(later.sent).toEqual([])
 
     const hooked = fakePorts()
     await record(hooked.ports.storage, child())
     await notePrompt(hooked.ports, delivered("evt_d", 100))
     await hooked.ports.storage.set("webhook/o%2Fr%237/ses_child", { sessionID: "ses_child", topic: "o/r#7", createdAt: 150 })
-    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s", 200))).toEqual([])
-    expect([...later.sent, ...hooked.sent]).toEqual([])
+    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s", 200))).toEqual(["ses_parent"])
+  })
+
+  test("notes the parent was told before telling it, as the notice may end the parent's turn at once", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, child())
+    let toldFirst: unknown
+    ;(ports.session as any).synthetic = async () => {
+      toldFirst = store.get(toldKey("ses_child"))
+      return { id: "msg_1" }
+    }
+    await notePrompt(ports, delivered("evt_d", 100))
+    await reportSilent(ports, new Set(), succeeded("evt_s", 200))
+    expect(toldFirst).toEqual({ at: 200 })
+  })
+
+  test("keeps the later time when a subscription that is behind notes an older event", async () => {
+    const { ports, store } = fakePorts()
+    await record(ports.storage, child())
+    await notePrompt(ports, delivered("evt_d2", 160))
+    await notePrompt(ports, delivered("evt_d1", 100))
+    expect(store.get(promptKey("ses_child"))).toEqual({ at: 160 })
+
+    await sendFrom(ports, "ses_child", "ses_parent", 200)
+    await noteInterrupted(ports, sessionEvent("session.execution.interrupted", "evt_i", 150, "ses_child", "user") as SessionEvent)
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 200, by: "report" })
+  })
+
+  test("forgets a deleted child, so its parent no longer waits for it", async () => {
+    const { ports, store, sent } = fakePorts()
+    await record(ports.storage, child())
+    await record(ports.storage, { ...child("ses_child"), sessionID: "ses_grandchild" })
+    await notePrompt(ports, delivered("evt_d1", 100))
+    await notePrompt(ports, delivered("evt_d2", 110, "ses_grandchild"))
+
+    expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_x", 150, "ses_grandchild") as SessionEvent)).toBe(true)
+    expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_y", 150, "ses_stranger") as SessionEvent)).toBe(false)
+
+    expect(store.has(promptKey("ses_grandchild"))).toBe(false)
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual(["ses_parent"])
+    expect(sent).toHaveLength(1)
   })
 
   test("what it keeps survives a restart: a new instance over the same storage judges the same", async () => {

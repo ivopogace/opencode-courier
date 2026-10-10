@@ -94,9 +94,11 @@ moment a prompt or message reaches it until it reports to its parent with `couri
 turn fails or is interrupted, so a child that ends its turn without reporting keeps counting until
 it does; a session that has split its task and ended its turn to wait for its children owes one too.
 A session that has reported, failed or been interrupted since anything last reached it, with
-nothing live below it, does not count. Its turn counts as ended when `session.get` fails, so one
-OpenCode no longer knows, or cannot look up, does not count, whatever it owes; one spawned by a
-release of the plugin that kept no such state counts only while it runs.
+nothing live below it, does not count. One OpenCode no longer knows (`session.get` says it was not
+found) does not count, whatever it owes. Whether a session owes a report is read from the plugin's
+storage; when that is not known, for a session spawned by a release of the plugin that kept no such
+state, or cannot be read, the session counts while its turn runs, and a `session.get` that fails
+otherwise counts it as not running.
 
 Each check reads the whole roster once, to find the calling session's tree, and looks up every
 session in that tree with `session.get` and its two report keys. The checks run one at a time in the process,
@@ -171,8 +173,9 @@ out, so one notice is sent however many instances and copies of the plugin see i
 A turn that ends while the child waits is not reported. It waits while a session it started owes
 it a report that it has not been told about, as a session that has split its task ends its turn to
 wait for its children; while it has a permission request or a question pending; and while a
-`courier_later` message for it is pending or it is subscribed to a webhook topic, either of which
-wakes it. Once its children have reported, failed or been interrupted, or it has been told that
+`courier_later` message for it is pending, which wakes it. A webhook subscription is not waiting,
+since it outlives the delivery it was made for: a child that subscribes and ends its turn to wait
+for one has its parent told, which can leave it be. Once its children have reported, failed or been interrupted, or it has been told that
 they ended without a report, a turn of it that ends without a report of its own is reported. A turn
 stopped by OpenCode's shutdown resumes on the next start and does not count as interrupted; one
 stopped otherwise (by the person, or by OpenCode after an hour without activity) settles the report
@@ -188,7 +191,9 @@ The prompt's time is the one OpenCode published its delivery at, not when the pl
 event, and the report's is the server's clock as `courier_send` runs, before it delivers, so an event
 handled late cannot make a report look older than the prompt it answers. `courier_spawn` writes the
 first `prompt` itself, just before it hands the child its task, and settles it as failed if handing
-it over fails. The keys go with the child's roster entry.
+it over fails. Each key keeps the later of two times, since both of the hub's subscriptions note
+every event and one may be behind. The keys go with the child's roster entry, and when OpenCode
+deletes the session (`session.deleted`), so its parent no longer waits for it.
 
 What the plugin cannot see, it cannot judge: a prompt delivered while the server is down or the
 plugin not loaded leaves the earlier one in place, so a turn after it that ends without a report

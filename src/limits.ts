@@ -72,19 +72,23 @@ export async function running(ports: Pick<LimitPorts, "session">, sessionID: str
   }
 }
 
+/** Whether an error of OpenCode's says that a session does not exist (`Session.NotFoundError`). */
+const notFound = (error: unknown) => /NotFound/.test(`${String(obj(error)._tag ?? "")} ${String(obj(error).name ?? "")}`)
+
 /**
- * Whether a spawned session counts against the limits: it runs, or owes its parent a report. One
- * OpenCode no longer knows counts as neither, and a report state that cannot be read as not owing.
+ * Whether a spawned session counts against the limits: it owes its parent a report, or, when nothing
+ * is known of that or it cannot be read, it runs. One OpenCode no longer knows does not count.
  */
 async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: string) {
   const [time, owes] = await Promise.all([
     ports.session.get({ sessionID }).then(
       (info) => info.time,
-      () => undefined,
+      (error: unknown) => (notFound(error) ? null : undefined),
     ),
-    owesReport(ports.storage, sessionID).catch(() => false),
+    owesReport(ports.storage, sessionID).catch(() => undefined),
   ])
-  return time !== undefined && (busy(time) || owes)
+  if (time === null) return false
+  return owes ?? (time !== undefined && busy(time))
 }
 
 /**

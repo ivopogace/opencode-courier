@@ -340,7 +340,15 @@ the [recursive scenario](#recursive-orchestration), 9 checks of 9, in 20 model r
 five sessions: the root and the "numbers" session each split into two, each in a join group, each
 ended its turn and was woken once, each verified its part's files before reporting, every report
 carried `status="done"`, and the root replied `RESULTS 391 1024 42`. Which session loaded the
-skill varied between runs, on the skill's description alone.
+skill varied between runs, on the skill's description alone. On the same scenario
+`nemotron-3-ultra-free` built the same tree, with groups at both levels, and got every file and the
+final line right, but as on the fan-out it did not end its turn: the root scheduled a one-minute
+check-in, cancelled it and called `courier_children`, three times over, until the reports had been
+steered into its open turn; and its "numbers" session reported `done` to the root twice, before its
+own halves had reported, which the group's message then found nothing left to do with, so the root
+was told of a turn without a report after it had already answered. Neither loaded the skill. The
+checker fails that run on three checks, as it should: the shape was right, the discipline was not.
+`muse-spark-1.3-contributor-free` was rate limited on its first request (inconclusive).
 
 With the isolated-child brief (nested isolation), `longcat-2.5-preview-free` passes the fan-out with
 `COURIER_PROMPT` asking for two `isolate: true` helpers that each create a file and commit it: both

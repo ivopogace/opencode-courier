@@ -746,6 +746,11 @@ unindexed=$(head -1 <<<"$spawned")
 kv remove "roster-by-child/$unindexed"
 check "one child's reverse key is removed, as if an older version had recorded it" \
   "$([ -z "$(indexed_under "$unindexed")" ] && echo true || echo false)"
+# Report state a failed cleanup left behind: its session has no roster entry.
+orphan=ses_orphaned_report_sweep
+kv set "report/$orphan/prompt" '{"at":1}' "roster-by-child/$(tail -1 <<<"$spawned")"
+kv set "report/$orphan/settled" '{"at":1,"by":"report"}' "roster-by-child/$(tail -1 <<<"$spawned")"
+check "report state is written for a session with no roster entry" "$([ -n "$(kv get "report/$orphan/prompt")" ] && echo true || echo false)"
 start_server
 restarted=$(now_ms)
 # Plugins load per project location, on its first use after a start.
@@ -762,6 +767,11 @@ check "lists both children" "$(jq -r --arg ids "$spawned" '[.[].sessionID] | sor
 check "with each child's last reply" "$(jq -r 'all((.lastText // "") | contains("TOOL DONE courier_send"))' <<<"$listed")"
 check "the entry written without a reverse key got one when the plugin loaded" \
   "$(for _ in $(seq 1 10); do [ "$(indexed_under "$unindexed")" = "$roster_parent" ] && { echo true; exit; }; sleep 1; done; echo false)"
+
+check "report state with no roster entry was swept when the plugin loaded" \
+  "$(for _ in $(seq 1 10); do [ -z "$(kv get "report/$orphan/prompt")$(kv get "report/$orphan/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+check "while a live child's report state was kept" \
+  "$(for id in $spawned; do [ -n "$(kv get "report/$id/prompt")" ] || { echo false; exit; }; done; echo true)"
 
 echo "a signed GitHub webhook wakes a subscribed idle session"
 out=$(prompt "COURIER-SUBSCRIBE Codertocat/Hello-World#2")

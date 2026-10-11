@@ -115,8 +115,9 @@ dropped after 14 days, starts its children as if it were the top of a tree.
 `maxDepth` it is given a rule: split the task when it has 2 or more independent, substantial parts
 touching separate files or areas, one session per part; do it itself when it is small, sequential or
 tightly coupled, and never start exactly one session; and say which in one line of its reply,
-`split: no, because …` or `split: <n> parts: …`, so that a transcript tells a reasoned decision to
-do the task itself from one never made. A session that splits orchestrates: it ends its
+`split: no, because …; considered: <the parts you weighed>` or `split: <n> parts: …`, so that a
+transcript tells a reasoned decision to do the task itself from one never made, and a reviewer can
+see which parts were weighed. A session that splits orchestrates: it ends its
 turn while its children work, checks and integrates each part itself, never handing that checking
 to another session, and sends its parent one combined report. At `maxDepth` it is told to do the
 task itself. Every spawned session is told how to [report](#a-childs-report): once, with a status
@@ -132,8 +133,8 @@ call is still refused.
 A session nobody spawned that has started none gets one part too, `opencode-courier role: root, no
 sessions started yet`, which is a pointer rather than a role: before a task that touches several
 files or areas, load the `courier-orchestrate` skill and decide whether to split it across sessions,
-doing it itself being fine, and say which in one line of the reply (`split: no, because …` or
-`split: <n> parts: …`). The [skill's description](#the-courier-orchestrate-skill) alone fires only
+doing it itself being fine, and say which in one line of the reply (`split: no, because …;
+considered: <the parts you weighed>` or `split: <n> parts: …`). The [skill's description](#the-courier-orchestrate-skill) alone fires only
 once a model already takes its task for a big one; the pointer reaches it before it starts
 working, and asks for the decision to be visible either way. A request without `courier_spawn` in
 its tool list, from a session whose agent does not have the courier tools or one another plugin's
@@ -167,13 +168,22 @@ loads and injects a skill: [plugin-api-notes.md](plugin-api-notes.md#skills-v202
 Its text is short and model-facing, kept in `src/notices.ts` with the other model-facing strings and
 snapshotted with them. It names no limits (the role part and the brief give the session's own) and
 says, in order: decide whether to split or do, by [the brief's rule](#session-trees-and-their-limits),
-and say which in one line of the reply before starting, `split: no, because …` or `split: <n>
-parts: …`, so that a reasoned decision to do the task alone can be told from one never made;
+never starting exactly one session for the whole task. An implementation task with one tightly
+coupled core usually still has independent parts: its e2e scenario, its documentation, sometimes a
+second test file, and a review of the core by a session with fresh context, which reads the
+committed diff against the task and the repository's rules and reports its findings (`isolate:
+false`, it edits nothing). The skill asks the session to weigh each of them, to do the core itself
+first and commit it, so that the names and texts the other parts depend on are fixed, then to start
+one session per remaining part in one group. Then it says which in one line of the reply before
+starting, `split: no, because …; considered: <the parts you weighed>` or `split: <n> parts: …`, so
+that a reasoned decision to do the task alone can be told from one never made, and a reviewer can
+see what was weighed;
 plan the parts so that no two edit the same files, each task complete enough to be done without the
 orchestrator; start them with one `courier_spawn` per part, all in one [join group](#join-groups),
 `isolate: true` where parts edit files in parallel; end the turn, without polling; read each
 [report](#a-childs-report) by its status and artifacts, and what to do on `done`, `partial`,
-`blocked` and `failed`; verify first-hand, never through another session, running checks through
+`blocked` and `failed`; verify first-hand, never through another session (a review session's
+findings are a report to act on, while running the checks stays the orchestrator's), running checks through
 the project's scripts (`bun run <script>`, `npm run <script>`) rather than `./node_modules/.bin/<tool>`,
 so that one permission rule covers them, since the orchestrating session's own permission prompts
 are relayed nowhere and each one stalls the whole tree; integrate by merging each

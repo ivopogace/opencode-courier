@@ -123,10 +123,13 @@ Spark 1.3).
 A session splits a goal across child sessions, each child decides in turn whether to split its
 part again, and the results are checked and integrated at every level on the way back up. The
 plugin ships the playbook as an OpenCode skill, `courier-orchestrate`, listed in every session with
-the plugin loaded: how to decide whether to split, and to say which in one line of the reply
-(`split: no, because …` or `split: 3 parts: …`), plan the parts, start them in one join group,
-end the turn, read each report by its status, verify first-hand through the project's scripts,
-integrate and report upward, and what to do when a part fails, ends quietly, blocks or hits a
+the plugin loaded: how to decide whether to split, weighing the parts an implementation task with
+one coupled core usually still has (its e2e scenario, its documentation, sometimes a second test
+file, and a review of the core by a session with fresh context, `isolate: false`), done by the
+session itself first and committed, and to say which in one line of the reply (`split: no, because
+…; considered: <the parts you weighed>` or `split: 3 parts: …`), plan the parts, start them in one
+join group, end the turn, read each report by its status, verify first-hand through the project's
+scripts (a review session's findings are a report to act on, not the checks), integrate and report upward, and what to do when a part fails, ends quietly, blocks or hits a
 limit. Its description asks a model to load it at the start of any implementation task that may
 have independent parts, and a session nobody spawned is pointed to it by its system prompt as well
 ([Session trees](#session-trees)); `/skills` in the TUI attaches it to your prompt. Its text:
@@ -335,8 +338,8 @@ session below it is live. One that has reported, with nothing live below it, doe
 spawned session's model is also told its role on every request: `sub-orchestrator`, which may split
 its task, or `leaf`, at `maxDepth`, which does not see `courier_spawn` at all. Your own session is
 told, in one line, to load the `courier-orchestrate` skill before a task that touches several files
-or areas, decide whether to split it, and say which in one line of its reply (`split: no, because …`
-or `split: 3 parts: …`); once it has started a session, that line becomes a `root orchestrator` part
+or areas, decide whether to split it, and say which in one line of its reply (`split: no, because …;
+considered: <the parts you weighed>` or `split: 3 parts: …`); once it has started a session, that line becomes a `root orchestrator` part
 with the limits. The details: [the reference](docs/reference.md#session-trees-and-their-limits).
 
 ## Webhooks

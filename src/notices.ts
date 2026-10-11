@@ -131,13 +131,13 @@ export const SKILL_CONTENT = [
     "opencode-courier role line in your system prompt, names your depth in the session tree and its limits.",
   "",
   "1. Decide: split or do. Split when the task has 2 or more independent, substantial parts touching separate files or " +
-    "areas; do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole " +
-    "task. An implementation task with one tightly coupled core usually still has independent parts: its e2e scenario, its " +
+    "areas; do it yourself when it is small, sequential or tightly coupled. Never start exactly one session. " +
+    "An implementation task with one tightly coupled core usually still has independent parts: its e2e scenario, its " +
     "documentation, sometimes a second test file, and a review of the core by a session with fresh context, which reads the " +
     "committed diff against the task and the repository's rules and reports its findings (isolate: false, it edits nothing). " +
     "Weigh each of them: do the core yourself first and commit it, so that the names and texts the other parts depend on are " +
-    "fixed, then start one session per remaining part, in one group. A part that is itself big and divisible is split again " +
-    "by the session that gets it; at the deepest level a session does its part itself. " +
+    "fixed, then, if 2 or more remain, start one session per remaining part, in one group. A part that is itself big and " +
+    "divisible is split again by the session that gets it; at the deepest level a session does its part itself. " +
     `Say which in one line of your reply, before you start: ${SPLIT_LINE}, so that a reasoned decision to do it ` +
     "yourself can be told from one never made.",
   "2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to " +

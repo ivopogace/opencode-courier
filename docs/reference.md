@@ -134,8 +134,8 @@ A session nobody spawned that has started none gets one part too, `opencode-cour
 sessions started yet`, which is a pointer rather than a role: before a task that touches several
 files or areas, load the `courier-orchestrate` skill and decide whether to split it across sessions,
 doing it itself being fine, and say which in one line of the reply (`split: no, because …;
-considered: <the parts you weighed>` or `split: <n> parts: …`). The [skill's description](#the-courier-orchestrate-skill) alone fires only
-once a model already takes its task for a big one; the pointer reaches it before it starts
+considered: <the parts you weighed>` or `split: <n> parts: …`). The
+[skill's description](#the-courier-orchestrate-skill) alone fires only once a model already takes its task for a big one; the pointer reaches it before it starts
 working, and asks for the decision to be visible either way. A request without `courier_spawn` in
 its tool list, from a session whose agent does not have the courier tools or one another plugin's
 hook stripped them from, gets no pointer, since the session could not act on it. From the request after its first
@@ -168,13 +168,13 @@ loads and injects a skill: [plugin-api-notes.md](plugin-api-notes.md#skills-v202
 Its text is short and model-facing, kept in `src/notices.ts` with the other model-facing strings and
 snapshotted with them. It names no limits (the role part and the brief give the session's own) and
 says, in order: decide whether to split or do, by [the brief's rule](#session-trees-and-their-limits),
-never starting exactly one session for the whole task. An implementation task with one tightly
+never starting exactly one session. An implementation task with one tightly
 coupled core usually still has independent parts: its e2e scenario, its documentation, sometimes a
 second test file, and a review of the core by a session with fresh context, which reads the
 committed diff against the task and the repository's rules and reports its findings (`isolate:
 false`, it edits nothing). The skill asks the session to weigh each of them, to do the core itself
-first and commit it, so that the names and texts the other parts depend on are fixed, then to start
-one session per remaining part in one group. Then it says which in one line of the reply before
+first and commit it, so that the names and texts the other parts depend on are fixed, then, if 2 or more
+remain, to start one session per remaining part in one group. Then it says which in one line of the reply before
 starting, `split: no, because …; considered: <the parts you weighed>` or `split: <n> parts: …`, so
 that a reasoned decision to do the task alone can be told from one never made, and a reviewer can
 see what was weighed;
@@ -183,8 +183,8 @@ orchestrator; start them with one `courier_spawn` per part, all in one [join gro
 `isolate: true` where parts edit files in parallel; end the turn, without polling; read each
 [report](#a-childs-report) by its status and artifacts, and what to do on `done`, `partial`,
 `blocked` and `failed`; verify first-hand, never through another session (a review session's
-findings are a report to act on, while running the checks stays the orchestrator's), running checks through
-the project's scripts (`bun run <script>`, `npm run <script>`) rather than `./node_modules/.bin/<tool>`,
+findings are a report to act on, while running the checks stays the orchestrator's), running
+checks through the project's scripts (`bun run <script>`, `npm run <script>`) rather than `./node_modules/.bin/<tool>`,
 so that one permission rule covers them, since the orchestrating session's own permission prompts
 are relayed nowhere and each one stalls the whole tree; integrate by merging each
 reported branch, then `courier_cleanup`; report upward with one status for the whole, or reply to the

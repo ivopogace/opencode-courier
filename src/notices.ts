@@ -26,7 +26,8 @@ export const isStatus = (value: unknown): value is Status => typeof value === "s
 const STATUS_LIST = `${STATUSES.slice(0, -1).join(", ")} or ${STATUSES.at(-1)}`
 
 /** The one line a session states its split decision in, so a transcript tells a decision from one never made. */
-export const SPLIT_LINE = "split: no, because … or split: <n> parts: … (one phrase per part)"
+export const SPLIT_LINE =
+  "split: no, because …; considered: <the parts you weighed> or split: <n> parts: … (one phrase per part)"
 
 /** The branch an isolated child commits its work on, and names in the `branch` of its report. */
 export const childBranch = (sessionID: string) => `courier/${sessionID}`
@@ -130,8 +131,13 @@ export const SKILL_CONTENT = [
     "opencode-courier role line in your system prompt, names your depth in the session tree and its limits.",
   "",
   "1. Decide: split or do. Split when the task has 2 or more independent, substantial parts touching separate files or " +
-    "areas; do it yourself when it is small, sequential or tightly coupled. Never start exactly one session. A part that is " +
-    "itself big and divisible is split again by the session that gets it; at the deepest level a session does its part itself. " +
+    "areas; do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole " +
+    "task. An implementation task with one tightly coupled core usually still has independent parts: its e2e scenario, its " +
+    "documentation, sometimes a second test file, and a review of the core by a session with fresh context, which reads the " +
+    "committed diff against the task and the repository's rules and reports its findings (isolate: false, it edits nothing). " +
+    "Weigh each of them: do the core yourself first and commit it, so that the names and texts the other parts depend on are " +
+    "fixed, then start one session per remaining part, in one group. A part that is itself big and divisible is split again " +
+    "by the session that gets it; at the deepest level a session does its part itself. " +
     `Say which in one line of your reply, before you start: ${SPLIT_LINE}, so that a reasoned decision to do it ` +
     "yourself can be told from one never made.",
   "2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to " +
@@ -146,7 +152,8 @@ export const SKILL_CONTENT = [
     "left and why; have the session finish it with a courier_send, or do it yourself. blocked: make the decision it asks for " +
     "and send it with courier_send; if only the person can make it, ask them with your question tool and pass the answer on. " +
     "failed: read the error; message the session to try again, start a replacement, or carry on without it.",
-  "6. Verify first-hand: open the files, run the checks. Never hand the checking to another session. Run checks through " +
+  "6. Verify first-hand: open the files, run the checks. Never hand the checking to another session: a review session's " +
+    "findings are a report to act on, and running the checks is still yours. Run checks through " +
     "the project's scripts (bun run <script>, npm run <script>), not ./node_modules/.bin/<tool>, so that one permission " +
     "rule covers them: your own permission prompts are relayed nowhere, and each one stalls the whole tree.",
   "7. Integrate: merge each reported branch into your own checkout (git merge courier/<session>), resolve conflicts " +

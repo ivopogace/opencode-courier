@@ -409,7 +409,10 @@ session split into a group of its own both times, and every report carried `done
 … no independent parts` or `a single sequential task` instead, which says what was weighed in other
 words. Whether a root given an issue-sized task names its parts there is for the next dogfood run.
 The file-writing prompt above that drew a `no` after #119 drew no decision line at all this time:
-no skill loaded, both commands run as background shells, no RESULTS line.
+no skill loaded, both commands run as background shells, no RESULTS line. After rule 1 was changed
+to start the remaining parts only when 2 or more remain, two more recursive runs were inconclusive:
+Zen's free quota refused 4 and then 8 model requests (`provider.quota`), after the root had loaded
+the skill, split into a group, and every session had stated its line.
 
 With the isolated-child brief (nested isolation), `longcat-2.5-preview-free` passes the fan-out with
 `COURIER_PROMPT` asking for two `isolate: true` helpers that each create a file and commit it: both

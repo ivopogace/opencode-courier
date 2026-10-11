@@ -280,8 +280,11 @@ describe("roster", () => {
         store.set(`report/ses_live/${name}`, { at: 1 })
       }
 
+      store.set("report/stray", { at: 1 })
+
       await pruneExpired(storage, now)
 
+      expect(store.has("report/stray")).toBe(true)
       expect([...store.keys()].filter((key) => key.startsWith("report/ses_orphan/"))).toEqual([])
       expect([...store.keys()].filter((key) => key.startsWith("report/ses_live/")).sort()).toEqual(
         ["progress", "prompt", "settled", "stopped", "told"].map((name) => `report/ses_live/${name}`),
@@ -308,7 +311,7 @@ describe("roster", () => {
       expect(store.has("report/ses_orphan/prompt")).toBe(false)
     })
 
-    test("pruning on load removes the report state of an expired entry whose removal left it, and carries on when a key will not go", async () => {
+    test("pruning on load removes report state a failed removal left, and carries on when a key will not go", async () => {
       const { storage, store } = fakeStorage()
       const now = 10 * RETENTION_MS
       await record(storage, entry("ses_kept", "ses_top", now))

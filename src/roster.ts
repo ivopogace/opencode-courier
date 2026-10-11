@@ -76,7 +76,7 @@ function isReverse(value: unknown): value is ReverseEntry {
 
 /**
  * Removes a child's roster entry, its reverse key, its report state and, given its group, its membership. Only
- * the entry's removal can fail it: a reverse key left behind leads nowhere, and the next load drops it.
+ * the entry's removal can fail it: keys left behind lead nowhere, and the next load drops them.
  */
 export async function remove(storage: RosterStorage, parentID: string, sessionID: string, group?: string) {
   const [, , , dropped] = await Promise.all([
@@ -225,9 +225,8 @@ export async function current(storage: RosterStorage, parentID: string, now: num
 }
 
 /**
- * On loading: drops expired entries of every parent, so parents that never list their children
- * don't keep them forever, then brings the reverse index in line with what is left (`backfill`) and
- * drops the report state of sessions with no entry left (`dropOrphanedReports`).
+ * On loading: drops expired entries of every parent, then brings the reverse index in line with
+ * what is left (`backfill`) and drops report state with no entry (`dropOrphanedReports`).
  */
 export async function pruneExpired(storage: RosterStorage, now: number, exists: Exists = existsSync) {
   // Report keys are read before the roster: courier_spawn writes a child's entry before its first

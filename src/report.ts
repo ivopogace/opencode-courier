@@ -109,8 +109,9 @@ export async function forgetReport(storage: Pick<Storage, "remove">, sessionID: 
 export async function reportKeys(storage: Pick<Storage, "scan">) {
   const keys = new Map<string, string[]>()
   for (const { key } of await scanEntries<unknown>(storage, PREFIX)) {
-    const sessionID = key.slice(0, key.indexOf("/"))
-    if (sessionID) keys.set(sessionID, [...(keys.get(sessionID) ?? []), `${PREFIX}${key}`])
+    const slash = key.indexOf("/")
+    const sessionID = key.slice(0, slash)
+    if (slash > 0) keys.set(sessionID, [...(keys.get(sessionID) ?? []), `${PREFIX}${key}`])
   }
   return keys
 }

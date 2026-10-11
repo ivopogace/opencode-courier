@@ -325,7 +325,8 @@ description never fired and the plugin never engaged. Since then the description
 at the start of any implementation task that may have independent parts, a session nobody spawned
 is pointed to it by [the context hook](reference.md#session-trees-and-their-limits) before it starts,
 and the skill, the brief and the pointer each ask for the decision in one line of the reply,
-`split: no, because …` or `split: <n> parts: …`. Either way every check passed but one in that other run, the model's
+`split: no, because …` or `split: <n> parts: …` (since #122, `split: no, because …; considered: <the parts
+you weighed>`). Either way every check passed but one in that other run, the model's
 doing: the root copied a long temporary path into its children's tasks with a typo, so the files
 were written next to the project rather than in it, and the three sessions reading them back read
 the same wrong path. Run the scenario in a plainly named directory (the default temp dir is).
@@ -412,7 +413,10 @@ The file-writing prompt above that drew a `no` after #119 drew no decision line 
 no skill loaded, both commands run as background shells, no RESULTS line. After rule 1 was changed
 to start the remaining parts only when 2 or more remain, two more recursive runs were inconclusive:
 Zen's free quota refused 4 and then 8 model requests (`provider.quota`), after the root had loaded
-the skill, split into a group, and every session had stated its line.
+the skill, split into a group, and every session had stated its line. A third got 8 of 9: every
+file held its value and all four reports came back `done` through two groups, and only the root's
+last turn was lost to one refused request. On the same wording the fan-out passed, 8 of 8, in 12
+model requests, its parent stating no split line this time.
 
 With the isolated-child brief (nested isolation), `longcat-2.5-preview-free` passes the fan-out with
 `COURIER_PROMPT` asking for two `isolate: true` helpers that each create a file and commit it: both

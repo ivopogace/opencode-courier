@@ -78,12 +78,12 @@ function isReverse(value: unknown): value is ReverseEntry {
  * Removes a child's roster entry, its reverse key, its report state and, given its group, its membership. Only
  * the entry's removal can fail it: a reverse key left behind leads nowhere, and the next load drops it.
  */
-export async function remove(storage: RosterStorage, parentID: string, sessionID: string, group?: string) {
+export async function remove(storage: RosterStorage, parentID: string, sessionID: string, group?: string, at = 0) {
   const [, , , dropped] = await Promise.all([
     storage.remove(rosterKey(parentID, sessionID)),
     storage.remove(reverseKey(sessionID)).catch(() => undefined),
     forgetReport(storage, sessionID).catch(() => undefined),
-    group ? dropMember(storage, parentID, group, sessionID).catch(() => false) : false,
+    group ? dropMember(storage, parentID, group, sessionID, at).catch(() => false) : false,
   ])
   return { droppedFromGroup: dropped }
 }
@@ -215,7 +215,7 @@ async function dropExpired(storage: RosterStorage, entries: RosterEntry[], now: 
   const expired = new Set(
     entries.filter((entry) => now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory))),
   )
-  await Promise.all([...expired].map((entry) => remove(storage, entry.parentID, entry.sessionID, entry.group)))
+  await Promise.all([...expired].map((entry) => remove(storage, entry.parentID, entry.sessionID, entry.group, now)))
   return entries.filter((entry) => !expired.has(entry))
 }
 

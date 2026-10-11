@@ -264,6 +264,36 @@ check "answered, the blocked member reported, and the group went to the parent i
     contains("reports=\"2\"") and contains("CHILD DONE AFTER NUDGE") and contains("\": done\nCHILD DONE\n"))')"
 check "and the group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
 
+echo "a member that ends silently is dropped from its group, whose held report is released without it"
+out=$(prompt "COURIER-GROUP-DROP")
+turn_ended=$(now_ms)
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
+check "two children were started in the group, and their reports are held with it" \
+  "$([ "$(wc -w <<<"$members")" -eq 2 ] && tool_state courier_spawn <<<"$out" | jq -sr 'all(.metadata.metadata.group == "pair" and (.output | contains("held with group \"pair\"")))')"
+# The member that ends silently is named in a notice, which the parent answers by dropping it from the group.
+silent=""
+for _ in $(seq 1 45); do
+  silent=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains("ended=\"without-report\"")) | capture("from=\"(?<from>ses_\\w+)\" ended=\"without-report\">").from] | first // empty')
+  [ -n "$silent" ] && break
+  sleep 1
+done
+check "the parent was told which member ended without a report" "$([ -n "$silent" ] && echo true || echo false)"
+woke=$(reply_time "$parent" "PARENT GOT GROUP" 60)
+check "the group's release started a new turn after the parent's had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
+notices=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "synthetic") | .text | select(contains("group=\"pair\""))]')
+check "the parent got one message, with the held report and the dropped member named without one, with why" \
+  "$(jq -r --arg silent "$silent" 'length == 1 and (.[0] |
+    contains("Group \"pair\" is complete: 1 report of 2 members (1 done), 1 member without a report, named at the end") and
+    contains("[1/1] ") and contains("CHILD DONE\n\nArtifacts:\n- branch: child/work") and
+    contains("Without a report: " + $silent + " \"CHILD-SILENT\" (its parent dropped it)."))' <<<"$notices")"
+check "the dropped member is off the roster, and its reverse key with it" \
+  "$([ -z "$(kv get "roster/$parent/$silent")" ] && [ -z "$(kv get "roster-by-child/$silent")" ] && echo true || echo false)"
+check "the delivered group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
+prompt_in "$parent" "COURIER-NUDGE $silent" >/dev/null
+check "told to report, the dropped member's report reached the parent on its own, as a child in no group" \
+  "$(has_text "$parent" "<courier from=\"$silent\" status=\"done\">" 66)"
+
 echo "a group whose members report before the parent's turn has ended goes out once it has, in one message"
 out=$(prompt "COURIER-GROUP-SPLIT")
 turn_ended=$(now_ms)

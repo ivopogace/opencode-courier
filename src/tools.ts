@@ -108,7 +108,7 @@ export const StopInput = Schema.Struct({
 })
 
 export const CleanupInput = Schema.Struct({
-  sessionID: Schema.String.annotate({ description: "The isolated child whose worktree to remove." }),
+  sessionID: Schema.String.annotate({ description: "The child to drop: its worktree, if it ran in one of its own, is removed, and it is dropped from courier_children and any join group it was in." }),
   force: Schema.optional(
     Schema.Boolean.annotate({
       description: "Remove it even with uncommitted changes or commits on no branch; that work is lost.",
@@ -311,7 +311,9 @@ export function addTools(tools: ToolEditor, ports: ToolPorts) {
     description:
       "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, " +
       "and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and " +
-      "the result lists them; commit or branch what you want, or pass force: true to discard it.",
+      "the result lists them; commit or branch what you want, or pass force: true to discard it. A session " +
+      "that ran in your own directory has no worktree: it is only dropped, from courier_children and from any " +
+      "join group it was in, whose held reports then reach you without it.",
     input: CleanupInput,
     execute: async (input, context) => {
       const result = await cleanup(ports.cleanup, context.sessionID, input).catch(rethrow("courier_cleanup"))

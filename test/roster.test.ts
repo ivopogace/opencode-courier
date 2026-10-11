@@ -198,7 +198,7 @@ describe("roster", () => {
       expect(ids(await lineage(storage, "ses_child"))).toEqual(["ses_child"])
     })
 
-    test("removes the reverse key with the entry, and the entry's group membership", async () => {
+    test("removes the reverse key with the entry, and drops it from its group as dropped", async () => {
       const { storage, store } = fakeStorage()
       await record(storage, entry("ses_a", "ses_parent", 1))
       await record(storage, { ...entry("ses_b", "ses_parent", 2), group: "pair" })
@@ -208,15 +208,17 @@ describe("roster", () => {
       await remove(storage, "ses_parent", "ses_a")
       expect(await forget(storage, "ses_parent", "ses_b")).toBe(true)
 
-      expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_c"])
+      // The group no longer waits for it: marked as dropped, which releases the group without it.
+      expect(store.get("group/ses_parent/pair/ses_b")).toEqual({ title: "b", joinedAt: 2, left: { at: 0, by: "dropped" } })
       store.set("roster/ses_parent/ses_c", { ...entry("ses_c", "ses_parent", 3), group: "pair" })
-      await remove(storage, "ses_parent", "ses_c", "pair")
-      expect([...store.keys()]).toEqual([])
+      await remove(storage, "ses_parent", "ses_c", "pair", 6)
+      expect(store.get("group/ses_parent/pair/ses_c")).toEqual({ title: "c", joinedAt: 3, left: { at: 6, by: "dropped" } })
       // A held report outlives the entry: the group still delivers it.
       store.set("group/ses_parent/pair/ses_d", { title: "d", joinedAt: 4, report: { at: 5, status: "done", message: "m" } })
       store.set("roster/ses_parent/ses_d", { ...entry("ses_d", "ses_parent", 4), group: "pair" })
       expect(await forget(storage, "ses_parent", "ses_d")).toBe(true)
-      expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_d"])
+      // The dropped memberships are marked, not gone: the group releases with them named, and drops them then.
+      expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_b", "group/ses_parent/pair/ses_c", "group/ses_parent/pair/ses_d"])
     })
 
     test("back-fills missing reverse keys and drops those whose entry is gone, once however often it runs", async () => {

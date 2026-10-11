@@ -179,17 +179,22 @@ describe("joining and leaving", () => {
     expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_a"))).toBe("held")
   })
 
-  test("a member dropped with its roster entry is gone, unless its report is held; a parent's groups go with it", async () => {
+  test("a member dropped with its roster entry leaves its group as dropped, which completes it, unless its report is held or it already left", async () => {
     const { ports, store } = fakePorts()
     await joinGroup(ports.storage, "ses_parent", "pair", "ses_a", "A", 1)
     await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "B", 2)
     await joinGroup(ports.storage, "ses_other", "pair", "ses_c", "C", 3)
     await holdReport(ports.storage, membership("ses_b", "B"), report("done"))
 
-    expect(await dropMember(ports.storage, "ses_parent", "pair", "ses_a")).toBe(true)
-    expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_a"))).toBe("released")
+    expect(await dropMember(ports.storage, "ses_parent", "pair", "ses_a", 60)).toBe(true)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toEqual({ title: "A", joinedAt: 1, left: { at: 60, by: "dropped" } })
+    expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_a"))).toBe("dropped")
+    // The group no longer waits for it: the held report completes it.
+    expect(await groupStanding(ports.storage, "ses_parent", "pair")).toEqual({ reported: 1, members: 1, complete: true })
+    // One that already left keeps why, and one whose report is held keeps it: neither is dropped again.
+    expect(await dropMember(ports.storage, "ses_parent", "pair", "ses_a", 70)).toBe(false)
     expect(await dropMember(ports.storage, "ses_parent", "pair", "ses_b")).toBe(false)
-    expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_b"))).toBe("held")
+    expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toEqual({ title: "A", joinedAt: 1, left: { at: 60, by: "dropped" } })
     await dropGroups(ports.storage, "ses_parent")
     expect([...store.keys()]).toEqual([memberKey("ses_other", "pair", "ses_c")])
   })
@@ -242,6 +247,21 @@ describe("deliverReleased", () => {
     expect(delivered).toHaveLength(1)
     expect(delivered[0].text).toContain('1 report of 2 members (1 done)')
     expect(delivered[0].text).toContain('Without a report: ses_b "Second" (its turn failed).')
+    expect(delivered[0].metadata.from).toBe("ses_a")
+    expect(store.size).toBe(0)
+  })
+
+  test("names a member the parent dropped under Without a report, with why, and carries no report of its own", async () => {
+    const { ports, delivered, store } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a", "First"), report("done"))
+    await dropMember(ports.storage, "ses_parent", "pair", "ses_b", 50)
+
+    await deliverReleased(ports, new Set())
+
+    expect(delivered).toHaveLength(1)
+    expect(delivered[0].text).toContain('1 report of 2 members (1 done), 1 member without a report, named at the end')
+    expect(delivered[0].text).toContain('Without a report: ses_b "Second" (its parent dropped it).')
     expect(delivered[0].metadata.from).toBe("ses_a")
     expect(store.size).toBe(0)
   })

@@ -25,6 +25,8 @@ export interface CleanupPorts {
   readonly projectID: string
   /** The worktree's state, or undefined when its directory no longer exists; `base` is the commit it was made from. */
   readonly inspect: (directory: string, base?: string) => Promise<WorktreeState | undefined>
+  /** The clock, for when a group membership is marked as dropped. */
+  readonly now: () => number
   /** Has the scheduler deliver what is due now: a group the forgotten child may have been the last member out of. */
   readonly nudge: () => void
 }
@@ -40,16 +42,23 @@ export const MAX_LISTED = 50
 /**
  * Removes the worktree of an isolated child the parent started, and forgets the child. One with
  * uncommitted changes or commits found nowhere else is kept unless `force` is set; the result says so.
+ * A child that ran in the parent's own directory has no worktree: it is only forgotten, from
+ * `courier_children` and from any join group it was a member of, whose held reports then reach the
+ * parent without it.
  */
 export async function cleanup(ports: CleanupPorts, parentID: string, input: CleanupInput): Promise<CleanupResult> {
   const entry = (await ports.storage.get(rosterKey(parentID, input.sessionID))) as unknown as RosterEntry | undefined
   if (!entry) throw new Error(`${input.sessionID} is not on the courier_children list of ${parentID}.`)
-  if (!entry.isolated)
-    throw new Error(`${input.sessionID} ran in ${entry.directory}, not in a worktree of its own; there is nothing to remove.`)
   const { directory } = entry
   const forget = async () => {
-    const { droppedFromGroup } = await remove(ports.storage, parentID, input.sessionID, entry.group)
+    const { droppedFromGroup } = await remove(ports.storage, parentID, input.sessionID, entry.group, ports.now())
     if (droppedFromGroup) ports.nudge()
+  }
+  // With no worktree of its own there is nothing to inspect or remove: forgetting it is all there is
+  // to do, and a group it was the last member out of is released by it.
+  if (!entry.isolated) {
+    await forget()
+    return { sessionID: input.sessionID, directory, outcome: "dropped" }
   }
   // With force the state only decides whether there is anything left to remove, so a worktree git
   // can no longer read is still removed.

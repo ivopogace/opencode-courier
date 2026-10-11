@@ -599,7 +599,11 @@ report](#a-child-that-ends-without-a-report), and its place in a [join group](#j
 kept next to it, and dropped with its entry.
 Entries are dropped 14 days after the child was started, when that parent's roster is read or
 the plugin is next loaded, except isolated children whose worktree is still there (see
-[Worktree cleanup](#worktree-cleanup)). If the roster cannot be written, the child still gets its
+[Worktree cleanup](#worktree-cleanup)). Loading the plugin also removes report state
+(`report/<sessionID>/*`) whose session has no entry left, as a cleanup that failed part-way leaves it,
+best-effort: a key that will not go is retried at the next load. The `report/` keys are read before
+the roster, so a child spawned during the sweep, whose entry is written before its first report key,
+is never taken for an orphan. If the roster cannot be written, the child still gets its
 task and `courier_spawn` says it is not on the list.
 
 ## Seeing and stopping a subtree

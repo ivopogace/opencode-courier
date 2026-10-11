@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs"
 import { dropMember } from "./group.js"
-import { forgetReport } from "./report.js"
+import { forgetReport, reportKeys } from "./report.js"
 import { scanAll, scanEntries, type Storage } from "./storage.js"
 
 /**
@@ -76,7 +76,7 @@ function isReverse(value: unknown): value is ReverseEntry {
 
 /**
  * Removes a child's roster entry, its reverse key, its report state and, given its group, its membership. Only
- * the entry's removal can fail it: a reverse key left behind leads nowhere, and the next load drops it.
+ * the entry's removal can fail it: keys left behind lead nowhere, and the next load drops them.
  */
 export async function remove(storage: RosterStorage, parentID: string, sessionID: string, group?: string) {
   const [, , , dropped] = await Promise.all([
@@ -225,11 +225,22 @@ export async function current(storage: RosterStorage, parentID: string, now: num
 }
 
 /**
- * On loading: drops expired entries of every parent, so parents that never list their children
- * don't keep them forever, then brings the reverse index in line with what is left (`backfill`).
+ * On loading: drops expired entries of every parent, then brings the reverse index in line with
+ * what is left (`backfill`) and drops report state with no entry (`dropOrphanedReports`).
  */
 export async function pruneExpired(storage: RosterStorage, now: number, exists: Exists = existsSync) {
-  await backfill(storage, await dropExpired(storage, await scanAll<RosterEntry>(storage, PREFIX), now, exists))
+  // Report keys are read before the roster: courier_spawn writes a child's entry before its first
+  // report key, so a session seen here that spawns during the sweep has its entry in the read below.
+  const reported = await reportKeys(storage).catch(() => new Map<string, string[]>())
+  const entries = await dropExpired(storage, await scanAll<RosterEntry>(storage, PREFIX), now, exists)
+  await Promise.all([backfill(storage, entries), dropOrphanedReports(storage, reported, entries)])
+}
+
+/** Removes the report keys read of sessions that have no roster entry; a key that will not go is left for the next load. */
+async function dropOrphanedReports(storage: RosterStorage, reported: ReadonlyMap<string, string[]>, entries: ReadonlyArray<RosterEntry>) {
+  const sessions = new Set(entries.map((entry) => entry.sessionID))
+  const orphaned = [...reported].filter(([sessionID]) => !sessions.has(sessionID)).flatMap(([, keys]) => keys)
+  await Promise.all(orphaned.map((key) => storage.remove(key).catch(() => undefined)))
 }
 
 /** Whether a reverse key's value leads to this entry. */

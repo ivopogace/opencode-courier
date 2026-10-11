@@ -332,7 +332,7 @@ that a member ended without a report, which ends its turn without acting on it, 
 would be for a child in no group.
 
 **`courier_children`** lists, for a child started in a group, `group: { name, report }`, with
-`report` one of `held`, `out`, `failed`, `interrupted`, `deleted`, `dropped` (it left), `released` (the group has been
+`report` one of `held`, `out`, `failed`, `interrupted`, `deleted` (it left), `released` (the group has been
 delivered, or the child joined an earlier one of that name) or `unknown` (its membership could not
 be read). A child whose group could not be joined when it was started is recorded in no group, and
 `courier_spawn`'s result says so: its report comes on its own.

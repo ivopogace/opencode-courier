@@ -140,7 +140,7 @@ export async function membershipOf(storage: Pick<Storage, "get">, parentID: stri
 }
 
 /**
- * Notes that a member left its group without a report: its turn failed or was interrupted, or it was deleted. Read
+ * Notes that a member left its group without a report: its turn failed or was interrupted, it was deleted or dropped. Read
  * again first: one whose report is held meanwhile keeps it, one that left keeps why. True when that completes the group.
  */
 export async function markLeft(storage: Pick<Storage, "get" | "set" | "scan">, membership: Membership, by: LeftMember["by"], at: number) {

@@ -1,6 +1,6 @@
 import { obj } from "./json.js"
 import { isStatus, type Status } from "./notices.js"
-import type { Storage } from "./storage.js"
+import { scanEntries, type Storage } from "./storage.js"
 
 /**
  * Whether a spawned session has reported since its last prompt, under `report/<sessionID>/`: `prompt`, `settled` (with
@@ -103,4 +103,14 @@ export async function awaited(storage: Pick<Storage, "get">, sessionID: string) 
 /** Drops what is kept about a session, with its roster entry. */
 export async function forgetReport(storage: Pick<Storage, "remove">, sessionID: string) {
   await Promise.all([promptKey, settledKey, progressKey, toldKey, stoppedKey].map((key) => storage.remove(key(sessionID))))
+}
+
+/** Every key kept under `report/`, by the session it is about. */
+export async function reportKeys(storage: Pick<Storage, "scan">) {
+  const keys = new Map<string, string[]>()
+  for (const { key } of await scanEntries<unknown>(storage, PREFIX)) {
+    const sessionID = key.slice(0, key.indexOf("/"))
+    if (sessionID) keys.set(sessionID, [...(keys.get(sessionID) ?? []), `${PREFIX}${key}`])
+  }
+  return keys
 }

@@ -271,6 +271,76 @@ describe("roster", () => {
       expect(store.get(reverseKey("ses_new"))).toEqual({ ancestors: ["ses_top"] })
     })
 
+    test("pruning on load removes report state with no roster entry and keeps a live child's", async () => {
+      const { storage, store } = fakeStorage()
+      const now = 10 * RETENTION_MS
+      await record(storage, entry("ses_live", "ses_top", now))
+      for (const name of ["prompt", "settled", "progress", "told", "stopped"]) {
+        store.set(`report/ses_orphan/${name}`, { at: 1 })
+        store.set(`report/ses_live/${name}`, { at: 1 })
+      }
+
+      await pruneExpired(storage, now)
+
+      expect([...store.keys()].filter((key) => key.startsWith("report/ses_orphan/"))).toEqual([])
+      expect([...store.keys()].filter((key) => key.startsWith("report/ses_live/")).sort()).toEqual(
+        ["progress", "prompt", "settled", "stopped", "told"].map((name) => `report/ses_live/${name}`),
+      )
+    })
+
+    test("pruning on load keeps report state of a child spawned while it sweeps", async () => {
+      const { storage, store } = fakeStorage()
+      const now = 10 * RETENTION_MS
+      const racing: RosterStorage = {
+        ...storage,
+        scan: async (request) => {
+          const page = await storage.scan(request)
+          // The roster is read second: a child recorded after the report keys were read is on it.
+          if (request.prefix === "report/") await record(storage, entry("ses_new", "ses_top", now)).then(() => store.set("report/ses_new/prompt", { at: now }))
+          return page
+        },
+      }
+      store.set("report/ses_orphan/prompt", { at: 1 })
+
+      await pruneExpired(racing, now)
+
+      expect(store.has("report/ses_new/prompt")).toBe(true)
+      expect(store.has("report/ses_orphan/prompt")).toBe(false)
+    })
+
+    test("pruning on load removes the report state of an expired entry whose removal left it, and carries on when a key will not go", async () => {
+      const { storage, store } = fakeStorage()
+      const now = 10 * RETENTION_MS
+      await record(storage, entry("ses_kept", "ses_top", now))
+      store.set("report/ses_a/prompt", { at: 1 })
+      store.set("report/ses_a/settled", { at: 1 })
+      const failing: RosterStorage = {
+        ...storage,
+        remove: async (key) => (key === "report/ses_a/prompt" ? Promise.reject(new Error("locked")) : storage.remove(key)),
+      }
+
+      await pruneExpired(failing, now)
+
+      expect([...store.keys()].filter((key) => key.startsWith("report/"))).toEqual(["report/ses_a/prompt"])
+      await pruneExpired(storage, now)
+      expect([...store.keys()].filter((key) => key.startsWith("report/"))).toEqual([])
+      expect(store.has(reverseKey("ses_kept"))).toBe(true)
+    })
+
+    test("pruning on load still prunes the roster when the report keys cannot be read", async () => {
+      const { storage, store } = fakeStorage()
+      const now = 10 * RETENTION_MS
+      store.set(rosterKey("ses_top", "ses_old"), entry("ses_old", "ses_top", now - RETENTION_MS - 1))
+      const failing: RosterStorage = {
+        ...storage,
+        scan: async (request) => (request.prefix === "report/" ? Promise.reject(new Error("locked")) : storage.scan(request)),
+      }
+
+      await pruneExpired(failing, now)
+
+      expect(store.has(rosterKey("ses_top", "ses_old"))).toBe(false)
+    })
+
     test("pruning on load back-fills the entries it keeps", async () => {
       const { storage, store, scans } = fakeStorage()
       const now = 10 * RETENTION_MS

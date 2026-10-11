@@ -6,6 +6,9 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
 
 ## Layout
 
+Why `src/` has this shape (ports, a functional core, one versioned hub, Effect only in `question/`):
+`docs/research/architecture.md`.
+
 `src/`:
 
 - `index.ts`: the plugin, an Effect plugin running the promise one. Builds the ports, registers the

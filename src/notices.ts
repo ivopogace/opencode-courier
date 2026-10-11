@@ -295,10 +295,9 @@ export const statusText = (status: unknown) => JSON.stringify(status, null, 2)
 export const childrenText = (listed: ReadonlyArray<unknown>) =>
   listed.length ? JSON.stringify(listed, null, 2) : "No sessions started with courier_spawn."
 
-/** What courier_cleanup did: removed the worktree, found it gone, or kept it and why. */
+/** What courier_cleanup did: removed the worktree, found it gone, kept it and why, or forgot a child with none; `group`, one it dropped the child from. */
 export type CleanupResult =
-  | { readonly sessionID: string; readonly directory: string; readonly outcome: "removed" }
-  | { readonly sessionID: string; readonly directory: string; readonly outcome: "gone" }
+  | { readonly sessionID: string; readonly directory: string; readonly outcome: "removed" | "gone" | "forgotten"; readonly group?: string }
   | {
       readonly sessionID: string
       readonly directory: string
@@ -309,10 +308,15 @@ export type CleanupResult =
     }
 
 export function cleanupText(result: CleanupResult) {
-  if (result.outcome === "removed") return `Removed the worktree ${result.directory} of ${result.sessionID}.`
-  if (result.outcome === "gone")
-    return `The worktree ${result.directory} of ${result.sessionID} was already gone; dropped it from courier_children.`
-  return `Kept the worktree ${result.directory} of ${result.sessionID}: it has ${result.reason}. Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it.`
+  if (result.outcome === "kept")
+    return `Kept the worktree ${result.directory} of ${result.sessionID}: it has ${result.reason}. Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it.`
+  const done = {
+    removed: `Removed the worktree ${result.directory} of ${result.sessionID}.`,
+    gone: `The worktree ${result.directory} of ${result.sessionID} was already gone; dropped it from courier_children.`,
+    forgotten: `${result.sessionID} ran in ${result.directory}, with no worktree of its own to remove; dropped it from courier_children.`,
+  }[result.outcome]
+  if (!result.group) return done
+  return `${done} Dropped it from group "${result.group}" without a report: the group's other reports reach you once they are in and your turn has ended, the message naming it, and a report it sends after all comes on its own.`
 }
 
 /** courier_tree's result: the sessions under a session, drawn depth first, as JSON. */
@@ -500,7 +504,10 @@ export function silentNotice(title: string, lastText: string | undefined, progre
     "Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.",
     "Until it reports, it counts toward your limits on the sessions you run at once.",
     ...(group
-      ? [`It is a member of group "${group}", whose other reports are held until it reports: have it report, as above, so the group reaches you.`]
+      ? [
+          `It is a member of group "${group}", whose other reports are held until it reports: have it report, as above, so the group ` +
+            "reaches you, or, if you no longer need its report, drop it with courier_cleanup, which releases the group without it.",
+        ]
       : []),
   ].join("\n")
 }
@@ -515,11 +522,11 @@ export interface HeldReport {
   readonly artifacts?: Artifacts
 }
 
-/** A member of a group that left it without a report, and why: its turn failed or was interrupted, or it was deleted. */
+/** A member of a group that left it without a report, and why: its turn failed or was interrupted, it was deleted, or courier_cleanup dropped it. */
 export interface LeftMember {
   readonly sessionID: string
   readonly title: string
-  readonly by: "failed" | "interrupted" | "deleted"
+  readonly by: "failed" | "interrupted" | "deleted" | "dropped"
 }
 
 /** How a release names each status among its reports: `2 done, 1 failed`. */
@@ -530,7 +537,12 @@ function statusCounts(reports: ReadonlyArray<Pick<HeldReport, "status">>) {
   }).join(", ")
 }
 
-const LEFT_HOW = { failed: "its turn failed", interrupted: "its turn was interrupted", deleted: "it was deleted" }
+const LEFT_HOW = {
+  failed: "its turn failed",
+  interrupted: "its turn was interrupted",
+  deleted: "it was deleted",
+  dropped: "you dropped it with courier_cleanup",
+}
 
 /**
  * What the parent gets when a group it named is released: every report, with its status, text and artifacts in

@@ -23,7 +23,7 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   `report.ts`: whether each spawned session owes its parent a report. `group.ts`: join groups, the
   reports held with them and their delivery from the scheduler's tick. `later.ts`: scheduled
   messages and their delivery. `roster.ts`: the children each parent spawned. `cleanup.ts`:
-  removing an isolated child's worktree. `tree.ts`: the subtree under a session, read level by level
+  forgetting a child, with its worktree if it is isolated, and dropping it from its join group. `tree.ts`: the subtree under a session, read level by level
   from the roster (`courier_tree`). `stop.ts`: stopping a subtree (`courier_stop`). `webhook.ts`: the webhook receiver and subscriptions.
   `version.ts`: the log line on an OpenCode version other than the pinned one.
 - `watch.ts`: following OpenCode's events to tell a parent that a child's turn failed or ended

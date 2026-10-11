@@ -203,6 +203,22 @@ describe("deliverReleased", () => {
     await joinGroup(ports.storage, "ses_parent", "pair", "ses_b", "Second", 2)
   }
 
+  test("names a member courier_cleanup dropped under Without a report, and releases the group without it", async () => {
+    const { ports, store, delivered } = fakePorts()
+    await pair(ports)
+    await holdReport(ports.storage, membership("ses_a", "First"), report("done", "Did it."))
+    expect(await leaveGroup(ports.storage, "ses_parent", "pair", "ses_b", "dropped", 50)).toBe(true)
+    expect(standingOf(await memberOf(ports.storage, "ses_parent", "pair", "ses_b"))).toBe("dropped")
+
+    await deliverReleased(ports, new Set())
+
+    const left = [{ sessionID: "ses_b", title: "Second", by: "dropped" as const }]
+    expect(delivered.map((one) => one.text)).toEqual([
+      envelope("ses_a", groupNotice("pair", [{ sessionID: "ses_a", title: "First", ...report("done", "Did it.") }], left), { group: "pair", reports: "1" }),
+    ])
+    expect(store.size).toBe(0)
+  })
+
   test("delivers a group whose every member has reported, in one message listing each report in the order joined, then drops it", async () => {
     const { ports, store, delivered } = fakePorts()
     await pair(ports)

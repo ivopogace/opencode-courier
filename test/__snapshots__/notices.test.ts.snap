@@ -371,7 +371,7 @@ exports[`tools courier_stop 1`] = `
 
 exports[`tools courier_cleanup 1`] = `
 {
-  "description": "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and the result lists them; commit or branch what you want, or pass force: true to discard it.",
+  "description": "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and the result lists them; commit or branch what you want, or pass force: true to discard it. A session without isolate has no worktree and is only dropped from courier_children. Either way, one in a join group that has not reported is dropped from it, so the group's other reports reach you without it; use this for a member you no longer need a report from.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -387,7 +387,7 @@ exports[`tools courier_cleanup 1`] = `
         ],
       },
       "sessionID": {
-        "description": "The isolated child whose worktree to remove.",
+        "description": "The session you started to drop, with its worktree if it is isolated.",
         "type": "string",
       },
     },
@@ -902,6 +902,10 @@ exports[`tool results cleanupText 2`] = `"The worktree /wt of ses_child was alre
 
 exports[`tool results cleanupText 3`] = `"Kept the worktree /wt of ses_child: it has 1 uncommitted change (a.ts). Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it."`;
 
+exports[`tool results cleanupText 4`] = `"ses_child ran in /repo, with no worktree of its own to remove; dropped it from courier_children."`;
+
+exports[`tool results cleanupText 5`] = `"ses_child ran in /repo, with no worktree of its own to remove; dropped it from courier_children. Dropped it from group "reviews" without a report: the group's other reports reach you once they are in and your turn has ended, the message naming it, and a report it sends after all comes on its own."`;
+
 exports[`tool results keepReason 1`] = `"1 uncommitted change (a.ts)"`;
 
 exports[`tool results keepReason 2`] = `"6 uncommitted changes (a, b, c, d, e, ...) and 2 commits on no branch, tag or remote (abc1234, def5678)"`;
@@ -993,7 +997,7 @@ Done, I think.
 
 Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
 Until it reports, it counts toward your limits on the sessions you run at once.
-It is a member of group "reviews", whose other reports are held until it reports: have it report, as above, so the group reaches you."
+It is a member of group "reviews", whose other reports are held until it reports: have it report, as above, so the group reaches you, or, if you no longer need its report, drop it with courier_cleanup, which releases the group without it."
 `;
 
 exports[`join groups groupNotice 1`] = `
@@ -1018,7 +1022,7 @@ Check and integrate each one yourself. The sessions that reported are idle; mess
 `;
 
 exports[`join groups groupNotice 2`] = `
-"Group "reviews" is complete: 1 report of 4 members (1 done), 3 members without a report, named at the end. Each report follows, with its status.
+"Group "reviews" is complete: 1 report of 5 members (1 done), 4 members without a report, named at the end. Each report follows, with its status.
 
 [1/1] ses_a "Review a.ts": done
 Looks fine.
@@ -1028,7 +1032,7 @@ Artifacts:
 - checks:
   - bun test: ok
 
-Without a report: ses_d "Review d.ts" (its turn failed), ses_e "Review e.ts" (it was deleted), ses_f "Review f.ts" (its turn was interrupted).
+Without a report: ses_d "Review d.ts" (its turn failed), ses_e "Review e.ts" (it was deleted), ses_f "Review f.ts" (its turn was interrupted), ses_g "Review g.ts" (you dropped it with courier_cleanup).
 
 Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
 `;

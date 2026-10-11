@@ -398,6 +398,19 @@ and a reasoned `no` on two trivial commands is what the skill's own rule asks fo
 given an issue-sized task now loads the skill and splits is what the dogfood run of #114, repeated
 after #119, is to show.
 
+With rule 1 naming the parts an implementation task usually still has (its e2e scenario, its
+documentation, a second test file, a fresh-context review) and the `split:` line asking for
+`considered: <the parts you weighed>` on a `no` (#122, OpenCode 2.0.26), `longcat-2.5-preview-free`
+passes the fan-out, 8 of 8, in 9 model requests (`split: 2 parts: helper A runs …, helper B runs …`,
+no skill loaded, one group, `RESULTS 391 1024`), and the recursive scenario twice, 9 of 9 each, in 26
+and 24 model requests across five sessions: the root loaded the skill both times, the "numbers"
+session split into a group of its own both times, and every report carried `done`. None of the five
+`split: no` lines in those runs added `considered:`; each did a one-command part and wrote `because
+… no independent parts` or `a single sequential task` instead, which says what was weighed in other
+words. Whether a root given an issue-sized task names its parts there is for the next dogfood run.
+The file-writing prompt above that drew a `no` after #119 drew no decision line at all this time:
+no skill loaded, both commands run as background shells, no RESULTS line.
+
 With the isolated-child brief (nested isolation), `longcat-2.5-preview-free` passes the fan-out with
 `COURIER_PROMPT` asking for two `isolate: true` helpers that each create a file and commit it: both
 created `courier/<their session ID>`, committed on it and named it in their report. One child took

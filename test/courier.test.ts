@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "../src/courier.js"
 import { DEFAULT_LIMITS } from "../src/limits.js"
 import { childBrief, envelope, reportBody } from "../src/notices.js"
-import { joinGroup, memberKey } from "../src/group.js"
+import { dropMember, joinGroup, memberKey } from "../src/group.js"
 import { progressKey, settledKey } from "../src/report.js"
 import { record, rosterKey } from "../src/roster.js"
 
@@ -630,6 +630,19 @@ describe("send, from a member of a group", () => {
     expect(store.has(memberKey("ses_parent", "pair", "ses_child"))).toBe(false)
     expect(nudges).toHaveLength(1)
     expect(logs).toEqual(["courier_send: ses_child's place in group pair could not be read, so its report goes on its own: Error: locked"])
+  })
+
+  test("a member the parent dropped reports on its own, in no group, and a blocked one passes through too", async () => {
+    const { ports, calls, store } = fakePorts()
+    await grouped(ports)
+    await dropMember(ports.storage, "ses_parent", "pair", "ses_child", 60)
+
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done", report: true })
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "Which?", status: "blocked" })).toEqual({ messageID: "msg_2", status: "blocked", report: true })
+
+    expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(2)
+    // Neither held nor dropped again: the member keeps standing as dropped.
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({ title: "A", joinedAt: 1, left: { at: 60, by: "dropped" } })
   })
 
   test("a message to any session but the parent is not held", async () => {

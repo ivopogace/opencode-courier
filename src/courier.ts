@@ -286,13 +286,16 @@ async function noteReport(ports: CourierPorts, from: string, to: string, status:
 }
 
 /**
- * A child's membership of an open group of its parent's, by its roster entry. One that cannot be read is dropped
- * from the group, best effort, as the report then goes on its own and the group must not wait for it.
+ * A child's membership of an open group of its parent's, by its roster entry: undefined for one its
+ * parent dropped, whose report then goes on its own, as for one whose membership cannot be read, which
+ * is dropped from the group, best effort, as the group must not wait for it either.
  */
 async function memberIn(ports: CourierPorts, entry: RosterEntry): Promise<Membership | undefined> {
   if (!entry.group) return undefined
   try {
-    return await membershipOf(ports.storage, entry.parentID, entry.group, entry.sessionID)
+    const member = await membershipOf(ports.storage, entry.parentID, entry.group, entry.sessionID)
+    // Dropped by the parent, its report is no longer one the group holds or waits for.
+    return member && standingOf(member) === "dropped" ? undefined : member
   } catch (error) {
     ports.log(`courier_send: ${entry.sessionID}'s place in group ${entry.group} could not be read, so its report goes on its own: ${String(error)}`)
     await ports.storage.remove(memberKey(entry.parentID, entry.group, entry.sessionID)).then(() => ports.nudge(), () => undefined)

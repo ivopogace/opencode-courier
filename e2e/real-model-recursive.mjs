@@ -229,7 +229,7 @@ if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.
 const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()
 for (const [id, entry] of tree) {
   const decision = splitLineOf((turnsOf(entry.list)[0] ?? []).filter((message) => message.type === "assistant").map(textOf).join("\n"))
-  if (decision) notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} stated: ${decision.slice(0, 160)}`)
+  if (decision) notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} stated: ${decision.slice(0, 320)}`)
 }
 for (const [id, entry] of orchestrators) {
   const groups = [...new Set(toolsOf(entry.list).filter((part) => childOf(part) && part.state.input?.group).map((part) => part.state.input.group))]

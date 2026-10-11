@@ -235,7 +235,7 @@ const notes = []
 const loads = parentTools.filter((part) => part.name === "skill" && part.state.status === "completed").map((part) => part.state.input?.id)
 notes.push(loads.length ? `the parent loaded the skill(s): ${loads.join(", ")}` : "the parent loaded no skill")
 const decision = splitLineOf(firstText)
-notes.push(decision ? `the parent's split decision: ${decision.slice(0, 160)}` : "the parent stated no split decision in its first turn")
+notes.push(decision ? `the parent's split decision: ${decision.slice(0, 320)}` : "the parent stated no split decision in its first turn")
 const native = parentTools.filter((part) => part.name === "subagent")
 if (native.length) notes.push(`the parent also used OpenCode's own subagent tool ${native.length} time(s)`)
 const selfWorked = expected.filter((value) => firstText.includes(value))

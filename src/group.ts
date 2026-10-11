@@ -59,7 +59,7 @@ function readMember(value: unknown): Member | undefined {
     title,
     joinedAt,
     ...(report ? { report } : {}),
-    ...(by === "failed" || by === "interrupted" || by === "deleted" ? { left: { at: num(left.at) ?? 0, by } } : {}),
+    ...(by === "failed" || by === "interrupted" || by === "deleted" || by === "dropped" ? { left: { at: num(left.at) ?? 0, by } } : {}),
   }
 }
 

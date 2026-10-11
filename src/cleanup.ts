@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { isAbsolute } from "node:path"
+import { markLeft, membershipOf } from "./group.js"
 import { keepReason, type CleanupResult } from "./notices.js"
 import { remove, rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
 
@@ -25,6 +26,8 @@ export interface CleanupPorts {
   readonly projectID: string
   /** The worktree's state, or undefined when its directory no longer exists; `base` is the commit it was made from. */
   readonly inspect: (directory: string, base?: string) => Promise<WorktreeState | undefined>
+  /** When a member still out is dropped from its group. */
+  readonly now: () => number
   /** Has the scheduler deliver what is due now: a group the forgotten child may have been the last member out of. */
   readonly nudge: () => void
 }
@@ -38,28 +41,21 @@ export interface CleanupInput {
 export const MAX_LISTED = 50
 
 /**
- * Removes the worktree of an isolated child the parent started, and forgets the child. One with
- * uncommitted changes or commits found nowhere else is kept unless `force` is set; the result says so.
+ * Forgets a child the parent started, removing its worktree if it is isolated. A worktree with uncommitted changes
+ * or commits found nowhere else is kept unless `force` is set; the result says so.
  */
 export async function cleanup(ports: CleanupPorts, parentID: string, input: CleanupInput): Promise<CleanupResult> {
   const entry = (await ports.storage.get(rosterKey(parentID, input.sessionID))) as unknown as RosterEntry | undefined
   if (!entry) throw new Error(`${input.sessionID} is not on the courier_children list of ${parentID}.`)
-  if (!entry.isolated)
-    throw new Error(`${input.sessionID} ran in ${entry.directory}, not in a worktree of its own; there is nothing to remove.`)
   const { directory } = entry
-  const forget = async () => {
-    const { droppedFromGroup } = await remove(ports.storage, parentID, input.sessionID, entry.group)
-    if (droppedFromGroup) ports.nudge()
-  }
+  const forget = () => forgetChild(ports, entry)
+  if (!entry.isolated) return { sessionID: input.sessionID, directory, outcome: "forgotten", ...(await forget()) }
   // With force the state only decides whether there is anything left to remove, so a worktree git
   // can no longer read is still removed.
   const state = await ports
     .inspect(directory, entry.base)
     .catch((error: unknown) => (input.force ? { changes: [], commits: [] } : Promise.reject(error)))
-  if (!state) {
-    await forget()
-    return { sessionID: input.sessionID, directory, outcome: "gone" }
-  }
+  if (!state) return { sessionID: input.sessionID, directory, outcome: "gone", ...(await forget()) }
   const reason = keepReason(state)
   if (reason && !input.force)
     return {
@@ -75,8 +71,18 @@ export async function cleanup(ports: CleanupPorts, parentID: string, input: Clea
     directory,
     force: input.force === true,
   })
-  await forget()
-  return { sessionID: input.sessionID, directory, outcome: "removed" }
+  return { sessionID: input.sessionID, directory, outcome: "removed", ...(await forget()) }
+}
+
+/**
+ * Drops a member still out from its group as `dropped`, so the group is released without it, then the roster entry
+ * and report state. A held report stays with its group. Returns the group it was dropped from.
+ */
+async function forgetChild(ports: CleanupPorts, entry: RosterEntry) {
+  const member = entry.group ? await membershipOf(ports.storage, entry.parentID, entry.group, entry.sessionID) : undefined
+  if (member?.out && (await markLeft(ports.storage, member, "dropped", ports.now()))) ports.nudge()
+  await remove(ports.storage, entry.parentID, entry.sessionID)
+  return member?.out ? { group: member.group } : {}
 }
 
 /** Names the git to run, by absolute path, overriding the places `GIT_LOCATIONS` lists. */

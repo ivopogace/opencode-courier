@@ -517,6 +517,20 @@ describe("send, from a member of a group", () => {
     expect(nudges).toEqual([])
   })
 
+  test("a member courier_cleanup dropped reports on its own, as a child in no group, and stays dropped", async () => {
+    const { ports, calls, store } = fakePorts()
+    await grouped(ports)
+    const dropped = { title: "A", joinedAt: 1, left: { at: 50, by: "dropped" } }
+    store.set(memberKey("ses_parent", "pair", "ses_child"), dropped)
+
+    const sent = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done after all.", status: "done" })
+
+    expect(sent).toMatchObject({ status: "done", report: true })
+    expect(sent).not.toHaveProperty("held")
+    expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(1)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual(dropped)
+  })
+
   test("has the scheduler deliver the group once the last member's report is held", async () => {
     const { ports, nudges } = fakePorts()
     await grouped(ports)

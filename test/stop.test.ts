@@ -62,6 +62,7 @@ async function fixture(options: { idle?: string[]; missing?: string[]; failing?:
   const cleanupPorts = {
     storage,
     projectID: "proj",
+    now: () => 5_000,
     nudge: courier.nudge,
     worktree: { remove: async (input: any) => void removed.push(input) },
     inspect: async (directory: string) => (options.inspect ? options.inspect(directory) : { changes: [], commits: [] }),

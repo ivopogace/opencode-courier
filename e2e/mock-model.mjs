@@ -245,6 +245,14 @@ function decide(body) {
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
   if (recent.includes("COURIER-GROUP-NESTED")) return { tool: "courier_spawn", args: { task: "CHILD-GROUPS" } }
   if (recent.includes("COURIER-GROUP-SPLIT")) return { tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } }
+  // COURIER-GROUP-DROP starts two children at once in one group; the second ends its turn without a report.
+  if (recent.includes("COURIER-GROUP-DROP"))
+    return {
+      calls: [
+        { tool: "courier_spawn", args: { task: "Report back to your parent.", group: "pair" } },
+        { tool: "courier_spawn", args: { task: "CHILD-SILENT", group: "pair" } },
+      ],
+    }
   // COURIER-GROUP starts two children at once in one group; with -BLOCKED, the second needs a decision first.
   const group = recent.match(/COURIER-GROUP(-BLOCKED)?/)
   if (group)

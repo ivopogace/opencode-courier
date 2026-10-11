@@ -264,6 +264,33 @@ check "answered, the blocked member reported, and the group went to the parent i
     contains("reports=\"2\"") and contains("CHILD DONE AFTER NUDGE") and contains("\": done\nCHILD DONE\n"))')"
 check "and the group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
 
+echo "a member that ends silently, dropped with courier_cleanup, releases its group without it, and its late report comes on its own"
+out=$(prompt "COURIER-GROUP-DROP")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
+check "the parent was told a member ended without a report" "$([ -n "$(reply_time "$parent" "PARENT TOLD SILENT" 45)" ] && echo true || echo false)"
+silent=$(notices_with "$parent" ended | jq -r '.[0] | capture("^<courier from=\"(?<from>ses_\\w+)\"").from')
+reported=$(grep -vxF "$silent" <<<"$members" || true)
+check "the notice offers to drop it with courier_cleanup" "$(notices_with "$parent" ended | jq -r '.[0] | contains("drop it with courier_cleanup")')"
+check "the other member's report is held, and nothing else reached the parent" \
+  "$([ -n "$reported" ] && [ "$(kv get "group/$parent/pair/$reported" | jq -r '.report.status')" = done ] && notices_with "$parent" group | jq -r 'length == 0')"
+cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $silent" | tool_state courier_cleanup)
+check "courier_cleanup forgot it, with no worktree to remove, and dropped it from the group" \
+  "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "forgotten" and .metadata.metadata.group == "pair" and (.output | contains("Dropped it from group \"pair\""))' <<<"$cleaned")"
+check "it is off the roster, with its reverse key and report state" \
+  "$([ -z "$(kv get "roster/$parent/$silent")$(kv get "roster-by-child/$silent")$(kv get "report/$silent/prompt")" ] && echo true || echo false)"
+check "the group reached the parent at once, in one message, with the held report and the dropped member named" \
+  "$(for _ in $(seq 1 10); do [ "$(notices_with "$parent" group | jq -r 'length')" = 1 ] && break; sleep 1; done
+     notices_with "$parent" group | jq -r --arg silent "$silent" --arg reported "$reported" 'length == 1 and (.[0] |
+       startswith("<courier from=\"" + $reported + "\" group=\"pair\" reports=\"1\">") and
+       contains("1 report of 2 members (1 done), 1 member without a report") and contains("CHILD DONE") and
+       contains("Without a report: " + $silent + " \"CHILD-SILENT\" (you dropped it with courier_cleanup)."))')"
+check "and the group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
+prompt_in "$parent" "COURIER-NUDGE $silent" >/dev/null
+check "told to report after all, the dropped member's report reached the parent on its own, as a child in no group" \
+  "$(has_text "$parent" "<courier from=\"$silent\" status=\"done\">" 45)"
+check "and no group was opened again for it" "$([ -z "$(kv get "group/$parent/pair/$silent")" ] && notices_with "$parent" group | jq -r 'length == 1')"
+
 echo "a group whose members report before the parent's turn has ended goes out once it has, in one message"
 out=$(prompt "COURIER-GROUP-SPLIT")
 turn_ended=$(now_ms)

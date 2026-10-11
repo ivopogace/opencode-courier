@@ -371,7 +371,7 @@ exports[`tools courier_stop 1`] = `
 
 exports[`tools courier_cleanup 1`] = `
 {
-  "description": "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and the result lists them; commit or branch what you want, or pass force: true to discard it.",
+  "description": "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and the result lists them; commit or branch what you want, or pass force: true to discard it. A session that ran in your own directory has no worktree: it is only dropped, from courier_children and from any join group it was in, whose held reports then reach you without it.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -387,7 +387,7 @@ exports[`tools courier_cleanup 1`] = `
         ],
       },
       "sessionID": {
-        "description": "The isolated child whose worktree to remove.",
+        "description": "The child to drop: its worktree, if it ran in one of its own, is removed, and it is dropped from courier_children and any join group it was in.",
         "type": "string",
       },
     },
@@ -900,7 +900,9 @@ exports[`tool results cleanupText 1`] = `"Removed the worktree /wt of ses_child.
 
 exports[`tool results cleanupText 2`] = `"The worktree /wt of ses_child was already gone; dropped it from courier_children."`;
 
-exports[`tool results cleanupText 3`] = `"Kept the worktree /wt of ses_child: it has 1 uncommitted change (a.ts). Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it."`;
+exports[`tool results cleanupText 3`] = `"ses_child ran in /repo, not in a worktree of its own; dropped it from courier_children."`;
+
+exports[`tool results cleanupText 4`] = `"Kept the worktree /wt of ses_child: it has 1 uncommitted change (a.ts). Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it."`;
 
 exports[`tool results keepReason 1`] = `"1 uncommitted change (a.ts)"`;
 
@@ -993,7 +995,7 @@ Done, I think.
 
 Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
 Until it reports, it counts toward your limits on the sessions you run at once.
-It is a member of group "reviews", whose other reports are held until it reports: have it report, as above, so the group reaches you."
+It is a member of group "reviews", whose other reports are held until it reports: have it report, as above, so the group reaches you, or drop it with courier_cleanup, which releases the group without it and names it in its message, with why."
 `;
 
 exports[`join groups groupNotice 1`] = `
@@ -1029,6 +1031,22 @@ Artifacts:
   - bun test: ok
 
 Without a report: ses_d "Review d.ts" (its turn failed), ses_e "Review e.ts" (it was deleted), ses_f "Review f.ts" (its turn was interrupted).
+
+Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
+`;
+
+exports[`join groups groupNotice 3`] = `
+"Group "reviews" is complete: 1 report of 2 members (1 done), 1 member without a report, named at the end. Each report follows, with its status.
+
+[1/1] ses_a "Review a.ts": done
+Looks fine.
+
+Artifacts:
+- files: src/a.ts
+- checks:
+  - bun test: ok
+
+Without a report: ses_g "Review g.ts" (its parent dropped it).
 
 Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
 `;

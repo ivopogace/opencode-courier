@@ -59,7 +59,7 @@ function readMember(value: unknown): Member | undefined {
     title,
     joinedAt,
     ...(report ? { report } : {}),
-    ...(by === "failed" || by === "interrupted" || by === "deleted" ? { left: { at: num(left.at) ?? 0, by } } : {}),
+    ...(by === "failed" || by === "interrupted" || by === "deleted" || by === "dropped" ? { left: { at: num(left.at) ?? 0, by } } : {}),
   }
 }
 
@@ -169,11 +169,15 @@ export async function unholdForBlocked(storage: Pick<Storage, "get" | "set">, me
   await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt }))
 }
 
-/** Drops a member from its group as its roster entry goes, unless its report is held: that still goes to the parent. True when dropped. */
-export async function dropMember(storage: Pick<Storage, "get" | "remove">, parentID: string, group: string, sessionID: string) {
+/**
+ * Drops a member from its group as its roster entry goes: marked as left as dropped, so the group is
+ * released without it and its message names it, with why. Unless its report is held, which still goes
+ * to the parent, or it already left, which keeps why. True when dropped.
+ */
+export async function dropMember(storage: Pick<Storage, "get" | "set">, parentID: string, group: string, sessionID: string, at = 0) {
   const member = await memberOf(storage, parentID, group, sessionID)
-  if (!member || member.report) return false
-  await storage.remove(memberKey(parentID, group, sessionID))
+  if (!member || member.report || member.left) return false
+  await storage.set(memberKey(parentID, group, sessionID), stored({ title: member.title, joinedAt: member.joinedAt, left: { at, by: "dropped" } }))
   return true
 }
 

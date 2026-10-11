@@ -206,6 +206,12 @@ function decide(body) {
   const form = recent.match(/<courier from="ses_\w+" asks="form" form="([^"]+)"/)
   if (form) return { text: `PARENT TOLD FORM ${form[1]}` }
   if (/<courier from="ses_\w+" (answered|settled)=/.test(recent)) return { text: "PARENT SETTLED" }
+  // In the drop scenario, a parent told of a member that ended without a report drops it from the group.
+  const dropping = messages.some((message) => message.role === "user" && textOf(message.content).includes("COURIER-GROUP-DROP"))
+  if (dropping) {
+    const silent = [...recent.matchAll(/<courier from="(ses_\w+)" ended="without-report">/g)].at(-1)
+    if (silent) return { tool: "courier_cleanup", args: { sessionID: silent[1] } }
+  }
   if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
   // A group's reports, in one message, or a member's blocked report, which is not held.
   // A middle session reports its group's message on; a root parent ends its turn on it.
@@ -245,6 +251,14 @@ function decide(body) {
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
   if (recent.includes("COURIER-GROUP-NESTED")) return { tool: "courier_spawn", args: { task: "CHILD-GROUPS" } }
   if (recent.includes("COURIER-GROUP-SPLIT")) return { tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } }
+  // COURIER-GROUP-DROP starts two children at once in one group; the second ends its turn without a report.
+  if (recent.includes("COURIER-GROUP-DROP"))
+    return {
+      calls: [
+        { tool: "courier_spawn", args: { task: "Report back to parent.", group: "pair" } },
+        { tool: "courier_spawn", args: { task: "CHILD-SILENT", group: "pair" } },
+      ],
+    }
   // COURIER-GROUP starts two children at once in one group; with -BLOCKED, the second needs a decision first.
   const group = recent.match(/COURIER-GROUP(-BLOCKED)?/)
   if (group)

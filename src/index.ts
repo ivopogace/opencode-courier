@@ -5,23 +5,32 @@ import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
 import type { CourierPorts } from "./courier.js"
 import { dirtyOf, headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
-import { gate, hub, inbox, join, nudge, permissions, portsAt, track, type Member, type Receiver } from "./platform/hub.js"
+import { hub, join, nudge, permissions as domains, sharedState, track, type Member } from "./platform/hub.js"
 import type { LaterPorts } from "./later.js"
-import { readLimits, shapeContext } from "./limits.js"
-import { pendingOf, type AnswerPorts } from "./relay.js"
-import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question/index.js"
+import { readLimits, shapeContext, type SpawnGate } from "./limits.js"
+import { pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
+import { joinRelay, noticeCutOff, pendingQuestions, portsAt, relayQuestions, type QuestionPorts } from "./question/index.js"
 import { pruneExpired } from "./roster.js"
 import { addSkill } from "./skill.js"
 import { addTools, type ToolPorts } from "./tools.js"
 import { watchFromHub, type WatchPorts, type WatchState } from "./watch.js"
 import { builtVersions, versionNotice } from "./platform/version.js"
-import { listen, readConfig, type WebhookConfig, type WebhookPorts } from "./webhook.js"
+import { listen, readConfig, type Receiver, type Receivers, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
 /**
  * The webhook receiver, one per process: instances with a `webhook` option join `instances`, the first
  * starts the server and the last to unload stops it; one that could not listen is dropped for a retry.
  */
-const receivers = hub.receivers
+const receivers = sharedState<Receivers>("receiver", () => ({}))
+
+/** The spawns under way in the process, outside the hub, so spawns in other locations, copies and hub versions count them. */
+const gate = sharedState<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() }))
+
+/** The type of each item enqueued for a spawned session, outside the hub like the gate. */
+const inbox = sharedState("inbox", () => new Map<string, string>())
+
+/** The permission domains of the loaded instances: every member's is its location's, whichever copy joined it. */
+const permissions = domains as () => Iterable<Permissions>
 
 const sameSettings = (a: WebhookConfig, b: WebhookConfig) =>
   a.port === b.port && a.host === b.host && a.secret === b.secret && a.maxBytes === b.maxBytes

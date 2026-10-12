@@ -46,6 +46,22 @@ export interface Subscription {
 }
 
 /** The receiver's settings, from the plugin's `webhook` option. */
+/**
+ * The webhook receiver, one per process: every instance configured with a `webhook` option joins
+ * `instances`, the first one starts the server, and the last one to unload stops it.
+ */
+export interface Receiver {
+  readonly config: WebhookConfig
+  readonly instances: Set<WebhookPorts>
+  readonly server: Promise<Server | undefined>
+}
+
+/** The current receiver, if any, and the previous one while it closes, which a new one waits for. */
+export interface Receivers {
+  current?: Receiver
+  closing?: Promise<void>
+}
+
 export interface WebhookConfig {
   readonly port: number
   readonly host: string

@@ -4,15 +4,8 @@ import { admit, type Limits, type SpawnGate } from "./limits.js"
 import { envelope, isStatus, STATUSES, describeFailure, type Status } from "./kernel/protocol.js"
 import { childBrief, childBranch, reportBody } from "./notices.js"
 import { progressed, progressKey, prompted, settled, settledKey, type Artifacts } from "./report.js"
+import type { Prompt } from "./question/index.js"
 import { current, indexedEntry, record, type RosterEntry, type RosterStorage } from "./roster.js"
-
-/** One question of OpenCode's question tool, as the asking model wrote it. */
-export interface Prompt {
-  readonly question: string
-  readonly header: string
-  readonly options: ReadonlyArray<{ readonly label: string; readonly description: string }>
-  readonly multiple?: boolean
-}
 
 /** A report held with its group: which group, and how many of its members have reported so far, when that could be read. */
 export interface Held {

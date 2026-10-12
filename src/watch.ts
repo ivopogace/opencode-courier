@@ -1,7 +1,6 @@
-import { addBounded, setBounded } from "./platform/bounded.js"
+import type { Plugin } from "@opencode/plugin"
 import { lastReply } from "./courier.js"
 import { dropGroups, hasCompleteGroup, markLeft, membershipOf, type Membership } from "./group.js"
-import type { Hub, Member, WatchPorts, WatchState } from "./platform/hub.js"
 import { envelope } from "./kernel/protocol.js"
 import {
   failureNotice,
@@ -20,10 +19,13 @@ import {
   type FormSettled,
   type PermissionAsked,
   type PermissionReplied,
+  type Waiting,
 } from "./relay.js"
 import { scheduledFor } from "./later.js"
+import { addBounded, setBounded } from "./platform/bounded.js"
+import type { FormsTold, Hub, Member } from "./platform/hub.js"
 import { awaited, forgetReport, prompted, reportOf, settled, stoppedSincePrompt, told, untold } from "./report.js"
-import { allEntries, children, entriesOf, entryUnder, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
+import { allEntries, children, entriesOf, entryUnder, indexedEntry, indexedParent, lineage, type RosterEntry, type RosterStorage } from "./roster.js"
 import { subscriptions } from "./webhook.js"
 
 /** The error of OpenCode's `session.execution.failed` event. */
@@ -33,7 +35,39 @@ export interface ExecutionError {
   readonly status?: number
 }
 
-export type { FormsTold, WatchPorts, WatchState } from "./platform/hub.js"
+type Context = Plugin.Context
+
+export type { FormsTold } from "./platform/hub.js"
+
+export interface WatchPorts {
+  readonly storage: RosterStorage
+  /** `context` reads the last reply of a session that ended its turn without reporting. */
+  readonly session: Pick<Context["session"], "synthetic" | "context">
+  readonly event: Pick<Context["event"], "subscribe">
+  /**
+   * The permission domains of every loaded location, whose pending requests are relayed when the
+   * watcher (re)subscribes: one watcher serves them all, and an isolated child's are in its worktree's.
+   */
+  readonly permissions: () => Iterable<Pick<Context["permission"], "list">>
+  /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
+  readonly now: () => number
+  readonly log: (message: string) => void
+  /** Has the scheduler deliver what is due now rather than at its next tick: a group completed, or its parent's turn ended. */
+  readonly nudge: () => void
+}
+
+/**
+ * What every plugin instance in the process shares. Several subscriptions and copies see the same
+ * events, so each is claimed synchronously and handled once; `answered` keeps stale notices unsent.
+ */
+export interface WatchState {
+  readonly seen: Set<string>
+  readonly waiting: Waiting
+  readonly answered: Set<string>
+  readonly forms: FormsTold
+  /** The type of each item enqueued for a spawned session, by inbox id, for its delivery to look up. */
+  readonly inbox: Map<string, string>
+}
 
 /** How long to wait before subscribing again after the event stream ended or broke. */
 export const RESUBSCRIBE_MS = 5_000
@@ -514,6 +548,7 @@ export async function watchChildren(ports: WatchPorts, state: WatchState, signal
 export function watchFromHub(hub: Pick<Hub, "subscribe">, state: WatchState, retryMs = RESUBSCRIBE_MS) {
   hub.subscribe = (member: Member) => {
     const stop = new AbortController()
-    return { member, stop, done: watchChildren(member.watch, state, stop.signal, retryMs) }
+    // Every hub-v2 member's `watch` is its instance's WatchPorts, whichever copy joined it.
+    return { member, stop, done: watchChildren(member.watch as WatchPorts, state, stop.signal, retryMs) }
   }
 }

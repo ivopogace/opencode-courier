@@ -14,8 +14,10 @@ import {
   type PermissionAsked,
   type PermissionReplied,
 } from "../src/relay.js"
-import { hub as processHub, open, resetHub, type Hub, type Member } from "../src/platform/hub.js"
+import { open, type Hub, type Member } from "../src/platform/hub.js"
+import { resetHub } from "./fixtures/reset.js"
 import { shutdownReportedAt } from "../src/question/index.js"
+import { shared as relayState } from "../src/question/shared.js"
 import { send, type CourierPorts } from "../src/courier.js"
 import { joinGroup, memberKey, memberOf } from "../src/group.js"
 import { reportOf, prompted, promptKey, settledKey, stopped, toldKey } from "../src/report.js"
@@ -1492,13 +1494,13 @@ describe("the hub's subscriptions: one active, one standby", () => {
     const [a, b, c] = [member("a"), member("b"), member("c")]
     const unloadA = load(opened, a)
     expect(watchingThrough(opened.hub)).toEqual([a.joined])
-    expect(processHub.questions.following).toBe(1)
+    expect(relayState.following).toBe(1)
 
     const unloadB = load(opened, b)
     const unloadC = load(opened, c)
     expect(watchingThrough(opened.hub)).toEqual([a.joined, b.joined])
     expect([a.subscriptions(), b.subscriptions(), c.subscriptions()]).toEqual([1, 1, 0])
-    expect(processHub.questions.following).toBe(2)
+    expect(relayState.following).toBe(2)
 
     // An instance with no subscription leaves without touching them.
     await unloadC()
@@ -1510,7 +1512,7 @@ describe("the hub's subscriptions: one active, one standby", () => {
     await unloadB()
     expect(watchingThrough(opened.hub)).toEqual([])
     expect([a.ended(), b.ended()]).toEqual([1, 1])
-    expect(processHub.questions.following).toBe(0)
+    expect(relayState.following).toBe(0)
     resetHub()
   })
 
@@ -1524,14 +1526,14 @@ describe("the hub's subscriptions: one active, one standby", () => {
     const unloadB = load(opened, b, state)
     const unloadC = load(opened, c, state)
     let released = false
-    processHub.questions.shown.set("ses_child call_1", () => (released = true))
+    relayState.shown.set("ses_child call_1", () => (released = true))
 
     const ended = unloadA()
     // Never fewer than one subscription following the events, so nothing is taken as missed.
     expect(watchingThrough(opened.hub)).toEqual([b.joined, c.joined])
-    expect(processHub.questions.following).toBe(3)
+    expect(relayState.following).toBe(3)
     await ended
-    expect(processHub.questions.following).toBe(2)
+    expect(relayState.following).toBe(2)
     expect([b.subscriptions(), c.subscriptions()]).toEqual([1, 1])
 
     // The new standby, like any subscription, relays what is already pending, once.
@@ -1541,7 +1543,7 @@ describe("the hub's subscriptions: one active, one standby", () => {
 
     await unloadB()
     await unloadC()
-    expect(processHub.questions.following).toBe(0)
+    expect(relayState.following).toBe(0)
     resetHub()
   })
 

@@ -1,6 +1,5 @@
 import { Deferred, Effect, Semaphore } from "effect"
-import type { Prompt } from "../courier.js"
-import type { Answers, Asked, Outcome, QuestionPorts } from "../platform/hub.js"
+import type { Answers, Asked, Outcome, Prompt, QuestionPorts } from "./types.js"
 import { envelope } from "../kernel/protocol.js"
 import { cutOffAnswer, questionNotice, type CutOff } from "../notices.js"
 import { allEntries, answeringTop, lineageIn, RETENTION_MS, type RosterStorage } from "../roster.js"

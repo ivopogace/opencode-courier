@@ -15,11 +15,13 @@ import {
   join,
   open,
   permissions,
-  portsAt,
-  resetHub,
+  sharedState,
   type Member,
   type Timers,
 } from "../src/platform/hub.js"
+import type { QuestionPorts } from "../src/question/index.js"
+import { portsAt, questionState, shared as relayState } from "../src/question/shared.js"
+import { resetHub } from "./fixtures/reset.js"
 import { TICK_MS, type LaterEntry, type LaterPorts } from "../src/later.js"
 
 const LEGACY = ["claimed", "watched", "forms", "questions", "receiver", "locations"]
@@ -134,11 +136,14 @@ describe("the hub", () => {
     expect(at(registry, HUB_KEY)).toBe(fresh)
     expect(fresh.claimed).toBe(claimed)
     expect(fresh.watched).toBe(watched)
-    expect(fresh.questions).toBe(questions as never)
-    expect(fresh.questions.noticed.has("question_1")).toBe(true)
-    expect(fresh.questions.loaded).toBeInstanceOf(Set)
-    expect(fresh.questions.following).toBe(0)
-    expect(fresh.questions.followed).toBe(false)
+    expect(fresh.questions).toBe(questions)
+    // The question relay fills in the fields its state lacks, on the hub's own object.
+    const filled = questionState(registry)
+    expect(filled).toBe(fresh.questions as never)
+    expect(filled.noticed.has("question_1")).toBe(true)
+    expect(filled.loaded).toBeInstanceOf(Set)
+    expect(filled.following).toBe(0)
+    expect(filled.followed).toBe(false)
     // The ones the earlier copy did not make are made, under their keys, for the copies after.
     expect(at(registry, "opencode-courier.forms")).toBe(fresh.forms)
     expect(at(registry, "opencode-courier.receiver")).toBe(fresh.receivers)
@@ -162,8 +167,6 @@ describe("the hub", () => {
     expect(skewed.hub.version).toBe(HUB_VERSION)
     // The claim set is the one every copy claims in, so an older copy and this one never both act.
     expect(skewed.hub.claimed).toBe(claimed)
-    // The inbox item types are kept outside the hub, so this copy shares them with the current one.
-    expect(at(registry, "opencode-courier.inbox")).toBe(skewed.inbox)
 
     const logs: string[] = []
     const leaveA = skewed.join(member("/a", (message) => logs.push(message)))
@@ -218,6 +221,14 @@ describe("the hub", () => {
     })
   })
 
+  test("keeps a shared value under its key of its own, outside the hub, the same one for every copy and hub version", () => {
+    const registry: Record<symbol, unknown> = {}
+    const inbox = sharedState("inbox", () => new Map<string, string>(), registry)
+    expect(at(registry, "opencode-courier.inbox")).toBe(inbox)
+    expect(sharedState("inbox", () => new Map<string, string>(), registry)).toBe(inbox)
+    expect(Object.values(open(registry).hub)).not.toContain(inbox)
+  })
+
   test("resetHub forgets the remembered ids and the question relay's state, not the joined instances", () => {
     const leave = join(member("/a"))
     hub.claimed.add("later_1")
@@ -226,19 +237,19 @@ describe("the hub", () => {
     hub.watched.answered.add("per_2")
     hub.forms.told.set("form_1", Promise.resolve())
     hub.forms.settled.add("form_2")
-    hub.questions.noticed.add("question_1")
-    hub.questions.answered.add("question_2")
-    hub.questions.shutdowns.set("/a", 1)
-    hub.questions.following = 2
-    hub.questions.followed = true
+    relayState.noticed.add("question_1")
+    relayState.answered.add("question_2")
+    relayState.shutdowns.set("/a", 1)
+    relayState.following = 2
+    relayState.followed = true
 
     resetHub()
 
     expect(hub.claimed.size + hub.watched.seen.size + hub.watched.waiting.size + hub.watched.answered.size).toBe(0)
     expect(hub.forms.told.size + hub.forms.settled.size).toBe(0)
-    expect(hub.questions.noticed.size + hub.questions.answered.size + hub.questions.shutdowns.size).toBe(0)
-    expect(hub.questions.following).toBe(0)
-    expect(hub.questions.followed).toBe(false)
+    expect(relayState.noticed.size + relayState.answered.size + relayState.shutdowns.size).toBe(0)
+    expect(relayState.following).toBe(0)
+    expect(relayState.followed).toBe(false)
     expect(hub.members.size).toBe(1)
     leave()
   })
@@ -1078,8 +1089,8 @@ describe("a leave", () => {
 describe("the question relay's binding to its member", () => {
   test("holds the member that joined last at the location, until it leaves, whoever joins there after", async () => {
     const location = { directory: "/a" }
-    const first = { ...member("/a"), location, questions: { directory: "/a", which: "first" } } as unknown as Member
-    const second = { ...member("/a"), location, questions: { directory: "/a", which: "second" } } as unknown as Member
+    const first = { ...member("/a"), location, questions: { directory: "/a", which: "first" } as unknown as QuestionPorts }
+    const second = { ...member("/a"), location, questions: { directory: "/a", which: "second" } as unknown as QuestionPorts }
     const leaveFirst = join(first)
     const firstPorts = portsAt(location)
     expect(firstPorts()).toBe(first.questions)

@@ -225,9 +225,8 @@ export interface Opened {
 }
 
 /**
- * The one value of `name` every copy of the plugin in the process shares, under the key
- * `opencode-courier.<name>`, made by `create` the first time. Each key, and its value's shape, is
- * kept by every copy: a copy of another version, or one before the hub, may have made it.
+ * The value under `opencode-courier.<name>` every copy in the process shares, made by `create` the first
+ * time; another version, or a copy before the hub, may have made it, so its shape is kept for good.
  */
 export function sharedState<T>(name: string, create: () => T, registry: Registry = globalThis as Registry): T {
   return processWide(`opencode-courier.${name}`, create, registry)
@@ -261,9 +260,8 @@ function find(registry: Registry) {
 }
 
 /**
- * This copy's hub in `registry`, as `find` finds or makes it, and how its instances join it; its
- * ticks run `jobs` in order. The jobs live in this copy's tick, which the hub runs once a member of
- * this copy has joined last, never in the hub: a copy that unloads takes its jobs with it.
+ * This copy's hub in `registry`, and how its instances join it. Its ticks run `jobs` in order, kept in
+ * this copy's tick, which the hub runs once this copy has joined last, never in the hub itself.
  */
 export function open(registry: Registry, jobs: readonly TickJob[], timers: Timers = realTimers, server = SERVER): Opened {
   const { hub, skew } = find(registry)

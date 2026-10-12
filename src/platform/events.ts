@@ -13,17 +13,17 @@ export interface EventPorts {
   readonly log: (message: string) => void
 }
 
-/**
- * What a module does with OpenCode's events, by phase. For each event, every module's `handle` runs
- * in list order, the first to throw ending the phase; then, however it ended, every module's `after`.
- * Around each subscription: `followed` as it starts, returning what to run at its first event, if
- * anything; `subscribed` alongside it, which the watcher's end waits for; `left` once it has ended.
- */
+/** What a module does with OpenCode's events, by phase; each phase runs the modules in list order. */
 export interface EventModule<P extends EventPorts> {
+  /** For each event; the first to throw ends the phase. */
   readonly handle?: (ports: P, event: HostEvent) => Promise<unknown> | undefined
+  /** For each event, once the `handle` phase has ended, however it did; the first to throw ends this one too. */
   readonly after?: (ports: P, event: HostEvent) => Promise<void> | undefined
+  /** As a subscription starts; returns what to run at its first event, if anything. */
   readonly followed?: () => (() => void) | undefined
+  /** Alongside each (re)subscription; the watcher's end waits for it. */
   readonly subscribed?: (ports: P) => Promise<void>
+  /** Once a subscription has ended or broken. */
   readonly left?: () => void
 }
 
@@ -69,7 +69,7 @@ const until = <T>(events: AsyncIterator<T>, signal: AbortSignal): AsyncIterable<
   }),
 })
 
-/** One event through every module's `handle`, then, however that ended, every module's `after`. */
+/** One event through the `handle` phase, then, however that ended, the `after` phase. */
 async function handle<P extends EventPorts>(ports: P, modules: readonly EventModule<P>[], event: HostEvent) {
   try {
     for (const module of modules) {
@@ -105,33 +105,35 @@ function subscribed<P extends EventPorts>(ports: P, modules: readonly EventModul
   }
 }
 
-/**
- * Follows OpenCode's events through `ports` until `signal` aborts, subscribing again when the stream
- * ends or breaks, and runs each through `modules`' phases; ends after its current event.
- */
+/** One subscription, its events through `modules`' phases, until its stream ends or breaks or `signal` aborts. */
+async function subscription<P extends EventPorts>(ports: P, modules: readonly EventModule<P>[], signal: AbortSignal, alongside: Set<Promise<void>>) {
+  let following = false
+  let events: AsyncIterator<HostEvent> | undefined
+  try {
+    events = ports.event.subscribe({ signal })[Symbol.asyncIterator]()
+    let first = modules.flatMap((module) => module.followed?.() ?? [])
+    following = true
+    subscribed(ports, modules, alongside)
+    for await (const event of until(events, signal)) {
+      for (const run of first) run()
+      first = []
+      await handleLogged(ports, modules, event)
+    }
+  } catch (error) {
+    if (!signal.aborted) ports.log(`courier watch: event stream broke: ${String(error)}`)
+  } finally {
+    if (following) for (const module of modules) module.left?.()
+    // Closed without waiting: closing the adapter's stream waits on OpenCode, which may not answer
+    // while a location closes, and the leave waiting for this watcher must not wait for that too.
+    void events?.return?.().catch(() => {})
+  }
+}
+
+/** Follows OpenCode's events through `ports`, subscribing again after `retryMs` when a subscription ends, until `signal` aborts. */
 export async function follow<P extends EventPorts>(ports: P, modules: readonly EventModule<P>[], signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
   const alongside = new Set<Promise<void>>()
   while (!signal.aborted) {
-    let following = false
-    let events: AsyncIterator<HostEvent> | undefined
-    try {
-      events = ports.event.subscribe({ signal })[Symbol.asyncIterator]()
-      let first = modules.flatMap((module) => module.followed?.() ?? [])
-      following = true
-      subscribed(ports, modules, alongside)
-      for await (const event of until(events, signal)) {
-        for (const run of first) run()
-        first = []
-        await handleLogged(ports, modules, event)
-      }
-    } catch (error) {
-      if (!signal.aborted) ports.log(`courier watch: event stream broke: ${String(error)}`)
-    } finally {
-      if (following) for (const module of modules) module.left?.()
-      // Closed without waiting: closing the adapter's stream waits on OpenCode, which may not answer
-      // while a location closes, and the leave waiting for this watcher must not wait for that too.
-      void events?.return?.().catch(() => {})
-    }
+    await subscription(ports, modules, signal, alongside)
     if (!signal.aborted) await pause(retryMs, signal)
   }
   await Promise.allSettled(alongside)

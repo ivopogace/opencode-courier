@@ -223,9 +223,8 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
 }
 
 /**
- * Whether a session waits, since `since`, on something the tree does not keep: a port the silent-turn
- * rule asks after the tree's own children and groups, which `src/index.ts` composes from the modules
- * that keep it. `ports` are the watcher's, of whichever member the subscription runs through.
+ * Whether a session waits, since `since`, on what the tree does not keep: asked by the silent-turn
+ * rule after the tree's own checks, through the watcher's ports; `src/index.ts` composes it.
  */
 export type Waits = (ports: Pick<WatchPorts, "storage" | "permissions">, sessionID: string, since: number) => Promise<boolean>
 
@@ -457,9 +456,8 @@ function routePerson(ports: WatchPorts, state: WatchState, event: HostEvent) {
 }
 
 /**
- * Tells parents of a spawned child's failed or silent turn, unless it waits on what `outside` says, and
- * notes its prompts, interruptions and deletion; after every module has handled a turn's end, seals
- * the groups of the session it ended.
+ * Tells parents of a child's failed or silent turn, unless it waits on what `outside` says, and notes
+ * its prompts, interruptions and deletion; `after` a turn's end, seals the groups of its session.
  */
 export function treeEvents(state: WatchState, outside: Waits): EventModule<WatchPorts> {
   return {

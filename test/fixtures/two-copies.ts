@@ -114,10 +114,8 @@ finish()
 await settle()
 const otherCopy = { renewedAt, heldWhileDelivering, releasedAfter: !store.has(first.OWNER_KEY) && left }
 
-// Registration under skew: an older copy's instances /a, /b and /c, then a newer copy's /d, each copy
-// registering its own tick jobs and event modules as its plugin module does. The newer copy, joined
-// last, runs its own through the older copy's members: ticks through /a, the first loaded, and the
-// subscription replacing /a's through /c, the earliest without one.
+// Registration under skew: an older copy's /a, /b, /c, then a newer copy's /d, each with its own jobs
+// and event modules; the newer one's run through the older copy's /a (ticks) and /c (replacing /a's subscription).
 const ran: string[] = []
 const registry2: Record<symbol, unknown> = {}
 const keys = new Map<string, unknown>()

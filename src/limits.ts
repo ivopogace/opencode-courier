@@ -40,8 +40,8 @@ export interface Reservation {
 }
 
 /**
- * The spawns under way in the process, kept by the hub under a fixed key, so spawns in other
- * locations and copies count them; `turn` runs the limit checks one at a time.
+ * The spawns under way in the process, under a fixed process-wide key outside the hub, so spawns in
+ * other locations and copies count them; `turn` runs the limit checks one at a time.
  */
 export interface SpawnGate {
   readonly reserved: Set<Reservation>

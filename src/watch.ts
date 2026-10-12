@@ -2,8 +2,8 @@ import { addBounded, setBounded } from "./bounded.js"
 import { lastReply } from "./courier.js"
 import { dropGroups, hasCompleteGroup, markLeft, membershipOf, type Membership } from "./group.js"
 import type { Hub, Member, WatchPorts, WatchState } from "./hub.js"
+import { envelope } from "./kernel/protocol.js"
 import {
-  envelope,
   failureNotice,
   formNotice,
   formSettledNotice,
@@ -11,7 +11,6 @@ import {
   permissionNotice,
   permissionSettledNotice,
   silentNotice,
-  type ExecutionError,
 } from "./notices.js"
 import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing, pendingQuestions } from "./question/index.js"
 import {
@@ -26,6 +25,13 @@ import { scheduledFor } from "./later.js"
 import { awaited, forgetReport, prompted, reportOf, settled, stoppedSincePrompt, told, untold } from "./report.js"
 import { allEntries, children, entriesOf, entryUnder, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
 import { subscriptions } from "./webhook.js"
+
+/** The error of OpenCode's `session.execution.failed` event. */
+export interface ExecutionError {
+  readonly type: string
+  readonly message: string
+  readonly status?: number
+}
 
 export type { FormsTold, WatchPorts, WatchState } from "./hub.js"
 

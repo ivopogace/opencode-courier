@@ -1,11 +1,17 @@
 import type { Plugin } from "@opencode/plugin"
 import { setBounded } from "./bounded.js"
 import { isNotFound, millis, obj } from "./json.js"
-import { childrenRefusal, depthRefusal, ROLE_PREFIX, rolePart, totalRefusal, type Limits } from "./notices.js"
+import { childrenRefusal, depthRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "./notices.js"
 import { reportOf } from "./report.js"
 import { allEntries, bySession, children, indexedLineage, lineageBy, type RosterStorage } from "./roster.js"
 
-export type { Limits } from "./notices.js"
+/** The limits on the tree of sessions courier_spawn builds, from the plugin's options. */
+export interface Limits {
+  readonly maxDepth: number
+  readonly maxChildren: number
+  readonly maxTotal: number
+}
+
 
 type Context = Plugin.Context
 

@@ -5,8 +5,22 @@ import { createServer, type IncomingMessage, type Server } from "node:http"
 import { homedir } from "node:os"
 import { addBounded } from "./bounded.js"
 import { isNotFound, num, obj, str } from "./json.js"
-import { CI_EVENTS, envelope, githubSummary, hookSummary, webhookText } from "./notices.js"
+import { envelope } from "./kernel/protocol.js"
+import { CI_EVENTS, githubSummary, hookSummary, webhookText } from "./notices.js"
 import { scanAll } from "./storage.js"
+
+/** What every GitHub delivery carries, read once for the summary of its event. */
+export interface Delivery {
+  readonly name: string
+  readonly body: Record<string, any>
+  readonly repo: string
+  readonly action: string | undefined
+  readonly sender: string | undefined
+  /** ` by <sender>`, or nothing when the delivery names no sender. */
+  readonly by: string
+  /** The pull request and issue numbers it concerns, which `webhook.ts` reads for its topics. */
+  readonly numbers: readonly number[]
+}
 
 type Context = Plugin.Context
 

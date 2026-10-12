@@ -2,15 +2,46 @@ import type { Plugin } from "@opencode/plugin"
 import { randomInt } from "node:crypto"
 import type { Server } from "node:http"
 import { hostname } from "node:os"
+import type { Prompt } from "./courier.js"
 import { deliverReleased } from "./group.js"
 import { num, obj, str } from "./json.js"
 import { deliverDue, TICK_MS, type LaterPorts } from "./later.js"
 import type { SpawnGate } from "./limits.js"
-import type { Asked, Outcome, Withdrawal } from "./notices.js"
 import type { Permissions, Waiting } from "./relay.js"
 import type { RosterStorage } from "./roster.js"
 import { processWide, type Registry } from "./storage.js"
 import type { WebhookConfig, WebhookPorts } from "./webhook.js"
+
+/** The answers to a question call, as the question tool returns them: one list per question. */
+export type Answers = string[][]
+
+/** A question a spawned session asked with its question tool, stored until it is answered. */
+export interface Asked {
+  readonly requestID: string
+  readonly sessionID: string
+  /** The session told, at the top of the sessions started with courier_spawn; it alone answers. */
+  readonly top: string
+  readonly title: string
+  /** The session that started the asking one, when that is not the top session itself. */
+  readonly startedBy?: string
+  readonly questions: ReadonlyArray<Prompt>
+  readonly askedAt: number
+}
+
+/** How a question was settled without the top session: in the asking session, or not at all. */
+export type Elsewhere =
+  | { readonly by: "child"; readonly answers: Answers }
+  | { readonly by: "dismissed" }
+  | { readonly by: "failed"; readonly error: string }
+
+/** What the top session's answer does to a call that waits: answers it, or dismisses it. */
+export type Outcome = { readonly answers: Answers } | { readonly dismissed: true }
+
+/**
+ * Why a linked call is withdrawn: its question was settled elsewhere, or the top session's outcome
+ * reached it another way (courier_answer, or a dismissal through an earlier call linked to it).
+ */
+export type Withdrawal = Elsewhere | { readonly by: "top"; readonly outcome: Outcome }
 
 type Context = Plugin.Context
 

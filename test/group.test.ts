@@ -19,7 +19,8 @@ import {
   type GroupPorts,
   type Membership,
 } from "../src/group.js"
-import { envelope, groupNotice } from "../src/notices.js"
+import { envelope } from "../src/kernel/protocol.js"
+import { groupNotice } from "../src/notices.js"
 
 function fakePorts(options: { pageSize?: number; store?: Map<string, unknown> } = {}) {
   const store = options.store ?? new Map<string, unknown>()

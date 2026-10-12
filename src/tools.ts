@@ -3,7 +3,8 @@ import { Schema } from "effect"
 import { cleanup, type CleanupPorts } from "./cleanup.js"
 import { stop, type StopPorts } from "./stop.js"
 import { tree } from "./tree.js"
-import { describeFailure, listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
+import { describeFailure, STATUSES } from "./kernel/protocol.js"
+import { listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
 import { cancel, schedule, type LaterPorts } from "./later.js"
 import {
   answerText,
@@ -11,10 +12,8 @@ import {
   childrenText,
   cleanupText,
   laterText,
-  REPLIES,
   sendText,
   spawnText,
-  STATUSES,
   statusText,
   stopText,
   subscribeText,
@@ -22,7 +21,7 @@ import {
   unsubscribeText,
 } from "./notices.js"
 import { answerQuestion, isQuestion, type QuestionPorts } from "./question/index.js"
-import { answer, type AnswerPorts, type Waiting } from "./relay.js"
+import { answer, REPLIES, type AnswerPorts, type Waiting } from "./relay.js"
 import { subscribe, unsubscribe, type WebhookPorts } from "./webhook.js"
 
 /**

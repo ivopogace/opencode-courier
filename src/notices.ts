@@ -1,26 +1,21 @@
 /**
  * Every model-facing text the plugin builds; `test/notices.test.ts` snapshots them with the tool
- * descriptions. Pure functions on plain data, importing nothing of the plugin's but `json.ts`.
+ * descriptions. Pure functions on plain data. Until they move out, they import no runtime value of the plugin's
+ * but `kernel/protocol.ts` and `json.ts`; the types they use come from the modules that own them, as `import type`.
  */
 import { num, obj, str } from "./json.js"
+import { clipText, defuse, END_TURN, envelope, STATUSES, type Status } from "./kernel/protocol.js"
+import type { Artifacts } from "./report.js"
+import type { Held, Sent } from "./courier.js"
+import type { CleanupResult } from "./cleanup.js"
+import type { HeldReport, LeftMember } from "./group.js"
+import type { Limits } from "./limits.js"
+import type { Answers, Asked, Elsewhere, Outcome, Prompt, QuestionAnswered, Withdrawal } from "./question/index.js"
+import type { Form, FormField, PermissionAnswered, PermissionRequest, Reply } from "./relay.js"
+import type { ExecutionError } from "./watch.js"
+import type { Delivery } from "./webhook.js"
 
 // The envelope and the child brief.
-
-/** Closes a tool result after which the caller most likely has nothing left to do. */
-export const END_TURN = "If nothing else is left to do now, end your turn by replying without calling more tools."
-
-/** The limits on the tree of sessions courier_spawn builds, from the plugin's options. */
-export interface Limits {
-  readonly maxDepth: number
-  readonly maxChildren: number
-  readonly maxTotal: number
-}
-
-/** The statuses a report carries: the task is done, partly done, waits on the parent, or failed. */
-export const STATUSES = ["done", "partial", "blocked", "failed"] as const
-export type Status = (typeof STATUSES)[number]
-
-export const isStatus = (value: unknown): value is Status => typeof value === "string" && (STATUSES as readonly string[]).includes(value)
 
 /** How a text names the statuses a report may carry. */
 const STATUS_LIST = `${STATUSES.slice(0, -1).join(", ")} or ${STATUSES.at(-1)}`
@@ -190,21 +185,6 @@ export const totalRefusal = (running: number, maxTotal: number) =>
   `Not started: ${count(running, "session")} in this session tree ${live(running)}, the most allowed at once ` +
   `(maxTotal ${maxTotal}). Do this part yourself, or end your turn and try again once a report has arrived.`
 
-export function envelope(from: string, message: string, attributes: Record<string, string> = {}) {
-  const extra = Object.entries(attributes)
-    .map(([name, value]) => ` ${name}="${value}"`)
-    .join("")
-  return `<courier from="${from}"${extra}>\n${message}\n</courier>`
-}
-
-/** What a report lists besides its text; `checks` are the commands the session ran and what each gave. */
-export interface Artifacts {
-  readonly branch?: string
-  readonly commits?: ReadonlyArray<string>
-  readonly files?: ReadonlyArray<string>
-  readonly checks?: ReadonlyArray<{ readonly command: string; readonly result: string }>
-}
-
 /** The strings of a list given as artifacts, whatever else the model put in it. */
 const strings = (value: unknown) => (Array.isArray(value) ? value.flatMap((item) => (typeof item === "string" ? [item.trim()] : [])) : []).filter(Boolean)
 
@@ -259,24 +239,6 @@ export function spawnText(child: {
   )
 }
 
-/** A report held with its group: which group, and how many of its members have reported so far, when that could be read. */
-export interface Held {
-  readonly group: string
-  readonly reported?: number
-  readonly members?: number
-}
-
-/**
- * What courier_send did; `report` says whether the message was noted as the sender's report to the session
- * that started it, and `held` that it was held with the sender's group rather than delivered, with no `messageID`.
- */
-export interface Sent {
-  readonly messageID?: string
-  readonly status?: Status
-  readonly report?: boolean
-  readonly held?: Held
-}
-
 /** courier_send's result: for a message to the session that started the sender, whether it was its report. */
 export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report" | "held"> = {}) {
   const status = sent.status ? `, status ${sent.status}` : ""
@@ -301,18 +263,6 @@ export const statusText = (status: unknown) => JSON.stringify(status, null, 2)
 
 export const childrenText = (listed: ReadonlyArray<unknown>) =>
   listed.length ? JSON.stringify(listed, null, 2) : "No sessions started with courier_spawn."
-
-/** What courier_cleanup did: removed the worktree, found it gone, kept it and why, or forgot a child with none; `group`, one it dropped the child from. */
-export type CleanupResult =
-  | { readonly sessionID: string; readonly directory: string; readonly outcome: "removed" | "gone" | "forgotten"; readonly group?: string }
-  | {
-      readonly sessionID: string
-      readonly directory: string
-      readonly outcome: "kept"
-      readonly reason: string
-      readonly changes: readonly string[]
-      readonly commits: readonly string[]
-    }
 
 export function cleanupText(result: CleanupResult) {
   if (result.outcome === "kept")
@@ -400,28 +350,6 @@ function preview(items: readonly string[]) {
  */
 export type AnswerResult = PermissionAnswered | QuestionAnswered
 
-/**
- * What answering a permission request did; `answered` is false when no location loaded here held the
- * request: answered already, no longer waited for, or waiting in another server on the same data dir.
- */
-export interface PermissionAnswered {
-  readonly sessionID: string
-  readonly requestID: string
-  readonly reply: Reply
-  readonly answered: boolean
-}
-
-/** What answering a question did; `answered` is false when it no longer waited. */
-export type QuestionAnswered =
-  | { readonly sessionID: string; readonly requestID: string; readonly answered: false }
-  | {
-      readonly sessionID: string
-      readonly requestID: string
-      readonly answered: true
-      readonly by: "result" | "message"
-      readonly answers: Answers
-    }
-
 export function answerText(result: AnswerResult) {
   // A permission request is pending only in the server running the session's turn; a question is
   // stored where every server on the data directory finds it.
@@ -470,13 +398,6 @@ export const unsubscribeText = (sessionID: string, dropped: readonly string[]) =
 
 // Turn failures.
 
-/** The error of OpenCode's `session.execution.failed` event. */
-export interface ExecutionError {
-  readonly type: string
-  readonly message: string
-  readonly status?: number
-}
-
 export function failureNotice(title: string, error: ExecutionError, group?: string) {
   const status = error.status === undefined ? "" : `, status ${error.status}`
   return [
@@ -521,21 +442,6 @@ export function silentNotice(title: string, lastText: string | undefined, progre
 
 // Join groups.
 
-/** A report held with its group: its status, text and artifacts, as courier_send was given them, and when. */
-export interface HeldReport {
-  readonly at: number
-  readonly status: Status
-  readonly message: string
-  readonly artifacts?: Artifacts
-}
-
-/** A member of a group that left it without a report, and why: its turn failed or was interrupted, it was deleted, or courier_cleanup dropped it. */
-export interface LeftMember {
-  readonly sessionID: string
-  readonly title: string
-  readonly by: "failed" | "interrupted" | "deleted" | "dropped"
-}
-
 /** How a release names each status among its reports: `2 done, 1 failed`. */
 function statusCounts(reports: ReadonlyArray<Pick<HeldReport, "status">>) {
   return STATUSES.flatMap((status) => {
@@ -575,20 +481,6 @@ export function groupNotice(group: string, reports: ReadonlyArray<HeldReport & {
 }
 
 // Permission requests.
-
-/** The answers to a permission request, as OpenCode's own prompt offers them. */
-export const REPLIES = ["once", "always", "reject"] as const
-export type Reply = (typeof REPLIES)[number]
-
-/** A permission request, as OpenCode's `permission.asked` event carries it. */
-export interface PermissionRequest {
-  readonly id: string
-  readonly sessionID: string
-  readonly action: string
-  readonly resources: ReadonlyArray<string>
-  readonly save?: ReadonlyArray<string>
-  readonly message?: string
-}
 
 /**
  * Sent with a rejection that has no reason of its own. OpenCode ends the child's turn on a bare
@@ -653,29 +545,6 @@ export function permissionSettledNotice(title: string, requestID: string, reply:
 /** The `metadata.kind` of the forms OpenCode's web search asks its provider with. */
 export const WEBSEARCH_FORM = "websearch.provider"
 
-/** One field of an OpenCode form, as much of it as a notice shows. */
-export interface FormField {
-  readonly key: string
-  readonly type: string
-  readonly title?: string
-  readonly description?: string
-  readonly options?: ReadonlyArray<{ readonly value: string; readonly label: string; readonly description?: string }>
-  readonly url?: string
-  /** Not shown to the person. */
-  readonly hidden?: boolean
-  /** Conditions on earlier answers; the field is shown only when they hold. */
-  readonly when?: ReadonlyArray<unknown>
-}
-
-/** An OpenCode form, as its `form.created` event carries it. */
-export interface Form {
-  readonly id: string
-  readonly sessionID: string
-  readonly title: string
-  readonly metadata?: Readonly<Record<string, unknown>>
-  readonly fields: ReadonlyArray<FormField>
-}
-
 /** A form's `metadata.kind`, when it has one that can go in a notice's envelope. */
 export const kindOf = (form: Form) => {
   const kind = form.metadata?.kind
@@ -734,45 +603,6 @@ export function formSettledNotice(title: string, formID: string, settled: "answe
 }
 
 // Questions.
-
-/** One question of OpenCode's question tool, as the asking model wrote it. */
-export interface Prompt {
-  readonly question: string
-  readonly header: string
-  readonly options: ReadonlyArray<{ readonly label: string; readonly description: string }>
-  readonly multiple?: boolean
-}
-
-/** The answers to a question call, as the question tool returns them: one list per question. */
-export type Answers = string[][]
-
-/** A question a spawned session asked with its question tool, stored until it is answered. */
-export interface Asked {
-  readonly requestID: string
-  readonly sessionID: string
-  /** The session told, at the top of the sessions started with courier_spawn; it alone answers. */
-  readonly top: string
-  readonly title: string
-  /** The session that started the asking one, when that is not the top session itself. */
-  readonly startedBy?: string
-  readonly questions: ReadonlyArray<Prompt>
-  readonly askedAt: number
-}
-
-/** How a question was settled without the top session: in the asking session, or not at all. */
-export type Elsewhere =
-  | { readonly by: "child"; readonly answers: Answers }
-  | { readonly by: "dismissed" }
-  | { readonly by: "failed"; readonly error: string }
-
-/** What the top session's answer does to a call that waits: answers it, or dismisses it. */
-export type Outcome = { readonly answers: Answers } | { readonly dismissed: true }
-
-/**
- * Why a linked call is withdrawn: its question was settled elsewhere, or the top session's outcome
- * reached it another way (courier_answer, or a dismissal through an earlier call linked to it).
- */
-export type Withdrawal = Elsewhere | { readonly by: "top"; readonly outcome: Outcome }
 
 /** What OpenCode's question tool tells the asking model once it has the answers. */
 export function answeredText(questions: ReadonlyArray<Prompt>, answers: ReadonlyArray<ReadonlyArray<string>>) {
@@ -889,28 +719,8 @@ export function passedNote(linked: Asked, passed: string | undefined) {
 
 // Webhook deliveries.
 
-/** Longest piece of free text (a review body, a generic payload) copied into a delivered message. */
-const MAX_TEXT = 1500
-
-export function clipText(text: string, max = MAX_TEXT) {
-  return text.length > max ? `${text.slice(0, max)}… [${text.length - max} more characters]` : text
-}
-
 /** The GitHub CI events, with how a summary names each. */
 export const CI_EVENTS: Record<string, string> = { check_run: "check run", check_suite: "check suite", workflow_run: "workflow run" }
-
-/** What every GitHub delivery carries, read once for the summary of its event. */
-export interface Delivery {
-  readonly name: string
-  readonly body: Record<string, any>
-  readonly repo: string
-  readonly action: string | undefined
-  readonly sender: string | undefined
-  /** ` by <sender>`, or nothing when the delivery names no sender. */
-  readonly by: string
-  /** The pull request and issue numbers it concerns, which `webhook.ts` reads for its topics. */
-  readonly numbers: readonly number[]
-}
 
 /** The lines that have any text, in order. */
 const present = (...lines: (string | undefined)[]) => lines.filter((line): line is string => !!line)
@@ -989,11 +799,6 @@ export function githubSummary(delivery: Delivery) {
 
 /** The summary of a delivery to `/hook/<name>`: its text, clipped. */
 export const hookSummary = (text: string) => clipText(text.trim() || "(empty body)")
-
-/** Defuses `<courier` and `</courier>` in outside text, so it cannot close the envelope or forge another. */
-export function defuse(text: string) {
-  return text.replace(/<(\/?)(courier)/gi, "&lt;$1$2")
-}
 
 /** The text a subscribed session is woken with for a webhook delivery, before its envelope. */
 export const webhookText = (summary: string) =>

@@ -1,7 +1,24 @@
 import type { Plugin } from "@opencode/plugin"
 import { isNotFound, millis, num, obj, str } from "./json.js"
-import { envelope, groupNotice, isStatus, type Artifacts, type HeldReport, type LeftMember } from "./notices.js"
+import { envelope, isStatus, type Status } from "./kernel/protocol.js"
+import { groupNotice } from "./notices.js"
+import type { Artifacts } from "./report.js"
 import { scanEntries, type Storage } from "./storage.js"
+
+/** A report held with its group: its status, text and artifacts, as courier_send was given them, and when. */
+export interface HeldReport {
+  readonly at: number
+  readonly status: Status
+  readonly message: string
+  readonly artifacts?: Artifacts
+}
+
+/** A member of a group that left it without a report, and why: its turn failed or was interrupted, it was deleted, or courier_cleanup dropped it. */
+export interface LeftMember {
+  readonly sessionID: string
+  readonly title: string
+  readonly by: "failed" | "interrupted" | "deleted" | "dropped"
+}
 
 type Context = Plugin.Context
 

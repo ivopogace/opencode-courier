@@ -1,6 +1,5 @@
 import { addBounded } from "../bounded.js"
-import { hub, type Question, type QuestionPorts } from "../hub.js"
-import type { Asked } from "../notices.js"
+import { hub, type Asked, type Question, type QuestionPorts } from "../hub.js"
 
 /** OpenCode's own question tool, which the relay wraps. */
 export const QUESTION_TOOL = "question"

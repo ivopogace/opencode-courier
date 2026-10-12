@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test"
+import { envelope } from "../src/kernel/protocol.js"
 import {
-  envelope,
   failureNotice,
   formNotice,
   formSettledNotice,
   permissionNotice,
   permissionSettledNotice as settledNotice,
   silentNotice,
-  type FormField,
 } from "../src/notices.js"
+import type { FormField } from "../src/relay.js"
 import {
   type FormCreated,
   type PermissionAsked,

@@ -3,7 +3,7 @@ import { lastReply } from "./courier.js"
 import { dropGroups, hasCompleteGroup, markLeft, membershipOf, type Membership } from "./group.js"
 import { envelope } from "./kernel/protocol.js"
 import { failureNotice, silentNotice } from "./notices.js"
-import { addBounded, setBounded } from "./platform/bounded.js"
+import { claim, SEEN_MAX, setBounded } from "./platform/bounded.js"
 import type { EventModule, HostEvent } from "./platform/events.js"
 import { awaited, forgetReport, prompted, reportOf, settled, stoppedSincePrompt, told, untold } from "./report.js"
 import { children, entriesOf, entryUnder, indexedEntry, indexedParent, type RosterEntry, type RosterStorage } from "./roster.js"
@@ -41,9 +41,6 @@ export interface WatchState {
   readonly inbox: Map<string, string>
 }
 
-/** How many handled event ids, and waiting or answered requests and forms, are remembered. */
-export const SEEN_MAX = 1_000
-
 /** The part of OpenCode's `session.execution.failed` event the notice is made from. */
 export interface ExecutionFailed {
   readonly id: string
@@ -61,9 +58,6 @@ export interface SessionEvent {
   readonly created?: number
   readonly data: { readonly sessionID: string; readonly reason?: string }
 }
-
-/** Claims a value in one of the shared sets; false when it was claimed already. */
-export const claim = (set: Set<string>, value: string) => addBounded(set, value, SEEN_MAX)
 
 /**
  * Tells the parent of a child whose turn failed, since a child that cannot reach its model cannot

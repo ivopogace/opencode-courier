@@ -1,10 +1,6 @@
-/**
- * What the session at the top is told about the permission requests, forms and questions of the sessions
- * it started, and what courier_answer returns. Pure functions on plain data, snapshotted with the rest in
- * `test/notices.test.ts`; `notices.ts` re-exports them.
- */
+/** The permission, form and question notices and the result of courier_answer, snapshotted with the other texts. */
 import { END_TURN } from "../kernel/protocol.js"
-import type { Answers, Asked, Elsewhere, Outcome, Prompt, QuestionAnswered, Withdrawal } from "./question/index.js"
+import type { Asked, Elsewhere, Outcome, Prompt, QuestionAnswered, Withdrawal } from "./question/index.js"
 import type { Form, FormField } from "./form.js"
 import type { PermissionAnswered, PermissionRequest, Reply } from "./permission.js"
 

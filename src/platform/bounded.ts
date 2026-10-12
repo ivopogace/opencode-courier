@@ -16,3 +16,9 @@ export function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number) 
   map.set(key, value)
   if (map.size > max) map.delete(map.keys().next().value!)
 }
+
+/** How many handled event ids, and waiting or answered requests and forms, are remembered. */
+export const SEEN_MAX = 1_000
+
+/** Claims a value in one of the shared sets; false when it was claimed already. */
+export const claim = (set: Set<string>, value: string) => addBounded(set, value, SEEN_MAX)

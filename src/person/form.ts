@@ -1,7 +1,6 @@
 import { envelope } from "../kernel/protocol.js"
-import { setBounded } from "../platform/bounded.js"
+import { claim, SEEN_MAX, setBounded } from "../platform/bounded.js"
 import { lineage } from "../roster.js"
-import { claim, SEEN_MAX } from "../watch.js"
 import { topOf, type PersonPorts, type PersonState } from "./ports.js"
 import { formNotice, formSettledNotice, kindOf } from "./text.js"
 

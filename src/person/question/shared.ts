@@ -1,6 +1,6 @@
-import { addBounded } from "../platform/bounded.js"
-import { hub, memberAt, sharedState } from "../platform/hub.js"
-import type { Registry } from "../platform/storage.js"
+import { addBounded } from "../../platform/bounded.js"
+import { hub, memberAt, sharedState } from "../../platform/hub.js"
+import type { Registry } from "../../platform/storage.js"
 import type { Asked, Question, QuestionPorts, QuestionState } from "./types.js"
 
 /** OpenCode's own question tool, which the relay wraps. */

@@ -1,6 +1,6 @@
 import { hub, sharedState } from "../../src/platform/hub.js"
 import type { SpawnGate } from "../../src/limits.js"
-import { shared as questions } from "../../src/question/shared.js"
+import { shared as questions } from "../../src/person/question/shared.js"
 
 /**
  * Forgets every remembered id, the spawns under way and the question relay's state, loaded instances

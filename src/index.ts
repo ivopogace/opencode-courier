@@ -11,12 +11,25 @@ import { hub, openInProcess, permissions as domains, sharedState, type Member, t
 import { builtVersions, versionNotice } from "./platform/version.js"
 import { dueJob, isScheduled, type LaterPorts } from "./scheduling/index.js"
 import { readLimits, shapeContext, type SpawnGate } from "./limits.js"
-import { asksPermission, pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
-import { asksQuestion, joinRelay, noticeCutOff, pendingQuestions, portsAt, relayQuestions, type QuestionPorts } from "./question/index.js"
+import {
+  asksPermission,
+  asksQuestion,
+  joinRelay,
+  noticeCutOff,
+  pendingOf,
+  pendingQuestions,
+  personEvents,
+  portsAt,
+  relayQuestions,
+  type AnswerPorts,
+  type Permissions,
+  type PersonState,
+  type QuestionPorts,
+} from "./person/index.js"
 import { pruneExpired } from "./roster.js"
 import { addSkill } from "./skill.js"
 import { addTools, type ToolPorts } from "./tools.js"
-import { personEvents, together, treeEvents, waitsOn, type WatchPorts, type WatchState } from "./watch.js"
+import { together, treeEvents, waitsOn, type WatchPorts, type WatchState } from "./watch.js"
 import { joinReceiver, readConfig, receiving, subscribedSince, type WebhookConfig, type WebhookPorts } from "./webhook/index.js"
 
 /** The spawns under way in the process, outside the hub, so spawns in other locations, copies and hub versions count them. */
@@ -42,7 +55,8 @@ const permissions = domains as () => Iterable<Permissions>
 // One set of handled events and of told permission requests for every instance in the process, since
 // several subscriptions and copies see the same events. The scheduler's claim set is the hub's own.
 const { watched } = hub
-const watchState: WatchState = { ...watched, forms: hub.forms, inbox }
+const watchState: WatchState = { seen: watched.seen, inbox }
+const personState: PersonState = { ...watched, forms: hub.forms }
 
 /**
  * What a session waits on outside the tree, for the silent-turn rule, cheapest first: a request of its
@@ -51,7 +65,7 @@ const watchState: WatchState = { ...watched, forms: hub.forms, inbox }
 const outside = waitsOn(asksPermission, asksQuestion, together(isScheduled, subscribedSince))
 
 /** What the hub's subscriptions do with each event of OpenCode's, module by module, in this order. */
-const eventModules = [treeEvents(watchState, outside), personEvents(watchState)]
+const eventModules = [treeEvents(watchState, outside), personEvents(personState)]
 
 /**
  * The courier tools and webhook receiver, as a promise plugin joining the hub that runs the scheduler

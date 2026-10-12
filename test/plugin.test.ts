@@ -5,8 +5,8 @@ import { memberAt, OWNER_KEY, SERVER } from "../src/platform/hub.js"
 import { DEFAULT_LIMITS } from "../src/limits.js"
 import { depthRefusal, rolePart, SKILL_CONTENT, SKILL_DESCRIPTION, SKILL_ID } from "../src/notices.js"
 import { builtVersions } from "../src/platform/version.js"
-import type { QuestionPorts } from "../src/question/index.js"
-import { shared as relayState } from "../src/question/shared.js"
+import type { QuestionPorts } from "../src/person/question/index.js"
+import { shared as relayState } from "../src/person/question/shared.js"
 
 const cleanups: Array<() => unknown> = []
 afterEach(async () => {

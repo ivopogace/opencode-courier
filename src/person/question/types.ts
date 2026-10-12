@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
-import type { Storage } from "../platform/storage.js"
+import type { Storage } from "../../platform/storage.js"
 
 type Context = Plugin.Context
 

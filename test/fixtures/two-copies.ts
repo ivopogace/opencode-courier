@@ -1,6 +1,6 @@
 // Run by test/hub.test.ts in a process of its own: loads the hub module twice, as two copies of the
 // plugin in one process; kept out of the test process, whose Bun coverage one copy would overwrite.
-import { deliverDue, type LaterPorts } from "../../src/later.js"
+import { deliverDue, type LaterPorts } from "../../src/scheduling/index.js"
 import type { Member, TickJob } from "../../src/platform/hub.js"
 
 type HubModule = typeof import("../../src/platform/hub.js")

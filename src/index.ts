@@ -9,7 +9,7 @@ import { deliverReleased } from "./group.js"
 import { watchFromHub } from "./platform/events.js"
 import { hub, openInProcess, permissions as domains, sharedState, type Member, type TickJob } from "./platform/hub.js"
 import { builtVersions, versionNotice } from "./platform/version.js"
-import { deliverDue, isScheduled, type LaterPorts } from "./later.js"
+import { dueJob, isScheduled, type LaterPorts } from "./scheduling/index.js"
 import { readLimits, shapeContext, type SpawnGate } from "./limits.js"
 import { asksPermission, pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
 import { asksQuestion, joinRelay, noticeCutOff, pendingQuestions, portsAt, relayQuestions, type QuestionPorts } from "./question/index.js"
@@ -36,7 +36,7 @@ const inbox = sharedState("inbox", () => new Map<string, string>())
  * due `courier_later` messages, then released join groups. Every hub-v2 member's `later` is its LaterPorts.
  */
 const jobs: TickJob[] = [
-  (owner, claimed) => deliverDue(owner.later as LaterPorts, claimed),
+  dueJob,
   (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
 ]
 

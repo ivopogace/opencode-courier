@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { envelope } from "../src/kernel/protocol.js"
-import { cancel, deliverDue, schedule, type LaterPorts } from "../src/later.js"
+import { cancel, deliverDue, schedule, type LaterPorts } from "../src/scheduling/index.js"
 
 const MINUTE = 60_000
 

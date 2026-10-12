@@ -15,6 +15,8 @@ import type { Form, FormField, PermissionAnswered, PermissionRequest, Reply } fr
 import type { ExecutionError } from "./watch.js"
 import type { Delivery } from "./webhook.js"
 
+export { cancelText, laterText } from "./scheduling/text.js"
+
 // The envelope and the child brief.
 
 /** How a text names the statuses a report may carry. */
@@ -371,19 +373,6 @@ export function answerText(result: AnswerResult) {
   const how = result.by === "message" ? " as a message, since its question had been cut off" : ""
   return `Passed the answers to question ${result.requestID} on to ${result.sessionID}${how}; it carries on and reports back with courier_send. ${END_TURN}`
 }
-
-/** `own` when the message goes to the session that scheduled it. */
-export function laterText(entry: { readonly id: string; readonly sessionID: string }, fireAt: string, own: boolean) {
-  const next = own
-    ? "It arrives when due, after your current turn if one is running, so do not wait for it: once nothing " +
-      "else is left to do now, end your turn by replying without calling more tools. If what it checks on " +
-      "reports first, cancel it then with courier_cancel."
-    : "Cancel it with courier_cancel if it is no longer needed."
-  return `Scheduled ${entry.id} for ${fireAt}, to ${entry.sessionID}. ${next}`
-}
-
-export const cancelText = (id: string, cancelled: boolean) =>
-  cancelled ? `Cancelled ${id}.` : `Nothing pending under ${id}; it may have been delivered.`
 
 /** `receiving` says whether a webhook receiver runs in this server. */
 export function subscribeText(sessionID: string, topic: string, receiving: boolean) {

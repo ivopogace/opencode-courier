@@ -51,10 +51,10 @@ test("no module of src/ imports itself through others, type-only imports include
   expect(cycles).toEqual([])
 })
 
-test("notices.ts imports nothing of the plugin's at runtime but platform/json.ts and kernel/protocol.ts", () => {
+test("notices.ts imports nothing of the plugin's at runtime but platform/json.ts, kernel/protocol.ts and the text.ts of the modules that moved", () => {
   const types = typeOnly()
   const runtime = (imports().get("notices") ?? []).filter((name) => !types.has(`notices -> ${name}`))
-  expect(runtime.sort()).toEqual(["kernel/protocol", "platform/json"])
+  expect(runtime.sort()).toEqual(["kernel/protocol", "platform/json", "scheduling/text"])
 })
 
 test("platform/ imports only platform/, so the hub and the event loop depend on no feature", () => {
@@ -69,12 +69,12 @@ test("kernel/ imports only kernel/ and platform/json.ts, so any module can use i
   expect(kernel.flatMap(([module, imported]) => imported.filter((name) => !name.startsWith("kernel/") && name !== "platform/json").map((name) => `${module} -> ${name}`))).toEqual([])
 })
 
-test("effect is imported only by question/, index.ts and tools.ts", () => {
+test("effect is imported only by question/, index.ts and the tools.ts files", () => {
   const importing = readdirSync(SRC, { recursive: true, encoding: "utf8" })
     .filter((name) => name.endsWith(".ts"))
     .filter((name) => /(?:from|import)\s*\(?\s*["']effect(?:\/[^"']*)?["']/.test(readFileSync(join(SRC, name), "utf8")))
     .map((name) => name.slice(0, -3).split("\\").join("/"))
-    .filter((module) => !module.startsWith("question/") && module !== "index" && module !== "tools")
+    .filter((module) => !module.startsWith("question/") && module !== "index" && !/(?:^|\/)tools$/.test(module))
   expect(importing).toEqual([])
 })
 
@@ -92,4 +92,28 @@ test("modules outside question/ use the relay through question/index.ts only", (
     .filter(([module]) => !module.startsWith("question/"))
     .flatMap(([module, imported]) => imported.filter((name) => name.startsWith("question/") && name !== "question/index").map((name) => `${module} -> ${name}`))
   expect(reaching).toEqual([])
+})
+
+/** The modules of src/ that live in a folder of their own with an index.ts, as `folder -> files`. */
+const MODULES = ["scheduling"]
+
+test("a module is imported from outside only through its index.ts", () => {
+  const reaching = [...imports()].flatMap(([module, imported]) =>
+    imported
+      .filter((name) => MODULES.some((folder) => name.startsWith(`${folder}/`) && !module.startsWith(`${folder}/`) && name !== `${folder}/index`))
+      .filter((name) => !(module === "notices" && name.endsWith("/text")))
+      .map((name) => `${module} -> ${name}`),
+  )
+  expect(reaching).toEqual([])
+})
+
+test("scheduling/ and webhook/ import no other feature module, only platform/ and kernel/", () => {
+  const modules = [...imports()].filter(([module]) => module.startsWith("scheduling/") || module.startsWith("webhook/"))
+  expect(modules.map(([module]) => module)).toContain("scheduling/index")
+  const outside = modules.flatMap(([module, imported]) =>
+    imported
+      .filter((name) => !name.startsWith(`${module.split("/")[0]}/`) && !name.startsWith("platform/") && !name.startsWith("kernel/"))
+      .map((name) => `${module} -> ${name}`),
+  )
+  expect(outside).toEqual([])
 })

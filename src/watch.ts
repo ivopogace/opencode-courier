@@ -11,7 +11,7 @@ import {
   permissionSettledNotice,
   silentNotice,
 } from "./notices.js"
-import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing, pendingQuestions } from "./question/index.js"
+import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing } from "./question/index.js"
 import {
   listEverywhere,
   QUESTION_FORM,
@@ -21,13 +21,11 @@ import {
   type PermissionReplied,
   type Waiting,
 } from "./relay.js"
-import { scheduledFor } from "./later.js"
 import { addBounded, setBounded } from "./platform/bounded.js"
 import type { EventModule, HostEvent } from "./platform/events.js"
 import type { FormsTold } from "./platform/hub.js"
 import { awaited, forgetReport, prompted, reportOf, settled, stoppedSincePrompt, told, untold } from "./report.js"
 import { allEntries, children, entriesOf, entryUnder, indexedEntry, indexedParent, lineage, type RosterEntry, type RosterStorage } from "./roster.js"
-import { subscriptions } from "./webhook.js"
 
 /** The error of OpenCode's `session.execution.failed` event. */
 export interface ExecutionError {
@@ -225,32 +223,49 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
 }
 
 /**
- * Whether a session prompted at `prompt` waits: on an untold report of a session it started, a complete group of
- * its about to be delivered, a request of its own, a scheduled message, or a webhook it subscribed to since. Cheapest first.
+ * Whether a session waits, since `since`, on something the tree does not keep: a port the silent-turn
+ * rule asks after the tree's own children and groups, which `src/index.ts` composes from the modules
+ * that keep it. `ports` are the watcher's, of whichever member the subscription runs through.
  */
-async function waits(ports: WatchPorts, sessionID: string, prompt: number) {
+export type Waits = (ports: Pick<WatchPorts, "storage" | "permissions">, sessionID: string, since: number) => Promise<boolean>
+
+/** A `Waits` asking `suppliers` one after another, cheapest first: the first that waits answers. */
+export const waitsOn =
+  (...suppliers: Waits[]): Waits =>
+  async (ports, sessionID, since) => {
+    for (const supplier of suppliers) if (await supplier(ports, sessionID, since)) return true
+    return false
+  }
+
+/** A `Waits` asking `suppliers` at once, as cheap as each other: it waits when one does, and fails when one fails. */
+export const together =
+  (...suppliers: Waits[]): Waits =>
+  async (ports, sessionID, since) =>
+    (await Promise.all(suppliers.map((supplier) => supplier(ports, sessionID, since)))).includes(true)
+
+/**
+ * Whether a session prompted at `prompt` waits: on an untold report of a session it started, a complete group of
+ * its about to be delivered, or what `outside` says it waits on. Cheapest first.
+ */
+async function waits(ports: WatchPorts, outside: Waits, sessionID: string, prompt: number) {
   const started = await children(ports.storage, sessionID)
   if ((await Promise.all(started.map((entry) => awaited(ports.storage, entry.sessionID)))).includes(true)) return true
-  if ((await listEverywhere([...ports.permissions()], sessionID)).some((found) => found.requests.length)) return true
   // A group with a member still out is waited on through that member, above; one whose every out member was told of is not.
   if (started.some((entry) => entry.group) && (await hasCompleteGroup(ports.storage, sessionID))) return true
-  if ((await pendingQuestions(ports.storage, sessionID)).length) return true
-  const [scheduled, subscribed] = await Promise.all([scheduledFor(ports.storage, sessionID), subscriptions(ports)])
-  // An older subscription is no wait: a prompt, most likely its delivery, has come since.
-  return scheduled.length > 0 || subscribed.some((subscription) => subscription.sessionID === sessionID && subscription.createdAt >= prompt)
+  return outside(ports, sessionID, prompt)
 }
 
 /**
  * Tells the parent of a spawned session whose turn ended without reporting to it since its last
  * prompt, unless it waits; finds the session by the reverse index alone. Returns the parents told.
  */
-export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: SessionEvent) {
+export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: SessionEvent, outside: Waits) {
   const { sessionID } = event.data
   const entry = await indexedEntry(ports.storage, sessionID)
   // Claimed after the lookup, so other sessions' turns do not crowd `seen`, and before anything is told.
   if (!entry || !claim(seen, event.id)) return []
   const report = await reportOf(ports.storage, sessionID)
-  if (!report?.owes || (await waits(ports, sessionID, report.prompt))) return []
+  if (!report?.owes || (await waits(ports, outside, sessionID, report.prompt))) return []
   if (await stoppedSincePrompt(ports.storage, sessionID).catch(() => false)) return []
   // The notice goes out without the reply rather than not at all.
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
@@ -410,9 +425,9 @@ async function sealGroups(ports: WatchPorts, event: SessionEvent) {
 }
 
 /** The events of spawned sessions' turns and inboxes, and their deletion: the tree's. */
-function routeTree(ports: WatchPorts, state: WatchState, event: HostEvent) {
+function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: HostEvent) {
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
-  if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent)
+  if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent, outside)
   if (event.type === "session.execution.interrupted") return noteInterrupted(ports, event as unknown as SessionEvent)
   if (event.type === "session.inbox.enqueued") return noteEnqueued(ports, state.inbox, event as unknown as InboxEnqueued)
   if (event.type === "session.inbox.delivered") return notePrompt(ports, event as unknown as SessionEvent, state.inbox)
@@ -442,12 +457,13 @@ function routePerson(ports: WatchPorts, state: WatchState, event: HostEvent) {
 }
 
 /**
- * Tells parents of a spawned child's failed or silent turn and notes its prompts, interruptions and
- * deletion; after every module has handled a turn's end, seals the groups of the session it ended.
+ * Tells parents of a spawned child's failed or silent turn, unless it waits on what `outside` says, and
+ * notes its prompts, interruptions and deletion; after every module has handled a turn's end, seals
+ * the groups of the session it ended.
  */
-export function treeEvents(state: WatchState): EventModule<WatchPorts> {
+export function treeEvents(state: WatchState, outside: Waits): EventModule<WatchPorts> {
   return {
-    handle: (ports, event) => routeTree(ports, state, event),
+    handle: (ports, event) => routeTree(ports, state, outside, event),
     // After: a silent end is judged while the group the nudge may deliver is still there to wait on.
     after: (ports, event) => (TURN_ENDS.has(event.type) ? sealGroups(ports, event as unknown as SessionEvent) : undefined),
   }

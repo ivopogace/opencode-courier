@@ -35,16 +35,25 @@ import {
   relayPending,
   reportReplied,
   personEvents,
+  together,
   treeEvents,
+  waitsOn,
   type ExecutionFailed,
   type SessionEvent,
   type WatchPorts,
   type WatchState,
 } from "../src/watch.js"
 import { follow, watchFromHub } from "../src/platform/events.js"
+import { isScheduled } from "../src/later.js"
+import { asksQuestion } from "../src/question/index.js"
+import { asksPermission } from "../src/relay.js"
+import { subscribedSince } from "../src/webhook.js"
+
+/** What a session waits on outside the tree, as src/index.ts composes it. */
+const outside = waitsOn(asksPermission, asksQuestion, together(isScheduled, subscribedSince))
 
 /** The plugin's event modules over `state`, in src/index.ts's order. */
-const modules = (state: WatchState) => [treeEvents(state), personEvents(state)]
+const modules = (state: WatchState) => [treeEvents(state, outside), personEvents(state)]
 
 /** Follows the events through `ports` with the plugin's modules, as a hub's subscription does. */
 const watchChildren = (ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs?: number) =>
@@ -225,6 +234,31 @@ function sendFrom(ports: WatchPorts, from: string, to: string, now: number, stat
   return send(courier, from, { sessionID: to, message: "done", ...(status === "none" ? {} : { status }) })
 }
 
+describe("the Waits port's composition", () => {
+  const ports = fakePorts().ports
+  const supplier = (answer: boolean | Error, asked: string[], name: string) => async () => {
+    asked.push(name)
+    if (answer instanceof Error) throw answer
+    return answer
+  }
+
+  test("waitsOn asks its suppliers in order, the first that waits answering", async () => {
+    const asked: string[] = []
+    const waits = waitsOn(supplier(false, asked, "a"), supplier(true, asked, "b"), supplier(true, asked, "c"))
+    expect(await waits(ports, "ses_child", 0)).toBe(true)
+    expect(asked).toEqual(["a", "b"])
+    expect(await waitsOn(supplier(false, asked, "d"))(ports, "ses_child", 0)).toBe(false)
+  })
+
+  test("together asks its suppliers at once: it waits when one does, and fails when one fails", async () => {
+    const asked: string[] = []
+    expect(await together(supplier(false, asked, "a"), supplier(true, asked, "b"))(ports, "ses_child", 0)).toBe(true)
+    expect(await together(supplier(false, asked, "c"), supplier(false, asked, "d"))(ports, "ses_child", 0)).toBe(false)
+    await expect(together(supplier(true, asked, "e"), supplier(new Error("storage gone"), asked, "f"))(ports, "ses_child", 0)).rejects.toThrow("storage gone")
+    expect(asked).toEqual(["a", "b", "c", "d", "e", "f"])
+  })
+})
+
 describe("reportSilent", () => {
   test("tells the parent once of a turn that ended without a report, with the child's last reply, waking it", async () => {
     const { ports, sent } = fakePorts()
@@ -232,7 +266,7 @@ describe("reportSilent", () => {
     const seen = new Set<string>()
     await notePrompt(ports, delivered("evt_d", 100))
 
-    const told = await Promise.all([reportSilent(ports, seen, succeeded("evt_s", 200)), reportSilent(ports, seen, succeeded("evt_s", 200))])
+    const told = await Promise.all([reportSilent(ports, seen, succeeded("evt_s", 200), outside), reportSilent(ports, seen, succeeded("evt_s", 200), outside)])
 
     expect(told).toEqual([["ses_parent"], []])
     expect(sent).toEqual([
@@ -252,7 +286,7 @@ describe("reportSilent", () => {
     await notePrompt(ports, delivered("evt_d", 100))
     await stopped(ports.storage, "ses_child", 150)
 
-    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)).toEqual([])
     expect(sent).toEqual([])
   })
 
@@ -262,7 +296,7 @@ describe("reportSilent", () => {
     await notePrompt(ports, delivered("evt_d", 100))
     await sendFrom(ports, "ses_child", "ses_parent", 150)
 
-    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)).toEqual([])
     expect(sent).toEqual([])
   })
 
@@ -272,7 +306,7 @@ describe("reportSilent", () => {
     await notePrompt(ports, delivered("evt_d", 100))
     await sendFrom(ports, "ses_child", "ses_parent", 150, "none")
 
-    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual(["ses_parent"])
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)).toEqual(["ses_parent"])
 
     expect(sent[0].text).toBe(envelope("ses_child", silentNotice("Fix the bug", "Looked at it; line 4 is wrong.", true), { ended: "without-report" }))
     expect(sent[0].text).toContain("Its last message to you had no status")
@@ -284,7 +318,7 @@ describe("reportSilent", () => {
     await notePrompt(ports, delivered("evt_d", 100))
     await sendFrom(ports, "ses_child", "ses_parent", 150, "blocked")
 
-    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)).toEqual([])
     expect(sent).toEqual([])
     expect(await owesReport(ports.storage, "ses_child")).toBe(false)
   })
@@ -296,7 +330,7 @@ describe("reportSilent", () => {
     await notePrompt(ports, delivered("evt_d", 100))
     await sendFrom(ports, "ses_child", "ses_parent", 150, "none")
 
-    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)).toEqual([])
     expect(sent).toEqual([])
   })
 
@@ -309,7 +343,7 @@ describe("reportSilent", () => {
     // Steered into the same turn, after the report.
     await notePrompt(ports, delivered("evt_d2", 160))
 
-    expect(await reportSilent(ports, seen, succeeded("evt_s", 200))).toEqual(["ses_parent"])
+    expect(await reportSilent(ports, seen, succeeded("evt_s", 200), outside)).toEqual(["ses_parent"])
     expect(sent).toHaveLength(1)
   })
 
@@ -320,7 +354,7 @@ describe("reportSilent", () => {
     await sendFrom(ports, "ses_child", "ses_parent", 150)
     await notePrompt(ports, delivered("evt_d", 100))
 
-    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)).toEqual([])
     expect(sent).toEqual([])
   })
 
@@ -332,7 +366,7 @@ describe("reportSilent", () => {
     await sendFrom(ports, "ses_child", "ses_sibling", 150)
     await sendFrom(ports, "ses_child", "ses_root", 150)
 
-    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual(["ses_parent"])
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)).toEqual(["ses_parent"])
     expect(sent).toHaveLength(1)
   })
 
@@ -340,7 +374,7 @@ describe("reportSilent", () => {
     const waiting = fakePorts([], [request])
     await record(waiting.ports.storage, child())
     await notePrompt(waiting.ports, delivered("evt_d", 100))
-    expect(await reportSilent(waiting.ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(await reportSilent(waiting.ports, new Set(), succeeded("evt_s", 200), outside)).toEqual([])
 
     const asking = fakePorts()
     await record(asking.ports.storage, child())
@@ -353,7 +387,7 @@ describe("reportSilent", () => {
       questions: [],
       askedAt: 1,
     })
-    expect(await reportSilent(asking.ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(await reportSilent(asking.ports, new Set(), succeeded("evt_s", 200), outside)).toEqual([])
     expect([...waiting.sent, ...asking.sent]).toEqual([])
   })
 
@@ -364,12 +398,12 @@ describe("reportSilent", () => {
     const seen = new Set<string>()
     await notePrompt(ports, delivered("evt_d1", 100))
     await notePrompt(ports, delivered("evt_d2", 110, "ses_grandchild"))
-    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200))).toEqual([])
+    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200), outside)).toEqual([])
 
     // Woken by its child's report, it ends its turn without reporting itself.
     await sendFrom(ports, "ses_grandchild", "ses_child", 300)
     await notePrompt(ports, delivered("evt_d3", 310))
-    expect(await reportSilent(ports, seen, succeeded("evt_s2", 400))).toEqual(["ses_parent"])
+    expect(await reportSilent(ports, seen, succeeded("evt_s2", 400), outside)).toEqual(["ses_parent"])
     expect(sent).toHaveLength(1)
   })
 
@@ -380,13 +414,13 @@ describe("reportSilent", () => {
     const seen = new Set<string>()
     await notePrompt(ports, delivered("evt_d1", 100))
     await notePrompt(ports, delivered("evt_d2", 110, "ses_grandchild"))
-    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200))).toEqual([])
+    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200), outside)).toEqual([])
     // The grandchild ends silently too; ses_child is told, and that notice prompts it.
-    expect(await reportSilent(ports, seen, succeeded("evt_s2", 300, "ses_grandchild"))).toEqual(["ses_child"])
+    expect(await reportSilent(ports, seen, succeeded("evt_s2", 300, "ses_grandchild"), outside)).toEqual(["ses_child"])
     await notePrompt(ports, delivered("evt_d3", 310))
 
     // It takes the grandchild's last reply and ends its turn without reporting itself.
-    expect(await reportSilent(ports, seen, succeeded("evt_s3", 400))).toEqual(["ses_parent"])
+    expect(await reportSilent(ports, seen, succeeded("evt_s3", 400), outside)).toEqual(["ses_parent"])
     expect(sent.map((notice: any) => notice.sessionID)).toEqual(["ses_child", "ses_parent"])
   })
 
@@ -406,7 +440,7 @@ describe("reportSilent", () => {
     ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
     await notePrompt(ports, delivered("evt_d", 100))
 
-    await expect(reportSilent(ports, new Set(), succeeded("evt_s", 200))).rejects.toThrow("parent is gone")
+    await expect(reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)).rejects.toThrow("parent is gone")
     expect(store.has(toldKey("ses_child"))).toBe(false)
 
     // A later notice told the parent meanwhile: that stays.
@@ -414,7 +448,7 @@ describe("reportSilent", () => {
       store.set(toldKey("ses_child"), { at: 400 })
       throw new Error("parent is gone")
     }
-    await expect(reportSilent(ports, new Set(), succeeded("evt_s2", 300))).rejects.toThrow("parent is gone")
+    await expect(reportSilent(ports, new Set(), succeeded("evt_s2", 300), outside)).rejects.toThrow("parent is gone")
     expect(store.get(toldKey("ses_child"))).toEqual({ at: 400 })
   })
 
@@ -423,17 +457,17 @@ describe("reportSilent", () => {
     await record(later.ports.storage, child())
     await notePrompt(later.ports, delivered("evt_d", 100))
     await later.ports.storage.set("later/later_1", { id: "later_1", sessionID: "ses_child", from: "ses_child", message: "m", fireAt: 500, createdAt: 150 })
-    expect(await reportSilent(later.ports, new Set(), succeeded("evt_s", 200))).toEqual([])
+    expect(await reportSilent(later.ports, new Set(), succeeded("evt_s", 200), outside)).toEqual([])
     expect(later.sent).toEqual([])
 
     const hooked = fakePorts()
     await record(hooked.ports.storage, child())
     await notePrompt(hooked.ports, delivered("evt_d", 100))
     await hooked.ports.storage.set("webhook/o%2Fr%237/ses_child", { sessionID: "ses_child", topic: "o/r#7", createdAt: 150 })
-    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s1", 200))).toEqual([])
+    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s1", 200), outside)).toEqual([])
     // The delivery it waited for came, and it ended its turn without reporting: the subscription is no wait.
     await notePrompt(hooked.ports, delivered("evt_d2", 300))
-    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s2", 400))).toEqual(["ses_parent"])
+    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s2", 400), outside)).toEqual(["ses_parent"])
   })
 
   test("notes the parent was told before telling it, as the notice may end the parent's turn at once", async () => {
@@ -445,7 +479,7 @@ describe("reportSilent", () => {
       return { id: "msg_1" }
     }
     await notePrompt(ports, delivered("evt_d", 100))
-    await reportSilent(ports, new Set(), succeeded("evt_s", 200))
+    await reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)
     expect(toldFirst).toEqual({ at: 200 })
   })
 
@@ -472,7 +506,7 @@ describe("reportSilent", () => {
     expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_y", 150, "ses_stranger") as SessionEvent)).toEqual([])
 
     expect(store.has(promptKey("ses_grandchild"))).toBe(false)
-    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200))).toEqual(["ses_parent"])
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)).toEqual(["ses_parent"])
     expect(sent).toHaveLength(1)
   })
 
@@ -483,9 +517,9 @@ describe("reportSilent", () => {
     await sendFrom(before.ports, "ses_child", "ses_parent", 150)
 
     const after = fakePorts([], [], before.store)
-    expect(await reportSilent(after.ports, new Set(), succeeded("evt_s1", 200))).toEqual([])
+    expect(await reportSilent(after.ports, new Set(), succeeded("evt_s1", 200), outside)).toEqual([])
     await notePrompt(after.ports, delivered("evt_d2", 300))
-    expect(await reportSilent(after.ports, new Set(), succeeded("evt_s2", 400))).toEqual(["ses_parent"])
+    expect(await reportSilent(after.ports, new Set(), succeeded("evt_s2", 400), outside)).toEqual(["ses_parent"])
     expect(after.sent).toHaveLength(1)
   })
 
@@ -497,7 +531,7 @@ describe("reportSilent", () => {
     }
     await notePrompt(ports, delivered("evt_d", 100))
 
-    await reportSilent(ports, new Set(), succeeded("evt_s", 200))
+    await reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)
 
     expect(sent[0].text).toBe(envelope("ses_child", silentNotice("Fix the bug", undefined), { ended: "without-report" }))
   })
@@ -507,8 +541,8 @@ describe("reportSilent", () => {
     await record(ports.storage, child())
     scanned.length = 0
     expect(await notePrompt(ports, delivered("evt_d", 100, "ses_parent"))).toBe(false)
-    expect(await reportSilent(ports, new Set(), succeeded("evt_s1", 200, "ses_parent"))).toEqual([])
-    expect(await reportSilent(ports, new Set(), succeeded("evt_s2", 200))).toEqual([])
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s1", 200, "ses_parent"), outside)).toEqual([])
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s2", 200), outside)).toEqual([])
     expect(sent).toEqual([])
     expect(scanned).toEqual([])
     expect(store.has(promptKey("ses_parent"))).toBe(false)
@@ -520,9 +554,9 @@ describe("reportSilent", () => {
     await notePrompt(ports, delivered("evt_d", 100))
     const seen = new Set<string>()
 
-    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_parent"))).toEqual([])
+    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_parent"), outside)).toEqual([])
     expect([...seen]).toEqual([])
-    const told = await Promise.all([reportSilent(ports, seen, succeeded("evt_s2", 200)), reportSilent(ports, seen, succeeded("evt_s2", 200))])
+    const told = await Promise.all([reportSilent(ports, seen, succeeded("evt_s2", 200), outside), reportSilent(ports, seen, succeeded("evt_s2", 200), outside)])
 
     expect(told).toEqual([["ses_parent"], []])
     expect(sent).toHaveLength(1)
@@ -592,14 +626,14 @@ describe("join groups", () => {
     await notePrompt(ports, delivered("evt_d2", 100, "ses_b"))
     await sendFrom(ports, "ses_a", "ses_parent", 150)
 
-    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_b"))).toEqual(["ses_parent"])
+    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_b"), outside)).toEqual(["ses_parent"])
     expect(sent[0].text).toBe(envelope("ses_b", silentNotice("B", "Looked at it; line 4 is wrong.", false, "pair"), { ended: "without-report" }))
     expect(sent[0].text).toContain('It is a member of group "pair", whose other reports are held until it reports')
     expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2 })
 
     // One whose report is held, told after a later turn of its own, is not said to hold the group up.
     await notePrompt(ports, delivered("evt_d3", 300, "ses_a"))
-    expect(await reportSilent(ports, seen, succeeded("evt_s2", 400, "ses_a"))).toEqual(["ses_parent"])
+    expect(await reportSilent(ports, seen, succeeded("evt_s2", 400, "ses_a"), outside)).toEqual(["ses_parent"])
     expect(sent[1].text).not.toContain("group")
   })
 
@@ -673,16 +707,16 @@ describe("join groups", () => {
     await notePrompt(ports, delivered("evt_d3", 110, "ses_b"))
     // One report held, the other member still owes: the parent waits.
     await sendFrom(ports, "ses_a", "ses_parent", 150)
-    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_parent"))).toEqual([])
+    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_parent"), outside)).toEqual([])
     // Its last member reports and the group is held complete, for the scheduler: the parent still waits.
     await sendFrom(ports, "ses_b", "ses_parent", 250)
-    expect(await reportSilent(ports, seen, succeeded("evt_s2", 300, "ses_parent"))).toEqual([])
+    expect(await reportSilent(ports, seen, succeeded("evt_s2", 300, "ses_parent"), outside)).toEqual([])
     expect(sent).toEqual([])
 
     // Delivered and dropped, the group's message prompts the parent, which ends its turn without reporting: told.
     for (const id of ["ses_a", "ses_b"]) store.delete(memberKey("ses_parent", "pair", id))
     await notePrompt(ports, delivered("evt_d4", 350, "ses_parent"))
-    expect(await reportSilent(ports, seen, succeeded("evt_s3", 400, "ses_parent"))).toEqual(["ses_root"])
+    expect(await reportSilent(ports, seen, succeeded("evt_s3", 400, "ses_parent"), outside)).toEqual(["ses_root"])
   })
 
   test("a session told that a group member ended without a report no longer waits for the group, as for a child in no group", async () => {
@@ -695,11 +729,11 @@ describe("join groups", () => {
     await notePrompt(ports, delivered("evt_d3", 110, "ses_b"))
     await sendFrom(ports, "ses_a", "ses_parent", 150)
     // ses_b ends silently: the parent is told, and prompted by that notice.
-    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_b"))).toEqual(["ses_parent"])
+    expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_b"), outside)).toEqual(["ses_parent"])
     await notePrompt(ports, delivered("evt_d4", 210, "ses_parent"))
 
     // It ends its turn without reporting, with the group open but stuck on a member it was told of: its parent is told.
-    expect(await reportSilent(ports, seen, succeeded("evt_s2", 300, "ses_parent"))).toEqual(["ses_root"])
+    expect(await reportSilent(ports, seen, succeeded("evt_s2", 300, "ses_parent"), outside)).toEqual(["ses_root"])
     expect(sent.map((notice: any) => notice.sessionID)).toEqual(["ses_parent", "ses_root"])
   })
 
@@ -709,7 +743,7 @@ describe("join groups", () => {
     await reportFailure(ports, new Set(), { ...failed("ses_b", "evt_1"), created: 100 })
     await notePrompt(ports, delivered("evt_d", 200, "ses_b"))
 
-    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 300, "ses_b"))).toEqual(["ses_parent"])
+    expect(await reportSilent(ports, new Set(), succeeded("evt_s", 300, "ses_b"), outside)).toEqual(["ses_parent"])
 
     expect(sent[1].text).not.toContain("group")
     expect(await noteInterrupted(ports, sessionEvent("session.execution.interrupted", "evt_i", 400, "ses_b", "user") as SessionEvent)).toBe(true)
@@ -820,7 +854,7 @@ describe("what settles a child's report", () => {
     expect(await owesReport(ports.storage, "ses_child")).toBe(true)
     expect(await noteInterrupted(ports, sessionEvent("session.execution.interrupted", "evt_i2", 160, "ses_child", "user") as SessionEvent)).toBe(true)
     expect(await owesReport(ports.storage, "ses_child")).toBe(false)
-    expect(await reportSilent(ports, seen, succeeded("evt_s", 200))).toEqual([])
+    expect(await reportSilent(ports, seen, succeeded("evt_s", 200), outside)).toEqual([])
     expect(sent).toEqual([])
   })
 
@@ -854,7 +888,7 @@ describe("what settles a child's report", () => {
     const { ports, store } = fakePorts()
     await record(ports.storage, child())
     await notePrompt(ports, delivered("evt_d", 100))
-    await reportSilent(ports, new Set(), succeeded("evt_s", 120))
+    await reportSilent(ports, new Set(), succeeded("evt_s", 120), outside)
     await sendFrom(ports, "ses_child", "ses_parent", 130, "none")
     await sendFrom(ports, "ses_child", "ses_parent", 150)
     expect([...store.keys()].filter((key) => key.startsWith("report/")).sort()).toEqual([

@@ -8,16 +8,16 @@ import { dirtyOf, headOf, inspectWorktree, type CleanupPorts } from "./cleanup.j
 import { deliverReleased } from "./group.js"
 import { watchFromHub } from "./platform/events.js"
 import { hub, openInProcess, permissions as domains, sharedState, type Member, type TickJob } from "./platform/hub.js"
-import { deliverDue, type LaterPorts } from "./later.js"
+import { builtVersions, versionNotice } from "./platform/version.js"
+import { deliverDue, isScheduled, type LaterPorts } from "./later.js"
 import { readLimits, shapeContext, type SpawnGate } from "./limits.js"
-import { pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
-import { joinRelay, noticeCutOff, pendingQuestions, portsAt, relayQuestions, type QuestionPorts } from "./question/index.js"
+import { asksPermission, pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
+import { asksQuestion, joinRelay, noticeCutOff, pendingQuestions, portsAt, relayQuestions, type QuestionPorts } from "./question/index.js"
 import { pruneExpired } from "./roster.js"
 import { addSkill } from "./skill.js"
 import { addTools, type ToolPorts } from "./tools.js"
-import { personEvents, treeEvents, type WatchPorts, type WatchState } from "./watch.js"
-import { builtVersions, versionNotice } from "./platform/version.js"
-import { listen, readConfig, type Receiver, type Receivers, type WebhookConfig, type WebhookPorts } from "./webhook.js"
+import { personEvents, together, treeEvents, waitsOn, type WatchPorts, type WatchState } from "./watch.js"
+import { listen, readConfig, subscribedSince, type Receiver, type Receivers, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
 /**
  * The webhook receiver, one per process: instances with a `webhook` option join `instances`, the first
@@ -102,8 +102,14 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 const { watched } = hub
 const watchState: WatchState = { ...watched, forms: hub.forms, inbox }
 
+/**
+ * What a session waits on outside the tree, for the silent-turn rule, cheapest first: a request of its
+ * own to the person, then a scheduled message or a webhook it subscribed to since its last prompt.
+ */
+const outside = waitsOn(asksPermission, asksQuestion, together(isScheduled, subscribedSince))
+
 /** What the hub's subscriptions do with each event of OpenCode's, module by module, in this order. */
-const eventModules = [treeEvents(watchState), personEvents(watchState)]
+const eventModules = [treeEvents(watchState, outside), personEvents(watchState)]
 
 /**
  * The courier tools and webhook receiver, as a promise plugin joining the hub that runs the scheduler

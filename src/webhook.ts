@@ -120,6 +120,12 @@ export function subscriptions(ports: Pick<WebhookPorts, "storage">, topic?: stri
   return scanAll<Subscription>(ports.storage, topic === undefined ? PREFIX : topicPrefix(topic))
 }
 
+/** Whether a session waits on a webhook it subscribed to at `since` or later. */
+export async function subscribedSince(ports: Pick<WebhookPorts, "storage">, sessionID: string, since: number) {
+  // An older subscription is no wait: a prompt, most likely its delivery, has come since.
+  return (await subscriptions(ports)).some((subscription) => subscription.sessionID === sessionID && subscription.createdAt >= since)
+}
+
 /**
  * The HMAC a delivery is signed with: of the raw body for GitHub, and of `<name>\n<body>` for
  * `/hook/<name>`, so a captured generic delivery cannot be replayed to another topic.

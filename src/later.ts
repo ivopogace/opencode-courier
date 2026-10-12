@@ -93,6 +93,11 @@ export async function scheduledFor(storage: Pick<Storage, "scan">, sessionID: st
   return (await pending({ storage: storage as Storage })).filter((entry) => entry.sessionID === sessionID)
 }
 
+/** Whether a session waits on a scheduled message of its own. */
+export async function isScheduled(ports: { readonly storage: Pick<Storage, "scan"> }, sessionID: string) {
+  return (await scheduledFor(ports.storage, sessionID)).length > 0
+}
+
 /**
  * Delivers every due message once: an id is claimed synchronously in the shared `claimed`, re-read,
  * delivered and only then removed; a crash in between delivers it again after a restart, not never.

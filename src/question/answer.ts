@@ -188,6 +188,11 @@ export async function answerQuestion(ports: QuestionPorts, callerID: string, inp
   return by ? { sessionID, requestID, answered: true, by, answers } : { sessionID, requestID, answered: false }
 }
 
+/** Whether a session waits on a question of its own, open or cut off and not yet answered. */
+export async function asksQuestion(ports: { readonly storage: RosterStorage }, sessionID: string) {
+  return (await pendingQuestions(ports.storage, sessionID)).length > 0
+}
+
 /** The questions a session waits on, for courier_status; `stopped` when its call was cut off. */
 export async function pendingQuestions(storage: RosterStorage, sessionID: string) {
   const found = new Map<string, { type: "question"; requestID: string; questions: Prompt[]; stopped?: true }>()

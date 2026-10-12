@@ -100,6 +100,11 @@ export function listEverywhere<D extends Pick<Permissions, "list">>(permissions:
   )
 }
 
+/** Whether a session waits on a permission request of its own, in any loaded location. */
+export async function asksPermission(ports: { readonly permissions: () => Iterable<Pick<Permissions, "list">> }, sessionID: string) {
+  return (await listEverywhere([...ports.permissions()], sessionID)).some((found) => found.requests.length > 0)
+}
+
 /** The location holding a pending request, and the request; undefined when none does, and an error when one could not be read. */
 async function locate(ports: AnswerPorts, sessionID: string, requestID: string) {
   const listed = await listEverywhere(ports.permissions(), sessionID)

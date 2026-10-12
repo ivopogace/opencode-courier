@@ -16,7 +16,7 @@ import {
   type QuestionPorts,
   type QuestionTiming,
 } from "../src/question/index.js"
-import { hub, join, resetHub, type Asked, type Member } from "../src/hub.js"
+import { hub, join, resetHub, type Asked, type Member } from "../src/platform/hub.js"
 import { anyLoaded } from "../src/question/shared.js"
 import { background, run, stopRelay, useClock } from "../src/question/runtime.js"
 import { answeredText, questionNotice, questionSettledNotice as settledNotice } from "../src/notices.js"

@@ -1,9 +1,9 @@
 // Run by test/hub.test.ts in a process of its own: loads the hub module twice, as two copies of the
 // plugin in one process; kept out of the test process, whose Bun coverage one copy would overwrite.
-import type { Member } from "../../src/hub.js"
+import type { Member } from "../../src/platform/hub.js"
 
-type HubModule = typeof import("../../src/hub.js")
-const copy = (name: string) => import(`../../src/hub.js?copy=${name}`) as Promise<HubModule>
+type HubModule = typeof import("../../src/platform/hub.js")
+const copy = (name: string) => import(`../../src/platform/hub.js?copy=${name}`) as Promise<HubModule>
 const registry = globalThis as Record<symbol, unknown>
 
 // The reads of the scheduler's owner key, by the directory of the member they ran through: the first

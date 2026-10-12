@@ -14,7 +14,7 @@ import {
   type PermissionAsked,
   type PermissionReplied,
 } from "../src/relay.js"
-import { hub as processHub, open, resetHub, type Hub, type Member } from "../src/hub.js"
+import { hub as processHub, open, resetHub, type Hub, type Member } from "../src/platform/hub.js"
 import { shutdownReportedAt } from "../src/question/index.js"
 import { send, type CourierPorts } from "../src/courier.js"
 import { joinGroup, memberKey, memberOf } from "../src/group.js"

@@ -3,11 +3,11 @@ import { createHmac, timingSafeEqual } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type Server } from "node:http"
 import { homedir } from "node:os"
-import { addBounded } from "./bounded.js"
-import { isNotFound, num, obj, str } from "./json.js"
+import { addBounded } from "./platform/bounded.js"
+import { isNotFound, num, obj, str } from "./platform/json.js"
 import { envelope } from "./kernel/protocol.js"
 import { CI_EVENTS, githubSummary, hookSummary, webhookText } from "./notices.js"
-import { scanAll } from "./storage.js"
+import { scanAll } from "./platform/storage.js"
 
 /** What every GitHub delivery carries, read once for the summary of its event. */
 export interface Delivery {

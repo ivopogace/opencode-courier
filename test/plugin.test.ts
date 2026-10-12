@@ -1,10 +1,10 @@
 import { afterEach, expect, spyOn, test } from "bun:test"
 import { Schema } from "effect"
 import plugin, { courier } from "../src/index.js"
-import { hub, memberAt, OWNER_KEY, SERVER } from "../src/hub.js"
+import { hub, memberAt, OWNER_KEY, SERVER } from "../src/platform/hub.js"
 import { DEFAULT_LIMITS } from "../src/limits.js"
 import { depthRefusal, rolePart, SKILL_CONTENT, SKILL_DESCRIPTION, SKILL_ID } from "../src/notices.js"
-import { builtVersions } from "../src/version.js"
+import { builtVersions } from "../src/platform/version.js"
 
 const cleanups: Array<() => unknown> = []
 afterEach(async () => {

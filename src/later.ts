@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 import { envelope } from "./kernel/protocol.js"
-import { scanAll, type Storage } from "./storage.js"
+import { scanAll, type Storage } from "./platform/storage.js"
 
 type Context = Plugin.Context
 

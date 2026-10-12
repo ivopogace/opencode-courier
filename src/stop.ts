@@ -1,6 +1,6 @@
 import { cleanup, type CleanupPorts, type CleanupResult } from "./cleanup.js"
 import type { CourierPorts } from "./courier.js"
-import { isNotFound } from "./json.js"
+import { isNotFound } from "./platform/json.js"
 import { describeFailure, envelope } from "./kernel/protocol.js"
 import { cancel, scheduledFor, type LaterPorts } from "./later.js"
 import { stoppedNotice } from "./notices.js"

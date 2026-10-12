@@ -3,7 +3,7 @@
  * descriptions. Pure functions on plain data. Until they move out, they import no runtime value of the plugin's
  * but `kernel/protocol.ts` and `json.ts`; the types they use come from the modules that own them, as `import type`.
  */
-import { num, obj, str } from "./json.js"
+import { num, obj, str } from "./platform/json.js"
 import { clipText, defuse, END_TURN, envelope, STATUSES, type Status } from "./kernel/protocol.js"
 import type { Artifacts } from "./report.js"
 import type { Held, Sent } from "./courier.js"

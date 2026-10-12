@@ -1,7 +1,7 @@
-import { addBounded, setBounded } from "./bounded.js"
+import { addBounded, setBounded } from "./platform/bounded.js"
 import { lastReply } from "./courier.js"
 import { dropGroups, hasCompleteGroup, markLeft, membershipOf, type Membership } from "./group.js"
-import type { Hub, Member, WatchPorts, WatchState } from "./hub.js"
+import type { Hub, Member, WatchPorts, WatchState } from "./platform/hub.js"
 import { envelope } from "./kernel/protocol.js"
 import {
   failureNotice,
@@ -33,7 +33,7 @@ export interface ExecutionError {
   readonly status?: number
 }
 
-export type { FormsTold, WatchPorts, WatchState } from "./hub.js"
+export type { FormsTold, WatchPorts, WatchState } from "./platform/hub.js"
 
 /** How long to wait before subscribing again after the event stream ended or broke. */
 export const RESUBSCRIBE_MS = 5_000

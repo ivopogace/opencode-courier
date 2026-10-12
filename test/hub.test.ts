@@ -19,7 +19,7 @@ import {
   resetHub,
   type Member,
   type Timers,
-} from "../src/hub.js"
+} from "../src/platform/hub.js"
 import { TICK_MS, type LaterEntry, type LaterPorts } from "../src/later.js"
 
 const LEGACY = ["claimed", "watched", "forms", "questions", "receiver", "locations"]
@@ -1123,10 +1123,10 @@ describe("a tick's end", () => {
   })
 })
 
-test("hub.ts is the only module of src/ that keeps anything process-wide", () => {
+test("platform/hub.ts is the only module of src/ that keeps anything process-wide", () => {
   const src = joinPath(import.meta.dir, "..", "src")
   const users = readdirSync(src, { recursive: true, encoding: "utf8" }).filter(
-    (file) => file.endsWith(".ts") && file !== "storage.ts" && /\bprocessWide\s*[(<]|Symbol\.for\s*\(|globalThis/.test(readFileSync(joinPath(src, file), "utf8")),
+    (file) => file.endsWith(".ts") && file !== joinPath("platform", "storage.ts") && /\bprocessWide\s*[(<]|Symbol\.for\s*\(|globalThis/.test(readFileSync(joinPath(src, file), "utf8")),
   )
-  expect(users).toEqual(["hub.ts"])
+  expect(users).toEqual([joinPath("platform", "hub.ts")])
 })

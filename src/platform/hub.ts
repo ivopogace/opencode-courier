@@ -1,8 +1,6 @@
 import { randomInt } from "node:crypto"
 import { hostname } from "node:os"
-import { deliverReleased } from "../group.js"
 import { num, obj, str } from "./json.js"
-import { deliverDue, TICK_MS, type LaterPorts } from "../later.js"
 import { processWide, type Registry, type Storage } from "./storage.js"
 
 /**
@@ -75,8 +73,8 @@ export interface Tick {
 }
 
 /**
- * The scheduler's loop, one per hub: it runs while the hub has members, and each tick delivers the
- * due `courier_later` messages through the ports of the member that joined first and is still loaded.
+ * The scheduler's loop, one per hub: it runs while the hub has members, and each tick runs the jobs
+ * registered with `open` through the ports of the member that joined first and is still loaded.
  */
 export interface Scheduler {
   /** The loop's interval, while it runs. */
@@ -109,6 +107,9 @@ const realTimers: Timers = {
   stop: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
   wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }
+
+/** How often the hub's scheduler ticks: what a job delivers, a `courier_later` message, can be this late. */
+export const TICK_MS = 15_000
 
 /**
  * The storage key, shared by every server on one data directory, naming the server whose scheduler
@@ -200,6 +201,12 @@ export interface Hub {
   skewLogged: boolean
 }
 
+/**
+ * A job each tick runs, in its turn, through the first loaded member, which may be another copy's:
+ * it uses only the ports every hub-v2 member has. `claimed` is the hub's claim set; a throw ends the tick.
+ */
+export type TickJob = (owner: Member, claimed: Set<string>) => Promise<void>
+
 /** A hub, as `open` finds or makes it, and how instances join it. */
 export interface Opened {
   readonly hub: Hub
@@ -230,7 +237,7 @@ export function sharedState<T>(name: string, create: () => T, registry: Registry
  * Finds or makes this copy's hub in `registry`: the one under `HUB_KEY`, or its own under a versioned
  * key when another version holds that; its claim sets are the pre-hub keys', made when missing.
  */
-export function open(registry: Registry, timers: Timers = realTimers, server = SERVER): Opened {
+function find(registry: Registry) {
   const shared = <T>(name: string, create: () => T) => sharedState(name, create, registry)
   const create = (): Hub => ({
     version: HUB_VERSION,
@@ -250,7 +257,16 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
   const found = registry[Symbol.for(HUB_KEY)] as { version?: unknown } | null | undefined
   // The version of the hub of another copy found under `HUB_KEY`, if one is there.
   const skew = found != null && found.version !== HUB_VERSION ? { version: found.version } : undefined
-  const hub = processWide(skew ? `${HUB_KEY}@${HUB_VERSION}` : HUB_KEY, create, registry)
+  return { hub: processWide(skew ? `${HUB_KEY}@${HUB_VERSION}` : HUB_KEY, create, registry), skew }
+}
+
+/**
+ * This copy's hub in `registry`, as `find` finds or makes it, and how its instances join it; its
+ * ticks run `jobs` in order. The jobs live in this copy's tick, which the hub runs once a member of
+ * this copy has joined last, never in the hub: a copy that unloads takes its jobs with it.
+ */
+export function open(registry: Registry, jobs: readonly TickJob[], timers: Timers = realTimers, server = SERVER): Opened {
+  const { hub, skew } = find(registry)
 
   /**
    * Whether this server holds the owner key, taking or renewing it through `ports`. A free, expired
@@ -341,8 +357,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     }
     try {
       if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner)) {
-        await deliverDue(owner.later as LaterPorts, hub.claimed)
-        await deliverReleased(owner.later as LaterPorts, hub.claimed)
+        for (const job of jobs) await job(owner, hub.claimed)
       }
     } catch (error) {
       tell(`courier_later scheduler: ${String(error)}`)
@@ -444,19 +459,11 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
   }
 }
 
-const opened = open(globalThis as Registry)
-
 /** This copy's hub, in the process. */
-export const hub: Hub = opened.hub
+export const hub: Hub = find(globalThis as Registry).hub
 
-/** Joins this copy's hub; see `Opened.join`. */
-export const join = opened.join
-
-/** Hands this copy's hub work a member started; see `Opened.track`. */
-export const track = opened.track
-
-/** Has this copy's scheduler deliver what is due now; see `Opened.nudge`. */
-export const nudge = opened.nudge
+/** Opens this copy's hub in the process, with its tick jobs; see `open`. */
+export const openInProcess = (jobs: readonly TickJob[]) => open(globalThis as Registry, jobs)
 
 /** The member of this copy's hub set up with `location` that joined last, while it is loaded. */
 export function memberAt(location: object) {

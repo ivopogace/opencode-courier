@@ -1,6 +1,7 @@
 // Run by test/hub.test.ts in a process of its own: loads the hub module twice, as two copies of the
 // plugin in one process; kept out of the test process, whose Bun coverage one copy would overwrite.
-import type { Member } from "../../src/platform/hub.js"
+import { deliverDue, type LaterPorts } from "../../src/later.js"
+import type { Member, TickJob } from "../../src/platform/hub.js"
 
 type HubModule = typeof import("../../src/platform/hub.js")
 const copy = (name: string) => import(`../../src/platform/hub.js?copy=${name}`) as Promise<HubModule>
@@ -24,9 +25,12 @@ const member = (directory: string, log: (message: string) => void = () => {}) =>
 
 const first = await copy("1")
 const second = await copy("2")
-const leaveA = first.join(member("/a"))
+// Each copy opens the process's hub as its plugin module does, with its own jobs: none here.
+const firstOpened = first.open(registry, [])
+const secondOpened = second.open(registry, [])
+const leaveA = firstOpened.join(member("/a"))
 const loop = first.hub.scheduler.timer
-const leaveB = second.join(member("/b"))
+const leaveB = secondOpened.join(member("/b"))
 const joined = { members: [...first.hub.members].map((m) => m.directory), permissions: [...second.permissions()].length }
 // The second copy joins the loop the first one started rather than starting its own.
 const oneLoop = loop !== undefined && second.hub.scheduler.timer === loop
@@ -40,8 +44,9 @@ const emptyAtEnd = first.hub.members.size === 0 && first.hub.locations.size === 
 registry[Symbol.for(first.HUB_KEY)] = { version: first.HUB_VERSION + 1 }
 const logs: string[] = []
 const skewed = await copy("skewed")
-const leaveC = skewed.join(member("/c", (message) => logs.push(message)))
-const leaveD = skewed.join(member("/d", (message) => logs.push(message)))
+const skewedOpened = skewed.open(registry, [])
+const leaveC = skewedOpened.join(member("/c", (message) => logs.push(message)))
+const leaveD = skewedOpened.join(member("/d", (message) => logs.push(message)))
 // A hub of its own runs a loop of its own.
 const skewedOwnLoop = skewed.hub.scheduler.timer !== undefined
 leaveC()
@@ -85,8 +90,9 @@ const stored = (directory: string, deliver?: () => Promise<unknown>) =>
 const settle = () => Bun.sleep(1)
 store.set("later/later_1", { id: "later_1", sessionID: "ses_parent", from: "ses_parent", message: "wake", fireAt: 1, createdAt: 0 })
 const own: Record<symbol, unknown> = {}
-const olderCopy = first.open(own, timers, "server_a")
-const newerCopy = second.open(own, timers, "server_a")
+const delivering: TickJob[] = [(owner, claimed) => deliverDue(owner.later as LaterPorts, claimed)]
+const olderCopy = first.open(own, delivering, timers, "server_a")
+const newerCopy = second.open(own, delivering, timers, "server_a")
 const leaveOlder = olderCopy.join(stored("/a", () => new Promise((resolve) => (finish = () => resolve({ id: "msg_1" })))))
 await settle()
 const leaveNewer = newerCopy.join(stored("/b"))
@@ -110,7 +116,7 @@ console.log(
   JSON.stringify({
     otherCopy,
     sameHub: first.hub === second.hub,
-    separateModules: first.join !== second.join,
+    separateModules: first.open !== second.open && firstOpened.join !== secondOpened.join,
     joined,
     oneLoop,
     afterLeave,

@@ -1490,7 +1490,7 @@ describe("the hub's subscriptions: one active, one standby", () => {
 
   test("one instance gives one subscription and no standby; a second starts the standby, a third neither", async () => {
     resetHub()
-    const opened = open({}, idle)
+    const opened = open({}, [], idle)
     const [a, b, c] = [member("a"), member("b"), member("c")]
     const unloadA = load(opened, a)
     expect(watchingThrough(opened.hub)).toEqual([a.joined])
@@ -1518,7 +1518,7 @@ describe("the hub's subscriptions: one active, one standby", () => {
 
   test("when the first one's instance leaves, the standby keeps following and a new one starts, through the earliest instance without one", async () => {
     resetHub()
-    const opened = open({}, idle)
+    const opened = open({}, [], idle)
     const state = fresh()
     const [a, b, c] = [member("a"), member("b"), member("c", [request])]
     await record(c.ports.storage, child())
@@ -1549,7 +1549,7 @@ describe("the hub's subscriptions: one active, one standby", () => {
 
   test("when the standby's instance leaves, another starts", async () => {
     resetHub()
-    const opened = open({}, idle)
+    const opened = open({}, [], idle)
     const [a, b, c] = [member("a"), member("b"), member("c")]
     const unloadA = load(opened, a)
     const unloadB = load(opened, b)
@@ -1566,7 +1566,7 @@ describe("the hub's subscriptions: one active, one standby", () => {
 
   test("a subscription started after an update runs the watcher of the copy loaded last", async () => {
     resetHub()
-    const opened = open({}, idle)
+    const opened = open({}, [], idle)
     const [a, b, c] = [member("a"), member("b"), member("c")]
     const unloadA = load(opened, a)
     const unloadB = load(opened, b)
@@ -1586,7 +1586,7 @@ describe("the hub's subscriptions: one active, one standby", () => {
 
   test("after a reload, which closes every location and loads it again, both subscriptions run through new instances", async () => {
     resetHub()
-    const opened = open({}, idle)
+    const opened = open({}, [], idle)
     const old = [member("a"), member("b"), member("c")]
     const unloads = old.map((loaded) => load(opened, loaded))
     const fresh_ = [member("a2"), member("b2"), member("c2")]

@@ -5,8 +5,9 @@ import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
 import type { CourierPorts } from "./courier.js"
 import { dirtyOf, headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
-import { hub, join, nudge, permissions as domains, sharedState, track, type Member } from "./platform/hub.js"
-import type { LaterPorts } from "./later.js"
+import { deliverReleased } from "./group.js"
+import { hub, openInProcess, permissions as domains, sharedState, type Member, type TickJob } from "./platform/hub.js"
+import { deliverDue, type LaterPorts } from "./later.js"
 import { readLimits, shapeContext, type SpawnGate } from "./limits.js"
 import { pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
 import { joinRelay, noticeCutOff, pendingQuestions, portsAt, relayQuestions, type QuestionPorts } from "./question/index.js"
@@ -28,6 +29,17 @@ const gate = sharedState<SpawnGate>("spawning", () => ({ reserved: new Set(), tu
 
 /** The type of each item enqueued for a spawned session, outside the hub like the gate. */
 const inbox = sharedState("inbox", () => new Map<string, string>())
+
+/**
+ * What each tick of the scheduler does, in order, through the first loaded member, of whichever copy:
+ * due `courier_later` messages, then released join groups. Every hub-v2 member's `later` is its LaterPorts.
+ */
+const jobs: TickJob[] = [
+  (owner, claimed) => deliverDue(owner.later as LaterPorts, claimed),
+  (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
+]
+
+const { join, track, nudge } = openInProcess(jobs)
 
 /** The permission domains of the loaded instances: every member's is its location's, whichever copy joined it. */
 const permissions = domains as () => Iterable<Permissions>

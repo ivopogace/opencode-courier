@@ -4,9 +4,6 @@ import { scanAll, type Storage } from "./platform/storage.js"
 
 type Context = Plugin.Context
 
-/** How often the hub's scheduler looks for due messages; a delivery can be this late. */
-export const TICK_MS = 15_000
-
 const PREFIX = "later/"
 /** The latest time a Date can hold; a message due after it could never be shown or delivered. */
 const LATEST = 8.64e15

@@ -57,6 +57,12 @@ test("notices.ts imports nothing of the plugin's at runtime but platform/json.ts
   expect(runtime.sort()).toEqual(["kernel/protocol", "platform/json"])
 })
 
+test("platform/ imports only platform/, so the hub and the event loop depend on no feature", () => {
+  const platform = [...imports()].filter(([module]) => module.startsWith("platform/"))
+  expect(platform.map(([module]) => module)).toContain("platform/hub")
+  expect(platform.flatMap(([module, imported]) => imported.filter((name) => !name.startsWith("platform/")).map((name) => `${module} -> ${name}`))).toEqual([])
+})
+
 test("kernel/ imports only kernel/ and platform/json.ts, so any module can use it", () => {
   const kernel = [...imports()].filter(([module]) => module.startsWith("kernel/"))
   expect(kernel.map(([module]) => module)).toContain("kernel/protocol")

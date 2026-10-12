@@ -1,7 +1,6 @@
 import type { Plugin as EffectPlugin } from "@opencode/plugin/effect"
 import { Cause, Exit, Result, type Effect } from "effect"
-import type { Prompt } from "../courier.js"
-import type { Answers, Asked, Elsewhere, Question, Withdrawal } from "../hub.js"
+import type { Answers, Asked, Elsewhere, Prompt, Question, Withdrawal } from "./types.js"
 import { withdrawnText } from "../notices.js"
 
 type ToolEditor = Parameters<Parameters<EffectPlugin.Context["tool"]["transform"]>[0]>[0]

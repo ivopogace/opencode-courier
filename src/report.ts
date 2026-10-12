@@ -1,6 +1,6 @@
-import { obj } from "./json.js"
+import { obj } from "./platform/json.js"
 import { isStatus, type Status } from "./kernel/protocol.js"
-import { scanEntries, type Storage } from "./storage.js"
+import { scanEntries, type Storage } from "./platform/storage.js"
 
 /** What a report lists besides its text; `checks` are the commands the session ran and what each gave. */
 export interface Artifacts {

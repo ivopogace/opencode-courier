@@ -1,7 +1,6 @@
-import { addBounded, setBounded } from "./bounded.js"
+import type { Plugin } from "@opencode/plugin"
 import { lastReply } from "./courier.js"
 import { dropGroups, hasCompleteGroup, markLeft, membershipOf, type Membership } from "./group.js"
-import type { Hub, Member, WatchPorts, WatchState } from "./hub.js"
 import { envelope } from "./kernel/protocol.js"
 import {
   failureNotice,
@@ -12,7 +11,7 @@ import {
   permissionSettledNotice,
   silentNotice,
 } from "./notices.js"
-import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing, pendingQuestions } from "./question/index.js"
+import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing } from "./question/index.js"
 import {
   listEverywhere,
   QUESTION_FORM,
@@ -20,11 +19,13 @@ import {
   type FormSettled,
   type PermissionAsked,
   type PermissionReplied,
+  type Waiting,
 } from "./relay.js"
-import { scheduledFor } from "./later.js"
+import { addBounded, setBounded } from "./platform/bounded.js"
+import type { EventModule, HostEvent } from "./platform/events.js"
+import type { FormsTold } from "./platform/hub.js"
 import { awaited, forgetReport, prompted, reportOf, settled, stoppedSincePrompt, told, untold } from "./report.js"
-import { allEntries, children, entriesOf, entryUnder, indexedEntry, indexedParent, lineage, type RosterEntry } from "./roster.js"
-import { subscriptions } from "./webhook.js"
+import { allEntries, children, entriesOf, entryUnder, indexedEntry, indexedParent, lineage, type RosterEntry, type RosterStorage } from "./roster.js"
 
 /** The error of OpenCode's `session.execution.failed` event. */
 export interface ExecutionError {
@@ -33,10 +34,39 @@ export interface ExecutionError {
   readonly status?: number
 }
 
-export type { FormsTold, WatchPorts, WatchState } from "./hub.js"
+type Context = Plugin.Context
 
-/** How long to wait before subscribing again after the event stream ended or broke. */
-export const RESUBSCRIBE_MS = 5_000
+export type { FormsTold } from "./platform/hub.js"
+
+export interface WatchPorts {
+  readonly storage: RosterStorage
+  /** `context` reads the last reply of a session that ended its turn without reporting. */
+  readonly session: Pick<Context["session"], "synthetic" | "context">
+  readonly event: Pick<Context["event"], "subscribe">
+  /**
+   * The permission domains of every loaded location, whose pending requests are relayed when the
+   * watcher (re)subscribes: one watcher serves them all, and an isolated child's are in its worktree's.
+   */
+  readonly permissions: () => Iterable<Pick<Context["permission"], "list">>
+  /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
+  readonly now: () => number
+  readonly log: (message: string) => void
+  /** Has the scheduler deliver what is due now rather than at its next tick: a group completed, or its parent's turn ended. */
+  readonly nudge: () => void
+}
+
+/**
+ * What every plugin instance in the process shares. Several subscriptions and copies see the same
+ * events, so each is claimed synchronously and handled once; `answered` keeps stale notices unsent.
+ */
+export interface WatchState {
+  readonly seen: Set<string>
+  readonly waiting: Waiting
+  readonly answered: Set<string>
+  readonly forms: FormsTold
+  /** The type of each item enqueued for a spawned session, by inbox id, for its delivery to look up. */
+  readonly inbox: Map<string, string>
+}
 
 /** How many handled event ids, and waiting or answered requests, are remembered. */
 const SEEN_MAX = 1_000
@@ -193,32 +223,48 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
 }
 
 /**
- * Whether a session prompted at `prompt` waits: on an untold report of a session it started, a complete group of
- * its about to be delivered, a request of its own, a scheduled message, or a webhook it subscribed to since. Cheapest first.
+ * Whether a session waits, since `since`, on what the tree does not keep: asked by the silent-turn
+ * rule after the tree's own checks, through the watcher's ports; `src/index.ts` composes it.
  */
-async function waits(ports: WatchPorts, sessionID: string, prompt: number) {
+export type Waits = (ports: Pick<WatchPorts, "storage" | "permissions">, sessionID: string, since: number) => Promise<boolean>
+
+/** A `Waits` asking `suppliers` one after another, cheapest first: the first that waits answers. */
+export const waitsOn =
+  (...suppliers: Waits[]): Waits =>
+  async (ports, sessionID, since) => {
+    for (const supplier of suppliers) if (await supplier(ports, sessionID, since)) return true
+    return false
+  }
+
+/** A `Waits` asking `suppliers` at once, as cheap as each other: it waits when one does, and fails when one fails. */
+export const together =
+  (...suppliers: Waits[]): Waits =>
+  async (ports, sessionID, since) =>
+    (await Promise.all(suppliers.map((supplier) => supplier(ports, sessionID, since)))).includes(true)
+
+/**
+ * Whether a session prompted at `prompt` waits: on an untold report of a session it started, a complete group of
+ * its about to be delivered, or what `outside` says it waits on. Cheapest first.
+ */
+async function waits(ports: WatchPorts, outside: Waits, sessionID: string, prompt: number) {
   const started = await children(ports.storage, sessionID)
   if ((await Promise.all(started.map((entry) => awaited(ports.storage, entry.sessionID)))).includes(true)) return true
-  if ((await listEverywhere([...ports.permissions()], sessionID)).some((found) => found.requests.length)) return true
   // A group with a member still out is waited on through that member, above; one whose every out member was told of is not.
   if (started.some((entry) => entry.group) && (await hasCompleteGroup(ports.storage, sessionID))) return true
-  if ((await pendingQuestions(ports.storage, sessionID)).length) return true
-  const [scheduled, subscribed] = await Promise.all([scheduledFor(ports.storage, sessionID), subscriptions(ports)])
-  // An older subscription is no wait: a prompt, most likely its delivery, has come since.
-  return scheduled.length > 0 || subscribed.some((subscription) => subscription.sessionID === sessionID && subscription.createdAt >= prompt)
+  return outside(ports, sessionID, prompt)
 }
 
 /**
  * Tells the parent of a spawned session whose turn ended without reporting to it since its last
  * prompt, unless it waits; finds the session by the reverse index alone. Returns the parents told.
  */
-export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: SessionEvent) {
+export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: SessionEvent, outside: Waits) {
   const { sessionID } = event.data
   const entry = await indexedEntry(ports.storage, sessionID)
   // Claimed after the lookup, so other sessions' turns do not crowd `seen`, and before anything is told.
   if (!entry || !claim(seen, event.id)) return []
   const report = await reportOf(ports.storage, sessionID)
-  if (!report?.owes || (await waits(ports, sessionID, report.prompt))) return []
+  if (!report?.owes || (await waits(ports, outside, sessionID, report.prompt))) return []
   if (await stoppedSincePrompt(ports.storage, sessionID).catch(() => false)) return []
   // The notice goes out without the reply rather than not at all.
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
@@ -365,17 +411,6 @@ export async function relayPending(ports: WatchPorts, state: WatchState) {
   await Promise.all([...sessions].map(relay))
 }
 
-const pause = (ms: number, signal: AbortSignal) =>
-  new Promise<void>((resolve) => {
-    const timer = setTimeout(done, ms)
-    function done() {
-      clearTimeout(timer)
-      signal.removeEventListener("abort", done)
-      resolve()
-    }
-    signal.addEventListener("abort", done)
-  })
-
 const TURN_ENDS = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
 
 /** A session's turn ended, sealing its groups: one that is complete has the scheduler deliver it now. */
@@ -388,26 +423,19 @@ async function sealGroups(ports: WatchPorts, event: SessionEvent) {
   }
 }
 
-/**
- * Handles one event of OpenCode's stream; those that cannot concern a spawned child, or a question
- * relayed for one, are ignored.
- */
-async function handle(ports: WatchPorts, state: WatchState, event: { readonly type: string }) {
-  try {
-    return await route(ports, state, event)
-  } finally {
-    // After: a silent end is judged while the group the nudge may deliver is still there to wait on.
-    if (TURN_ENDS.has(event.type)) await sealGroups(ports, event as unknown as SessionEvent)
-  }
-}
-
-async function route(ports: WatchPorts, state: WatchState, event: { readonly type: string }) {
+/** The events of spawned sessions' turns and inboxes, and their deletion: the tree's. */
+function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: HostEvent) {
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
-  if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent)
+  if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent, outside)
   if (event.type === "session.execution.interrupted") return noteInterrupted(ports, event as unknown as SessionEvent)
   if (event.type === "session.inbox.enqueued") return noteEnqueued(ports, state.inbox, event as unknown as InboxEnqueued)
   if (event.type === "session.inbox.delivered") return notePrompt(ports, event as unknown as SessionEvent, state.inbox)
   if (event.type === "session.deleted") return noteDeleted(ports, event as unknown as SessionEvent)
+  return undefined
+}
+
+/** The events of what a spawned session asks the person: permission requests, forms, and locations closing on them. */
+function routePerson(ports: WatchPorts, state: WatchState, event: HostEvent) {
   if (event.type === "permission.asked") return reportAsked(ports, state, event as unknown as PermissionAsked)
   if (event.type === "permission.replied") return reportReplied(ports, state, event as unknown as PermissionReplied)
   if (event.type === "form.created") {
@@ -424,96 +452,33 @@ async function route(ports: WatchPorts, state: WatchState, event: { readonly typ
     const directory = (event as { location?: { directory?: unknown } }).location?.directory
     locationClosing(ports.now(), typeof directory === "string" ? directory : undefined)
   }
-  return []
-}
-
-const ENDED: IteratorReturnResult<undefined> = { done: true, value: undefined }
-
-/**
- * `events` until it ends or `signal` aborts, the stream left open; each wait hears the abort only while
- * it waits, so a watcher that follows events for the life of the process holds nothing per event.
- */
-const until = <T>(events: AsyncIterator<T>, signal: AbortSignal): AsyncIterable<T> => ({
-  [Symbol.asyncIterator]: () => ({
-    next: () =>
-      new Promise<IteratorResult<T>>((resolve, reject) => {
-        if (signal.aborted) return resolve(ENDED)
-        const stop = () => resolve(ENDED)
-        signal.addEventListener("abort", stop, { once: true })
-        // Once the signal has aborted, whatever the stream ends this wait with is not wanted.
-        events.next().then(
-          (next) => {
-            signal.removeEventListener("abort", stop)
-            resolve(next)
-          },
-          (error: unknown) => {
-            signal.removeEventListener("abort", stop)
-            reject(error)
-          },
-        )
-      }),
-  }),
-})
-
-/** Relays the requests already pending, kept in `relaying` until done, for the watcher's end to wait for. */
-function relayAlongside(ports: WatchPorts, state: WatchState, relaying: Set<Promise<void>>) {
-  const relayed: Promise<void> = relayPending(ports, state)
-    .catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`))
-    .finally(() => relaying.delete(relayed))
-  relaying.add(relayed)
-}
-
-/** Handles one event, logging a failure rather than ending the watch. */
-function handleLogged(ports: WatchPorts, state: WatchState, event: { readonly type: string; readonly data?: unknown }) {
-  return handle(ports, state, event).catch((error: unknown) => {
-    const data = event.data as { sessionID?: string; form?: { sessionID?: string } } | undefined
-    const sessionID = data?.sessionID ?? data?.form?.sessionID
-    ports.log(`courier watch: could not handle ${event.type} of ${sessionID}: ${String(error)}`)
-  })
+  return undefined
 }
 
 /**
- * Follows OpenCode's events until `signal` aborts: tells parents of a spawned child's failed or silent
- * turn, its pending permission or form, notes forms and shutdowns for the relay; ends after its current event.
+ * Tells parents of a child's failed or silent turn, unless it waits on what `outside` says, and notes
+ * its prompts, interruptions and deletion; `after` a turn's end, seals the groups of its session.
  */
-export async function watchChildren(ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs = RESUBSCRIBE_MS) {
-  const relaying = new Set<Promise<void>>()
-  while (!signal.aborted) {
-    let following = false
-    let events: AsyncIterator<{ readonly type: string; readonly data?: unknown }> | undefined
-    try {
-      events = ports.event.subscribe({ signal })[Symbol.asyncIterator]()
-      // Question forms shown while no instance followed the events were not seen: released now,
-      // and again on the first event, by when the stream is surely connected.
-      let missed = eventsFollowed()
-      following = true
-      // Alongside the new subscription; a request both relays see is relayed once.
-      relayAlongside(ports, state, relaying)
-      for await (const event of until(events, signal)) {
-        if (missed) formsMayHaveBeenMissed()
-        missed = false
-        await handleLogged(ports, state, event)
-      }
-    } catch (error) {
-      if (!signal.aborted) ports.log(`courier watch: event stream broke: ${String(error)}`)
-    } finally {
-      if (following) eventsLeft()
-      // Closed without waiting: closing the adapter's stream waits on OpenCode, which may not answer
-      // while a location closes, and the leave waiting for this watcher must not wait for that too.
-      void events?.return?.().catch(() => {})
-    }
-    if (!signal.aborted) await pause(retryMs, signal)
+export function treeEvents(state: WatchState, outside: Waits): EventModule<WatchPorts> {
+  return {
+    handle: (ports, event) => routeTree(ports, state, outside, event),
+    // After: a silent end is judged while the group the nudge may deliver is still there to wait on.
+    after: (ports, event) => (TURN_ENDS.has(event.type) ? sealGroups(ports, event as unknown as SessionEvent) : undefined),
   }
-  await Promise.allSettled(relaying)
 }
 
 /**
- * Makes the hub start its subscriptions to OpenCode's events with this copy's watcher, the one loaded
- * last; `join` starts them. The second is a standby, connected before the first's member leaves.
+ * Tells the top session of a spawned child's pending permission or form, relays the requests already
+ * pending on every (re)subscribe, and tells the question relay when events are followed and when not.
  */
-export function watchFromHub(hub: Pick<Hub, "subscribe">, state: WatchState, retryMs = RESUBSCRIBE_MS) {
-  hub.subscribe = (member: Member) => {
-    const stop = new AbortController()
-    return { member, stop, done: watchChildren(member.watch, state, stop.signal, retryMs) }
+export function personEvents(state: WatchState): EventModule<WatchPorts> {
+  return {
+    handle: (ports, event) => routePerson(ports, state, event),
+    // Question forms shown while no instance followed the events were not seen: released now,
+    // and again on the first event, by when the stream is surely connected.
+    followed: () => (eventsFollowed() ? formsMayHaveBeenMissed : undefined),
+    // Alongside the new subscription; a request both relays see is relayed once.
+    subscribed: (ports) => relayPending(ports, state).catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`)),
+    left: eventsLeft,
   }
 }

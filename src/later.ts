@@ -1,11 +1,8 @@
 import type { Plugin } from "@opencode/plugin"
 import { envelope } from "./kernel/protocol.js"
-import { scanAll, type Storage } from "./storage.js"
+import { scanAll, type Storage } from "./platform/storage.js"
 
 type Context = Plugin.Context
-
-/** How often the hub's scheduler looks for due messages; a delivery can be this late. */
-export const TICK_MS = 15_000
 
 const PREFIX = "later/"
 /** The latest time a Date can hold; a message due after it could never be shown or delivered. */
@@ -94,6 +91,11 @@ function pending(ports: Pick<LaterPorts, "storage">) {
 /** The messages scheduled for a session that have not been delivered yet. */
 export async function scheduledFor(storage: Pick<Storage, "scan">, sessionID: string) {
   return (await pending({ storage: storage as Storage })).filter((entry) => entry.sessionID === sessionID)
+}
+
+/** Whether a session waits on a scheduled message of its own. */
+export async function isScheduled(ports: { readonly storage: Pick<Storage, "scan"> }, sessionID: string) {
+  return (await scheduledFor(ports.storage, sessionID)).length > 0
 }
 
 /**

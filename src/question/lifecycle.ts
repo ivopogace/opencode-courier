@@ -1,5 +1,5 @@
 import { Deferred, Effect, Exit } from "effect"
-import type { QuestionPorts } from "../hub.js"
+import type { QuestionPorts } from "./types.js"
 import { shared } from "./shared.js"
 
 /** The key of a shutdown reported without a location: it counts for every location. */

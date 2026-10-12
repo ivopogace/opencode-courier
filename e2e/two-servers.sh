@@ -33,9 +33,9 @@ SERVER_PORT=${SERVER_PORT:-4610}
 OTHER_PORT=${OTHER_PORT:-4611}
 CHILD_DELAY_MS=${CHILD_DELAY_MS:-5000}
 ROUNDS=${ROUNDS:-10}
-# How often each scheduler looks for due messages: src/later.ts's TICK_MS.
-TICK_MS=$(sed -n 's/^export const TICK_MS = \([0-9_]*\)$/\1/p' "$ROOT/src/later.ts" | tr -d _)
-[ -n "$TICK_MS" ] || { echo "cannot read TICK_MS from src/later.ts"; exit 1; }
+# How often each scheduler looks for due messages: src/platform/hub.ts's TICK_MS.
+TICK_MS=$(sed -n 's/^export const TICK_MS = \([0-9_]*\)$/\1/p' "$ROOT/src/platform/hub.ts" | tr -d _)
+[ -n "$TICK_MS" ] || { echo "cannot read TICK_MS from src/platform/hub.ts"; exit 1; }
 WORK=${E2E_WORK:-$(mktemp -d)}
 MOCK_PID=
 OTHER_PID=

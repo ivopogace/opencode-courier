@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { processWide, scanAll } from "../src/storage.js"
+import { processWide, scanAll } from "../src/platform/storage.js"
 
 describe("processWide", () => {
   test("makes the value once and hands the same one to every caller", () => {

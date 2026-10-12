@@ -5,7 +5,7 @@ import { join, posix } from "node:path"
 const SRC = join(import.meta.dir, "..", "src")
 
 /**
- * Each module of src/, by its path there without `.ts` (`hub`, `question/relay`), with the modules of
+ * Each module of src/, by its path there without `.ts` (`platform/hub`, `question/relay`), with the modules of
  * src/ it imports: static, type-only, side-effect and dynamic imports alike.
  */
 function imports() {
@@ -51,16 +51,22 @@ test("no module of src/ imports itself through others, type-only imports include
   expect(cycles).toEqual([])
 })
 
-test("notices.ts imports nothing of the plugin's at runtime but json.ts and kernel/protocol.ts", () => {
+test("notices.ts imports nothing of the plugin's at runtime but platform/json.ts and kernel/protocol.ts", () => {
   const types = typeOnly()
   const runtime = (imports().get("notices") ?? []).filter((name) => !types.has(`notices -> ${name}`))
-  expect(runtime.sort()).toEqual(["json", "kernel/protocol"])
+  expect(runtime.sort()).toEqual(["kernel/protocol", "platform/json"])
 })
 
-test("kernel/ imports only kernel/ and json.ts, so any module can use it", () => {
+test("platform/ imports only platform/, so the hub and the event loop depend on no feature", () => {
+  const platform = [...imports()].filter(([module]) => module.startsWith("platform/"))
+  expect(platform.map(([module]) => module)).toContain("platform/hub")
+  expect(platform.flatMap(([module, imported]) => imported.filter((name) => !name.startsWith("platform/")).map((name) => `${module} -> ${name}`))).toEqual([])
+})
+
+test("kernel/ imports only kernel/ and platform/json.ts, so any module can use it", () => {
   const kernel = [...imports()].filter(([module]) => module.startsWith("kernel/"))
   expect(kernel.map(([module]) => module)).toContain("kernel/protocol")
-  expect(kernel.flatMap(([module, imported]) => imported.filter((name) => !name.startsWith("kernel/") && name !== "json").map((name) => `${module} -> ${name}`))).toEqual([])
+  expect(kernel.flatMap(([module, imported]) => imported.filter((name) => !name.startsWith("kernel/") && name !== "platform/json").map((name) => `${module} -> ${name}`))).toEqual([])
 })
 
 test("effect is imported only by question/, index.ts and tools.ts", () => {
@@ -72,8 +78,8 @@ test("effect is imported only by question/, index.ts and tools.ts", () => {
   expect(importing).toEqual([])
 })
 
-test("bounded.ts imports nothing of the plugin's, so any module can hold its collections", () => {
-  expect(imports().get("bounded")).toEqual([])
+test("platform/bounded.ts imports nothing of the plugin's, so any module can hold its collections", () => {
+  expect(imports().get("platform/bounded")).toEqual([])
 })
 
 test("the question relay's modules are found, so the checks above cover them", () => {

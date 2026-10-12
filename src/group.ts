@@ -1,9 +1,9 @@
 import type { Plugin } from "@opencode/plugin"
-import { isNotFound, millis, num, obj, str } from "./json.js"
+import { isNotFound, millis, num, obj, str } from "./platform/json.js"
 import { envelope, isStatus, type Status } from "./kernel/protocol.js"
 import { groupNotice } from "./notices.js"
 import type { Artifacts } from "./report.js"
-import { scanEntries, type Storage } from "./storage.js"
+import { scanEntries, type Storage } from "./platform/storage.js"
 
 /** A report held with its group: its status, text and artifacts, as courier_send was given them, and when. */
 export interface HeldReport {

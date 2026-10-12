@@ -1,10 +1,12 @@
 import { afterEach, expect, spyOn, test } from "bun:test"
 import { Schema } from "effect"
 import plugin, { courier } from "../src/index.js"
-import { hub, memberAt, OWNER_KEY, SERVER } from "../src/hub.js"
+import { memberAt, OWNER_KEY, SERVER } from "../src/platform/hub.js"
 import { DEFAULT_LIMITS } from "../src/limits.js"
 import { depthRefusal, rolePart, SKILL_CONTENT, SKILL_DESCRIPTION, SKILL_ID } from "../src/notices.js"
-import { builtVersions } from "../src/version.js"
+import { builtVersions } from "../src/platform/version.js"
+import type { QuestionPorts } from "../src/question/index.js"
+import { shared as relayState } from "../src/question/shared.js"
 
 const cleanups: Array<() => unknown> = []
 afterEach(async () => {
@@ -125,12 +127,12 @@ test("a loaded instance is found in the hub by its location, its ports in the re
 
   const member = memberAt(location)
   expect(member?.directory).toBe("/repo")
-  expect(hub.questions.loaded.has(member!.questions)).toBe(true)
+  expect(relayState.loaded.has(member!.questions as QuestionPorts)).toBe(true)
   // Another location object, as another instance's, even of the same directory, finds no member.
   expect(memberAt({ ...location })).toBeUndefined()
   await cleanups.shift()!()
   expect(memberAt(location)).toBeUndefined()
-  expect(hub.questions.loaded.has(member!.questions)).toBe(false)
+  expect(relayState.loaded.has(member!.questions as QuestionPorts)).toBe(false)
 })
 
 test("unloading waits for the roster's prune and the cut-off questions' notice still in flight", async () => {

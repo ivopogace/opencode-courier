@@ -13,14 +13,19 @@ import {
   noticeCutOff,
   pendingQuestions,
   relayQuestions,
+  type Asked,
   type QuestionPorts,
   type QuestionTiming,
 } from "../src/question/index.js"
-import { hub, join, resetHub, type Asked, type Member } from "../src/hub.js"
-import { anyLoaded } from "../src/question/shared.js"
+import { hub, openInProcess, type Member } from "../src/platform/hub.js"
+import { resetHub } from "./fixtures/reset.js"
+import { anyLoaded, shared as relayState } from "../src/question/shared.js"
 import { background, run, stopRelay, useClock } from "../src/question/runtime.js"
 import { answeredText, questionNotice, questionSettledNotice as settledNotice } from "../src/notices.js"
 import { record, RETENTION_MS } from "../src/roster.js"
+
+/** Joins the process's hub, as an instance with no tick jobs. */
+const { join } = openInProcess([])
 
 let showForms = true
 const formShownOff = () => {
@@ -692,7 +697,7 @@ describe("the question tool of a spawned session", () => {
     expect(Exit.isFailure(await exitOf(child))).toBe(true)
     expect(Exit.isFailure(await exitOf(parent))).toBe(true)
     await settle()
-    expect(hub.questions.closingWaiters.size).toBe(0)
+    expect(relayState.closingWaiters.size).toBe(0)
     // No instance is loaded once the closing grace is over to tell the parent.
     await advance(30_000)
 
@@ -744,14 +749,14 @@ describe("the question tool of a spawned session", () => {
     await exitOf(child)
     await settle()
     expect(notices(told, "answered")).toEqual([])
-    expect(hub.questions.closingWaiters.size).toBe(1)
+    expect(relayState.closingWaiters.size).toBe(1)
     await advance(49)
     expect(notices(told, "answered")).toEqual([])
     await advance(1)
 
     expect(notices(told, "answered")[0].text).toContain('answered="dismissed" request="question_1"')
     expect(store.has("question/question_1")).toBe(false)
-    expect(hub.questions.closingWaiters.size).toBe(0)
+    expect(relayState.closingWaiters.size).toBe(0)
   })
 
   test("a shutdown is judged by the clock in the relay's ports: one reported longer than the grace before a dismissal does not count, one within it does", async () => {
@@ -1064,7 +1069,7 @@ describe("the question tool of a spawned session", () => {
     await settle()
     // A copy loaded beside this one, a release before the hub say, passes an answer on: it shows in the shared state only.
     let passed!: () => void
-    hub.questions.passing.set("question_1", new Promise<void>((resolve) => (passed = resolve)))
+    relayState.passing.set("question_1", new Promise<void>((resolve) => (passed = resolve)))
     let answered: unknown
     void answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
       .then((result) => (answered = result))
@@ -1072,8 +1077,8 @@ describe("the question tool of a spawned session", () => {
     await settle()
     expect(answered).toBeUndefined()
 
-    hub.questions.answered.add("question_1")
-    hub.questions.passing.delete("question_1")
+    relayState.answered.add("question_1")
+    relayState.passing.delete("question_1")
     passed()
     await settle()
 
@@ -1086,7 +1091,7 @@ describe("the question tool of a spawned session", () => {
     const { ports, ask, advance } = await setUp({ passingWaitMs: 30 })
     const child = ask("ses_child")
     await settle()
-    hub.questions.passing.set("question_1", new Promise(() => undefined))
+    relayState.passing.set("question_1", new Promise(() => undefined))
     let failed: unknown
     void answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }).catch((error) => (failed = error))
     await advance(29)
@@ -1094,7 +1099,7 @@ describe("the question tool of a spawned session", () => {
 
     await advance(1)
     expect(String(failed)).toBe("Error: another answer to question_1 is still being passed on; try again in a while.")
-    hub.questions.passing.delete("question_1")
+    relayState.passing.delete("question_1")
     await Effect.runPromise(Fiber.interrupt(child))
   })
 
@@ -1445,13 +1450,13 @@ test("a cut-off question is told through a member of this copy's hub first, else
   const subscribe = hub.subscribe
   hub.subscribe = undefined
   const elsewhere = { directory: "/old" } as never
-  hub.questions.loaded.add(elsewhere)
+  relayState.loaded.add(elsewhere)
   expect(anyLoaded()).toBe(elsewhere)
   const questions = { directory: "/a" } as never
   const later = { storage: { get: async () => undefined, set: async () => {}, scan: async () => ({ entries: [] }) }, now: () => 0, log: () => {} }
   const leave = join({ directory: "/a", permission: {}, later, watch: {}, questions, log: () => {} } as unknown as Member)
   expect(anyLoaded()).toBe(questions)
   void leave()
-  hub.questions.loaded.delete(elsewhere)
+  relayState.loaded.delete(elsewhere)
   hub.subscribe = subscribe
 })

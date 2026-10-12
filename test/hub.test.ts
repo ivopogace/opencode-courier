@@ -12,15 +12,29 @@ import {
   OWNER_WAIT_MS,
   SERVER,
   hub,
-  join,
   open,
+  openInProcess,
   permissions,
-  portsAt,
-  resetHub,
+  sharedState,
+  TICK_MS,
   type Member,
+  type TickJob,
   type Timers,
-} from "../src/hub.js"
-import { TICK_MS, type LaterEntry, type LaterPorts } from "../src/later.js"
+} from "../src/platform/hub.js"
+import { deliverReleased } from "../src/group.js"
+import type { QuestionPorts } from "../src/question/index.js"
+import { portsAt, questionState, shared as relayState } from "../src/question/shared.js"
+import { resetHub } from "./fixtures/reset.js"
+import { deliverDue, type LaterEntry, type LaterPorts } from "../src/later.js"
+
+/** The plugin's tick jobs, as src/index.ts registers them. */
+const jobs: TickJob[] = [
+  (owner, claimed) => deliverDue(owner.later as LaterPorts, claimed),
+  (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
+]
+
+/** Joins the process's hub, as an instance of this copy would. */
+const { join } = openInProcess(jobs)
 
 const LEGACY = ["claimed", "watched", "forms", "questions", "receiver", "locations"]
 const at = (registry: Record<symbol, unknown>, key: string) => registry[Symbol.for(key)]
@@ -107,8 +121,8 @@ describe("the hub", () => {
 
   test("of the same version is found by the next copy, which joins the same one", () => {
     const registry: Record<symbol, unknown> = {}
-    const first = open(registry)
-    const second = open(registry)
+    const first = open(registry, jobs)
+    const second = open(registry, jobs)
     expect(second.hub).toBe(first.hub)
     expect(at(registry, HUB_KEY)).toBe(first.hub)
     const leave = second.join(member("/a"))
@@ -129,16 +143,19 @@ describe("the hub", () => {
       [Symbol.for("opencode-courier.locations")]: locations,
     }
 
-    const { hub: fresh, join: joinFresh } = open(registry)
+    const { hub: fresh, join: joinFresh } = open(registry, jobs)
 
     expect(at(registry, HUB_KEY)).toBe(fresh)
     expect(fresh.claimed).toBe(claimed)
     expect(fresh.watched).toBe(watched)
-    expect(fresh.questions).toBe(questions as never)
-    expect(fresh.questions.noticed.has("question_1")).toBe(true)
-    expect(fresh.questions.loaded).toBeInstanceOf(Set)
-    expect(fresh.questions.following).toBe(0)
-    expect(fresh.questions.followed).toBe(false)
+    expect(fresh.questions).toBe(questions)
+    // The question relay fills in the fields its state lacks, on the hub's own object.
+    const filled = questionState(registry)
+    expect(filled).toBe(fresh.questions as never)
+    expect(filled.noticed.has("question_1")).toBe(true)
+    expect(filled.loaded).toBeInstanceOf(Set)
+    expect(filled.following).toBe(0)
+    expect(filled.followed).toBe(false)
     // The ones the earlier copy did not make are made, under their keys, for the copies after.
     expect(at(registry, "opencode-courier.forms")).toBe(fresh.forms)
     expect(at(registry, "opencode-courier.receiver")).toBe(fresh.receivers)
@@ -156,20 +173,18 @@ describe("the hub", () => {
     const claimed = new Set(["later_1"])
     const registry: Record<symbol, unknown> = { [Symbol.for(HUB_KEY)]: other, [Symbol.for("opencode-courier.claimed")]: claimed }
 
-    const skewed = open(registry)
+    const skewed = open(registry, jobs)
     expect(at(registry, HUB_KEY)).toBe(other)
     expect(at(registry, `${HUB_KEY}@${HUB_VERSION}`)).toBe(skewed.hub)
     expect(skewed.hub.version).toBe(HUB_VERSION)
     // The claim set is the one every copy claims in, so an older copy and this one never both act.
     expect(skewed.hub.claimed).toBe(claimed)
-    // The inbox item types are kept outside the hub, so this copy shares them with the current one.
-    expect(at(registry, "opencode-courier.inbox")).toBe(skewed.inbox)
 
     const logs: string[] = []
     const leaveA = skewed.join(member("/a", (message) => logs.push(message)))
     const leaveB = skewed.join(member("/b", (message) => logs.push(message)))
     // A second copy of the same version finds the same versioned hub, which has logged already.
-    const again = open(registry)
+    const again = open(registry, jobs)
     expect(again.hub).toBe(skewed.hub)
     const leaveC = again.join(member("/c", (message) => logs.push(message)))
     expect(logs).toEqual([
@@ -183,7 +198,7 @@ describe("the hub", () => {
 
   test("found as null under its key counts as none", () => {
     const registry: Record<symbol, unknown> = { [Symbol.for(HUB_KEY)]: null }
-    const opened = open(registry)
+    const opened = open(registry, jobs)
     expect(at(registry, HUB_KEY)).toBe(opened.hub)
     const logs: string[] = []
     const leave = opened.join(member("/a", (message) => logs.push(message)))
@@ -191,11 +206,18 @@ describe("the hub", () => {
     leave()
   })
 
-  test("is shared by two copies of the module in one process", () => {
+  test("is shared by two copies of the module in one process, the one joined last running its own jobs and event modules", () => {
     // In a process of its own, since a second copy would replace this one's coverage (see the script).
     const run = Bun.spawnSync([process.execPath, joinPath(import.meta.dir, "fixtures", "two-copies.ts")])
     expect(run.stderr.toString()).toBe("")
     expect(JSON.parse(run.stdout.toString())).toEqual({
+      // The copy joined last runs its own jobs and event modules, through the other copy's members.
+      registration: {
+        sameHub: true,
+        beforeNewer: ["older job through /a", "older ping through /a", "older ping through /b"],
+        afterNewer: ["newer job through /a", "newer ping through /c"],
+        watchingThrough: ["/b", "/c"],
+      },
       // Renewed for the first copy's tick by the second's, each tick, until a minute from its start.
       otherCopy: {
         renewedAt: [1_000 + TICK_MS, 1_000 + 2 * TICK_MS, 1_000 + 3 * TICK_MS, 1_000 + 3 * TICK_MS],
@@ -218,6 +240,14 @@ describe("the hub", () => {
     })
   })
 
+  test("keeps a shared value under its key of its own, outside the hub, the same one for every copy and hub version", () => {
+    const registry: Record<symbol, unknown> = {}
+    const inbox = sharedState("inbox", () => new Map<string, string>(), registry)
+    expect(at(registry, "opencode-courier.inbox")).toBe(inbox)
+    expect(sharedState("inbox", () => new Map<string, string>(), registry)).toBe(inbox)
+    expect(Object.values(open(registry, jobs).hub)).not.toContain(inbox)
+  })
+
   test("resetHub forgets the remembered ids and the question relay's state, not the joined instances", () => {
     const leave = join(member("/a"))
     hub.claimed.add("later_1")
@@ -226,19 +256,19 @@ describe("the hub", () => {
     hub.watched.answered.add("per_2")
     hub.forms.told.set("form_1", Promise.resolve())
     hub.forms.settled.add("form_2")
-    hub.questions.noticed.add("question_1")
-    hub.questions.answered.add("question_2")
-    hub.questions.shutdowns.set("/a", 1)
-    hub.questions.following = 2
-    hub.questions.followed = true
+    relayState.noticed.add("question_1")
+    relayState.answered.add("question_2")
+    relayState.shutdowns.set("/a", 1)
+    relayState.following = 2
+    relayState.followed = true
 
     resetHub()
 
     expect(hub.claimed.size + hub.watched.seen.size + hub.watched.waiting.size + hub.watched.answered.size).toBe(0)
     expect(hub.forms.told.size + hub.forms.settled.size).toBe(0)
-    expect(hub.questions.noticed.size + hub.questions.answered.size + hub.questions.shutdowns.size).toBe(0)
-    expect(hub.questions.following).toBe(0)
-    expect(hub.questions.followed).toBe(false)
+    expect(relayState.noticed.size + relayState.answered.size + relayState.shutdowns.size).toBe(0)
+    expect(relayState.following).toBe(0)
+    expect(relayState.followed).toBe(false)
     expect(hub.members.size).toBe(1)
     leave()
   })
@@ -270,7 +300,7 @@ const settle = () => Bun.sleep(1)
 describe("the scheduler", () => {
   test("runs one loop for several instances, through the first one loaded, with a tick as it starts", async () => {
     const { timers, started, fire } = fakeTimers()
-    const { join: joinHub } = open({}, timers)
+    const { join: joinHub } = open({}, jobs, timers)
     const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
     const delivered: string[] = []
     const leaves = ["/a", "/b", "/c"].map((directory) => joinHub(member(directory, () => {}, laterPorts(directory, store, delivered))))
@@ -289,7 +319,7 @@ describe("the scheduler", () => {
 
   test("delivers a released group at each tick, and at once when nudged", async () => {
     const { timers, fire } = fakeTimers()
-    const { join: joinHub, nudge } = open({}, timers)
+    const { join: joinHub, nudge } = open({}, jobs, timers)
     const store = new Map<string, unknown>()
     const delivered: string[] = []
     const later = laterPorts("/a", store, delivered)
@@ -321,7 +351,7 @@ describe("the scheduler", () => {
 
   test("a nudge during a tick runs another once it has ended, so what fell due meanwhile is not left to the next tick", async () => {
     const { timers } = fakeTimers()
-    const { join: joinHub, nudge } = open({}, timers)
+    const { join: joinHub, nudge } = open({}, jobs, timers)
     const store = new Map<string, unknown>()
     const delivered: string[] = []
     const later = laterPorts("/a", store, delivered)
@@ -355,14 +385,14 @@ describe("the scheduler", () => {
 
   test("a nudge while no instance is loaded does nothing", () => {
     const { timers, started } = fakeTimers()
-    const { nudge } = open({}, timers)
+    const { nudge } = open({}, jobs, timers)
     nudge()
     expect(started).toEqual([])
   })
 
   test("hands the loop over to the next instance when the one it runs through leaves", async () => {
     const { timers, started, stopped, fire } = fakeTimers()
-    const { join: joinHub } = open({}, timers)
+    const { join: joinHub } = open({}, jobs, timers)
     const store = new Map<string, unknown>()
     const delivered: string[] = []
     const leaveA = joinHub(member("/a", () => {}, laterPorts("/a", store, delivered)))
@@ -382,7 +412,7 @@ describe("the scheduler", () => {
 
   test("stops after the last instance leaves, and starts again, with a tick, when one joins", async () => {
     const { timers, started, stopped } = fakeTimers()
-    const { hub: fresh, join: joinHub } = open({}, timers)
+    const { hub: fresh, join: joinHub } = open({}, jobs, timers)
     const store = new Map<string, unknown>()
     const delivered: string[] = []
     const leaveA = joinHub(member("/a", () => {}, laterPorts("/a", store, delivered)))
@@ -409,7 +439,7 @@ describe("the scheduler", () => {
 
   test("skips a tick while the last one is still under way", async () => {
     const { timers, fire } = fakeTimers()
-    const { join: joinHub } = open({}, timers)
+    const { join: joinHub } = open({}, jobs, timers)
     let scans = 0
     let release = () => {}
     const later = laterPorts("/a")
@@ -434,7 +464,7 @@ describe("the scheduler", () => {
 
   test("waits on a tick through an instance that has left for a minute from its start, then ticks without it", async () => {
     const { timers, fire } = fakeTimers()
-    const { join: joinHub } = open({}, timers)
+    const { join: joinHub } = open({}, jobs, timers)
     let now = 1_000
     const clock = () => now
     const later = laterPorts("/a", new Map(), [], clock)
@@ -473,7 +503,7 @@ describe("the scheduler", () => {
 
   test("keeps skipping a tick past its minute while its instance is loaded", async () => {
     const { timers, fire } = fakeTimers()
-    const { join: joinHub } = open({}, timers)
+    const { join: joinHub } = open({}, jobs, timers)
     let now = 1_000
     let scans = 0
     const later = laterPorts("/a", new Map(), [], () => now)
@@ -489,7 +519,7 @@ describe("the scheduler", () => {
 
   test("skips a tick while one of a copy that keeps only the member it ticks through is under way", async () => {
     const { timers, fire } = fakeTimers()
-    const { hub: fresh, join: joinHub } = open({}, timers)
+    const { hub: fresh, join: joinHub } = open({}, jobs, timers)
     const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
     const delivered: string[] = []
     const a = member("/a", () => {}, laterPorts("/a", store, delivered))
@@ -512,10 +542,10 @@ describe("the scheduler", () => {
   test("ticks with the code of the copy that joined last", () => {
     const registry: Record<symbol, unknown> = {}
     const { timers } = fakeTimers()
-    const first = open(registry, timers)
+    const first = open(registry, jobs, timers)
     const leaveA = first.join(member("/a"))
     const firstTick = first.hub.scheduler.tick
-    const second = open(registry, timers)
+    const second = open(registry, jobs, timers)
     const leaveB = second.join(member("/b"))
     expect(second.hub).toBe(first.hub)
     expect(first.hub.scheduler.tick).toBeFunction()
@@ -526,7 +556,7 @@ describe("the scheduler", () => {
 
   test("logs a failed tick through the instance it ran through, and carries on", async () => {
     const { timers, fire } = fakeTimers()
-    const { join: joinHub } = open({}, timers)
+    const { join: joinHub } = open({}, jobs, timers)
     const logs: string[] = []
     const later = laterPorts("/a")
     let fail = true
@@ -555,7 +585,7 @@ describe("the scheduler", () => {
 describe("the owner key", () => {
   test("is taken with a wait on the first tick, then renewed every tick without one", async () => {
     const { timers, waits, fire } = fakeTimers()
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     let now = 1_000
     const store = new Map<string, unknown>()
     const delivered: string[] = []
@@ -578,7 +608,7 @@ describe("the owner key", () => {
 
   test("held fresh by another server keeps this one from delivering, until it expires", async () => {
     const { timers, waits, fire } = fakeTimers()
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     let now = 1_000
     const store = new Map<string, unknown>([
       [OWNER_KEY, { server: "server_b", at: 1_000 }],
@@ -608,8 +638,8 @@ describe("the owner key", () => {
     const delivered: string[] = []
     const a = fakeTimers(true)
     const b = fakeTimers(true)
-    const leaveA = open({}, a.timers, "server_a").join(member("/a", () => {}, laterPorts("/a", store, delivered)))
-    const leaveB = open({}, b.timers, "server_b").join(member("/b", () => {}, laterPorts("/b", store, delivered)))
+    const leaveA = open({}, jobs, a.timers, "server_a").join(member("/a", () => {}, laterPorts("/a", store, delivered)))
+    const leaveB = open({}, jobs, b.timers, "server_b").join(member("/b", () => {}, laterPorts("/b", store, delivered)))
     await settle()
     // Both read the key free and wrote it before either read it back.
     expect(a.waits).toHaveLength(1)
@@ -631,7 +661,7 @@ describe("the owner key", () => {
 
   test("of this server, older than the renewal limit, is taken again with a wait, and lost to a server that wrote meanwhile", async () => {
     const { timers, waits, go, fire } = fakeTimers(true)
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
     const delivered: string[] = []
     const now = 1_000 + OWNER_RENEW_MS
@@ -655,7 +685,7 @@ describe("the owner key", () => {
 
   test("written in the future, after the clock went back, holds no longer than the expiry", async () => {
     const { timers } = fakeTimers()
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     const store = new Map<string, unknown>([
       [OWNER_KEY, { server: "server_b", at: 1_000 + OWNER_EXPIRY_MS }],
       ["later/later_1", due("later_1")],
@@ -669,7 +699,7 @@ describe("the owner key", () => {
 
   test("that is not an owner record counts as free", async () => {
     const { timers } = fakeTimers()
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     const store = new Map<string, unknown>([
       [OWNER_KEY, { server: 7, at: 1_000 }],
       ["later/later_1", due("later_1")],
@@ -683,7 +713,7 @@ describe("the owner key", () => {
 
   test("is released when the last instance leaves, so another server takes over at its next tick", async () => {
     const { timers } = fakeTimers()
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     const store = new Map<string, unknown>()
     const leaveA = joinHub(member("/a", () => {}, laterPorts("/a", store)))
     const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store)))
@@ -698,7 +728,7 @@ describe("the owner key", () => {
 
   test("is renewed by the ticks that fall due while a tick is still delivering, for a minute from its start", async () => {
     const { timers, fire } = fakeTimers()
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     let now = 1_000
     const store = new Map<string, unknown>()
     const later = laterPorts("/a", store, [], () => now)
@@ -724,7 +754,7 @@ describe("the owner key", () => {
 
   test("is renewed for a tick still delivering through an instance that has left, for a minute from its start", async () => {
     const { timers, fire } = fakeTimers()
-    const { hub: fresh, join: joinHub } = open({}, timers, "server_a")
+    const { hub: fresh, join: joinHub } = open({}, jobs, timers, "server_a")
     let now = 1_000
     const store = new Map<string, unknown>()
     const later = laterPorts("/a", store, [], () => now)
@@ -759,10 +789,10 @@ describe("the owner key", () => {
     const store = new Map<string, unknown>()
     const later = laterPorts("/a", store, [], () => now)
     const slow: LaterPorts = { ...later, storage: { ...later.storage, scan: () => new Promise(() => {}) } }
-    const first = open(registry, timers, "server_a")
+    const first = open(registry, jobs, timers, "server_a")
     const leaveA = first.join(member("/a", () => {}, slow))
     await settle()
-    const second = open(registry, timers, "server_a")
+    const second = open(registry, jobs, timers, "server_a")
     const leaveB = second.join(member("/b", () => {}, laterPorts("/b", store, [], () => now)))
     expect(second.hub).toBe(first.hub)
 
@@ -790,12 +820,12 @@ describe("the owner key", () => {
       ...later,
       session: { synthetic: () => new Promise((resolve) => (finish = () => resolve({ id: "msg_1" } as never))) } as never,
     }
-    const first = open(registry, timers, "server_a")
+    const first = open(registry, jobs, timers, "server_a")
     const leaveA = first.join(member("/a", () => {}, slow))
     await settle()
     go()
     await settle()
-    const second = open(registry, timers, "server_a")
+    const second = open(registry, jobs, timers, "server_a")
     const leaveB = second.join(member("/b", () => {}, laterPorts("/b", store)))
     void leaveA()
     let left = false
@@ -811,7 +841,7 @@ describe("the owner key", () => {
 
   test("held by another server is not renewed by a tick still delivering", async () => {
     const { timers, fire } = fakeTimers()
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     let now = 1_000
     const store = new Map<string, unknown>()
     const later = laterPorts("/a", store, [], () => now)
@@ -828,7 +858,7 @@ describe("the owner key", () => {
 
   test("is left by a last leave during a delivery to the tick, which releases it when it ends", async () => {
     const { timers, go } = fakeTimers(true)
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
     const later = laterPorts("/a", store)
     let finish = () => {}
@@ -857,7 +887,7 @@ describe("the owner key", () => {
   test("is not released while a hub of another version in the process has instances", async () => {
     const { timers } = fakeTimers()
     const registry: Record<symbol, unknown> = { [Symbol.for(HUB_KEY)]: { version: HUB_VERSION + 1, members: new Set([{}]) } }
-    const { join: joinHub } = open(registry, timers, "server_a")
+    const { join: joinHub } = open(registry, jobs, timers, "server_a")
     const store = new Map<string, unknown>()
     const leave = joinHub(member("/a", () => {}, laterPorts("/a", store)))
     await settle()
@@ -867,7 +897,7 @@ describe("the owner key", () => {
 
   test("is kept when an instance joins again while it is being released", async () => {
     const { timers } = fakeTimers()
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     const store = new Map<string, unknown>()
     const leaveA = joinHub(member("/a", () => {}, laterPorts("/a", store)))
     await settle()
@@ -880,7 +910,7 @@ describe("the owner key", () => {
 
   test("the last leave settles once it is released", async () => {
     const { timers, go } = fakeTimers(true)
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     const store = new Map<string, unknown>([[OWNER_KEY, { server: "server_a", at: 1_000 }]])
     const leave = joinHub(member("/a", () => {}, laterPorts("/a", store)))
     await settle()
@@ -892,7 +922,7 @@ describe("the owner key", () => {
 
   test("held by another server is left alone when the last instance leaves", async () => {
     const { timers } = fakeTimers()
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     const store = new Map<string, unknown>([[OWNER_KEY, { server: "server_b", at: 1_000 }]])
     const leave = joinHub(member("/a", () => {}, laterPorts("/a", store)))
     await settle()
@@ -903,7 +933,7 @@ describe("the owner key", () => {
 
   test("written by a tick whose loop stopped during its wait is released, and nothing is delivered", async () => {
     const { timers, go } = fakeTimers(true)
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
     const delivered: string[] = []
     const leave = joinHub(member("/a", () => {}, laterPorts("/a", store, delivered)))
@@ -918,7 +948,7 @@ describe("the owner key", () => {
 
   test("a failure to release it is logged", async () => {
     const { timers } = fakeTimers()
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     const logs: string[] = []
     const later = laterPorts("/a")
     const failing: LaterPorts = {
@@ -962,7 +992,7 @@ describe("a leave", () => {
 
   test("waits for the work its member handed over, a failure included, and not for another member's", async () => {
     const { timers } = fakeTimers(true)
-    const { join: joinHub, track } = open({}, timers, "server_a")
+    const { join: joinHub, track } = open({}, jobs, timers, "server_a")
     const store = owned()
     const a = member("/a", () => {}, laterPorts("/a", store))
     const b = member("/b", () => {}, laterPorts("/b", store))
@@ -988,7 +1018,7 @@ describe("a leave", () => {
 
   test("of a member with nothing in flight settles at once", async () => {
     const { timers } = fakeTimers(true)
-    const { join: joinHub, track } = open({}, timers, "server_a")
+    const { join: joinHub, track } = open({}, jobs, timers, "server_a")
     const store = owned()
     const a = member("/a", () => {}, laterPorts("/a", store))
     const leaveA = joinHub(a)
@@ -1002,7 +1032,7 @@ describe("a leave", () => {
 
   test("that is not the last waits for a tick under way through its member, and not for one through another", async () => {
     const { timers, fire } = fakeTimers(true)
-    const { join: joinHub } = open({}, timers, "server_a")
+    const { join: joinHub } = open({}, jobs, timers, "server_a")
     const store = owned()
     store.set("later/later_1", due("later_1"))
     const later = laterPorts("/a", store)
@@ -1026,7 +1056,7 @@ describe("a leave", () => {
 
   test("waits for the subscription its member ran to end, after the event it is handling", async () => {
     const { timers } = fakeTimers(true)
-    const { hub: fresh, join: joinHub } = open({}, timers, "server_a")
+    const { hub: fresh, join: joinHub } = open({}, jobs, timers, "server_a")
     const ended = new Map<string, ReturnType<typeof deferred<void>>>()
     fresh.subscribe = (m) => {
       const end = deferred()
@@ -1059,7 +1089,7 @@ describe("a leave", () => {
       stop: () => {},
       wait: (ms) => (waits.push(ms), ms === LEAVE_MS ? bound.promise : Promise.resolve()),
     }
-    const { join: joinHub, track } = open({}, timers, "server_a")
+    const { join: joinHub, track } = open({}, jobs, timers, "server_a")
     const store = owned()
     const a = member("/a", () => {}, laterPorts("/a", store))
     const leaveA = joinHub(a)
@@ -1078,8 +1108,8 @@ describe("a leave", () => {
 describe("the question relay's binding to its member", () => {
   test("holds the member that joined last at the location, until it leaves, whoever joins there after", async () => {
     const location = { directory: "/a" }
-    const first = { ...member("/a"), location, questions: { directory: "/a", which: "first" } } as unknown as Member
-    const second = { ...member("/a"), location, questions: { directory: "/a", which: "second" } } as unknown as Member
+    const first = { ...member("/a"), location, questions: { directory: "/a", which: "first" } as unknown as QuestionPorts }
+    const second = { ...member("/a"), location, questions: { directory: "/a", which: "second" } as unknown as QuestionPorts }
     const leaveFirst = join(first)
     const firstPorts = portsAt(location)
     expect(firstPorts()).toBe(first.questions)
@@ -1102,7 +1132,7 @@ describe("the question relay's binding to its member", () => {
 describe("a tick's end", () => {
   test("settles, and gives back the key, when the log of a failure throws, so a last leave does not wait for the bound", async () => {
     const { timers } = fakeTimers(true)
-    const { hub: fresh, join: joinHub } = open({}, timers, "server_a")
+    const { hub: fresh, join: joinHub } = open({}, jobs, timers, "server_a")
     const store = new Map<string, unknown>([[OWNER_KEY, { server: "server_a", at: 1_000 }]])
     const later = laterPorts("/a", store)
     const scanning = deferred<never>()
@@ -1123,10 +1153,10 @@ describe("a tick's end", () => {
   })
 })
 
-test("hub.ts is the only module of src/ that keeps anything process-wide", () => {
+test("platform/hub.ts is the only module of src/ that keeps anything process-wide", () => {
   const src = joinPath(import.meta.dir, "..", "src")
   const users = readdirSync(src, { recursive: true, encoding: "utf8" }).filter(
-    (file) => file.endsWith(".ts") && file !== "storage.ts" && /\bprocessWide\s*[(<]|Symbol\.for\s*\(|globalThis/.test(readFileSync(joinPath(src, file), "utf8")),
+    (file) => file.endsWith(".ts") && file !== joinPath("platform", "storage.ts") && /\bprocessWide\s*[(<]|Symbol\.for\s*\(|globalThis/.test(readFileSync(joinPath(src, file), "utf8")),
   )
-  expect(users).toEqual(["hub.ts"])
+  expect(users).toEqual([joinPath("platform", "hub.ts")])
 })

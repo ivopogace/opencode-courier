@@ -1,10 +1,9 @@
 import { Deferred, Effect, Semaphore } from "effect"
-import type { Prompt } from "../courier.js"
-import type { Answers, Asked, Outcome, QuestionPorts } from "../hub.js"
+import type { Answers, Asked, Outcome, Prompt, QuestionPorts } from "./types.js"
 import { envelope } from "../kernel/protocol.js"
 import { cutOffAnswer, questionNotice, type CutOff } from "../notices.js"
 import { allEntries, answeringTop, lineageIn, RETENTION_MS, type RosterStorage } from "../roster.js"
-import { scanAll } from "../storage.js"
+import { scanAll } from "../platform/storage.js"
 import { within, run } from "./runtime.js"
 import { normalize, type QuestionAnswerInput } from "./pure.js"
 import { claim, isPassing, keyOf, MAX_STORED, PREFIX, shared, storedOf, type Stored } from "./shared.js"
@@ -187,6 +186,11 @@ export async function answerQuestion(ports: QuestionPorts, callerID: string, inp
   const answers = normalize(asked, input.answers)
   const by = await run(deliver(ports, asked, { answers }))
   return by ? { sessionID, requestID, answered: true, by, answers } : { sessionID, requestID, answered: false }
+}
+
+/** Whether a session waits on a question of its own, open or cut off and not yet answered. */
+export async function asksQuestion(ports: { readonly storage: RosterStorage }, sessionID: string) {
+  return (await pendingQuestions(ports.storage, sessionID)).length > 0
 }
 
 /** The questions a session waits on, for courier_status; `stopped` when its call was cut off. */

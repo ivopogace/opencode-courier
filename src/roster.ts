@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs"
 import { dropMember } from "./group.js"
 import { forgetReport, reportKeys } from "./report.js"
-import { scanAll, scanEntries, type Storage } from "./storage.js"
+import { scanAll, scanEntries, type Storage } from "./platform/storage.js"
 
 /**
  * Entries older than this are dropped when their parent's roster is read, and on plugin setup,

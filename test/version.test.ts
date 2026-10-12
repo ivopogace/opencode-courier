@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { builtVersions, versionNotice } from "../src/version.js"
+import { builtVersions, versionNotice } from "../src/platform/version.js"
 
 const read = (path: string) => JSON.parse(readFileSync(join(import.meta.dir, "..", path), "utf8"))
 

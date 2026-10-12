@@ -1,7 +1,6 @@
 import type { Plugin as EffectPlugin } from "@opencode/plugin/effect"
 import { Deferred, Effect, Exit, Fiber, type Cause } from "effect"
-import type { Prompt } from "../courier.js"
-import type { Answers, Elsewhere, Outcome, Question, QuestionPorts, Withdrawal } from "../hub.js"
+import type { Answers, Elsewhere, Outcome, Prompt, Question, QuestionPorts, Withdrawal } from "./types.js"
 import {
   answeredText,
   DISMISSED,

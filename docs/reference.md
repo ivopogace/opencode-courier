@@ -763,6 +763,12 @@ versions, under keys whose shape and meaning are fixed for good, so an old and a
 plugin loaded together still never both deliver or tell the same thing; a change that needed
 another meaning for one of them would make a new key and keep claiming in the old one as well.
 
+What a scheduler tick and an event subscription do is the code of the copy loaded last, run through
+the instance loaded first (or the earliest without a subscription), which may belong to an older
+copy of the same hub version: so the ports an instance joins the hub with are part of that version
+too, and a release whose tick or event handling needed a port older instances lack would change it.
+A copy that unloads takes its code with it; the hub keeps none of it.
+
 When an instance unloads, OpenCode waits, up to 2 seconds, for the work it leaves behind: a
 scheduler tick running through it, the event subscription it ran (once its replacement has
 started), and what it started on loading. Past that, what is still under way finishes on its own.

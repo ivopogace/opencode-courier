@@ -1,49 +1,7 @@
-import type { Plugin } from "@opencode/plugin"
 import { randomInt } from "node:crypto"
-import type { Server } from "node:http"
 import { hostname } from "node:os"
-import type { Prompt } from "./courier.js"
-import { deliverReleased } from "./group.js"
 import { num, obj, str } from "./json.js"
-import { deliverDue, TICK_MS, type LaterPorts } from "./later.js"
-import type { SpawnGate } from "./limits.js"
-import type { Permissions, Waiting } from "./relay.js"
-import type { RosterStorage } from "./roster.js"
-import { processWide, type Registry } from "./storage.js"
-import type { WebhookConfig, WebhookPorts } from "./webhook.js"
-
-/** The answers to a question call, as the question tool returns them: one list per question. */
-export type Answers = string[][]
-
-/** A question a spawned session asked with its question tool, stored until it is answered. */
-export interface Asked {
-  readonly requestID: string
-  readonly sessionID: string
-  /** The session told, at the top of the sessions started with courier_spawn; it alone answers. */
-  readonly top: string
-  readonly title: string
-  /** The session that started the asking one, when that is not the top session itself. */
-  readonly startedBy?: string
-  readonly questions: ReadonlyArray<Prompt>
-  readonly askedAt: number
-}
-
-/** How a question was settled without the top session: in the asking session, or not at all. */
-export type Elsewhere =
-  | { readonly by: "child"; readonly answers: Answers }
-  | { readonly by: "dismissed" }
-  | { readonly by: "failed"; readonly error: string }
-
-/** What the top session's answer does to a call that waits: answers it, or dismisses it. */
-export type Outcome = { readonly answers: Answers } | { readonly dismissed: true }
-
-/**
- * Why a linked call is withdrawn: its question was settled elsewhere, or the top session's outcome
- * reached it another way (courier_answer, or a dismissal through an earlier call linked to it).
- */
-export type Withdrawal = Elsewhere | { readonly by: "top"; readonly outcome: Outcome }
-
-type Context = Plugin.Context
+import { processWide, type Registry, type Storage } from "./storage.js"
 
 /**
  * The plugin's process-wide state on `globalThis`, shared by every loaded copy; only this module puts
@@ -54,76 +12,23 @@ export const HUB_VERSION = 2
 /** The key of the hub; a copy that finds another version there keeps its own under `${HUB_KEY}@<version>`. */
 export const HUB_KEY = "opencode-courier.hub"
 
-// The ports an instance joins with, and the state the hub keeps for the question relay and the
-// event watcher. Declared here rather than in `question/` and `watch.ts`, which use the hub.
+// The hub types what it owns. What a member carries for the features, and the state it keeps for
+// them, are opaque here: the modules that own them type them, and every hub-v2 copy keeps their shape.
 
-/**
- * A question this process knows: its call waits (`call`), or was cut off and is answered by message.
- * `link` withdraws the top session's call passing the answer on, once settled without that call.
- */
-export interface Question extends Asked {
-  /** The directory of the location the call runs in, whose shutdown withdraws its form. */
-  directory?: string
-  /** Hands the waiting call the top session's outcome; true once the call has ended with it. */
-  call?: (outcome: Outcome) => Promise<boolean>
-  link?: (how: Withdrawal) => void
-  /** Storing the question and telling the top session, while that is under way. */
-  relaying?: Promise<boolean>
-  /** Working out what became of it once its call ended without the top session's answer. */
-  settling?: Promise<void>
-}
-
-/**
- * The relay's timings, carried by its ports: the closing grace before a cut-off question is told, the
- * wait for an answer still being passed on, the wait for a notice to go out, and the dismissal hold.
- */
-export interface QuestionTiming {
-  readonly closingGraceMs: number
-  readonly passingWaitMs: number
-  readonly relayWaitMs: number
-  readonly dismissalGraceMs: number
-}
-
-export interface QuestionPorts {
-  readonly storage: RosterStorage
-  readonly session: Pick<Context["session"], "synthetic">
-  /** The directory of the instance's location. */
-  readonly directory: string
-  /** The clock, in epoch milliseconds, as OpenCode's location shutdowns are recorded. */
+/** The ports a member's scheduler keeps the owner key through: what every member's `later` ports have. */
+export interface TickPorts {
+  readonly storage: Pick<Storage, "get" | "set" | "remove">
   readonly now: () => number
-  readonly timing: QuestionTiming
-  readonly newID: () => string
-  readonly log: (message: string) => void
-}
-
-export interface WatchPorts {
-  readonly storage: RosterStorage
-  /** `context` reads the last reply of a session that ended its turn without reporting. */
-  readonly session: Pick<Context["session"], "synthetic" | "context">
-  readonly event: Pick<Context["event"], "subscribe">
-  /**
-   * The permission domains of every loaded location, whose pending requests are relayed when the
-   * watcher (re)subscribes: one watcher serves them all, and an isolated child's are in its worktree's.
-   */
-  readonly permissions: () => Iterable<Pick<Context["permission"], "list">>
-  /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
-  readonly now: () => number
-  readonly log: (message: string) => void
-  /** Has the scheduler deliver what is due now rather than at its next tick: a group completed, or its parent's turn ended. */
-  readonly nudge: () => void
 }
 
 /**
- * What every plugin instance in the process shares. Several subscriptions and copies see the same
- * events, so each is claimed synchronously and handled once; `answered` keeps stale notices unsent.
+ * The events handled, and the permission requests a session was told about or that were answered
+ * first: claim sets shared by every subscription and copy, so each event is handled once.
  */
-export interface WatchState {
+export interface Watched {
   readonly seen: Set<string>
-  readonly waiting: Waiting
+  readonly waiting: Set<string>
   readonly answered: Set<string>
-  readonly forms: FormsTold
-  /** The type of each item enqueued for a spawned session, by inbox id, for its delivery to look up. */
-  readonly inbox: Map<string, string>
 }
 
 /** The forms sessions were told about, kept apart from the permission requests. */
@@ -132,50 +37,6 @@ export interface FormsTold {
   readonly told: Map<string, Promise<unknown>>
   /** Forms settled before anyone was told, so a notice whose roster lookup was overtaken is not sent. */
   readonly settled: Set<string>
-}
-
-/**
- * The webhook receiver, one per process: every instance configured with a `webhook` option joins
- * `instances`, the first one starts the server, and the last one to unload stops it.
- */
-export interface Receiver {
-  readonly config: WebhookConfig
-  readonly instances: Set<WebhookPorts>
-  readonly server: Promise<Server | undefined>
-}
-
-/** The current receiver, if any, and the previous one while it closes, which a new one waits for. */
-export interface Receivers {
-  current?: Receiver
-  closing?: Promise<void>
-}
-
-/**
- * The question relay's state, shared by every instance, as a child and the session it asks can be in
- * different locations: open questions, cut-off ones already told, and calls waiting for their form.
- */
-export interface QuestionState {
-  readonly questions: Map<string, Question>
-  readonly noticed: Set<string>
-  readonly shown: Map<string, () => void>
-  /** The questions whose answer is being passed on, each until that is done, and those whose answer went out. */
-  readonly passing: Map<string, Promise<unknown>>
-  readonly answered: Set<string>
-  /**
-   * The ports of every loaded instance of every copy. A release before the hub picks one here to tell
-   * a cut-off question through, so every copy fills it; this copy reads it only for another copy.
-   */
-  readonly loaded: Set<QuestionPorts>
-  /** How many instances follow OpenCode's events now, and whether any has since the process started. */
-  following: number
-  followed: boolean
-  /**
-   * When OpenCode last reported each location shutting down (`location.shutdown`), by directory
-   * in epoch milliseconds by the clock of the watcher that saw it; under `""` when the event named no location.
-   */
-  readonly shutdowns: Map<string, number>
-  /** Woken when a location shuts down or an instance unloads: dismissals held to see whether one follows. */
-  readonly closingWaiters: Set<() => void>
 }
 
 /**
@@ -189,10 +50,14 @@ export interface Member {
    * handed too, which finds its member by it (`portsAt`). A member of a copy before it has none.
    */
   readonly location?: object
-  readonly permission: Permissions
-  readonly later: LaterPorts
-  readonly watch: WatchPorts
-  readonly questions: QuestionPorts
+  /** The location's permission domain, kept in `locations`. */
+  readonly permission: unknown
+  /** The ports the scheduler's tick runs through: the owner key's, and the tick jobs'. */
+  readonly later: TickPorts
+  /** The ports the hub's subscriptions to OpenCode's events run through. */
+  readonly watch: unknown
+  /** The question relay's ports. */
+  readonly questions: unknown
   readonly log: (message: string) => void
 }
 
@@ -208,8 +73,8 @@ export interface Tick {
 }
 
 /**
- * The scheduler's loop, one per hub: it runs while the hub has members, and each tick delivers the
- * due `courier_later` messages through the ports of the member that joined first and is still loaded.
+ * The scheduler's loop, one per hub: it runs while the hub has members, and each tick runs the jobs
+ * registered with `open` through the ports of the member that joined first and is still loaded.
  */
 export interface Scheduler {
   /** The loop's interval, while it runs. */
@@ -243,6 +108,9 @@ const realTimers: Timers = {
   wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }
 
+/** How often the hub's scheduler ticks: what a job delivers, a `courier_later` message, can be this late. */
+export const TICK_MS = 15_000
+
 /**
  * The storage key, shared by every server on one data directory, naming the server whose scheduler
  * delivers `courier_later` messages: `{ server, at }`, its id and when it last wrote (epoch ms).
@@ -272,7 +140,7 @@ interface Owner {
   readonly at: number
 }
 
-async function readOwner(ports: LaterPorts): Promise<Owner | undefined> {
+async function readOwner(ports: TickPorts): Promise<Owner | undefined> {
   const value = obj(await ports.storage.get(OWNER_KEY))
   const server = str(value.server)
   const at = num(value.at)
@@ -317,19 +185,27 @@ export interface Hub {
   /** The ids of the `courier_later` messages being delivered. */
   readonly claimed: Set<string>
   /** The events handled, and the permission requests a session was told about or that were answered first. */
-  readonly watched: Omit<WatchState, "forms" | "inbox">
+  readonly watched: Watched
   /** The forms sessions were told about, and those settled first. */
   readonly forms: FormsTold
   /**
    * The permission domain of every loaded instance, by instance. OpenCode keeps a request where its
    * session runs, so a request of an isolated child is answered through the instance loaded in its worktree.
    */
-  readonly locations: Map<object, Permissions>
-  readonly receivers: Receivers
-  readonly questions: QuestionState
+  readonly locations: Map<object, unknown>
+  /** The webhook receiver's state: the object every copy shares under the key `receiver`. */
+  readonly receivers: object
+  /** The question relay's state: the object every copy shares under the key `questions`. */
+  readonly questions: object
   /** Whether the hub of another version found under `HUB_KEY` has been logged. */
   skewLogged: boolean
 }
+
+/**
+ * A job each tick runs, in its turn, through the first loaded member, which may be another copy's:
+ * it uses only the ports every hub-v2 member has. `claimed` is the hub's claim set; a throw ends the tick.
+ */
+export type TickJob = (owner: Member, claimed: Set<string>) => Promise<void>
 
 /** A hub, as `open` finds or makes it, and how instances join it. */
 export interface Opened {
@@ -341,10 +217,6 @@ export interface Opened {
   readonly join: (member: Member) => () => Promise<void>
   /** Hands the hub work a member started, which its leave waits for; the member's own background work. */
   readonly track: (member: Member, work: Promise<unknown>) => void
-  /** The spawns under way, under a fixed key of its own rather than in the hub, so every hub version shares it. */
-  readonly gate: SpawnGate
-  /** `WatchState.inbox`, under a fixed key of its own like the gate, so every hub version shares it. */
-  readonly inbox: Map<string, string>
   /**
    * Runs a tick now, or once the tick under way has ended, so what has just fallen due (a released
    * group) is delivered at once rather than at the next tick; nothing while no instance is loaded.
@@ -353,50 +225,52 @@ export interface Opened {
 }
 
 /**
+ * The value under `opencode-courier.<name>` every copy in the process shares, made by `create` the first
+ * time; another version, or a copy before the hub, may have made it, so its shape is kept for good.
+ */
+export function sharedState<T>(name: string, create: () => T, registry: Registry = globalThis as Registry): T {
+  return processWide(`opencode-courier.${name}`, create, registry)
+}
+
+/**
  * Finds or makes this copy's hub in `registry`: the one under `HUB_KEY`, or its own under a versioned
  * key when another version holds that; its claim sets are the pre-hub keys', made when missing.
  */
-export function open(registry: Registry, timers: Timers = realTimers, server = SERVER): Opened {
-  const shared = <T>(name: string, create: () => T) => processWide(`opencode-courier.${name}`, create, registry)
-  const questionState = () => {
-    // Field by field, since a copy before the hub may have made it without the fields added later.
-    const state = shared<{ -readonly [K in keyof QuestionState]?: QuestionState[K] }>("questions", () => ({}))
-    state.questions ??= new Map()
-    state.noticed ??= new Set()
-    state.shown ??= new Map()
-    state.passing ??= new Map()
-    state.answered ??= new Set()
-    state.loaded ??= new Set()
-    state.following ??= 0
-    state.followed ??= false
-    state.shutdowns ??= new Map()
-    state.closingWaiters ??= new Set()
-    return state as QuestionState
-  }
+function find(registry: Registry) {
+  const shared = <T>(name: string, create: () => T) => sharedState(name, create, registry)
   const create = (): Hub => ({
     version: HUB_VERSION,
     members: new Set(),
     scheduler: {},
     watchers: [],
     claimed: shared("claimed", () => new Set<string>()),
-    watched: shared<Omit<WatchState, "forms" | "inbox">>("watched", () => ({ seen: new Set(), waiting: new Set(), answered: new Set() })),
+    watched: shared<Watched>("watched", () => ({ seen: new Set(), waiting: new Set(), answered: new Set() })),
     forms: shared<FormsTold>("forms", () => ({ told: new Map(), settled: new Set() })),
-    locations: shared("locations", () => new Map<object, Permissions>()),
-    receivers: shared<Receivers>("receiver", () => ({})),
-    questions: questionState(),
+    locations: shared("locations", () => new Map<object, unknown>()),
+    receivers: shared<object>("receiver", () => ({})),
+    // Filled in by `question/`, field by field, since a copy before the hub may have made it without them.
+    questions: shared<object>("questions", () => ({})),
     skewLogged: false,
   })
 
   const found = registry[Symbol.for(HUB_KEY)] as { version?: unknown } | null | undefined
   // The version of the hub of another copy found under `HUB_KEY`, if one is there.
   const skew = found != null && found.version !== HUB_VERSION ? { version: found.version } : undefined
-  const hub = processWide(skew ? `${HUB_KEY}@${HUB_VERSION}` : HUB_KEY, create, registry)
+  return { hub: processWide(skew ? `${HUB_KEY}@${HUB_VERSION}` : HUB_KEY, create, registry), skew }
+}
+
+/**
+ * This copy's hub in `registry`, and how its instances join it. Its ticks run `jobs` in order, kept in
+ * this copy's tick, which the hub runs once this copy has joined last, never in the hub itself.
+ */
+export function open(registry: Registry, jobs: readonly TickJob[], timers: Timers = realTimers, server = SERVER): Opened {
+  const { hub, skew } = find(registry)
 
   /**
    * Whether this server holds the owner key, taking or renewing it through `ports`. A free, expired
    * or stalled key is written and read back after a random wait: the last of two writers holds it.
    */
-  const own = async (ports: LaterPorts) => {
+  const own = async (ports: TickPorts) => {
     const held = await readOwner(ports)
     const now = ports.now()
     if (held && held.server !== server && holds(held.at, now, OWNER_EXPIRY_MS)) return false
@@ -410,7 +284,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
   const fresh = (held: Owner | undefined, now: number) => held?.server === server && holds(held.at, now, OWNER_RENEW_MS)
 
   /** Renews the owner key if this server holds it fresh: what a tick does, for a tick still delivering. */
-  const renew = async (ports: LaterPorts) => {
+  const renew = async (ports: TickPorts) => {
     const now = ports.now()
     if (fresh(await readOwner(ports), now)) await ports.storage.set(OWNER_KEY, { server, at: now })
   }
@@ -427,7 +301,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
    * Removes the owner key if this server holds it, so another takes over at its next tick: once the
    * loop has stopped, no tick is under way and no other hub version here runs a loop under this id.
    */
-  const release = async (ports: LaterPorts) => {
+  const release = async (ports: TickPorts) => {
     const scheduler = hub.scheduler
     const idle = () => scheduler.timer === undefined && !scheduler.running && !scheduler.ticking && !othersRunning()
     if (idle() && (await readOwner(ports))?.server === server && idle()) await ports.storage.remove(OWNER_KEY)
@@ -481,8 +355,7 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     }
     try {
       if ((await own(owner.later)) && scheduler.timer !== undefined && hub.members.has(owner)) {
-        await deliverDue(owner.later, hub.claimed)
-        await deliverReleased(owner.later, hub.claimed)
+        for (const job of jobs) await job(owner, hub.claimed)
       }
     } catch (error) {
       tell(`courier_later scheduler: ${String(error)}`)
@@ -580,31 +453,15 @@ export function open(registry: Registry, timers: Timers = realTimers, server = S
     hub,
     join,
     track,
-    gate: shared<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() })),
-    inbox: shared("inbox", () => new Map<string, string>()),
     nudge,
   }
 }
 
-const opened = open(globalThis as Registry)
-
 /** This copy's hub, in the process. */
-export const hub: Hub = opened.hub
+export const hub: Hub = find(globalThis as Registry).hub
 
-/** Joins this copy's hub; see `Opened.join`. */
-export const join = opened.join
-
-/** Hands this copy's hub work a member started; see `Opened.track`. */
-export const track = opened.track
-
-/** The spawns under way in the process; see `Opened.gate`. */
-export const gate = opened.gate
-
-/** The types of the items enqueued for spawned sessions; see `Opened.inbox`. */
-export const inbox = opened.inbox
-
-/** Has this copy's scheduler deliver what is due now; see `Opened.nudge`. */
-export const nudge = opened.nudge
+/** Opens this copy's hub in the process, with its tick jobs; see `open`. */
+export const openInProcess = (jobs: readonly TickJob[]) => open(globalThis as Registry, jobs)
 
 /** The member of this copy's hub set up with `location` that joined last, while it is loaded. */
 export function memberAt(location: object) {
@@ -613,40 +470,5 @@ export function memberAt(location: object) {
   return found
 }
 
-/**
- * The question ports of the member that just joined at `location`, while it is loaded: resolved once,
- * so a later instance at the same location does not take its place while this one is still loaded.
- */
-export function portsAt(location: object): () => QuestionPorts | undefined {
-  const own = memberAt(location)
-  return () => (own && hub.members.has(own) ? own.questions : undefined)
-}
-
 /** The permission domains of the loaded instances. */
 export const permissions = () => hub.locations.values()
-
-/**
- * For tests: forgets every remembered id, the spawns under way and the question relay's state, loaded
- * instances and watcher count included. Members, locations and the receiver are left to unloading.
- */
-export function resetHub() {
-  gate.reserved.clear()
-  inbox.clear()
-  hub.claimed.clear()
-  hub.watched.seen.clear()
-  hub.watched.waiting.clear()
-  hub.watched.answered.clear()
-  hub.forms.told.clear()
-  hub.forms.settled.clear()
-  const questions = hub.questions
-  questions.questions.clear()
-  questions.noticed.clear()
-  questions.shown.clear()
-  questions.passing.clear()
-  questions.answered.clear()
-  questions.loaded.clear()
-  questions.following = 0
-  questions.followed = false
-  questions.shutdowns.clear()
-  questions.closingWaiters.clear()
-}

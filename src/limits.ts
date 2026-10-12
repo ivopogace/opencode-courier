@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
-import { setBounded } from "./bounded.js"
-import { isNotFound, millis, obj } from "./json.js"
+import { setBounded } from "./platform/bounded.js"
+import { isNotFound, millis, obj } from "./platform/json.js"
 import { childrenRefusal, depthRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "./notices.js"
 import { reportOf } from "./report.js"
 import { allEntries, bySession, children, indexedLineage, lineageBy, type RosterStorage } from "./roster.js"
@@ -40,8 +40,8 @@ export interface Reservation {
 }
 
 /**
- * The spawns under way in the process, kept by the hub under a fixed key, so spawns in other
- * locations and copies count them; `turn` runs the limit checks one at a time.
+ * The spawns under way in the process, under a fixed process-wide key outside the hub, so spawns in
+ * other locations and copies count them; `turn` runs the limit checks one at a time.
  */
 export interface SpawnGate {
   readonly reserved: Set<Reservation>

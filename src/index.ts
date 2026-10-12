@@ -5,23 +5,45 @@ import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
 import type { CourierPorts } from "./courier.js"
 import { dirtyOf, headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
-import { gate, hub, inbox, join, nudge, permissions, portsAt, track, type Member, type Receiver } from "./hub.js"
-import type { LaterPorts } from "./later.js"
-import { readLimits, shapeContext } from "./limits.js"
-import { pendingOf, type AnswerPorts } from "./relay.js"
-import { joinRelay, noticeCutOff, pendingQuestions, relayQuestions, type QuestionPorts } from "./question/index.js"
+import { deliverReleased } from "./group.js"
+import { watchFromHub } from "./platform/events.js"
+import { hub, openInProcess, permissions as domains, sharedState, type Member, type TickJob } from "./platform/hub.js"
+import { builtVersions, versionNotice } from "./platform/version.js"
+import { deliverDue, isScheduled, type LaterPorts } from "./later.js"
+import { readLimits, shapeContext, type SpawnGate } from "./limits.js"
+import { asksPermission, pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
+import { asksQuestion, joinRelay, noticeCutOff, pendingQuestions, portsAt, relayQuestions, type QuestionPorts } from "./question/index.js"
 import { pruneExpired } from "./roster.js"
 import { addSkill } from "./skill.js"
 import { addTools, type ToolPorts } from "./tools.js"
-import { watchFromHub, type WatchPorts, type WatchState } from "./watch.js"
-import { builtVersions, versionNotice } from "./version.js"
-import { listen, readConfig, type WebhookConfig, type WebhookPorts } from "./webhook.js"
+import { personEvents, together, treeEvents, waitsOn, type WatchPorts, type WatchState } from "./watch.js"
+import { listen, readConfig, subscribedSince, type Receiver, type Receivers, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
 /**
  * The webhook receiver, one per process: instances with a `webhook` option join `instances`, the first
  * starts the server and the last to unload stops it; one that could not listen is dropped for a retry.
  */
-const receivers = hub.receivers
+const receivers = sharedState<Receivers>("receiver", () => ({}))
+
+/** The spawns under way in the process, outside the hub, so spawns in other locations, copies and hub versions count them. */
+const gate = sharedState<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() }))
+
+/** The type of each item enqueued for a spawned session, outside the hub like the gate. */
+const inbox = sharedState("inbox", () => new Map<string, string>())
+
+/**
+ * What each tick of the scheduler does, in order, through the first loaded member, of whichever copy:
+ * due `courier_later` messages, then released join groups. Every hub-v2 member's `later` is its LaterPorts.
+ */
+const jobs: TickJob[] = [
+  (owner, claimed) => deliverDue(owner.later as LaterPorts, claimed),
+  (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
+]
+
+const { join, track, nudge } = openInProcess(jobs)
+
+/** The permission domains of the loaded instances: every member's is its location's, whichever copy joined it. */
+const permissions = domains as () => Iterable<Permissions>
 
 const sameSettings = (a: WebhookConfig, b: WebhookConfig) =>
   a.port === b.port && a.host === b.host && a.secret === b.secret && a.maxBytes === b.maxBytes
@@ -79,6 +101,15 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 // several subscriptions and copies see the same events. The scheduler's claim set is the hub's own.
 const { watched } = hub
 const watchState: WatchState = { ...watched, forms: hub.forms, inbox }
+
+/**
+ * What a session waits on outside the tree, for the silent-turn rule, cheapest first: a request of its
+ * own to the person, then a scheduled message or a webhook it subscribed to since its last prompt.
+ */
+const outside = waitsOn(asksPermission, asksQuestion, together(isScheduled, subscribedSince))
+
+/** What the hub's subscriptions do with each event of OpenCode's, module by module, in this order. */
+const eventModules = [treeEvents(watchState, outside), personEvents(watchState)]
 
 /**
  * The courier tools and webhook receiver, as a promise plugin joining the hub that runs the scheduler
@@ -178,8 +209,8 @@ export const courier = () => Plugin.define({
       log: later.log,
       nudge,
     }
-    // The hub's subscriptions to OpenCode's events, one and a standby, start with this copy's watcher.
-    watchFromHub(hub, watchState)
+    // The hub's subscriptions to OpenCode's events, one and a standby, start with this copy's modules.
+    watchFromHub(hub, eventModules)
     const member: Member = {
       directory: ctx.location.directory,
       location: ctx.location,

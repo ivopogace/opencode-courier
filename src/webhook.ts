@@ -3,11 +3,11 @@ import { createHmac, timingSafeEqual } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type Server } from "node:http"
 import { homedir } from "node:os"
-import { addBounded } from "./bounded.js"
-import { isNotFound, num, obj, str } from "./json.js"
+import { addBounded } from "./platform/bounded.js"
+import { isNotFound, num, obj, str } from "./platform/json.js"
 import { envelope } from "./kernel/protocol.js"
 import { CI_EVENTS, githubSummary, hookSummary, webhookText } from "./notices.js"
-import { scanAll } from "./storage.js"
+import { scanAll } from "./platform/storage.js"
 
 /** What every GitHub delivery carries, read once for the summary of its event. */
 export interface Delivery {
@@ -43,6 +43,22 @@ export interface Subscription {
   readonly sessionID: string
   readonly topic: string
   readonly createdAt: number
+}
+
+/**
+ * The webhook receiver, one per process: every instance configured with a `webhook` option joins
+ * `instances`, the first one starts the server, and the last one to unload stops it.
+ */
+export interface Receiver {
+  readonly config: WebhookConfig
+  readonly instances: Set<WebhookPorts>
+  readonly server: Promise<Server | undefined>
+}
+
+/** The current receiver, if any, and the previous one while it closes, which a new one waits for. */
+export interface Receivers {
+  current?: Receiver
+  closing?: Promise<void>
 }
 
 /** The receiver's settings, from the plugin's `webhook` option. */
@@ -102,6 +118,12 @@ export async function unsubscribe(ports: WebhookPorts, sessionID: string, topic?
 /** Every subscription, or those to one topic. */
 export function subscriptions(ports: Pick<WebhookPorts, "storage">, topic?: string) {
   return scanAll<Subscription>(ports.storage, topic === undefined ? PREFIX : topicPrefix(topic))
+}
+
+/** Whether a session waits on a webhook it subscribed to at `since` or later. */
+export async function subscribedSince(ports: Pick<WebhookPorts, "storage">, sessionID: string, since: number) {
+  // An older subscription is no wait: a prompt, most likely its delivery, has come since.
+  return (await subscriptions(ports)).some((subscription) => subscription.sessionID === sessionID && subscription.createdAt >= since)
 }
 
 /**

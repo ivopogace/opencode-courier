@@ -14,7 +14,7 @@ const README_TABLE = "https://github.com/ivopogace/opencode-courier#supported-op
  * `@opencode/plugin` devDependency version, which the peer repeats. Throws if either is missing.
  */
 export function builtVersions(): BuiltVersions {
-  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+  const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
     version?: unknown
     devDependencies?: Record<string, unknown>
   }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { addBounded, setBounded } from "../src/bounded.js"
+import { addBounded, setBounded } from "../src/platform/bounded.js"
 
 describe("addBounded", () => {
   test("adds a value once: false when it was there already", () => {

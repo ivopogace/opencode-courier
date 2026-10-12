@@ -2,21 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync, writeFileSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import {
-  checkSignature,
-  dispatch,
-  genericEvent,
-  githubEvent,
-  listen,
-  parseTopic,
-  readConfig,
-  receive,
-  sign,
-  subscribe,
-  subscriptions,
-  unsubscribe,
-  type WebhookPorts,
-} from "../src/webhook.js"
+import { checkSignature, dispatch, genericEvent, githubEvent, listen, readConfig, receive, sign } from "../src/webhook/receiver.js"
+import { parseTopic, subscribe, subscriptions, unsubscribe, type WebhookPorts } from "../src/webhook/subscriptions.js"
 import { defuse } from "../src/kernel/protocol.js"
 
 const SECRET = "It's a Secret to Everybody"

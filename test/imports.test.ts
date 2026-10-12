@@ -54,7 +54,7 @@ test("no module of src/ imports itself through others, type-only imports include
 test("notices.ts imports nothing of the plugin's at runtime but platform/json.ts, kernel/protocol.ts and the text.ts of the modules that moved", () => {
   const types = typeOnly()
   const runtime = (imports().get("notices") ?? []).filter((name) => !types.has(`notices -> ${name}`))
-  expect(runtime.sort()).toEqual(["kernel/protocol", "platform/json", "scheduling/text"])
+  expect(runtime.sort()).toEqual(["kernel/protocol", "platform/json", "scheduling/text", "webhook/text"])
 })
 
 test("platform/ imports only platform/, so the hub and the event loop depend on no feature", () => {
@@ -95,7 +95,7 @@ test("modules outside question/ use the relay through question/index.ts only", (
 })
 
 /** The modules of src/ that live in a folder of their own with an index.ts, as `folder -> files`. */
-const MODULES = ["scheduling"]
+const MODULES = ["scheduling", "webhook"]
 
 test("a module is imported from outside only through its index.ts", () => {
   const reaching = [...imports()].flatMap(([module, imported]) =>

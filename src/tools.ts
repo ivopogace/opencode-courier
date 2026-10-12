@@ -14,13 +14,11 @@ import {
   spawnText,
   statusText,
   stopText,
-  subscribeText,
   treeText,
-  unsubscribeText,
 } from "./notices.js"
 import { answerQuestion, isQuestion, type QuestionPorts } from "./question/index.js"
 import { answer, REPLIES, type AnswerPorts, type Waiting } from "./relay.js"
-import { subscribe, unsubscribe, type WebhookPorts } from "./webhook.js"
+import { addWebhookTools, type WebhookPorts } from "./webhook/index.js"
 
 /**
  * The courier tools: their input schemas, descriptions, and what each returns. The descriptions are
@@ -131,20 +129,6 @@ export const AnswerInput = Schema.Struct({
         "or a list of labels where the question allows several.",
     }),
   ),
-})
-
-export const SubscribeInput = Schema.Struct({
-  topic: Schema.String.annotate({
-    description:
-      "owner/repo for every event of a GitHub repository, owner/repo#<number> for one pull request or issue " +
-      "(reviews, comments, completed CI runs), or a plain name for deliveries posted to /hook/<name>.",
-  }),
-  sessionID: Schema.optional(Schema.String.annotate({ description: "The session to subscribe; defaults to this one." })),
-})
-
-export const UnsubscribeInput = Schema.Struct({
-  topic: Schema.optional(Schema.String.annotate({ description: "The topic to drop; all of this session's when omitted." })),
-  sessionID: Schema.optional(Schema.String.annotate({ description: "The session to unsubscribe; defaults to this one." })),
 })
 
 export type { ToolEditor }
@@ -312,35 +296,5 @@ export function addTools(tools: ToolEditor, ports: ToolPorts) {
   })
 
   addSchedulingTools(tools, ports.later)
-
-  tools.add({
-    name: "courier_subscribe",
-    options: { codemode: false },
-    description:
-      "Wake a session (this one by default) when a webhook arrives for a topic: a GitHub repository, one of its " +
-      "pull requests or issues (reviews, comments, completed CI runs), or a named generic hook. Each matching " +
-      "delivery arrives as a message, queued behind any running turn. End your turn and wait; do not poll.",
-    input: SubscribeInput,
-    execute: async (input, context) => {
-      const sessionID = input.sessionID ?? context.sessionID
-      const subscription = await subscribe(ports.hooks, sessionID, input.topic).catch(rethrow("courier_subscribe"))
-      const receiving = await ports.receiving()
-      return {
-        content: subscribeText(sessionID, subscription.topic, receiving),
-        metadata: { sessionID, topic: subscription.topic, receiver: receiving },
-      }
-    },
-  })
-
-  tools.add({
-    name: "courier_unsubscribe",
-    options: { codemode: false },
-    description: "Stop webhook deliveries for a topic, or all of a session's topics, e.g. once its pull request is merged.",
-    input: UnsubscribeInput,
-    execute: async (input, context) => {
-      const sessionID = input.sessionID ?? context.sessionID
-      const dropped = await unsubscribe(ports.hooks, sessionID, input.topic).catch(rethrow("courier_unsubscribe"))
-      return { content: unsubscribeText(sessionID, dropped), metadata: { sessionID, dropped } }
-    },
-  })
+  addWebhookTools(tools, ports)
 }

@@ -47,7 +47,7 @@ import { follow, watchFromHub } from "../src/platform/events.js"
 import { isScheduled } from "../src/scheduling/index.js"
 import { asksQuestion } from "../src/question/index.js"
 import { asksPermission } from "../src/relay.js"
-import { subscribedSince } from "../src/webhook.js"
+import { subscribedSince } from "../src/webhook/index.js"
 
 /** What a session waits on outside the tree, as src/index.ts composes it. */
 const outside = waitsOn(asksPermission, asksQuestion, together(isScheduled, subscribedSince))

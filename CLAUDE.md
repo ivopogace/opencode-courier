@@ -6,6 +6,9 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
 
 ## Layout
 
+`src/` is being restructured into modules by feature, in steps (issue #126); `docs/research/layout.md`
+holds the target layout, the import rules and the reasons for them. Today:
+
 `src/`:
 
 - `index.ts`: the plugin, an Effect plugin running the promise one. Builds the ports, registers the
@@ -13,11 +16,16 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
   question tool and binds it to its instance's member in the hub.
 - `tools.ts`: the twelve courier tools: input schemas, descriptions and results. `skill.ts`: the
   `courier-orchestrate` skill, registered through the skill domain; its text is in `notices.ts`.
+- `kernel/protocol.ts`: what the models see of the protocol in every module: `envelope`, `END_TURN`,
+  `clipText`, `defuse`, `describeFailure` and `Status`. It imports only `kernel/**` and `json.ts`;
+  tuned against real models, so a change to it reruns the real-model smoke test.
 - `notices.ts`: every other model-facing string (tool result texts, the child brief, the skill, the
-  envelope, the failure, permission, form, question and webhook notices), as pure functions that import
-  nothing of the plugin's but `json.ts`. `test/notices.test.ts` snapshots them and the tool
-  descriptions, so a wording change shows up as a diff in `test/__snapshots__/`; update it with
-  `bun test --update-snapshots` and rerun the real-model smoke test.
+  failure, permission, form, question and webhook notices), as pure functions. The domain types they
+  take (`Limits`, `Artifacts`, `HeldReport`, `Prompt`, `Form`, …) live in the modules that own them;
+  until it dissolves into per-module `text.ts` files, it imports no runtime value of the plugin's but
+  `kernel/protocol.ts` and `json.ts`, and those types only as `import type`. `test/notices.test.ts`
+  snapshots them and the tool descriptions, so a wording change shows up as a diff in
+  `test/__snapshots__/`; update it with `bun test --update-snapshots` and rerun the real-model smoke test.
 - `courier.ts`: spawn, send, status, children. `limits.ts`: the session tree limits `spawn()` checks,
   and the `context` hook naming each spawned session's role and hiding `courier_spawn` from a leaf.
   `report.ts`: whether each spawned session owes its parent a report. `group.ts`: join groups, the

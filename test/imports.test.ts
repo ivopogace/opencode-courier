@@ -23,11 +23,26 @@ function imports() {
   return graph
 }
 
-test("no module of src/ imports itself through others", () => {
+/** The modules of src/ each module imports with `import type` or `export type … from` only, as `module -> imported`. */
+function typeOnly() {
+  const edges = new Set<string>()
+  for (const file of readdirSync(SRC, { recursive: true, encoding: "utf8" }).filter((name) => name.endsWith(".ts"))) {
+    const module = file.slice(0, -3).split("\\").join("/")
+    const text = readFileSync(join(SRC, file), "utf8")
+    for (const match of text.matchAll(/\b(?:import|export)\s+type\s*(?:\{[^}]*\}|[^"'{}]*?)\s*from\s*["'](\.{1,2}\/[\w./-]+)\.js["']/g))
+      edges.add(`${module} -> ${posix.normalize(posix.join(posix.dirname(module), match[1]!))}`)
+  }
+  return edges
+}
+
+test("no module of src/ imports itself through others, type-only imports included", () => {
+  // Until step 5 of #126 dissolves it, notices.ts takes its types from the modules that own them.
+  const exempt = typeOnly()
   const graph = imports()
   const cycles: string[] = []
   const visit = (module: string, path: string[]) => {
     for (const next of graph.get(module) ?? []) {
+      if (module === "notices" && exempt.has(`${module} -> ${next}`)) continue
       if (path.includes(next)) cycles.push([...path.slice(path.indexOf(next)), next].join(" -> "))
       else visit(next, [...path, next])
     }
@@ -36,8 +51,25 @@ test("no module of src/ imports itself through others", () => {
   expect(cycles).toEqual([])
 })
 
-test("notices.ts imports nothing of the plugin's but json.ts, so any module can use it", () => {
-  expect(imports().get("notices")).toEqual(["json"])
+test("notices.ts imports nothing of the plugin's at runtime but json.ts and kernel/protocol.ts", () => {
+  const types = typeOnly()
+  const runtime = (imports().get("notices") ?? []).filter((name) => !types.has(`notices -> ${name}`))
+  expect(runtime.sort()).toEqual(["json", "kernel/protocol"])
+})
+
+test("kernel/ imports only kernel/ and json.ts, so any module can use it", () => {
+  const kernel = [...imports()].filter(([module]) => module.startsWith("kernel/"))
+  expect(kernel.map(([module]) => module)).toContain("kernel/protocol")
+  expect(kernel.flatMap(([module, imported]) => imported.filter((name) => !name.startsWith("kernel/") && name !== "json").map((name) => `${module} -> ${name}`))).toEqual([])
+})
+
+test("effect is imported only by question/, index.ts and tools.ts", () => {
+  const importing = readdirSync(SRC, { recursive: true, encoding: "utf8" })
+    .filter((name) => name.endsWith(".ts"))
+    .filter((name) => /(?:from|import)\s*\(?\s*["']effect(?:\/[^"']*)?["']/.test(readFileSync(join(SRC, name), "utf8")))
+    .map((name) => name.slice(0, -3).split("\\").join("/"))
+    .filter((module) => !module.startsWith("question/") && module !== "index" && module !== "tools")
+  expect(importing).toEqual([])
 })
 
 test("bounded.ts imports nothing of the plugin's, so any module can hold its collections", () => {

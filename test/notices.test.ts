@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import * as kernel from "../src/kernel/protocol.js"
 import * as notices from "../src/notices.js"
 import { addTools, type ToolEditor, type ToolPorts } from "../src/tools.js"
-import { githubEvent } from "../src/webhook.js"
+import { githubEvent } from "../src/webhook/receiver.js"
 
 // Every model-facing string, built from fixed inputs and kept in __snapshots__/notices.test.ts.snap.
 // A wording change shows up there as a snapshot diff; after one, rerun e2e/real-model.sh (CLAUDE.md).

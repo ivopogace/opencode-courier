@@ -12,35 +12,48 @@ holds the target layout, the import rules and the reasons for them. Today:
 `src/`:
 
 - `index.ts`: the plugin, an Effect plugin running the promise one, and the composition root. Builds
-  the ports, registers the tools, hands the platform the ordered tick jobs (`deliverDue`, then
+  the ports, registers the tools, hands the platform the ordered tick jobs (`dueJob`, then
   `deliverReleased`) and event modules (`treeEvents`, then `personEvents`), composes the `Waits` port
   from its suppliers, and starts the webhook receiver; the Effect half wraps the question tool and
   binds it to its instance's member in the hub.
-- `tools.ts`: the twelve courier tools: input schemas, descriptions and results. `skill.ts`: the
+- `tools.ts`: the eight courier tools of the tree and the person: input schemas, descriptions and results, and
+  the call to each module's tool registration (`scheduling/`, then `webhook/`, last: the tool order is fixed). `skill.ts`: the
   `courier-orchestrate` skill, registered through the skill domain; its text is in `notices.ts`.
 - `kernel/protocol.ts`: what the models see of the protocol in every module: `envelope`, `END_TURN`,
   `clipText`, `defuse`, `describeFailure` and `Status`. It imports only `kernel/**` and
   `platform/json.ts`; tuned against real models, so a change to it reruns the real-model smoke test.
 - `notices.ts`: every other model-facing string (tool result texts, the child brief, the skill, the
-  failure, permission, form, question and webhook notices), as pure functions. The domain types they
+  failure, permission, form and question notices), as pure functions. The domain types they
   take (`Limits`, `Artifacts`, `HeldReport`, `Prompt`, `Form`, …) live in the modules that own them;
   until it dissolves into per-module `text.ts` files, it imports no runtime value of the plugin's but
-  `kernel/protocol.ts` and `platform/json.ts`, and those types only as `import type`.
+  `kernel/protocol.ts`, `platform/json.ts` and the `text.ts` of the modules that moved
+  (`scheduling/text.ts`, `webhook/text.ts`), which it re-exports, and those types only as `import type`.
   `test/notices.test.ts` snapshots them and the tool descriptions, so a wording change shows up as a diff in
   `test/__snapshots__/`; update it with `bun test --update-snapshots` and rerun the real-model smoke test.
 - `courier.ts`: spawn, send, status, children. `limits.ts`: the session tree limits `spawn()` checks,
   and the `context` hook naming each spawned session's role and hiding `courier_spawn` from a leaf.
   `report.ts`: whether each spawned session owes its parent a report. `group.ts`: join groups, the
-  reports held with them and their delivery from the scheduler's tick. `later.ts`: scheduled
-  messages, their delivery, and whether a session waits on one. `roster.ts`: the children each
+  reports held with them and their delivery from the scheduler's tick. `roster.ts`: the children each
   parent spawned. `cleanup.ts`:
   forgetting a child, with its worktree if it is isolated, and dropping it from its join group. `tree.ts`: the subtree under a session, read level by level
-  from the roster (`courier_tree`). `stop.ts`: stopping a subtree (`courier_stop`). `webhook.ts`: the webhook receiver and subscriptions.
+  from the roster (`courier_tree`). `stop.ts`: stopping a subtree (`courier_stop`).
+- `scheduling/`: scheduled messages. `index.ts` is its public API; `later.ts` stores and delivers them
+  (`courier_later`'s logic, `deliverDue`) and says whether a session waits on one (`isScheduled`);
+  `tools.ts` registers `courier_later` and `courier_cancel`; `text.ts` their result texts. It exports
+  `dueJob`, its tick job, and `isScheduled`, its `Waits` supplier, for `src/index.ts` to register.
+- `webhook/`: webhook deliveries. `index.ts` is its public API; `receiver.ts` the HTTP server, the
+  signature check, dispatch and the process-wide receiver (`joinReceiver`, under the hub's `receiver`
+  key); `subscriptions.ts` the subscription store and topics; `tools.ts` `courier_subscribe` and
+  `courier_unsubscribe`; `text.ts` their texts and the delivery summaries. It exports `subscribedSince`,
+  its `Waits` supplier.
+  `scheduling/` and `webhook/` import no other feature module, only `platform/**` and `kernel/**`, and
+  are imported through their `index.ts` only (`test/imports.test.ts`). `kernel/tool.ts`: `ToolEditor`
+  and `rethrow` for the `tools.ts` files.
 - `watch.ts`: what is done with OpenCode's events, as two event modules: `treeEvents` tells a parent
   that a child's turn failed or ended without a report, `personEvents` that it waits for a
   permission or shows a form only the person can answer. It declares the `Waits` port the silent-turn
-  rule asks, with `waitsOn` and `together` to compose it; `relay.ts`, `question/`, `later.ts` and
-  `webhook.ts` supply it. `relay.ts`: the permission and form notices, and passing a permission
+  rule asks, with `waitsOn` and `together` to compose it; `relay.ts`, `question/`, `scheduling/` and
+  `webhook/` supply it. `relay.ts`: the permission and form notices, and passing a permission
   answer back.
 - `question/`: relaying a child's question by wrapping OpenCode's `question` tool. `index.ts` is
   what the rest of the plugin imports; `relay.ts` wraps the tool; `answer.ts` passes an answer on;

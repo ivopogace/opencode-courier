@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { DEFAULT_LIMITS } from "../src/limits.js"
 import { joinGroup, memberKey } from "../src/group.js"
-import { schedule } from "../src/later.js"
+import { schedule } from "../src/scheduling/index.js"
 import { stoppedNotice, stopText, treeText } from "../src/notices.js"
 import { progressKey, promptKey, settledKey, stoppedKey, stoppedSincePrompt } from "../src/report.js"
 import { record, type RosterEntry } from "../src/roster.js"

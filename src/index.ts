@@ -9,7 +9,7 @@ import { deliverReleased } from "./group.js"
 import { watchFromHub } from "./platform/events.js"
 import { hub, openInProcess, permissions as domains, sharedState, type Member, type TickJob } from "./platform/hub.js"
 import { builtVersions, versionNotice } from "./platform/version.js"
-import { deliverDue, isScheduled, type LaterPorts } from "./later.js"
+import { dueJob, isScheduled, type LaterPorts } from "./scheduling/index.js"
 import { readLimits, shapeContext, type SpawnGate } from "./limits.js"
 import { asksPermission, pendingOf, type AnswerPorts, type Permissions } from "./relay.js"
 import { asksQuestion, joinRelay, noticeCutOff, pendingQuestions, portsAt, relayQuestions, type QuestionPorts } from "./question/index.js"
@@ -17,13 +17,7 @@ import { pruneExpired } from "./roster.js"
 import { addSkill } from "./skill.js"
 import { addTools, type ToolPorts } from "./tools.js"
 import { personEvents, together, treeEvents, waitsOn, type WatchPorts, type WatchState } from "./watch.js"
-import { listen, readConfig, subscribedSince, type Receiver, type Receivers, type WebhookConfig, type WebhookPorts } from "./webhook.js"
-
-/**
- * The webhook receiver, one per process: instances with a `webhook` option join `instances`, the first
- * starts the server and the last to unload stops it; one that could not listen is dropped for a retry.
- */
-const receivers = sharedState<Receivers>("receiver", () => ({}))
+import { joinReceiver, readConfig, receiving, subscribedSince, type WebhookConfig, type WebhookPorts } from "./webhook/index.js"
 
 /** The spawns under way in the process, outside the hub, so spawns in other locations, copies and hub versions count them. */
 const gate = sharedState<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() }))
@@ -36,7 +30,7 @@ const inbox = sharedState("inbox", () => new Map<string, string>())
  * due `courier_later` messages, then released join groups. Every hub-v2 member's `later` is its LaterPorts.
  */
 const jobs: TickJob[] = [
-  (owner, claimed) => deliverDue(owner.later as LaterPorts, claimed),
+  dueJob,
   (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
 ]
 
@@ -44,58 +38,6 @@ const { join, track, nudge } = openInProcess(jobs)
 
 /** The permission domains of the loaded instances: every member's is its location's, whichever copy joined it. */
 const permissions = domains as () => Iterable<Permissions>
-
-const sameSettings = (a: WebhookConfig, b: WebhookConfig) =>
-  a.port === b.port && a.host === b.host && a.secret === b.secret && a.maxBytes === b.maxBytes
-
-function startReceiver(config: WebhookConfig, log: (message: string) => void) {
-  const instances = new Set<WebhookPorts>()
-  const receiver: Receiver = {
-    config,
-    instances,
-    server: (receivers.closing ?? Promise.resolve())
-      .then(() => listen(config, () => instances.values().next().value))
-      .then(
-        (server) => {
-          log(`courier webhook: listening on http://${config.host}:${(server.address() as { port: number }).port}`)
-          return server
-        },
-        (error: unknown) => {
-          log(`courier webhook: cannot listen on ${config.host}:${config.port}: ${String(error)}`)
-          if (receivers.current === receiver) receivers.current = undefined
-          return undefined
-        },
-      ),
-  }
-  receivers.current = receiver
-  return receiver
-}
-
-function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
-  const receiver = receivers.current ?? startReceiver(config, ports.log)
-  if (!sameSettings(receiver.config, config))
-    ports.log(
-      `courier webhook: already running on ${receiver.config.host}:${receiver.config.port} with other settings ` +
-        "(port, host, secret or maxBytes); this location's are ignored. Set the webhook option once, in the global config.",
-    )
-  receiver.instances.add(ports)
-  return async () => {
-    receiver.instances.delete(ports)
-    if (receiver.instances.size > 0 || receivers.current !== receiver) return
-    receivers.current = undefined
-    const closing = receiver.server.then(
-      (server) =>
-        new Promise<void>((resolve) => {
-          if (!server) return resolve()
-          server.closeAllConnections()
-          server.close(() => resolve())
-        }),
-    )
-    receivers.closing = closing
-    await closing
-    if (receivers.closing === closing) receivers.closing = undefined
-  }
-}
 
 // One set of handled events and of told permission requests for every instance in the process, since
 // several subscriptions and copies see the same events. The scheduler's claim set is the hub's own.
@@ -188,7 +130,7 @@ export const courier = () => Plugin.define({
       questions: questionPorts,
       hooks,
       waiting: watched.waiting,
-      receiving: async () => (await receivers.current?.server) !== undefined,
+      receiving,
     }
     await ctx.tool.transform((tools) => addTools(tools, toolPorts))
     await ctx.skill.transform(addSkill)

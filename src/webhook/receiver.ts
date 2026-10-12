@@ -1,49 +1,19 @@
-import type { Plugin } from "@opencode/plugin"
 import { createHmac, timingSafeEqual } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type Server } from "node:http"
 import { homedir } from "node:os"
-import { addBounded } from "./platform/bounded.js"
-import { isNotFound, num, obj, str } from "./platform/json.js"
-import { envelope } from "./kernel/protocol.js"
-import { CI_EVENTS, githubSummary, hookSummary, webhookText } from "./notices.js"
-import { scanAll } from "./platform/storage.js"
-
-/** What every GitHub delivery carries, read once for the summary of its event. */
-export interface Delivery {
-  readonly name: string
-  readonly body: Record<string, any>
-  readonly repo: string
-  readonly action: string | undefined
-  readonly sender: string | undefined
-  /** ` by <sender>`, or nothing when the delivery names no sender. */
-  readonly by: string
-  /** The pull request and issue numbers it concerns, which `webhook.ts` reads for its topics. */
-  readonly numbers: readonly number[]
-}
-
-type Context = Plugin.Context
-
-const PREFIX = "webhook/"
+import { addBounded } from "../platform/bounded.js"
+import { sharedState } from "../platform/hub.js"
+import { isNotFound, num, obj, str } from "../platform/json.js"
+import { envelope } from "../kernel/protocol.js"
+import { GENERIC_NAME, keyOf, subscriptions, type WebhookPorts } from "./subscriptions.js"
+import { CI_EVENTS, githubSummary, hookSummary, webhookText } from "./text.js"
 
 /** Bodies above this are refused; GitHub's own deliveries are capped at 25 MB, real ones are far smaller. */
 export const DEFAULT_MAX_BYTES = 1024 * 1024
 
 /** How many accepted signatures are remembered, so a captured delivery cannot be replayed. */
 const REMEMBERED = 1000
-
-export interface WebhookPorts {
-  readonly storage: Pick<Context["storage"], "get" | "set" | "remove" | "scan">
-  readonly session: Pick<Context["session"], "synthetic" | "get">
-  readonly now: () => number
-  readonly log: (message: string) => void
-}
-
-export interface Subscription {
-  readonly sessionID: string
-  readonly topic: string
-  readonly createdAt: number
-}
 
 /**
  * The webhook receiver, one per process: every instance configured with a `webhook` option joins
@@ -67,63 +37,6 @@ export interface WebhookConfig {
   readonly host: string
   readonly secret: string
   readonly maxBytes: number
-}
-
-const GITHUB_REPO = /^[\w.-]+\/[\w.-]+$/
-const GENERIC_NAME = /^[\w.-]{1,64}$/
-
-/**
- * Normalises a topic: `owner/repo` or `owner/repo#12` (optionally `github:`-prefixed) is a GitHub
- * repo, PR or issue; any other name of letters, digits, `.`, `_` and `-` is posted to `/hook/<name>`.
- */
-export function parseTopic(input: string) {
-  const raw = input.trim()
-  const github = raw.replace(/^github:/i, "")
-  const [repo, number, ...rest] = github.split("#")
-  if (repo && GITHUB_REPO.test(repo) && rest.length === 0 && (number === undefined || /^\d+$/.test(number))) {
-    const suffix = number === undefined ? "" : `#${Number(number)}`
-    return `github:${repo.toLowerCase()}${suffix}`
-  }
-  if (GENERIC_NAME.test(raw)) return raw
-  throw new Error(
-    `Not a topic: ${JSON.stringify(input)}. Use owner/repo, owner/repo#<number>, or a name of letters, digits, ".", "_" and "-".`,
-  )
-}
-
-// Topic first, so a delivery scans only its own topics' subscribers.
-const topicPrefix = (topic: string) => `${PREFIX}${encodeURIComponent(topic)}/`
-const keyOf = (sessionID: string, topic: string) => topicPrefix(topic) + sessionID
-
-/** Subscribes an existing session to a topic; throws for a session OpenCode does not know. */
-export async function subscribe(ports: WebhookPorts, sessionID: string, topic: string) {
-  const subscription: Subscription = { sessionID, topic: parseTopic(topic), createdAt: ports.now() }
-  await ports.session.get({ sessionID })
-  await ports.storage.set(keyOf(sessionID, subscription.topic), { ...subscription })
-  return subscription
-}
-
-/** Drops one subscription, or all of the session's when no topic is given; returns the topics dropped. */
-export async function unsubscribe(ports: WebhookPorts, sessionID: string, topic?: string) {
-  if (topic !== undefined) {
-    const key = keyOf(sessionID, parseTopic(topic))
-    if ((await ports.storage.get(key)) === undefined) return []
-    await ports.storage.remove(key)
-    return [parseTopic(topic)]
-  }
-  const dropped = (await subscriptions(ports)).filter((item) => item.sessionID === sessionID)
-  await Promise.all(dropped.map((item) => ports.storage.remove(keyOf(item.sessionID, item.topic))))
-  return dropped.map((item) => item.topic)
-}
-
-/** Every subscription, or those to one topic. */
-export function subscriptions(ports: Pick<WebhookPorts, "storage">, topic?: string) {
-  return scanAll<Subscription>(ports.storage, topic === undefined ? PREFIX : topicPrefix(topic))
-}
-
-/** Whether a session waits on a webhook it subscribed to at `since` or later. */
-export async function subscribedSince(ports: Pick<WebhookPorts, "storage">, sessionID: string, since: number) {
-  // An older subscription is no wait: a prompt, most likely its delivery, has come since.
-  return (await subscriptions(ports)).some((subscription) => subscription.sessionID === sessionID && subscription.createdAt >= since)
 }
 
 /**
@@ -407,3 +320,65 @@ export function readConfig(options: unknown, env: Record<string, string | undefi
   if (num(maxBytes) === undefined || maxBytes <= 0) throw new Error(`webhook.maxBytes is not a positive integer: ${maxBytes}`)
   return { port, host: str(webhook.host) ?? "127.0.0.1", secret, maxBytes }
 }
+
+/**
+ * The webhook receiver, one per process: instances with a `webhook` option join `instances`, the first
+ * starts the server and the last to unload stops it; one that could not listen is dropped for a retry.
+ */
+const receivers = sharedState<Receivers>("receiver", () => ({}))
+
+const sameSettings = (a: WebhookConfig, b: WebhookConfig) =>
+  a.port === b.port && a.host === b.host && a.secret === b.secret && a.maxBytes === b.maxBytes
+
+function startReceiver(config: WebhookConfig, log: (message: string) => void) {
+  const instances = new Set<WebhookPorts>()
+  const receiver: Receiver = {
+    config,
+    instances,
+    server: (receivers.closing ?? Promise.resolve())
+      .then(() => listen(config, () => instances.values().next().value))
+      .then(
+        (server) => {
+          log(`courier webhook: listening on http://${config.host}:${(server.address() as { port: number }).port}`)
+          return server
+        },
+        (error: unknown) => {
+          log(`courier webhook: cannot listen on ${config.host}:${config.port}: ${String(error)}`)
+          if (receivers.current === receiver) receivers.current = undefined
+          return undefined
+        },
+      ),
+  }
+  receivers.current = receiver
+  return receiver
+}
+
+/** Joins this instance to the process's receiver, starting it if there is none; returns the leave. */
+export function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
+  const receiver = receivers.current ?? startReceiver(config, ports.log)
+  if (!sameSettings(receiver.config, config))
+    ports.log(
+      `courier webhook: already running on ${receiver.config.host}:${receiver.config.port} with other settings ` +
+        "(port, host, secret or maxBytes); this location's are ignored. Set the webhook option once, in the global config.",
+    )
+  receiver.instances.add(ports)
+  return async () => {
+    receiver.instances.delete(ports)
+    if (receiver.instances.size > 0 || receivers.current !== receiver) return
+    receivers.current = undefined
+    const closing = receiver.server.then(
+      (server) =>
+        new Promise<void>((resolve) => {
+          if (!server) return resolve()
+          server.closeAllConnections()
+          server.close(() => resolve())
+        }),
+    )
+    receivers.closing = closing
+    await closing
+    if (receivers.closing === closing) receivers.closing = undefined
+  }
+}
+
+/** Whether a webhook receiver runs in this server. */
+export const receiving = async () => (await receivers.current?.server) !== undefined

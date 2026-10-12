@@ -206,11 +206,18 @@ describe("the hub", () => {
     leave()
   })
 
-  test("is shared by two copies of the module in one process", () => {
+  test("is shared by two copies of the module in one process, the one joined last running its own jobs and event modules", () => {
     // In a process of its own, since a second copy would replace this one's coverage (see the script).
     const run = Bun.spawnSync([process.execPath, joinPath(import.meta.dir, "fixtures", "two-copies.ts")])
     expect(run.stderr.toString()).toBe("")
     expect(JSON.parse(run.stdout.toString())).toEqual({
+      // The copy joined last runs its own jobs and event modules, through the other copy's members.
+      registration: {
+        sameHub: true,
+        beforeNewer: ["older job through /a", "older ping through /a", "older ping through /b"],
+        afterNewer: ["newer job through /a", "newer ping through /c"],
+        watchingThrough: ["/b", "/c"],
+      },
       // Renewed for the first copy's tick by the second's, each tick, until a minute from its start.
       otherCopy: {
         renewedAt: [1_000 + TICK_MS, 1_000 + 2 * TICK_MS, 1_000 + 3 * TICK_MS, 1_000 + 3 * TICK_MS],

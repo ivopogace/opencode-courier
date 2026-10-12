@@ -4,7 +4,9 @@ import { deliverDue, type LaterPorts } from "../../src/later.js"
 import type { Member, TickJob } from "../../src/platform/hub.js"
 
 type HubModule = typeof import("../../src/platform/hub.js")
+type EventsModule = typeof import("../../src/platform/events.js")
 const copy = (name: string) => import(`../../src/platform/hub.js?copy=${name}`) as Promise<HubModule>
+const eventsCopy = (name: string) => import(`../../src/platform/events.js?copy=${name}`) as Promise<EventsModule>
 const registry = globalThis as Record<symbol, unknown>
 
 // The reads of the scheduler's owner key, by the directory of the member they ran through: the first
@@ -112,8 +114,77 @@ finish()
 await settle()
 const otherCopy = { renewedAt, heldWhileDelivering, releasedAfter: !store.has(first.OWNER_KEY) && left }
 
+// Registration under skew: an older copy's instances /a, /b and /c, then a newer copy's /d, each copy
+// registering its own tick jobs and event modules as its plugin module does. The newer copy, joined
+// last, runs its own through the older copy's members: ticks through /a, the first loaded, and the
+// subscription replacing /a's through /c, the earliest without one.
+const ran: string[] = []
+const registry2: Record<symbol, unknown> = {}
+const keys = new Map<string, unknown>()
+const runs2: Array<() => void> = []
+const timers2 = { every: (run: () => void) => (runs2.push(run), runs2.length), stop: () => {}, wait: async () => {} }
+const watching = (directory: string) => ({
+  later: {
+    storage: {
+      get: async (key: string) => keys.get(key),
+      set: async (key: string, value: unknown) => void keys.set(key, value),
+      remove: async (key: string) => void keys.delete(key),
+    },
+    now: () => 1_000,
+  },
+  // The event stream yields one event, then stays open until its subscription is stopped.
+  watch: {
+    name: directory,
+    event: {
+      subscribe: async function* ({ signal }: { signal: AbortSignal }) {
+        yield { type: "ping", data: {} }
+        await new Promise((resolve) => signal.addEventListener("abort", resolve))
+      },
+    },
+    log: () => {},
+  },
+  directory,
+  permission: {},
+  questions: {},
+  log: () => {},
+})
+const registered = async (name: string) => {
+  const hubCopy = await copy(`registered-${name}`)
+  const events = await eventsCopy(`registered-${name}`)
+  const opened = hubCopy.open(registry2, [async (owner) => void ran.push(`${name} job through ${owner.directory}`)], timers2, "server_r")
+  const modules = [{ handle: async (ports: { name: string }, event: { type: string }) => void ran.push(`${name} ${event.type} through ${ports.name}`) }]
+  return {
+    load: (directory: string) => {
+      events.watchFromHub(opened.hub, modules as never)
+      return opened.join(watching(directory) as unknown as Member)
+    },
+    opened,
+  }
+}
+const older = await registered("older")
+const newer = await registered("newer")
+const leaveRA = older.load("/a")
+older.load("/b")
+older.load("/c")
+await settle()
+const beforeNewer = ran.splice(0).sort()
+newer.load("/d")
+runs2.at(-1)!()
+await settle()
+await leaveRA()
+await settle()
+const shared2 = older.opened.hub
+const registration = {
+  sameHub: shared2 === newer.opened.hub,
+  beforeNewer,
+  afterNewer: ran,
+  watchingThrough: shared2.watchers.map((watcher) => watcher.member.directory),
+}
+for (const watcher of shared2.watchers) watcher.stop.abort()
+
 console.log(
   JSON.stringify({
+    registration,
     otherCopy,
     sameHub: first.hub === second.hub,
     separateModules: first.open !== second.open && firstOpened.join !== secondOpened.join,

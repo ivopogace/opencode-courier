@@ -34,12 +34,21 @@ import {
   reportFormSettled,
   relayPending,
   reportReplied,
-  watchChildren,
-  watchFromHub,
+  personEvents,
+  treeEvents,
   type ExecutionFailed,
   type SessionEvent,
   type WatchPorts,
+  type WatchState,
 } from "../src/watch.js"
+import { follow, watchFromHub } from "../src/platform/events.js"
+
+/** The plugin's event modules over `state`, in src/index.ts's order. */
+const modules = (state: WatchState) => [treeEvents(state), personEvents(state)]
+
+/** Follows the events through `ports` with the plugin's modules, as a hub's subscription does. */
+const watchChildren = (ports: WatchPorts, state: WatchState, signal: AbortSignal, retryMs?: number) =>
+  follow(ports, modules(state), signal, retryMs)
 
 /** Whether a spawned session owes its parent a report, as `reportOf` reads it. */
 const owesReport = async (storage: Parameters<typeof reportOf>[0], sessionID: string) => (await reportOf(storage, sessionID))?.owes
@@ -1477,7 +1486,7 @@ describe("the hub's subscriptions: one active, one standby", () => {
 
   /** Loads `member` as an instance does, with this copy's watcher; returns its unload, which settles once its subscription, if any, has ended. */
   function load(opened: ReturnType<typeof open>, loaded: ReturnType<typeof member>, state = fresh()) {
-    watchFromHub(opened.hub, state, 1)
+    watchFromHub(opened.hub, modules(state), 1)
     const leave = opened.join(loaded.joined)
     return () => {
       const done = opened.hub.watchers.find((watcher) => watcher.member === loaded.joined)?.done

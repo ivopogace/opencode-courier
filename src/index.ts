@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto"
 import type { CourierPorts } from "./courier.js"
 import { dirtyOf, headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
 import { deliverReleased } from "./group.js"
+import { watchFromHub } from "./platform/events.js"
 import { hub, openInProcess, permissions as domains, sharedState, type Member, type TickJob } from "./platform/hub.js"
 import { deliverDue, type LaterPorts } from "./later.js"
 import { readLimits, shapeContext, type SpawnGate } from "./limits.js"
@@ -14,7 +15,7 @@ import { joinRelay, noticeCutOff, pendingQuestions, portsAt, relayQuestions, typ
 import { pruneExpired } from "./roster.js"
 import { addSkill } from "./skill.js"
 import { addTools, type ToolPorts } from "./tools.js"
-import { watchFromHub, type WatchPorts, type WatchState } from "./watch.js"
+import { personEvents, treeEvents, type WatchPorts, type WatchState } from "./watch.js"
 import { builtVersions, versionNotice } from "./platform/version.js"
 import { listen, readConfig, type Receiver, type Receivers, type WebhookConfig, type WebhookPorts } from "./webhook.js"
 
@@ -100,6 +101,9 @@ function joinReceiver(config: WebhookConfig, ports: WebhookPorts) {
 // several subscriptions and copies see the same events. The scheduler's claim set is the hub's own.
 const { watched } = hub
 const watchState: WatchState = { ...watched, forms: hub.forms, inbox }
+
+/** What the hub's subscriptions do with each event of OpenCode's, module by module, in this order. */
+const eventModules = [treeEvents(watchState), personEvents(watchState)]
 
 /**
  * The courier tools and webhook receiver, as a promise plugin joining the hub that runs the scheduler
@@ -199,8 +203,8 @@ export const courier = () => Plugin.define({
       log: later.log,
       nudge,
     }
-    // The hub's subscriptions to OpenCode's events, one and a standby, start with this copy's watcher.
-    watchFromHub(hub, watchState)
+    // The hub's subscriptions to OpenCode's events, one and a standby, start with this copy's modules.
+    watchFromHub(hub, eventModules)
     const member: Member = {
       directory: ctx.location.directory,
       location: ctx.location,

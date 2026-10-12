@@ -1,7 +1,8 @@
 /**
  * Every model-facing text the plugin builds; `test/notices.test.ts` snapshots them with the tool
  * descriptions. Pure functions on plain data. Until they move out, they import no runtime value of the plugin's
- * but `kernel/protocol.ts` and `json.ts`; the types they use come from the modules that own them, as `import type`.
+ * but `kernel/protocol.ts`, `platform/json.ts` and the `text.ts` of the modules that moved, which they re-export;
+ * the types they use come from the modules that own them, as `import type`.
  */
 import { obj, str } from "./platform/json.js"
 import { clipText, defuse, END_TURN, envelope, STATUSES, type Status } from "./kernel/protocol.js"

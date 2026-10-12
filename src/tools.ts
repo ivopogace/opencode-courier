@@ -21,7 +21,7 @@ import { answer, REPLIES, type AnswerPorts, type Waiting } from "./relay.js"
 import { addWebhookTools, type WebhookPorts } from "./webhook/index.js"
 
 /**
- * The courier tools: their input schemas, descriptions, and what each returns. The descriptions are
+ * The core courier tools: their input schemas, descriptions, and what each returns. The descriptions are
  * model-facing like the texts in `notices.ts`, and snapshotted with them in `test/notices.test.ts`.
  */
 

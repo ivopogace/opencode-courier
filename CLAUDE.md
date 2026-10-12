@@ -12,17 +12,18 @@ holds the target layout, the import rules and the reasons for them. Today:
 `src/`:
 
 - `index.ts`: the plugin, an Effect plugin running the promise one, and the composition root. Builds
-  the ports, registers the tools, hands the platform the ordered tick jobs (`deliverDue`, then
+  the ports, registers the tools, hands the platform the ordered tick jobs (`dueJob`, then
   `deliverReleased`) and event modules (`treeEvents`, then `personEvents`), composes the `Waits` port
   from its suppliers, and starts the webhook receiver; the Effect half wraps the question tool and
   binds it to its instance's member in the hub.
-- `tools.ts`: the twelve courier tools: input schemas, descriptions and results. `skill.ts`: the
+- `tools.ts`: the eight courier tools of the tree and the person: input schemas, descriptions and results, and
+  the call to each module's tool registration (`scheduling/`, then `webhook/`, last: the tool order is fixed). `skill.ts`: the
   `courier-orchestrate` skill, registered through the skill domain; its text is in `notices.ts`.
 - `kernel/protocol.ts`: what the models see of the protocol in every module: `envelope`, `END_TURN`,
   `clipText`, `defuse`, `describeFailure` and `Status`. It imports only `kernel/**` and
   `platform/json.ts`; tuned against real models, so a change to it reruns the real-model smoke test.
 - `notices.ts`: every other model-facing string (tool result texts, the child brief, the skill, the
-  failure, permission, form, question and webhook notices), as pure functions. The domain types they
+  failure, permission, form and question notices), as pure functions. The domain types they
   take (`Limits`, `Artifacts`, `HeldReport`, `Prompt`, `Form`, …) live in the modules that own them;
   until it dissolves into per-module `text.ts` files, it imports no runtime value of the plugin's but
   `kernel/protocol.ts`, `platform/json.ts` and the `text.ts` of the modules that moved

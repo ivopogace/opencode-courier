@@ -1,7 +1,56 @@
 import type { Plugin } from "@opencode/plugin"
-import { describeFailure, type Pending } from "./courier.js"
-import { REJECTED, REPLIES, type Form, type PermissionAnswered, type PermissionRequest, type Reply } from "./notices.js"
+import type { Pending } from "./courier.js"
+import { describeFailure } from "./kernel/protocol.js"
+import { REJECTED } from "./notices.js"
 import { answeringTop, type RosterStorage } from "./roster.js"
+
+/** The answers to a permission request, as OpenCode's own prompt offers them. */
+export const REPLIES = ["once", "always", "reject"] as const
+export type Reply = (typeof REPLIES)[number]
+
+/** A permission request, as OpenCode's `permission.asked` event carries it. */
+export interface PermissionRequest {
+  readonly id: string
+  readonly sessionID: string
+  readonly action: string
+  readonly resources: ReadonlyArray<string>
+  readonly save?: ReadonlyArray<string>
+  readonly message?: string
+}
+
+/**
+ * What answering a permission request did; `answered` is false when no location loaded here held the
+ * request: answered already, no longer waited for, or waiting in another server on the same data dir.
+ */
+export interface PermissionAnswered {
+  readonly sessionID: string
+  readonly requestID: string
+  readonly reply: Reply
+  readonly answered: boolean
+}
+
+/** One field of an OpenCode form, as much of it as a notice shows. */
+export interface FormField {
+  readonly key: string
+  readonly type: string
+  readonly title?: string
+  readonly description?: string
+  readonly options?: ReadonlyArray<{ readonly value: string; readonly label: string; readonly description?: string }>
+  readonly url?: string
+  /** Not shown to the person. */
+  readonly hidden?: boolean
+  /** Conditions on earlier answers; the field is shown only when they hold. */
+  readonly when?: ReadonlyArray<unknown>
+}
+
+/** An OpenCode form, as its `form.created` event carries it. */
+export interface Form {
+  readonly id: string
+  readonly sessionID: string
+  readonly title: string
+  readonly metadata?: Readonly<Record<string, unknown>>
+  readonly fields: ReadonlyArray<FormField>
+}
 
 type Context = Plugin.Context
 

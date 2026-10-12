@@ -3,8 +3,20 @@ import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { isAbsolute } from "node:path"
 import { markLeft, membershipOf } from "./group.js"
-import { keepReason, type CleanupResult } from "./notices.js"
+import { keepReason } from "./notices.js"
 import { remove, rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
+
+/** What courier_cleanup did: removed the worktree, found it gone, kept it and why, or forgot a child with none; `group`, one it dropped the child from. */
+export type CleanupResult =
+  | { readonly sessionID: string; readonly directory: string; readonly outcome: "removed" | "gone" | "forgotten"; readonly group?: string }
+  | {
+      readonly sessionID: string
+      readonly directory: string
+      readonly outcome: "kept"
+      readonly reason: string
+      readonly changes: readonly string[]
+      readonly commits: readonly string[]
+    }
 
 type Context = Plugin.Context
 

@@ -1,9 +1,36 @@
 import type { Plugin } from "@opencode/plugin"
-import { groupStanding, holdReport, isGroupName, joinGroup, leaveGroup, memberKey, memberOf, membershipOf, standingOf, unholdForBlocked, unholdReport, type Membership } from "./group.js"
+import { groupStanding, holdReport, isGroupName, joinGroup, leaveGroup, memberKey, memberOf, membershipOf, standingOf, unholdForBlocked, unholdReport, type HeldReport, type Membership } from "./group.js"
 import { admit, type Limits, type SpawnGate } from "./limits.js"
-import { childBrief, childBranch, envelope, isStatus, reportBody, STATUSES, type Artifacts, type Held, type HeldReport, type Prompt, type Sent, type Status } from "./notices.js"
-import { progressed, progressKey, prompted, settled, settledKey } from "./report.js"
+import { envelope, isStatus, STATUSES, describeFailure, type Status } from "./kernel/protocol.js"
+import { childBrief, childBranch, reportBody } from "./notices.js"
+import { progressed, progressKey, prompted, settled, settledKey, type Artifacts } from "./report.js"
 import { current, indexedEntry, record, type RosterEntry, type RosterStorage } from "./roster.js"
+
+/** One question of OpenCode's question tool, as the asking model wrote it. */
+export interface Prompt {
+  readonly question: string
+  readonly header: string
+  readonly options: ReadonlyArray<{ readonly label: string; readonly description: string }>
+  readonly multiple?: boolean
+}
+
+/** A report held with its group: which group, and how many of its members have reported so far, when that could be read. */
+export interface Held {
+  readonly group: string
+  readonly reported?: number
+  readonly members?: number
+}
+
+/**
+ * What courier_send did; `report` says whether the message was noted as the sender's report to the session
+ * that started it, and `held` that it was held with the sender's group rather than delivered, with no `messageID`.
+ */
+export interface Sent {
+  readonly messageID?: string
+  readonly status?: Status
+  readonly report?: boolean
+  readonly held?: Held
+}
 
 type Context = Plugin.Context
 
@@ -382,12 +409,3 @@ function withoutUndefined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>
 }
 
-/** A readable message for a failed courier call; OpenCode's own errors can carry an empty message. */
-export function describeFailure(tool: string, error: unknown) {
-  const tagged = error as { message?: unknown; _tag?: unknown; sessionID?: unknown }
-  const message =
-    (typeof tagged?.message === "string" && tagged.message) ||
-    [tagged?._tag, tagged?.sessionID].filter((item) => typeof item === "string").join(" ") ||
-    String(error)
-  return new Error(`${tool} failed: ${message}`)
-}

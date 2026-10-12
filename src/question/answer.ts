@@ -1,11 +1,24 @@
 import { Deferred, Effect, Semaphore } from "effect"
-import type { QuestionPorts } from "../hub.js"
-import { cutOffAnswer, envelope, questionNotice, type Asked, type CutOff, type Outcome, type Prompt, type QuestionAnswered } from "../notices.js"
+import type { Prompt } from "../courier.js"
+import type { Answers, Asked, Outcome, QuestionPorts } from "../hub.js"
+import { envelope } from "../kernel/protocol.js"
+import { cutOffAnswer, questionNotice, type CutOff } from "../notices.js"
 import { allEntries, answeringTop, lineageIn, RETENTION_MS, type RosterStorage } from "../roster.js"
 import { scanAll } from "../storage.js"
 import { within, run } from "./runtime.js"
 import { normalize, type QuestionAnswerInput } from "./pure.js"
 import { claim, isPassing, keyOf, MAX_STORED, PREFIX, shared, storedOf, type Stored } from "./shared.js"
+
+/** What answering a question did; `answered` is false when it no longer waited. */
+export type QuestionAnswered =
+  | { readonly sessionID: string; readonly requestID: string; readonly answered: false }
+  | {
+      readonly sessionID: string
+      readonly requestID: string
+      readonly answered: true
+      readonly by: "result" | "message"
+      readonly answers: Answers
+    }
 
 export async function tell(ports: QuestionPorts, asked: Asked, text: string, attributes: Record<string, string>) {
   await ports.session.synthetic({

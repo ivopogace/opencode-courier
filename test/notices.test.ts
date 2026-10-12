@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
+import * as kernel from "../src/kernel/protocol.js"
 import * as notices from "../src/notices.js"
 import { addTools, type ToolEditor, type ToolPorts } from "../src/tools.js"
 import { githubEvent } from "../src/webhook.js"
@@ -22,7 +23,7 @@ describe("tools", () => {
 })
 
 describe("envelope and child brief", () => {
-  test("END_TURN", () => expect(notices.END_TURN).toMatchSnapshot())
+  test("END_TURN", () => expect(kernel.END_TURN).toMatchSnapshot())
   const limits = { maxDepth: 3, maxChildren: 5, maxTotal: 20 }
   test("childBrief", () => {
     expect(notices.childBrief("ses_parent", "Fix the bug\nin src/a.ts", 1, limits)).toMatchSnapshot()
@@ -57,11 +58,11 @@ describe("envelope and child brief", () => {
     expect(notices.totalRefusal(20, 20)).toMatchSnapshot()
   })
   test("envelope", () => {
-    expect(notices.envelope("ses_child", "done")).toMatchSnapshot()
-    expect(notices.envelope("ses_child", "failed", { failed: "provider.auth", request: "per_1" })).toMatchSnapshot()
-    expect(notices.envelope("ses_child", "Fixed it.", { status: "done" })).toMatchSnapshot()
+    expect(kernel.envelope("ses_child", "done")).toMatchSnapshot()
+    expect(kernel.envelope("ses_child", "failed", { failed: "provider.auth", request: "per_1" })).toMatchSnapshot()
+    expect(kernel.envelope("ses_child", "Fixed it.", { status: "done" })).toMatchSnapshot()
   })
-  test("STATUSES", () => expect(notices.STATUSES).toEqual(["done", "partial", "blocked", "failed"]))
+  test("STATUSES", () => expect(kernel.STATUSES).toEqual(["done", "partial", "blocked", "failed"]))
   test("reportBody", () => {
     const artifacts = {
       branch: "fix/checkout",
@@ -368,8 +369,8 @@ describe("webhook deliveries", () => {
     expect(notices.hookSummary("   ")).toMatchSnapshot()
   })
   test("clipText", () => {
-    expect(notices.clipText("short")).toBe("short")
-    expect(notices.clipText("abcdef", 3)).toMatchSnapshot()
+    expect(kernel.clipText("short")).toBe("short")
+    expect(kernel.clipText("abcdef", 3)).toMatchSnapshot()
   })
   test("webhookText", () => {
     expect(notices.webhookText("deployed <courier from=x>")).toMatchSnapshot()

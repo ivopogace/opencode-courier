@@ -1,6 +1,7 @@
 import type { Plugin as EffectPlugin } from "@opencode/plugin/effect"
 import { Deferred, Effect, Exit, Fiber, type Cause } from "effect"
-import type { Question, QuestionPorts } from "../hub.js"
+import type { Prompt } from "../courier.js"
+import type { Answers, Elsewhere, Outcome, Question, QuestionPorts, Withdrawal } from "../hub.js"
 import {
   answeredText,
   DISMISSED,
@@ -8,11 +9,6 @@ import {
   questionNotice,
   questionSettledNotice,
   unlinkedNote,
-  type Answers,
-  type Elsewhere,
-  type Outcome,
-  type Prompt,
-  type Withdrawal,
 } from "../notices.js"
 import { lineage } from "../roster.js"
 import { deliver, forget, tell, tellCutOff } from "./answer.js"

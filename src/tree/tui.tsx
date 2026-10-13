@@ -86,21 +86,28 @@ export function waitLine(wait: Wait) {
 
 /** What a row's session is doing, its report and its group standing: "idle · reported done · group pair held". */
 export function statusLine(row: Row) {
-  const state =
-    row.state === "waiting"
-      ? "waiting on you"
-      : row.state === "idle" && (row.outcome === "failed" || row.outcome === "interrupted")
-        ? row.outcome
-        : row.state
-  const report = !row.report
-    ? ""
-    : row.report.state === "owed"
-      ? "owes a report"
-      : row.report.state === "ended"
-        ? "ended without a report"
-        : `reported${row.report.status ? ` ${row.report.status}` : ""}`
-  return [state, report, row.group ? `group ${row.group.name} ${row.group.standing}` : "", row.isolated ? "isolated" : ""].filter(Boolean).join(" · ")
+  return [stateWord(row), reportWords(row.report), row.group ? `group ${row.group.name} ${row.group.standing}` : "", row.isolated ? "isolated" : ""]
+    .filter(Boolean)
+    .join(" · ")
 }
+
+/** What a session does, an idle one whose last turn failed or was interrupted saying so. */
+function stateWord(row: Row) {
+  if (row.state === "waiting") return "waiting on you"
+  if (row.state === "idle" && (row.outcome === "failed" || row.outcome === "interrupted")) return row.outcome
+  return row.state
+}
+
+/** A session's report since its last prompt, in words; empty for one spawned before report notes were kept. */
+function reportWords(report: Row["report"]) {
+  if (!report) return ""
+  if (report.state === "owed") return "owes a report"
+  if (report.state === "ended") return "ended without a report"
+  return ["reported", report.status].filter(Boolean).join(" ")
+}
+
+/** `count` and the noun, plural unless it is one: "1 session", "2 sessions". */
+const counted = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
 
 /** A leaf's activity: how long it has run, its last tool call and how long ago, and its cost. */
 export function activityLine(row: Row, now: number) {
@@ -116,10 +123,8 @@ export function activityLine(row: Row, now: number) {
 /** The lines a row shows under its title: an orchestrator's bar, a paused session's requests, or else a leaf's activity. */
 export function detailLines(row: Row, rows: ReadonlyArray<Row>, now: number) {
   const started = parts(rows, row.sessionID)
-  return [
-    ...(started.started ? [bar(started)] : []),
-    ...(row.waits.length ? row.waits.map(waitLine) : started.started ? [] : [activityLine(row, now)]),
-  ]
+  if (row.waits.length) return [...(started.started ? [bar(started)] : []), ...row.waits.map(waitLine)]
+  return started.started ? [bar(started)] : [activityLine(row, now)]
 }
 
 /** The RPC client and where to ask it about a session: where it runs, which has the plugin loaded. */
@@ -151,7 +156,10 @@ function changes(ctx: Context, types: ReadonlySet<string>) {
 }
 
 /** Why a call failed, from an RPC error or anything thrown. */
-const reason = (error: unknown) => (error instanceof Error ? error.message : typeof error === "object" && error && "message" in error ? String(error.message) : String(error))
+function reason(error: unknown) {
+  if (error instanceof Error) return error.message
+  return typeof error === "object" && error && "message" in error ? String(error.message) : String(error)
+}
 
 /**
  * Adds the tree's entry to the prompt's footer: what the sessions started under the open session are doing, asked
@@ -204,9 +212,9 @@ export function stoppedLine({ stopped, cancelled }: Stopped) {
   const interrupted = stopped.filter((one) => one.outcome === "interrupted").length
   const failed = stopped.filter((one) => one.outcome === "failed").length
   return [
-    `Stopped ${stopped.length} session${stopped.length === 1 ? "" : "s"}: ${interrupted} interrupted`,
+    `Stopped ${counted(stopped.length, "session")}: ${interrupted} interrupted`,
     failed ? `${failed} failed to stop` : "",
-    cancelled ? `${cancelled} scheduled message${cancelled === 1 ? "" : "s"} cancelled` : "",
+    cancelled ? `${counted(cancelled, "scheduled message")} cancelled` : "",
   ]
     .filter(Boolean)
     .join(", ")
@@ -217,9 +225,10 @@ export function stoppedLine({ stopped, cancelled }: Stopped) {
  * session above it, would; says what happened in a toast. False when the person did not confirm.
  */
 async function confirmStop(ctx: Context, courier: Courier, location: (sessionID: string) => Location, by: string, target: { sessionID: string; title: string; under: number }) {
+  const under = target.under ? ` and the ${counted(target.under, "session")} under it` : ""
   const confirmed = await ctx.ui.dialog.confirm({
     title: "Stop session",
-    message: `Stop "${target.title}" (${target.sessionID})${target.under ? ` and the ${target.under} session${target.under === 1 ? "" : "s"} under it` : ""}? Their turns are interrupted and their scheduled messages cancelled, as courier_stop does.`,
+    message: `Stop "${target.title}" (${target.sessionID})${under}? Their turns are interrupted and their scheduled messages cancelled, as courier_stop does.`,
     label: { confirm: "Stop", cancel: "Keep running" },
   })
   if (!confirmed) return false
@@ -280,6 +289,10 @@ function TreePanel(props: { ctx: Context; input: PanelInput; courier: Courier; l
     ],
   }))
   const root = () => parts(rows(), input.sessionID)
+  const rowColor = (row: Row) => {
+    if (row.state === "waiting") return theme.text.feedback.warning.base
+    return row.state === "gone" ? theme.text.muted : theme.text.base
+  }
   return (
     <box flexDirection="column" flexGrow={1} paddingLeft={1} paddingRight={1}>
       <box flexDirection="row" flexShrink={0} gap={2}>
@@ -310,7 +323,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; courier: Courier; l
             const indent = "  ".repeat(row.depth - 1)
             return (
               <box id={`courier-row-${index()}`} flexDirection="column" flexShrink={0} backgroundColor={chosen() && input.focused ? theme.background.raised.high : undefined}>
-                <text fg={row.state === "waiting" ? theme.text.feedback.warning.base : row.state === "gone" ? theme.text.muted : theme.text.base} wrapMode="none">
+                <text fg={rowColor(row)} wrapMode="none">
                   {indent}
                   {chosen() ? "▸ " : "  "}
                   {row.title}
@@ -424,7 +437,7 @@ export function addTreeAttention(ctx: Context) {
     void (group
       ? ctx.attention.notify({
           title: title(sessionID),
-          message: `Group ${group}: ${String(metadata.reports ?? "its")} report${metadata.reports === 1 ? "" : "s"} arrived`,
+          message: `Group ${group}: ${typeof metadata.reports === "number" ? counted(metadata.reports, "report") : "its reports"} arrived`,
           notification: { when: "blurred" },
           sound: { name: "done", when: "always" },
         })

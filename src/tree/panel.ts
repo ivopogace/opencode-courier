@@ -28,10 +28,17 @@ export const waitOf = (pending: Pending): Wait =>
 /** A session's report since its last prompt, as the panel shows it; none for one spawned before this was kept. */
 function reportRow(report: Awaited<ReturnType<typeof reportOf>>, status: Status | undefined): Pick<Row, "report"> {
   if (!report) return {}
-  const state = report.owes ? "owed" : report.ended ? "ended" : "reported"
-  return { report: { state, progressed: report.progressed, ...(state === "reported" && status ? { status } : {}) } }
+  if (report.owes) return { report: { state: "owed", progressed: report.progressed } }
+  if (report.ended) return { report: { state: "ended", progressed: report.progressed } }
+  return { report: { state: "reported", progressed: report.progressed, ...(status ? { status } : {}) } }
 }
 
+/** What a session does: waiting on a request to the person, running, idle, or gone when OpenCode no longer knows it. */
+function stateOf(info: unknown, waits: number, running: boolean): Row["state"] {
+  if (!info) return "gone"
+  if (waits) return "waiting"
+  return running ? "running" : "idle"
+}
 /** One session of the panel: what it is doing, its report and group standing, its last tool call and its cost. */
 async function row(ports: CourierPorts, entry: RosterEntry, depth: number): Promise<Row> {
   const { sessionID } = entry
@@ -51,7 +58,7 @@ async function row(ports: CourierPorts, entry: RosterEntry, depth: number): Prom
     parentID: entry.parentID,
     title: info?.title ?? entry.title,
     depth,
-    state: !info ? "gone" : pending.length ? "waiting" : running ? "running" : "idle",
+    state: stateOf(info, pending.length, running),
     ...(info?.outcome ? { outcome: info.outcome } : {}),
     ...reportRow(report, status),
     ...(entry.group && standing ? { group: { name: entry.group, standing } } : {}),

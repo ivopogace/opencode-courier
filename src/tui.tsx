@@ -8,7 +8,7 @@ export default Plugin.define({
   setup: (ctx) => {
     const cleanups = [addTreeStatus(ctx), addTreePanel(ctx), addTreeAttention(ctx)]
     return () => {
-      for (const cleanup of cleanups.reverse()) cleanup()
+      for (const cleanup of cleanups.toReversed()) cleanup()
     }
   },
 })

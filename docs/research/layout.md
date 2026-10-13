@@ -360,11 +360,12 @@ src/
     ports.ts          ChildStore, GroupStore, SessionPort, Waits
     domain.ts         pure: standing, complete, lineageIn, admit rules
     spawn.ts send.ts status.ts report.ts group.ts limits.ts subtree.ts stop.ts cleanup.ts forget.ts
+    summary.ts panel.ts  what the RPC's summary and tree methods read
     store.ts          KV adapter for roster/, reverse index, report/, group/ (keys unchanged)
     tools.ts events.ts context.ts text.ts
     rpc.ts            the RPC contract the TUI part and the server share (rule 16)
     rpc-handlers.ts   its server side, registered from index.ts after the tools
-    tui.tsx           the TUI adapter: the prompt footer's status entry (rule 15)
+    tui.tsx           the TUI adapter: the prompt footer's status entry, the tree panel, /courier, attention (rule 15)
   person/             (or asks/)
     index.ts ports.ts permission.ts form.ts tools.ts events.ts text.ts
     question/         unchanged inner layout (Effect island)

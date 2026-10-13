@@ -276,6 +276,11 @@ range such as `^2.0.22` would install the newest version on npm that satisfies i
 has run the suite with, and on a newer one the pin names exactly one tested version. The README's
 table keeps one version per row for the same reason.
 
+The `effect` peer states that the host supplies `effect`: from 2.0.25 on, OpenCode resolves the
+plugin's imports to its own copy, and the installed one serves the build, the tests and hosts
+before that. It is exact and equal to the `effect` the pinned `@opencode/plugin` depends on, so the
+courier names no `effect` version of its own that could drift from it; a unit test keeps both.
+
 ## Update checks skip a plugin pinned to an exact version
 
 `opencode plugin check`, `plugin update` and the TUI's *check for updates* parse the configured

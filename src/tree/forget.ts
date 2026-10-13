@@ -1,4 +1,4 @@
-import { leave, markLeft, membershipOf } from "./group.js"
+import { leave, markLeft, membershipFor } from "./group.js"
 import type { CleanupPorts, GroupStore, Membership, ReportKeys, RosterEntry, RosterStorage, WatchPorts } from "./ports.js"
 import { childStore, groupStore } from "./store.js"
 
@@ -31,21 +31,13 @@ export async function forgetChild(storage: RosterStorage, parentID: string, sess
   return { droppedFromGroup: dropped }
 }
 
-/** Removes a child from its parent's roster; false when it was not there. */
-export async function forget(storage: RosterStorage, parentID: string, sessionID: string) {
-  const entry = await childStore(storage).entry(parentID, sessionID)
-  if (entry === undefined) return false
-  await forgetChild(storage, parentID, sessionID, entry.group)
-  return true
-}
-
 /**
  * Drops a member still out from its group as `dropped`, so the group is released without it, then the roster entry
  * and report state. A held report stays with its group. Returns the group it was dropped from.
  */
 export async function forgetDropped(ports: Pick<CleanupPorts, "storage" | "now" | "nudge">, entry: RosterEntry) {
   const groups = groupStore(ports.storage)
-  const member = entry.group ? await membershipOf(groups, entry.parentID, entry.group, entry.sessionID) : undefined
+  const member = await membershipFor(groups, entry)
   if (member?.out && (await markLeft(groups, member, "dropped", ports.now()))) ports.nudge()
   await forgetChild(ports.storage, entry.parentID, entry.sessionID)
   return member?.out ? member.group : undefined

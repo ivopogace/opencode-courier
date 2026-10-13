@@ -5,7 +5,7 @@ import {
   pruneExpired,
   RETENTION_MS,
 } from "../src/tree/roster.js"
-import { forget, forgetChild } from "../src/tree/forget.js"
+import { forgetChild } from "../src/tree/forget.js"
 import { childStore, reverseKey, rosterKey } from "../src/tree/store.js"
 import type { RosterEntry, RosterStorage } from "../src/tree/ports.js"
 
@@ -60,12 +60,19 @@ describe("roster", () => {
   })
 
   test("forgets a child", async () => {
-    const { storage } = fakeStorage()
+    const { storage, store } = fakeStorage()
     await childStore(storage).record(entry("ses_a", "ses_parent", 1))
     await childStore(storage).record(entry("ses_b", "ses_parent", 2))
 
-    expect(await forget(storage, "ses_parent", "ses_a")).toBe(true)
-    expect(await forget(storage, "ses_parent", "ses_a")).toBe(false)
+    await childStore(storage).settled("ses_a", "report", 5, "done")
+    expect(await childStore(storage).peek("ses_a", "settled")).toBeDefined()
+
+    await forgetChild(storage, "ses_parent", "ses_a")
+    expect(await childStore(storage).entry("ses_parent", "ses_a")).toBeUndefined()
+    expect(store.has(reverseKey("ses_a"))).toBe(false)
+    expect(await childStore(storage).peek("ses_a", "settled")).toBeUndefined()
+    await forgetChild(storage, "ses_parent", "ses_a")
+    expect(await childStore(storage).entry("ses_parent", "ses_a")).toBeUndefined()
     expect((await childStore(storage).children("ses_parent")).map((child) => child.sessionID)).toEqual(["ses_b"])
   })
 
@@ -199,7 +206,7 @@ describe("roster", () => {
       store.set("group/ses_parent/pair/ses_c", { title: "c", joinedAt: 3 })
 
       await forgetChild(storage, "ses_parent", "ses_a")
-      expect(await forget(storage, "ses_parent", "ses_b")).toBe(true)
+      await forgetChild(storage, "ses_parent", "ses_b", "pair")
 
       expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_c"])
       store.set("roster/ses_parent/ses_c", { ...entry("ses_c", "ses_parent", 3), group: "pair" })
@@ -208,7 +215,7 @@ describe("roster", () => {
       // A held report outlives the entry: the group still delivers it.
       store.set("group/ses_parent/pair/ses_d", { title: "d", joinedAt: 4, report: { at: 5, status: "done", message: "m" } })
       store.set("roster/ses_parent/ses_d", { ...entry("ses_d", "ses_parent", 4), group: "pair" })
-      expect(await forget(storage, "ses_parent", "ses_d")).toBe(true)
+      await forgetChild(storage, "ses_parent", "ses_d", "pair")
       expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_d"])
     })
 

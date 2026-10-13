@@ -674,8 +674,10 @@ The package has three entrypoints: the server plugin (`.`, `dist/index.js`), a T
 `dist/tui.js`) and its RPC contract (`./rpc`, `dist/rpc.js`). The server finds the other two next to
 the first and reports `features: { server: true, tui: true, rpc: true }` in `GET /api/plugin`; it runs
 only the server plugin, and the TUI loads `tui` for a plugin with that feature (`docs/plugin-api-notes.md`,
-*TUI and RPC entrypoints*). The TUI part is a view: courier without a TUI attached, as under `opencode
-serve`, `opencode service` or the paired app, behaves the same, and no model sees anything of it.
+*TUI and RPC entrypoints*). The TUI part is a view and a shortcut: courier without a TUI attached, as
+under `opencode serve`, `opencode service` or the paired app, behaves the same. What it does, answering
+an ask or stopping a session, goes through the same paths as `courier_answer` and `courier_stop`, so a
+model sees only what those would tell it.
 
 **The status entry.** In the prompt's footer (`prompt.footer.status`), for the open session:
 

@@ -6,7 +6,7 @@ import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import type { Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, bar, detailLines, duration, PANEL, parts, SETTLE_MS, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
+import { activityLine, bar, detailLines, duration, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
 import tui from "../src/tui.js"
 
 const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
@@ -350,6 +350,8 @@ describe("the tree panel's lines", () => {
     expect(detailLines(rows[0]!, rows, NOW)).toEqual(["[██████████] 1/1 reported"])
     expect(detailLines(rows[1]!, rows, NOW)).toEqual(["ran 2m 00s · no tool call yet · $0.01"])
     expect(detailLines(rows[2]!, rows, NOW)).toEqual(["asks permission: shell echo courier-asks", "asks: Which greeting?"])
+    // A session OpenCode no longer knows has no activity to show.
+    expect(detailLines(row("ses_gone", { state: "gone", idle: undefined, cost: undefined }), rows, NOW)).toEqual([])
   })
 
   test("after a stop, a toast says how many sessions were interrupted and how many messages cancelled", () => {
@@ -429,9 +431,15 @@ describe("the tree panel", () => {
     expect(fake.calls).toContainEqual(["tree", { sessionID: "ses_parent" }, { location: { directory: "/workspace" } }])
 
     reported = 2
+    const asked = fake.calls.length
     fake.emit("session.tool.success")
+    fake.emit("session.tool.called")
     await settle()
+    // A burst is asked once, a second after its first event, as each ask reads every row's messages.
+    expect(fake.calls.length).toBe(asked)
+    await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS - SETTLE_MS))
     await app.waitForFrame((frame) => frame.includes("2/2 reported"))
+    expect(fake.calls.length).toBe(asked + 1)
     expect(app.captureCharFrame()).toContain("CHILD-ASKS  idle · reported done · group pair held")
   })
 

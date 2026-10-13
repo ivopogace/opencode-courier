@@ -40,6 +40,9 @@ const PANEL_CHANGES = new Set<string>([
 /** How long after the first of a burst of changes the entry asks the server again. */
 export const SETTLE_MS = 250
 
+/** The panel's settle: each of its asks reads every row's messages, so a busy tree is asked at most once a second. */
+export const PANEL_SETTLE_MS = 1000
+
 /** The name of the tree panel in the `session.panel` slot. */
 export const PANEL = "courier-tree"
 
@@ -120,11 +123,12 @@ export function activityLine(row: Row, now: number) {
     .join(" · ")
 }
 
-/** The lines a row shows under its title: an orchestrator's bar, a paused session's requests, or else a leaf's activity. */
+/** The lines a row shows under its title: an orchestrator's bar, a paused session's requests, or else a live leaf's activity. */
 export function detailLines(row: Row, rows: ReadonlyArray<Row>, now: number) {
   const started = parts(rows, row.sessionID)
   if (row.waits.length) return [...(started.started ? [bar(started)] : []), ...row.waits.map(waitLine)]
-  return started.started ? [bar(started)] : [activityLine(row, now)]
+  if (started.started) return [bar(started)]
+  return row.state === "gone" ? [] : [activityLine(row, now)]
 }
 
 /** The RPC client and where to ask it about a session: where it runs, which has the plugin loaded. */
@@ -135,8 +139,8 @@ function courierOf(ctx: Context) {
   return { courier, location }
 }
 
-/** A counter bumped once `SETTLE_MS` after the first of a burst of the `types` of events, and its cleanup. */
-function changes(ctx: Context, types: ReadonlySet<string>) {
+/** A counter bumped once `settle` ms after the first of a burst of the `types` of events, and its cleanup. */
+function changes(ctx: Context, types: ReadonlySet<string>, settle: number) {
   const [changed, setChanged] = createSignal(0)
   let settling: ReturnType<typeof setTimeout> | undefined
   const unlisten = ctx.data.listen(({ details }) => {
@@ -144,7 +148,7 @@ function changes(ctx: Context, types: ReadonlySet<string>) {
     settling = setTimeout(() => {
       settling = undefined
       setChanged((count) => count + 1)
-    }, SETTLE_MS)
+    }, settle)
   })
   return [
     changed,
@@ -167,7 +171,7 @@ function reason(error: unknown) {
  */
 export function addTreeStatus(ctx: Context) {
   const { courier, location } = courierOf(ctx)
-  const [changed, stopListening] = changes(ctx, CHANGES)
+  const [changed, stopListening] = changes(ctx, CHANGES, SETTLE_MS)
   const release = ctx.ui.slot({
     append: "prompt.footer.status",
     render: (input) => {
@@ -360,7 +364,7 @@ export const USAGE = "/courier tree opens the session tree; /courier stop [sessi
  */
 export function addTreePanel(ctx: Context) {
   const { courier, location } = courierOf(ctx)
-  const [changed, stopListening] = changes(ctx, PANEL_CHANGES)
+  const [changed, stopListening] = changes(ctx, PANEL_CHANGES, PANEL_SETTLE_MS)
   const release = ctx.ui.slot({
     append: "session.panel",
     render: (input) => (

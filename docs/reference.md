@@ -753,15 +753,16 @@ interrupted; nothing for a session spawned before report notes were kept), its j
 - a session **waiting on the person** gets one line per request: `asks permission: <action>
   <resources>` or `asks: <its first question>`;
 - a **leaf** gets its activity: how long it ran (from its creation to the end of its last turn, or to
-  now while it runs), its last tool call and how long ago it was made, and what it has cost so far.
+  now while it runs), its last tool call and how long ago it was made, and what it has cost so far;
+  a `gone` one gets none.
 
 There is no progress a session reports of itself: a bar counts only reports courier noted. The panel
-asks again 250 ms after the first of a burst of the status entry's events and of a tool call, a usage
-update or a rename, and redraws its times every second. Its keys, while it has the keyboard (it takes
-it when it opens; `<leader>left` and `<leader>right` move it between the session and the panel):
-`↑`/`k` and `↓`/`j` move the selection, `enter` opens the selected session, `s` stops it, `r` asks
-again, `f` toggles fullscreen and `q` closes the panel. Opening a session leaves the panel with the
-session it was opened in.
+asks again a second after the first of a burst of the status entry's events and of a tool call, a
+usage update or a rename (each ask reads every row's messages, so at most once a second), and redraws
+its times every second. Its keys, while it has the keyboard (it takes it when it opens; `<leader>left`
+and `<leader>right` move it between the session and the panel): `↑`/`k` and `↓`/`j` move the
+selection, `enter` opens the selected session, `s` stops it, `r` asks again, `f` toggles fullscreen
+and `q` closes the panel. Opening a session leaves the panel with the session it was opened in.
 
 **Stopping from the TUI.** `s` in the panel, or `/courier stop <session>` in the prompt (`/courier
 stop` alone lists the open session's tree to pick from), asks the person to confirm with the session's

@@ -1,5 +1,5 @@
 import { envelope, isStatus, STATUSES, type Status } from "../kernel/protocol.js"
-import { groupStanding, holdReport, membershipOf, unholdForBlocked } from "./group.js"
+import { groupStanding, holdReport, membershipFor, unholdForBlocked } from "./group.js"
 import type { Artifacts, CourierPorts, Held, HeldReport, Membership, RosterEntry, Sent } from "./ports.js"
 import { childStore, groupStore } from "./store.js"
 import { reportBody } from "./text.js"
@@ -68,14 +68,13 @@ async function noteReport(ports: CourierPorts, from: string, to: string, status:
  * cannot be read is dropped from the group, best effort, as the report then goes on its own and the group must not wait for it.
  */
 async function memberIn(ports: CourierPorts, entry: RosterEntry): Promise<Membership | undefined> {
-  if (!entry.group) return undefined
   const groups = groupStore(ports.storage)
   try {
-    const member = await membershipOf(groups, entry.parentID, entry.group, entry.sessionID)
+    const member = await membershipFor(groups, entry)
     return member?.left?.by === "dropped" ? undefined : member
   } catch (error) {
     ports.log(`courier_send: ${entry.sessionID}'s place in group ${entry.group} could not be read, so its report goes on its own: ${String(error)}`)
-    await groups.remove(entry.parentID, entry.group, entry.sessionID).then(() => ports.nudge(), () => undefined)
+    if (entry.group) await groups.remove(entry.parentID, entry.group, entry.sessionID).then(() => ports.nudge(), () => undefined)
     return undefined
   }
 }

@@ -51,6 +51,11 @@ export async function membershipOf(groups: Pick<GroupStore, "member">, parentID:
   return member && { ...member, parentID, group, sessionID, out: standingOf(member) === "out" }
 }
 
+/** A child's membership of the group its roster entry names; none without one. A failed read is the caller's to handle. */
+export async function membershipFor(groups: Pick<GroupStore, "member">, entry: RosterEntry) {
+  return entry.group ? membershipOf(groups, entry.parentID, entry.group, entry.sessionID) : undefined
+}
+
 /**
  * Notes that a member left its group without a report: its turn failed or was interrupted, it was deleted or dropped. Read
  * again first: one whose report is held meanwhile keeps it, one that left keeps why. True when that completes the group.
@@ -71,9 +76,8 @@ export async function leaveGroup(groups: GroupStore, parentID: string, group: st
 
 /** A child's membership of an open group it is still out in: the group waits for it, and its end takes it out without a report. */
 export async function outIn(ports: Pick<WatchPorts, "storage" | "log">, entry: RosterEntry) {
-  if (!entry.group) return undefined
   try {
-    const member = await membershipOf(groupStore(ports.storage), entry.parentID, entry.group, entry.sessionID)
+    const member = await membershipFor(groupStore(ports.storage), entry)
     return member?.out ? member : undefined
   } catch (error) {
     ports.log(`courier watch: could not read ${entry.sessionID}'s place in group ${entry.group}: ${String(error)}`)

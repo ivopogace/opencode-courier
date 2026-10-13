@@ -31,14 +31,6 @@ export async function forgetChild(storage: RosterStorage, parentID: string, sess
   return { droppedFromGroup: dropped }
 }
 
-/** Removes a child from its parent's roster; false when it was not there. */
-export async function forget(storage: RosterStorage, parentID: string, sessionID: string) {
-  const entry = await childStore(storage).entry(parentID, sessionID)
-  if (entry === undefined) return false
-  await forgetChild(storage, parentID, sessionID, entry.group)
-  return true
-}
-
 /**
  * Drops a member still out from its group as `dropped`, so the group is released without it, then the roster entry
  * and report state. A held report stays with its group. Returns the group it was dropped from.

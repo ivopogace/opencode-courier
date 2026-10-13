@@ -148,7 +148,8 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # ~2 min
 
 - The V2 plugin API is pinned to an exact version, `@opencode/plugin@2.0.28`, as devDependency and
   as peer dependency alike (the peer picks the copy `opencode plugin add` installs next to the
-  plugin, see `docs/plugin-api-notes.md`; a unit test keeps the two equal), and the live test
+  plugin, which OpenCode 2.0.25 and later replace with their own at load, see
+  `docs/plugin-api-notes.md`; a unit test keeps the two equal), and the live test
   installs `@opencode/cli` at that same version. Read the API's types in `node_modules` rather than
   guessing; the OpenCode V2 source is on the `v2` branch of https://github.com/anomalyco/opencode,
   with each release tagged (`v2.0.28`). A pin bump adds a row to README.md's Supported OpenCode

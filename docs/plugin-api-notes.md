@@ -266,19 +266,15 @@ home directory, with the plugin served from the live suite's stand-in registry:
 
 So a mismatched host installs and loads the plugin without a word, and what breaks does so on use.
 The plugin's own load-time log line ([the reference](reference.md#the-opencode-version)) is the
-only runtime signal. The peer dependency does do one thing: it picks the copy of the plugin API
-that `plugin add` installs next to the plugin, and that the plugin then runs on, on every host
-before 2.0.25.
-With an exact version that copy is the one the plugin was built and tested with; with a range such
-as `^2.0.22` it would be the newest version on npm that satisfies it, a copy nothing has run the
-suite with. That is why the peer dependency stays exact, the same version as the devDependency,
-and why the README's table keeps one version per row.
-
-From 2.0.25 on, the copy installed next to the plugin is still installed but no longer run: the
-CLI resolves a plugin's imports of `@opencode/plugin` and `effect` to its own copies ([From
-`2.0.26` to `2.0.28`](#from-2026-to-2028)). The six hosts above all predate that. On a newer host
-the pin says which OpenCode the plugin was tested on, and the live suite on that version is what
-checks it.
+only runtime signal. The peer dependency picks the copy of the plugin API that `plugin add`
+installs next to the plugin. On the six hosts above, all before 2.0.25, that is the copy the plugin
+runs on; from 2.0.25 on it is installed but not run, as the CLI resolves a plugin's imports of
+`@opencode/plugin` and `effect` to its own copies ([From `2.0.26` to `2.0.28`](#from-2026-to-2028)),
+and the pin says which OpenCode the plugin was tested on, which the live suite on that version
+checks. Either way the peer stays exact, the same version as the devDependency: on an older host a
+range such as `^2.0.22` would install the newest version on npm that satisfies it, a copy nothing
+has run the suite with, and on a newer one the pin names exactly one tested version. The README's
+table keeps one version per row for the same reason.
 
 ## Update checks skip a plugin pinned to an exact version
 

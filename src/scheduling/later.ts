@@ -93,7 +93,7 @@ export async function scheduledFor(storage: Pick<Storage, "scan">, sessionID: st
   return (await pending({ storage: storage as Storage })).filter((entry) => entry.sessionID === sessionID)
 }
 
-/** Cancels every message scheduled for a session, as courier_stop does; the ids of those cancelled. */
+/** Cancels every message scheduled for a session; the ids of those cancelled. */
 export async function cancelScheduled(ports: LaterPorts, sessionID: string) {
   const scheduled = await scheduledFor(ports.storage, sessionID)
   const dropped = await Promise.all(scheduled.map(async (later) => ((await cancel(ports, later.id)) ? later.id : undefined)))

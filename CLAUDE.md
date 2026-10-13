@@ -33,7 +33,8 @@ the import rules and the reasons for them. Step 6 of #126 is still to come: the 
 - `tree/`: the session tree. `ports.ts` its ports and data types (`CourierPorts`, `WatchPorts`, `Waits`,
   `Pending`, `CleanupResult`, …); `domain.ts` its pure rules and the data they take (`readLimits`,
   `busy`, `lineageIn`, `standingOf`, `complete`, `isGroupName`, `Limits`, `RosterEntry`, `HeldReport`,
-  …), importing only `kernel/**` and `platform/json.ts`; `text.ts` the child brief, the role part, the
+  …), importing nothing of the plugin's but `kernel/**` and `platform/json.ts` (and OpenCode's types);
+  `text.ts` the child brief, the role part, the
   refusals, the report body, the failure, silent, stopped and group notices and the tool results.
   One file per use case: `spawn.ts`, `send.ts`, `status.ts` (`courier_status`, `courier_children`),
   `subtree.ts` (`courier_tree`), `stop.ts` (`courier_stop`), `cleanup.ts` (forgetting a child, with

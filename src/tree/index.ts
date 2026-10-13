@@ -8,7 +8,6 @@ export { deliverReleased } from "./group.js"
 export type {
   CleanupPorts,
   CourierPorts,
-  GroupPorts,
   Pending,
   PendingPrompt,
   RosterEntry,
@@ -20,4 +19,3 @@ export type {
 } from "./ports.js"
 export { allEntries, answeringTop, lineage, pruneExpired, RETENTION_MS } from "./roster.js"
 export { addTreeTools } from "./tools.js"
-export type { TreeToolPorts } from "./tools.js"

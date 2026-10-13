@@ -3,15 +3,12 @@ import { Plugin as EffectPlugin } from "@opencode/plugin/effect"
 import { fromPromise } from "@opencode/plugin/promise/adapter"
 import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
-import type { CourierPorts } from "./courier.js"
-import { dirtyOf, headOf, inspectWorktree, type CleanupPorts } from "./cleanup.js"
-import { deliverReleased } from "./group.js"
 import { watchFromHub } from "./platform/events.js"
 import { hub, openInProcess, permissions as domains, sharedState, type Member, type TickJob } from "./platform/hub.js"
 import { builtVersions, versionNotice } from "./platform/version.js"
-import { dueJob, isScheduled, type LaterPorts } from "./scheduling/index.js"
-import { readLimits, shapeContext, type SpawnGate } from "./limits.js"
+import { addSchedulingTools, cancelScheduled, dueJob, isScheduled, type LaterPorts } from "./scheduling/index.js"
 import {
+  addPersonTools,
   asksPermission,
   asksQuestion,
   joinRelay,
@@ -26,11 +23,34 @@ import {
   type PersonState,
   type QuestionPorts,
 } from "./person/index.js"
-import { pruneExpired } from "./roster.js"
 import { addSkill } from "./skill.js"
-import { addTools, type ToolPorts } from "./tools.js"
-import { together, treeEvents, waitsOn, type WatchPorts, type WatchState } from "./watch.js"
-import { joinReceiver, readConfig, receiving, subscribedSince, type WebhookConfig, type WebhookPorts } from "./webhook/index.js"
+import {
+  addTreeTools,
+  deliverReleased,
+  dirtyOf,
+  headOf,
+  inspectWorktree,
+  pruneExpired,
+  readLimits,
+  shapeContext,
+  together,
+  treeEvents,
+  waitsOn,
+  type CleanupPorts,
+  type CourierPorts,
+  type SpawnGate,
+  type WatchPorts,
+  type WatchState,
+} from "./tree/index.js"
+import {
+  addWebhookTools,
+  joinReceiver,
+  readConfig,
+  receiving,
+  subscribedSince,
+  type WebhookConfig,
+  type WebhookPorts,
+} from "./webhook/index.js"
 
 /** The spawns under way in the process, outside the hub, so spawns in other locations, copies and hub versions count them. */
 const gate = sharedState<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() }))
@@ -135,18 +155,14 @@ export const courier = () => Plugin.define({
       later.log(`courier webhook: not started: ${error instanceof Error ? error.message : String(error)}`)
     }
 
-    const toolPorts: ToolPorts = {
-      courier: ports,
-      cleanup: cleanupPorts,
-      stop: { courier: ports, later, cleanup: cleanupPorts },
-      later,
-      answer: answerPorts,
-      questions: questionPorts,
-      hooks,
-      waiting: watched.waiting,
-      receiving,
-    }
-    await ctx.tool.transform((tools) => addTools(tools, toolPorts))
+    const stopPorts = { courier: ports, cancelScheduled: (sessionID: string) => cancelScheduled(later, sessionID), cleanup: cleanupPorts }
+    // The tools in a fixed order: the tree's, then the person's, the scheduled messages' and the webhooks'.
+    await ctx.tool.transform((tools) => {
+      addTreeTools(tools, { courier: ports, cleanup: cleanupPorts, stop: stopPorts })
+      addPersonTools(tools, { answer: answerPorts, questions: questionPorts, waiting: watched.waiting })
+      addSchedulingTools(tools, later)
+      addWebhookTools(tools, { hooks, receiving })
+    })
     await ctx.skill.transform(addSkill)
     await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, log }, event))
 

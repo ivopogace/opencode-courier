@@ -1,6 +1,7 @@
 /**
  * What every module of the plugin shares of the protocol with the models: the envelope a message arrives in,
- * the phrase that ends a turn, the statuses of a report, and how outside text is clipped and defused.
+ * the phrase that ends a turn, the statuses of a report, the split line and the skill's id, and how outside
+ * text is clipped and defused.
  */
 
 /** Closes a tool result after which the caller most likely has nothing left to do. */
@@ -11,6 +12,12 @@ export const STATUSES = ["done", "partial", "blocked", "failed"] as const
 export type Status = (typeof STATUSES)[number]
 
 export const isStatus = (value: unknown): value is Status => typeof value === "string" && (STATUSES as readonly string[]).includes(value)
+
+/** The one line a session states its split decision in, so a transcript tells a decision from one never made. */
+export const SPLIT_LINE =
+  "split: no, because …; considered: <the parts you weighed> or split: <n> parts: … (one phrase per part)"
+
+export const SKILL_ID = "courier-orchestrate"
 
 export function envelope(from: string, message: string, attributes: Record<string, string> = {}) {
   const extra = Object.entries(attributes)

@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { DEFAULT_LIMITS } from "../src/limits.js"
-import { joinGroup, memberKey } from "../src/group.js"
-import { schedule } from "../src/scheduling/index.js"
-import { stoppedNotice, stopText, treeText } from "../src/notices.js"
-import { progressKey, promptKey, settledKey, stoppedKey, stoppedSincePrompt } from "../src/report.js"
-import { record, type RosterEntry } from "../src/roster.js"
-import { stop, type StopPorts } from "../src/stop.js"
-import { subtree, tree } from "../src/tree.js"
+import { DEFAULT_LIMITS } from "../src/tree/domain.js"
+import { joinGroup, memberKey } from "../src/tree/group.js"
+import { cancelScheduled, schedule, type LaterPorts } from "../src/scheduling/index.js"
+import { stoppedNotice, stopText, treeText } from "../src/tree/text.js"
+import { progressKey, promptKey, settledKey, stoppedKey, stoppedSincePrompt } from "../src/tree/report.js"
+import { record } from "../src/tree/roster.js"
+import type { RosterEntry, StopPorts } from "../src/tree/ports.js"
+import { stop } from "../src/tree/stop.js"
+import { subtree, tree } from "../src/tree/subtree.js"
 
 type Call = { method: string; input: any }
 
@@ -57,7 +58,7 @@ async function fixture(options: { idle?: string[]; missing?: string[]; failing?:
     nudge: () => void nudges.push(1),
     pending: async () => [],
   }
-  const later = { storage, session, now: () => 5_000, newID: (() => { let n = 0; return () => `later_${++n}` })(), log: courier.log }
+  const later = { storage, session, now: () => 5_000, newID: (() => { let n = 0; return () => `later_${++n}` })(), log: courier.log } as unknown as LaterPorts
   const removed: any[] = []
   const cleanupPorts = {
     storage,
@@ -67,7 +68,8 @@ async function fixture(options: { idle?: string[]; missing?: string[]; failing?:
     worktree: { remove: async (input: any) => void removed.push(input) },
     inspect: async (directory: string) => (options.inspect ? options.inspect(directory) : { changes: [], commits: [] }),
   }
-  const ports = { courier, later, cleanup: cleanupPorts } as unknown as StopPorts
+  // `later` too, for the tests to schedule the messages courier_stop cancels.
+  const ports = { courier, later, cancelScheduled: (sessionID: string) => cancelScheduled(later, sessionID), cleanup: cleanupPorts } as unknown as StopPorts & { readonly later: LaterPorts }
   const entries = [
     entry("mid", "root", 1, { isolated: true, directory: "/wt/mid", group: "g" }),
     entry("side", "root", 2),

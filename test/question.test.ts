@@ -21,8 +21,8 @@ import { hub, openInProcess, type Member } from "../src/platform/hub.js"
 import { resetHub } from "./fixtures/reset.js"
 import { anyLoaded, shared as relayState } from "../src/person/question/shared.js"
 import { background, run, stopRelay, useClock } from "../src/person/question/runtime.js"
-import { answeredText, questionNotice, questionSettledNotice as settledNotice } from "../src/notices.js"
-import { record, RETENTION_MS } from "../src/roster.js"
+import { answeredText, questionNotice, questionSettledNotice as settledNotice } from "../src/person/text.js"
+import { record, RETENTION_MS } from "../src/tree/roster.js"
 
 /** Joins the process's hub, as an instance with no tick jobs. */
 const { join } = openInProcess([])

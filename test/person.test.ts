@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { envelope } from "../src/kernel/protocol.js"
-import { formNotice, formSettledNotice, permissionNotice, permissionSettledNotice as settledNotice } from "../src/notices.js"
+import { formNotice, formSettledNotice, permissionNotice, permissionSettledNotice as settledNotice } from "../src/person/text.js"
 import { personEvents } from "../src/person/events.js"
 import type { FormCreated } from "../src/person/form.js"
 import { relayPending, reportAsked, reportReplied } from "../src/person/events.js"
 import { reportForm, reportFormSettled } from "../src/person/form.js"
-import { record, remove } from "../src/roster.js"
+import { record, remove } from "../src/tree/roster.js"
 import { asked, child, fakePorts, fresh, replied, request, settled, shown, webForm } from "./fixtures/events.js"
 
 describe("reportAsked", () => {

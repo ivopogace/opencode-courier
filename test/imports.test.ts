@@ -36,26 +36,20 @@ function typeOnly() {
 }
 
 test("no module of src/ imports itself through others, type-only imports included", () => {
-  // Until step 5 of #126 dissolves it, notices.ts takes its types from the modules that own them, and so
-  // does a module's text.ts, which the code its types come from imports back for its texts.
+  // But a text.ts's types: it takes them from its module's ports.ts, which re-exports some from the code
+  // that imports the text.ts back for its texts (person/'s question relay).
   const exempt = typeOnly()
   const graph = imports()
   const cycles: string[] = []
   const visit = (module: string, path: string[]) => {
     for (const next of graph.get(module) ?? []) {
-      if ((module === "notices" || module.endsWith("/text")) && exempt.has(`${module} -> ${next}`)) continue
+      if (module.endsWith("/text") && exempt.has(`${module} -> ${next}`)) continue
       if (path.includes(next)) cycles.push([...path.slice(path.indexOf(next)), next].join(" -> "))
       else visit(next, [...path, next])
     }
   }
   for (const module of graph.keys()) visit(module, [module])
   expect(cycles).toEqual([])
-})
-
-test("notices.ts imports nothing of the plugin's at runtime but platform/json.ts, kernel/protocol.ts and the text.ts of the modules that moved", () => {
-  const types = typeOnly()
-  const runtime = (imports().get("notices") ?? []).filter((name) => !types.has(`notices -> ${name}`))
-  expect(runtime.sort()).toEqual(["kernel/protocol", "person/text", "platform/json", "scheduling/text", "webhook/text"])
 })
 
 test("platform/ imports only platform/, so the hub and the event loop depend on no feature", () => {
@@ -98,48 +92,83 @@ test("person/ outside person/question/ uses the relay through person/question/in
   expect(reaching).toEqual([])
 })
 
-/** The modules of src/ that live in a folder of their own with an index.ts, as `folder -> files`. */
-const MODULES = ["scheduling", "webhook", "person"]
+/** The modules of src/: each a folder of its own, used from outside through its index.ts. */
+const MODULES = ["tree", "person", "scheduling", "webhook"]
+
+/** The module a file of src/ is in, or undefined for `src/index.ts`, `skill.ts`, `kernel/` and `platform/`. */
+const moduleOf = (file: string) => MODULES.find((folder) => file.startsWith(`${folder}/`))
 
 test("a module is imported from outside only through its index.ts", () => {
   const reaching = [...imports()].flatMap(([module, imported]) =>
     imported
-      .filter((name) => MODULES.some((folder) => name.startsWith(`${folder}/`) && !module.startsWith(`${folder}/`) && name !== `${folder}/index`))
-      .filter((name) => !(module === "notices" && name.endsWith("/text")))
+      .filter((name) => moduleOf(name) !== undefined && moduleOf(name) !== moduleOf(module) && name !== `${moduleOf(name)}/index`)
       .map((name) => `${module} -> ${name}`),
   )
   expect(reaching).toEqual([])
 })
 
-test("scheduling/ and webhook/ import no other feature module, only platform/ and kernel/", () => {
-  const modules = [...imports()].filter(([module]) => module.startsWith("scheduling/") || module.startsWith("webhook/"))
-  expect(modules.map(([module]) => module)).toContain("scheduling/index")
-  const outside = modules.flatMap(([module, imported]) =>
-    imported
-      .filter((name) => !name.startsWith(`${module.split("/")[0]}/`) && !name.startsWith("platform/") && !name.startsWith("kernel/"))
-      .map((name) => `${module} -> ${name}`),
+test("the only dependency between modules is person/ on tree/", () => {
+  const edges = new Set(
+    [...imports()].flatMap(([module, imported]) =>
+      imported.flatMap((name) => {
+        const [from, to] = [moduleOf(module), moduleOf(name)]
+        return from && to && from !== to ? [`${from} -> ${to}`] : []
+      }),
+    ),
   )
+  expect([...edges]).toEqual(["person -> tree"])
+})
+
+test("every module imports only itself, platform/, kernel/ and the modules it may depend on", () => {
+  const outside = [...imports()]
+    .filter(([module]) => moduleOf(module) !== undefined)
+    .flatMap(([module, imported]) =>
+      imported
+        .filter((name) => moduleOf(name) === undefined && !name.startsWith("platform/") && !name.startsWith("kernel/"))
+        .map((name) => `${module} -> ${name}`),
+    )
   expect(outside).toEqual([])
 })
 
-/** The files of src/ that are in no folder: the tree's, until step 5 of #126 makes them one. */
-const topLevel = (name: string) => !name.includes("/")
-
-test("person/ imports only person/, platform/, kernel/ and the tree's files, never another feature module", () => {
-  const modules = [...imports()].filter(([module]) => module.startsWith("person/"))
-  expect(modules.map(([module]) => module)).toContain("person/events")
-  const outside = modules.flatMap(([module, imported]) =>
-    imported
-      .filter((name) => !["person/", "platform/", "kernel/"].some((folder) => name.startsWith(folder)))
-      .filter((name) => !topLevel(name) || ["index", "notices", "tools"].includes(name))
-      .map((name) => `${module} -> ${name}`),
-  )
-  expect(outside).toEqual([])
+test("no file of src/ is outside a folder but index.ts, the composition root, and skill.ts", () => {
+  expect([...imports().keys()].filter((module) => !module.includes("/")).sort()).toEqual(["index", "skill"])
 })
 
-test("the tree's files import nothing of person/, but index.ts, tools.ts (its registration) and notices.ts (its re-export)", () => {
-  const reaching = [...imports()]
-    .filter(([module]) => topLevel(module) && !["index", "tools", "notices"].includes(module))
-    .flatMap(([module, imported]) => imported.filter((name) => name.startsWith("person/")).map((name) => `${module} -> ${name}`))
+test("skill.ts imports only kernel/", () => {
+  expect((imports().get("skill") ?? []).filter((name) => !name.startsWith("kernel/"))).toEqual([])
+})
+
+test("a text.ts imports only kernel/, platform/json.ts and its own module's ports.ts and domain.ts", () => {
+  const texts = [...imports()].filter(([module]) => module.endsWith("/text"))
+  expect(texts.map(([module]) => module).sort()).toEqual(["person/text", "scheduling/text", "tree/text", "webhook/text"])
+  const reaching = texts.flatMap(([module, imported]) => {
+    const own = module.slice(0, -"text".length)
+    const allowed = (name: string) => name.startsWith("kernel/") || name === "platform/json" || name === `${own}ports` || name === `${own}domain`
+    return imported.filter((name) => !allowed(name)).map((name) => `${module} -> ${name}`)
+  })
   expect(reaching).toEqual([])
+})
+
+test("tree/domain.ts imports only kernel/ and platform/json.ts, so its rules stay pure", () => {
+  const imported = imports().get("tree/domain")
+  expect(imported).toBeDefined()
+  expect(imported!.filter((name) => !name.startsWith("kernel/") && name !== "platform/json")).toEqual([])
+})
+
+test("only src/index.ts imports more than one module's index.ts, and nothing imports src/index.ts", () => {
+  const graph = [...imports()]
+  const several = graph
+    .filter(([module]) => module !== "index")
+    .filter(([, imported]) => new Set(imported.filter((name) => MODULES.some((folder) => name === `${folder}/index`))).size > 1)
+    .map(([module]) => module)
+  expect(several).toEqual([])
+  expect(graph.filter(([, imported]) => imported.includes("index")).map(([module]) => module)).toEqual([])
+})
+
+test("the snapshot test imports every text.ts of src/ by its path", () => {
+  const texts = [...imports().keys()].filter((module) => module === "text" || module.endsWith("/text"))
+  const snapshot = readFileSync(join(import.meta.dir, "notices.test.ts"), "utf8")
+  const imported = new Set([...snapshot.matchAll(/\bfrom\s*["']\.\.\/src\/([\w./-]+)\.js["']/g)].map((match) => match[1]!))
+  expect(texts.length).toBeGreaterThan(0)
+  expect(texts.filter((module) => !imported.has(module))).toEqual([])
 })

@@ -1,14 +1,6 @@
-import { obj } from "./platform/json.js"
-import { isStatus, type Status } from "./kernel/protocol.js"
-import { scanEntries, type Storage } from "./platform/storage.js"
-
-/** What a report lists besides its text; `checks` are the commands the session ran and what each gave. */
-export interface Artifacts {
-  readonly branch?: string
-  readonly commits?: ReadonlyArray<string>
-  readonly files?: ReadonlyArray<string>
-  readonly checks?: ReadonlyArray<{ readonly command: string; readonly result: string }>
-}
+import { obj } from "../platform/json.js"
+import { isStatus, type Status } from "../kernel/protocol.js"
+import { scanEntries, type Storage } from "../platform/storage.js"
 
 /**
  * Whether a spawned session has reported since its last prompt, under `report/<sessionID>/`: `prompt`, `settled` (with

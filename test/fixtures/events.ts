@@ -1,6 +1,7 @@
-import type { FormCreated, FormField } from "../../src/person/form.js"
+import type { FormCreated } from "../../src/person/form.js"
+import type { FormField } from "../../src/person/ports.js"
 import type { PermissionAsked, PermissionReplied } from "../../src/person/permission.js"
-import type { WatchPorts } from "../../src/watch.js"
+import type { WatchPorts } from "../../src/tree/ports.js"
 
 /** The fakes the event-module tests share: a permission request, its events, the shared state and ports over a map. */
 

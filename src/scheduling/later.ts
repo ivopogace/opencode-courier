@@ -93,6 +93,13 @@ export async function scheduledFor(storage: Pick<Storage, "scan">, sessionID: st
   return (await pending({ storage: storage as Storage })).filter((entry) => entry.sessionID === sessionID)
 }
 
+/** Cancels every message scheduled for a session; the ids of those cancelled. */
+export async function cancelScheduled(ports: LaterPorts, sessionID: string) {
+  const scheduled = await scheduledFor(ports.storage, sessionID)
+  const dropped = await Promise.all(scheduled.map(async (later) => ((await cancel(ports, later.id)) ? later.id : undefined)))
+  return dropped.filter((id) => id !== undefined)
+}
+
 /** Whether a session waits on a scheduled message of its own. */
 export async function isScheduled(ports: { readonly storage: Pick<Storage, "scan"> }, sessionID: string) {
   return (await scheduledFor(ports.storage, sessionID)).length > 0

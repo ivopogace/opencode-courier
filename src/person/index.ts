@@ -1,7 +1,6 @@
 // What the rest of the plugin uses of the person: the permission, form and question relays. The
-// question relay stays behind its own index; the notices are re-exported by `../notices.ts` from `text.ts`.
-import type { PendingPrompt } from "../courier.js"
-import type { WatchPorts } from "../watch.js"
+// question relay stays behind its own index.
+import type { PendingPrompt, WatchPorts } from "../tree/index.js"
 import type { PersonPorts } from "./ports.js"
 import type { Prompt } from "./question/index.js"
 

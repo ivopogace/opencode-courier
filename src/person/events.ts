@@ -1,7 +1,7 @@
 import { envelope } from "../kernel/protocol.js"
 import { claim } from "../platform/bounded.js"
 import type { EventModule, HostEvent } from "../platform/events.js"
-import { allEntries, lineage } from "../roster.js"
+import { allEntries, lineage } from "../tree/index.js"
 import { reportForm, reportFormSettled, type FormCreated, type FormSettled } from "./form.js"
 import { listEverywhere, type PermissionAsked, type PermissionReplied } from "./permission.js"
 import { topOf, type PersonPorts, type PersonState } from "./ports.js"

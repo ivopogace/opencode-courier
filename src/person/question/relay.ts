@@ -9,7 +9,7 @@ import {
   questionSettledNotice,
   unlinkedNote,
 } from "../text.js"
-import { lineage } from "../../roster.js"
+import { lineage } from "../../tree/index.js"
 import { deliver, forget, tell, tellCutOff } from "./answer.js"
 import { closingSoon } from "./lifecycle.js"
 import {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { permissionNotice, permissionSettledNotice as settledNotice, REJECTED } from "../src/notices.js"
+import { permissionNotice, permissionSettledNotice as settledNotice, REJECTED } from "../src/person/text.js"
 import { answer, pendingOf, type AnswerPorts, type Permissions } from "../src/person/permission.js"
-import { record } from "../src/roster.js"
+import { record } from "../src/tree/roster.js"
 
 const request = { id: "per_1", sessionID: "ses_child", action: "shell", resources: ["git push"], save: ["git push*"] }
 

@@ -12,9 +12,8 @@ import {
   RETENTION_MS,
   reverseKey,
   rosterKey,
-  type RosterEntry,
-  type RosterStorage,
-} from "../src/roster.js"
+} from "../src/tree/roster.js"
+import type { RosterEntry, RosterStorage } from "../src/tree/ports.js"
 
 function fakeStorage(pageSize?: number) {
   const store = new Map<string, unknown>()

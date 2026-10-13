@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { envelope } from "../src/kernel/protocol.js"
-import {
-  failureNotice,
-  formNotice,
-  formSettledNotice,
-  permissionNotice,
-  permissionSettledNotice as settledNotice,
-  silentNotice,
-} from "../src/notices.js"
+import { failureNotice, silentNotice } from "../src/tree/text.js"
+import { formNotice, formSettledNotice, permissionNotice, permissionSettledNotice as settledNotice } from "../src/person/text.js"
 import { personEvents } from "../src/person/events.js"
 import type { PersonState } from "../src/person/index.js"
 import { asksPermission, type PermissionAsked } from "../src/person/permission.js"
@@ -15,10 +9,10 @@ import { eventsFollowed, shutdownReportedAt } from "../src/person/question/index
 import { open, type Hub, type Member } from "../src/platform/hub.js"
 import { resetHub } from "./fixtures/reset.js"
 import { shared as relayState } from "../src/person/question/shared.js"
-import { send, type CourierPorts } from "../src/courier.js"
-import { joinGroup, memberKey, memberOf } from "../src/group.js"
-import { reportOf, prompted, promptKey, settledKey, stopped, toldKey } from "../src/report.js"
-import { record, remove } from "../src/roster.js"
+import { send } from "../src/tree/send.js"
+import { joinGroup, memberKey, memberOf } from "../src/tree/group.js"
+import { reportOf, prompted, promptKey, settledKey, stopped, toldKey } from "../src/tree/report.js"
+import { record, remove } from "../src/tree/roster.js"
 import {
   noteDeleted,
   noteInterrupted,
@@ -31,9 +25,8 @@ import {
   waitsOn,
   type ExecutionFailed,
   type SessionEvent,
-  type WatchPorts,
-  type WatchState,
-} from "../src/watch.js"
+} from "../src/tree/events.js"
+import type { CourierPorts, WatchPorts, WatchState } from "../src/tree/ports.js"
 import { follow, watchFromHub } from "../src/platform/events.js"
 import { isScheduled } from "../src/scheduling/index.js"
 import { asksQuestion } from "../src/person/question/index.js"

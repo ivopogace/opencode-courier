@@ -3,9 +3,10 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { cleanup, findGit, GIT_ENV, GIT_LOCATIONS, headOf, inspectWorktree, MAX_LISTED, type CleanupPorts, type WorktreeState } from "../src/cleanup.js"
-import { keepReason } from "../src/notices.js"
-import { record, reverseKey, rosterKey, type RosterEntry } from "../src/roster.js"
+import { cleanup, findGit, GIT_ENV, GIT_LOCATIONS, headOf, inspectWorktree, MAX_LISTED } from "../src/tree/cleanup.js"
+import type { CleanupPorts, RosterEntry, WorktreeState } from "../src/tree/ports.js"
+import { keepReason } from "../src/tree/text.js"
+import { record, reverseKey, rosterKey } from "../src/tree/roster.js"
 
 const clean: WorktreeState = { changes: [], commits: [] }
 

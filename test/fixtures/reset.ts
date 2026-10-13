@@ -1,5 +1,5 @@
 import { hub, sharedState } from "../../src/platform/hub.js"
-import type { SpawnGate } from "../../src/limits.js"
+import type { SpawnGate } from "../../src/tree/ports.js"
 import { shared as questions } from "../../src/person/question/shared.js"
 
 /**

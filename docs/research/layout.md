@@ -367,6 +367,9 @@ src/
     tui.tsx           the TUI adapter: the prompt footer's status entry (rule 15)
   person/             (or asks/)
     index.ts ports.ts permission.ts form.ts tools.ts events.ts text.ts
+    rpc.ts            the person's RPC contract: the asks of a tree, a question's answer (rule 16)
+    rpc-handlers.ts   its server side, registered from index.ts after the tree's
+    tui.tsx           the TUI adapter: the asks inbox, its dialogs, command and sounds (rule 15)
     question/         unchanged inner layout (Effect island)
   scheduling/         index.ts later.ts tools.ts text.ts (exports its TickJob and Waits)
   webhook/            index.ts receiver.ts subscriptions.ts tools.ts text.ts (exports its Waits)

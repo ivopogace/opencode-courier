@@ -184,7 +184,7 @@ describe("the inbox", () => {
     const [command] = layer.commands
 
     expect(layer.mode).toBe("global")
-    expect(command).toMatchObject({ id: INBOX_COMMAND, bind: "<leader>k", palette: true, slash: { name: "asks" } })
+    expect(command).toMatchObject({ id: INBOX_COMMAND, bind: "<leader>k", palette: true, slash: { name: "asks", aliases: ["ask"] } })
     command.run()
     await settle()
     expect(fake.dialogs[0]!.options.title).toBe("Waiting on you (1)")

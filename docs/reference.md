@@ -863,7 +863,7 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_â€
 
 Every permission request, question and form waiting on the person anywhere in the open session's courier
 tree, answered in the TUI's dialogs with no model in between. It is opened by the command `courier.asks`:
-its key `<leader>k` (`ctrl+x k` by default), the slash command `/asks`, the command palette ("Courier:
+its key `<leader>k` (`ctrl+x k` by default), the slash command `/asks` (alias `/ask`), the command palette ("Courier:
 what waits on you"), or a click on the footer's entry while it shows `waiting on you`. With no session
 open it says so; with nothing waiting, "Nothing in this courier tree waits on you."
 

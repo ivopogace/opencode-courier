@@ -266,7 +266,7 @@ a bar of the parts reported, a leaf how long it ran, its last tool call and its 
 `enter` opens the session, `s` stops it and everything under it after you confirm, as `courier_stop`
 would, and `q` closes the panel; `/courier stop <session>` stops from the prompt.
 
-`ctrl+x k` (the leader key, then `k`), `/asks`, the palette's "Courier: what waits on you" or a click
+`ctrl+x k` (the leader key, then `k`), `/asks` (or `/ask`), the palette's "Courier: what waits on you" or a click
 on "waiting on you" opens the asks inbox: every permission request, question and form waiting
 anywhere in the tree, oldest first, with where it comes from, answered in a dialog with no model in
 between; the session that started the tree hears once that you settled it. The TUI plays OpenCode's

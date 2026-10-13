@@ -213,7 +213,10 @@ export function childStore(storage: Storage): ChildStore {
     async stopped(sessionID, at) {
       await storage.set(stoppedKey(sessionID), { at })
     },
-    peek: async (sessionID, field) => storage.get(REPORT_KEYS[field](sessionID)),
+    async peek(sessionID, field) {
+      const value = await storage.get(REPORT_KEYS[field](sessionID))
+      return value
+    },
     async restore(sessionID, field, value) {
       const key = REPORT_KEYS[field](sessionID)
       await (value === undefined ? storage.remove(key) : storage.set(key, value))

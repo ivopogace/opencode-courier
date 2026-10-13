@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "types": ["node"],
+    "emitDeclarationOnly": true
+  },
+  "include": ["src/tui.tsx"]
+}

@@ -48,6 +48,7 @@ async function setUp(
   const store = new Map(Object.entries(stored))
   const tools = new Map<string, any>()
   const skills = new Map<string, any>()
+  const rpcs = new Map<string, { definition: any; handlers: any }>()
   const hooks = new Map<string, (event: any) => Promise<void> | void>()
   const calls: { method: string; input: any }[] = []
   const record = (method: string, result: unknown) => async (input: any) => {
@@ -112,10 +113,16 @@ async function setUp(
         return { dispose: async () => {} }
       },
     },
+    rpc: {
+      register: async (definition: any, handlers: any) => {
+        rpcs.set(definition.id, { definition, handlers })
+        return { dispose: async () => {}, events: { emit: async () => {} } }
+      },
+    },
   }
   const cleanup = await courier().setup(ctx as any)
   if (cleanup) cleanups.push(cleanup)
-  return { tools, skills, hooks, calls, store, emit: events.emit, location: ctx.location, cleanup, subscriptions: () => events.counted.subscriptions }
+  return { tools, skills, rpcs, hooks, calls, store, emit: events.emit, location: ctx.location, cleanup, subscriptions: () => events.counted.subscriptions }
 }
 
 test("OpenCode loads an Effect plugin, which runs the promise one and wraps the question tool", () => {
@@ -200,6 +207,13 @@ test("registers the courier tools", async () => {
     "courier_subscribe",
     "courier_unsubscribe",
   ])
+})
+
+test("registers the courier RPC for the TUI part, its summary read from this location's storage", async () => {
+  const { rpcs } = await setUp()
+
+  expect([...rpcs.keys()]).toEqual(["courier"])
+  expect(await rpcs.get("courier")!.handlers.summary({ sessionID: "ses_none" })).toEqual({ running: 0, waiting: 0, idle: 0, groups: [] })
 })
 
 test("registers the courier-orchestrate skill, with a description so it is listed, and the playbook as its text", async () => {

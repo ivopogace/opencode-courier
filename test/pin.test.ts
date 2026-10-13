@@ -26,4 +26,14 @@ describe("the @opencode/plugin pin", () => {
     expect(new Set(installs)).toEqual(new Set([peer]))
     expect(readme).toContain(`tested on **OpenCode ${peer}**`)
   })
+
+  // The TUI part's packages are the host's own copies at runtime: devDependencies at the versions
+  // OpenCode's catalog pins, for the typecheck and the unit tests, and never peers, which broke
+  // `opencode plugin add` in the spike for #130 (docs/plugin-api-notes.md).
+  test("adds no peer for the TUI part, whose packages are exact devDependencies only", () => {
+    expect(Object.keys(manifest.peerDependencies)).toEqual(["@opencode/plugin"])
+    for (const name of ["@opentui/core", "@opentui/solid", "solid-js", "@opencode/theme"])
+      expect(manifest.devDependencies[name]).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(manifest.devDependencies["@opencode/theme"]).toBe(manifest.peerDependencies["@opencode/plugin"])
+  })
 })

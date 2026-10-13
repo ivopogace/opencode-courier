@@ -1,0 +1,3 @@
+[test]
+# Solid's JSX transform for OpenTUI, for the TUI part's tests (test/tui.test.tsx).
+preload = ["@opentui/solid/preload"]

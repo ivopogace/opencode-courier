@@ -150,7 +150,7 @@ test("every module imports only itself, platform/, kernel/ and the modules it ma
 
 test("no file of src/ is outside a folder but index.ts, skill.ts and the rpc.ts and tui.tsx entrypoints", () => {
   const top = [...imports().keys()].filter((module) => !module.includes("/"))
-  expect(top).toEqual(expect.arrayContaining(["index", "skill"]))
+  expect(top).toEqual(expect.arrayContaining(["index", "skill", "rpc", "tui"]))
   expect(top.filter((module) => !["index", "rpc", "skill", "tui"].includes(module))).toEqual([])
 })
 
@@ -160,6 +160,7 @@ const isTuiPackage = (name: string) =>
 
 test("a module's tui.tsx imports only the TUI's packages and its own module's rpc.ts and text.ts", () => {
   const parts = sources().filter(({ file }) => /^[^/\\]+[/\\]tui\.tsx$/.test(file)).map(({ module }) => module)
+  expect(parts).toContain("tree/tui")
   const graph = imports()
   const used = packages()
   const reaching = parts.flatMap((module) => {
@@ -174,6 +175,7 @@ test("a module's tui.tsx imports only the TUI's packages and its own module's rp
 
 test("a module's rpc.ts imports only @opencode/plugin/rpc and effect, so the TUI bundle takes nothing else of the module", () => {
   const contracts = sources().filter(({ module }) => /^[^/]+\/rpc$/.test(module)).map(({ module }) => module)
+  expect(contracts).toContain("tree/rpc")
   const graph = imports()
   const used = packages()
   const reaching = contracts.flatMap((module) =>
@@ -185,6 +187,8 @@ test("a module's rpc.ts imports only @opencode/plugin/rpc and effect, so the TUI
 })
 
 test("the tui entrypoint imports only @opencode/plugin/tui and the modules' tui.tsx and rpc.ts, the rpc entrypoint only their rpc.ts", () => {
+  expect(imports().get("tui")).toContain("tree/tui")
+  expect(imports().get("rpc")).toContain("tree/rpc")
   const reaching = (["tui", "rpc"] as const).flatMap((entry) => {
     const allowed = (name: string) => moduleOf(name) !== undefined && ENTRY_REACH[entry]!.some((file) => name === `${moduleOf(name)}/${file}`)
     return [

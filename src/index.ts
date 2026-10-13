@@ -32,6 +32,7 @@ import {
   inspectWorktree,
   pruneExpired,
   readLimits,
+  registerTreeRpc,
   shapeContext,
   together,
   treeEvents,
@@ -164,6 +165,8 @@ export const courier = () => Plugin.define({
       addWebhookTools(tools, { hooks, receiving })
     })
     await ctx.skill.transform(addSkill)
+    // What the TUI part reads, through the same use cases as the tools.
+    await registerTreeRpc(ctx.rpc, ports)
     await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, log }, event))
 
     const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))

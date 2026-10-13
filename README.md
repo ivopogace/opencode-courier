@@ -272,6 +272,9 @@ anywhere in the tree, oldest first, with where it comes from, answered in a dial
 between; the session that started the tree hears once that you settled it. The TUI plays OpenCode's
 sounds for a child's report, a group's release and a new ask ([more](docs/reference.md#in-the-terminal)).
 
+While a permission prompt or form is shown in the session, OpenCode hides the footer, so open the
+inbox with `ctrl+x k` (or `/asks` once the prompt is back).
+
 ## Native child sessions
 
 Off by default. With `"nativeChildren": true` in the plugin's `options`, a child started without

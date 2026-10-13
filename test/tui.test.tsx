@@ -539,6 +539,8 @@ describe("the /courier command", () => {
     await tui.setup(fake.context)
     const courier = fake.command("courier.command")!
     expect(courier.slash).toEqual({ name: "courier", arguments: true })
+    const layer = fake.state.layers.map((one) => one() as { mode?: string; commands?: readonly any[] }).find((one) => one.commands?.some((command) => command.id === "courier.command"))
+    expect(layer?.mode).toBe("global")
 
     await courier.run("tree")
     await courier.run("")

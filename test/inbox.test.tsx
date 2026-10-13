@@ -180,8 +180,10 @@ describe("the inbox", () => {
   test("is opened by its command: a key, /asks and the palette", async () => {
     const fake = fakeContext({ ...empty, permissions: [bash] })
     addAsksInbox(fake.context)
-    const [command] = fake.layers[0]!().commands
+    const layer = fake.layers[0]!()
+    const [command] = layer.commands
 
+    expect(layer.mode).toBe("global")
     expect(command).toMatchObject({ id: INBOX_COMMAND, bind: "<leader>k", palette: true, slash: { name: "asks" } })
     command.run()
     await settle()

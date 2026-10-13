@@ -365,6 +365,7 @@ export function addAsksInbox(ctx: Context) {
   })
 
   ctx.keymap.layer(() => ({
+    mode: "global",
     commands: [
       {
         id: INBOX_COMMAND,

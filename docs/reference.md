@@ -867,6 +867,9 @@ its key `<leader>k` (`ctrl+x k` by default), the slash command `/asks`, the comm
 what waits on you"), or a click on the footer's entry while it shows `waiting on you`. With no session
 open it says so; with nothing waiting, "Nothing in this courier tree waits on you."
 
+While a permission prompt or form is shown in the session, OpenCode renders it in place of the prompt and
+the footer is hidden, so open the inbox with `ctrl+x k` (or `/asks` once the prompt is back).
+
 **What it lists.** The tree is courier's own, read from the roster, not OpenCode's `parentID`: from the
 top of the open session's lineage down, so every session of a tree, the root or a grandchild, lists the
 same, at most `maxTotal` sessions as `courier_tree` reads them. It lists the tree's permission requests

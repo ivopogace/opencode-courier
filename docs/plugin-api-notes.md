@@ -238,7 +238,7 @@ a plugin's `node_modules` fails with an error naming it. A live probe confirmed 
 hosts: a plugin whose own `node_modules/effect` sets a marker when it runs, and that has no
 `@opencode/plugin` installed at all, loaded with the marker never set and
 `@opencode/plugin/promise/adapter` imported. So on 2.0.25 and later the courier runs on OpenCode's
-`effect` and plugin API, whatever is installed next to it: its `effect` dependency and the peer copy
+`effect` and plugin API, whatever is installed next to it: its `effect` and `@opencode/plugin` peers
 serve the build, the unit tests and hosts before 2.0.25. The question relay's Effects and the host's
 are one copy there, and the live suite, the question relay's scenarios included, passes on 2.0.28.
 

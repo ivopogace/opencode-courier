@@ -160,7 +160,7 @@ const isTuiPackage = (name: string) =>
 
 test("a module's tui.tsx imports only the TUI's packages and its own module's rpc.ts and text.ts", () => {
   const parts = sources().filter(({ file }) => /^[^/\\]+[/\\]tui\.tsx$/.test(file)).map(({ module }) => module)
-  expect(parts).toContain("tree/tui")
+  expect(parts).toEqual(expect.arrayContaining(["tree/tui", "person/tui"]))
   const graph = imports()
   const used = packages()
   const reaching = parts.flatMap((module) => {
@@ -175,7 +175,7 @@ test("a module's tui.tsx imports only the TUI's packages and its own module's rp
 
 test("a module's rpc.ts imports only @opencode/plugin/rpc and effect, so the TUI bundle takes nothing else of the module", () => {
   const contracts = sources().filter(({ module }) => /^[^/]+\/rpc$/.test(module)).map(({ module }) => module)
-  expect(contracts).toContain("tree/rpc")
+  expect(contracts).toEqual(expect.arrayContaining(["tree/rpc", "person/rpc"]))
   const graph = imports()
   const used = packages()
   const reaching = contracts.flatMap((module) =>
@@ -187,8 +187,8 @@ test("a module's rpc.ts imports only @opencode/plugin/rpc and effect, so the TUI
 })
 
 test("the tui entrypoint imports only @opencode/plugin/tui and the modules' tui.tsx and rpc.ts, the rpc entrypoint only their rpc.ts", () => {
-  expect(imports().get("tui")).toContain("tree/tui")
-  expect(imports().get("rpc")).toContain("tree/rpc")
+  expect(imports().get("tui")).toEqual(expect.arrayContaining(["tree/tui", "person/tui"]))
+  expect(imports().get("rpc")).toEqual(expect.arrayContaining(["tree/rpc", "person/rpc"]))
   const reaching = (["tui", "rpc"] as const).flatMap((entry) => {
     const allowed = (name: string) => moduleOf(name) !== undefined && ENTRY_REACH[entry]!.some((file) => name === `${moduleOf(name)}/${file}`)
     return [

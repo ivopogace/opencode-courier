@@ -39,8 +39,9 @@ export function summaryLine(summary: Summary) {
 /**
  * Adds the tree's entry to the prompt's footer: what the sessions started under the open session are doing, asked
  * of the server's RPC and asked again after each change. It shows nothing on the home screen, which has no session.
+ * Clicked while some wait on the person, it calls `onWaiting` with the open session.
  */
-export function addTreeStatus(ctx: Plugin.Context) {
+export function addTreeStatus(ctx: Plugin.Context, onWaiting?: (sessionID: string) => void) {
   const courier = ctx.client.rpc(treeRpc)
   // Where the session runs, which has the plugin loaded; a request with no location would go to the server's default.
   const location = (sessionID: string) => ctx.data.session.get(sessionID)?.location ?? ctx.location ?? ctx.data.location.default()
@@ -60,20 +61,25 @@ export function addTreeStatus(ctx: Plugin.Context) {
         () => (input.sessionID ? { sessionID: input.sessionID, changed: changed() } : undefined),
         ({ sessionID }) =>
           courier.summary({ sessionID }, { location: location(sessionID) }).then(
-            (summary) => ({ sessionID, line: summaryLine(summary) }),
+            (summary) => ({ sessionID, line: summaryLine(summary), waiting: summary.waiting }),
             // A server without the courier's RPC, or one that fails, leaves the entry empty rather than the footer noisy.
-            () => ({ sessionID, line: "" }),
+            () => ({ sessionID, line: "", waiting: 0 }),
           ),
       )
       // The latest answer, but only for the session shown: another session's lingers while the new one is asked.
-      const line = () => {
+      const shown = () => {
         // Before its first answer `latest` reads the resource, which would suspend an enclosing Suspense boundary.
         const latest = read.state === "ready" || read.state === "refreshing" ? read.latest : undefined
-        return latest && latest.sessionID === input.sessionID ? latest.line : ""
+        return latest && latest.sessionID === input.sessionID ? latest : undefined
+      }
+      const line = () => shown()?.line ?? ""
+      const click = () => {
+        const latest = shown()
+        if (latest?.waiting) onWaiting?.(latest.sessionID)
       }
       return (
         <Show when={line()}>
-          <text fg={ctx.theme.text.muted} wrapMode="none">
+          <text fg={ctx.theme.text.muted} wrapMode="none" onMouseUp={click}>
             {" "}
             {line()}
           </text>

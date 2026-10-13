@@ -127,9 +127,8 @@ const DONE = Symbol("done")
 const SKIP = Symbol("skip")
 
 /**
- * Adds the asks inbox: every permission request, question and form waiting in the courier tree of the open session,
- * from the roster through the person's RPC, answered in dialogs, opened by a key, `/asks`, the palette or the footer's
- * "waiting on you"; and a sound when a new ask arrives in the open session's tree. Returns its cleanup and its opener.
+ * Adds the asks inbox: what the open session's courier tree waits on the person for, read through the person's RPC and
+ * answered in dialogs, opened by its command; a sound for each new ask. Returns its opener and its cleanup.
  */
 export function addAsksInbox(ctx: Context) {
   const person = ctx.client.rpc(personRpc)

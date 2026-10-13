@@ -37,9 +37,8 @@ export function summaryLine(summary: Summary) {
 }
 
 /**
- * Adds the tree's entry to the prompt's footer: what the sessions started under the open session are doing, asked
- * of the server's RPC and asked again after each change. It shows nothing on the home screen, which has no session.
- * Clicked while some wait on the person, it calls `onWaiting` with the open session.
+ * Adds the tree's entry to the prompt's footer: what the sessions under the open session do, asked of the RPC after each
+ * change; nothing on the home screen. Clicked while some wait on the person, it calls `onWaiting` with the open session.
  */
 export function addTreeStatus(ctx: Plugin.Context, onWaiting?: (sessionID: string) => void) {
   const courier = ctx.client.rpc(treeRpc)

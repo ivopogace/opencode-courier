@@ -424,6 +424,11 @@ created `courier/<their session ID>`, committed on it and named it in their repo
 a dozen tool calls to get its file committed (a write to a path outside its worktree first); that is
 the model's doing.
 
+On OpenCode 2.0.28 with Effect 4.0.1, after the pin moved (#135; no model-facing text changed, and
+the tool schemas models are sent are the same), `longcat-2.5-preview-free` passes the fan-out, 8 of
+8, in 9 model requests: `split: 2 parts: …`, no skill loaded, both children in one join group, one
+woken turn for the group's message, every report `done`, and `RESULTS 391 1024`.
+
 What the models did on the fan-out, over some 30 runs while the tool wording was tuned:
 
 | Model | Result |

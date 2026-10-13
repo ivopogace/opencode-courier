@@ -3,6 +3,7 @@ import { Effect, Exit, Fiber } from "effect"
 import { TestClock } from "effect/testing"
 import {
   byCodeUnit,
+  answerForPerson,
   answerQuestion,
   joinRelay,
   formShown,
@@ -1386,7 +1387,7 @@ describe("the question of a native child, whose form OpenCode shows in the top s
     const settled = notices(told, "answered")
     expect(settled).toHaveLength(1)
     expect(settled[0].text).toContain('<courier from="ses_child" answered="elsewhere" request="question_1">')
-    expect(settled[0].text).toContain("was answered in the form OpenCode showed the person")
+    expect(settled[0].text).toContain("was answered by the person (")
     expect(store.has("question/question_1")).toBe(false)
   })
 
@@ -1402,6 +1403,21 @@ describe("the question of a native child, whose form OpenCode shows in the top s
     const childExit = await exitOf(child)
     expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [["Hi"]] })
     expect(tool.cancelled).toHaveLength(1)
+  })
+
+  test("answered from the TUI's inbox: the parent, told of it and asking nothing, is told once it is settled", async () => {
+    const { ports, told, ask } = await setUp()
+    await native(ports)
+    const child = ask("ses_child")
+    await settle()
+
+    expect(await answerForPerson(ports, { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })).toMatchObject({ answered: true })
+    const childExit = await exitOf(child)
+    expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [["Hi"]] })
+    await settle()
+    expect(notices(told, "asks")).toHaveLength(1)
+    expect(notices(told, "answered")).toHaveLength(1)
+    expect(notices(told, "answered")[0].text).toContain("was answered by the person (")
   })
 
   test("once its call is cut off, its form is gone, and the parent's question is linked to it again", async () => {
@@ -1543,4 +1559,97 @@ test("a cut-off question is told through a member of this copy's hub first, else
   void leave()
   relayState.loaded.delete(elsewhere)
   hub.subscribe = subscribe
+})
+
+describe("a question answered by the person in the TUI's asks inbox", () => {
+  const input = { sessionID: "ses_child", requestID: "question_1", answers: [["Hi"]] }
+
+  test("ends the child's call, and the parent, told about it, is told once that it is settled", async () => {
+    const { ports, told, tool, ask, store } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+
+    expect(await answerForPerson(ports, input)).toEqual({ ...input, answered: true, by: "result" })
+
+    const exit = await exitOf(child)
+    expect(Exit.isSuccess(exit) && exit.value.output).toEqual({ answers: [["Hi"]] })
+    expect(tool.cancelled).toHaveLength(1)
+    await settle()
+    expect(store.has("question/question_1")).toBe(false)
+    // One notice that it asks, one that it is settled, and nothing asks the person again.
+    expect(told.map((item) => item.sessionID)).toEqual(["ses_parent", "ses_parent"])
+    const settled = notices(told, "answered")
+    expect(settled).toHaveLength(1)
+    expect(settled[0].text).toContain('<courier from="ses_child" answered="elsewhere" request="question_1">')
+    expect(settled[0].text).toContain('"Which greeting?"="Hi"')
+    expect(settled[0].text).toContain("so it no longer waits on you")
+    expect(relayState.questions.size).toBe(0)
+    // The parent's courier_answer after it passes nothing on.
+    expect((await answerQuestion(ports, "ses_parent", { ...input, answers: ["Hey"] })).answered).toBe(false)
+    expect(told).toHaveLength(2)
+  })
+
+  test("while the parent asks the person the same, its question is withdrawn instead, and no notice follows", async () => {
+    const { ports, told, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    const parent = ask("ses_parent")
+    await settle()
+
+    expect((await answerForPerson(ports, input)).answered).toBe(true)
+
+    expect(Exit.isSuccess(await exitOf(child))).toBe(true)
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value).toMatchObject({
+      output: { answers: [["Hi"]] },
+      content: expect.stringContaining("Session ses_child no longer waits on this question: it was answered in its own session ("),
+      metadata: { relayed: "question_1", withdrawn: true },
+    })
+    await settle()
+    expect(told).toHaveLength(1)
+  })
+
+  test("a cut-off question gets the answer as a message, and the parent one notice", async () => {
+    const { ports, told, ask } = await setUp()
+    const child = ask("ses_child")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    expect(notices(told, "stopped")).toHaveLength(1)
+
+    expect(await answerForPerson(ports, input)).toEqual({ ...input, answered: true, by: "message" })
+    await settle()
+
+    expect(told.filter((item) => item.sessionID === "ses_child").map((item) => item.text)).toEqual([expect.stringContaining('"Which greeting?"="Hi"')])
+    expect(notices(told, "answered")).toHaveLength(1)
+  })
+
+  test("a parent never told about the question is not told it is settled", async () => {
+    const { ports, told, ask } = await setUp()
+    // The notice that it asks fails; any after it would be told.
+    const synthetic = ports.session.synthetic
+    let failing = true
+    ;(ports.session as { synthetic: unknown }).synthetic = async (input: any) => {
+      if (!failing) return synthetic(input)
+      failing = false
+      throw new Error("closed")
+    }
+    ask("ses_child")
+    await settle()
+
+    expect((await answerForPerson(ports, input)).answered).toBe(true)
+    await settle()
+    expect(told).toEqual([])
+  })
+
+  test("a question that no longer waits, or another session's, is not answered, and answers that do not fit are refused", async () => {
+    const { ports, told, ask } = await setUp()
+    expect(await answerForPerson(ports, input)).toEqual({ sessionID: "ses_child", requestID: "question_1", answered: false })
+    ask("ses_child")
+    await settle()
+
+    expect((await answerForPerson(ports, { ...input, sessionID: "ses_other" })).answered).toBe(false)
+    await expect(answerForPerson(ports, { ...input, answers: [["Hi", "Hey"]] })).rejects.toThrow('question 1 ("Greeting") takes one answer, not 2.')
+    expect(told).toHaveLength(1)
+  })
 })

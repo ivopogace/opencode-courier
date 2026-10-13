@@ -245,7 +245,7 @@ export function nativeQuestionNotice(asked: Asked) {
 
 /** How a question was settled without the top session, as its settled notice puts it. */
 function settledHow(asked: Asked, how: Elsewhere) {
-  const where = asked.native ? "in the form OpenCode showed the person" : "in its own session"
+  const where = asked.native ? "by the person" : "in its own session"
   if (how.by === "child") return `answered ${where} (${answeredText(asked.questions, how.answers)})`
   if (how.by === "dismissed") return `dismissed ${where}, without an answer`
   return `ended without an answer: its question call failed (${how.error})`

@@ -151,6 +151,31 @@ open_tui tui-home
 check "the entry is not on the home screen of a TUI with no session" \
   "$([ "$(shows "ctrl+p" 60 tui-home)" = true ] && ! grep -qF "courier " "$WORK/tui-home.txt" && echo true || echo false)"
 
+# The asks inbox (#144), in the TUI: its key lists the child's request, and two Enters allow it once
+# through OpenCode's reply; the parent is told once that it is settled, and the child carries on.
+echo "the asks inbox answers a child's permission request from the TUI"
+out=$(prompt "COURIER-ASK")
+asker_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+asker=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out" | head -1)
+for _ in $(seq 1 45); do [ "$(api "session/$asker/permission" | jq -r '.data | length')" = 1 ] && break; sleep 1; done
+open_tui tui-inbox "$asker_parent"
+check "the footer says one waits on the person" "$(shows "courier 1 waiting on you" 60 tui-inbox-footer)"
+tmux send-keys -t "$TMUX_SESSION" C-x k
+check "its key opens the inbox, listing the request with where it comes from" \
+  "$([ "$(shows "Permission: shell echo courier-asks" 20 tui-inbox-list)" = true ] && grep -qF "Waiting on you (1)" "$WORK/tui-inbox-list.txt" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "choosing it offers the answers" "$(shows "Allow once" 20 tui-inbox-answers)"
+tmux send-keys -t "$TMUX_SESSION" Enter
+for _ in $(seq 1 30); do [ "$(api "session/$asker/permission" | jq -r '.data | length')" = 0 ] && break; sleep 1; done
+check "the request was answered" "$([ "$(api "session/$asker/permission" | jq -r '.data | length')" = 0 ] && echo true || echo false)"
+settled_notices() {
+  api "session/$asker_parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains(" answered=\"once\""))] | length'
+}
+for _ in $(seq 1 30); do [ "$(settled_notices)" = 1 ] && break; sleep 1; done
+check "the parent was told once that it is settled" "$(sleep 2; [ "$(settled_notices)" = 1 ] && echo true || echo false)"
+check "the child carried on and reported" \
+  "$(for _ in $(seq 1 45); do api "session/$asker_parent/message" | jq -e '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD DONE"))] | length > 0' >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
+
 echo "opencode plugin add installs the package with its tui and rpc entrypoints"
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 stop_server
@@ -185,7 +210,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-released tui-home tui-installed; do
+  for screen in tui-waiting tui-released tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

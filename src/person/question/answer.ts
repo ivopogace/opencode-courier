@@ -1,7 +1,7 @@
 import { Deferred, Effect, Semaphore } from "effect"
-import type { Answers, Asked, Outcome, Prompt, QuestionPorts } from "./types.js"
+import type { Answers, Asked, Outcome, Prompt, Question, QuestionPorts, Withdrawal } from "./types.js"
 import { envelope } from "../../kernel/protocol.js"
-import { cutOffAnswer, questionNotice, type CutOff } from "../text.js"
+import { cutOffAnswer, questionNotice, questionSettledNotice, type CutOff } from "../text.js"
 import { allEntries, answeringTop, lineageIn, RETENTION_MS, type RosterStorage } from "../../tree/index.js"
 import { scanAll } from "../../platform/storage.js"
 import { within, run } from "./runtime.js"
@@ -76,11 +76,26 @@ const holding = <A, E>(id: string, ms: number, effect: Effect.Effect<A, E>): Eff
   )
 
 /**
+ * What a linked call of the top session is withdrawn with once an answer is passed on, `withdrawal`, and
+ * whether one was: `linked`, set once it is withdrawn.
+ */
+export interface Linked {
+  readonly withdrawal: Withdrawal
+  linked: boolean
+}
+
+/**
  * Passes the top session's answer, or the person's dismissal, to a question: as the result of the
  * call that waits on it, or as a message when that call was cut off. Undefined when it was settled.
  */
-export const deliver = (ports: QuestionPorts, asked: Asked, outcome: Outcome): Effect.Effect<"result" | "message" | undefined, unknown> =>
+export const deliver = (
+  ports: QuestionPorts,
+  asked: Asked,
+  outcome: Outcome,
+  given?: Linked,
+): Effect.Effect<"result" | "message" | undefined, unknown> =>
   Effect.suspend(() => {
+    const linked = given ?? { withdrawal: { by: "top", outcome }, linked: false }
     const id = asked.requestID
     const wait = ports.timing.passingWaitMs
     // One answer at a time, and once, per question in this process, since storage cannot be claimed
@@ -97,7 +112,7 @@ export const deliver = (ports: QuestionPorts, asked: Asked, outcome: Outcome): E
           yield* within(under, left())
         }
         if (shared.answered.has(id)) return undefined
-        const passing = passOn(ports, asked, outcome)
+        const passing = passOn(ports, asked, outcome, linked)
         shared.passing.set(id, passing)
         // Held while it is passed on; one that hangs on a notice that never returns gives way after a
         // while, so the question can be answered again, and the child may then be told twice.
@@ -116,7 +131,14 @@ export const deliver = (ports: QuestionPorts, asked: Asked, outcome: Outcome): E
     )
   })
 
-async function passOn(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
+/** Withdraws the top session's call linked to a question, if any, now that it is settled. */
+function withdraw(known: Question, linked: Linked) {
+  if (!known.link) return
+  linked.linked = true
+  known.link(linked.withdrawal)
+}
+
+async function passOn(ports: QuestionPorts, asked: Asked, outcome: Outcome, linked: Linked) {
   const id = asked.requestID
   let known = shared.questions.get(id)
   // Taken only if the call ends with it: one already ending some other way, its turn being
@@ -125,7 +147,7 @@ async function passOn(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
     claim(shared.answered, id)
     shared.questions.delete(id)
     // A call of the top session linked to it, asking the person, is withdrawn: it is settled.
-    known.link?.({ by: "top", outcome })
+    withdraw(known, linked)
     return "result" as const
   }
   // Its call just ended: whether it was cut off and stays or was settled and is dropped is known once
@@ -145,7 +167,7 @@ async function passOn(ports: QuestionPorts, asked: Asked, outcome: Outcome) {
   // linked call, if any, goes then too, not before the answer is out.
   claim(shared.answered, id)
   shared.questions.delete(id)
-  known.link?.({ by: "top", outcome })
+  withdraw(known, linked)
   await forget(ports, asked)
   return "message" as const
 }
@@ -186,6 +208,29 @@ export async function answerQuestion(ports: QuestionPorts, callerID: string, inp
   const answers = normalize(asked, input.answers)
   const by = await run(deliver(ports, asked, { answers }))
   return by ? { sessionID, requestID, answered: true, by, answers } : { sessionID, requestID, answered: false }
+}
+
+/**
+ * Answers a question for the person, from the TUI's inbox, as courier_answer does; the top session hears it once, as
+ * if answered in the asking session: its linked call is withdrawn, or else, if it was told of it, it is told settled.
+ */
+export async function answerForPerson(ports: QuestionPorts, input: QuestionAnswerInput): Promise<QuestionAnswered> {
+  const { sessionID, requestID } = input
+  const known = shared.questions.get(requestID)
+  const asked: Stored | undefined = known ?? ((await ports.storage.get(keyOf(requestID))) as Stored | undefined)
+  if (asked?.sessionID !== sessionID || asked.answered) return { sessionID, requestID, answered: false }
+  const answers = normalize(asked, input.answers)
+  const settled = { by: "child", answers } as const
+  const linked: Linked = { withdrawal: settled, linked: false }
+  const by = await run(deliver(ports, asked, { answers }, linked))
+  if (!by) return { sessionID, requestID, answered: false }
+  // A question whose notice did not go out is not settled with one either; a stored one was told when cut off.
+  const told = !known?.relaying || (await run(within(known.relaying, ports.timing.relayWaitMs))) === true
+  if (!linked.linked && told)
+    await tell(ports, asked, questionSettledNotice(asked, settled), { answered: "elsewhere", request: requestID }).catch((error: unknown) =>
+      ports.log(`courier question: could not tell ${asked.top} that ${requestID} is settled: ${String(error)}`),
+    )
+  return { sessionID, requestID, answered: true, by, answers }
 }
 
 /** Whether a session waits on a question of its own, open or cut off and not yet answered. */

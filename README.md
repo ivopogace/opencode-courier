@@ -362,6 +362,15 @@ members have reported out of those that have not left. Nothing shows on the home
 session that started none. The TUI reads it through the plugin's RPC, `courier.summary`, and asks
 again after each change ([reference](docs/reference.md#in-the-terminal)).
 
+**What waits on you.** `ctrl+x k` (the leader key, then `k`), `/asks`, the command palette's
+"Courier: what waits on you", or a click on the footer's "waiting on you" opens the asks inbox: every
+permission request, question and form waiting anywhere in the open session's courier tree, oldest first,
+each with where it comes from (`Root › Fix the bug › Write tests`), its depth and its group. Choose one and
+answer it in a dialog, with no model in between: allow once, always or reject (with a reason if you give
+one), pick a question's answers or type your own, fill in a form. The session that started the tree hears
+once that it is settled, as when you answer in the child's own session, and does not ask you again. A new
+ask in the open tree plays OpenCode's permission or question sound ([reference](docs/reference.md#the-asks-inbox)).
+
 ## Native child sessions
 
 Off by default. With `"nativeChildren": true` in the plugin's `options`, a child started without

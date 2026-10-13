@@ -1318,12 +1318,12 @@ If they give you the answer some other way, call courier_answer with sessionID "
 `;
 
 exports[`questions question notices of a native child 2`] = `
-"The question question_1 of this session, "Fix the bug", was answered in the form OpenCode showed the person (User has answered your questions: "Which greeting?"="Hi", "Which languages?"="English, German". You can now continue with the user's answers in mind.), so it no longer waits on you.
+"The question question_1 of this session, "Fix the bug", was answered by the person (User has answered your questions: "Which greeting?"="Hi", "Which languages?"="English, German". You can now continue with the user's answers in mind.), so it no longer waits on you.
 If you asked someone about it, tell them it is settled; there is nothing to pass on."
 `;
 
 exports[`questions question notices of a native child 3`] = `
-"The question question_1 of this session, "Fix the bug", was dismissed in the form OpenCode showed the person, without an answer, so it no longer waits on you.
+"The question question_1 of this session, "Fix the bug", was dismissed by the person, without an answer, so it no longer waits on you.
 If you asked someone about it, tell them it is settled; there is nothing to pass on.
 That ends the session's turn, and then it does not report back on its own: if it stays quiet, message it with courier_send to have it carry on."
 `;

@@ -890,6 +890,42 @@ check "and the child's commit is in its history" "$(git -C "$leaf_dir" log --for
 check "the grandchild committed on courier/<its session>" "$(git -C "$WORK/project" log -1 --format=%s "courier/$nest_leaf" 2>/dev/null | grep -qx 'leaf work' && echo true || echo false)"
 check "the child merged it into its own worktree" "$([ -f "$mid_dir/leaf.txt" ] && echo true || echo false)"
 
+# The TUI's asks inbox (#144): it reads the tree over the person's RPC and answers over the routes the
+# TUI's client takes (e2e/tui.sh drives the TUI itself): a permission request through OpenCode's reply,
+# a question through the RPC's answer method. The parent hears each settled once, and is not asked again.
+# The person's RPC method $1 with input $2, at the project's location.
+inbox() {
+  curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier-person/$1?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" \
+    -H 'content-type: application/json' -d "{\"input\":$2}"
+}
+echo "the asks inbox lists a child's permission request, and answers it as the TUI does"
+ask_permission ""
+listed=$(inbox asks "{\"sessionID\":\"$parent\"}" | jq -c '.output')
+check "it lists the request, from the parent's tree" \
+  "$(jq -r --arg parent "$parent" --arg child "$child" --arg request "$request" '.top == $parent and .sessions[0].sessionID == $child and
+    (.permissions | length == 1 and (.[0] | .sessionID == $child and .requestID == $request and .action == "shell" and
+      .resources == ["echo courier-asks"]))' <<<"$listed" 2>/dev/null || echo false)"
+check "the child's own session lists the same" "$([ "$(inbox asks "{\"sessionID\":\"$child\"}" | jq -c '.output')" = "$listed" ] && echo true || echo false)"
+check "the inbox answers through OpenCode's reply" "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"once"}')" = 204 ] && echo true || echo false)"
+check "the parent was told it is settled, once" \
+  "$(reply_time "$parent" "PARENT SETTLED" >/dev/null; sleep 2; notices_with "$parent" answered | jq -r --arg request "$request" 'length == 1 and (.[0] | contains("request=\"" + $request + "\"") and contains("answered=\"once\""))')"
+check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+check "and nothing is left in the inbox" "$(inbox asks "{\"sessionID\":\"$parent\"}" | jq -r '.output.permissions == [] and .output.questions == []')"
+
+echo "the asks inbox answers a child's question through the person's RPC, while the parent asks the person"
+ask_question COURIER-QUESTION
+question=$(inbox asks "{\"sessionID\":\"$parent\"}" | jq -r --arg child "$child" '.output.questions[] | select(.sessionID == $child) | .requestID')
+check "it lists the question" "$([[ $question == question_* ]] && echo true || echo false)"
+answered=$(inbox answer "{\"sessionID\":\"$child\",\"requestID\":\"$question\",\"answers\":[[\"Hi\"]]}" | jq -c '.output')
+check "the answer went to the child's waiting call" "$([ "$answered" = '{"answered":true,"by":"result"}' ] && echo true || echo false)"
+check "the child got it and reported" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
+check "the parent's own question was withdrawn, saying it is settled: no second ask" \
+  "$(has_text "$parent" "Session $child no longer waits on this question: it was answered in its own session" 30)"
+check "both forms are gone" "$([ "$(forms_of "$parent")" = 0 ] && [ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
+check "and no notice besides" "$(sleep 2; notices_with "$parent" answered | jq -r 'length == 0')"
+check "answering it again passes nothing on" \
+  "$(inbox answer "{\"sessionID\":\"$child\",\"requestID\":\"$question\",\"answers\":[[\"Hey\"]]}" | jq -r '.output == {answered: false}')"
+
 # The nativeChildren option, on for the rest of the run: the server reloads the plugin with it.
 echo "nativeChildren: a child started without isolate gets OpenCode's own parentID"
 stop_server

@@ -454,6 +454,15 @@ to answer — which greeting would you like to use: Hello, Hi, or Hey?*, and end
 person's `Hi` reached the child 9 s before its report, the parent was told the question was settled
 (`answered="elsewhere"`) and replied `GREETING Hi`.
 
+The permission scenario got the same treatment after the decision that a native child's permission
+request is answered in OpenCode's own prompt, with the top session told not to ask
+(`e2e/real-model-permission.mjs` answers the child's request directly with `COURIER_NATIVE=1`, and
+fails a parent that asks with a form). `longcat-2.5-preview-free` passes it, 6 of 6: told with the
+`shown="native"` notice, the parent wrote one line, *The helper session is waiting on your
+permission to run the shell command.*, and ended its turn; the person allowed it once in
+OpenCode's prompt, the parent was told it was settled (`answered="once"`), and it replied `RESULT
+courier-permission-42` once the child had reported.
+
 What the models did on the fan-out, over some 30 runs while the tool wording was tuned:
 
 | Model | Result |

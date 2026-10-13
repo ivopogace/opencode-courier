@@ -121,8 +121,8 @@ between.
    view in the TUI lists none of its permission requests or forms; the view of the top of its native
    tree does, that is the session at the top of the courier's tree, or the isolated session nearest
    above it. The notice of a [form](#a-child-that-shows-a-form) names that session. The courier still
-   tells the top session's model of every request, as without the option, so either answer counts,
-   and of every question, which the person answers in OpenCode's own form: both below.
+   tells the top session's model of every request and question, which the person answers in
+   OpenCode's own prompt or form there: both below.
 5. **Who else answers.** Whatever answers the asks of a session's family now answers the courier's
    native children's too: the TUI's `autoaccept` permission mode, in the open top session's view,
    approves their requests once, and `opencode run`, while it runs a turn of the top session, takes
@@ -147,19 +147,25 @@ is relayed as without the option, the top session's question tool linked to it a
 a native child under an isolated session shows in that session's view, not the top's, so it is
 relayed and linked as without the option, as is every question of an isolated child.
 
-Turn the option on only where the person sees OpenCode's own forms: the TUI, or the paired app. A
-client that does not show them, a bare API client or `opencode run`, which cancels the forms of its
-session's family, leaves a native child's question without a prompt; `courier_answer` is the
-fallback, and `courier_status` lists the question under `pending`.
+Turn the option on only where the person sees OpenCode's own prompts and forms: the TUI, or the
+paired app. A client that shows none, a bare API client, leaves a native child's questions and
+permission requests without a prompt (and `opencode run` answers them itself, as above);
+`courier_answer` is the fallback, and `courier_status` lists them under `pending`.
 
-**Permission requests: can be asked twice.** In the TUI's view of the top session, a native child's
-permission request shows as OpenCode's own permission prompt, in place of the prompt input, while the
-plugin tells the top session's model as before, which asks the person too, usually with its question
-tool. Whichever answer comes first counts. Answered in OpenCode's prompt, the model is told the
-request is settled (`answered="<reply>"`) and a later `courier_answer` passes nothing on, but a
-question the model had already put to the person stays open until they answer or dismiss it. A form
-is told, not relayed, so the person sees it once. Seen in the TUI with the live suite's stand-in
-model; the app's dock shows the first pending ask of the tree the same way (source only).
+**Permission requests: asked once, in OpenCode's own prompt.** By the decision on #146 (option B of
+three: leave the double ask, tell the model not to ask, or link the model's question to the request
+as questions once were), a native child's permission request whose native root is the top session
+is not put to the person by the model. OpenCode shows it in the top session's view as its own
+permission prompt, bound to that request, and on the paired app's dock; the plugin tells the top
+session's model with a notice marked `shown="native"`, which says so, tells it not to ask the
+person, with its question tool or in its reply, nor to decide, and to tell them in one line at most
+and end its turn, and still lists the choices for `courier_answer`, for a person who asks the model
+to answer for them. Once the person answers in OpenCode's prompt, the model is told it is settled
+(`answered="<reply>"`). Approval stays with the host's prompt, which a model cannot answer for the
+person; a model that ignores the notice and asks anyway does no more than without the decision, and
+the first answer counts. A native child under an isolated session, an isolated child, and every
+child with the option off get the notice as without the option. Seen with the stand-in model in the
+TUI and the live suite, and with a real model (`docs/real-model.md`).
 
 ## Session trees and their limits
 
@@ -569,7 +575,9 @@ decide:
 
 The parent asks you, with its question tool if it has one, and calls
 `courier_answer { sessionID, requestID, reply, message? }` with your choice. The plugin passes it
-on, and the child carries on.
+on, and the child carries on. With [`nativeChildren`](#native-child-sessions) on, a native child's
+request is answered in OpenCode's own prompt in the top session's view instead, and the parent is
+told not to ask you.
 
 A request of a child's child goes to the session at the top, the one you started the first child
 from, and so on down any number of levels, since that is where you are; the message names the

@@ -493,8 +493,9 @@ point 3 of the spike below; read in OpenCode's source at `v2.0.28` and checked o
   stand-in model: a native child's permission request showed as `△ Permission required` in the root's
   view while the courier's notice reached the root's model; with a relayed question, the root's own
   question form showed, the child's queued behind it. So a native child's question is no longer
-  linked to the root's question tool (the reference's *Native child sessions*): the person answers
-  the child's form there, once.
+  linked to the root's question tool, and the root's model is told not to ask about a native child's
+  permission request (the reference's *Native child sessions*): the person answers OpenCode's own
+  form or prompt there, once.
 - **Deletion.** Observed: deleting the parent deleted the native child (404), each with its
   `session.deleted`; the plugin dropped the child's report state, and its roster entry stayed, as for
   any deleted child.

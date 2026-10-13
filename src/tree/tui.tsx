@@ -42,7 +42,7 @@ export function summaryLine(summary: Summary) {
  */
 export function addTreeStatus(ctx: Plugin.Context) {
   const courier = ctx.client.rpc(treeRpc)
-  // Without a location of its own the TUI would ask the server's default one, which may not have loaded the plugin.
+  // A request with no location goes to the server's default one, which may not have loaded the plugin: the TUI's instead.
   const location = () => ctx.location ?? ctx.data.location.default()
   const [changed, setChanged] = createSignal(0)
   let settling: ReturnType<typeof setTimeout> | undefined

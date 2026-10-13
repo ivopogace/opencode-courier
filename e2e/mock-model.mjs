@@ -253,6 +253,14 @@ function decide(body) {
         { tool: "courier_spawn", args: { task: "CHILD-SILENT", group: "pair" } },
       ],
     }
+  // COURIER-TUI (e2e/tui.sh) starts two children at once in one group: one reports, the other asks for a permission first.
+  if (recent.includes("COURIER-TUI"))
+    return {
+      calls: [
+        { tool: "courier_spawn", args: { task: "Report back to your parent.", group: "pair" } },
+        { tool: "courier_spawn", args: { task: "CHILD-ASKS", group: "pair" } },
+      ],
+    }
   // COURIER-GROUP starts two children at once in one group; with -BLOCKED, the second needs a decision first.
   const group = recent.match(/COURIER-GROUP(-BLOCKED)?/)
   if (group)

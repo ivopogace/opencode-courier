@@ -1,0 +1,173 @@
+# Smoke test with a real model
+
+`e2e/run.sh` proves the plumbing with a scripted model. `e2e/real-model.sh` checks that a real model
+uses the tools as meant: the parent spawns sessions instead of doing the work itself, ends its turn
+instead of waiting or polling, each child calls `courier_send` with a status before it stops, and
+each report wakes the idle parent. It is not part of CI. Re-run it after any change to a model-facing
+string: `src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or a tool description.
+
+## Running it
+
+```bash
+bun install
+npm install --prefix <scratch>/oc @opencode/cli@2.0.28
+OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
+```
+
+It sets up the same throwaway home directory, project and server as `run.sh`, with the plugin loaded
+from the local build. The default model, `opencode/longcat-2.5-preview-free`, is free on [OpenCode
+Zen](https://opencode.ai/zen) and needs no key: the provider is declared in `opencode.json` with
+Zen's endpoint, so OpenCode's model catalog is not needed either. Free models are rate limited;
+check Zen's terms before sending them anything private (the prompts here are trivial on purpose).
+
+| Variable | Default | |
+|---|---|---|
+| `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `longcat-2.5-preview-free` | The model, as OpenCode names it. |
+| `COURIER_BASE_URL` | Zen's endpoint for `opencode` | Declares the provider in `opencode.json` as an OpenAI-compatible endpoint with this URL. Set it empty to use OpenCode's catalog instead, with the provider's usual key variable, such as `ANTHROPIC_API_KEY`. |
+| `COURIER_API_KEY_ENV` | | For a declared provider, the name of the variable holding its key. The config refers to it as `{env:NAME}`, so the key is never written to a file. |
+| `COURIER_SCENARIO` | | `permission`, `question` or `recursive` for the scenarios below; the fan-out by default. |
+| `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the final reply must hold. |
+| `COURIER_FILES` | per scenario | With `recursive`: the files, relative to the project, that must hold those values, in the same order. |
+| `COURIER_MAX_DEPTH` | `3` | With `recursive`: the `maxDepth` the checker holds the tree to. |
+| `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server on the same data directory. |
+| `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
+| `COURIER_NATIVE` | | `1` loads the plugin with [`nativeChildren`](../reference.md#native-child-sessions) on. |
+| `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, and then for the children. |
+| `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |
+
+Each run prints a timeline of every session's turns and tool calls, its checks and notes, and keeps
+`parent.json`, `child-<id>.json`, `timeline.txt`, `summary.json` and the server log in the work
+directory. Turns are read from the transcript: OpenCode records an `idle` message when a turn ends,
+and a delivered message opens a new turn when it arrived after that marker; otherwise it was steered
+into the running turn. The exit code is 0 when every check passes and 1 when one fails; it is 2 when
+checks fail and model requests failed too, usually HTTP 429 from a free model, since the run then says
+more about the provider than the plugin: run it again. Run it in a plainly named directory (the
+default temp dir is): a model that copies a long, odd path into its children's tasks gets it wrong,
+and the files land elsewhere.
+
+## The fan-out
+
+The default. The parent is asked:
+
+> Have two helper sessions work in parallel and report back to you. One runs the shell command
+> `` `sleep 20; echo $((17 * 23))` ``, the other runs `` `sleep 40; echo $((2 ** 10))` ``, and each
+> reports the number it printed. Start them with courier_spawn and do not run the commands
+> yourself. When both have reported back, reply with one line: RESULTS \<first\> \<second\>
+
+The sleeps stand in for real work, so each report finds the parent idle, 20 seconds apart. Eight
+checks: the parent spawned two children; it ended its first turn after spawning, with no reports in
+it; it did not poll (any `courier_status`, `courier_children` or `sleep` right after spawning, or more
+than one in a later turn); both children called `courier_send` to the parent; both reports woke it
+(each arrived after its first turn and got a reply); each report carries a status; each holds its
+child's answer; and the final reply holds both. A `courier_later` check-in is not a report.
+
+The README's [Quickstart](../../README.md#quickstart) prompt is a shorter wording of the same task:
+set `COURIER_PROMPT` to it. A [join group](../reference.md#join-groups) is checked by adding *Start
+them with courier_spawn, both in one join group named "pair", so that you are woken once with both
+reports*; the checker takes the group's message as the report of each member it lists.
+
+| Model | OpenCode | Result |
+|---|---|---|
+| `longcat-2.5-preview-free` | 2.0.28 | 8/8 in 9 model requests: a `split: 2 parts: …` line, both children in one join group it named itself, one woken turn, every report `done`, `RESULTS 391 1024`. |
+| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 8/8 in 11 requests; both children recorded with the parent as `parent_id` and an empty ruleset. |
+| `longcat-2.5-preview-free`, two `isolate: true` helpers that each commit a file | 2.0.26 | Pass: both created `courier/<their session ID>`, committed on it and named it in their report. |
+| `nemotron-3-ultra-free` | 2.0.24, earlier wording | Ended its first turn in four runs of five; in the fifth a 44-second provider step let the first report land in the open turn. |
+| `muse-spark-1.3-contributor-free` | 2.0.24, earlier wording | Passed every run that was not rate limited. |
+| `mimo-v2.6-flash-free` | 2.0.24, earlier wording | Sends `delayMinutes` as a string, which `courier_later` takes. |
+| `big-pickle` | 2.0.24, earlier wording | Right as a parent; rate limits stopped its woken turn and one child before `courier_send`. |
+
+## The permission relay
+
+`COURIER_SCENARIO=permission`. The project config makes `shell` ask for any command containing
+`courier-permission`, and the parent is asked:
+
+> Have a helper session run the shell command `` `echo courier-permission-$((6 * 7))` `` and report
+> back what it printed. Start it with courier_spawn and do not run the command yourself. When it has
+> reported back, reply with one line: RESULT \<what it printed\>
+
+The script plays the person: it answers the parent's question form with the option for "once", or
+replies "Allow it once." if the parent asked in text. Six checks: the parent spawned a child, which
+asked, and the parent was told; it did not answer by itself; it asked the person; it passed `once` on
+with `courier_answer`; the child ran its command and reported `courier-permission-42`; the final reply
+holds it. The parent is started over the HTTP API, as a TUI session would be: `opencode run` cancels
+question forms in its session while attached.
+
+`COURIER_PERSON=other-server` adds a second server on the same data directory: the person dismisses
+the parent's form and sends "Allow it once." through the second server, whose `courier_answer` holds
+no request, so the fourth check becomes "the parent's courier_answer on the other server passed
+nothing on and named another server". The person then allows the request in the child's own session
+on the first server. With `COURIER_NATIVE=1` the script answers the child's request directly, as
+OpenCode's prompt in the parent's view would, and fails a parent that asks with a form.
+
+| Model | OpenCode | Result |
+|---|---|---|
+| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 6/6: told with the `shown="native"` notice, the parent wrote one line (*The helper session is waiting on your permission to run the shell command.*) and ended its turn; after the person allowed it, it was told `answered="once"` and replied `RESULT courier-permission-42`. |
+| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` before native children got their own notice | 2.0.28 | 6/6, on the notice every other child gets: asked the person with a question form offering `once`, `always` and `reject`, and passed `once` on with `courier_answer`. |
+| `longcat-2.5-preview-free` | 2.0.26 | Pass, with the status on `courier_send` and again with the skill listed. |
+| `longcat-2.5-preview-free`, `COURIER_PERSON=other-server` | 2.0.24, earlier wording | Pass: told the person the sentence `courier_answer`'s result gives it to pass on. |
+
+## The question relay
+
+`COURIER_SCENARIO=question`. The parent is asked:
+
+> Start one helper session with courier_spawn and give it this task, word for word: "Find out from
+> the user which greeting they want to use: Hello, Hi or Hey. Then report the chosen greeting to the
+> session that started you." Do not ask the user anything yourself before the helper does, and do
+> not do the task yourself. When the helper reports back, reply with one line: GREETING \<the
+> greeting it reported\>
+
+The child is not told how to ask: the brief's line on the question tool is part of the test. The
+script waits for the parent to ask the person, with a question form or in text, and answers with
+`COURIER_ANSWER`. Six checks: the parent spawned a child that asked, and asked the person; it did not
+answer by itself; it asked with the child's options; it passed the answer on (a linked question,
+`courier_answer` or `courier_send`); the child got it and reported it; the final reply holds it. Its
+notes say how the child asked and how the answer went on. With `COURIER_NATIVE=1` the script answers
+the child's form, as the TUI's view of the parent does, and fails a parent that asks with its question
+tool.
+
+| Model | OpenCode | Result |
+|---|---|---|
+| `longcat-2.5-preview-free` | 2.0.28 | 6/6: the child asked with its question tool, the parent asked with a form holding its three options, `Hi` went on through the linked question, the child reported `done` 6 s later, `GREETING Hi`. |
+| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 6/6: the parent wrote one line (*The helper session is waiting for your answer to its question about which greeting you'd like to use.*) and nothing else; told `answered="elsewhere"`, it replied `GREETING Hi`. |
+
+## Recursive orchestration
+
+`COURIER_SCENARIO=recursive`: a job whose shape calls for one split at the root and one more below it,
+with the `courier-orchestrate` skill listed in every session. The parent is asked:
+
+> Have this job done through helper sessions started with courier_spawn, one session per part, and
+> do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the
+> session that gets it hands to two sessions of its own: one runs `` `sleep 20; echo $((17 * 23))` ``
+> and writes the number it printed to numbers/a.txt, the other runs `` `sleep 20; echo $((2 ** 10))` ``
+> and writes the number it printed to numbers/b.txt. Part "count" runs `` `sleep 20; echo $((99 - 57))` ``
+> and writes the number it printed to count/total.txt. When the parts have reported back, read the
+> three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
+
+The root should start two sessions and end its turn; the "numbers" session starts two of its own,
+ends its turn, checks both files when their reports wake it and reports once to the root; the "count"
+session does its part itself; the root reads the three files and replies `RESULTS 391 1024 42`. The
+checker (`e2e/real-model-recursive.mjs`) reads every session reached from the root through its
+`courier_spawn` calls, waits until the tree has settled, and makes nine checks: the root spawned at
+least two children in its first turn; it ended that turn with no reports in it; no orchestrator polled
+(`courier_status`, `courier_children`, `courier_tree`, `sleep`, by the fan-out's rule); at least one
+child spawned at least two of its own in one turn, and no session ever started exactly one; no session
+went past `maxDepth`; every spawned session reported to its parent with a status; each sub-orchestrator
+reported upward once, after its own children had reported to it; the files hold the expected values;
+and the root's final reply holds them. Its notes say which sessions loaded the skill, used a join group,
+scheduled a check-in or had a spawn refused, and each report's status.
+
+| Model | OpenCode | Result |
+|---|---|---|
+| `longcat-2.5-preview-free` | 2.0.26 | 8/9: every file right and all four reports `done` through two groups; only the root's last turn was lost to a refused request. Two more runs were refused by Zen's free quota (`provider.quota`) after the root had loaded the skill and split into a group. |
+| `longcat-2.5-preview-free` | 2.0.26, before rule 1 started the remaining parts only when 2 or more remain | 9/9, twice, in 26 and 24 requests: the root loaded the skill, the "numbers" session split into a group of its own, every report `done`. |
+| `nemotron-3-ultra-free` | 2.0.26, earlier wording | 6/9: the right tree and every file, but the root did not end its turn (it scheduled, cancelled and polled until the reports were steered in), and the "numbers" session reported `done` twice, before its halves had. |
+| `muse-spark-1.3-contributor-free` | 2.0.26, earlier wording | Inconclusive: rate limited on its first request. |
+
+## Caveats
+
+This is a smoke test, not a benchmark: a handful of runs per model, on free models that are rate
+limited and change without notice, and Zen publishes no versions beyond the names. A model that passes
+here can still poll or forget to report on a harder task, so the `courier_later` safety net in [Using
+it](../../README.md#using-it) still applies. Which session loads the skill varies from run to run;
+on one-result tasks such as the fan-out and the relays, models do not load it. A row marked *earlier
+wording* predates a model-facing change since; re-run it before relying on it.

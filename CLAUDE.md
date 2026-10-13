@@ -2,12 +2,14 @@
 
 opencode-courier is an OpenCode V2 plugin that lets sessions spawn, message and wake each other
 without polling. README.md is the user-facing reference and `docs/reference.md` the long form of the
-behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin.
+behaviour; read both, and `docs/maintainers/plugin-api-notes.md`, before changing the plugin. The
+maintainer docs are in `docs/maintainers/`: `development.md` (commands, suites, CI), `architecture.md`,
+`plugin-api-notes.md` (the host's traps), `real-model.md` and `releasing.md`.
 
 ## Layout
 
-`src/` is split into modules by feature, hexagonal inside; `docs/research/layout.md` holds the layout,
-the import rules and the reasons for them.
+`src/` is split into modules by feature, hexagonal inside; `docs/maintainers/architecture.md` has the
+layout, the import rules and the reasons for them, the storage keys and the hub's version skew.
 
 `src/`:
 
@@ -116,13 +118,15 @@ the import rules and the reasons for them.
   (`open(registry, jobs)`) and event modules (`watchFromHub(hub, modules)`) are registered by
   `src/index.ts` and live in the closures the hub runs, the copy loaded last's, never in hub state;
   they run through the first loaded member, which may be another copy's, so they use only the ports
-  every hub-v2 member has. The version-skew rule is in `docs/reference.md`. `storage.ts`: storage
+  every hub-v2 member has. The version-skew rule is in `docs/maintainers/architecture.md`. `storage.ts`: storage
   helpers and `processWide`, which only `hub.ts` uses. `json.ts`: readers for untyped JSON.
   `bounded.ts`: the bounded `Set` and `Map` of remembered ids; it imports nothing of the plugin's.
   `version.ts`: the log line on an OpenCode version other than the pinned one.
 
 `test/imports.test.ts` checks these import rules, `tree/store.ts`'s privacy and that no other file
-names its key prefixes; `test/store.test.ts` pins the exact keys and values the stores write.
+names its key prefixes; `test/store.test.ts` pins the exact keys and values the stores write;
+`test/links.test.ts` resolves every relative Markdown link and `#anchor` in README.md, CLAUDE.md,
+`docs/**` and `.claude/**`, so a moved file or heading fails it.
 `test/tui.test.tsx` renders the TUI part against a fake TUI context with OpenTUI's `testRender`
 (`bunfig.toml` preloads its Solid transform); `test/inbox.test.tsx` drives the asks inbox's dialogs
 against one, and `test/person-rpc.test.ts` its RPC. `test/notices.test.ts` snapshots every `text.ts`,
@@ -141,18 +145,18 @@ set the plugin's storage keys in OpenCode's database. New behaviour gets a scena
 `tui.sh`, in CI after `run.sh`: the TUI part live, the TUI in `tmux` (CI installs it with `apt-get`),
 its footer entry and the RPC behind it, from `dist/` and from the package `opencode plugin add` installs.
 `two-servers.sh`, not in CI: two servers on one data directory; its findings are in
-`docs/plugin-api-notes.md`. `real-model.sh` (with `real-model.mjs`, `real-model-permission.mjs`,
+`docs/maintainers/plugin-api-notes.md`. `real-model.sh` (with `real-model.mjs`, `real-model-permission.mjs`,
 `real-model-question.mjs` and `real-model-recursive.mjs` for `COURIER_SCENARIO=permission`, `question`
 and `recursive`): smoke test with a real model, free on OpenCode Zen by default, not in CI. Re-run it
 after any change to `src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or a tool description
-(in a `src/**/tools.ts`), which is every model-facing string; `docs/real-model.md`
-describes it and its results.
+(in a `src/**/tools.ts`), which is every model-facing string; `docs/maintainers/real-model.md`
+describes it and holds a results table per scenario, which a re-run updates.
 
 `.github/workflows/ci.yml`: both suites on every push to `main` and every pull request (the live one is
 `run.sh` then `tui.sh`), and the live suite once more on the `latest` OpenCode release, allowed to fail. Its `sonar` job scans
 `src/` on SonarCloud with the unit coverage and fails when the quality gate does: no new bug,
 vulnerability or unreviewed hotspot, and at least 80% coverage on new code. `release-start.yml`,
-`release-tag.yml` and `release.yml`: the release flow, `docs/releasing.md`.
+`release-tag.yml` and `release.yml`: the release flow, `docs/maintainers/releasing.md`.
 
 ## Commands
 
@@ -172,15 +176,16 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
 - The V2 plugin API is pinned to an exact version, `@opencode/plugin@2.0.28`, as devDependency and
   as peer dependency alike (the peer picks the copy `opencode plugin add` installs next to the
   plugin, which OpenCode 2.0.25 and later replace with their own at load, see
-  `docs/plugin-api-notes.md`; a unit test keeps the two equal; the exact `effect` peer and
+  `docs/maintainers/plugin-api-notes.md`; a unit test keeps the two equal; the exact `effect` peer and
   devDependency move with it, to the `effect` the new `@opencode/plugin` depends on), and the live
   test installs `@opencode/cli` at that same version. Read the API's types in `node_modules` rather than
   guessing; the OpenCode V2 source is on the `v2` branch of https://github.com/anomalyco/opencode,
   with each release tagged (`v2.0.28`). A pin bump adds a row to README.md's Supported OpenCode
   version table, moves the version README names elsewhere (Quickstart, OpenCode V2 native, the
-  install command; a unit test checks them), and adds a section to `docs/plugin-api-notes.md` on
-  what changed. It also reads OpenCode's root `package.json` catalog at the new tag for `@opentui/*`
-  and `solid-js`, and moves the devDependencies `@opentui/core`, `@opentui/solid`, `solid-js` and
+  install command, the terminal part's line under the table; a unit test checks the first three), and
+  updates the affected traps in `docs/maintainers/plugin-api-notes.md` and the version they are
+  current at; that file has no per-version sections. It also reads OpenCode's root `package.json`
+  catalog at the new tag for `@opentui/*` and `solid-js`, and moves the devDependencies `@opentui/core`, `@opentui/solid`, `solid-js` and
   `@opencode/theme` to its versions; they are never peers (the host provides them to the TUI part,
   and a peer broke `opencode plugin add`; a unit test checks).
 - Every tool is registered with `options: { codemode: false }`, returns metadata without

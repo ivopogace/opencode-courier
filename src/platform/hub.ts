@@ -5,7 +5,7 @@ import { processWide, type Registry, type Storage } from "./storage.js"
 
 /**
  * The plugin's process-wide state on `globalThis`, shared by every loaded copy; only this module puts
- * it there. `HUB_VERSION`, the fixed claim keys and version skew: docs/reference.md, § Several copies.
+ * it there. `HUB_VERSION`, the fixed claim keys and version skew: docs/maintainers/architecture.md, § Several copies.
  */
 export const HUB_VERSION = 2
 

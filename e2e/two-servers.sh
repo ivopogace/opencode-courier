@@ -17,7 +17,7 @@
 # courier_answer there. ROUNDS (default 10) sets how many courier_later messages are scheduled each
 # time. Each server's event stream (/api/event) is recorded in events-a.sse and events-b*.sse,
 # which shows which server queued each message. Results and the setup are in
-# docs/plugin-api-notes.md; the script exits 1 when a result differs from what was seen at the
+# docs/maintainers/plugin-api-notes.md; the script exits 1 when a result differs from what was seen at the
 # pinned version, so a host where two servers behave differently stands out. Whether the two
 # schedulers' ticks fall within milliseconds of each other depends on how long each server takes to
 # set the plugin up, and varies from run to run; since the owner key, only one of them delivers

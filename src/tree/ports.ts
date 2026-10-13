@@ -16,7 +16,7 @@ export type RosterStorage = Storage
 /** How a session's wait for a report ended: it reported to its parent, or its turn failed or was interrupted. */
 export type Settled = "report" | "failed" | "interrupted"
 
-/** The notes kept of a spawned session's report state; docs/reference.md has each. */
+/** The notes kept of a spawned session's report state; docs/maintainers/architecture.md has each. */
 export type ReportField = "prompt" | "settled" | "progress" | "told" | "stopped"
 
 /** A report note as read: when it was made, and for `settled` how the wait ended and the report's status, as stored. */

@@ -217,10 +217,26 @@ export function questionNotice(asked: Asked, cutOff?: CutOff) {
   ].join("\n")
 }
 
+/**
+ * What the top session is told about a native child's question, which OpenCode shows the person in the
+ * top session's own view: they answer it there, so the top session does not ask them again.
+ */
+export function nativeQuestionNotice(asked: Asked) {
+  return [
+    `This session, "${asked.title}", ${origin(asked.startedBy)} asks the question below and waits for the answer.`,
+    ...describeQuestions(asked.questions),
+    "",
+    "OpenCode shows this question to the person you are working with in your own session, and they answer it there; you will be told once it is answered.",
+    "Do not ask them yourself, with your question tool or in your reply, and do not answer it: at most tell them in one line that this session's question waits for them, then end your turn.",
+    `If they give you the answer some other way, call courier_answer with sessionID "${asked.sessionID}", requestID "${asked.requestID}" and answers: one entry per question, in order, each the label they chose or the text they gave (a list of labels where a question allows several).`,
+  ].join("\n")
+}
+
 /** How a question was settled without the top session, as its settled notice puts it. */
 function settledHow(asked: Asked, how: Elsewhere) {
-  if (how.by === "child") return `answered in its own session (${answeredText(asked.questions, how.answers)})`
-  if (how.by === "dismissed") return "dismissed in its own session, without an answer"
+  const where = asked.native ? "in the form OpenCode showed the person" : "in its own session"
+  if (how.by === "child") return `answered ${where} (${answeredText(asked.questions, how.answers)})`
+  if (how.by === "dismissed") return `dismissed ${where}, without an answer`
   return `ended without an answer: its question call failed (${how.error})`
 }
 

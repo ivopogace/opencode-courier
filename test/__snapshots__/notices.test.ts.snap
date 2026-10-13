@@ -1289,6 +1289,30 @@ If you asked someone about it, tell them it is settled; there is nothing to pass
 That ends the session's turn, and then it does not report back on its own: if it stays quiet, message it with courier_send to have it carry on."
 `;
 
+exports[`questions question notices of a native child 1`] = `
+"This session, "Fix the bug", which you started with courier_spawn, asks the question below and waits for the answer.
+1. Greeting: Which greeting? (one of, or an answer of their own:)
+   - Hi: Short
+   - Hello
+2. Languages: Which languages? (any of, or an answer of their own:)
+   - English
+
+OpenCode shows this question to the person you are working with in your own session, and they answer it there; you will be told once it is answered.
+Do not ask them yourself, with your question tool or in your reply, and do not answer it: at most tell them in one line that this session's question waits for them, then end your turn.
+If they give you the answer some other way, call courier_answer with sessionID "ses_child", requestID "question_1" and answers: one entry per question, in order, each the label they chose or the text they gave (a list of labels where a question allows several)."
+`;
+
+exports[`questions question notices of a native child 2`] = `
+"The question question_1 of this session, "Fix the bug", was answered in the form OpenCode showed the person (User has answered your questions: "Which greeting?"="Hi", "Which languages?"="English, German". You can now continue with the user's answers in mind.), so it no longer waits on you.
+If you asked someone about it, tell them it is settled; there is nothing to pass on."
+`;
+
+exports[`questions question notices of a native child 3`] = `
+"The question question_1 of this session, "Fix the bug", was dismissed in the form OpenCode showed the person, without an answer, so it no longer waits on you.
+If you asked someone about it, tell them it is settled; there is nothing to pass on.
+That ends the session's turn, and then it does not report back on its own: if it stays quiet, message it with courier_send to have it carry on."
+`;
+
 exports[`questions DISMISSED 1`] = `"The person dismissed this question without answering it. Carry on without the answers, or report back with courier_send to the session that started you why you cannot."`;
 
 exports[`questions cutOffAnswer 1`] = `"Your question question_1 was cut off before it was answered; here is the answer. User has answered your questions: "Which greeting?"="Hi", "Which languages?"="English, German". You can now continue with the user's answers in mind."`;

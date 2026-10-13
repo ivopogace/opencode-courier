@@ -336,6 +336,11 @@ describe("questions", () => {
     expect(person.questionSettledNotice(asked, { by: "dismissed" })).toMatchSnapshot()
     expect(person.questionSettledNotice(asked, { by: "failed", error: "Error: boom" })).toMatchSnapshot()
   })
+  test("question notices of a native child", () => {
+    expect(person.nativeQuestionNotice({ ...asked, native: true })).toMatchSnapshot()
+    expect(person.questionSettledNotice({ ...asked, native: true }, { by: "child", answers })).toMatchSnapshot()
+    expect(person.questionSettledNotice({ ...asked, native: true }, { by: "dismissed" })).toMatchSnapshot()
+  })
   test("DISMISSED", () => expect(person.DISMISSED).toMatchSnapshot())
   test("cutOffAnswer", () => {
     expect(person.cutOffAnswer(asked, { answers })).toMatchSnapshot()

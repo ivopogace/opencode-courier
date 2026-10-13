@@ -1355,6 +1355,89 @@ describe("the question tool of a spawned session", () => {
   })
 })
 
+describe("the question of a native child, whose form OpenCode shows in the top session's view", () => {
+  const native = (ports: QuestionPorts, sessionID = "ses_child", parentID = "ses_parent") =>
+    childStore(ports.storage).record({ sessionID, parentID, title: "Fix the bug", directory: "/repo", isolated: false, createdAt: 1, native: true })
+
+  test("is told, not linked: the parent's own question asks as any other, and the person answers the child's form", async () => {
+    const { ports, store, told, tool, ask } = await setUp()
+    await native(ports)
+    const child = ask("ses_child")
+    await settle()
+
+    expect(told).toHaveLength(1)
+    expect(told[0].text).toContain('<courier from="ses_child" asks="question" request="question_1" shown="native">')
+    expect(told[0].text).toContain("OpenCode shows this question to the person you are working with in your own session")
+    expect(told[0].text).not.toContain('{"questions"')
+    expect((store.get("question/question_1") as any).native).toBe(true)
+
+    const parent = ask("ses_parent")
+    await settle()
+    formOf(tool, "ses_parent").answer([["Hi"]])
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value.content).not.toContain("passed on")
+    expect(Exit.isSuccess(parentExit) && parentExit.value.content).not.toContain("question_1")
+    expect(tool.forms.size).toBe(1)
+
+    formOf(tool, "ses_child").answer([["Hey"]])
+    const childExit = await exitOf(child)
+    expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [["Hey"]] })
+    await settle()
+    const settled = notices(told, "answered")
+    expect(settled).toHaveLength(1)
+    expect(settled[0].text).toContain('<courier from="ses_child" answered="elsewhere" request="question_1">')
+    expect(settled[0].text).toContain("was answered in the form OpenCode showed the person")
+    expect(store.has("question/question_1")).toBe(false)
+  })
+
+  test("courier_answer still answers it, withdrawing the child's form", async () => {
+    const { ports, tool, ask } = await setUp()
+    await native(ports)
+    const child = ask("ses_child")
+    await settle()
+
+    expect(await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })).toMatchObject({
+      answered: true,
+    })
+    const childExit = await exitOf(child)
+    expect(Exit.isSuccess(childExit) && childExit.value.output).toEqual({ answers: [["Hi"]] })
+    expect(tool.cancelled).toHaveLength(1)
+  })
+
+  test("once its call is cut off, its form is gone, and the parent's question is linked to it again", async () => {
+    const { ports, told, tool, ask } = await setUp()
+    await native(ports)
+    const child = ask("ses_child")
+    await settle()
+    await Effect.runPromise(Fiber.interrupt(child))
+    await settle()
+    expect(notices(told, "stopped")[0].text).toContain('{"questions"')
+
+    const parent = ask("ses_parent")
+    await settle()
+    formOf(tool, "ses_parent").answer([["Hello"]])
+    const parentExit = await exitOf(parent)
+    expect(Exit.isSuccess(parentExit) && parentExit.value.content).toContain("passed on to session ses_child as a message")
+  })
+
+  test("a native child of an isolated session is linked as before: its form shows in that session's view, not the top's", async () => {
+    const { ports, told, tool, ask } = await setUp()
+    await childStore(ports.storage).record({ sessionID: "ses_child", parentID: "ses_parent", title: "Lead", directory: "/wt", isolated: true, createdAt: 1 })
+    await native(ports, "ses_grandchild", "ses_child")
+    const grandchild = ask("ses_grandchild")
+    await settle()
+    expect(told[0].sessionID).toBe("ses_parent")
+    expect(told[0].text).not.toContain('shown="native"')
+
+    const parent = ask("ses_parent")
+    await settle()
+    formOf(tool, "ses_parent").answer([["Hey"]])
+    expect((await exitOf(parent)).toString()).toContain("passed on")
+    const grandchildExit = await exitOf(grandchild)
+    expect(Exit.isSuccess(grandchildExit) && grandchildExit.value.output).toEqual({ answers: [["Hey"]] })
+  })
+})
+
 describe("noticeCutOff", () => {
   test("tells the parent about a question a restart cut off, once, and drops stale ones", async () => {
     const { ports, store, told } = await setUp()

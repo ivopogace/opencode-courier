@@ -25,6 +25,8 @@ export interface Asked {
   readonly startedBy?: string
   readonly questions: ReadonlyArray<Prompt>
   readonly askedAt: number
+  /** A native child's, whose form OpenCode shows the person in the top session's own view; not linked while shown. */
+  readonly native?: true
 }
 
 /** How a question was settled without the top session: in the asking session, or not at all. */

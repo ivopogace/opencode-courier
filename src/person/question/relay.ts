@@ -4,12 +4,13 @@ import type { Answers, Elsewhere, Outcome, Prompt, Question, QuestionPorts, With
 import {
   answeredText,
   DISMISSED,
+  nativeQuestionNotice,
   passedNote,
   questionNotice,
   questionSettledNotice,
   unlinkedNote,
 } from "../text.js"
-import { lineage } from "../../tree/index.js"
+import { lineage, nativeRootOf } from "../../tree/index.js"
 import { deliver, forget, tell, tellCutOff } from "./answer.js"
 import { closingSoon } from "./lifecycle.js"
 import {
@@ -51,7 +52,8 @@ async function relay(ports: QuestionPorts, question: Question) {
   shared.questions.set(question.requestID, question)
   try {
     await ports.storage.set(keyOf(question.requestID), storedOf(question) as never)
-    await tell(ports, question, questionNotice(question), { asks: "question", request: question.requestID })
+    if (question.native) await tell(ports, question, nativeQuestionNotice(question), { asks: "question", request: question.requestID, shown: "native" })
+    else await tell(ports, question, questionNotice(question), { asks: "question", request: question.requestID })
     return true
   } catch (error) {
     // The question stays registered and the call waits on: courier_status lists it, and an answer
@@ -140,14 +142,17 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
       const acceptance = () => (acceptancePromise ??= Effect.runPromise(Deferred.await(accepted)))
       // Handed one outcome only: a second, while the first still ends the call, is not taken.
       let handed = false
+      const top = chain.at(-1)!.parentID
       const question: Question = {
         requestID: current.newID(),
         sessionID: context.sessionID,
-        top: chain.at(-1)!.parentID,
+        top,
         title: chain[0]!.title,
         ...(chain.length > 1 ? { startedBy: chain[0]!.parentID } : {}),
         questions: promptsOf(input),
         askedAt: current.now(),
+        // OpenCode shows a native child's form in its native root's view: when that is the top's, the person answers there.
+        ...(nativeRootOf(chain) === top ? { native: true as const } : {}),
         directory,
         call: (outcome) => {
           if (handed) return acceptance().then(() => false)
@@ -203,6 +208,10 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
     }) as ReturnType<Execute>
 }
 
+/** Whether the top session's question call may be linked to a question: not a native child's while its own form is shown. */
+const linkable = (question: Question, sessionID: string) =>
+  question.top === sessionID && !question.link && !isPassing(question.requestID) && !(question.native && question.call)
+
 /**
  * The waiting question a top session's call asks again, the oldest if several: the same question with
  * the same choices, in any order. Choices alone would let an unrelated yes-or-no answer a child's.
@@ -212,9 +221,7 @@ function linkFor(sessionID: string, questions: ReadonlyArray<Prompt>) {
   return [...shared.questions.values()]
     .filter(
       (question) =>
-        question.top === sessionID &&
-        !question.link &&
-        !isPassing(question.requestID) &&
+        linkable(question, sessionID) &&
         choices(question.questions) === asked.choices &&
         wording(question.questions) === asked.wording,
     )
@@ -228,9 +235,7 @@ function linkFor(sessionID: string, questions: ReadonlyArray<Prompt>) {
 function unlinkedResult(result: ToolResult, sessionID: string, questions: ReadonlyArray<Prompt>): ToolResult {
   if (typeof result.content !== "string") return result
   const asked = choices(questions)
-  const similar = [...shared.questions.values()].filter(
-    (question) => question.top === sessionID && !question.link && !isPassing(question.requestID) && choices(question.questions) === asked,
-  )
+  const similar = [...shared.questions.values()].filter((question) => linkable(question, sessionID) && choices(question.questions) === asked)
   if (!similar.length) return result
   return { ...result, content: `${result.content}\n${unlinkedNote(similar)}` }
 }

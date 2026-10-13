@@ -54,9 +54,7 @@ export async function listChildren(ports: CourierPorts, parentID: string) {
 
 /** One roster entry as courier_children shows it: what courier_status reports with its directory and group standing, or the error it gave. */
 export async function described(ports: CourierPorts, entry: RosterEntry) {
-  const group = entry.group
-    ? { group: { name: entry.group, report: await groupStore(ports.storage).member(entry.parentID, entry.group, entry.sessionID).then(standingOf, () => "unknown") } }
-    : {}
+  const group = entry.group ? { group: { name: entry.group, report: await standingIn(ports, entry, entry.group) } } : {}
   const roster = { directory: entry.directory, isolated: entry.isolated, created: entry.createdAt, ...group }
   try {
     return { ...(await status(ports, { sessionID: entry.sessionID })), ...roster }
@@ -68,6 +66,11 @@ export async function described(ports: CourierPorts, entry: RosterEntry) {
       error: describeFailure("courier_status", error).message,
     }
   }
+}
+
+/** A child's standing in the join group its roster entry names, `unknown` when that cannot be read. */
+export function standingIn(ports: Pick<CourierPorts, "storage">, entry: RosterEntry, group: string) {
+  return groupStore(ports.storage).member(entry.parentID, group, entry.sessionID).then(standingOf, () => "unknown" as const)
 }
 
 /** OpenCode leaves a tool call hanging when its metadata holds `undefined`, so results drop those keys. */

@@ -362,6 +362,24 @@ members have reported out of those that have not left. Nothing shows on the home
 session that started none. The TUI reads it through the plugin's RPC, `courier.summary`, and asks
 again after each change ([reference](docs/reference.md#in-the-terminal)).
 
+`/courier tree` opens a panel beside the session with the tree under it, as `courier_tree` reads it:
+
+```
+courier tree  [█████░░░░░] 1/2 reported
+▸ Report back to your parent.  idle · reported done · group pair held
+    ran 12s · last courier_send 3s ago · $0.00
+  CHILD-ASKS  waiting on you · owes a report · group pair out
+    asks permission: shell echo courier-asks
+```
+
+A row per session, indented by depth, with what it does, its report and its group's standing. A
+session that started others gets a bar of the parts reported: its children whose report arrived, out
+of those it started. A leaf gets how long it ran, its last tool call and its cost, and a paused one
+what it waits on; no session reports progress of its own. `↑`/`↓` select, `enter` opens the session,
+`s` stops it and everything under it, as `courier_stop` would, after you confirm, and `q` closes the
+panel. `/courier stop <session>` does the same from the prompt. The TUI also plays the
+`subagent_done` sound when a child reports, and notifies you when a join group's reports arrive.
+
 **What waits on you.** `ctrl+x k` (the leader key, then `k`), `/asks`, the command palette's
 "Courier: what waits on you", or a click on the footer's "waiting on you" opens the asks inbox: every
 permission request, question and form waiting anywhere in the open session's courier tree, oldest first,

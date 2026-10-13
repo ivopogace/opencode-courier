@@ -674,8 +674,10 @@ The package has three entrypoints: the server plugin (`.`, `dist/index.js`), a T
 `dist/tui.js`) and its RPC contract (`./rpc`, `dist/rpc.js`). The server finds the other two next to
 the first and reports `features: { server: true, tui: true, rpc: true }` in `GET /api/plugin`; it runs
 only the server plugin, and the TUI loads `tui` for a plugin with that feature (`docs/plugin-api-notes.md`,
-*TUI and RPC entrypoints*). The TUI part is a view: courier without a TUI attached, as under `opencode
-serve`, `opencode service` or the paired app, behaves the same, and no model sees anything of it.
+*TUI and RPC entrypoints*). The TUI part is a view and a shortcut: courier without a TUI attached, as
+under `opencode serve`, `opencode service` or the paired app, behaves the same. What it does, answering
+an ask or stopping a session, goes through the same paths as `courier_answer` and `courier_stop`, so a
+model sees only what those would tell it.
 
 **The status entry.** In the prompt's footer (`prompt.footer.status`), for the open session:
 
@@ -715,12 +717,82 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_�
 
 with `truncated: <maxTotal>` when the subtree was cut. An input without a `sessionID` is refused as
 `rpc.invalid_input`. The contract is `treeRpc` from `opencode-courier/rpc`, for a client's
-`client.rpc(treeRpc)`.
+`client.rpc(treeRpc)`. Two more methods serve the tree panel:
+
+- `courier.tree {sessionID}`: the panel's rows, read through `subtree()`, the report notes, the
+  sessions' times, messages and cost, their pending requests and the groups' standing. Each row:
+  `sessionID`, `parentID`, `title`, `depth` (a child of the session asked is at 1), `state`
+  (`running`, `waiting`, `idle` or `gone`), `outcome` of its last turn, `report` (`state`: `owed`,
+  `reported` or `ended`, with the report's `status` once reported, and `progressed`), `group`
+  (`name`, `standing`), `isolated`, `created`, `idle` (when its last turn ended, if it is not
+  running), `cost` in US dollars, `tool` (its last tool call's `name` and `at`, when it ran) and
+  `waits` (`{type: "permission", action, resources}` or `{type: "question", question}`); times in epoch
+  milliseconds. `truncated` as for the summary.
+- `courier.stop {sessionID, by}`: `courier_stop`'s `stop()` for `sessionID`, called from `by`, which
+  must be above it; answers `{stopped: [{sessionID, title, outcome}], cancelled: <count>}`, deepest
+  first, or fails with the declared error `refused` and `courier_stop`'s message.
+
+**The tree panel.** `/courier tree` (or *Courier session tree* in the command palette) opens the panel
+`courier-tree` in the `session.panel` slot, beside the open session (fullscreen when the session is
+too narrow to split): `courier_tree` for people. It reads the sessions under the open session as
+`courier_tree` does, at most `maxTotal` (past that, `first <maxTotal> shown`), in the order a tree is
+drawn, two spaces deeper per level:
+
+```
+courier tree  [█████░░░░░] 1/2 reported
+▸ Report back to your parent.  idle · reported done · group pair held
+    ran 12s · last courier_send 3s ago · $0.00
+  CHILD-ASKS  waiting on you · owes a report · group pair out
+    asks permission: shell echo courier-asks
+↑↓ select · enter open · s stop · r refresh · f fullscreen · q close
+```
+
+Each row's first line is the session's title, then what it does (`running`, `waiting on you`, `idle`,
+or `failed` and `interrupted` for an idle one whose last turn ended so, `gone` for one OpenCode no
+longer knows), its report since its last prompt (`owes a report`, `reported <status>` once it sent
+one, held with its group or delivered, `ended without a report` when its turn failed or was
+interrupted; nothing for a session spawned before report notes were kept), its join group's standing
+(`group <name> held`, `out`, how it left, or `released`), and `isolated`. Under it:
+
+- an **orchestrator**, any session with children among the rows, and the panel's own session in the
+  header, gets a bar of the parts reported: its children whose report arrived out of the children it
+  started;
+- a session **waiting on the person** gets one line per request: `asks permission: <action>
+  <resources>` or `asks: <its first question>`;
+- a **leaf** gets its activity: how long it ran (from its creation to the end of its last turn, or to
+  now while it runs), its last tool call and how long ago it was made, and what it has cost so far;
+  a `gone` one gets none.
+
+There is no progress a session reports of itself: a bar counts only reports courier noted. The panel
+asks again a second after the first of a burst of the status entry's events and of a tool call, a
+usage update or a rename (each ask reads every row's messages, so at most once a second), and redraws
+its times every second. Its keys, while it has the keyboard (it takes it when it opens; `<leader>left`
+and `<leader>right` move it between the session and the panel): `↑`/`k` and `↓`/`j` move the
+selection, `enter` opens the selected session, `s` stops it, `r` asks again, `f` toggles fullscreen
+and `q` closes the panel. Opening a session leaves the panel with the session it was opened in.
+
+**Stopping from the TUI.** `s` in the panel, or `/courier stop <session>` in the prompt (`/courier
+stop` alone lists the open session's tree to pick from), asks the person to confirm with the session's
+title and how many sessions are under it, then calls `courier.stop` with the open session as the
+caller: the same `stop()` as `courier_stop`, so only a session under the open one can be stopped,
+deepest first, its scheduled messages cancelled and its failure and silent-turn notices kept quiet,
+and the target's parent, when its turn was interrupted, is told with the usual notice unless it is the
+open session itself (the person is there to tell it). A toast says how many sessions were stopped and interrupted and how many
+scheduled messages were cancelled, or why the stop was refused. `/courier` with anything else shows its
+usage.
+
+**Attention.** The TUI part watches each message courier delivers (`session.inbox.enqueued` with
+courier's metadata): a join group's reports released to the session that started them call
+`attention.notify` with a notification when the terminal is not focused and the `done` sound; a
+child's report to its parent (a message with a status) plays the `subagent_done` sound, without a
+notification. A report held with its group sounds once, with its group's release. Each delivery is
+notified once per TUI.
 
 **The build.** `dist/tui.js` is bundled by `script/build-tui.ts` with OpenTUI's Solid transform and
 every package left external: the host provides `@opencode/plugin/tui`, `solid-js`, `@opentui/*` and
 `effect` to a TUI part, so the package declares none of them for it. `e2e/tui.sh` checks it live, in
-`tmux`.
+`tmux`: the footer entry, the panel opened with `/courier tree` on two children with its bar moving
+from 1/2 to 2/2 when the second reports, `q` closing it, and `/courier stop` with its confirm.
 
 ### The asks inbox
 

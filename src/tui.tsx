@@ -2,17 +2,16 @@
 // script/build-tui.ts, with every package left to the host, which provides them.
 import { Plugin } from "@opencode/plugin/tui"
 import { addAsksInbox } from "./person/tui.js"
-import { addTreeStatus } from "./tree/tui.js"
+import { addTreeAttention, addTreePanel, addTreeStatus } from "./tree/tui.js"
 
 export default Plugin.define({
   id: "courier.tui",
   setup: (ctx) => {
     const inbox = addAsksInbox(ctx)
     // The footer's "waiting on you" opens the inbox.
-    const releaseStatus = addTreeStatus(ctx, (sessionID) => void inbox.open(sessionID))
+    const cleanups = [inbox.cleanup, addTreeStatus(ctx, (sessionID) => void inbox.open(sessionID)), addTreePanel(ctx), addTreeAttention(ctx)]
     return () => {
-      releaseStatus()
-      inbox.cleanup()
+      for (const cleanup of cleanups.toReversed()) cleanup()
     }
   },
 })

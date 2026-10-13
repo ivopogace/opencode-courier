@@ -21,8 +21,8 @@ the import rules and the reasons for them.
 - `skill.ts`: the `courier-orchestrate` skill and its text, registered through the skill domain; it
   imports only `kernel/`.
 - `tui.tsx`: the package's `tui` entrypoint, a second composition root, adding each module's TUI part
-  (`addAsksInbox`, then `addTreeStatus`, whose "waiting on you" opens the inbox); it imports only
-  `@opencode/plugin/tui` and the modules' `tui.tsx` and `rpc.ts`.
+  (`addAsksInbox`, then `addTreeStatus`, whose "waiting on you" opens the inbox, `addTreePanel` and
+  `addTreeAttention`); it imports only `@opencode/plugin/tui` and the modules' `tui.tsx` and `rpc.ts`.
   Bundled alone to `dist/tui.js` by `script/build-tui.ts` (OpenTUI's Solid transform, every package
   external, as the host provides them); `tsconfig.build.json` leaves the `tui.tsx` files out and
   `tsconfig.tui.json` writes `dist/tui.d.ts`. `rpc.ts`: the `rpc` entrypoint, the modules' RPC
@@ -61,9 +61,11 @@ the import rules and the reasons for them.
   reads (`lineage`, `allEntries`, `answeringTop`). Inbound: `tools.ts` the seven tree tools (`addTreeTools`);
   `rpc.ts` the tree's RPC contract (`treeRpc`, Standard Schema from `effect`'s `Schema`), which imports only
   `@opencode/plugin/rpc` and `effect`, and `rpc-handlers.ts` its server side (`registerTreeRpc`, called
-  from `src/index.ts` after the tools), whose `summary` is `summary.ts`'s, read through the subtree walk,
-  `busy`, the pending port and `groupStanding`; `tui.tsx` the TUI part, the prompt footer's status entry
-  (`addTreeStatus`), which imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, `rpc.ts` and `text.ts`;
+  from `src/index.ts` after the tools with the stop ports), whose `summary` is `summary.ts`'s, read through the subtree walk,
+  `busy`, the pending port and `groupStanding`, whose `tree` is `panel.ts`'s (the tree panel's rows: the
+  subtree walk, the report notes, each session's times, last tool call, cost and pending requests) and whose
+  `stop` is `stop.ts`'s; `tui.tsx` the TUI part, the prompt footer's status entry (`addTreeStatus`), the
+  tree panel and the `/courier` command (`addTreePanel`) and the report sounds (`addTreeAttention`), which imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, `rpc.ts` and `text.ts`;
   `events.ts` `treeEvents`, which tells a parent that a child's turn failed or ended without a report,
   with `waitsOn` and `together` to compose the `Waits` port the silent-turn rule asks, supplied by
   `person/`, `scheduling/` and `webhook/`; `context.ts` the `context` hook naming each spawned

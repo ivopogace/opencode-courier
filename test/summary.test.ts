@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { DEFAULT_LIMITS, type RosterEntry } from "../src/tree/domain.js"
 import { holdReport, joinGroup, leaveGroup } from "../src/tree/group.js"
-import type { CourierPorts, Pending } from "../src/tree/ports.js"
+import type { CourierPorts, Pending, StopPorts } from "../src/tree/ports.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
 import { childStore, groupStore } from "../src/tree/store.js"
@@ -141,9 +141,9 @@ test("registerTreeRpc serves the summary as the courier RPC's summary method", a
     },
   }
 
-  await registerTreeRpc(rpc as any, ports)
+  await registerTreeRpc(rpc as any, { courier: ports } as StopPorts)
 
-  expect(registered.map(({ definition }) => [definition.id, Object.keys(definition.methods)])).toEqual([["courier", ["summary"]]])
+  expect(registered.map(({ definition }) => [definition.id, Object.keys(definition.methods)])).toEqual([["courier", ["summary", "tree", "stop"]]])
   expect(await registered[0]!.handlers.summary({ sessionID: "ses_root" })).toEqual({ running: 1, waiting: 0, idle: 0, groups: [] })
 })
 

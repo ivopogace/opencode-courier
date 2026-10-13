@@ -6,7 +6,7 @@ import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import type { Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, bar, detailLines, duration, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
+import { activityLine, addTreeStatus, bar, detailLines, duration, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
 import tui from "../src/tui.js"
 
 const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
@@ -263,8 +263,8 @@ describe("the footer status entry", () => {
   test("the TUI part's cleanup stops listening and gives the slots back", async () => {
     const fake = fakeContext(async () => empty)
     const cleanup = await tui.setup(fake.context)
-    // The footer entry's and the panel's, and the attention's.
-    expect(fake.listeners.size).toBe(2)
+    // The footer entry's, the panel's and the asks inbox's, and the attention's.
+    expect(fake.listeners.size).toBe(3)
     expect(fake.typed.get("session.inbox.enqueued")?.size).toBe(1)
 
     await cleanup?.()
@@ -612,5 +612,20 @@ describe("attention", () => {
     fake.emit("session.inbox.enqueued", enqueued("msg_2", { source: "other", status: "done" }))
     fake.emit("session.inbox.enqueued", enqueued("msg_3", { source: "courier", status: "done" }, "user"))
     expect(fake.state.notified).toEqual([])
+  })
+})
+
+describe("the footer's waiting on you", () => {
+  test("a click opens the asks inbox for the open session, only while some wait on the person", async () => {
+    for (const [waiting, opened] of [[1, ["ses_parent"]], [0, []]] as const) {
+      const fake = fakeContext(async () => ({ ...empty, running: 1, waiting }))
+      const clicked: string[] = []
+      addTreeStatus(fake.context, (sessionID) => void clicked.push(sessionID))
+      const app = await renderFooter(fake.claim("prompt.footer.status"), () => "ses_parent")
+      await app.waitForFrame((frame) => frame.includes("courier 1 running"))
+
+      await app.mockMouse.click(4, 0)
+      expect(clicked).toEqual([...opened])
+    }
   })
 })

@@ -17,6 +17,7 @@ import {
   pendingQuestions,
   personEvents,
   portsAt,
+  registerPersonRpc,
   relayQuestions,
   type AnswerPorts,
   type Permissions,
@@ -168,6 +169,7 @@ export const courier = () => Plugin.define({
     // What the TUI part reads and its stop; a host that cannot register it still gets the rest, the tools included.
     await Promise.resolve()
       .then(() => registerTreeRpc(ctx.rpc, stopPorts))
+      .then(() => registerPersonRpc(ctx.rpc, { questions: questionPorts, permissions, maxTotal: limits.maxTotal }))
       .catch((error: unknown) => log(`courier rpc: not registered, the TUI part shows nothing and cannot stop: ${String(error)}`))
     await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, log }, event))
 

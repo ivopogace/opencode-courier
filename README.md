@@ -380,6 +380,15 @@ what it waits on; no session reports progress of its own. `↑`/`↓` select, `e
 panel. `/courier stop <session>` does the same from the prompt. The TUI also plays the
 `subagent_done` sound when a child reports, and notifies you when a join group's reports arrive.
 
+**What waits on you.** `ctrl+x k` (the leader key, then `k`), `/asks`, the command palette's
+"Courier: what waits on you", or a click on the footer's "waiting on you" opens the asks inbox: every
+permission request, question and form waiting anywhere in the open session's courier tree, oldest first,
+each with where it comes from (`Root › Fix the bug › Write tests`), its depth and its group. Choose one and
+answer it in a dialog, with no model in between: allow once, always or reject (with a reason if you give
+one), pick a question's answers or type your own, fill in a form. The session that started the tree hears
+once that it is settled, as when you answer in the child's own session, and does not ask you again. A new
+ask in the open tree plays OpenCode's permission or question sound ([reference](docs/reference.md#the-asks-inbox)).
+
 ## Webhooks
 
 The receiver is off unless the plugin has a `webhook` option. Put it in the **global** config

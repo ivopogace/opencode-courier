@@ -21,11 +21,12 @@ the import rules and the reasons for them.
 - `skill.ts`: the `courier-orchestrate` skill and its text, registered through the skill domain; it
   imports only `kernel/`.
 - `tui.tsx`: the package's `tui` entrypoint, a second composition root, adding each module's TUI part
-  (`addTreeStatus`, `addTreePanel`, `addTreeAttention`); it imports only `@opencode/plugin/tui` and the modules' `tui.tsx` and `rpc.ts`.
+  (`addAsksInbox`, then `addTreeStatus`, whose "waiting on you" opens the inbox, `addTreePanel` and
+  `addTreeAttention`); it imports only `@opencode/plugin/tui` and the modules' `tui.tsx` and `rpc.ts`.
   Bundled alone to `dist/tui.js` by `script/build-tui.ts` (OpenTUI's Solid transform, every package
   external, as the host provides them); `tsconfig.build.json` leaves the `tui.tsx` files out and
   `tsconfig.tui.json` writes `dist/tui.d.ts`. `rpc.ts`: the `rpc` entrypoint, the modules' RPC
-  contracts (`treeRpc`). Neither is imported by the server half.
+  contracts (`treeRpc`, `personRpc`). Neither is imported by the server half.
 - `kernel/protocol.ts`: what the models see of the protocol in every module: `envelope`, `END_TURN`,
   `clipText`, `defuse`, `describeFailure`, `Status`, `SPLIT_LINE` and `SKILL_ID`. It imports only
   `kernel/**` and `platform/json.ts`. `kernel/tool.ts`: `ToolEditor` and `rethrow` for the `tools.ts`
@@ -78,7 +79,11 @@ the import rules and the reasons for them.
   the question relay (events followed or left, forms shown, locations closing); `ports.ts` its
   `PersonPorts`, `PersonState` and `Form`, and the types `text.ts` takes of the files that own them;
   `tools.ts` adds `courier_answer`, which answers both a permission request and a question; `text.ts`
-  the permission, form and question notices, `REJECTED` and the result of `courier_answer`. It reads the
+  the permission, form and question notices, `REJECTED` and the result of `courier_answer`. `rpc.ts` the
+  person's RPC contract (`personRpc`, id `courier-person`: `asks`, `answer`), `rpc-handlers.ts` its server
+  side (`registerPersonRpc`, after the tree's), reading a tree's permission requests and questions from the
+  roster and answering a question through `answerForPerson`; `tui.tsx` the asks inbox (`addAsksInbox`), which
+  imports only what a `tui.tsx` may, and answers permissions and forms through the TUI's own client. It reads the
   tree through `tree/index.ts`; `tree/ports.ts` declares the question shape its `Pending` needs
   (`PendingPrompt`), and `index.ts` checks `Prompt` against it at compile time.
   `person/question/`: relaying a child's question by wrapping OpenCode's `question` tool. `index.ts` is
@@ -119,7 +124,8 @@ the import rules and the reasons for them.
 `test/imports.test.ts` checks these import rules, `tree/store.ts`'s privacy and that no other file
 names its key prefixes; `test/store.test.ts` pins the exact keys and values the stores write.
 `test/tui.test.tsx` renders the TUI part against a fake TUI context with OpenTUI's `testRender`
-(`bunfig.toml` preloads its Solid transform). `test/notices.test.ts` snapshots every `text.ts`,
+(`bunfig.toml` preloads its Solid transform); `test/inbox.test.tsx` drives the asks inbox's dialogs
+against one, and `test/person-rpc.test.ts` its RPC. `test/notices.test.ts` snapshots every `text.ts`,
 imported each by its path (the import test fails on one it misses), the skill and the twelve tools'
 descriptions and schemas, so a wording change shows up as a diff in `test/__snapshots__/`; update it
 with `bun test --update-snapshots`.

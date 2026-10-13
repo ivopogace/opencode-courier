@@ -484,7 +484,8 @@ pending requests as well). For a request the parent was told about, the plugin t
 short message marked `answered="<reply>"` saying the request is settled, so it does not pass on a
 stale question; after a rejection, the message adds that the child may have stopped, and that
 `courier_send` gets it going again. A `courier_answer` that comes later anyway passes nothing on and
-says so.
+says so. The TUI's [asks inbox](#the-asks-inbox) answers through OpenCode's reply too, so the parent hears
+the same.
 
 `courier_status` and `courier_children` list the requests a session waits on under `pending`, so a
 parent that has lost the message, after a compaction for example, can still find them. Whenever
@@ -519,7 +520,8 @@ session and answer there, or pick the provider under OpenCode's "Third-party sea
 Once a form the parent was told about is answered, or withdrawn unanswered (dismissed, given up on
 after OpenCode's minute, or cut off with the child's turn), the plugin sends a short message marked
 `settled="answered"` or `settled="cancelled"` and `form="<id>"`, so the parent does not send you to a
-form that is gone.
+form that is gone. The TUI's [asks inbox](#the-asks-inbox) lists and answers such forms, and the parent
+hears the same.
 
 The question tool's forms are not told this way: [the question relay](#a-child-that-asks-a-question)
 passes every question of a spawned session on. Forms of sessions the plugin did not spawn are
@@ -587,6 +589,9 @@ may not ask questions (OpenCode's `general` agent, or a `question` rule with `"e
 is refused as before, and the parent hears nothing. The child brief tells children to use the
 question tool when the person must decide; a child can still send its question with
 `courier_send` instead, and the parent then passes your answer back with `courier_send`.
+
+The TUI's [asks inbox](#the-asks-inbox) answers a question as `courier_answer` does; the top session hears it
+as a question answered in the child's own session.
 
 ## Roster
 
@@ -786,6 +791,76 @@ every package left external: the host provides `@opencode/plugin/tui`, `solid-js
 `effect` to a TUI part, so the package declares none of them for it. `e2e/tui.sh` checks it live, in
 `tmux`: the footer entry, the panel opened with `/courier tree` on two children with its bar moving
 from 1/2 to 2/2 when the second reports, `q` closing it, and `/courier stop` with its confirm.
+
+### The asks inbox
+
+Every permission request, question and form waiting on the person anywhere in the open session's courier
+tree, answered in the TUI's dialogs with no model in between. It is opened by the command
+`courier.asks`: its key `<leader>k` (`ctrl+x k` by default), the slash command `/asks`, the command
+palette ("Courier: what waits on you"), or a click on the footer's entry while it shows `waiting on you`.
+With no session open it says so; with nothing waiting, "Nothing in this courier tree waits on you."
+
+**What it lists.** The tree is courier's own, read from the roster, not OpenCode's `parentID`: from the top
+of the open session's lineage down, so every session of a tree, the root or a grandchild, lists the same,
+at most `maxTotal` sessions as `courier_tree` reads them. The server's `asks` method gives the tree's
+sessions and their permission requests and questions, as `courier_status` lists them (`pending`); the TUI
+adds each session's forms (`GET /api/session/:id/form`), leaving out the question tool's own forms, which
+are listed as their questions. One line per ask, oldest first (in the order the inbox first saw them, and
+in the tree's order among those seen together):
+
+```
+Waiting on you (2)
+  Permission: shell echo courier-asks         Root › Fix the bug › Write tests   depth 2 · group pair
+  Question: Greeting: Which greeting?         Root › Fix the bug                 depth 1
+```
+
+A question whose call was cut off says `cut off, answered by message`. Searching filters the list.
+
+**Answering.** Choosing an ask opens its dialog; `esc` goes back to the list, which is read again after
+each answer and closes once nothing is left.
+
+- A permission request: `Allow once`, `Always allow` (only when the request has something to save, which
+  it names), `Reject`, or `Reject with a reason…`, which asks for the reason. It goes through OpenCode's own
+  reply (`POST /api/session/:id/permission/:request/reply`, the TUI client's `permission.reply`), which
+  settles it; a rejection always carries a message, the person's reason or `courier_answer`'s default, so
+  the child's call fails and it carries on rather than ending its turn. OpenCode's `permission.replied` then
+  reaches courier's events as any reply in the child's own session does: the session told about the
+  request gets [one settled notice](#a-child-that-asks-for-permission) (`answered="once"`, …) and no second ask.
+- A form: each field it shows in turn (hidden ones and those whose `when` fails on the answers so far are
+  skipped): a choice for one with options (and an answer of the person's own where the field allows it), a
+  yes or no for a boolean, several choices for a multiselect, typed text or a number otherwise; an optional
+  field can be skipped. The answer goes through the TUI's `data.session.form.reply`, and OpenCode's
+  `form.replied` gives the session told about the form [its settled notice](#a-child-that-shows-a-form). A
+  form that opens a page (an `external` field) is left to its own session.
+- A question: each of its questions in turn, one choice, several (toggled, then `Done`) where it allows
+  them, or `Type your own answer…`. The answers go to the server's `answer` method, which passes them on as
+  `courier_answer` does: as the result of the call that waits on it, or as a message when that call was cut
+  off. The top session then hears it once, [as if the question had been answered in the asking
+  session](#a-child-that-asks-a-question): if its own question call asking the person the same is open, that
+  call is withdrawn with `answered in its own session (…)`; otherwise, if it was told about the question,
+  it gets the settled notice (`answered="elsewhere"`). A later `courier_answer` for it passes nothing on.
+  Answers that do not fit the question come back as a message in the TUI, and nothing is passed on.
+
+**Attention.** 250 ms after the first of a burst of `permission.asked` and `form.created` events, the TUI
+reads the open session's tree and plays, for each ask it has not sounded before, OpenCode's `permission`
+sound for a permission request and its `question` sound for a question or a form, with a notification
+(the ask and where it comes from) when the terminal is not focused. OpenCode's own TUI sounds for every
+request and form it sees as well.
+
+**The RPC.** `courier-person`, registered by every instance next to `courier`:
+
+```
+POST /api/rpc/courier-person/asks?directory=<location> {"input":{"sessionID":"ses_…"}}
+{"output":{"top":"ses_…","sessions":[{"sessionID":"ses_…","title":"Fix the bug","parentID":"ses_…","depth":1}],
+  "permissions":[{"sessionID":"ses_…","requestID":"per_…","action":"shell","resources":["echo hi"],"save":["echo *"]}],
+  "questions":[{"sessionID":"ses_…","requestID":"question_…","questions":[…],"stopped":true}]}}
+POST /api/rpc/courier-person/answer?directory=<location> {"input":{"sessionID":"ses_…","requestID":"question_…","answers":[["Hi"]]}}
+{"output":{"answered":true,"by":"result"}}
+```
+
+`sessions` has `group` for a member of a join group, the output `truncated: <maxTotal>` when the tree was
+cut. `answer` gives `{"answered": false}` for a question that no longer waits, and `problem` with the
+reason when the answers do not fit. The contract is `personRpc` from `opencode-courier/rpc`.
 
 ## Worktree cleanup
 

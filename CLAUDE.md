@@ -40,9 +40,10 @@ the import rules and the reasons for them.
   reverse index and its report state, which go together) and `groupStore(storage)` (join groups'
   members and held reports), built inside `tree/` from the `storage` its ports already carry; no file
   outside `tree/` imports it. `forget.ts`, the one cleanup service: forgetting a child (`forgetChild`:
-  its entry and report state, then best effort its group membership, as a held report outlives the
-  entry), courier_cleanup's (`forgetDropped`), a deleted session's (`forgetDeleted`) and orphaned
-  report keys (`forgetReports`); every removal of tree state goes through it.
+  its entry and report state and, at once and best effort, its group membership, as a held report
+  outlives the entry), courier_cleanup's (`forgetDropped`), expired entries', a deleted session's
+  (`forgetDeleted`) and orphaned report keys (`forgetReports`). Taking back a write just made
+  (`send.ts`, `spawn.ts`) and dropping a delivered group (`group.ts`) stay with their use case.
   One file per use case: `spawn.ts`, `send.ts`, `status.ts` (`courier_status`, `courier_children`),
   `subtree.ts` (`courier_tree`), `stop.ts` (`courier_stop`), `cleanup.ts` (forgetting a child, with
   its worktree if it is isolated, and dropping it from its join group). `limits.ts` the limits
@@ -103,7 +104,8 @@ the import rules and the reasons for them.
   `version.ts`: the log line on an OpenCode version other than the pinned one.
 
 `test/imports.test.ts` checks these import rules, `tree/store.ts`'s privacy and that no other file
-names its key prefixes; `test/store.test.ts` pins the exact keys and values the stores write. `test/notices.test.ts` snapshots every `text.ts`,
+names its key prefixes; `test/store.test.ts` pins the exact keys and values the stores write.
+`test/notices.test.ts` snapshots every `text.ts`,
 imported each by its path (the import test fails on one it misses), the skill and the twelve tools'
 descriptions and schemas, so a wording change shows up as a diff in `test/__snapshots__/`; update it
 with `bun test --update-snapshots`.

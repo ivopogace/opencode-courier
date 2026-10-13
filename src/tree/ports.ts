@@ -39,7 +39,7 @@ export type ReportKeys = ReadonlyMap<string, ReadonlyArray<string>>
 export interface ChildStore {
   /** Records a child under its parent, then indexes it; a failed index write is left to a scan and the next load. */
   record(entry: RosterEntry): Promise<void>
-  /** Removes a child's entry, then, best effort, its reverse key and report state; only the entry's removal can fail it. */
+  /** Removes a child's entry and, at once and best effort, its reverse key and report state; only the entry's removal can fail it. */
   remove(parentID: string, sessionID: string): Promise<void>
   /** A session's roster entry under a parent, if it is there. */
   entry(parentID: string, sessionID: string): Promise<RosterEntry | undefined>

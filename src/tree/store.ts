@@ -4,10 +4,9 @@ import { scanAll, scanEntries, type Storage } from "../platform/storage.js"
 import { lineageIn, type Artifacts, type HeldReport, type Member, type RosterEntry } from "./domain.js"
 import type { ChildStore, GroupStore, Membership, ReportField, ReportNote, Settled, Stored } from "./ports.js"
 
-/**
- * The tree's storage: the only file that knows its keys and layouts. Older copies and a second server on the same data
- * directory read and write the same keys, so a key or a stored value never changes shape.
- */
+// The tree's storage: the only file that knows its keys and layouts. Older copies and a second server on the same data
+// directory read and write the same keys, so a key or a stored value never changes shape.
+
 const PREFIX = "roster/"
 /**
  * The reverse index: a child's `ReverseEntry` under `roster-by-child/<sessionID>`, written with its
@@ -137,7 +136,7 @@ export function childStore(storage: Storage): ChildStore {
   }
 
   const forgetReport = async (sessionID: string) => {
-    await Promise.all([promptKey, settledKey, progressKey, toldKey, stoppedKey].map((key) => storage.remove(key(sessionID))))
+    await Promise.all(Object.values(REPORT_KEYS).map((key) => storage.remove(key(sessionID))))
   }
 
   return {

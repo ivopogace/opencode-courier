@@ -2,10 +2,8 @@ import { leave, markLeft, membershipOf } from "./group.js"
 import type { CleanupPorts, GroupStore, Membership, ReportKeys, RosterEntry, RosterStorage, WatchPorts } from "./ports.js"
 import { childStore, groupStore } from "./store.js"
 
-/**
- * Forgetting, the one place tree state is removed. A child's roster entry and report state go together; its group is
- * another aggregate, left best effort, so a report held there outlives the entry and still reaches the parent.
- */
+// Forgetting a child and what it leaves behind. Its roster entry and report state go together; its group is another
+// aggregate, left best effort and alongside, so a report held there outlives the entry and still reaches the parent.
 
 /** Drops a member from its group as its roster entry goes, unless its report is held: that still goes to the parent. True when dropped. */
 export async function dropMember(groups: GroupStore, parentID: string, group: string, sessionID: string) {

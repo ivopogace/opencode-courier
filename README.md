@@ -390,10 +390,14 @@ What changes with it:
 - **A child does not take its parent's session rules**: courier passes it an empty ruleset, so it
   may do what it could without the option.
 - **A child's asks show in the top session's view**, not in its own, and it leaves the TUI's session
-  lists (reach it from the subagent tab). The courier still tells the top session's model too, so a
-  permission request can be put to you twice: by OpenCode's prompt and by the model; the first
-  answer counts. `opencode run` and the TUI's auto-accept mode answer native children's asks as
-  their own subagents'.
+  lists (reach it from the subagent tab). **A child's question is asked once**, in OpenCode's own
+  form there: the top session's model is only told, and does not ask you again. A permission
+  request can still be put to you twice, by OpenCode's prompt and by the model; the first answer
+  counts. `opencode run` and the TUI's auto-accept mode answer native children's asks as their own
+  subagents'.
+- **Turn it on only with OpenCode's TUI or the paired app**, which show those forms. A client that
+  does not (a bare API client, `opencode run`) gets no prompt for a native child's question; the
+  model can still pass an answer you give it in the chat on with `courier_answer`.
 
 The details, and what was checked how: [the reference](docs/reference.md#native-child-sessions).
 

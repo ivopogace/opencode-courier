@@ -436,12 +436,23 @@ wording of a form's notice, `longcat-2.5-preview-free` passes the fan-out, 8 of 
 requests (`split: 2 parts: …`, no skill loaded, one join group, every report `done`, `RESULTS 391
 1024`; both children recorded with the parent as `parent_id` and an empty ruleset), the permission
 relay, 6 of 6 (the parent asked the person with a question form offering `once`, `always` and
-`reject`, and passed `once` on with `courier_answer`), and the question relay, 6 of 6 (the child
-asked with its question tool, the parent with the child's three options, and the person's `Hi`
-went back through the linked question). Each fan-out child first sent `courier_send` with `branch:
+`reject`, and passed `once` on with `courier_answer`), and, before the owner's decision below, the
+question relay, 6 of 6, through the linked question. Each fan-out child first sent `courier_send` with `branch:
 []`, was refused by the schema and sent it again without; that is the model's doing. Zen took the
 parent's affinity for every child without complaint; GitHub Copilot, which meters a session with a
 parent as a subagent, was not tried.
+
+After the owner's decision that a native child's question is answered once, in OpenCode's own form,
+with the top session only told (`shown="native"`), the question scenario checks that instead
+(`COURIER_NATIVE=1` makes `e2e/real-model-question.mjs` answer the child's form, as the TUI's view
+of the parent does, and fail a parent that asks with its question tool). `longcat-2.5-preview-free`
+passes it, 6 of 6. On the notice's first wording (*Do not ask them yourself*) the parent called no
+tool but wrote the question and its three options out in its reply and asked for a choice, a second
+ask in text; the wording as shipped says not to ask in the reply either and to tell the person in one
+line at most, and the parent then wrote one line, *The helper session's question is waiting for you
+to answer — which greeting would you like to use: Hello, Hi, or Hey?*, and ended its turn. The
+person's `Hi` reached the child 9 s before its report, the parent was told the question was settled
+(`answered="elsewhere"`) and replied `GREETING Hi`.
 
 What the models did on the fan-out, over some 30 runs while the tool wording was tuned:
 

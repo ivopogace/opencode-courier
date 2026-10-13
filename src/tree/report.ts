@@ -1,77 +1,20 @@
-import { obj } from "../platform/json.js"
 import { isStatus, type Status } from "../kernel/protocol.js"
-import { scanEntries, type Storage } from "../platform/storage.js"
+import type { ChildStore } from "./ports.js"
 
-/**
- * Whether a spawned session has reported since its last prompt, under `report/<sessionID>/`: `prompt`, `settled` (with
- * the report's status), `progress` (a message to its parent without a status) and `told`; docs/reference.md has each.
- */
-const PREFIX = "report/"
-
-export const promptKey = (sessionID: string) => `${PREFIX}${sessionID}/prompt`
-export const settledKey = (sessionID: string) => `${PREFIX}${sessionID}/settled`
-export const progressKey = (sessionID: string) => `${PREFIX}${sessionID}/progress`
-export const toldKey = (sessionID: string) => `${PREFIX}${sessionID}/told`
-export const stoppedKey = (sessionID: string) => `${PREFIX}${sessionID}/stopped`
-
-/** How a session's wait for a report ended: it reported to its parent, or its turn failed or was interrupted. */
-export type Settled = "report" | "failed" | "interrupted"
-
-const timeOf = (value: unknown) => {
-  const at: unknown = obj(value).at
-  return typeof at === "number" && Number.isFinite(at) ? at : undefined
-}
-
-/**
- * Notes that a prompt or message reached a spawned session at `at`, in epoch milliseconds, unless a
- * later one is noted: both of the hub's subscriptions note each event, one of them maybe behind.
- */
-export async function prompted(storage: Pick<Storage, "get" | "set">, sessionID: string, at: number) {
-  if ((timeOf(await storage.get(promptKey(sessionID))) ?? -Infinity) < at) await storage.set(promptKey(sessionID), { at })
-}
-
-/**
- * Notes that a spawned session reported to its parent, with `status` when its report carried one, or
- * its turn failed or was interrupted, at `at`, unless a later end is noted.
- */
-export async function settled(storage: Pick<Storage, "get" | "set">, sessionID: string, by: Settled, at: number, status?: Status) {
-  if ((timeOf(await storage.get(settledKey(sessionID))) ?? -Infinity) <= at)
-    await storage.set(settledKey(sessionID), { at, by, ...(status ? { status } : {}) })
-}
-
-/** Notes that a spawned session messaged its parent without a status at `at`, which is progress, not its report. */
-export async function progressed(storage: Pick<Storage, "get" | "set">, sessionID: string, at: number) {
-  if ((timeOf(await storage.get(progressKey(sessionID))) ?? -Infinity) <= at) await storage.set(progressKey(sessionID), { at })
-}
-
-/** Notes that a spawned session's parent was told, at `at`, that a turn of it ended without a report, unless a later telling is noted. */
-export async function told(storage: Pick<Storage, "get" | "set">, sessionID: string, at: number) {
-  if ((timeOf(await storage.get(toldKey(sessionID))) ?? -Infinity) <= at) await storage.set(toldKey(sessionID), { at })
-}
-
-/** Takes back the note `told` made at `at`, whose notice did not go out; a later one stays, and one that cannot be read goes. */
-export async function untold(storage: Pick<Storage, "get" | "remove">, sessionID: string, at: number) {
-  const stored = await storage.get(toldKey(sessionID)).then(timeOf, () => at)
-  if (stored === at) await storage.remove(toldKey(sessionID))
-}
+type Notes = Pick<ChildStore, "notes">
 
 /** Whether `at` is known and no earlier than the prompt at `prompt`. */
 const since = (at: number | undefined, prompt: number) => at !== undefined && at >= prompt
 
-/** Notes that courier_stop stopped a spawned session at `at`, so the failure and silent-end notices stay quiet for it. */
-export async function stopped(storage: Pick<Storage, "set">, sessionID: string, at: number) {
-  await storage.set(stoppedKey(sessionID), { at })
-}
-
 /** Whether courier_stop stopped a session after its last prompt, or with none noted, at all. */
-export async function stoppedSincePrompt(storage: Pick<Storage, "get">, sessionID: string) {
-  const [stoppedAt, prompt] = await Promise.all([stoppedKey, promptKey].map((key) => storage.get(key(sessionID)).then(timeOf)))
-  return stoppedAt !== undefined && (prompt === undefined || stoppedAt >= prompt)
+export async function stoppedSincePrompt(children: Notes, sessionID: string) {
+  const { stopped, prompt } = await children.notes(sessionID, ["stopped", "prompt"])
+  return stopped.at !== undefined && (prompt.at === undefined || stopped.at >= prompt.at)
 }
 
 /** The status of a spawned session's last report to its parent, if it has reported with one. */
-export async function lastStatus(storage: Pick<Storage, "get">, sessionID: string): Promise<Status | undefined> {
-  const status: unknown = obj(await storage.get(settledKey(sessionID))).status
+export async function lastStatus(children: Notes, sessionID: string): Promise<Status | undefined> {
+  const { status } = (await children.notes(sessionID, ["settled"])).settled
   return isStatus(status) ? status : undefined
 }
 
@@ -79,39 +22,19 @@ export async function lastStatus(storage: Pick<Storage, "get">, sessionID: strin
  * What is known of a spawned session's report: when a prompt last reached it, and whether since then it owes one, has
  * messaged its parent without a status, or failed or was interrupted. Undefined for one spawned before this was kept.
  */
-export async function reportOf(storage: Pick<Storage, "get">, sessionID: string) {
-  const [prompt, settledValue, progress] = await Promise.all(
-    [promptKey, settledKey, progressKey].map((key) => storage.get(key(sessionID))),
-  )
-  const promptAt = timeOf(prompt)
+export async function reportOf(children: Notes, sessionID: string) {
+  const { prompt, settled, progress } = await children.notes(sessionID, ["prompt", "settled", "progress"])
+  const promptAt = prompt.at
   if (promptAt === undefined) return undefined
-  const done = since(timeOf(settledValue), promptAt)
-  return { prompt: promptAt, owes: !done, progressed: since(timeOf(progress), promptAt), ended: done && obj(settledValue).by !== "report" }
+  const done = since(settled.at, promptAt)
+  return { prompt: promptAt, owes: !done, progressed: since(progress.at, promptAt), ended: done && settled.by !== "report" }
 }
 
 /**
  * Whether its parent still waits on a spawned session's report: it owes one, and the parent has not
  * been told since its last prompt that it ended a turn without one.
  */
-export async function awaited(storage: Pick<Storage, "get">, sessionID: string) {
-  const [prompt, settledAt, toldAt] = await Promise.all(
-    [promptKey, settledKey, toldKey].map((key) => storage.get(key(sessionID)).then(timeOf)),
-  )
-  return prompt !== undefined && !since(settledAt, prompt) && !since(toldAt, prompt)
-}
-
-/** Drops what is kept about a session, with its roster entry. */
-export async function forgetReport(storage: Pick<Storage, "remove">, sessionID: string) {
-  await Promise.all([promptKey, settledKey, progressKey, toldKey, stoppedKey].map((key) => storage.remove(key(sessionID))))
-}
-
-/** Every key kept under `report/`, by the session it is about. */
-export async function reportKeys(storage: Pick<Storage, "scan">) {
-  const keys = new Map<string, string[]>()
-  for (const { key } of await scanEntries<unknown>(storage, PREFIX)) {
-    const slash = key.indexOf("/")
-    const sessionID = key.slice(0, slash)
-    if (slash > 0) keys.set(sessionID, [...(keys.get(sessionID) ?? []), `${PREFIX}${key}`])
-  }
-  return keys
+export async function awaited(children: Notes, sessionID: string) {
+  const { prompt, settled, told } = await children.notes(sessionID, ["prompt", "settled", "told"])
+  return prompt.at !== undefined && !since(settled.at, prompt.at) && !since(told.at, prompt.at)
 }

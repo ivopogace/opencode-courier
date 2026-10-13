@@ -1,10 +1,9 @@
 import { describeFailure } from "../kernel/protocol.js"
 import { isGroupName } from "./domain.js"
-import { joinGroup, leaveGroup, memberKey } from "./group.js"
+import { joinGroup, leaveGroup } from "./group.js"
 import { admit } from "./limits.js"
 import type { CourierPorts, RosterEntry } from "./ports.js"
-import { prompted, settled } from "./report.js"
-import { indexedEntry, record } from "./roster.js"
+import { childStore, groupStore } from "./store.js"
 import { childBrief, childBranch } from "./text.js"
 
 export interface SpawnInput {
@@ -114,7 +113,7 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
  * other parent. An unreadable HEAD fails the spawn rather than start the child without the parent's work.
  */
 async function parentWork(ports: CourierPorts, parentID: string) {
-  const parent = await indexedEntry(ports.storage, parentID)
+  const parent = await childStore(ports.storage).indexedEntry(parentID)
   if (!parent?.isolated) return undefined
   const head = await ports.head(parent.directory)
   if (!head)
@@ -130,7 +129,7 @@ async function parentWork(ports: CourierPorts, parentID: string) {
  * fails, then in its group. A failed write must not keep the child from its task: each is reported, not thrown.
  */
 async function enrol(ports: CourierPorts, entry: RosterEntry, group: string | undefined) {
-  const rosterError = await record(ports.storage, entry).then(
+  const rosterError = await childStore(ports.storage).record(entry).then(
     () => undefined,
     (error: unknown) => describeFailure("roster", error).message,
   )
@@ -144,13 +143,14 @@ async function enrol(ports: CourierPorts, entry: RosterEntry, group: string | un
  */
 async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, task: string, rostered: boolean, grouped: boolean) {
   // A baseline, until OpenCode's event for the prompt's delivery moves it on; written first, so it never overtakes that.
-  if (rostered) await prompted(ports.storage, entry.sessionID, ports.now()).catch(() => undefined)
+  const children = childStore(ports.storage)
+  if (rostered) await children.prompted(entry.sessionID, ports.now()).catch(() => undefined)
   try {
     await ports.session.prompt({ sessionID: entry.sessionID, text: childBrief(entry.parentID, task, depth, ports.limits, entry.isolated ? childBranch(entry.sessionID) : undefined) })
   } catch (error) {
-    if (rostered) await settled(ports.storage, entry.sessionID, "failed", ports.now()).catch(() => undefined)
+    if (rostered) await children.settled(entry.sessionID, "failed", ports.now()).catch(() => undefined)
     if (grouped && entry.group)
-      await leaveGroup(ports.storage, entry.parentID, entry.group, entry.sessionID, "failed", ports.now()).then(
+      await leaveGroup(groupStore(ports.storage), entry.parentID, entry.group, entry.sessionID, "failed", ports.now()).then(
         (complete) => complete && ports.nudge(),
         (leaveError: unknown) => ports.log(`courier_spawn: ${entry.sessionID} could not leave group ${entry.group}: ${String(leaveError)}`),
       )
@@ -163,15 +163,16 @@ async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, 
  * and the result says so. Returns the error's message, if any.
  */
 async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
+  const groups = groupStore(ports.storage)
   try {
-    await joinGroup(ports.storage, entry.parentID, group, entry.sessionID, entry.title, ports.now())
+    await joinGroup(groups, entry.parentID, group, entry.sessionID, entry.title, ports.now())
     return undefined
   } catch (error) {
     const { group: _, ...ungrouped } = entry
     // A write that failed may have landed all the same: a member left there would hold its group up for good.
     await Promise.all([
-      record(ports.storage, ungrouped).catch(() => undefined),
-      ports.storage.remove(memberKey(entry.parentID, group, entry.sessionID)).catch(() => undefined),
+      childStore(ports.storage).record(ungrouped).catch(() => undefined),
+      groups.remove(entry.parentID, group, entry.sessionID).catch(() => undefined),
     ])
     return describeFailure("group", error).message
   }

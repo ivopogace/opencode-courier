@@ -1,8 +1,7 @@
 import { envelope, isStatus, STATUSES, type Status } from "../kernel/protocol.js"
-import { groupStanding, holdReport, memberKey, membershipOf, unholdForBlocked, unholdReport, type Membership } from "./group.js"
-import type { Artifacts, CourierPorts, Held, HeldReport, RosterEntry, Sent } from "./ports.js"
-import { progressed, progressKey, settled, settledKey } from "./report.js"
-import { indexedEntry } from "./roster.js"
+import { groupStanding, holdReport, membershipOf, unholdForBlocked } from "./group.js"
+import type { Artifacts, CourierPorts, Held, HeldReport, Membership, RosterEntry, Sent } from "./ports.js"
+import { childStore, groupStore } from "./store.js"
 import { reportBody } from "./text.js"
 
 export interface SendInput {
@@ -34,7 +33,7 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
       delivery: input.queue ? "queue" : "steer",
     })
     // A blocked report, once delivered, is the member's latest word: an earlier report held for it would be stale.
-    if (noted?.member && status === "blocked") await unholdForBlocked(ports.storage, noted.member).catch(() => undefined)
+    if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)
     return { messageID: delivered.id, ...(status ? { status } : {}), ...(noted ? { report: noted.report } : {}) }
   } catch (error) {
     await noted?.undo().catch(() => undefined)
@@ -47,18 +46,19 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
  * release briefed `from`, else as progress. Returns which, when, how to take the note back, and `from`'s group membership.
  */
 async function noteReport(ports: CourierPorts, from: string, to: string, status: Status | undefined) {
-  const entry = await indexedEntry(ports.storage, from)
+  const children = childStore(ports.storage)
+  const entry = await children.indexedEntry(from)
   if (entry?.parentID !== to) return undefined
   const report = status !== undefined || entry.reports !== "status"
-  const key = report ? settledKey(from) : progressKey(from)
-  const before = await ports.storage.get(key)
+  const field = report ? "settled" : "progress"
+  const before = await children.peek(from, field)
   const at = ports.now()
-  await (report ? settled(ports.storage, from, "report", at, status) : progressed(ports.storage, from, at))
+  await (report ? children.settled(from, "report", at, status) : children.progressed(from, at))
   // Only its own note: another courier_send of the session's may have noted its report since.
   const undo = async () => {
-    const now = (await ports.storage.get(key)) as { at?: unknown; by?: unknown } | undefined
+    const now = (await children.peek(from, field)) as { at?: unknown; by?: unknown } | undefined
     if (now?.at !== at || (report && now.by !== "report")) return
-    await (before === undefined ? ports.storage.remove(key) : ports.storage.set(key, before))
+    await children.restore(from, field, before)
   }
   return { report, at, undo, member: status !== undefined ? await memberIn(ports, entry) : undefined }
 }
@@ -69,12 +69,13 @@ async function noteReport(ports: CourierPorts, from: string, to: string, status:
  */
 async function memberIn(ports: CourierPorts, entry: RosterEntry): Promise<Membership | undefined> {
   if (!entry.group) return undefined
+  const groups = groupStore(ports.storage)
   try {
-    const member = await membershipOf(ports.storage, entry.parentID, entry.group, entry.sessionID)
+    const member = await membershipOf(groups, entry.parentID, entry.group, entry.sessionID)
     return member?.left?.by === "dropped" ? undefined : member
   } catch (error) {
     ports.log(`courier_send: ${entry.sessionID}'s place in group ${entry.group} could not be read, so its report goes on its own: ${String(error)}`)
-    await ports.storage.remove(memberKey(entry.parentID, entry.group, entry.sessionID)).then(() => ports.nudge(), () => undefined)
+    await groups.remove(entry.parentID, entry.group, entry.sessionID).then(() => ports.nudge(), () => undefined)
     return undefined
   }
 }
@@ -84,18 +85,19 @@ async function memberIn(ports: CourierPorts, entry: RosterEntry): Promise<Member
  * when it could not be held: the member is dropped from the group, which releases without it, and reports on its own.
  */
 async function hold(ports: CourierPorts, member: Membership, report: HeldReport): Promise<Held | undefined> {
+  const groups = groupStore(ports.storage)
   try {
-    await holdReport(ports.storage, member, report)
+    await holdReport(groups, member, report)
   } catch (error) {
     // Neither held nor dropped, the group would wait for ever: the call fails, and the sender sends it again.
-    await unholdReport(ports.storage, member).catch((dropError: unknown) => {
+    await groups.remove(member.parentID, member.group, member.sessionID).catch((dropError: unknown) => {
       throw new Error(`the report could not be held with group ${member.group} (${String(error)}), nor the member dropped from it (${String(dropError)}); send it again.`)
     })
     ports.nudge()
     return undefined
   }
   // Held whatever the count gives; a count that cannot be read gets the nudge, as a tick that finds nothing due is cheap.
-  const standing = await groupStanding(ports.storage, member.parentID, member.group).catch(() => undefined)
+  const standing = await groupStanding(groups, member.parentID, member.group).catch(() => undefined)
   if (standing?.complete !== false) ports.nudge()
   return { group: member.group, ...(standing ? { reported: standing.reported, members: standing.members } : {}) }
 }

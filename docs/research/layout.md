@@ -1,3 +1,5 @@
+> The migration this note planned is done: step 6, the tree's stores and `forget.ts`, landed in #PR.
+
 Research notes behind this issue's decisions; this text goes into the repository as `docs/research/layout.md` in step 1.
 
 # opencode-courier: five layout decisions for the module-per-feature restructure

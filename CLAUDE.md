@@ -7,8 +7,7 @@ behaviour; read both, and `docs/plugin-api-notes.md`, before changing the plugin
 ## Layout
 
 `src/` is split into modules by feature, hexagonal inside; `docs/research/layout.md` holds the layout,
-the import rules and the reasons for them. Step 6 of #126 is still to come: the tree's stores
-(`ChildStore`, `GroupStore` in `tree/store.ts`) and one cleanup service (`tree/forget.ts`).
+the import rules and the reasons for them.
 
 `src/`:
 
@@ -31,18 +30,27 @@ the import rules and the reasons for them. Step 6 of #126 is still to come: the 
   functions, which imports only `kernel/**`, `platform/json.ts` and its own module's `ports.ts` and
   `domain.ts`, and a `tools.ts` adding its tools.
 - `tree/`: the session tree. `ports.ts` its ports and data types (`CourierPorts`, `WatchPorts`, `Waits`,
-  `Pending`, `CleanupResult`, …); `domain.ts` its pure rules and the data they take (`readLimits`,
-  `busy`, `lineageIn`, `standingOf`, `complete`, `isGroupName`, `Limits`, `RosterEntry`, `HeldReport`,
-  …), importing nothing of the plugin's but `kernel/**` and `platform/json.ts` (and OpenCode's types);
-  `text.ts` the child brief, the role part, the
+  `ChildStore`, `GroupStore`, `Pending`, `CleanupResult`, …); `domain.ts` its pure rules and the data
+  they take (`readLimits`, `busy`, `lineageIn`, `standingOf`, `complete`, `isGroupName`, `Limits`,
+  `RosterEntry`, `HeldReport`, …), importing nothing of the plugin's but `kernel/**` and
+  `platform/json.ts` (and OpenCode's types); `text.ts` the child brief, the role part, the
   refusals, the report body, the failure, silent, stopped and group notices and the tool results.
+  Outbound: `store.ts`, the only file that knows the storage keys and layouts of `roster/`,
+  `roster-by-child/`, `report/` and `group/`: `childStore(storage)` (a child's roster entry, its
+  reverse index and its report state, which go together) and `groupStore(storage)` (join groups'
+  members and held reports), built inside `tree/` from the `storage` its ports already carry; no file
+  outside `tree/` imports it. `forget.ts`, the one cleanup service: forgetting a child (`forgetChild`:
+  its entry and report state, then best effort its group membership, as a held report outlives the
+  entry), courier_cleanup's (`forgetDropped`), a deleted session's (`forgetDeleted`) and orphaned
+  report keys (`forgetReports`); every removal of tree state goes through it.
   One file per use case: `spawn.ts`, `send.ts`, `status.ts` (`courier_status`, `courier_children`),
   `subtree.ts` (`courier_tree`), `stop.ts` (`courier_stop`), `cleanup.ts` (forgetting a child, with
   its worktree if it is isolated, and dropping it from its join group). `limits.ts` the limits
-  `spawn()` checks; `report.ts` whether each spawned session owes its parent a report; `group.ts` join
-  groups, the reports held with them and their delivery from the scheduler's tick (`deliverReleased`);
-  `roster.ts` the children each parent spawned and the lineage queries `person/` reads
-  (`lineage`, `answeringTop`). Inbound: `tools.ts` the seven tree tools (`addTreeTools`);
+  `spawn()` checks; `report.ts` whether each spawned session owes its parent a report, read from its
+  report notes; `group.ts` join groups' rules (joining, holding, leaving, standing), the reports held
+  with them and their delivery from the scheduler's tick (`deliverReleased`); `roster.ts` the
+  retention of each parent's children (`current`, `pruneExpired`) and the lineage queries `person/`
+  reads (`lineage`, `allEntries`, `answeringTop`). Inbound: `tools.ts` the seven tree tools (`addTreeTools`);
   `events.ts` `treeEvents`, which tells a parent that a child's turn failed or ended without a report,
   with `waitsOn` and `together` to compose the `Waits` port the silent-turn rule asks, supplied by
   `person/`, `scheduling/` and `webhook/`; `context.ts` the `context` hook naming each spawned
@@ -94,7 +102,8 @@ the import rules and the reasons for them. Step 6 of #126 is still to come: the 
   `bounded.ts`: the bounded `Set` and `Map` of remembered ids; it imports nothing of the plugin's.
   `version.ts`: the log line on an OpenCode version other than the pinned one.
 
-`test/imports.test.ts` checks these import rules. `test/notices.test.ts` snapshots every `text.ts`,
+`test/imports.test.ts` checks these import rules, `tree/store.ts`'s privacy and that no other file
+names its key prefixes; `test/store.test.ts` pins the exact keys and values the stores write. `test/notices.test.ts` snapshots every `text.ts`,
 imported each by its path (the import test fails on one it misses), the skill and the twelve tools'
 descriptions and schemas, so a wording change shows up as a diff in `test/__snapshots__/`; update it
 with `bun test --update-snapshots`.

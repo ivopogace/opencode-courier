@@ -1,7 +1,7 @@
 import type { CourierPorts, RosterEntry, RosterStorage } from "./ports.js"
 import { lastStatus, reportOf } from "./report.js"
-import { children } from "./roster.js"
 import { described } from "./status.js"
+import { childStore } from "./store.js"
 
 /** A session below the one a subtree is read from, with how many levels below it is: a child is at depth 1. */
 export interface Below {
@@ -14,12 +14,13 @@ export interface Below {
  * (`truncated` if more), in the order a tree is drawn.
  */
 export async function subtree(storage: RosterStorage, rootID: string, max = Number.POSITIVE_INFINITY) {
+  const children = childStore(storage)
   const byParent = new Map<string, Below[]>()
   const seen = new Set([rootID])
   let truncated = false
   const expand = async (level: string[], depth: number): Promise<void> => {
     if (!level.length || truncated) return
-    const found = await Promise.all(level.map((parentID) => children(storage, parentID)))
+    const found = await Promise.all(level.map((parentID) => children.children(parentID)))
     const next: string[] = []
     for (const [index, entries] of found.entries()) {
       const fresh = entries.filter((entry) => !seen.has(entry.sessionID))
@@ -46,12 +47,13 @@ function drawn(byParent: ReadonlyMap<string, Below[]>, parentID: string): Below[
  */
 export async function tree(ports: CourierPorts, rootID: string) {
   const { nodes, truncated } = await subtree(ports.storage, rootID, ports.limits.maxTotal)
+  const children = childStore(ports.storage)
   const listed = await Promise.all(
     nodes.map(async ({ entry, depth }) => {
       const [info, report, last] = await Promise.all([
         described(ports, entry),
-        reportOf(ports.storage, entry.sessionID).catch(() => undefined),
-        lastStatus(ports.storage, entry.sessionID).catch(() => undefined),
+        reportOf(children, entry.sessionID).catch(() => undefined),
+        lastStatus(children, entry.sessionID).catch(() => undefined),
       ])
       return {
         ...info,

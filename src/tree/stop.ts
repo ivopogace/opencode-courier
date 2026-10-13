@@ -2,8 +2,7 @@ import { isNotFound } from "../platform/json.js"
 import { describeFailure, envelope } from "../kernel/protocol.js"
 import { cleanup } from "./cleanup.js"
 import type { CleanupResult, StopPorts } from "./ports.js"
-import { settled, stopped } from "./report.js"
-import { lineage } from "./roster.js"
+import { childStore } from "./store.js"
 import { subtree, type Below } from "./subtree.js"
 import { stoppedNotice } from "./text.js"
 
@@ -43,7 +42,7 @@ const ROUNDS = 3
 export async function stop(ports: StopPorts, callerID: string, input: StopInput): Promise<StopResult> {
   const { storage } = ports.courier
   const { sessionID } = input
-  const chain = await lineage(storage, sessionID)
+  const chain = await childStore(storage).lineage(sessionID)
   if (!chain.length) throw new Error(`${sessionID} was not started with courier_spawn, so courier_stop cannot stop it.`)
   const target = chain[0]!
   if (!chain.some((entry) => entry.parentID === callerID))
@@ -92,7 +91,7 @@ function eachDeepestFirst<T>(nodes: ReadonlyArray<Below>, act: (node: Below) => 
 /** Notes that a session was stopped, so the failure and silent-end notices stay quiet for it, and cancels its pending messages. */
 async function silence(ports: StopPorts, sessionID: string, cancelled: string[]) {
   const { storage, now, log } = ports.courier
-  await stopped(storage, sessionID, now()).catch((error: unknown) => log(`courier_stop: could not note that ${sessionID} was stopped: ${String(error)}`))
+  await childStore(storage).stopped(sessionID, now()).catch((error: unknown) => log(`courier_stop: could not note that ${sessionID} was stopped: ${String(error)}`))
   try {
     cancelled.push(...(await ports.cancelScheduled(sessionID)))
   } catch (error) {
@@ -106,7 +105,7 @@ async function interrupt(ports: StopPorts, { entry, depth }: Below): Promise<Sto
   try {
     const { interrupted } = await session.interrupt({ sessionID })
     // The event for it says so too; noted here as well, so the end is settled when this returns.
-    if (interrupted) await settled(storage, sessionID, "interrupted", now()).catch(() => undefined)
+    if (interrupted) await childStore(storage).settled(sessionID, "interrupted", now()).catch(() => undefined)
     return { sessionID, title, depth, outcome: interrupted ? "interrupted" : "idle" }
   } catch (error) {
     if (isNotFound(error)) return { sessionID, title, depth, outcome: "gone" }

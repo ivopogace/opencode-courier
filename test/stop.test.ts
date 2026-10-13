@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { DEFAULT_LIMITS } from "../src/tree/domain.js"
-import { joinGroup, memberKey } from "../src/tree/group.js"
+import { joinGroup } from "../src/tree/group.js"
 import { cancelScheduled, schedule, type LaterPorts } from "../src/scheduling/index.js"
 import { stoppedNotice, stopText, treeText } from "../src/tree/text.js"
-import { progressKey, promptKey, settledKey, stoppedKey, stoppedSincePrompt } from "../src/tree/report.js"
-import { record } from "../src/tree/roster.js"
+import { stoppedSincePrompt } from "../src/tree/report.js"
+import { childStore, groupStore, memberKey, progressKey, promptKey, settledKey, stoppedKey } from "../src/tree/store.js"
 import type { RosterEntry, StopPorts } from "../src/tree/ports.js"
 import { stop } from "../src/tree/stop.js"
 import { subtree, tree } from "../src/tree/subtree.js"
@@ -76,7 +76,7 @@ async function fixture(options: { idle?: string[]; missing?: string[]; failing?:
     entry("leaf1", "mid", 3, { isolated: true, directory: "/wt/leaf1" }),
     entry("leaf2", "mid", 4),
   ]
-  for (const one of entries) await record(storage as any, one)
+  for (const one of entries) await childStore(storage as any).record(one)
   return { ports, store, calls, logs, removed, nudges }
 }
 
@@ -112,7 +112,7 @@ describe("subtree", () => {
 
   test("does not loop on a roster that names a session twice", async () => {
     const { ports } = await fixture()
-    await record(ports.courier.storage as any, entry("root", "leaf2", 9))
+    await childStore(ports.courier.storage as any).record(entry("root", "leaf2", 9))
 
     const { nodes } = await subtree(ports.courier.storage, "root")
 
@@ -123,7 +123,7 @@ describe("subtree", () => {
 describe("tree", () => {
   test("gives each session its status, depth, parent, group standing, report state and isolation", async () => {
     const { ports, store } = await fixture()
-    await joinGroup(ports.courier.storage, "root", "g", "mid", "title mid", 1)
+    await joinGroup(groupStore(ports.courier.storage), "root", "g", "mid", "title mid", 1)
     store.set(promptKey("mid"), { at: 10 })
     store.set(settledKey("mid"), { at: 20, by: "report", status: "partial" })
     store.set(progressKey("mid"), { at: 15 })
@@ -197,11 +197,11 @@ describe("stop", () => {
   test("a stop counts only until the session is prompted again", async () => {
     const { ports, store } = await fixture()
     await stop(ports, "root", { sessionID: "mid" })
-    expect(await stoppedSincePrompt(ports.courier.storage as any, "leaf1")).toBe(true)
+    expect(await stoppedSincePrompt(childStore(ports.courier.storage as any), "leaf1")).toBe(true)
 
     store.set(promptKey("leaf1"), { at: 6_000 })
 
-    expect(await stoppedSincePrompt(ports.courier.storage as any, "leaf1")).toBe(false)
+    expect(await stoppedSincePrompt(childStore(ports.courier.storage as any), "leaf1")).toBe(false)
   })
 
   test("does not tell the caller of what it stopped", async () => {
@@ -293,7 +293,7 @@ describe("stop", () => {
 
   test("a group member that is stopped leaves its group through the interrupt event, as before", async () => {
     const { ports, store } = await fixture()
-    await joinGroup(ports.courier.storage, "root", "g", "mid", "title mid", 1)
+    await joinGroup(groupStore(ports.courier.storage), "root", "g", "mid", "title mid", 1)
 
     await stop(ports, "root", { sessionID: "mid" })
 
@@ -304,7 +304,7 @@ describe("stop", () => {
     const { ports, calls } = await fixture()
     const interrupt = ports.courier.session.interrupt
     ;(ports.courier.session as any).interrupt = async (input: any) => {
-      if (input.sessionID === "mid") await record(ports.courier.storage as any, entry("late", "mid", 8))
+      if (input.sessionID === "mid") await childStore(ports.courier.storage as any).record(entry("late", "mid", 8))
       return interrupt(input)
     }
 

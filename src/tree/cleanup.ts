@@ -1,10 +1,9 @@
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { isAbsolute } from "node:path"
-import type { RosterEntry } from "./domain.js"
-import { markLeft, membershipOf } from "./group.js"
+import { forgetDropped } from "./forget.js"
 import type { CleanupPorts, CleanupResult, WorktreeState } from "./ports.js"
-import { remove, rosterKey } from "./roster.js"
+import { childStore } from "./store.js"
 import { keepReason } from "./text.js"
 
 export interface CleanupInput {
@@ -20,10 +19,14 @@ export const MAX_LISTED = 50
  * or commits found nowhere else is kept unless `force` is set; the result says so.
  */
 export async function cleanup(ports: CleanupPorts, parentID: string, input: CleanupInput): Promise<CleanupResult> {
-  const entry = (await ports.storage.get(rosterKey(parentID, input.sessionID))) as unknown as RosterEntry | undefined
+  const entry = await childStore(ports.storage).entry(parentID, input.sessionID)
   if (!entry) throw new Error(`${input.sessionID} is not on the courier_children list of ${parentID}.`)
   const { directory } = entry
-  const forget = () => forgetChild(ports, entry)
+  // A member still out is dropped from its group, so the group is released without it; the result names that group.
+  const forget = async () => {
+    const group = await forgetDropped(ports, entry)
+    return group ? { group } : {}
+  }
   if (!entry.isolated) return { sessionID: input.sessionID, directory, outcome: "forgotten", ...(await forget()) }
   // With force the state only decides whether there is anything left to remove, so a worktree git
   // can no longer read is still removed.
@@ -47,17 +50,6 @@ export async function cleanup(ports: CleanupPorts, parentID: string, input: Clea
     force: input.force === true,
   })
   return { sessionID: input.sessionID, directory, outcome: "removed", ...(await forget()) }
-}
-
-/**
- * Drops a member still out from its group as `dropped`, so the group is released without it, then the roster entry
- * and report state. A held report stays with its group. Returns the group it was dropped from.
- */
-async function forgetChild(ports: CleanupPorts, entry: RosterEntry) {
-  const member = entry.group ? await membershipOf(ports.storage, entry.parentID, entry.group, entry.sessionID) : undefined
-  if (member?.out && (await markLeft(ports.storage, member, "dropped", ports.now()))) ports.nudge()
-  await remove(ports.storage, entry.parentID, entry.sessionID)
-  return member?.out ? { group: member.group } : {}
 }
 
 /** Names the git to run, by absolute path, overriding the places `GIT_LOCATIONS` lists. */

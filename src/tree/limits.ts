@@ -2,7 +2,7 @@ import { isNotFound } from "../platform/json.js"
 import { busy, bySession, lineageBy } from "./domain.js"
 import type { LimitPorts, Reservation } from "./ports.js"
 import { reportOf } from "./report.js"
-import { allEntries } from "./roster.js"
+import { childStore } from "./store.js"
 import { childrenRefusal, depthRefusal, totalRefusal } from "./text.js"
 
 /**
@@ -15,7 +15,7 @@ async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: s
       (info) => info.time,
       (error: unknown) => (isNotFound(error) ? null : undefined),
     ),
-    reportOf(ports.storage, sessionID).catch(() => undefined),
+    reportOf(childStore(ports.storage), sessionID).catch(() => undefined),
   ])
   if (time === null) return false
   // One whose first prompt failed never ran, and has no idle time to tell so.
@@ -40,7 +40,7 @@ export async function admit(ports: LimitPorts, parentID: string) {
 
 async function check(ports: LimitPorts, parentID: string) {
   const { maxDepth, maxChildren, maxTotal } = ports.limits
-  const entries = await allEntries(ports.storage)
+  const entries = await childStore(ports.storage).all()
   const parents = bySession(entries)
   const chain = lineageBy(parents, parentID)
   if (chain.length >= maxDepth) throw new Error(depthRefusal(chain.length, maxDepth))

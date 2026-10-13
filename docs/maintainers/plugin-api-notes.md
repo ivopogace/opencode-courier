@@ -349,6 +349,11 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   `client.permission.reply`; forms go through `data.session.form.reply` and are listed with
   `client.session.form.list`, since the server API has no form domain. OpenCode's own notifications
   part sounds `permission` and `question` for every request and form the TUI sees.
+- **The panel belongs to one session.** `ui.panel.open` targets the route's session; the app closes the
+  panel on any route to another (`packages/tui/src/app.tsx`), each session's frame is keyed by its id, and
+  a newly mounted panel takes the keyboard (`component/session-frame.tsx`, `onTarget`). So the tree panel
+  reopens itself after a route change with `presentation`, and gives the keyboard back with
+  `keymap.dispatch("pane.focus.left")`, the host's own command, when it did not have it.
 - **Keys.** `<leader>` bindings OpenCode takes: `a b c e g i l m n q r s t u w x y`, the digits and
   the arrows (`packages/tui/src/config/v1/keybind.ts`); the inbox takes `<leader>k`.
 - **Testing.** Unit tests render against a fake TUI context with OpenTUI's `testRender`, which needs

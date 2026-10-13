@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Live test of the TUI part: a real OpenCode V2 server loads the package's `tui` and `rpc`
 # entrypoints, its RPC answers over HTTP, and the TUI, in tmux, shows the prompt footer's entry and
-# follows a change, opens the tree panel with /courier tree and stops a child with /courier stop.
+# follows a change, opens the tree panel with /courier tree, follows it into a child, and stops a child with /courier stop.
 # Then the same from the package `opencode plugin add` installs. Driven by e2e/mock-model.mjs's
 # COURIER-TUI, so no API key is needed.
 #
@@ -170,9 +170,14 @@ result=$(summary_until "$parent" 60 "$idle")
 echo "  $result"
 check "the summary follows: both children idle, the group released" "$([ "$result" = "$idle" ] && echo true || echo false)"
 check "the panel follows the report: 2 of 2 parts reported" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-reported)"
-# q closes the panel, which has the keyboard while it is open; the footer is whole again.
+# enter opens the selected child; the panel follows it there, with the parent's tree and the child marked (#158).
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "enter on a child row keeps the panel in the child's view, the child marked" "$(shows "(on screen)" 30 tui-panel-followed)"
+check "with the parent's tree" "$(grep -qF "courier tree  [██████████] 2/2 reported" "$WORK/tui-panel-followed.txt" && echo true || echo false)"
+# q closes the panel, which has the keyboard while it is open; back on the parent, the footer is whole again.
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes the panel" "$(hides "courier tree" 10 tui-panel-closed)"
+open_tui tui "$parent"
 check "the footer follows it" "$(shows "courier 2 idle" 30 tui-released)"
 echo "  $(footer tui-released)"
 check "and the group is gone from it" "$([[ $(footer tui-released) != *"group pair"* ]] && echo true || echo false)"
@@ -264,7 +269,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-followed tui-panel-closed tui-released tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

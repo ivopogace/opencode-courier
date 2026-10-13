@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode/plugin/tui"
-import type { PanelInput } from "@opencode/plugin/tui/context"
+import type { PanelInput, PanelPresentation } from "@opencode/plugin/tui/context"
 import type { ScrollBoxRenderable } from "@opentui/core"
-import { createEffect, createResource, createSignal, For, onCleanup, Show, type Accessor } from "solid-js"
+import { createEffect, createResource, createRoot, createSignal, For, onCleanup, onMount, Show, untrack, type Accessor } from "solid-js"
 import { treeRpc, type Row, type Stopped, type Summary, type Tree, type Wait } from "./rpc.js"
 
 type Context = Plugin.Context
@@ -250,24 +250,54 @@ async function confirmStop(ctx: Context, courier: Courier, location: (sessionID:
   return true
 }
 
-/** The tree panel: the sessions under the panel's session, one row each, with the keys to move, open and stop. */
-function TreePanel(props: { ctx: Context; input: PanelInput; courier: Courier; location: (sessionID: string) => Location; changed: Accessor<number> }) {
-  const { ctx, input, courier, location } = props
+/** The host's command that gives the keyboard back to the prompt; a newly shown panel takes it. */
+const FOCUS_PROMPT = "pane.focus.left"
+
+/**
+ * The panel following the person: the session whose tree it shows, the one it is open in (or goes `to` while it looks),
+ * how it was shown, whether it had the keyboard, and the root's tree last read.
+ */
+type Following = { root: string; at?: string; to?: string; presentation: PanelPresentation; focused: boolean; refocus?: boolean; tree?: Tree }
+
+/** What a panel opened in a session shows: the tree it follows there, and whether to give the keyboard back to the prompt. */
+type View = { root: string; tree?: Tree; refocus: boolean; note: (fields: Partial<Following>) => void }
+
+/** The tree panel: the sessions under its root, one row each, the one on screen marked, with the keys to move, open and stop. */
+function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier: Courier; location: (sessionID: string) => Location; changed: Accessor<number> }) {
+  const { ctx, input, view, courier, location } = props
   const theme = ctx.theme
   const [read, { refetch }] = createResource(
-    () => ({ sessionID: input.sessionID, changed: props.changed() }),
+    () => ({ sessionID: view.root, changed: props.changed() }),
     ({ sessionID }): Promise<{ sessionID: string; tree?: Tree; error?: string }> =>
       courier.tree({ sessionID }, { location: location(sessionID) }).then(
         (tree) => ({ sessionID, tree }),
         (error: unknown) => ({ sessionID, error: reason(error) }),
       ),
   )
-  const latest = () => (read.state === "ready" || read.state === "refreshing" ? read.latest : undefined)
+  // Until the first answer, the tree last read for this root, so a panel reopened in another session is not blank.
+  const latest = () => (read.state === "ready" || read.state === "refreshing" ? read.latest : view.tree && { sessionID: view.root, tree: view.tree })
   const rows = (): ReadonlyArray<Row> => latest()?.tree?.rows ?? []
+  createEffect(() => {
+    const tree = latest()?.tree
+    if (tree) view.note({ tree })
+  })
+  createEffect(() => view.note({ presentation: input.presentation, focused: input.focused }))
+  onMount(() => {
+    if (!view.refocus) return
+    const giveBack = setTimeout(() => ctx.keymap.dispatch(FOCUS_PROMPT))
+    onCleanup(() => clearTimeout(giveBack))
+  })
   const [now, setNow] = createSignal(Date.now())
   const tick = setInterval(() => setNow(Date.now()), TICK_MS)
   onCleanup(() => clearInterval(tick))
   const [selected, setSelected] = createSignal(0)
+  let placed = false
+  createEffect(() => {
+    const index = placed ? -1 : rows().findIndex((row) => row.sessionID === input.sessionID)
+    if (index < 0) return
+    placed = true
+    setSelected(index)
+  })
   const current = () => rows()[Math.min(selected(), rows().length - 1)]
   let scroll: ScrollBoxRenderable | undefined
   createEffect(() => {
@@ -281,7 +311,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; courier: Courier; l
   }
   const stopSelected = () => {
     const row = current()
-    if (row) void confirmStop(ctx, courier, location, input.sessionID, { sessionID: row.sessionID, title: row.title, under: reach(rows(), row.sessionID) - 1 })
+    if (row) void confirmStop(ctx, courier, location, view.root, { sessionID: row.sessionID, title: row.title, under: reach(rows(), row.sessionID) - 1 })
   }
   ctx.keymap.layer(() => ({
     priority: 10,
@@ -298,7 +328,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; courier: Courier; l
       { bind: "q", title: "Close courier tree", group: "Courier", run: () => input.close() },
     ],
   }))
-  const root = () => parts(rows(), input.sessionID)
+  const root = () => parts(rows(), view.root)
   const rowColor = (row: Row) => {
     if (row.state === "waiting") return theme.text.feedback.warning.base
     return row.state === "gone" ? theme.text.muted : theme.text.base
@@ -337,6 +367,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; courier: Courier; l
                   {indent}
                   {chosen() ? "▸ " : "  "}
                   {row.title}
+                  {row.sessionID === input.sessionID ? " (on screen)" : ""}
                   {"  "}
                   <span style={{ fg: theme.text.muted }}>{statusLine(row)}</span>
                 </text>
@@ -366,21 +397,77 @@ export const USAGE = "/courier tree opens the session tree; /courier stop [sessi
 
 /**
  * Adds the tree panel to the `session.panel` slot, opened by `/courier tree` or the command palette, and `/courier
- * stop <session>`, which stops a session under the open one after the person confirms.
+ * stop <session>`, which stops a session under the open one after the person confirms. The host's panel belongs to one
+ * session, so while it is open the panel follows the person to the next one: with the same tree inside it, else that
+ * session's own tree, or closed when it started none.
  */
 export function addTreePanel(ctx: Context) {
   const { courier, location } = courierOf(ctx)
   const [changed, stopListening] = changes(ctx, PANEL_CHANGES, PANEL_SETTLE_MS)
+  let following: Following | undefined
+  let attempt = 0
+  const viewOf = (sessionID: string): View => {
+    const here = following?.at === sessionID ? following : undefined
+    const refocus = here?.refocus === true
+    if (here) here.refocus = false
+    return {
+      root: here?.root ?? sessionID,
+      tree: here?.tree,
+      refocus,
+      note: (fields) => {
+        if (here && following === here) Object.assign(here, fields)
+      },
+    }
+  }
   const release = ctx.ui.slot({
     append: "session.panel",
     render: (input) => (
       <Show when={input.name === PANEL}>
-        <TreePanel ctx={ctx} input={input} courier={courier} location={location} changed={changed} />
+        <TreePanel ctx={ctx} input={input} view={viewOf(input.sessionID)} courier={courier} location={location} changed={changed} />
       </Show>
     ),
   })
+  const show = (from: Following, at: string, root: string, tree: Tree | undefined) => {
+    following = { ...from, root, at, to: undefined, tree, refocus: !from.focused }
+    ctx.ui.panel.open(PANEL, { presentation: from.presentation })
+  }
+  const treeOf = (sessionID: string) => courier.tree({ sessionID }, { location: location(sessionID) }).catch(() => undefined)
+  /** Reopens the panel in `sessionID`, which the person moved to while it was open. */
+  const follow = (from: Following, sessionID: string) => {
+    const token = ++attempt
+    const under = (tree: Tree | undefined) => tree?.rows.some((row) => row.sessionID === sessionID) === true
+    Object.assign(from, { at: undefined, to: sessionID })
+    if (sessionID === from.root || under(from.tree)) return show(from, sessionID, from.root, from.tree)
+    void (async () => {
+      const inside = await treeOf(from.root)
+      const own = under(inside) ? undefined : await treeOf(sessionID)
+      if (token !== attempt || following !== from) return
+      if (under(inside)) show(from, sessionID, from.root, inside)
+      else if (own?.rows.length) show(from, sessionID, sessionID, own)
+      else following = undefined
+    })()
+  }
+  const stopFollowing = createRoot((dispose) => {
+    createEffect(() => {
+      const route = ctx.ui.router.current()
+      const sessionID = route.type === "session" ? route.sessionID : undefined
+      const shown = ctx.ui.panel.current()
+      untrack(() => {
+        if (!following || (shown && shown.sessionID === sessionID) || (!following.at && following.to === sessionID)) return
+        // Closed where it was open, by q or the host: it stays closed.
+        if ((!shown && following.at === sessionID) || !sessionID) following = undefined
+        else follow(following, sessionID)
+      })
+    })
+    return dispose
+  })
   const openPanel = () => {
-    if (!ctx.ui.panel.open(PANEL)) ctx.ui.toast.show({ title: "courier", message: "Open a session first", variant: "warning" })
+    const route = ctx.ui.router.current()
+    const before = following
+    if (route.type === "session" && following?.at !== route.sessionID) following = { root: route.sessionID, at: route.sessionID, presentation: "panel", focused: true }
+    if (ctx.ui.panel.open(PANEL)) return
+    following = before
+    ctx.ui.toast.show({ title: "courier", message: "Open a session first", variant: "warning" })
   }
   const stopUnder = async (target: string) => {
     const route = ctx.ui.router.current()
@@ -419,6 +506,7 @@ export function addTreePanel(ctx: Context) {
     ],
   }))
   return () => {
+    stopFollowing()
     stopListening()
     release()
   }

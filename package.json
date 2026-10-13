@@ -48,13 +48,13 @@
     "test:e2e": "e2e/run.sh"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.1"
   },
   "peerDependencies": {
-    "@opencode/plugin": "2.0.26"
+    "@opencode/plugin": "2.0.28"
   },
   "devDependencies": {
-    "@opencode/plugin": "2.0.26",
+    "@opencode/plugin": "2.0.28",
     "@types/bun": "1.3.14",
     "@types/node": "26.6.4",
     "typescript": "5.9.3"

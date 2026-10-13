@@ -32,7 +32,9 @@ describe("tools", () => {
 
   for (const tool of registered)
     test(tool.name, () => {
-      expect({ description: tool.description, input: Schema.toJsonSchemaDocument(tool.input).schema }).toMatchSnapshot()
+      // Closed, as OpenCode renders a tool's schema for the model; Effect 4.0.1 leaves objects open by default.
+      const input = Schema.toJsonSchemaDocument(tool.input, { onExcessProperty: "error" }).schema
+      expect({ description: tool.description, input }).toMatchSnapshot()
     })
 })
 

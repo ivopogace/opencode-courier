@@ -199,6 +199,13 @@ out=$(prompt "COURIER-ASK")
 asker_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 asker=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out" | head -1)
 for _ in $(seq 1 45); do [ "$(api "session/$asker/permission" | jq -r '.data | length')" = 1 ] && break; sleep 1; done
+# Viewing the asking child itself, OpenCode renders its permission prompt in place of the prompt and hides
+# the footer, so the key is the way to the inbox, which lists the request from anywhere in the tree.
+open_tui tui-prompt "$asker"
+check "the child's view shows OpenCode's permission prompt" "$(shows "Allow once" 60 tui-prompt)"
+tmux send-keys -t "$TMUX_SESSION" C-x k
+check "its key opens the inbox over the prompt, listing the request" \
+  "$([ "$(shows "Waiting on you (1)" 20 tui-prompt-inbox)" = true ] && grep -qF "Permission: shell echo courier-asks" "$WORK/tui-prompt-inbox.txt" && echo true || echo false)"
 open_tui tui-inbox "$asker_parent"
 check "the footer says one waits on the person" "$(shows "courier 1 waiting on you" 60 tui-inbox-footer)"
 tmux send-keys -t "$TMUX_SESSION" "/asks"
@@ -222,17 +229,6 @@ for _ in $(seq 1 30); do [ "$(settled_notices)" = 1 ] && break; sleep 1; done
 check "the parent was told once that it is settled" "$(sleep 2; [ "$(settled_notices)" = 1 ] && echo true || echo false)"
 check "the child carried on and reported" \
   "$(for _ in $(seq 1 45); do api "session/$asker_parent/message" | jq -e '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD DONE"))] | length > 0' >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
-
-# While a form is shown in the session OpenCode renders it in place of the prompt (and hides the footer),
-# so the key is the way to the inbox; the relayed question is the form, listed there as its question.
-echo "the asks inbox opens by its key while the parent's view shows a form"
-out=$(prompt "COURIER-QUESTION")
-form_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-open_tui tui-form "$form_parent"
-check "the relayed question is shown as a form in the session, with its options" "$(shows "Hello" 60 tui-form)"
-tmux send-keys -t "$TMUX_SESSION" C-x k
-check "its key opens the inbox over the form, listing the question" \
-  "$([ "$(shows "Waiting on you (1)" 20 tui-form-inbox)" = true ] && grep -qF "Which greeting?" "$WORK/tui-form-inbox.txt" && echo true || echo false)"
 
 echo "opencode plugin add installs the package with its tui and rpc entrypoints"
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true

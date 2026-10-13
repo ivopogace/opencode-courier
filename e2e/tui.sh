@@ -229,7 +229,7 @@ echo "the asks inbox opens by its key while the parent's view shows a form"
 out=$(prompt "COURIER-QUESTION")
 form_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 open_tui tui-form "$form_parent"
-check "the relayed question is shown as a form in the session" "$(shows "Which greeting?" 60 tui-form)"
+check "the relayed question is shown as a form in the session, with its options" "$(shows "Hello" 60 tui-form)"
 tmux send-keys -t "$TMUX_SESSION" C-x k
 check "its key opens the inbox over the form, listing the question" \
   "$([ "$(shows "Waiting on you (1)" 20 tui-form-inbox)" = true ] && grep -qF "Which greeting?" "$WORK/tui-form-inbox.txt" && echo true || echo false)"

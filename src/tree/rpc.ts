@@ -25,12 +25,76 @@ const Summary = Schema.Struct({
 
 export type Summary = typeof Summary.Type
 
+/** A request a session waits on until the person answers it: a permission request, or its first question. */
+const Wait = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("permission"), action: Schema.String, resources: Schema.Array(Schema.String) }),
+  Schema.Struct({ type: Schema.Literal("question"), question: Schema.String }),
+])
+
+/** One session of the tree panel: what courier_tree shows of it, and what it is doing, in epoch milliseconds. */
+const Row = Schema.Struct({
+  sessionID: Schema.String,
+  parentID: Schema.String,
+  title: Schema.String,
+  /** A child of the panel's session is at depth 1. */
+  depth: Count,
+  /** `waiting` on a request to the person; `gone` when OpenCode no longer knows it. */
+  state: Schema.Literals(["running", "waiting", "idle", "gone"]),
+  /** How its last turn ended. */
+  outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "interrupted"])),
+  /** Its report since its last prompt: still owed, arrived (held with its group or delivered), or its turn ended without one. */
+  report: Schema.optionalKey(
+    Schema.Struct({ state: Schema.Literals(["owed", "reported", "ended"]), status: Schema.optionalKey(Schema.String), progressed: Schema.Boolean }),
+  ),
+  /** Its join group, and its standing there: `held`, `out`, how it left, or `released`. */
+  group: Schema.optionalKey(Schema.Struct({ name: Schema.String, standing: Schema.String })),
+  isolated: Schema.Boolean,
+  created: Schema.Number,
+  /** When its last turn ended, if it is not running. */
+  idle: Schema.optionalKey(Schema.Number),
+  /** What it has cost so far, in US dollars. */
+  cost: Schema.optionalKey(Schema.Number),
+  /** Its last tool call, and when it was made. */
+  tool: Schema.optionalKey(Schema.Struct({ name: Schema.String, at: Schema.Number })),
+  waits: Schema.Array(Wait),
+})
+
+/** The sessions under a session, as courier_tree reads them, in the order a tree is drawn. */
+const Tree = Schema.Struct({
+  rows: Schema.Array(Row),
+  /** Set when the subtree had more sessions than `maxTotal`, which were left out. */
+  truncated: Schema.optionalKey(Count),
+})
+
+export type Row = typeof Row.Type
+export type Tree = typeof Tree.Type
+export type Wait = typeof Wait.Type
+
+/** What a stop did to each session, deepest first, as courier_stop reports it. */
+const Stopped = Schema.Struct({
+  stopped: Schema.Array(Schema.Struct({ sessionID: Schema.String, title: Schema.String, outcome: Schema.String })),
+  /** How many scheduled messages were cancelled. */
+  cancelled: Count,
+})
+
+export type Stopped = typeof Stopped.Type
+
 export const treeRpc = Rpc.define({
   id: "courier",
   methods: {
     summary: {
       input: Schema.toStandardSchemaV1(Schema.Struct({ sessionID: Schema.String })),
       output: Schema.toStandardSchemaV1(Summary),
+    },
+    tree: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({ sessionID: Schema.String })),
+      output: Schema.toStandardSchemaV1(Tree),
+    },
+    /** Stops `sessionID` and everything under it, as courier_stop called from `by`, which must be above it. */
+    stop: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({ sessionID: Schema.String, by: Schema.String })),
+      output: Schema.toStandardSchemaV1(Stopped),
+      errors: { refused: Schema.toStandardSchemaV1(Schema.Struct({})) },
     },
   },
   events: {},

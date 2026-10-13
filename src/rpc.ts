@@ -1,2 +1,2 @@
 // The package's `rpc` entrypoint: the courier's RPC contracts, for a client that calls them.
-export { treeRpc, type Summary, type TreeRpc } from "./tree/rpc.js"
+export { treeRpc, type Row, type Stopped, type Summary, type Tree, type TreeRpc, type Wait } from "./tree/rpc.js"

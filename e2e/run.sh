@@ -933,7 +933,9 @@ check "it has no parentID and runs in its worktree" \
 check "the roster does not record it as native" "$(kv get "roster/$parent/$child" | jq -r 'has("native") | not')"
 check "it reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
 
-echo "nativeChildren: a child does not run on its parent's session rules, and its permission request reaches the parent"
+# The decision on #146: a native child's request is answered once, in OpenCode's own permission prompt;
+# the top session is told not to ask, then that it is settled.
+echo "nativeChildren: a child does not run on its parent's session rules; its request is answered in OpenCode's own prompt"
 rules='[{"action":"shell","resource":"echo courier-asks*","effect":"allow"}]'
 parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"},\"permissions\":$rules}" | jq -r '.data.id')
 inherited=$(api_post session "{\"parentID\":\"$parent\"}" | jq -r '.data.id')
@@ -943,11 +945,16 @@ api_prompt "$parent" "COURIER-ASK"
 child=$(spawned_by "$parent" 45)
 check "the child, created with an empty ruleset, does not" \
   "$(session_info "$child" | jq -r --arg parent "$parent" '.parentID == $parent and .permissions == []')"
-check "so it asks, and the parent is told once" \
-  "$([ -n "$(reply_time "$parent" "PARENT ASKS" 45)" ] && notices_with "$parent" asks | jq -r 'length == 1')"
-api_prompt "$parent" "COURIER-ANSWER once"
-check "courier_answer passed the answer on, the command ran, and the child reported back" "$(has_text "$parent" "CHILD DONE shell" 45)"
-check "nobody else answered it" "$(notices_with "$parent" answered | jq -r 'length == 0')"
+check "so it asks, and the parent is told once, that OpenCode shows the request to the person" \
+  "$(has_text "$parent" "PARENT TOLD NATIVE PERMISSION" 45 >/dev/null; notices_with "$parent" asks | jq -r 'length == 1 and (.[0] | contains("shown=\"native\"") and contains("Do not ask them yourself"))')"
+check "and asks the person nothing itself" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
+request=$(api "session/$child/permission" | jq -r '.data[0].id // empty')
+check "the person answers in OpenCode's own prompt, as the TUI's view of the parent does" \
+  "$([ -n "$request" ] && [ "$(person "session/$child/permission/$request/reply" '{"decision":"once"}')" = 204 ] && echo true || echo false)"
+check "the command ran, and the child reported back" "$(has_text "$parent" "CHILD DONE shell" 45)"
+check "the parent was told once that it is settled, and asked nothing" \
+  "$(has_text "$parent" "PARENT SETTLED" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"once\""))')" = true ] &&
+    [ "$(notices_with "$parent" asks | jq length)" = 1 ] && [ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
 
 # The owner's decision on #146: a native child's question is answered once, in OpenCode's own form,
 # which the TUI shows in the top session's view; the top session is told, and its question tool is not linked.

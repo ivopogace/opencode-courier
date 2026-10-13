@@ -201,6 +201,9 @@ function decide(body) {
     const line = messages.flatMap((message) => textOf(message.content).split("\n")).findLast((item) => item.startsWith('{"questions"'))
     if (line) return { tool: "question", args: JSON.parse(line) }
   }
+  // A native child's request is shown to the person by OpenCode: the parent is told, and ends its turn without asking.
+  const nativeAsks = recent.match(/<courier from="ses_\w+" asks="permission" request="([^"]+)" shown="native">/)
+  if (nativeAsks) return { text: `PARENT TOLD NATIVE PERMISSION ${nativeAsks[1]}` }
   // A parent told that its child waits for permission ends its turn, as if it had asked the person;
   // the test then answers for the person with COURIER-ANSWER.
   const asks = recent.match(/<courier from="ses_\w+" asks="permission" request="([^"]+)">/)

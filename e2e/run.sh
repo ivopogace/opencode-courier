@@ -890,6 +890,86 @@ check "and the child's commit is in its history" "$(git -C "$leaf_dir" log --for
 check "the grandchild committed on courier/<its session>" "$(git -C "$WORK/project" log -1 --format=%s "courier/$nest_leaf" 2>/dev/null | grep -qx 'leaf work' && echo true || echo false)"
 check "the child merged it into its own worktree" "$([ -f "$mid_dir/leaf.txt" ] && echo true || echo false)"
 
+# The nativeChildren option, on for the rest of the run: the server reloads the plugin with it.
+echo "nativeChildren: a child started without isolate gets OpenCode's own parentID"
+stop_server
+jq '.plugins[0].options.nativeChildren = true' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "nativeChildren"
+start_server
+session_info() { api "session/$1" | jq -c '.data // .'; }
+api_post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
+# A turn of session $1 with text $2 through the API: `opencode run` takes a native child's asks for its own and answers them.
+api_prompt() { api_post "session/$1/prompt" "{\"text\":\"$2\"}" >/dev/null; }
+# The session session $1 started with courier_spawn, waiting up to $2 (default 30) s.
+spawned_by() {
+  for _ in $(seq 1 "${2:-30}"); do
+    local id
+    id=$(texts "$1" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
+    if [ -n "$id" ]; then echo "$id"; return; fi
+    sleep 1
+  done
+}
+status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
+
+out=$(prompt "COURIER-TEST")
+native_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+native_child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+info=$(session_info "$native_child")
+check "the child's OpenCode parentID is its parent, and courier's metadata is kept" \
+  "$(jq -r --arg parent "$native_parent" '.parentID == $parent and .metadata.courier.parentID == $parent' <<<"$info")"
+check "it has an empty ruleset of its own" "$(jq -r '.permissions == []' <<<"$info")"
+check "OpenCode lists it under its parent" \
+  "$(api "session?parentID=$native_parent" | jq -r --arg child "$native_child" '[.data[].id] | index($child) != null')"
+check "the roster records it as native" "$(kv get "roster/$native_parent/$native_child" | jq -r '.native == true and .isolated == false')"
+check "it reported back, waking the parent" "$([ -n "$(reply_time "$native_parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+
+echo "nativeChildren: an isolated child is created as before, without a parentID"
+out=$(prompt "COURIER-TEST isolate")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+check "it has no parentID and runs in its worktree" \
+  "$(session_info "$child" | jq -r '.parentID == null and (.location.directory | contains("/worktree/"))')"
+check "the roster does not record it as native" "$(kv get "roster/$parent/$child" | jq -r 'has("native") | not')"
+check "it reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+
+echo "nativeChildren: a child does not run on its parent's session rules, and its permission request reaches the parent"
+rules='[{"action":"shell","resource":"echo courier-asks*","effect":"allow"}]'
+parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"},\"permissions\":$rules}" | jq -r '.data.id')
+inherited=$(api_post session "{\"parentID\":\"$parent\"}" | jq -r '.data.id')
+check "a session created under it without a ruleset would run on the parent's" \
+  "$(session_info "$inherited" | jq -r --argjson rules "$rules" '.permissions == $rules')"
+api_prompt "$parent" "COURIER-ASK"
+child=$(spawned_by "$parent" 45)
+check "the child, created with an empty ruleset, does not" \
+  "$(session_info "$child" | jq -r --arg parent "$parent" '.parentID == $parent and .permissions == []')"
+check "so it asks, and the parent is told once" \
+  "$([ -n "$(reply_time "$parent" "PARENT ASKS" 45)" ] && notices_with "$parent" asks | jq -r 'length == 1')"
+api_prompt "$parent" "COURIER-ANSWER once"
+check "courier_answer passed the answer on, the command ran, and the child reported back" "$(has_text "$parent" "CHILD DONE shell" 45)"
+check "nobody else answered it" "$(notices_with "$parent" answered | jq -r 'length == 0')"
+
+echo "nativeChildren: a question of a native grandchild goes to the session at the top"
+parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
+api_prompt "$parent" "COURIER-QUESTION nested"
+middle=$(spawned_by "$parent" 45)
+parent_form=$(form_of "$parent" "" 60)
+check "the parent at the top asks the person" "$([ -n "$parent_form" ] && echo true || echo false)"
+leaf=$(spawned_by "$middle" 30)
+check "the grandchild is a native child of the child, which is one of the top" \
+  "$([ "$(session_info "$leaf" | jq -r '.parentID')" = "$middle" ] && [ "$(session_info "$middle" | jq -r '.parentID')" = "$parent" ] && echo true || echo false)"
+check "the person answers in the top session" "$(answer_form "$parent" "$parent_form" '"Hey"')"
+check "the grandchild got it and reported to the child" "$(has_text "$middle" 'CHILD GOT [["Hey"]]' 45)"
+
+echo "nativeChildren: deleting a parent deletes its native children, and their report state goes"
+check "the child's roster entry and report state are there" \
+  "$([ -n "$(kv get "roster/$native_parent/$native_child")" ] && [ -n "$(kv get "report/$native_child/settled")" ] && echo true || echo false)"
+check "the parent is deleted" \
+  "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$native_parent") == 20* ]] && echo true || echo false)"
+check "and with it the child" "$([ "$(status_of "$native_child")" = 404 ] && echo true || echo false)"
+check "whose report state is gone, as for any deleted child" \
+  "$(for _ in $(seq 1 20); do [ -z "$(kv get "report/$native_child/prompt")$(kv get "report/$native_child/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+
 # Last, because it swaps the local plugin for the installed one.
 echo "opencode plugin add installs the packed package and its tools load"
 stop_server

@@ -180,8 +180,8 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   devDependency move with it, to the `effect` the new `@opencode/plugin` depends on), and the live
   test installs `@opencode/cli` at that same version. Read the API's types in `node_modules` rather than
   guessing; the OpenCode V2 source is on the `v2` branch of https://github.com/anomalyco/opencode,
-  with each release tagged (`v2.0.28`). A pin bump adds a row to README.md's Supported OpenCode
-  version table, moves the version README names elsewhere (Quickstart, OpenCode V2 native, the
+  with each release tagged (`v2.0.28`). A release that keeps the pin adds itself to the current row of
+  README.md's Supported OpenCode version table. A pin bump adds a row to that table, moves the version README names elsewhere (Quickstart, OpenCode V2 native, the
   install command, the terminal part's line under the table; a unit test checks the first three), and
   updates the affected traps in `docs/maintainers/plugin-api-notes.md` and the version they are
   current at; that file has no per-version sections. It also reads OpenCode's root `package.json`

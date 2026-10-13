@@ -109,14 +109,15 @@ reference](docs/reference.md#the-courier-orchestrate-skill).
 ### Supported OpenCode version
 
 Requires OpenCode V2: the `opencode` command from `@opencode/cli` (also installed as `opencode2`).
-Each release is built and tested against exactly one OpenCode V2 version. OpenCode never checks it:
+Each release is built and tested against exactly one OpenCode V2 version; a row lists the releases
+pinned to its version. OpenCode never checks it:
 the plugin installs and loads on any V2 host, and on a version other than the pinned one writes one
 line to the server log naming both ([more](docs/reference.md#the-opencode-version)).
 
 | opencode-courier | OpenCode V2 (`opencode` and `@opencode/plugin`) |
 |---|---|
 | 0.4.0 | 2.0.28 |
-| 0.2.3 | 2.0.26 |
+| 0.2.3, 0.3.0 | 2.0.26 |
 | 0.2.2 | 2.0.24 |
 | 0.2.1 | 2.0.23 |
 | 0.2.0 | 2.0.22 |

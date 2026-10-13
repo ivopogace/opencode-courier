@@ -112,6 +112,13 @@ function chooseOptions(choices: ReadonlyArray<Choice>, picked: ReadonlyArray<str
   ]
 }
 
+/** Picks `value` if it is not picked, else unpicks it. */
+function toggle(picked: string[], value: string) {
+  const at = picked.indexOf(value)
+  if (at >= 0) picked.splice(at, 1)
+  else picked.push(value)
+}
+
 /** The choice that leads to a prompt for an answer of the person's own. */
 const OWN = Symbol("own")
 /** The choice that ends a multiple choice. */
@@ -173,9 +180,7 @@ export function addAsksInbox(ctx: Context) {
       const chosen = value === OWN ? (await ctx.ui.dialog.prompt({ title, placeholder: "Your answer" }))?.trim() : (value as string)
       if (!chosen) continue
       if (!multiple) return [chosen]
-      const at = picked.indexOf(chosen)
-      if (at >= 0) picked.splice(at, 1)
-      else picked.push(chosen)
+      toggle(picked, chosen)
     }
   }
 

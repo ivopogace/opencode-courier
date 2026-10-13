@@ -7,11 +7,11 @@ import { busy, DEFAULT_LIMITS, readLimits } from "../src/tree/domain.js"
 import type { ContextPorts, CourierPorts, LimitPorts, SpawnGate } from "../src/tree/ports.js"
 import { SKILL_ID, SPLIT_LINE } from "../src/kernel/protocol.js"
 import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/tree/text.js"
-import { reportOf, prompted, settled } from "../src/tree/report.js"
-import { record } from "../src/tree/roster.js"
+import { reportOf } from "../src/tree/report.js"
+import { childStore } from "../src/tree/store.js"
 
 /** Whether a spawned session owes its parent a report, as `reportOf` reads it. */
-const owesReport = async (storage: Parameters<typeof reportOf>[0], sessionID: string) => (await reportOf(storage, sessionID))?.owes
+const owesReport = async (storage: Parameters<typeof childStore>[0], sessionID: string) => (await reportOf(childStore(storage), sessionID))?.owes
 
 function fakeStorage() {
   const store = new Map<string, unknown>()
@@ -40,7 +40,7 @@ function limitPorts(limits = DEFAULT_LIMITS, times: Record<string, object> = {})
     session: { get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID, time: times[sessionID] ?? RUNNING }) } as any,
   }
   const child = (parentID: string, sessionID: string) =>
-    record(storage, { sessionID, parentID, title: sessionID, directory: "/repo", isolated: false, createdAt: 1 })
+    childStore(storage).record({ sessionID, parentID, title: sessionID, directory: "/repo", isolated: false, createdAt: 1 })
   return { ports, storage, gate, child }
 }
 
@@ -212,10 +212,10 @@ describe("admit, with children that owe a report", () => {
     })
     for (const id of ["ses_a", "ses_b", "ses_c"]) {
       await child("ses_root", id)
-      await prompted(storage, id, 100)
+      await childStore(storage).prompted(id, 100)
     }
-    await settled(storage, "ses_a", "report", 150)
-    if (c !== "silent") await settled(storage, "ses_c", c, 150)
+    await childStore(storage).settled("ses_a", "report", 150)
+    if (c !== "silent") await childStore(storage).settled("ses_c", c, 150)
     return ports
   }
 
@@ -232,15 +232,15 @@ describe("admit, with children that owe a report", () => {
 
   test("counts one that reported once a new prompt reached it", async () => {
     const ports = await owing("failed")
-    await prompted(ports.storage, "ses_a", 200)
+    await childStore(ports.storage).prompted("ses_a", 200)
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(2, 2))
   })
 
   test("counts a child that reported early while its turn still runs", async () => {
     const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 })
     await child("ses_root", "ses_a")
-    await prompted(storage, "ses_a", 100)
-    await settled(storage, "ses_a", "report", 150)
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150)
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
   })
 
@@ -281,7 +281,7 @@ describe("admit, with sessions waiting on their own children", () => {
       } as any,
     }
     const add = (parentID: string, sessionID: string) =>
-      record(storage, { sessionID, parentID, title: sessionID, directory: "/repo", isolated: false, createdAt: 1 })
+      childStore(storage).record({ sessionID, parentID, title: sessionID, directory: "/repo", isolated: false, createdAt: 1 })
     for (const [parentID, sessionID] of [["ses_r", "ses_a"], ["ses_r", "ses_b"], ["ses_a", "ses_a1"], ["ses_b", "ses_b1"]]) await add(parentID!, sessionID!)
     return ports
   }

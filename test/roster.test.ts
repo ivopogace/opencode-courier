@@ -1,18 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import {
-  backfill,
-  children,
   current,
-  entriesOf,
-  forget,
   lineage,
   pruneExpired,
-  record,
-  remove,
   RETENTION_MS,
-  reverseKey,
-  rosterKey,
 } from "../src/tree/roster.js"
+import { forget, forgetChild } from "../src/tree/forget.js"
+import { childStore, reverseKey, rosterKey } from "../src/tree/store.js"
 import type { RosterEntry, RosterStorage } from "../src/tree/ports.js"
 
 function fakeStorage(pageSize?: number) {
@@ -48,38 +42,38 @@ describe("roster", () => {
   test("records a child under its parent", async () => {
     const { storage, store } = fakeStorage()
 
-    await record(storage, entry("ses_a", "ses_parent", 1))
+    await childStore(storage).record(entry("ses_a", "ses_parent", 1))
 
     expect(store.get(rosterKey("ses_parent", "ses_a"))).toEqual(entry("ses_a", "ses_parent", 1))
   })
 
   test("lists only the parent's children, oldest first, across pages", async () => {
     const { storage } = fakeStorage(1)
-    await record(storage, entry("ses_b", "ses_parent", 2))
-    await record(storage, entry("ses_a", "ses_parent", 1))
-    await record(storage, entry("ses_c", "ses_parent", 3))
-    await record(storage, entry("ses_x", "ses_other", 1))
-    await record(storage, entry("ses_y", "ses_parent2", 1))
+    await childStore(storage).record(entry("ses_b", "ses_parent", 2))
+    await childStore(storage).record(entry("ses_a", "ses_parent", 1))
+    await childStore(storage).record(entry("ses_c", "ses_parent", 3))
+    await childStore(storage).record(entry("ses_x", "ses_other", 1))
+    await childStore(storage).record(entry("ses_y", "ses_parent2", 1))
 
-    expect((await children(storage, "ses_parent")).map((child) => child.sessionID)).toEqual(["ses_a", "ses_b", "ses_c"])
-    expect(await children(storage, "ses_nobody")).toEqual([])
+    expect((await childStore(storage).children("ses_parent")).map((child) => child.sessionID)).toEqual(["ses_a", "ses_b", "ses_c"])
+    expect(await childStore(storage).children("ses_nobody")).toEqual([])
   })
 
   test("forgets a child", async () => {
     const { storage } = fakeStorage()
-    await record(storage, entry("ses_a", "ses_parent", 1))
-    await record(storage, entry("ses_b", "ses_parent", 2))
+    await childStore(storage).record(entry("ses_a", "ses_parent", 1))
+    await childStore(storage).record(entry("ses_b", "ses_parent", 2))
 
     expect(await forget(storage, "ses_parent", "ses_a")).toBe(true)
     expect(await forget(storage, "ses_parent", "ses_a")).toBe(false)
-    expect((await children(storage, "ses_parent")).map((child) => child.sessionID)).toEqual(["ses_b"])
+    expect((await childStore(storage).children("ses_parent")).map((child) => child.sessionID)).toEqual(["ses_b"])
   })
 
   test("drops children past the retention period when the roster is read", async () => {
     const { storage, store } = fakeStorage()
     const now = 10 * RETENTION_MS
-    await record(storage, entry("ses_old", "ses_parent", now - RETENTION_MS - 1))
-    await record(storage, entry("ses_new", "ses_parent", now - RETENTION_MS))
+    await childStore(storage).record(entry("ses_old", "ses_parent", now - RETENTION_MS - 1))
+    await childStore(storage).record(entry("ses_new", "ses_parent", now - RETENTION_MS))
 
     expect((await current(storage, "ses_parent", now)).map((child) => child.sessionID)).toEqual(["ses_new"])
     expect(store.has(rosterKey("ses_parent", "ses_old"))).toBe(false)
@@ -88,9 +82,9 @@ describe("roster", () => {
   test("prunes expired children of every parent", async () => {
     const { storage, store } = fakeStorage()
     const now = 10 * RETENTION_MS
-    await record(storage, entry("ses_a", "ses_one", now - RETENTION_MS - 1))
-    await record(storage, entry("ses_b", "ses_two", now - RETENTION_MS - 1))
-    await record(storage, entry("ses_c", "ses_two", now))
+    await childStore(storage).record(entry("ses_a", "ses_one", now - RETENTION_MS - 1))
+    await childStore(storage).record(entry("ses_b", "ses_two", now - RETENTION_MS - 1))
+    await childStore(storage).record(entry("ses_c", "ses_two", now))
     store.set("later/x", { id: "x" })
 
     await pruneExpired(storage, now)
@@ -102,8 +96,8 @@ describe("roster", () => {
     const { storage, store } = fakeStorage()
     const now = 10 * RETENTION_MS
     const old = now - RETENTION_MS - 1
-    await record(storage, { ...entry("ses_kept", "ses_parent", old), isolated: true, directory: "/wt/kept" })
-    await record(storage, { ...entry("ses_gone", "ses_parent", old), isolated: true, directory: "/wt/gone" })
+    await childStore(storage).record({ ...entry("ses_kept", "ses_parent", old), isolated: true, directory: "/wt/kept" })
+    await childStore(storage).record({ ...entry("ses_gone", "ses_parent", old), isolated: true, directory: "/wt/gone" })
     const exists = (directory: string) => directory === "/wt/kept"
 
     expect((await current(storage, "ses_parent", now, exists)).map((child) => child.sessionID)).toEqual(["ses_kept"])
@@ -116,8 +110,8 @@ describe("roster", () => {
 
     test("records each child's ancestors under its own session, up to the session at the top", async () => {
       const { storage, store } = fakeStorage()
-      await record(storage, entry("ses_child", "ses_top", 1))
-      await record(storage, entry("ses_grandchild", "ses_child", 2))
+      await childStore(storage).record(entry("ses_child", "ses_top", 1))
+      await childStore(storage).record(entry("ses_grandchild", "ses_child", 2))
 
       expect(store.get(reverseKey("ses_child"))).toEqual({ ancestors: ["ses_top"] })
       expect(store.get(reverseKey("ses_grandchild"))).toEqual({ ancestors: ["ses_child", "ses_top"] })
@@ -125,12 +119,12 @@ describe("roster", () => {
 
     test("finds a child's entry and lineage without scanning the roster", async () => {
       const { storage, scans } = fakeStorage()
-      await record(storage, entry("ses_child", "ses_top", 1))
-      await record(storage, entry("ses_grandchild", "ses_child", 2))
-      await record(storage, entry("ses_other", "ses_elsewhere", 3))
+      await childStore(storage).record(entry("ses_child", "ses_top", 1))
+      await childStore(storage).record(entry("ses_grandchild", "ses_child", 2))
+      await childStore(storage).record(entry("ses_other", "ses_elsewhere", 3))
       scans.length = 0
 
-      expect(await entriesOf(storage, "ses_grandchild")).toEqual([entry("ses_grandchild", "ses_child", 2)])
+      expect(await childStore(storage).entriesOf("ses_grandchild")).toEqual([entry("ses_grandchild", "ses_child", 2)])
       expect(ids(await lineage(storage, "ses_grandchild"))).toEqual(["ses_grandchild", "ses_child"])
       expect((await lineage(storage, "ses_grandchild")).at(-1)!.parentID).toBe("ses_top")
       expect(scans).toEqual([])
@@ -138,18 +132,18 @@ describe("roster", () => {
 
     test("indexes a child of a top session by scanning once, and a child of an indexed one without", async () => {
       const { storage, scans } = fakeStorage()
-      await record(storage, entry("ses_child", "ses_top", 1))
+      await childStore(storage).record(entry("ses_child", "ses_top", 1))
       expect(scans).toEqual(["roster/"])
       scans.length = 0
 
-      await record(storage, entry("ses_grandchild", "ses_child", 2))
+      await childStore(storage).record(entry("ses_grandchild", "ses_child", 2))
       expect(scans).toEqual([])
     })
 
     test("follows the top's own reverse key, for a parent recorded after its child", async () => {
       const { storage, scans } = fakeStorage()
-      await record(storage, entry("ses_grandchild", "ses_child", 2))
-      await record(storage, entry("ses_child", "ses_top", 1))
+      await childStore(storage).record(entry("ses_grandchild", "ses_child", 2))
+      await childStore(storage).record(entry("ses_child", "ses_top", 1))
       scans.length = 0
 
       expect(ids(await lineage(storage, "ses_grandchild"))).toEqual(["ses_grandchild", "ses_child"])
@@ -158,29 +152,29 @@ describe("roster", () => {
 
     test("ends the lineage where an entry is gone, and finds nothing for a child whose entry is gone", async () => {
       const { storage, store } = fakeStorage()
-      await record(storage, entry("ses_child", "ses_top", 1))
-      await record(storage, entry("ses_grandchild", "ses_child", 2))
+      await childStore(storage).record(entry("ses_child", "ses_top", 1))
+      await childStore(storage).record(entry("ses_grandchild", "ses_child", 2))
       // As an older copy of the plugin removes them: the entry only, the reverse key stays.
       store.delete(rosterKey("ses_top", "ses_child"))
 
       expect(ids(await lineage(storage, "ses_grandchild"))).toEqual(["ses_grandchild"])
       expect(await lineage(storage, "ses_child")).toEqual([])
-      expect(await entriesOf(storage, "ses_child")).toEqual([])
+      expect(await childStore(storage).entriesOf("ses_child")).toEqual([])
     })
 
     test("falls back to scanning for an entry without a reverse key, as an older copy writes it", async () => {
       const { storage, store, scans } = fakeStorage()
       store.set(rosterKey("ses_top", "ses_child"), entry("ses_child", "ses_top", 1))
-      await record(storage, entry("ses_grandchild", "ses_child", 2))
+      await childStore(storage).record(entry("ses_grandchild", "ses_child", 2))
       store.set(rosterKey("ses_grandchild", "ses_old"), entry("ses_old", "ses_grandchild", 3))
       scans.length = 0
 
-      expect(await entriesOf(storage, "ses_child")).toEqual([entry("ses_child", "ses_top", 1)])
+      expect(await childStore(storage).entriesOf("ses_child")).toEqual([entry("ses_child", "ses_top", 1)])
       expect(ids(await lineage(storage, "ses_old"))).toEqual(["ses_old", "ses_grandchild", "ses_child"])
       expect(scans).toEqual(["roster/", "roster/"])
       // The grandchild, recorded by this copy, was indexed through that scan, its parent included.
       expect(store.get(reverseKey("ses_grandchild"))).toEqual({ ancestors: ["ses_child", "ses_top"] })
-      expect(await entriesOf(storage, "ses_nobody")).toEqual([])
+      expect(await childStore(storage).entriesOf("ses_nobody")).toEqual([])
       expect(await lineage(storage, "ses_nobody")).toEqual([])
     })
 
@@ -191,7 +185,7 @@ describe("roster", () => {
         set: async (key, value) => (key.startsWith("roster-by-child/") ? Promise.reject(new Error("disk full")) : storage.set(key, value)),
       }
 
-      await record(failing, entry("ses_child", "ses_top", 1))
+      await childStore(failing).record(entry("ses_child", "ses_top", 1))
 
       expect(store.has(reverseKey("ses_child"))).toBe(false)
       expect(ids(await lineage(storage, "ses_child"))).toEqual(["ses_child"])
@@ -199,17 +193,17 @@ describe("roster", () => {
 
     test("removes the reverse key with the entry, and the entry's group membership", async () => {
       const { storage, store } = fakeStorage()
-      await record(storage, entry("ses_a", "ses_parent", 1))
-      await record(storage, { ...entry("ses_b", "ses_parent", 2), group: "pair" })
+      await childStore(storage).record(entry("ses_a", "ses_parent", 1))
+      await childStore(storage).record({ ...entry("ses_b", "ses_parent", 2), group: "pair" })
       store.set("group/ses_parent/pair/ses_b", { title: "b", joinedAt: 2 })
       store.set("group/ses_parent/pair/ses_c", { title: "c", joinedAt: 3 })
 
-      await remove(storage, "ses_parent", "ses_a")
+      await forgetChild(storage, "ses_parent", "ses_a")
       expect(await forget(storage, "ses_parent", "ses_b")).toBe(true)
 
       expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_c"])
       store.set("roster/ses_parent/ses_c", { ...entry("ses_c", "ses_parent", 3), group: "pair" })
-      await remove(storage, "ses_parent", "ses_c", "pair")
+      await forgetChild(storage, "ses_parent", "ses_c", "pair")
       expect([...store.keys()]).toEqual([])
       // A held report outlives the entry: the group still delivers it.
       store.set("group/ses_parent/pair/ses_d", { title: "d", joinedAt: 4, report: { at: 5, status: "done", message: "m" } })
@@ -222,7 +216,7 @@ describe("roster", () => {
       const { storage, store } = fakeStorage(1)
       store.set(rosterKey("ses_top", "ses_child"), entry("ses_child", "ses_top", 1))
       store.set(rosterKey("ses_child", "ses_grandchild"), entry("ses_grandchild", "ses_child", 2))
-      await record(storage, entry("ses_indexed", "ses_top", 3))
+      await childStore(storage).record(entry("ses_indexed", "ses_top", 3))
       store.set(reverseKey("ses_gone"), { ancestors: ["ses_top"] })
       store.set(reverseKey("ses_junk"), "not an index")
       store.set(rosterKey("ses_top", "ses_moved"), entry("ses_moved", "ses_top", 4))
@@ -234,9 +228,9 @@ describe("roster", () => {
         entry("ses_moved", "ses_top", 4),
       ]
 
-      await backfill(storage, entries)
+      await childStore(storage).backfill(entries)
       const once = new Map(store)
-      await backfill(storage, entries)
+      await childStore(storage).backfill(entries)
 
       expect(store).toEqual(once)
       expect(store.get(reverseKey("ses_child"))).toEqual({ ancestors: ["ses_top"] })
@@ -249,13 +243,13 @@ describe("roster", () => {
 
     test("removing an entry succeeds when its reverse key cannot be removed", async () => {
       const { storage, store } = fakeStorage()
-      await record(storage, entry("ses_child", "ses_top", 1))
+      await childStore(storage).record(entry("ses_child", "ses_top", 1))
       const failing: RosterStorage = {
         ...storage,
         remove: async (key) => (key.startsWith("roster-by-child/") ? Promise.reject(new Error("locked")) : storage.remove(key)),
       }
 
-      await remove(failing, "ses_top", "ses_child")
+      await forgetChild(failing, "ses_top", "ses_child")
 
       expect([...store.keys()]).toEqual([reverseKey("ses_child")])
       expect(await lineage(storage, "ses_child")).toEqual([])
@@ -263,9 +257,9 @@ describe("roster", () => {
 
     test("back-filling keeps a reverse key whose entry was recorded after the roster was read", async () => {
       const { storage, store } = fakeStorage()
-      await record(storage, entry("ses_new", "ses_top", 1))
+      await childStore(storage).record(entry("ses_new", "ses_top", 1))
 
-      await backfill(storage, [])
+      await childStore(storage).backfill([])
 
       expect(store.get(reverseKey("ses_new"))).toEqual({ ancestors: ["ses_top"] })
     })
@@ -273,7 +267,7 @@ describe("roster", () => {
     test("pruning on load removes report state with no roster entry and keeps a live child's", async () => {
       const { storage, store } = fakeStorage()
       const now = 10 * RETENTION_MS
-      await record(storage, entry("ses_live", "ses_top", now))
+      await childStore(storage).record(entry("ses_live", "ses_top", now))
       for (const name of ["prompt", "settled", "progress", "told", "stopped"]) {
         store.set(`report/ses_orphan/${name}`, { at: 1 })
         store.set(`report/ses_live/${name}`, { at: 1 })
@@ -298,7 +292,7 @@ describe("roster", () => {
         scan: async (request) => {
           const page = await storage.scan(request)
           // The roster is read second: a child recorded after the report keys were read is on it.
-          if (request.prefix === "report/") await record(storage, entry("ses_new", "ses_top", now)).then(() => store.set("report/ses_new/prompt", { at: now }))
+          if (request.prefix === "report/") await childStore(storage).record(entry("ses_new", "ses_top", now)).then(() => store.set("report/ses_new/prompt", { at: now }))
           return page
         },
       }
@@ -313,7 +307,7 @@ describe("roster", () => {
     test("pruning on load removes report state a failed removal left, and carries on when a key will not go", async () => {
       const { storage, store } = fakeStorage()
       const now = 10 * RETENTION_MS
-      await record(storage, entry("ses_kept", "ses_top", now))
+      await childStore(storage).record(entry("ses_kept", "ses_top", now))
       store.set("report/ses_a/prompt", { at: 1 })
       store.set("report/ses_a/settled", { at: 1 })
       const failing: RosterStorage = {

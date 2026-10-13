@@ -172,3 +172,18 @@ test("the snapshot test imports every text.ts of src/ by its path", () => {
   expect(texts.length).toBeGreaterThan(0)
   expect(texts.filter((module) => !imported.has(module))).toEqual([])
 })
+
+test("tree/store.ts is imported from no file outside tree/, and tree/index.ts re-exports nothing of it", () => {
+  const importing = [...imports()].filter(([, imported]) => imported.includes("tree/store")).map(([module]) => module)
+  expect(importing).toContain("tree/forget")
+  expect(importing.filter((module) => !module.startsWith("tree/") || module === "tree/index")).toEqual([])
+})
+
+test("only tree/store.ts names the tree's storage prefixes, so no other file builds its keys", () => {
+  const prefix = /\b(?:roster|roster-by-child|report|group)\//
+  const naming = readdirSync(SRC, { recursive: true, encoding: "utf8" })
+    .filter((name) => name.endsWith(".ts"))
+    .map((name) => name.split("\\").join("/"))
+    .filter((name) => prefix.test(readFileSync(join(SRC, name), "utf8")))
+  expect(naming).toEqual(["tree/store.ts"])
+})

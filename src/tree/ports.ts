@@ -5,13 +5,111 @@
 import type { Plugin } from "@opencode/plugin"
 import type { Status } from "../kernel/protocol.js"
 import type { Storage } from "../platform/storage.js"
-import type { Limits } from "./domain.js"
+import type { Limits, Member, RosterEntry } from "./domain.js"
 
 export type { Artifacts, HeldReport, LeftMember, Limits, Member, RosterEntry, Standing } from "./domain.js"
 
 type Context = Plugin.Context
 
 export type RosterStorage = Storage
+
+/** How a session's wait for a report ended: it reported to its parent, or its turn failed or was interrupted. */
+export type Settled = "report" | "failed" | "interrupted"
+
+/** The notes kept of a spawned session's report state; docs/reference.md has each. */
+export type ReportField = "prompt" | "settled" | "progress" | "told" | "stopped"
+
+/** A report note as read: when it was made, and for `settled` how the wait ended and the report's status, as stored. */
+export interface ReportNote {
+  readonly at: number | undefined
+  readonly by: unknown
+  readonly status: unknown
+}
+
+/** A stored value, as `Storage` gives and takes it. */
+export type Stored = Parameters<Storage["set"]>[1]
+
+/** The report keys found, by the session they are about. */
+export type ReportKeys = ReadonlyMap<string, ReadonlyArray<string>>
+
+/**
+ * A spawned session as kept: its roster entry under its parent, the reverse index that finds it, and its report
+ * state, which go together. The reverse index is only an index: a session it does not name is looked for in the roster.
+ */
+export interface ChildStore {
+  /** Records a child under its parent, then indexes it; a failed index write is left to a scan and the next load. */
+  record(entry: RosterEntry): Promise<void>
+  /** Removes a child's entry and, at once and best effort, its reverse key and report state; only the entry's removal can fail it. */
+  remove(parentID: string, sessionID: string): Promise<void>
+  /** A session's roster entry under a parent, if it is there. */
+  entry(parentID: string, sessionID: string): Promise<RosterEntry | undefined>
+  /** A parent's children, oldest first. */
+  children(parentID: string): Promise<RosterEntry[]>
+  /** Every parent's children. */
+  all(): Promise<RosterEntry[]>
+  /** A session's roster entries: one for the parent that started it, none if courier_spawn did not. */
+  entriesOf(sessionID: string): Promise<RosterEntry[]>
+  /** The session that started a session, by the reverse index alone, without scanning the roster. */
+  indexedParent(sessionID: string): Promise<string | undefined>
+  /** A session's roster entry, by the reverse index alone, without scanning the roster. */
+  indexedEntry(sessionID: string): Promise<RosterEntry | undefined>
+  /**
+   * The roster entries from a session up to the top, its own first, ending with the entry whose parent
+   * courier_spawn did not start; empty when courier_spawn did not start the session.
+   */
+  lineage(sessionID: string): Promise<RosterEntry[]>
+  /** `lineage` by the reverse index alone: empty, without scanning the roster, when it does not name the session. */
+  indexedLineage(sessionID: string): Promise<RosterEntry[]>
+  /** Writes the reverse keys missing or stale for the given entries, the whole roster, and drops those whose entry is gone. */
+  backfill(entries: ReadonlyArray<RosterEntry>): Promise<void>
+  /** The given notes of a session's report state, read at once. */
+  notes<F extends ReportField>(sessionID: string, fields: ReadonlyArray<F>): Promise<{ readonly [K in F]: ReportNote }>
+  /** Notes that a prompt or message reached a spawned session at `at`, unless a later one is noted. */
+  prompted(sessionID: string, at: number): Promise<void>
+  /** Notes how a spawned session's wait for a report ended at `at`, with its report's status, unless a later end is noted. */
+  settled(sessionID: string, by: Settled, at: number, status?: Status): Promise<void>
+  /** Notes that a spawned session messaged its parent without a status at `at`, unless a later one is noted. */
+  progressed(sessionID: string, at: number): Promise<void>
+  /** Notes that a spawned session's parent was told at `at` that a turn ended without a report, unless a later telling is noted. */
+  told(sessionID: string, at: number): Promise<void>
+  /** Takes back the note `told` made at `at`; a later one stays, and one that cannot be read goes. */
+  untold(sessionID: string, at: number): Promise<void>
+  /** Notes that courier_stop stopped a spawned session at `at`. */
+  stopped(sessionID: string, at: number): Promise<void>
+  /** A `settled` or `progress` note as stored, for `restore` to put back. */
+  peek(sessionID: string, field: "settled" | "progress"): Promise<Stored | undefined>
+  /** Puts back a note `peek` read; one that was not there is removed. */
+  restore(sessionID: string, field: "settled" | "progress", value: Stored | undefined): Promise<void>
+  /** Drops a session's report state. */
+  forgetReport(sessionID: string): Promise<void>
+  /** Every report key, by the session it is about. */
+  reported(): Promise<ReportKeys>
+  /** Removes report keys `reported` found, each best effort. */
+  dropReported(keys: ReadonlyArray<string>): Promise<void>
+}
+
+/** A member of a join group with where it is kept. */
+export interface Membership extends Member {
+  readonly parentID: string
+  readonly group: string
+  readonly sessionID: string
+}
+
+/** The members of parents' join groups, each with its held report or how it left; a value that is not a member reads as none. */
+export interface GroupStore {
+  /** A session's member in a parent's group, if it is one. */
+  member(parentID: string, group: string, sessionID: string): Promise<Member | undefined>
+  /** The members of every group. */
+  all(): Promise<Membership[]>
+  /** The members of a parent's groups. */
+  ofParent(parentID: string): Promise<Membership[]>
+  /** The members of one group. */
+  ofGroup(parentID: string, group: string): Promise<Membership[]>
+  /** Writes a member in place of what was kept for it. */
+  put(parentID: string, group: string, sessionID: string, member: Member): Promise<void>
+  /** Removes a member whatever it holds. */
+  remove(parentID: string, group: string, sessionID: string): Promise<void>
+}
 
 /** A report held with its group: which group, and how many of its members have reported so far, when that could be read. */
 export interface Held {

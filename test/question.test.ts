@@ -22,7 +22,8 @@ import { resetHub } from "./fixtures/reset.js"
 import { anyLoaded, shared as relayState } from "../src/person/question/shared.js"
 import { background, run, stopRelay, useClock } from "../src/person/question/runtime.js"
 import { answeredText, questionNotice, questionSettledNotice as settledNotice } from "../src/person/text.js"
-import { record, RETENTION_MS } from "../src/tree/roster.js"
+import { RETENTION_MS } from "../src/tree/roster.js"
+import { childStore } from "../src/tree/store.js"
 
 /** Joins the process's hub, as an instance with no tick jobs. */
 const { join } = openInProcess([])
@@ -115,7 +116,7 @@ async function setUp(timings: Partial<QuestionTiming> = {}) {
     newID: () => `question_${++ids}`,
     log: () => undefined,
   }
-  await record(ports.storage, { sessionID: "ses_child", parentID: "ses_parent", title: "Fix the bug", directory: "/repo", isolated: false, createdAt: 1 })
+  await childStore(ports.storage).record({ sessionID: "ses_child", parentID: "ses_parent", title: "Fix the bug", directory: "/repo", isolated: false, createdAt: 1 })
   const tool = questionTool()
   const wrapped: { execute: any } = { execute: tool.execute }
   const host = {
@@ -798,7 +799,7 @@ describe("the question tool of a spawned session", () => {
 
   test("the location a dismissal is judged by is the one the call runs in, not the one recorded for the session", async () => {
     const { advance, ports, store, told, tool, ask, shutDown } = await setUp({ dismissalGraceMs: 100 })
-    await record(ports.storage, { sessionID: "ses_child", parentID: "ses_parent", title: "Fix the bug", directory: "/worktree", isolated: true, createdAt: 1 })
+    await childStore(ports.storage).record({ sessionID: "ses_child", parentID: "ses_parent", title: "Fix the bug", directory: "/worktree", isolated: true, createdAt: 1 })
     const first = ask("ses_child")
     await settle()
     formOf(tool, "ses_child").dismiss()
@@ -1330,7 +1331,7 @@ describe("the question tool of a spawned session", () => {
 
   test("a question of a child's child goes to the session at the top, which alone answers it", async () => {
     const { ports, told, tool, ask } = await setUp()
-    await record(ports.storage, { sessionID: "ses_grandchild", parentID: "ses_child", title: "Sub task", directory: "/repo", isolated: false, createdAt: 2 })
+    await childStore(ports.storage).record({ sessionID: "ses_grandchild", parentID: "ses_child", title: "Sub task", directory: "/repo", isolated: false, createdAt: 2 })
     const grandchild = ask("ses_grandchild")
     await settle()
 

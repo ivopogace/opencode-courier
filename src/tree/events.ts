@@ -1,10 +1,11 @@
 import { envelope } from "../kernel/protocol.js"
 import { claim, SEEN_MAX, setBounded } from "../platform/bounded.js"
 import type { EventModule, HostEvent } from "../platform/events.js"
-import { dropGroups, hasCompleteGroup, markLeft, membershipOf, type Membership } from "./group.js"
-import type { ExecutionError, RosterEntry, Waits, WatchPorts, WatchState } from "./ports.js"
-import { awaited, forgetReport, prompted, reportOf, settled, stoppedSincePrompt, told, untold } from "./report.js"
-import { children, entriesOf, entryUnder, indexedEntry, indexedParent } from "./roster.js"
+import { forgetDeleted } from "./forget.js"
+import { hasCompleteGroup, leave, outIn } from "./group.js"
+import type { ExecutionError, Waits, WatchPorts, WatchState } from "./ports.js"
+import { awaited, reportOf, stoppedSincePrompt } from "./report.js"
+import { childStore, groupStore } from "./store.js"
 import { lastReply } from "./status.js"
 import { failureNotice, silentNotice } from "./text.js"
 
@@ -33,11 +34,12 @@ export interface SessionEvent {
 export async function reportFailure(ports: WatchPorts, seen: Set<string>, event: ExecutionFailed) {
   if (!claim(seen, event.id)) return []
   const { sessionID, error } = event.data
-  const entries = await entriesOf(ports.storage, sessionID)
+  const children = childStore(ports.storage)
+  const entries = await children.entriesOf(sessionID)
   const at = event.created ?? ports.now()
   // Not in the way of the notice: kept only so the limits stop counting the child.
   if (entries.length)
-    await settled(ports.storage, sessionID, "failed", at).catch((error: unknown) =>
+    await children.settled(sessionID, "failed", at).catch((error: unknown) =>
       ports.log(`courier watch: could not note the failed turn of ${sessionID}: ${String(error)}`),
     )
   const out = await Promise.all(entries.map((entry) => outIn(ports, entry)))
@@ -45,7 +47,7 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   // message does not overtake the notice, short of an interval tick falling in between.
   const completed = await Promise.all(out.map((member) => (member ? leave(ports, member, "failed", at) : Promise.resolve(false))))
   // A session courier_stop stopped is not a failure to tell: its parent was told of the stop, or ordered it.
-  const quiet = entries.length > 0 && (await stoppedSincePrompt(ports.storage, sessionID).catch(() => false))
+  const quiet = entries.length > 0 && (await stoppedSincePrompt(children, sessionID).catch(() => false))
   try {
     if (quiet) return []
     await Promise.all(
@@ -65,28 +67,6 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   return entries.map((entry) => entry.parentID)
 }
 
-/** A child's membership of an open group it is still out in: the group waits for it, and its end takes it out without a report. */
-async function outIn(ports: WatchPorts, entry: RosterEntry) {
-  if (!entry.group) return undefined
-  try {
-    const member = await membershipOf(ports.storage, entry.parentID, entry.group, entry.sessionID)
-    return member?.out ? member : undefined
-  } catch (error) {
-    ports.log(`courier watch: could not read ${entry.sessionID}'s place in group ${entry.group}: ${String(error)}`)
-    return undefined
-  }
-}
-
-/** Takes a member out of its group without a report; true when that completes the group, for the caller to nudge the scheduler. */
-async function leave(ports: WatchPorts, member: Membership, by: "failed" | "interrupted" | "deleted", at: number) {
-  try {
-    return await markLeft(ports.storage, member, by, at)
-  } catch (error) {
-    ports.log(`courier watch: could not take ${member.sessionID} out of group ${member.group}: ${String(error)}`)
-    return false
-  }
-}
-
 /** OpenCode's `session.inbox.enqueued`: the item's type, which its `session.inbox.delivered` does not carry. */
 export interface InboxEnqueued {
   readonly data: { readonly sessionID: string; readonly inboxID: string; readonly item: { readonly type: string } }
@@ -98,7 +78,7 @@ const UNOWED = new Set(["user", "compaction", "move"])
 /** Remembers the type of an item enqueued for a spawned session, for `notePrompt`; other sessions cost one read. */
 export async function noteEnqueued(ports: WatchPorts, inbox: Map<string, string>, event: InboxEnqueued) {
   const { sessionID, inboxID, item } = event.data
-  if ((await indexedParent(ports.storage, sessionID)) === undefined) return false
+  if ((await childStore(ports.storage).indexedParent(sessionID)) === undefined) return false
   setBounded(inbox, inboxID, item.type, SEEN_MAX)
   return true
 }
@@ -115,8 +95,9 @@ export async function notePrompt(
   const { sessionID, inboxID } = event.data
   // Kept, not deleted: the hub's other subscription looks it up for the same delivery.
   if (inboxID !== undefined && UNOWED.has(inbox?.get(inboxID) ?? "")) return false
-  if ((await indexedParent(ports.storage, sessionID)) === undefined) return false
-  await prompted(ports.storage, sessionID, event.created ?? ports.now())
+  const children = childStore(ports.storage)
+  if ((await children.indexedParent(sessionID)) === undefined) return false
+  await children.prompted(sessionID, event.created ?? ports.now())
   return true
 }
 
@@ -127,10 +108,11 @@ export async function notePrompt(
 export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
   if (event.data.reason === "shutdown") return false
   const { sessionID } = event.data
-  const entry = await indexedEntry(ports.storage, sessionID)
+  const children = childStore(ports.storage)
+  const entry = await children.indexedEntry(sessionID)
   if (entry === undefined) return false
   const at = event.created ?? ports.now()
-  await settled(ports.storage, sessionID, "interrupted", at)
+  await children.settled(sessionID, "interrupted", at)
   const member = await outIn(ports, entry)
   if (member && (await leave(ports, member, "interrupted", at))) ports.nudge()
   return true
@@ -142,17 +124,12 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
  */
 export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const { sessionID } = event.data
-  const [parentID, started] = await Promise.all([indexedParent(ports.storage, sessionID), children(ports.storage, sessionID)])
+  const children = childStore(ports.storage)
+  const [parentID, started] = await Promise.all([children.indexedParent(sessionID), children.children(sessionID)])
   const forgotten = [...(parentID === undefined ? [] : [sessionID]), ...started.map((child) => child.sessionID)]
-  const entry = parentID === undefined ? undefined : await entryUnder(ports.storage, parentID, sessionID)
+  const entry = parentID === undefined ? undefined : await children.entry(parentID, sessionID)
   const member = entry && (await outIn(ports, entry))
-  // Its groups go whether or not it has children on the roster: a held report outlives the member's entry.
-  const [completed] = await Promise.all([
-    member ? leave(ports, member, "deleted", event.created ?? ports.now()) : Promise.resolve(false),
-    ...forgotten.map((id) => forgetReport(ports.storage, id)),
-    dropGroups(ports.storage, sessionID),
-  ])
-  if (completed) ports.nudge()
+  await forgetDeleted(ports, sessionID, forgotten, member, event.created)
   return forgotten
 }
 
@@ -175,10 +152,11 @@ export const together =
  * its about to be delivered, or what `outside` says it waits on. Cheapest first.
  */
 async function waits(ports: WatchPorts, outside: Waits, sessionID: string, prompt: number) {
-  const started = await children(ports.storage, sessionID)
-  if ((await Promise.all(started.map((entry) => awaited(ports.storage, entry.sessionID)))).includes(true)) return true
+  const children = childStore(ports.storage)
+  const started = await children.children(sessionID)
+  if ((await Promise.all(started.map((entry) => awaited(children, entry.sessionID)))).includes(true)) return true
   // A group with a member still out is waited on through that member, above; one whose every out member was told of is not.
-  if (started.some((entry) => entry.group) && (await hasCompleteGroup(ports.storage, sessionID))) return true
+  if (started.some((entry) => entry.group) && (await hasCompleteGroup(groupStore(ports.storage), sessionID))) return true
   return outside(ports, sessionID, prompt)
 }
 
@@ -188,18 +166,19 @@ async function waits(ports: WatchPorts, outside: Waits, sessionID: string, promp
  */
 export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: SessionEvent, outside: Waits) {
   const { sessionID } = event.data
-  const entry = await indexedEntry(ports.storage, sessionID)
+  const children = childStore(ports.storage)
+  const entry = await children.indexedEntry(sessionID)
   // Claimed after the lookup, so other sessions' turns do not crowd `seen`, and before anything is told.
   if (!entry || !claim(seen, event.id)) return []
-  const report = await reportOf(ports.storage, sessionID)
+  const report = await reportOf(children, sessionID)
   if (!report?.owes || (await waits(ports, outside, sessionID, report.prompt))) return []
-  if (await stoppedSincePrompt(ports.storage, sessionID).catch(() => false)) return []
+  if (await stoppedSincePrompt(children, sessionID).catch(() => false)) return []
   // The notice goes out without the reply rather than not at all.
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
   const group = (await outIn(ports, entry))?.group
   // Before the notice, which may end the parent's turn at once: once told, it no longer waits for this one.
   const toldAt = event.created ?? ports.now()
-  await told(ports.storage, sessionID, toldAt).catch((error: unknown) =>
+  await children.told(sessionID, toldAt).catch((error: unknown) =>
     ports.log(`courier watch: could not note that the parent of ${sessionID} was told: ${String(error)}`),
   )
   try {
@@ -212,7 +191,7 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
     })
   } catch (error) {
     // Not told after all: the parent still waits for it.
-    await untold(ports.storage, sessionID, toldAt).catch(() => undefined)
+    await children.untold(sessionID, toldAt).catch(() => undefined)
     throw error
   }
   return [entry.parentID]
@@ -224,7 +203,7 @@ const TURN_ENDS = new Set(["session.execution.succeeded", "session.execution.fai
 async function sealGroups(ports: WatchPorts, event: SessionEvent) {
   if (event.data.reason === "shutdown") return
   try {
-    if (await hasCompleteGroup(ports.storage, event.data.sessionID)) ports.nudge()
+    if (await hasCompleteGroup(groupStore(ports.storage), event.data.sessionID)) ports.nudge()
   } catch (error) {
     ports.log(`courier watch: could not read the groups of ${event.data.sessionID}: ${String(error)}`)
   }

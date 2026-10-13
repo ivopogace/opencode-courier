@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { permissionNotice, permissionSettledNotice as settledNotice, REJECTED } from "../src/person/text.js"
 import { answer, pendingOf, type AnswerPorts, type Permissions } from "../src/person/permission.js"
-import { record } from "../src/tree/roster.js"
+import { childStore } from "../src/tree/store.js"
 
 const request = { id: "per_1", sessionID: "ses_child", action: "shell", resources: ["git push"], save: ["git push*"] }
 
@@ -37,7 +37,7 @@ async function setUp(...locations: Permissions[]) {
     } as unknown as AnswerPorts["storage"],
     permissions: () => locations,
   }
-  await record(ports.storage, { sessionID: "ses_child", parentID: "ses_parent", title: "Fix the bug", directory: "/wt", isolated: true, createdAt: 1 })
+  await childStore(ports.storage).record({ sessionID: "ses_child", parentID: "ses_parent", title: "Fix the bug", directory: "/wt", isolated: true, createdAt: 1 })
   return ports
 }
 
@@ -185,7 +185,7 @@ describe("answer", () => {
     const grandchild = { ...request, id: "per_g", sessionID: "ses_grand" }
     const worktree = location([grandchild])
     const ports = await setUp(worktree.domain)
-    await record(ports.storage, { sessionID: "ses_grand", parentID: "ses_child", title: "Push", directory: "/wt", isolated: true, createdAt: 2 })
+    await childStore(ports.storage).record({ sessionID: "ses_grand", parentID: "ses_child", title: "Push", directory: "/wt", isolated: true, createdAt: 2 })
 
     await expect(answer(ports, new Set(), "ses_child", { sessionID: "ses_grand", requestID: "per_g", reply: "always" })).rejects.toThrow(
       "ses_grand's permission requests go to ses_parent",

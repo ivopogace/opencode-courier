@@ -1,6 +1,6 @@
 import { setBounded } from "../platform/bounded.js"
 import type { ContextPorts } from "./ports.js"
-import { children, indexedLineage } from "./roster.js"
+import { childStore } from "./store.js"
 import { ROLE_PREFIX, rolePart } from "./text.js"
 
 /** How many sessions' depths an instance remembers. */
@@ -33,8 +33,9 @@ async function depthOf(ports: ContextPorts, sessionID: string) {
   const known = ports.roles.get(sessionID)
   if (known !== undefined) return known
   // The reverse index alone: a scan here would run for every session's first request, courier or not.
-  const chain = await indexedLineage(ports.storage, sessionID)
-  const depth = chain.length || ((await children(ports.storage, sessionID)).length ? 0 : null)
+  const children = childStore(ports.storage)
+  const chain = await children.indexedLineage(sessionID)
+  const depth = chain.length || ((await children.children(sessionID)).length ? 0 : null)
   setBounded(ports.roles, sessionID, depth, ROLES_MAX)
   return depth
 }

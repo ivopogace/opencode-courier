@@ -6,9 +6,8 @@ import type { CourierPorts } from "../src/tree/ports.js"
 import { DEFAULT_LIMITS } from "../src/tree/domain.js"
 import { describeFailure, envelope } from "../src/kernel/protocol.js"
 import { childBrief, reportBody } from "../src/tree/text.js"
-import { joinGroup, memberKey } from "../src/tree/group.js"
-import { progressKey, settledKey } from "../src/tree/report.js"
-import { record, rosterKey } from "../src/tree/roster.js"
+import { joinGroup } from "../src/tree/group.js"
+import { childStore, groupStore, memberKey, progressKey, rosterKey, settledKey } from "../src/tree/store.js"
 
 type Call = { method: string; input: any }
 
@@ -167,7 +166,7 @@ describe("spawn", () => {
   describe("nested isolation", () => {
     /** ses_parent is an isolated child of ses_root, working in /wt/parent. */
     const isolatedParent = async (ports: CourierPorts) =>
-      record(ports.storage, { sessionID: "ses_parent", parentID: "ses_root", title: "P", directory: "/wt/parent", isolated: true, createdAt: 1, base: "root000" })
+      childStore(ports.storage).record({ sessionID: "ses_parent", parentID: "ses_root", title: "P", directory: "/wt/parent", isolated: true, createdAt: 1, base: "root000" })
 
     test("starts an isolated child's worktree from an isolated parent's HEAD, and records it as the base", async () => {
       const { ports, calls: all, store } = fakePorts()
@@ -190,7 +189,7 @@ describe("spawn", () => {
       expect(afterLookups(root.calls)[0]!.input).toEqual({ projectID: "proj_1" })
 
       const plain = fakePorts()
-      await record(plain.ports.storage, { sessionID: "ses_parent", parentID: "ses_root", title: "P", directory: "/repo", isolated: false, createdAt: 1 })
+      await childStore(plain.ports.storage).record({ sessionID: "ses_parent", parentID: "ses_root", title: "P", directory: "/repo", isolated: false, createdAt: 1 })
       const child = await spawn(plain.ports, "ses_parent", { task: "t", isolate: true })
       expect(afterLookups(plain.calls)[0]!.input).toEqual({ projectID: "proj_1" })
       expect(child).not.toHaveProperty("fromParent")
@@ -326,7 +325,7 @@ describe("spawn, into a group", () => {
 
   test("a child in a group that never got its task leaves the group, so the group does not wait for it", async () => {
     const { ports, store, nudges } = fakePorts()
-    await joinGroup(ports.storage, "ses_parent", "reviews", "ses_other", "Other", 1)
+    await joinGroup(groupStore(ports.storage), "ses_parent", "reviews", "ses_other", "Other", 1)
     await ports.storage.set(memberKey("ses_parent", "reviews", "ses_other"), { title: "Other", joinedAt: 1, report: { at: 2, status: "done", message: "m" } })
     ;(ports.session as any).prompt = async () => {
       throw new Error("prompt failed")
@@ -399,7 +398,7 @@ describe("send", () => {
 
   test("notes a spawned session's message with a status to its parent, and only that, as its report, with the status", async () => {
     const { ports, store } = fakePorts()
-    await record(ports.storage, spawned)
+    await childStore(ports.storage).record(spawned)
 
     await send(ports, "ses_child", { sessionID: "ses_other", message: "m", status: "done" })
     expect(store.has(settledKey("ses_child"))).toBe(false)
@@ -438,7 +437,7 @@ describe("send", () => {
 
   test("notes a message without a status to the parent as progress, not as the report, and says so", async () => {
     const { ports, store } = fakePorts()
-    await record(ports.storage, spawned)
+    await childStore(ports.storage).record(spawned)
 
     expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "halfway" })).toEqual({ messageID: "msg_2", report: false })
 
@@ -451,7 +450,7 @@ describe("send", () => {
   test("takes a message without a status from a child an older release briefed as its report, as before", async () => {
     const { ports, store } = fakePorts()
     const { reports, ...older } = spawned
-    await record(ports.storage, older)
+    await childStore(ports.storage).record(older)
 
     expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m" })).toEqual({ messageID: "msg_2", report: true })
 
@@ -461,7 +460,7 @@ describe("send", () => {
 
   test("notes the report before delivering it, which may end the parent's turn at once", async () => {
     const { ports, store } = fakePorts()
-    await record(ports.storage, spawned)
+    await childStore(ports.storage).record(spawned)
     let noted: unknown
     ;(ports.session as any).synthetic = async () => {
       noted = store.get(settledKey("ses_child"))
@@ -473,7 +472,7 @@ describe("send", () => {
 
   test("takes the note back when the message is not delivered, and delivers it when the report cannot be noted", async () => {
     const { ports, store } = fakePorts()
-    await record(ports.storage, spawned)
+    await childStore(ports.storage).record(spawned)
     ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
     await expect(send(ports, "ses_child", report)).rejects.toThrow("parent is gone")
     expect(store.has(settledKey("ses_child"))).toBe(false)
@@ -501,10 +500,10 @@ describe("send", () => {
 describe("send, from a member of a group", () => {
   const spawned = { sessionID: "ses_child", parentID: "ses_parent", title: "A", directory: "/repo", isolated: false, createdAt: 1, reports: "status" as const, group: "pair" }
   async function grouped(ports: CourierPorts) {
-    await record(ports.storage, spawned)
-    await record(ports.storage, { ...spawned, sessionID: "ses_other", title: "B" })
-    await joinGroup(ports.storage, "ses_parent", "pair", "ses_child", "A", 1)
-    await joinGroup(ports.storage, "ses_parent", "pair", "ses_other", "B", 2)
+    await childStore(ports.storage).record(spawned)
+    await childStore(ports.storage).record({ ...spawned, sessionID: "ses_other", title: "B" })
+    await joinGroup(groupStore(ports.storage), "ses_parent", "pair", "ses_child", "A", 1)
+    await joinGroup(groupStore(ports.storage), "ses_parent", "pair", "ses_other", "B", 2)
   }
 
   test("holds a report with a final status instead of delivering it, settles the report, and says so", async () => {
@@ -720,9 +719,9 @@ describe("listChildren", () => {
       if (input.sessionID === "ses_gone") throw Object.assign(new Error(""), { _tag: "Session.NotFoundError", sessionID: "ses_gone" })
       return get(input)
     }
-    await record(ports.storage, { sessionID: "ses_child", parentID: "ses_parent", title: "Fix the bug", directory: "/repo", isolated: false, createdAt: 900 })
-    await record(ports.storage, { sessionID: "ses_gone", parentID: "ses_parent", title: "Gone", directory: "/wt", isolated: true, createdAt: 950 })
-    await record(ports.storage, { sessionID: "ses_else", parentID: "ses_other", title: "Else", directory: "/repo", isolated: false, createdAt: 900 })
+    await childStore(ports.storage).record({ sessionID: "ses_child", parentID: "ses_parent", title: "Fix the bug", directory: "/repo", isolated: false, createdAt: 900 })
+    await childStore(ports.storage).record({ sessionID: "ses_gone", parentID: "ses_parent", title: "Gone", directory: "/wt", isolated: true, createdAt: 950 })
+    await childStore(ports.storage).record({ sessionID: "ses_else", parentID: "ses_other", title: "Else", directory: "/repo", isolated: false, createdAt: 900 })
 
     expect(await listChildren(ports, "ses_parent")).toStrictEqual([
       {
@@ -767,10 +766,10 @@ describe("listChildren", () => {
       ["ses_released", undefined],
       ["ses_unknown", undefined],
     ] as const) {
-      await record(ports.storage, { ...spawned, sessionID })
+      await childStore(ports.storage).record({ ...spawned, sessionID })
       if (member) await ports.storage.set(memberKey("ses_parent", "pair", sessionID), member as never)
     }
-    await record(ports.storage, { ...spawned, sessionID: "ses_plain", group: undefined })
+    await childStore(ports.storage).record({ ...spawned, sessionID: "ses_plain", group: undefined })
 
     const listed = await listChildren(ports, "ses_parent")
 

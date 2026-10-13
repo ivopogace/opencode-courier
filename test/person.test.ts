@@ -5,13 +5,14 @@ import { personEvents } from "../src/person/events.js"
 import type { FormCreated } from "../src/person/form.js"
 import { relayPending, reportAsked, reportReplied } from "../src/person/events.js"
 import { reportForm, reportFormSettled } from "../src/person/form.js"
-import { record, remove } from "../src/tree/roster.js"
+import { forgetChild } from "../src/tree/forget.js"
+import { childStore } from "../src/tree/store.js"
 import { asked, child, fakePorts, fresh, replied, request, settled, shown, webForm } from "./fixtures/events.js"
 
 describe("reportAsked", () => {
   test("tells the parent what the child asks for and how to answer, waking it", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
 
     const told = await reportAsked(ports, state, asked())
@@ -31,8 +32,8 @@ describe("reportAsked", () => {
 
   test("tells the session at the top, where the person is, about a request of a child's child", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
-    await record(ports.storage, { ...child("ses_root"), sessionID: "ses_parent", title: "Lead" })
+    await childStore(ports.storage).record(child())
+    await childStore(ports.storage).record({ ...child("ses_root"), sessionID: "ses_parent", title: "Lead" })
 
     expect(await reportAsked(ports, fresh(), asked())).toEqual(["ses_root"])
 
@@ -45,7 +46,7 @@ describe("reportAsked", () => {
 
   test("does not tell anyone about a request answered while its roster was looked up", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
 
     const telling = reportAsked(ports, state, asked())
@@ -58,7 +59,7 @@ describe("reportAsked", () => {
 
   test("ignores a request of a session that courier_spawn did not start, and a repeated event", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
 
     expect(await reportAsked(ports, state, asked("evt_a", { ...request, sessionID: "ses_other" }))).toEqual([])
@@ -71,7 +72,7 @@ describe("reportAsked", () => {
 describe("reportReplied", () => {
   test("tells the parent that a request it was told about was answered without it", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
     await reportAsked(ports, state, asked())
 
@@ -89,7 +90,7 @@ describe("reportReplied", () => {
 
   test("says nothing about a request the parent was not told about or has answered itself", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
 
     expect(await reportReplied(ports, fresh(), replied())).toEqual([])
     expect(sent).toEqual([])
@@ -99,7 +100,7 @@ describe("reportReplied", () => {
 describe("reportForm", () => {
   test("tells the parent which form its child shows and that only the person can answer it, waking it", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
 
     expect(await reportForm(ports, state, shown())).toEqual(["ses_parent"])
@@ -124,7 +125,7 @@ describe("reportForm", () => {
 
   test("tells about another kind of form without the web search note, and shows each kind of field", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const many = Array.from({ length: 22 }, (_, index) => ({ value: `v${index}`, label: `Option ${index}` }))
     const form = {
       id: "frm_2",
@@ -150,7 +151,7 @@ describe("reportForm", () => {
 
   test("names a field by its title and description, leaves hidden fields out and says when there are more", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const extra = Array.from({ length: 21 }, (_, index) => ({ key: `f${index}`, type: "boolean" }))
     const form = {
       ...webForm,
@@ -172,7 +173,7 @@ describe("reportForm", () => {
 
   test("leaves a kind that cannot go in the envelope out of it", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
 
     await reportForm(ports, fresh(), shown("evt_f", { ...webForm, metadata: { kind: 'x" y' } }))
 
@@ -181,8 +182,8 @@ describe("reportForm", () => {
 
   test("tells the session at the top about a form of a child's child", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
-    await record(ports.storage, { ...child("ses_root"), sessionID: "ses_parent", title: "Lead" })
+    await childStore(ports.storage).record(child())
+    await childStore(ports.storage).record({ ...child("ses_root"), sessionID: "ses_parent", title: "Lead" })
 
     expect(await reportForm(ports, fresh(), shown())).toEqual(["ses_root"])
     expect(sent[0].text).toContain("which ses_parent started with courier_spawn, a session started from yours,")
@@ -190,7 +191,7 @@ describe("reportForm", () => {
 
   test("leaves a question's form to the question relay", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const question = { ...webForm, title: "Questions", metadata: { kind: "question", tool: { messageID: "msg_1", id: "call_1" } } }
 
     expect(await reportForm(ports, fresh(), shown("evt_f", question))).toEqual([])
@@ -199,7 +200,7 @@ describe("reportForm", () => {
 
   test("ignores a form of a session courier_spawn did not start, and tells each form once", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
 
     expect(await reportForm(ports, state, shown("evt_o", { ...webForm, sessionID: "ses_other" }))).toEqual([])
@@ -211,7 +212,7 @@ describe("reportForm", () => {
 
   test("does not tell anyone about a form settled while its roster was looked up", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
 
     const telling = reportForm(ports, state, shown())
@@ -226,7 +227,7 @@ describe("reportForm", () => {
 describe("reportFormSettled", () => {
   test("tells the parent that a form it was told about was answered, or withdrawn", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
     await reportForm(ports, state, shown())
     await reportForm(ports, state, shown("evt_g", { ...webForm, id: "frm_2" }))
@@ -249,7 +250,7 @@ describe("reportFormSettled", () => {
 
   test("says nothing about a form no one was told about, or about one event twice", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
 
     expect(await reportFormSettled(ports, state, settled())).toEqual([])
@@ -263,7 +264,7 @@ describe("reportFormSettled", () => {
 
   test("waits for the notice that the form is shown, which another instance may still be sending", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
     let deliver: () => void = () => undefined
     ;(ports.session as any).synthetic = (input: any) =>
@@ -284,7 +285,7 @@ describe("reportFormSettled", () => {
 
   test("says nothing of the settling when the notice that the form is shown did not go out", async () => {
     const { ports, sent } = fakePorts()
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
     state.forms.told.set("frm_1", Promise.reject(new Error("parent is gone")))
 
@@ -306,7 +307,7 @@ describe("relayPending", () => {
   test("relays the requests spawned sessions already wait on, once, alongside the events", async () => {
     const other = { ...request, id: "per_2", sessionID: "ses_other" }
     const { ports, sent } = fakePorts([], [request, other])
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
     const state = fresh()
 
     await Promise.all([relayPending(ports, state), reportAsked(ports, state, asked())])
@@ -323,7 +324,7 @@ describe("relayPending, across locations", () => {
     const here = [...ports.permissions()][0]!
     const worktree = { list: async ({ sessionID }: { sessionID: string }) => [isolated, request].filter((item) => item.sessionID === sessionID) }
     ;(ports as any).permissions = () => [here, worktree]
-    await record(ports.storage, child())
+    await childStore(ports.storage).record(child())
 
     await relayPending(ports, fresh())
 
@@ -335,8 +336,8 @@ describe("relayPending, concurrency", () => {
   test("a notice slow to go out does not hold up the others", async () => {
     const second = { ...request, id: "per_2", sessionID: "ses_child2" }
     const { ports, sent } = fakePorts([], [request, second])
-    await record(ports.storage, child())
-    await record(ports.storage, { ...child(), sessionID: "ses_child2" })
+    await childStore(ports.storage).record(child())
+    await childStore(ports.storage).record({ ...child(), sessionID: "ses_child2" })
     let secondSent: () => void = () => undefined
     const told = new Promise<void>((resolve) => (secondSent = resolve))
     ;(ports.session as any).synthetic = async (input: any) => {

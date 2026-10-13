@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Live test of the TUI part: a real OpenCode V2 server loads the package's `tui` and `rpc`
 # entrypoints, its RPC answers over HTTP, and the TUI, in tmux, shows the prompt footer's entry and
-# follows a change. Then the same from the package `opencode plugin add` installs. Driven by
-# e2e/mock-model.mjs's COURIER-TUI, so no API key is needed.
+# follows a change, opens the tree panel with /courier tree and stops a child with /courier stop.
+# Then the same from the package `opencode plugin add` installs. Driven by e2e/mock-model.mjs's
+# COURIER-TUI, so no API key is needed.
 #
 #   OPENCODE_BIN=/path/to/opencode e2e/tui.sh      # KEEP=1 keeps the temp dir and logs
 #
@@ -73,10 +74,23 @@ shows() {
   tmux capture-pane -pt "$TMUX_SESSION" >"$WORK/$3.txt" 2>/dev/null || true
   echo "$shown"
 }
+kv() { XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" "$@"; }
+# Whether the line $1 is gone from the TUI's screen within $2 s; the screen is kept in $WORK/$3.txt.
+hides() {
+  local gone=false
+  for _ in $(seq 1 "$2"); do
+    if ! tmux capture-pane -pt "$TMUX_SESSION" 2>/dev/null | grep -qF -- "$1"; then gone=true; break; fi
+    sleep 1
+  done
+  tmux capture-pane -pt "$TMUX_SESSION" >"$WORK/$3.txt" 2>/dev/null || true
+  echo "$gone"
+}
 # The footer line of the TUI's screen kept in $WORK/$1.txt, the line the courier's entry is on.
 footer() { grep -F "courier " "$WORK/$1.txt" | tail -1 || true; }
 
-mkdir -p "$WORK/project" "$HOME"
+mkdir -p "$WORK/project" "$HOME" "$XDG_CONFIG_HOME/opencode"
+# The slash commands typed below make a prompt history, after which the home screen would open the release highlights over its footer.
+echo '{ "highlights": false }' >"$XDG_CONFIG_HOME/opencode/cli.json"
 build_plugin
 
 cat >"$WORK/project/opencode.json" <<EOT
@@ -134,6 +148,18 @@ echo "the TUI shows the entry in the prompt's footer, and follows the answer"
 open_tui tui "$parent"
 check "the footer shows what the RPC gave" "$(shows "courier 1 waiting on you · 1 idle · group pair 1/2" 60 tui-waiting)"
 echo "  $(footer tui-waiting)"
+echo "the tree panel: /courier tree opens it on both children, with the bar of the parts reported"
+rows=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[] | {depth, state, report: .report.state, group: .group.standing}] | sort_by(.state)')
+echo "  $rows"
+check "the RPC's tree: one child reported and held, the other waits on the person and owes its report" \
+  "$(jq -r '. == [{depth: 1, state: "idle", report: "reported", group: "held"}, {depth: 1, state: "waiting", report: "owed", group: "out"}]' <<<"$rows")"
+tmux send-keys -t "$TMUX_SESSION" "/courier tree"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "the panel opens with the bar: 1 of 2 parts reported" "$(shows "courier tree  [█████░░░░░] 1/2 reported" 30 tui-panel)"
+check "it has the reported child's row" "$(grep -qF "Report back to your parent.  idle · reported done · group pair held" "$WORK/tui-panel.txt" && echo true || echo false)"
+check "and the asking child's, which says what it waits on" \
+  "$(grep -qF "CHILD-ASKS  waiting on you · owes a report · group pair out" "$WORK/tui-panel.txt" && grep -qF "asks permission: shell echo courier-asks" "$WORK/tui-panel.txt" && echo true || echo false)"
 request=$(api "session/$asking/permission" | jq -r '.data[0].id // empty')
 code=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
   --data '{"decision":"once"}' "$SERVER/api/session/$asking/permission/$request/reply")
@@ -143,9 +169,24 @@ idle='{"running":0,"waiting":0,"idle":2,"groups":[]}'
 result=$(summary_until "$parent" 60 "$idle")
 echo "  $result"
 check "the summary follows: both children idle, the group released" "$([ "$result" = "$idle" ] && echo true || echo false)"
+check "the panel follows the report: 2 of 2 parts reported" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-reported)"
+# q closes the panel, which has the keyboard while it is open; the footer is whole again.
+tmux send-keys -t "$TMUX_SESSION" q
+check "q closes the panel" "$(hides "courier tree" 10 tui-panel-closed)"
 check "the footer follows it" "$(shows "courier 2 idle" 30 tui-released)"
 echo "  $(footer tui-released)"
 check "and the group is gone from it" "$([[ $(footer tui-released) != *"group pair"* ]] && echo true || echo false)"
+echo "/courier stop stops a child after a confirm, through courier_stop's path"
+refused=$(rpc stop "{\"sessionID\":\"$asking\",\"by\":\"$asking\"}")
+echo "  $refused"
+check "the RPC refuses a stop from a session not above the target" "$(jq -r '.type == "refused"' <<<"$refused")"
+tmux send-keys -t "$TMUX_SESSION" "/courier stop $asking"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "a confirm names the child" "$(shows "Stop \"CHILD-ASKS\"" 30 tui-stop-confirm)"
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "once confirmed, a toast says what was stopped" "$(shows "Stopped 1 session: 0 interrupted" 30 tui-stopped)"
+check "and the child is noted stopped, as courier_stop notes it" "$([ -n "$(kv get "report/$asking/stopped")" ] && echo true || echo false)"
 open_tui tui-home
 # The home screen's own footer, once drawn, without the entry.
 check "the entry is not on the home screen of a TUI with no session" \
@@ -185,7 +226,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-released tui-home tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-stop-confirm tui-stopped tui-home tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

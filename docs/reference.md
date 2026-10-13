@@ -805,9 +805,9 @@ with its group or delivered, `ended without a report` when its turn failed or wa
 for a session spawned before report notes were kept), its join group's standing (`group <name> held`,
 `out`, how it left, or `released`), and `isolated`. Under it:
 
-- an **orchestrator**, any session with children among the rows, and the session whose tree the panel shows, in
-  header, gets a bar of the parts reported: its children whose report arrived out of the children it
-  started;
+- an **orchestrator**, any session with children among the rows, and the session whose tree the panel
+  shows, in the header, gets a bar of the parts reported: its children whose report arrived out of the
+  children it started;
 - a session **waiting on the person** gets one line per request: `asks permission: <action>
   <resources>` or `asks: <its first question>`;
 - a **leaf** gets its activity: how long it ran (from its creation to the end of its last turn, or to

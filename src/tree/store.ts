@@ -32,7 +32,7 @@ export function reverseKey(sessionID: string) {
 
 /**
  * Whether a spawned session has reported since its last prompt, under `report/<sessionID>/`: `prompt`, `settled` (with
- * the report's status), `progress` (a message to its parent without a status) and `told`; docs/reference.md has each.
+ * the report's status), `progress` (a message to its parent without a status) and `told`; docs/maintainers/architecture.md has each.
  */
 const REPORT_PREFIX = "report/"
 
@@ -52,7 +52,7 @@ const REPORT_KEYS: Readonly<Record<ReportField, (sessionID: string) => string>> 
 
 /**
  * Join groups: each member of a parent's group under `group/<parentID>/<name>/<sessionID>`, with its
- * held report or how it left; released and dropped once none is out. docs/reference.md, § Join groups.
+ * held report or how it left; released and dropped once none is out. docs/maintainers/architecture.md, § Storage.
  */
 const GROUP_PREFIX = "group/"
 

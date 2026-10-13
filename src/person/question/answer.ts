@@ -77,7 +77,7 @@ const holding = <A, E>(id: string, ms: number, effect: Effect.Effect<A, E>): Eff
 
 /**
  * What a linked call of the top session is withdrawn with once an answer is passed on, `withdrawal`, and
- * whether one was: `linked`, set by `deliver`.
+ * whether one was: `linked`, set once it is withdrawn.
  */
 export interface Linked {
   readonly withdrawal: Withdrawal

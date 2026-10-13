@@ -2,30 +2,11 @@ import type { Plugin } from "@opencode/plugin"
 import { lastReply } from "./courier.js"
 import { dropGroups, hasCompleteGroup, markLeft, membershipOf, type Membership } from "./group.js"
 import { envelope } from "./kernel/protocol.js"
-import {
-  failureNotice,
-  formNotice,
-  formSettledNotice,
-  kindOf,
-  permissionNotice,
-  permissionSettledNotice,
-  silentNotice,
-} from "./notices.js"
-import { eventsFollowed, eventsLeft, formShown, formsMayHaveBeenMissed, locationClosing } from "./question/index.js"
-import {
-  listEverywhere,
-  QUESTION_FORM,
-  type FormCreated,
-  type FormSettled,
-  type PermissionAsked,
-  type PermissionReplied,
-  type Waiting,
-} from "./relay.js"
-import { addBounded, setBounded } from "./platform/bounded.js"
+import { failureNotice, silentNotice } from "./notices.js"
+import { claim, SEEN_MAX, setBounded } from "./platform/bounded.js"
 import type { EventModule, HostEvent } from "./platform/events.js"
-import type { FormsTold } from "./platform/hub.js"
 import { awaited, forgetReport, prompted, reportOf, settled, stoppedSincePrompt, told, untold } from "./report.js"
-import { allEntries, children, entriesOf, entryUnder, indexedEntry, indexedParent, lineage, type RosterEntry, type RosterStorage } from "./roster.js"
+import { children, entriesOf, entryUnder, indexedEntry, indexedParent, type RosterEntry, type RosterStorage } from "./roster.js"
 
 /** The error of OpenCode's `session.execution.failed` event. */
 export interface ExecutionError {
@@ -36,19 +17,14 @@ export interface ExecutionError {
 
 type Context = Plugin.Context
 
-export type { FormsTold } from "./platform/hub.js"
-
 export interface WatchPorts {
   readonly storage: RosterStorage
   /** `context` reads the last reply of a session that ended its turn without reporting. */
   readonly session: Pick<Context["session"], "synthetic" | "context">
   readonly event: Pick<Context["event"], "subscribe">
-  /**
-   * The permission domains of every loaded location, whose pending requests are relayed when the
-   * watcher (re)subscribes: one watcher serves them all, and an isolated child's are in its worktree's.
-   */
+  /** The permission domains of every loaded location, which the `Waits` suppliers ask; an isolated child's are in its worktree's. */
   readonly permissions: () => Iterable<Pick<Context["permission"], "list">>
-  /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
+  /** The clock, in epoch milliseconds, for an event that carries no `created`. */
   readonly now: () => number
   readonly log: (message: string) => void
   /** Has the scheduler deliver what is due now rather than at its next tick: a group completed, or its parent's turn ended. */
@@ -57,19 +33,13 @@ export interface WatchPorts {
 
 /**
  * What every plugin instance in the process shares. Several subscriptions and copies see the same
- * events, so each is claimed synchronously and handled once; `answered` keeps stale notices unsent.
+ * events, so each is claimed synchronously and handled once.
  */
 export interface WatchState {
   readonly seen: Set<string>
-  readonly waiting: Waiting
-  readonly answered: Set<string>
-  readonly forms: FormsTold
   /** The type of each item enqueued for a spawned session, by inbox id, for its delivery to look up. */
   readonly inbox: Map<string, string>
 }
-
-/** How many handled event ids, and waiting or answered requests, are remembered. */
-const SEEN_MAX = 1_000
 
 /** The part of OpenCode's `session.execution.failed` event the notice is made from. */
 export interface ExecutionFailed {
@@ -88,9 +58,6 @@ export interface SessionEvent {
   readonly created?: number
   readonly data: { readonly sessionID: string; readonly reason?: string }
 }
-
-/** Claims a value in one of the shared sets; false when it was claimed already. */
-const claim = (set: Set<string>, value: string) => addBounded(set, value, SEEN_MAX)
 
 /**
  * Tells the parent of a child whose turn failed, since a child that cannot reach its model cannot
@@ -290,127 +257,6 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   return [entry.parentID]
 }
 
-/** The session at the top of a lineage: where its permission requests go, since that is where the person is. */
-const topOf = (chain: RosterEntry[]) => chain.at(-1)!.parentID
-
-/**
- * Tells the session at the top, the parent of a child or the session a chain of children started
- * from, what a waiting child asks and which answers there are, waking it. Returns the sessions told.
- */
-export async function reportAsked(ports: WatchPorts, state: WatchState, event: PermissionAsked) {
-  if (!claim(state.seen, event.id)) return []
-  const request = event.data
-  const chain = await lineage(ports.storage, request.sessionID)
-  // Claimed only now, after the lookup: a request answered meanwhile is in `answered`, and one
-  // already relayed, from the event or from the pending list, is in `waiting`.
-  if (!chain.length || state.answered.has(request.id) || !claim(state.waiting, request.id)) return []
-  const startedBy = chain.length > 1 ? chain[0]!.parentID : undefined
-  await ports.session.synthetic({
-    sessionID: topOf(chain),
-    text: envelope(request.sessionID, permissionNotice(chain[0]!.title, request, startedBy), {
-      asks: "permission",
-      request: request.id,
-    }),
-    description: `Session ${request.sessionID} asks for permission`,
-    metadata: { source: "courier", from: request.sessionID, asks: "permission", requestID: request.id },
-    delivery: "steer",
-  })
-  return [topOf(chain)]
-}
-
-/**
- * Tells the session told about a request that it was answered some other way, so it does not pass on
- * a stale question; requests answered through courier_answer no longer wait and are skipped.
- */
-export async function reportReplied(ports: WatchPorts, state: WatchState, event: PermissionReplied) {
-  if (!claim(state.seen, event.id)) return []
-  const { sessionID, requestID, reply } = event.data
-  if (!state.waiting.delete(requestID)) {
-    claim(state.answered, requestID)
-    return []
-  }
-  const chain = await lineage(ports.storage, sessionID)
-  if (!chain.length) return []
-  await ports.session.synthetic({
-    sessionID: topOf(chain),
-    text: envelope(sessionID, permissionSettledNotice(chain[0]!.title, requestID, reply), { answered: reply, request: requestID }),
-    description: `Session ${sessionID} no longer asks for permission`,
-    metadata: { source: "courier", from: sessionID, answered: reply, requestID },
-    delivery: "steer",
-  })
-  return [topOf(chain)]
-}
-
-/**
- * Tells the top session about a form OpenCode shows in a spawned session, such as web search asking
- * for its provider, which only the person can answer; question forms are left to the question relay.
- */
-export async function reportForm(ports: WatchPorts, state: WatchState, event: FormCreated) {
-  if (!claim(state.seen, event.id)) return []
-  const form = event.data.form
-  if (kindOf(form) === QUESTION_FORM) return []
-  const chain = await lineage(ports.storage, form.sessionID)
-  // As with a permission request, claimed after the lookup, so a form settled meanwhile is not told.
-  if (!chain.length || state.forms.settled.has(form.id) || state.forms.told.has(form.id)) return []
-  const startedBy = chain.length > 1 ? chain[0]!.parentID : undefined
-  const kind = kindOf(form)
-  const telling = ports.session.synthetic({
-    sessionID: topOf(chain),
-    text: envelope(form.sessionID, formNotice(chain[0]!.title, form, startedBy), {
-      asks: "form",
-      form: form.id,
-      ...(kind ? { kind } : {}),
-    }),
-    description: `Session ${form.sessionID} shows a form`,
-    metadata: { source: "courier", from: form.sessionID, asks: "form", formID: form.id, ...(kind ? { kind } : {}) },
-    delivery: "steer",
-  })
-  setBounded(state.forms.told, form.id, telling, SEEN_MAX)
-  await telling
-  return [topOf(chain)]
-}
-
-/** Tells the session told about a form that it was answered or withdrawn, so it does not send the person to a form that is gone. */
-export async function reportFormSettled(ports: WatchPorts, state: WatchState, event: FormSettled) {
-  if (!claim(state.seen, event.id)) return []
-  const { id, sessionID } = event.data
-  const telling = state.forms.told.get(id)
-  if (!telling) {
-    claim(state.forms.settled, id)
-    return []
-  }
-  state.forms.told.delete(id)
-  const settled = event.type === "form.replied" ? "answered" : "cancelled"
-  // After the notice that the form is shown, which another instance may still be sending, so the
-  // settling never arrives first; and not at all when that notice did not go out.
-  const [chain, told] = await Promise.all([lineage(ports.storage, sessionID), telling.then(() => true, () => false)])
-  if (!chain.length || !told) return []
-  await ports.session.synthetic({
-    sessionID: topOf(chain),
-    text: envelope(sessionID, formSettledNotice(chain[0]!.title, id, settled), { settled, form: id }),
-    description: `Session ${sessionID} no longer shows a form`,
-    metadata: { source: "courier", from: sessionID, settled, formID: id },
-    delivery: "steer",
-  })
-  return [topOf(chain)]
-}
-
-/**
- * Relays the requests that spawned sessions already wait on, in every loaded location, which the
- * event stream does not repeat: those asked while it was down, before the watcher (re)subscribed.
- */
-export async function relayPending(ports: WatchPorts, state: WatchState) {
-  const sessions = new Set((await allEntries(ports.storage)).map((entry) => entry.sessionID))
-  const domains = [...ports.permissions()]
-  // Each request is claimed before its notice goes out, so relaying them all at once tells each
-  // once, however many locations list it; a location that cannot be read lists none.
-  const relay = async (sessionID: string) => {
-    const listed = (await listEverywhere(domains, sessionID)).flatMap((found) => found.requests)
-    await Promise.all(listed.map((request) => reportAsked(ports, state, { id: `pending:${request.id}`, data: request })))
-  }
-  await Promise.all([...sessions].map(relay))
-}
-
 const TURN_ENDS = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
 
 /** A session's turn ended, sealing its groups: one that is complete has the scheduler deliver it now. */
@@ -434,27 +280,6 @@ function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: 
   return undefined
 }
 
-/** The events of what a spawned session asks the person: permission requests, forms, and locations closing on them. */
-function routePerson(ports: WatchPorts, state: WatchState, event: HostEvent) {
-  if (event.type === "permission.asked") return reportAsked(ports, state, event as unknown as PermissionAsked)
-  if (event.type === "permission.replied") return reportReplied(ports, state, event as unknown as PermissionReplied)
-  if (event.type === "form.created") {
-    // Not claimed: the hub's other subscription, or another copy's watcher, may resolve the same
-    // waiting call, which is harmless.
-    formShown(event as unknown as Parameters<typeof formShown>[0])
-    return reportForm(ports, state, event as unknown as FormCreated)
-  }
-  if (event.type === "form.replied" || event.type === "form.cancelled")
-    return reportFormSettled(ports, state, event as unknown as FormSettled)
-  // Not claimed either: a location closing withdraws its forms, which must not pass for dismissals.
-  // The event's location is optional; without one, the shutdown counts for every location.
-  if (event.type === "location.shutdown") {
-    const directory = (event as { location?: { directory?: unknown } }).location?.directory
-    locationClosing(ports.now(), typeof directory === "string" ? directory : undefined)
-  }
-  return undefined
-}
-
 /**
  * Tells parents of a child's failed or silent turn, unless it waits on what `outside` says, and notes
  * its prompts, interruptions and deletion; `after` a turn's end, seals the groups of its session.
@@ -464,21 +289,5 @@ export function treeEvents(state: WatchState, outside: Waits): EventModule<Watch
     handle: (ports, event) => routeTree(ports, state, outside, event),
     // After: a silent end is judged while the group the nudge may deliver is still there to wait on.
     after: (ports, event) => (TURN_ENDS.has(event.type) ? sealGroups(ports, event as unknown as SessionEvent) : undefined),
-  }
-}
-
-/**
- * Tells the top session of a spawned child's pending permission or form, relays the requests already
- * pending on every (re)subscribe, and tells the question relay when events are followed and when not.
- */
-export function personEvents(state: WatchState): EventModule<WatchPorts> {
-  return {
-    handle: (ports, event) => routePerson(ports, state, event),
-    // Question forms shown while no instance followed the events were not seen: released now,
-    // and again on the first event, by when the stream is surely connected.
-    followed: () => (eventsFollowed() ? formsMayHaveBeenMissed : undefined),
-    // Alongside the new subscription; a request both relays see is relayed once.
-    subscribed: (ports) => relayPending(ports, state).catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`)),
-    left: eventsLeft,
   }
 }

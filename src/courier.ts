@@ -4,7 +4,6 @@ import { admit, type Limits, type SpawnGate } from "./limits.js"
 import { envelope, isStatus, STATUSES, describeFailure, type Status } from "./kernel/protocol.js"
 import { childBrief, childBranch, reportBody } from "./notices.js"
 import { progressed, progressKey, prompted, settled, settledKey, type Artifacts } from "./report.js"
-import type { Prompt } from "./question/index.js"
 import { current, indexedEntry, record, type RosterEntry, type RosterStorage } from "./roster.js"
 
 /** A report held with its group: which group, and how many of its members have reported so far, when that could be read. */
@@ -52,6 +51,14 @@ export interface CourierPorts {
   readonly log: (message: string) => void
 }
 
+/** One question a session waits on, as `Pending` shows it; `person/`'s `Prompt` has these fields. */
+export interface PendingPrompt {
+  readonly question: string
+  readonly header: string
+  readonly options: ReadonlyArray<{ readonly label: string; readonly description: string }>
+  readonly multiple?: boolean
+}
+
 /** A request a session waits on until someone answers it: a permission request, or a question it asked. */
 export type Pending =
   | {
@@ -64,7 +71,7 @@ export type Pending =
   | {
       readonly type: "question"
       readonly requestID: string
-      readonly questions: ReadonlyArray<Prompt>
+      readonly questions: ReadonlyArray<PendingPrompt>
       /** Its question call was cut off; the answer reaches it as a message. */
       readonly stopped?: true
     }

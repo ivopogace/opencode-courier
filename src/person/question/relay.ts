@@ -8,8 +8,8 @@ import {
   questionNotice,
   questionSettledNotice,
   unlinkedNote,
-} from "../notices.js"
-import { lineage } from "../roster.js"
+} from "../text.js"
+import { lineage } from "../../roster.js"
 import { deliver, forget, tell, tellCutOff } from "./answer.js"
 import { closingSoon } from "./lifecycle.js"
 import {

@@ -1,8 +1,8 @@
 import type { Plugin } from "@opencode/plugin"
-import type { Pending } from "./courier.js"
-import { describeFailure } from "./kernel/protocol.js"
-import { REJECTED } from "./notices.js"
-import { answeringTop, type RosterStorage } from "./roster.js"
+import type { Pending } from "../courier.js"
+import { describeFailure } from "../kernel/protocol.js"
+import { REJECTED } from "./text.js"
+import { answeringTop, type RosterStorage } from "../roster.js"
 
 /** The answers to a permission request, as OpenCode's own prompt offers them. */
 export const REPLIES = ["once", "always", "reject"] as const
@@ -27,29 +27,6 @@ export interface PermissionAnswered {
   readonly requestID: string
   readonly reply: Reply
   readonly answered: boolean
-}
-
-/** One field of an OpenCode form, as much of it as a notice shows. */
-export interface FormField {
-  readonly key: string
-  readonly type: string
-  readonly title?: string
-  readonly description?: string
-  readonly options?: ReadonlyArray<{ readonly value: string; readonly label: string; readonly description?: string }>
-  readonly url?: string
-  /** Not shown to the person. */
-  readonly hidden?: boolean
-  /** Conditions on earlier answers; the field is shown only when they hold. */
-  readonly when?: ReadonlyArray<unknown>
-}
-
-/** An OpenCode form, as its `form.created` event carries it. */
-export interface Form {
-  readonly id: string
-  readonly sessionID: string
-  readonly title: string
-  readonly metadata?: Readonly<Record<string, unknown>>
-  readonly fields: ReadonlyArray<FormField>
 }
 
 type Context = Plugin.Context
@@ -163,20 +140,4 @@ export async function pendingOf(permissions: Iterable<Permissions>, sessionID: s
         ...(request.save?.length ? { save: [...request.save] } : {}),
       })
   return [...found.values()]
-}
-
-/** The `metadata.kind` of the forms OpenCode's question tool asks with; the question relay passes those on. */
-export const QUESTION_FORM = "question"
-
-/** The part of OpenCode's `form.created` event the notice is made from. */
-export interface FormCreated {
-  readonly id: string
-  readonly data: { readonly form: Form }
-}
-
-/** OpenCode's `form.replied` or `form.cancelled` event: the form is no longer shown. */
-export interface FormSettled {
-  readonly id: string
-  readonly type: string
-  readonly data: { readonly id: string; readonly sessionID: string }
 }

@@ -22,8 +22,8 @@ import {
   type Timers,
 } from "../src/platform/hub.js"
 import { deliverReleased } from "../src/group.js"
-import type { QuestionPorts } from "../src/question/index.js"
-import { portsAt, questionState, shared as relayState } from "../src/question/shared.js"
+import type { QuestionPorts } from "../src/person/question/index.js"
+import { portsAt, questionState, shared as relayState } from "../src/person/question/shared.js"
 import { resetHub } from "./fixtures/reset.js"
 import { deliverDue, type LaterEntry, type LaterPorts } from "../src/scheduling/index.js"
 

@@ -123,6 +123,24 @@ describe("reportForm", () => {
     expect([...state.forms.told.keys()]).toEqual(["frm_1"])
   })
 
+  test("sends the person to the view OpenCode shows a native child's form in: the top's, or an isolated session's above it", async () => {
+    const { ports, sent } = fakePorts()
+    await childStore(ports.storage).record({ ...child(), native: true })
+
+    await reportForm(ports, fresh(), shown())
+    expect(sent[0].text).toContain(
+      "only the person you are working with can, in your own session, where OpenCode shows the forms of the sessions under it.",
+    )
+    expect(sent[0].text).toContain("Tell them your session shows this form")
+    expect(sent[0].text).not.toContain("in session ses_child itself")
+
+    await childStore(ports.storage).record({ ...child("ses_root"), sessionID: "ses_parent", title: "Lead", isolated: true })
+    await reportForm(ports, fresh(), shown("evt_g"))
+    expect(sent[1].sessionID).toBe("ses_root")
+    expect(sent[1].text).toContain("can, in session ses_parent, where OpenCode shows the forms of the sessions under it.")
+    expect(sent[1].text).toContain("Tell them session ses_parent shows this form")
+  })
+
   test("tells about another kind of form without the web search note, and shows each kind of field", async () => {
     const { ports, sent } = fakePorts()
     await childStore(ports.storage).record(child())
@@ -242,7 +260,7 @@ describe("reportFormSettled", () => {
       metadata: { source: "courier", from: "ses_child", settled: "answered", formID: "frm_1" },
       delivery: "steer",
     })
-    expect(sent[2].text).toContain("has been answered in that session")
+    expect(sent[2].text).toContain("has been answered, so it no longer waits")
     expect(sent[3].text).toStartWith('<courier from="ses_child" settled="cancelled" form="frm_2">')
     expect(sent[3].text).toContain("has been withdrawn unanswered")
     expect(state.forms.told.size).toBe(0)

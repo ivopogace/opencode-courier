@@ -1,6 +1,6 @@
 import { envelope } from "../kernel/protocol.js"
 import { claim, SEEN_MAX, setBounded } from "../platform/bounded.js"
-import { lineage } from "../tree/index.js"
+import { lineage, nativeRootOf } from "../tree/index.js"
 import { topOf, type Form, type PersonPorts, type PersonState } from "./ports.js"
 import { formNotice, formSettledNotice, kindOf } from "./text.js"
 
@@ -35,7 +35,7 @@ export async function reportForm(ports: PersonPorts, state: PersonState, event: 
   const kind = kindOf(form)
   const telling = ports.session.synthetic({
     sessionID: topOf(chain),
-    text: envelope(form.sessionID, formNotice(chain[0]!.title, form, startedBy), {
+    text: envelope(form.sessionID, formNotice(chain[0]!.title, form, startedBy, nativeRootOf(chain), topOf(chain)), {
       asks: "form",
       form: form.id,
       ...(kind ? { kind } : {}),

@@ -371,7 +371,7 @@ exports[`tools courier_stop 1`] = `
 
 exports[`tools courier_cleanup 1`] = `
 {
-  "description": "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and the result lists them; commit or branch what you want, or pass force: true to discard it. A session without isolate has no worktree and is only dropped from courier_children. Either way, one in a join group that has not reported is dropped from it, so the group's other reports reach you without it; use this for a member you no longer need a report from.",
+  "description": "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and the result lists them; commit or branch what you want, or pass force: true to discard it. A session without isolate has no worktree and is only dropped from courier_children. Either way, one in a join group that has not reported is dropped from it, so the group's other reports reach you without it; use this for a member you no longer need a report from. It never deletes the session itself, nor the sessions it started.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -1134,7 +1134,7 @@ exports[`forms formNotice 1`] = `
 This is OpenCode asking whether to search the web, and through which provider.
 It waits at most a minute; then the session's search fails with "Web search cancelled" and it carries on without it.
 The choice is kept for every session: once it is made, in any session, no session is asked again.
-Besides answering in that session, the person can make it by running a web search in their own, or under OpenCode's "Third-party search" setting.
+Besides answering the form, the person can make it by running a web search in their own session, or under OpenCode's "Third-party search" setting.
 
 Neither you nor courier_answer can answer it: only the person you are working with can, in session ses_child itself.
 Do not choose for them. Tell them that session shows this form and waits on them, then carry on."
@@ -1189,8 +1189,38 @@ Neither you nor courier_answer can answer it: only the person you are working wi
 Do not choose for them. Tell them that session shows this form and waits on them, then carry on."
 `;
 
+exports[`forms formNotice of a native child 1`] = `
+"This session, "Fix the bug", which you started with courier_spawn, shows a form, "Search the web?", and waits until it is answered.
+- Provider: Where to search
+  - Exa
+  - Don't search
+
+This is OpenCode asking whether to search the web, and through which provider.
+It waits at most a minute; then the session's search fails with "Web search cancelled" and it carries on without it.
+The choice is kept for every session: once it is made, in any session, no session is asked again.
+Besides answering the form, the person can make it by running a web search in their own session, or under OpenCode's "Third-party search" setting.
+
+Neither you nor courier_answer can answer it: only the person you are working with can, in your own session, where OpenCode shows the forms of the sessions under it.
+Do not choose for them. Tell them your session shows this form and waits on them, then carry on."
+`;
+
+exports[`forms formNotice of a native child 2`] = `
+"This session, "Fix the bug", which ses_middle started with courier_spawn, a session started from yours, shows a form, "Search the web?", and waits until it is answered.
+- Provider: Where to search
+  - Exa
+  - Don't search
+
+This is OpenCode asking whether to search the web, and through which provider.
+It waits at most a minute; then the session's search fails with "Web search cancelled" and it carries on without it.
+The choice is kept for every session: once it is made, in any session, no session is asked again.
+Besides answering the form, the person can make it by running a web search in their own session, or under OpenCode's "Third-party search" setting.
+
+Neither you nor courier_answer can answer it: only the person you are working with can, in session ses_middle, where OpenCode shows the forms of the sessions under it.
+Do not choose for them. Tell them session ses_middle shows this form and waits on them, then carry on."
+`;
+
 exports[`forms formSettledNotice 1`] = `
-"The form frm_1 of this session, "Fix the bug", has been answered in that session, so it no longer waits on it.
+"The form frm_1 of this session, "Fix the bug", has been answered, so it no longer waits on it.
 If you told someone about it, tell them it is settled; there is nothing to pass on."
 `;
 

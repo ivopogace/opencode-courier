@@ -290,6 +290,10 @@ describe("forms", () => {
     ]
     expect(person.formNotice("Fix the bug", { id: "frm_2", sessionID: "ses_child", title: "Settings", fields }, "ses_middle")).toMatchSnapshot()
   })
+  test("formNotice of a native child", () => {
+    expect(person.formNotice("Fix the bug", websearch, undefined, "ses_parent", "ses_parent")).toMatchSnapshot()
+    expect(person.formNotice("Fix the bug", websearch, "ses_middle", "ses_middle", "ses_root")).toMatchSnapshot()
+  })
   test("formSettledNotice", () => {
     expect(person.formSettledNotice("Fix the bug", "frm_1", "answered")).toMatchSnapshot()
     expect(person.formSettledNotice("Fix the bug", "frm_1", "cancelled")).toMatchSnapshot()

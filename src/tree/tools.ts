@@ -211,7 +211,7 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
       "the result lists them; commit or branch what you want, or pass force: true to discard it. A session without " +
       "isolate has no worktree and is only dropped from courier_children. Either way, one in a join group that has not " +
       "reported is dropped from it, so the group's other reports reach you without it; use this for a member you no " +
-      "longer need a report from.",
+      "longer need a report from. It never deletes the session itself, nor the sessions it started.",
     input: CleanupInput,
     execute: async (input, context) => {
       const result = await cleanup(ports.cleanup, context.sessionID, input).catch(rethrow("courier_cleanup"))

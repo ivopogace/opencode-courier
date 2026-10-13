@@ -136,21 +136,33 @@ const WEBSEARCH_NOTE = [
   "This is OpenCode asking whether to search the web, and through which provider.",
   'It waits at most a minute; then the session\'s search fails with "Web search cancelled" and it carries on without it.',
   "The choice is kept for every session: once it is made, in any session, no session is asked again.",
-  'Besides answering in that session, the person can make it by running a web search in their own, or under OpenCode\'s "Third-party search" setting.',
+  'Besides answering the form, the person can make it by running a web search in their own session, or under OpenCode\'s "Third-party search" setting.',
 ]
 
 /**
- * What the session at the top is told about a form OpenCode shows in a session started with
- * courier_spawn, which the plugin cannot pass on or answer: only the person can, in that session.
+ * Where the person answers a form: in its own session, or, for a native child, in the view of `shownIn`, the
+ * top of its native tree, where OpenCode lists the asks of the sessions under it; `top` is the session told.
  */
-export function formNotice(title: string, form: Form, startedBy?: string) {
+function formPlace(sessionID: string, shownIn: string, top: string) {
+  if (shownIn === sessionID) return { where: `in session ${sessionID} itself`, which: "that session" }
+  const lists = "where OpenCode shows the forms of the sessions under it"
+  if (shownIn === top) return { where: `in your own session, ${lists}`, which: "your session" }
+  return { where: `in session ${shownIn}, ${lists}`, which: `session ${shownIn}` }
+}
+
+/**
+ * What the session at the top is told about a form OpenCode shows in a session started with
+ * courier_spawn, which the plugin cannot pass on or answer: only the person can, where OpenCode shows it.
+ */
+export function formNotice(title: string, form: Form, startedBy?: string, shownIn = form.sessionID, top = "") {
+  const { where, which } = formPlace(form.sessionID, shownIn, top)
   return [
     `This session, "${title}", ${origin(startedBy)} shows a form, "${clip(form.title)}", and waits until it is answered.`,
     ...formLines(form.fields),
     ...(kindOf(form) === WEBSEARCH_FORM ? ["", ...WEBSEARCH_NOTE] : []),
     "",
-    `Neither you nor courier_answer can answer it: only the person you are working with can, in session ${form.sessionID} itself.`,
-    "Do not choose for them. Tell them that session shows this form and waits on them, then carry on.",
+    `Neither you nor courier_answer can answer it: only the person you are working with can, ${where}.`,
+    `Do not choose for them. Tell them ${which} shows this form and waits on them, then carry on.`,
   ].join("\n")
 }
 
@@ -158,7 +170,7 @@ export function formNotice(title: string, form: Form, startedBy?: string) {
 export function formSettledNotice(title: string, formID: string, settled: "answered" | "cancelled") {
   return [
     settled === "answered"
-      ? `The form ${formID} of this session, "${title}", has been answered in that session, so it no longer waits on it.`
+      ? `The form ${formID} of this session, "${title}", has been answered, so it no longer waits on it.`
       : `The form ${formID} of this session, "${title}", has been withdrawn unanswered: dismissed, given up on or cut off, so it no longer waits on it.`,
     "If you told someone about it, tell them it is settled; there is nothing to pass on.",
   ].join("\n")

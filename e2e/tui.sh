@@ -223,6 +223,17 @@ check "the parent was told once that it is settled" "$(sleep 2; [ "$(settled_not
 check "the child carried on and reported" \
   "$(for _ in $(seq 1 45); do api "session/$asker_parent/message" | jq -e '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD DONE"))] | length > 0' >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
 
+# While a form is shown in the session OpenCode renders it in place of the prompt (and hides the footer),
+# so the key is the way to the inbox; the relayed question is the form, listed there as its question.
+echo "the asks inbox opens by its key while the parent's view shows a form"
+out=$(prompt "COURIER-QUESTION")
+form_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+open_tui tui-form "$form_parent"
+check "the relayed question is shown as a form in the session" "$(shows "Which greeting?" 60 tui-form)"
+tmux send-keys -t "$TMUX_SESSION" C-x k
+check "its key opens the inbox over the form, listing the question" \
+  "$([ "$(shows "Waiting on you (1)" 20 tui-form-inbox)" = true ] && grep -qF "Which greeting?" "$WORK/tui-form-inbox.txt" && echo true || echo false)"
+
 echo "opencode plugin add installs the package with its tui and rpc entrypoints"
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 stop_server

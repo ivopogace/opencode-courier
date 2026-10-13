@@ -79,6 +79,43 @@ describe("spawn", () => {
     expect(calls[1]!.input).toEqual({ sessionID: "ses_child", text: childBrief("ses_parent", "Fix the bug\nin checkout", 1, DEFAULT_LIMITS) })
   })
 
+  describe("with the nativeChildren option", () => {
+    test("creates a child without isolate with OpenCode's parentID and an empty ruleset, and records it as native", async () => {
+      const { ports, calls, store } = fakePorts()
+      ;(ports as any).nativeChildren = true
+
+      await spawn(ports, "ses_parent", { task: "Fix the bug" })
+
+      expect(calls.find((call) => call.method === "session.create")!.input).toEqual({
+        title: "Fix the bug",
+        parentID: "ses_parent",
+        permissions: [],
+        metadata: { courier: { parentID: "ses_parent" } },
+      })
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({ isolated: false, native: true })
+    })
+
+    test("leaves an isolated child as before: its worktree's location, no parentID", async () => {
+      const { ports, calls, store } = fakePorts()
+      ;(ports as any).nativeChildren = true
+
+      await spawn(ports, "ses_parent", { task: "t", isolate: true })
+
+      const input = calls.find((call) => call.method === "session.create")!.input
+      expect(input).toEqual({ title: "t", location: { directory: "/repo/.worktrees/ses" }, metadata: { courier: { parentID: "ses_parent" } } })
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("native")
+    })
+
+    test("is off by default: no parentID, nothing recorded", async () => {
+      const { ports, calls, store } = fakePorts()
+
+      await spawn(ports, "ses_parent", { task: "t" })
+
+      expect(calls.find((call) => call.method === "session.create")!.input).not.toHaveProperty("parentID")
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("native")
+    })
+  })
+
   test("records the child on its parent's roster before prompting it", async () => {
     const { ports, store } = fakePorts()
     ;(ports.session as any).prompt = async () => {

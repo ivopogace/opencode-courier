@@ -32,6 +32,13 @@ export function readLimits(options: unknown) {
   return { limits, problems }
 }
 
+/** The `nativeChildren` option: whether a child started without isolate gets OpenCode's own `parentID`; off unless `true`. */
+export function readNativeChildren(options: unknown) {
+  const value: unknown = obj(options).nativeChildren
+  if (value === undefined || typeof value === "boolean") return { nativeChildren: value === true, problems: [] }
+  return { nativeChildren: false, problems: [`nativeChildren must be true or false, not ${JSON.stringify(value)}; using false`] }
+}
+
 /** A session's times, as `session.get` gives them. */
 type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
@@ -56,6 +63,8 @@ export interface RosterEntry {
   readonly reports?: "status"
   /** The join group courier_spawn put it in, whose release holds its report; absent for a child in none. */
   readonly group?: string
+  /** Created with OpenCode's own `parentID` (the `nativeChildren` option), so OpenCode shows its asks in its parent's view. */
+  readonly native?: true
 }
 
 /** `lineage` over roster entries already read. */
@@ -73,6 +82,19 @@ export function lineageBy(bySession: ReadonlyMap<string, RosterEntry>, sessionID
   const chain: RosterEntry[] = []
   for (let entry = bySession.get(sessionID); entry && !chain.includes(entry); entry = bySession.get(entry.parentID)) chain.push(entry)
   return chain
+}
+
+/**
+ * The session whose view OpenCode shows the asks of a lineage's first session in: up its native parents, to the
+ * first session that is not a native child (an isolated one, or the top). The session itself when it is not native.
+ */
+export function nativeRootOf(chain: ReadonlyArray<RosterEntry>) {
+  let root = chain[0]!.sessionID
+  for (const entry of chain) {
+    if (!entry.native) break
+    root = entry.parentID
+  }
+  return root
 }
 
 /** What a report lists besides its text; `checks` are the commands the session ran and what each gave. */

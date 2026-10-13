@@ -2,7 +2,7 @@
 // for `src/index.ts`, and the lineage queries and types `person/` reads.
 export { dirtyOf, headOf, inspectWorktree } from "./cleanup.js"
 export { shapeContext } from "./context.js"
-export { readLimits, lineageIn } from "./domain.js"
+export { lineageIn, nativeRootOf, readLimits, readNativeChildren } from "./domain.js"
 export { together, treeEvents, waitsOn } from "./events.js"
 export { deliverReleased } from "./group.js"
 export type {

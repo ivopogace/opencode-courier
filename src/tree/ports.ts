@@ -146,6 +146,8 @@ export interface CourierPorts {
   /** The permission requests and questions a session waits on, wherever they are pending. */
   readonly pending: (sessionID: string) => Promise<ReadonlyArray<Pending>>
   readonly limits: Limits
+  /** The `nativeChildren` option: a child started without isolate is created with OpenCode's own `parentID`. */
+  readonly nativeChildren?: boolean
   readonly gate: SpawnGate
   /** The depths the `context` hook remembers; a parent's is dropped when it starts a child. */
   readonly roles: Map<string, number | null>
@@ -199,6 +201,8 @@ export interface LimitPorts {
   readonly storage: RosterStorage
   readonly session: Pick<Context["session"], "get">
   readonly limits: Limits
+  /** The `nativeChildren` option: a child started without isolate is created with OpenCode's own `parentID`. */
+  readonly nativeChildren?: boolean
   readonly gate: SpawnGate
 }
 

@@ -3,7 +3,7 @@ import { DateTime } from "effect"
 import { spawn } from "../src/tree/spawn.js"
 import { admit } from "../src/tree/limits.js"
 import { shapeContext } from "../src/tree/context.js"
-import { busy, DEFAULT_LIMITS, readLimits } from "../src/tree/domain.js"
+import { busy, DEFAULT_LIMITS, nativeRootOf, readLimits, readNativeChildren, type RosterEntry } from "../src/tree/domain.js"
 import type { ContextPorts, CourierPorts, LimitPorts, SpawnGate } from "../src/tree/ports.js"
 import { SKILL_ID, SPLIT_LINE } from "../src/kernel/protocol.js"
 import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/tree/text.js"
@@ -72,6 +72,36 @@ describe("readLimits", () => {
       'maxChildren must be a positive integer, not "4"; using 5',
       "maxTotal must be a positive integer, not 2.5; using 20",
     ])
+  })
+})
+
+describe("readNativeChildren", () => {
+  test("is off unless the option is true", () => {
+    expect(readNativeChildren(undefined)).toEqual({ nativeChildren: false, problems: [] })
+    expect(readNativeChildren({ maxDepth: 2 })).toEqual({ nativeChildren: false, problems: [] })
+    expect(readNativeChildren({ nativeChildren: false })).toEqual({ nativeChildren: false, problems: [] })
+    expect(readNativeChildren({ nativeChildren: true })).toEqual({ nativeChildren: true, problems: [] })
+  })
+
+  test("keeps it off for a value that is not a boolean, and names it", () => {
+    expect(readNativeChildren({ nativeChildren: "yes" })).toEqual({
+      nativeChildren: false,
+      problems: ['nativeChildren must be true or false, not "yes"; using false'],
+    })
+  })
+})
+
+describe("nativeRootOf", () => {
+  const entry = (sessionID: string, parentID: string, native?: true) =>
+    ({ sessionID, parentID, title: "t", directory: "/repo", isolated: !native, createdAt: 1, ...(native ? { native } : {}) }) as RosterEntry
+
+  test("is the session itself when it is not a native child", () => {
+    expect(nativeRootOf([entry("ses_c", "ses_p")])).toBe("ses_c")
+  })
+
+  test("climbs native parents to the first session that is not a native child", () => {
+    expect(nativeRootOf([entry("ses_c", "ses_p", true), entry("ses_p", "ses_top", true)])).toBe("ses_top")
+    expect(nativeRootOf([entry("ses_c", "ses_p", true), entry("ses_p", "ses_top")])).toBe("ses_p")
   })
 })
 

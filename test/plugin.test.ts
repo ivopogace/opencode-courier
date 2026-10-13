@@ -281,6 +281,26 @@ test("logs a limit option it cannot use, and keeps that limit's default", async 
   }
 })
 
+test("logs a nativeChildren option it cannot use, and keeps it off", async () => {
+  const logged = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    const { tools, calls } = await setUp({}, { nativeChildren: "yes" })
+    expect(logged.mock.calls.map((call) => call[0])).toContain('courier: nativeChildren must be true or false, not "yes"; using false')
+    await tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_parent" })
+    expect(calls.find((call) => call.method === "session.create")!.input).not.toHaveProperty("parentID")
+  } finally {
+    logged.mockRestore()
+  }
+})
+
+test("with nativeChildren in the options, courier_spawn gives a child OpenCode's parentID", async () => {
+  const { tools, calls } = await setUp({}, { nativeChildren: true })
+
+  await tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_parent" })
+
+  expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ parentID: "ses_parent", permissions: [] })
+})
+
 test("tool inputs decode with their schemas", async () => {
   const { tools } = await setUp()
 

@@ -768,8 +768,8 @@ stop` alone lists the open session's tree to pick from), asks the person to conf
 title and how many sessions are under it, then calls `courier.stop` with the open session as the
 caller: the same `stop()` as `courier_stop`, so only a session under the open one can be stopped,
 deepest first, its scheduled messages cancelled and its failure and silent-turn notices kept quiet,
-and the target's parent is told with the usual notice unless it is the open session itself (the person
-is there to tell it). A toast says how many sessions were stopped and interrupted and how many
+and the target's parent, when its turn was interrupted, is told with the usual notice unless it is the
+open session itself (the person is there to tell it). A toast says how many sessions were stopped and interrupted and how many
 scheduled messages were cancelled, or why the stop was refused. `/courier` with anything else shows its
 usage.
 

@@ -220,7 +220,7 @@ export async function answerForPerson(ports: QuestionPorts, input: QuestionAnswe
   const asked: Stored | undefined = known ?? ((await ports.storage.get(keyOf(requestID))) as Stored | undefined)
   if (asked?.sessionID !== sessionID || asked.answered) return { sessionID, requestID, answered: false }
   const answers = normalize(asked, input.answers)
-  const settled = { by: "child", answers } as const
+  const settled = { by: "child", answers, via: "inbox" } as const
   const linked: Linked = { withdrawal: settled, linked: false }
   const by = await run(deliver(ports, asked, { answers }, linked))
   if (!by) return { sessionID, requestID, answered: false }

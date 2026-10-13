@@ -920,11 +920,23 @@ answered=$(inbox answer "{\"sessionID\":\"$child\",\"requestID\":\"$question\",\
 check "the answer went to the child's waiting call" "$([ "$answered" = '{"answered":true,"by":"result"}' ] && echo true || echo false)"
 check "the child got it and reported" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
 check "the parent's own question was withdrawn, saying it is settled: no second ask" \
-  "$(has_text "$parent" "Session $child no longer waits on this question: it was answered in its own session" 30)"
+  "$(has_text "$parent" "Session $child no longer waits on this question: it was answered by the person (" 30)"
 check "both forms are gone" "$([ "$(forms_of "$parent")" = 0 ] && [ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
 check "and no notice besides" "$(sleep 2; notices_with "$parent" answered | jq -r 'length == 0')"
 check "answering it again passes nothing on" \
   "$(inbox answer "{\"sessionID\":\"$child\",\"requestID\":\"$question\",\"answers\":[[\"Hey\"]]}" | jq -r '.output == {answered: false}')"
+
+echo "the asks inbox answers a child's question the parent was told of and did not ask: the parent hears it answered by the person"
+out=$(prompt "COURIER-QUESTION-WAIT")
+parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+question=$(reply_time "$parent" "PARENT WAITS QUESTION" 45 >/dev/null; inbox asks "{\"sessionID\":\"$parent\"}" | jq -r --arg child "$child" '.output.questions[] | select(.sessionID == $child) | .requestID')
+check "the parent was told of it and asked no one" "$([[ $question == question_* ]] && [ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
+answered=$(inbox answer "{\"sessionID\":\"$child\",\"requestID\":\"$question\",\"answers\":[[\"Hey\"]]}" | jq -c '.output')
+check "the answer went to the child's waiting call" "$([ "$answered" = '{"answered":true,"by":"result"}' ] && echo true || echo false)"
+check "the child got it and reported" "$(has_text "$parent" 'CHILD GOT [["Hey"]]' 45)"
+check "the parent was told once that the person answered it, not its own session" \
+  "$(sleep 2; notices_with "$parent" answered | jq -r --arg question "$question" 'length == 1 and (.[0] | contains("request=\"" + $question + "\"") and contains("was answered by the person (") and (contains("in its own session") | not))')"
 
 # The nativeChildren option, on for the rest of the run: the server reloads the plugin with it.
 echo "nativeChildren: a child started without isolate gets OpenCode's own parentID"

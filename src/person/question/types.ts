@@ -29,9 +29,12 @@ export interface Asked {
   readonly native?: true
 }
 
-/** How a question was settled without the top session: in the asking session, or not at all. */
+/**
+ * How a question was settled without the top session: in the asking session, or not at all. `via`
+ * "inbox" marks an answer the person gave in the TUI's asks inbox.
+ */
 export type Elsewhere =
-  | { readonly by: "child"; readonly answers: Answers }
+  | { readonly by: "child"; readonly answers: Answers; readonly via?: "inbox" }
   | { readonly by: "dismissed" }
   | { readonly by: "failed"; readonly error: string }
 

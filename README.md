@@ -386,7 +386,7 @@ permission request, question and form waiting anywhere in the open session's cou
 each with where it comes from (`Root › Fix the bug › Write tests`), its depth and its group. Choose one and
 answer it in a dialog, with no model in between: allow once, always or reject (with a reason if you give
 one), pick a question's answers or type your own, fill in a form. The session that started the tree hears
-once that it is settled, as when you answer in the child's own session, and does not ask you again. A new
+once that you settled it (a question *answered by the person*), and does not ask you again. A new
 ask in the open tree plays OpenCode's permission or question sound ([reference](docs/reference.md#the-asks-inbox)).
 
 ## Native child sessions

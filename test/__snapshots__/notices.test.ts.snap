@@ -1304,6 +1304,11 @@ If you asked someone about it, tell them it is settled; there is nothing to pass
 That ends the session's turn, and then it does not report back on its own: if it stays quiet, message it with courier_send to have it carry on."
 `;
 
+exports[`questions questionSettledNotice 4`] = `
+"The question question_1 of this session, "Fix the bug", was answered by the person (User has answered your questions: "Which greeting?"="Hi", "Which languages?"="English, German". You can now continue with the user's answers in mind.), so it no longer waits on you.
+If you asked someone about it, tell them it is settled; there is nothing to pass on."
+`;
+
 exports[`questions question notices of a native child 1`] = `
 "This session, "Fix the bug", which you started with courier_spawn, asks the question below and waits for the answer.
 1. Greeting: Which greeting? (one of, or an answer of their own:)
@@ -1345,6 +1350,8 @@ exports[`questions withdrawnText 3`] = `"Session ses_child no longer waits on th
 exports[`questions withdrawnText 4`] = `"Session ses_child no longer waits on this question: it was dismissed in its own session, which ends its turn; message it with courier_send if it should carry on. There is nothing to pass on; tell the person it is settled."`;
 
 exports[`questions withdrawnText 5`] = `"Session ses_child no longer waits on this question: it was ended: its question call failed (Error: boom). There is nothing to pass on; tell the person it is settled."`;
+
+exports[`questions withdrawnText 6`] = `"Session ses_child no longer waits on this question: it was answered by the person (User has answered your questions: "Which greeting?"="Hi", "Which languages?"="English, German". You can now continue with the user's answers in mind.). There is nothing to pass on; tell the person it is settled."`;
 
 exports[`questions passedNote 1`] = `"These answers were passed on to session ses_child, which carries on with them; do not call courier_answer for question_1. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 

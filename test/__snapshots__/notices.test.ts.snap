@@ -1114,6 +1114,21 @@ Do not decide this yourself. Ask the person you are working with (with your ques
 When they have chosen, call courier_answer with sessionID "ses_child", requestID "per_1", reply set to their choice and, with reject, message set to their reason."
 `;
 
+exports[`permission requests permissionNotice 5`] = `
+"This session, "Fix the bug", which you started with courier_spawn, is waiting for permission and does nothing until it is answered.
+It asks for: shell
+On:
+- git push
+
+OpenCode already shows this request to the person you are working with, as its own permission prompt in your session (and in the paired app's request dock), where they answer it; you will be told once it is answered.
+Do not ask them yourself, with your question tool or in your reply, and do not decide it: at most tell them in one line that this session waits on their permission, then end your turn.
+Only if they ask you to answer it for them, these are the choices:
+- once: allow this request only
+- always: allow it, and from now on every shell request in this project
+- reject: refuse it, with a reason if they give one; the session's call fails and it carries on
+When they have chosen, call courier_answer with sessionID "ses_child", requestID "per_1", reply set to their choice and, with reject, message set to their reason."
+`;
+
 exports[`permission requests permissionSettledNotice 1`] = `
 "The permission request per_1 of this session, "Fix the bug", has been answered (once) without courier_answer, so it no longer waits on you.
 If you asked someone about it, tell them it is settled; there is nothing to pass on."

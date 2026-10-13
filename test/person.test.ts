@@ -44,6 +44,48 @@ describe("reportAsked", () => {
     expect(sent[0].text).toContain('This session, "Fix the bug", which ses_parent started with courier_spawn, a session started from yours,')
   })
 
+  test("a native child's request, shown by OpenCode in the top session's view: the top is told not to ask the person", async () => {
+    const { ports, sent } = fakePorts()
+    await childStore(ports.storage).record({ ...child(), native: true })
+
+    await reportAsked(ports, fresh(), asked())
+
+    expect(sent[0].text).toBe(
+      envelope("ses_child", permissionNotice("Fix the bug", request, undefined, true), { asks: "permission", request: "per_1", shown: "native" }),
+    )
+    expect(sent[0].text).toContain("OpenCode already shows this request to the person you are working with")
+    expect(sent[0].text).toContain("Do not ask them yourself")
+    expect(sent[0].text).not.toContain("Ask the person you are working with")
+  })
+
+  test("a native child's child, all native up to the top, is told the same way", async () => {
+    const { ports, sent } = fakePorts()
+    await childStore(ports.storage).record({ ...child(), native: true })
+    await childStore(ports.storage).record({ ...child("ses_root"), sessionID: "ses_parent", title: "Lead", native: true })
+
+    await reportAsked(ports, fresh(), asked())
+
+    expect(sent[0].sessionID).toBe("ses_root")
+    expect(sent[0].text).toContain('request="per_1" shown="native">')
+  })
+
+  test("a native child under an isolated session, an isolated child, and a child without the option: the top asks the person as before", async () => {
+    const cases = [
+      [{ ...child(), native: true as const }, { ...child("ses_root"), sessionID: "ses_parent", title: "Lead", isolated: true }],
+      [{ ...child(), isolated: true }],
+      [child()],
+    ]
+    for (const entries of cases) {
+      const { ports, sent } = fakePorts()
+      for (const entry of entries) await childStore(ports.storage).record(entry)
+
+      await reportAsked(ports, fresh(), asked())
+
+      expect(sent[0].text).not.toContain("shown=")
+      expect(sent[0].text).toContain("Do not decide this yourself. Ask the person you are working with")
+    }
+  })
+
   test("does not tell anyone about a request answered while its roster was looked up", async () => {
     const { ports, sent } = fakePorts()
     await childStore(ports.storage).record(child())

@@ -74,7 +74,7 @@ export const STAYS_QUIET =
  * What the session at the top is told. `startedBy` names the session that started the asking one
  * when that is not the top session itself, but one started from it.
  */
-export function permissionNotice(title: string, request: PermissionRequest, startedBy?: string) {
+export function permissionNotice(title: string, request: PermissionRequest, startedBy?: string, native = false) {
   const resources = request.resources.slice(0, MAX_RESOURCES).map((resource) => `- ${clip(resource)}`)
   if (request.resources.length > MAX_RESOURCES) resources.push(`- and ${request.resources.length - MAX_RESOURCES} more`)
   return [
@@ -83,13 +83,24 @@ export function permissionNotice(title: string, request: PermissionRequest, star
     ...(resources.length ? ["On:", ...resources] : []),
     ...(request.message ? [`Note: ${request.message}`] : []),
     "",
-    "Do not decide this yourself. Ask the person you are working with (with your question tool, if you have one), offering exactly these choices:",
+    ...(native ? NATIVE_PERMISSION : PERMISSION_ASK),
     "- once: allow this request only",
     ...alwaysChoice(request),
     "- reject: refuse it, with a reason if they give one; the session's call fails and it carries on",
     `When they have chosen, call courier_answer with sessionID "${request.sessionID}", requestID "${request.id}", reply set to their choice and, with reject, message set to their reason.`,
   ].join("\n")
 }
+
+const PERMISSION_ASK = [
+  "Do not decide this yourself. Ask the person you are working with (with your question tool, if you have one), offering exactly these choices:",
+]
+
+/** For a native child's request, which OpenCode shows the person itself, in the top session's view. */
+const NATIVE_PERMISSION = [
+  "OpenCode already shows this request to the person you are working with, as its own permission prompt in your session (and in the paired app's request dock), where they answer it; you will be told once it is answered.",
+  "Do not ask them yourself, with your question tool or in your reply, and do not decide it: at most tell them in one line that this session waits on their permission, then end your turn.",
+  "Only if they ask you to answer it for them, these are the choices:",
+]
 
 /** What the session told about a permission request is told once it is answered without courier_answer. */
 export function permissionSettledNotice(title: string, requestID: string, reply: Reply) {

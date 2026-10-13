@@ -247,6 +247,7 @@ describe("permission requests", () => {
     const many = Array.from({ length: 22 }, (_, i) => `file-${i}`)
     expect(person.permissionNotice("Fix the bug", { ...request, action: "edit", resources: [...many, "x".repeat(400)], save: ["git push*", "git fetch*"] })).toMatchSnapshot()
     expect(person.permissionNotice("Fix the bug", { ...request, resources: [] })).toMatchSnapshot()
+    expect(person.permissionNotice("Fix the bug", { ...request, save: ["*"] }, undefined, true)).toMatchSnapshot()
   })
   test("permissionSettledNotice", () => {
     expect(person.permissionSettledNotice("Fix the bug", "per_1", "once")).toMatchSnapshot()

@@ -44,6 +44,7 @@ async function setUp(
   app: { name: string; version: string; channel: string } = pinned,
   // Storage scans outside the scheduler's messages wait for it, as a slow storage's would.
   hold: Promise<unknown> = Promise.resolve(),
+  overrides: Record<string, unknown> = {},
 ) {
   const store = new Map(Object.entries(stored))
   const tools = new Map<string, any>()
@@ -120,7 +121,7 @@ async function setUp(
       },
     },
   }
-  const cleanup = await courier().setup(ctx as any)
+  const cleanup = await courier().setup({ ...ctx, ...overrides } as any)
   if (cleanup) cleanups.push(cleanup)
   return { tools, skills, rpcs, hooks, calls, store, emit: events.emit, location: ctx.location, cleanup, subscriptions: () => events.counted.subscriptions }
 }
@@ -214,6 +215,20 @@ test("registers the courier RPC for the TUI part, its summary read from this loc
 
   expect([...rpcs.keys()]).toEqual(["courier"])
   expect(await rpcs.get("courier")!.handlers.summary({ sessionID: "ses_none" })).toEqual({ running: 0, waiting: 0, idle: 0, groups: [] })
+})
+
+test("loads all the same when the host cannot register the RPC, and logs it", async () => {
+  const logged: string[] = []
+  const error = spyOn(console, "error").mockImplementation((message: unknown) => void logged.push(String(message)))
+  try {
+    const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { rpc: undefined })
+
+    expect(tools.size).toBe(12)
+    expect(hooks.has("context")).toBe(true)
+    expect(logged.filter((line) => line.startsWith("courier rpc: not registered"))).toHaveLength(1)
+  } finally {
+    error.mockRestore()
+  }
 })
 
 test("registers the courier-orchestrate skill, with a description so it is listed, and the playbook as its text", async () => {

@@ -42,8 +42,8 @@ export function summaryLine(summary: Summary) {
  */
 export function addTreeStatus(ctx: Plugin.Context) {
   const courier = ctx.client.rpc(treeRpc)
-  // A request with no location goes to the server's default one, which may not have loaded the plugin: the TUI's instead.
-  const location = () => ctx.location ?? ctx.data.location.default()
+  // Where the session runs, which has the plugin loaded; a request with no location would go to the server's default.
+  const location = (sessionID: string) => ctx.data.session.get(sessionID)?.location ?? ctx.location ?? ctx.data.location.default()
   const [changed, setChanged] = createSignal(0)
   let settling: ReturnType<typeof setTimeout> | undefined
   const unlisten = ctx.data.listen(({ details }) => {
@@ -59,7 +59,7 @@ export function addTreeStatus(ctx: Plugin.Context) {
       const [read] = createResource(
         () => (input.sessionID ? { sessionID: input.sessionID, changed: changed() } : undefined),
         ({ sessionID }) =>
-          courier.summary({ sessionID }, { location: location() }).then(
+          courier.summary({ sessionID }, { location: location(sessionID) }).then(
             (summary) => ({ sessionID, line: summaryLine(summary) }),
             // A server without the courier's RPC, or one that fails, leaves the entry empty rather than the footer noisy.
             () => ({ sessionID, line: "" }),
@@ -67,7 +67,8 @@ export function addTreeStatus(ctx: Plugin.Context) {
       )
       // The latest answer, but only for the session shown: another session's lingers while the new one is asked.
       const line = () => {
-        const latest = read.latest
+        // Before its first answer `latest` reads the resource, which would suspend an enclosing Suspense boundary.
+        const latest = read.state === "ready" || read.state === "refreshing" ? read.latest : undefined
         return latest && latest.sessionID === input.sessionID ? latest.line : ""
       }
       return (

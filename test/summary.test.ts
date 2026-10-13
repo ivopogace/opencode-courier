@@ -107,11 +107,19 @@ describe("summary", () => {
     expect((await summary(ports, "ses_root")).groups).toEqual([{ name: "pair", reported: 1, members: 2 }])
   })
 
-  test("leaves out a group released since its children were read", async () => {
+  test("reads the groups from the group store: a released one is gone, a held report outlives its member's entry", async () => {
     const { ports } = fakePorts({ ses_a: { updated: 5, idle: 5 } })
+    const groups = groupStore(ports.storage)
+    // Released: its roster entry still names the group, whose members have been dropped.
     await childStore(ports.storage).record(entry("ses_a", "ses_root", "pair"))
+    await joinGroup(groups, "ses_root", "trio", "ses_gone", "ses_gone", 900)
+    await holdReport(groups, { parentID: "ses_root", group: "trio", sessionID: "ses_gone", title: "ses_gone", joinedAt: 900 }, {
+      at: 950,
+      status: "done",
+      message: "Done",
+    })
 
-    expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 0, idle: 1, groups: [] })
+    expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 0, idle: 1, groups: [{ name: "trio", reported: 1, members: 1 }] })
   })
 
   test("counts at most maxTotal sessions, as courier_tree reads them, and says so", async () => {

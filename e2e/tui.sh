@@ -57,11 +57,11 @@ summary_until() {
   done
   echo "$last"
 }
-# Opens the TUI on session $1 in a fresh tmux session, 160 columns wide; its stderr goes to $WORK/$2.err.
+# Opens the TUI in a fresh tmux session, 160 columns wide, its stderr to $WORK/$1.err: on session $2, or the home screen.
 open_tui() {
   tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
   tmux new-session -d -s "$TMUX_SESSION" -x 160 -y 40 \
-    "cd '$WORK/project' && LANG=C.UTF-8 OPENCODE_PASSWORD='$OPENCODE_PASSWORD' TERM=xterm-256color '$OPENCODE' --server '$SERVER' --session '$1' 2>'$WORK/$2.err'; sleep 600"
+    "cd '$WORK/project' && LANG=C.UTF-8 OPENCODE_PASSWORD='$OPENCODE_PASSWORD' TERM=xterm-256color '$OPENCODE' --server '$SERVER' ${2:+--session '$2'} 2>'$WORK/$1.err'; sleep 600"
 }
 # Whether the TUI's screen shows the line $1 within $2 s; the screen is kept in $WORK/$3.txt.
 shows() {
@@ -108,8 +108,8 @@ echo "the server resolves the tui and rpc entrypoints next to dist/index.js"
 # A session first: the plugin list is the inventory of a location that has been booted.
 out=$(prompt "COURIER-TUI")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-children=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out")
-asking=$(sed -n 2p <<<"$children")
+children=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn" and .part.state.status == "completed") |
+  .part.state.metadata.metadata.sessionID' <<<"$out")
 echo "  parent $parent, children $(tr '\n' ' ' <<<"$children")"
 info=$(plugins | jq -c '.data[] | select(.id == "courier") | {state: .state.status, features}')
 echo "  $info"
@@ -120,6 +120,9 @@ waiting='{"running":0,"waiting":1,"idle":1,"groups":[{"name":"pair","reported":1
 result=$(summary_until "$parent" 60 "$waiting")
 echo "  $result"
 check "one child waits on the person, one has reported, and group pair holds 1 of 2" "$([ "$result" = "$waiting" ] && echo true || echo false)"
+# The two spawns run at once, so the one that asks is told by its request, not by the order they finished in.
+asking=$(for child in $children; do if [ "$(api "session/$child/permission" | jq -r '.data | length')" = 1 ]; then echo "$child"; fi; done | head -1)
+check "the child that asks is found" "$([ -n "$asking" ] && echo true || echo false)"
 bad=$(rpc summary '{"wrong":1}')
 echo "  $bad"
 check "an input without a session is refused as rpc.invalid_input" "$(jq -r '.type == "rpc.invalid_input"' <<<"$bad")"
@@ -128,7 +131,7 @@ check "a session that started none has an empty summary" \
   "$(rpc summary "{\"sessionID\":\"$asking\"}" | jq -r '.output == {running: 0, waiting: 0, idle: 0, groups: []}')"
 
 echo "the TUI shows the entry in the prompt's footer, and follows the answer"
-open_tui "$parent" tui
+open_tui tui "$parent"
 check "the footer shows what the RPC gave" "$(shows "courier 1 waiting on you · 1 idle · group pair 1/2" 60 tui-waiting)"
 echo "  $(footer tui-waiting)"
 request=$(api "session/$asking/permission" | jq -r '.data[0].id // empty')
@@ -143,13 +146,10 @@ check "the summary follows: both children idle, the group released" "$([ "$resul
 check "the footer follows it" "$(shows "courier 2 idle" 30 tui-released)"
 echo "  $(footer tui-released)"
 check "and the group is gone from it" "$([[ $(footer tui-released) != *"group pair"* ]] && echo true || echo false)"
-check "the entry is not on the home screen of a TUI with no session" "$(
-  tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
-  tmux new-session -d -s "$TMUX_SESSION" -x 160 -y 40 \
-    "cd '$WORK/project' && LANG=C.UTF-8 OPENCODE_PASSWORD='$OPENCODE_PASSWORD' TERM=xterm-256color '$OPENCODE' --server '$SERVER' 2>'$WORK/tui-home.err'; sleep 600"
-  # The home screen's own footer, once drawn, without the entry.
-  if [ "$(shows "ctrl+p" 60 tui-home)" = true ] && ! grep -qF "courier " "$WORK/tui-home.txt"; then echo true; else echo false; fi
-)"
+open_tui tui-home
+# The home screen's own footer, once drawn, without the entry.
+check "the entry is not on the home screen of a TUI with no session" \
+  "$([ "$(shows "ctrl+p" 60 tui-home)" = true ] && ! grep -qF "courier " "$WORK/tui-home.txt" && echo true || echo false)"
 
 echo "opencode plugin add installs the package with its tui and rpc entrypoints"
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
@@ -161,6 +161,7 @@ tarball=$(ls "$WORK"/pack/*.tgz)
 REGISTRY_PORT=$REGISTRY_PORT REGISTRY_TARBALL=$tarball REGISTRY_MANIFEST=$ROOT/package.json node "$ROOT/e2e/registry.mjs" >"$WORK/registry.out" 2>&1 </dev/null &
 REGISTRY_PID=$!
 for _ in $(seq 1 10); do curl -sf "http://127.0.0.1:$REGISTRY_PORT/opencode-courier" >/dev/null && break; sleep 1; done
+curl -sf "http://127.0.0.1:$REGISTRY_PORT/opencode-courier" >/dev/null || { echo "stand-in registry did not start"; cat "$WORK/registry.out"; exit 1; }
 export npm_config_registry="http://127.0.0.1:$REGISTRY_PORT/"
 added=$( (cd "$WORK/project" && "$OPENCODE" plugin add opencode-courier </dev/null >"$WORK/plugin-add.log" 2>&1) && echo ok || echo failed)
 # plugin add starts the background server; this test runs its own.
@@ -179,7 +180,7 @@ info=$(plugins | jq -c '.data[] | select(.id == "courier") | {state: .state.stat
 echo "  $info"
 check "the installed package reports features server, tui and rpc" \
   "$(jq -r '.features == {server: true, tui: true, rpc: true} and .source == "package"' <<<"$info")"
-open_tui "$parent" tui-installed
+open_tui tui-installed "$parent"
 check "the TUI loads the installed package's tui entrypoint and shows the entry" "$(shows "courier 2 idle" 60 tui-installed)"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.

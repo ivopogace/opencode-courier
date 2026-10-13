@@ -695,7 +695,9 @@ that is zero is left out; the entry shows nothing on the home screen, where ther
 session that started none, and when the RPC fails, as on a server without it. It asks again 250 ms
 after the first of the events that may change it (a session created or deleted, a turn started or
 ended, a permission request asked or answered, a form created or settled, a message delivered), once
-per burst, at the TUI's location, or the server's default one when the TUI has none.
+per burst, at the open session's own location (where the plugin is loaded), else the TUI's, else the
+server's default one. A server that cannot register the RPC logs `courier rpc: not registered` and
+loads the rest as before.
 
 **The RPC.** `courier.summary`, registered by every instance at its location as the tools are, through
 the same use cases as `courier_tree` and `courier_children` (the roster, the sessions' times, their

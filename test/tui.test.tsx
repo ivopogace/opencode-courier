@@ -12,7 +12,10 @@ import tui from "../src/tui.js"
 const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
 
 /** A fake TUI context whose RPC answers `answer` for each session; the calls, the slot claimed and the event listeners are kept. */
-function fakeContext(answer: (sessionID: string) => Promise<Summary>, { location }: { location?: { directory: string } } = { location: { directory: "/workspace" } }) {
+function fakeContext(
+  answer: (sessionID: string) => Promise<Summary>,
+  { location, sessions = {} }: { location?: { directory: string }; sessions?: Record<string, { directory: string }> } = { location: { directory: "/workspace" } },
+) {
   const calls: unknown[] = []
   const listeners = new Set<(event: { details: { type: string } }) => void>()
   const state = { claim: undefined as SlotClaim | undefined, released: 0 }
@@ -20,6 +23,7 @@ function fakeContext(answer: (sessionID: string) => Promise<Summary>, { location
     location,
     data: {
       location: { default: () => ({ directory: "/default" }) },
+      session: { get: (sessionID: string) => (sessions[sessionID] ? { id: sessionID, location: sessions[sessionID] } : undefined) },
       listen: (handler: (event: { details: { type: string } }) => void) => {
         listeners.add(handler)
         return () => listeners.delete(handler)
@@ -96,6 +100,15 @@ describe("the footer status entry", () => {
     await app.waitForFrame((frame) => frame.includes("group pair"))
     expect(app.captureCharFrame()).toContain("courier 2 running · 1 waiting on you · group pair 1/2")
     expect(fake.calls).toEqual([[{ sessionID: "ses_parent" }, { location: { directory: "/workspace" } }]])
+  })
+
+  test("asks at the open session's own location when the TUI knows it", async () => {
+    const fake = fakeContext(async () => ({ ...empty, idle: 1 }), { location: { directory: "/workspace" }, sessions: { ses_parent: { directory: "/project" } } })
+    await tui.setup(fake.context)
+    const app = await renderFooter(fake.state.claim, () => "ses_parent")
+
+    await app.waitForFrame((frame) => frame.includes("courier 1 idle"))
+    expect(fake.calls).toEqual([[{ sessionID: "ses_parent" }, { location: { directory: "/project" } }]])
   })
 
   test("asks at the server's default location when the TUI has none", async () => {

@@ -3,6 +3,7 @@ import { DateTime } from "effect"
 import {
   deliverReleased,
   groupStanding,
+  groupStandings,
   hasCompleteGroup,
   holdReport,
   joinGroup,
@@ -78,6 +79,21 @@ describe("joining and leaving", () => {
     expect(await groupStore(ports.storage).member("ses_parent", "pair", "ses_a")).toEqual({ title: "First", joinedAt: 1 })
     expect(await groupStore(ports.storage).member("ses_parent", "pair", "ses_d")).toBeUndefined()
     expect(await groupStanding(groupStore(ports.storage), "ses_parent", "pair")).toEqual({ reported: 0, members: 2, complete: false })
+  })
+
+  test("groupStandings gives each of a parent's groups its standing, from one read", async () => {
+    const { ports } = fakePorts()
+    const groups = groupStore(ports.storage)
+    await joinGroup(groups, "ses_parent", "pair", "ses_a", "First", 1)
+    await joinGroup(groups, "ses_parent", "pair", "ses_b", "Second", 2)
+    await joinGroup(groups, "ses_parent", "solo", "ses_c", "Third", 3)
+    await joinGroup(groups, "ses_other", "pair", "ses_d", "Elsewhere", 4)
+    await leaveGroup(groups, "ses_parent", "solo", "ses_c", "failed", 5)
+
+    expect(await groupStandings(groups, "ses_parent")).toEqual([
+      { name: "pair", reported: 0, members: 2, complete: false },
+      { name: "solo", reported: 0, members: 0, complete: true },
+    ])
   })
 
   test("a parent has a complete group once every member of one of its groups has reported or left", async () => {

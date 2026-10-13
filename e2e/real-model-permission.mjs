@@ -1,7 +1,5 @@
-// The permission scenario of e2e/real-model.sh (node e2e/real-model-permission.mjs <parentSessionID>):
-// the parent asks the person about its child's permission request, and the answer reaches the child. With
-// COURIER_NATIVE=1 the child is a native one: the parent is only told, and the person answers in
-// OpenCode's own permission prompt, as the TUI's view of the parent shows it.
+// The permission scenario of e2e/real-model.sh (node e2e/real-model-permission.mjs <parentSessionID>): the parent asks
+// the person about its child's request; with COURIER_NATIVE=1 it is only told, and the person answers OpenCode's prompt.
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 

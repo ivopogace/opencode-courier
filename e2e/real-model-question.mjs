@@ -1,7 +1,5 @@
-// The question scenario of e2e/real-model.sh (node e2e/real-model-question.mjs <parentSessionID>): the
-// child asks the person which greeting to use, through its parent, and COURIER_ANSWER reaches it. With
-// COURIER_NATIVE=1 the child is a native one: the parent is only told, and the person answers the
-// child's own form, as the TUI's view of the parent shows it.
+// The question scenario of e2e/real-model.sh (node e2e/real-model-question.mjs <parentSessionID>): the child asks the
+// person a greeting through its parent; with COURIER_NATIVE=1 the parent is only told, and the person answers the child's form.
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -86,9 +84,8 @@ function answerOf(form) {
   )
 }
 
-// 1. The child asks, with its question tool or a message, and the parent asks the person: a form in
-//    the parent's session, or a turn that ends with a question in text. A native child's parent is
-//    told and should end its turn without asking; the person then answers the child's own form.
+// 1. The child asks, with its question tool or a message, and the parent asks the person (a native child's parent
+//    only ends its turn): a form in the parent's session, or a turn that ends with a question in text.
 let child
 let childForm
 const asked = NATIVE

@@ -56,6 +56,7 @@ describe("reportAsked", () => {
     expect(sent[0].text).toContain("OpenCode already shows this request to the person you are working with")
     expect(sent[0].text).toContain("Do not ask them yourself")
     expect(sent[0].text).not.toContain("Ask the person you are working with")
+    expect(sent[0].metadata).toMatchObject({ asks: "permission", requestID: "per_1", shown: "native" })
   })
 
   test("a native child's child, all native up to the top, is told the same way", async () => {

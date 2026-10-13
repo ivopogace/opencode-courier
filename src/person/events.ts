@@ -30,7 +30,7 @@ export async function reportAsked(ports: PersonPorts, state: PersonState, event:
       ...(native ? { shown: "native" } : {}),
     }),
     description: `Session ${request.sessionID} asks for permission`,
-    metadata: { source: "courier", from: request.sessionID, asks: "permission", requestID: request.id },
+    metadata: { source: "courier", from: request.sessionID, asks: "permission", requestID: request.id, ...(native ? { shown: "native" } : {}) },
     delivery: "steer",
   })
   return [topOf(chain)]

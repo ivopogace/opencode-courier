@@ -201,8 +201,6 @@ export interface LimitPorts {
   readonly storage: RosterStorage
   readonly session: Pick<Context["session"], "get">
   readonly limits: Limits
-  /** The `nativeChildren` option: a child started without isolate is created with OpenCode's own `parentID`. */
-  readonly nativeChildren?: boolean
   readonly gate: SpawnGate
 }
 

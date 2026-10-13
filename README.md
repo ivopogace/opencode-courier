@@ -124,7 +124,7 @@ line to the server log naming both ([more](docs/reference.md#the-opencode-versio
 | 0.1.6 | 0.0.0-beta-19271 (the beta line: `opencode2` from `@opencode-ai/cli`, and `@opencode-ai/plugin`) |
 
 The [terminal part](#in-the-terminal) relies on the host to provide its UI modules and is tested on
-OpenCode 2.0.28 only; the server part works as before on older V2 hosts.
+OpenCode 2.0.28 only; the server part works as before on older V2 hosts from 2.0.4 on.
 
 Check yours with `opencode --version`, and install the matching CLI with:
 

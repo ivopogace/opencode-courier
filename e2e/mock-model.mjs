@@ -192,7 +192,10 @@ function decide(body) {
     for (const item of args.questions)
       if (item.header === "Relabel") item.options = item.options.map((option) => ({ ...option, label: option.label.toLowerCase() }))
       else if (item.header === "Reword") item.question = "Which greeting would you like?"
-    const both = messages.some((message) => message.role === "user" && textOf(message.content).includes("COURIER-QUESTION-BOTH"))
+    const started = (task) => messages.some((message) => message.role === "user" && textOf(message.content).includes(task))
+    // WAIT: it ends its turn without asking, and the person answers in the asks inbox.
+    if (started("COURIER-QUESTION-WAIT")) return { text: `PARENT WAITS QUESTION ${notice[2]}` }
+    const both = started("COURIER-QUESTION-BOTH")
     if (both) return { calls: [{ tool: "question", args }, { tool: "courier_answer", args: { sessionID: notice[1], requestID: notice[2], answers: [["Hi"]] } }] }
     return { tool: "question", args }
   }
@@ -282,12 +285,12 @@ function decide(body) {
   if (recent.includes("COURIER-PROGRESS")) return { tool: "courier_spawn", args: { task: "CHILD-PROGRESSES" } }
   if (recent.includes("COURIER-WAITING")) return { tool: "courier_spawn", args: { task: "CHILD-WAITS" } }
   if (recent.includes("COURIER-HOOKED")) return { tool: "courier_spawn", args: { task: "CHILD-HOOKED" } }
-  const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL|-REWORD|-BOTH)?(?: (isolate|nested))?/)
+  const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL|-REWORD|-BOTH|-WAIT)?(?: (isolate|nested))?/)
   if (questions)
     return {
       tool: "courier_spawn",
       args: {
-        task: questions[2] === "nested" ? "CHILD-NESTS" : `CHILD-QUESTION${questions[1] === "-BOTH" ? "" : (questions[1] ?? "")}`,
+        task: questions[2] === "nested" ? "CHILD-NESTS" : `CHILD-QUESTION${questions[1] === "-BOTH" || questions[1] === "-WAIT" ? "" : (questions[1] ?? "")}`,
         isolate: questions[2] === "isolate",
       },
     }

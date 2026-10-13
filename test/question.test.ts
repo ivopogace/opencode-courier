@@ -1582,6 +1582,9 @@ describe("a question answered by the person in the TUI's asks inbox", () => {
     expect(settled).toHaveLength(1)
     expect(settled[0].text).toContain('<courier from="ses_child" answered="elsewhere" request="question_1">')
     expect(settled[0].text).toContain('"Which greeting?"="Hi"')
+    // A child without native parentID too: it was answered by the person, not in its own session.
+    expect(settled[0].text).toContain('The question question_1 of this session, "Fix the bug", was answered by the person (')
+    expect(settled[0].text).not.toContain("in its own session")
     expect(settled[0].text).toContain("so it no longer waits on you")
     expect(relayState.questions.size).toBe(0)
     // The parent's courier_answer after it passes nothing on.
@@ -1602,7 +1605,7 @@ describe("a question answered by the person in the TUI's asks inbox", () => {
     const parentExit = await exitOf(parent)
     expect(Exit.isSuccess(parentExit) && parentExit.value).toMatchObject({
       output: { answers: [["Hi"]] },
-      content: expect.stringContaining("Session ses_child no longer waits on this question: it was answered in its own session ("),
+      content: expect.stringContaining("Session ses_child no longer waits on this question: it was answered by the person ("),
       metadata: { relayed: "question_1", withdrawn: true },
     })
     await settle()

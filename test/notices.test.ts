@@ -336,6 +336,7 @@ describe("questions", () => {
     expect(person.questionSettledNotice(asked, { by: "child", answers })).toMatchSnapshot()
     expect(person.questionSettledNotice(asked, { by: "dismissed" })).toMatchSnapshot()
     expect(person.questionSettledNotice(asked, { by: "failed", error: "Error: boom" })).toMatchSnapshot()
+    expect(person.questionSettledNotice(asked, { by: "child", answers, via: "inbox" })).toMatchSnapshot()
   })
   test("question notices of a native child", () => {
     expect(person.nativeQuestionNotice({ ...asked, native: true })).toMatchSnapshot()
@@ -356,6 +357,7 @@ describe("questions", () => {
     expect(person.withdrawnText(asked, { by: "child", answers })).toMatchSnapshot()
     expect(person.withdrawnText(asked, { by: "dismissed" })).toMatchSnapshot()
     expect(person.withdrawnText(asked, { by: "failed", error: "Error: boom" })).toMatchSnapshot()
+    expect(person.withdrawnText(asked, { by: "child", answers, via: "inbox" })).toMatchSnapshot()
   })
   test("passedNote", () => {
     expect(person.passedNote(asked, "result")).toMatchSnapshot()

@@ -245,7 +245,7 @@ export function nativeQuestionNotice(asked: Asked) {
 
 /** How a question was settled without the top session, as its settled notice puts it. */
 function settledHow(asked: Asked, how: Elsewhere) {
-  const where = asked.native ? "by the person" : "in its own session"
+  const where = asked.native || (how.by === "child" && how.via === "inbox") ? "by the person" : "in its own session"
   if (how.by === "child") return `answered ${where} (${answeredText(asked.questions, how.answers)})`
   if (how.by === "dismissed") return `dismissed ${where}, without an answer`
   return `ended without an answer: its question call failed (${how.error})`
@@ -291,7 +291,7 @@ function withdrawnHow(linked: Asked, how: Withdrawal): string {
         ? `already answered with courier_answer (${answeredText(linked.questions, how.outcome.answers)})`
         : "already dismissed in your session, so it carries on without the answers"
     case "child":
-      return `answered in its own session (${answeredText(linked.questions, how.answers)})`
+      return `answered ${how.via === "inbox" ? "by the person" : "in its own session"} (${answeredText(linked.questions, how.answers)})`
     case "dismissed":
       return "dismissed in its own session, which ends its turn; message it with courier_send if it should carry on"
     case "failed":

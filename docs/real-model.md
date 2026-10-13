@@ -466,6 +466,15 @@ permission to run the shell command.*, and ended its turn; the person allowed it
 OpenCode's prompt, the parent was told it was settled (`answered="once"`), and it replied `RESULT
 courier-permission-42` once the child had reported.
 
+After the settled notice and a withdrawn linked call took their place from how the question was
+answered (#151: an answer from the asks inbox reads *answered by the person* for every child, one in
+the child's own session keeps *in its own session*), the question scenario with `nativeChildren` off
+passed with `longcat-2.5-preview-free`, 6 of 6, on OpenCode 2.0.28: the child asked with its question
+tool, the parent asked the person with a question form holding the child's three options, the
+person's `Hi` went on through the linked question, the child reported `done` 6 s later and the parent
+replied `GREETING Hi`. The scenario answers in the parent's session, so it sees neither changed
+wording; the live suite checks those.
+
 What the models did on the fan-out, over some 30 runs while the tool wording was tuned:
 
 | Model | Result |

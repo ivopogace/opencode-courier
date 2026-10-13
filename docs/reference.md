@@ -709,7 +709,7 @@ question tool when the person must decide; a child can still send its question w
 `courier_send` instead, and the parent then passes your answer back with `courier_send`.
 
 The TUI's [asks inbox](#the-asks-inbox) answers a question as `courier_answer` does; the top session hears it
-as a question answered in the child's own session.
+as a question settled without it, *answered by the person*, whether or not the child is native.
 
 ## Roster
 
@@ -955,10 +955,11 @@ each answer and closes once nothing is left.
 - A question: each of its questions in turn, one choice, several (toggled, then `Done`) where it allows
   them, or `Type your own answer…`. The answers go to the server's `answer` method, which passes them on as
   `courier_answer` does: as the result of the call that waits on it, or as a message when that call was cut
-  off. The top session then hears it once, [as if the question had been answered in the asking
-  session](#a-child-that-asks-a-question): if its own question call asking the person the same is open, that
-  call is withdrawn with `answered in its own session (…)`; otherwise, if it was told about the question,
-  it gets the settled notice (`answered="elsewhere"`). A later `courier_answer` for it passes nothing on.
+  off. The top session then hears it once, [as a question settled without
+  it](#a-child-that-asks-a-question), *answered by the person*: if its own question call asking the person
+  the same is open, that call is withdrawn with `answered by the person (…)`; otherwise, if it was told
+  about the question, it gets the settled notice (`answered="elsewhere"`, `was answered by the person (…)`),
+  for every child, native or not. A later `courier_answer` for it passes nothing on.
   Answers that do not fit the question come back as a message in the TUI, and nothing is passed on.
 
 **Attention.** 250 ms after the first of a burst of `permission.asked` and `form.created` events, the TUI

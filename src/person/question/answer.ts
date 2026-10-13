@@ -212,7 +212,7 @@ export async function answerQuestion(ports: QuestionPorts, callerID: string, inp
 
 /**
  * Answers a question for the person, from the TUI's inbox, as courier_answer does; the top session hears it once, as
- * if answered in the asking session: its linked call is withdrawn, or else, if it was told of it, it is told settled.
+ * answered by the person: its linked call is withdrawn, or else, if it was told of it, it is told settled.
  */
 export async function answerForPerson(ports: QuestionPorts, input: QuestionAnswerInput): Promise<QuestionAnswered> {
   const { sessionID, requestID } = input
@@ -220,7 +220,7 @@ export async function answerForPerson(ports: QuestionPorts, input: QuestionAnswe
   const asked: Stored | undefined = known ?? ((await ports.storage.get(keyOf(requestID))) as Stored | undefined)
   if (asked?.sessionID !== sessionID || asked.answered) return { sessionID, requestID, answered: false }
   const answers = normalize(asked, input.answers)
-  const settled = { by: "child", answers } as const
+  const settled = { by: "child", answers, via: "inbox" } as const
   const linked: Linked = { withdrawal: settled, linked: false }
   const by = await run(deliver(ports, asked, { answers }, linked))
   if (!by) return { sessionID, requestID, answered: false }

@@ -1,5 +1,5 @@
-// What the rest of the plugin uses of the person: the permission, form and question relays. The
-// question relay stays behind its own index.
+// What the rest of the plugin uses of the person: the permission, form and question relays and the RPC
+// of its TUI part. The question relay stays behind its own index.
 import type { PendingPrompt, WatchPorts } from "../tree/index.js"
 import type { PersonPorts } from "./ports.js"
 import type { Prompt } from "./question/index.js"
@@ -8,6 +8,7 @@ export { personEvents } from "./events.js"
 export { asksPermission, pendingOf } from "./permission.js"
 export type { AnswerPorts, Permissions, Waiting } from "./permission.js"
 export type { PersonPorts, PersonState } from "./ports.js"
+export { registerPersonRpc } from "./rpc-handlers.js"
 export { asksQuestion, joinRelay, noticeCutOff, pendingQuestions, portsAt, relayQuestions } from "./question/index.js"
 export type { QuestionPorts } from "./question/index.js"
 export { addPersonTools } from "./tools.js"

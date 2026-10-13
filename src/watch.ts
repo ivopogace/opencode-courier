@@ -24,7 +24,7 @@ export interface WatchPorts {
   readonly event: Pick<Context["event"], "subscribe">
   /** The permission domains of every loaded location, which the `Waits` suppliers ask; an isolated child's are in its worktree's. */
   readonly permissions: () => Iterable<Pick<Context["permission"], "list">>
-  /** The clock a location shutdown is recorded by: the question relay's, which judges it. */
+  /** The clock, in epoch milliseconds, for an event that carries no `created`. */
   readonly now: () => number
   readonly log: (message: string) => void
   /** Has the scheduler deliver what is due now rather than at its next tick: a group completed, or its parent's turn ended. */

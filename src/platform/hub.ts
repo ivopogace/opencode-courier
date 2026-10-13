@@ -248,7 +248,7 @@ function find(registry: Registry) {
     forms: shared<FormsTold>("forms", () => ({ told: new Map(), settled: new Set() })),
     locations: shared("locations", () => new Map<object, unknown>()),
     receivers: shared<object>("receiver", () => ({})),
-    // Filled in by `question/`, field by field, since a copy before the hub may have made it without them.
+    // Filled in by `person/question/`, field by field, since a copy before the hub may have made it without them.
     questions: shared<object>("questions", () => ({})),
     skewLogged: false,
   })

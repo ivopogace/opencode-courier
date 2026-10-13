@@ -5,7 +5,7 @@ import { join, posix } from "node:path"
 const SRC = join(import.meta.dir, "..", "src")
 
 /**
- * Each module of src/, by its path there without `.ts` (`platform/hub`, `question/relay`), with the modules of
+ * Each module of src/, by its path there without `.ts` (`platform/hub`, `person/question/relay`), with the modules of
  * src/ it imports: static, type-only, side-effect and dynamic imports alike.
  */
 function imports() {

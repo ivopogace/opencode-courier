@@ -863,9 +863,12 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_â€
 
 Every permission request, question and form waiting on the person anywhere in the open session's courier
 tree, answered in the TUI's dialogs with no model in between. It is opened by the command `courier.asks`:
-its key `<leader>k` (`ctrl+x k` by default), the slash command `/asks`, the command palette ("Courier:
+its key `<leader>k` (`ctrl+x k` by default), the slash command `/asks` (alias `/ask`), the command palette ("Courier:
 what waits on you"), or a click on the footer's entry while it shows `waiting on you`. With no session
 open it says so; with nothing waiting, "Nothing in this courier tree waits on you."
+
+While a permission prompt or form is shown in the session, OpenCode renders it in place of the prompt and
+the footer is hidden, so open the inbox with `ctrl+x k` (or `/asks` once the prompt is back).
 
 **What it lists.** The tree is courier's own, read from the roster, not OpenCode's `parentID`: from the
 top of the open session's lineage down, so every session of a tree, the root or a grandchild, lists the

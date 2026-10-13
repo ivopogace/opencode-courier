@@ -365,6 +365,7 @@ export function addAsksInbox(ctx: Context) {
   })
 
   ctx.keymap.layer(() => ({
+    mode: "global",
     commands: [
       {
         id: INBOX_COMMAND,
@@ -373,7 +374,7 @@ export function addAsksInbox(ctx: Context) {
         group: "Courier",
         bind: "<leader>k",
         palette: true,
-        slash: { name: "asks" },
+        slash: { name: "asks", aliases: ["ask"] },
         run: () => void open(),
       },
     ],

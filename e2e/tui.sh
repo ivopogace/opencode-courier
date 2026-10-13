@@ -199,8 +199,21 @@ out=$(prompt "COURIER-ASK")
 asker_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 asker=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out" | head -1)
 for _ in $(seq 1 45); do [ "$(api "session/$asker/permission" | jq -r '.data | length')" = 1 ] && break; sleep 1; done
+# Viewing the asking child itself, OpenCode renders its permission prompt in place of the prompt and hides
+# the footer, so the key is the way to the inbox, which lists the request from anywhere in the tree.
+open_tui tui-prompt "$asker"
+check "the child's view shows OpenCode's permission prompt" "$(shows "Allow once" 60 tui-prompt)"
+tmux send-keys -t "$TMUX_SESSION" C-x k
+check "its key opens the inbox over the prompt, listing the request" \
+  "$([ "$(shows "Waiting on you (1)" 20 tui-prompt-inbox)" = true ] && grep -qF "Permission: shell echo courier-asks" "$WORK/tui-prompt-inbox.txt" && echo true || echo false)"
 open_tui tui-inbox "$asker_parent"
 check "the footer says one waits on the person" "$(shows "courier 1 waiting on you" 60 tui-inbox-footer)"
+tmux send-keys -t "$TMUX_SESSION" "/asks"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "/asks typed into the prompt opens the inbox" "$(shows "Waiting on you (1)" 20 tui-inbox-slash)"
+tmux send-keys -t "$TMUX_SESSION" Escape
+check "Escape closes it" "$(hides "Waiting on you" 10 tui-inbox-slash-closed)"
 tmux send-keys -t "$TMUX_SESSION" C-x k
 check "its key opens the inbox, listing the request with where it comes from" \
   "$([ "$(shows "Permission: shell echo courier-asks" 20 tui-inbox-list)" = true ] && grep -qF "Waiting on you (1)" "$WORK/tui-inbox-list.txt" && echo true || echo false)"

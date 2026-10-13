@@ -6,7 +6,7 @@ import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import type { Summary } from "../src/tree/rpc.js"
-import { SETTLE_MS, summaryLine } from "../src/tree/tui.js"
+import { addTreeStatus, SETTLE_MS, summaryLine } from "../src/tree/tui.js"
 import tui from "../src/tui.js"
 
 const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
@@ -44,6 +44,8 @@ function fakeContext(
         return () => void state.released++
       },
     },
+    // The asks inbox's command, which test/inbox.test.tsx tests.
+    keymap: { layer: () => undefined },
   } as unknown as Plugin.Context
   const emit = (type: string) => {
     for (const listener of listeners) listener({ details: { type } })
@@ -182,10 +184,26 @@ describe("the footer status entry", () => {
   test("its cleanup stops listening and gives the slot back", async () => {
     const fake = fakeContext(async () => empty)
     const cleanup = await tui.setup(fake.context)
-    expect(fake.listeners.size).toBe(1)
+    // The footer's and the asks inbox's.
+    expect(fake.listeners.size).toBe(2)
 
     await cleanup?.()
     expect(fake.listeners.size).toBe(0)
     expect(fake.state.released).toBe(1)
+  })
+})
+
+describe("the footer's waiting on you", () => {
+  test("a click opens the asks inbox for the open session, only while some wait on the person", async () => {
+    for (const [waiting, opened] of [[1, ["ses_parent"]], [0, []]] as const) {
+      const fake = fakeContext(async () => ({ ...empty, running: 1, waiting }))
+      const clicked: string[] = []
+      addTreeStatus(fake.context, (sessionID) => void clicked.push(sessionID))
+      const app = await renderFooter(fake.state.claim, () => "ses_parent")
+      await app.waitForFrame((frame) => frame.includes("courier 1 running"))
+
+      await app.mockMouse.click(4, 0)
+      expect(clicked).toEqual([...opened])
+    }
   })
 })

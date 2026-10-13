@@ -855,3 +855,28 @@ of the affinity change (a real-model rerun); whether the TUI's own `question` di
 relay compose for a native child (the relay wraps the question tool at the server; the TUI shows a
 native child's form in the root's view, so a person could answer there what the relay has already
 passed up).
+
+### What the asks inbox found (#144)
+
+Read in OpenCode's source at `v2.0.28` and checked live by `e2e/tui.sh`.
+
+- **Replying to a permission request.** The plugin TUI context's `data.session.permission` types `list`,
+  `sync` and `invalidate` only (`packages/plugin/src/tui/context.ts`); the host's own data store has a
+  `reply` (`packages/tui/src/routes/session/permission.tsx`, line 138, and the auto-accept in
+  `routes/session/index.tsx`, line 268), which a plugin is not typed to reach. The inbox replies through
+  the context's `client.permission.reply`, the same `POST /api/session/:id/permission/:request/reply` route.
+  Forms go through the typed `data.session.form.reply`, as the TUI's form view does (`routes/session/form.tsx`,
+  line 271). Both are session routes: the server finds the session's location, so an isolated child's
+  request needs no location from the TUI.
+- **Forms are listed by the TUI.** The server plugin API has no form domain, so the person's RPC lists
+  permission requests and questions, and the TUI lists each session's forms with `client.session.form.list`.
+- **Sounds.** OpenCode's own `opencode.notifications` part (`packages/tui/src/feature-plugins/system/notifications.ts`)
+  already sounds `permission` on every `permission.asked` and `question` on every `form.created` the TUI
+  receives, courier children's included; the inbox's own notice adds where the ask comes from.
+- **Keys.** `<leader>` bindings OpenCode takes at `v2.0.28` (`packages/tui/src/config/v1/keybind.ts`):
+  `a b c e g i l m n q r s t u w x y`, the digits and the arrows; the inbox takes `<leader>k`.
+- **The question dialog and the relay.** Without a native `parentID` a child's question form shows only in
+  the child's own view; the person sees it there, in the root's view when the root's model asks the same
+  (the relay links the two), and in the inbox. Whichever answers first settles the others: the relay
+  withdraws the linked call and the child's form, and the inbox reads the tree again. With a native
+  `parentID` (#146) the root's view would show the child's form too, next to the root's own linked question.

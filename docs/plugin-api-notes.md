@@ -468,3 +468,388 @@ live suite's skill scenario:
   `skill` message in the transcript, sent to the model as a user message carrying the raw `content`,
   and resumes the session unless `resume` is `false`. A compaction keeps `[Skill activated: <name>]`
   and the text.
+
+## TUI and RPC entrypoints (spike for #130)
+
+Phase 0 of [#130](https://github.com/ivopogace/opencode-courier/issues/130): can this package ship a
+TUI part and an RPC, how, and should non-isolated children get OpenCode's own `parentID`. Read in
+`@opencode/plugin@2.0.28`'s types and in OpenCode's source at tag `v2.0.28` (file and line numbers
+below are at that tag), and checked on a real OpenCode 2.0.28, server and TUI, with the spike on the
+branch [`spike-130-tui`](https://github.com/ivopogace/opencode-courier/tree/spike-130-tui): a minimal
+`tui` entrypoint (one `prompt.footer.status` entry), a minimal `rpc` definition with one server
+handler, the build for them, a unit test of the TUI part, and `e2e/spike-tui.sh`, the live script
+whose output is quoted here. Nothing of it is in the shipped plugin.
+
+#130 was written against `v2.0.26`. Of the files it cites and this note reads, these changed between
+`v2.0.26` and `v2.0.28`, none in what is cited: `packages/core/src/plugin/host.ts` (`credential.activate`
+added, lines 255-257), `packages/core/src/session/model-request.ts` (the `effect/http` import and the
+recovery of declines, [From `2.0.26` to `2.0.28`](#from-2026-to-2028); the parent header lines are the
+same), `packages/protocol/src/groups/rpc.ts` (the `effect/http-api` import), the app's request dock
+(`packages/app/src/session/requests/model.ts` and `auto-approve.ts`: auto-approval is now per project),
+`packages/client/src/solid/data.ts` (an `error` on a failed turn's idle message; archived projects
+hidden), `packages/tui/src/routes/session/index.tsx` (that error rendered) and
+`packages/cli/src/commands/handlers/default.ts` (release highlights). Unchanged: `packages/plugin/src/tui/*`,
+`host.ts`, `rpc.ts`, `runtime.ts`, `runtime-modules.ts`, `packages/core/src/plugin/module.ts`,
+`packages/core/src/session.ts`, `session/affinity.ts`, `plugin/warming.ts`, `session/runner/llm.ts`,
+`packages/core/src/rpc.ts`, `packages/schema/src/rpc.ts`, `packages/tui/src/plugin/*`,
+`packages/app/src/session/requests/session-request-tree.ts` and
+`packages/cli/src/commands/handlers/plugin/add.ts`. The TUI's versions are the same at both tags: the
+root `package.json`'s catalog pins `@opentui/core` and `@opentui/solid` `0.5.17` and `solid-js`
+`1.9.15` (lines 57-59 and 112 at `v2.0.28`), and `@opencode/plugin`'s peers are `>=0.5.17` and
+`>=1.9.0`, optional, at both.
+
+### 1. Entrypoints
+
+**How they are found.** `Host.resolve` (`packages/plugin/src/host.ts`, lines 17-44) looks up three
+module specifiers per plugin and returns a file URL for each it resolves, `undefined` for the rest:
+`server` is `<name>/server` when the package exports it, else the package itself, `tui` is
+`<name>/tui` and `rpc` is `<name>/rpc`, each through `resolveModule(specifier, directory)`, which is `Bun.resolveSync`
+(`packages/util/src/runtime/import.bun.ts`, lines 7-10). For a package that is Node's export
+resolution, so `package.json` needs `exports["./tui"]` and `exports["./rpc"]`. For a configured local
+directory the specifiers are `path.resolve(directory, "tui")` and `"rpc"`, and Bun's extension
+inference finds `tui.js` (or `.ts`, `.tsx`) in it: the files must sit at the top of the directory, next
+to `index.js`, not under a subfolder. The spike's `package.json`:
+
+```json
+"exports": {
+  ".":     { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+  "./tui": { "types": "./dist/tui.d.ts", "import": "./dist/tui.js" },
+  "./rpc": { "types": "./dist/rpc.d.ts", "import": "./dist/rpc.js" }
+}
+```
+
+with `src/tui.tsx` built to `dist/tui.js` (its types in point 5) and `src/rpc.ts` to `dist/rpc.js`;
+`files` stays `["dist"]`.
+
+**What the server does with them.** `PluginModule.load` (`packages/core/src/plugin/module.ts`) resolves
+the three at load (lines 112-115; a local plugin configured by a file path rather than a directory gets
+`server` only, so the `dist/` directory is what a local configuration names) and records `features: { tui: true, rpc: true }` from their presence
+(137-140); it imports and runs only `server`. The features show in `GET /api/plugin` (`Plugin.Info`,
+`packages/schema/src/plugin.ts`, lines 23-27 and 37-42), the inventory of a booted location
+(`packages/core/src/plugin.ts`, lines 42-44; before a session has run in the project the list is
+empty). Observed, with the plugin configured as the local directory `dist/`, the way `e2e/run.sh`
+loads it, and again from the installed package:
+
+```
+{"id":"courier","state":"active","features":{"server":true,"tui":true,"rpc":true},"source":{"type":"local","path":"/…/dist/index.js"}}
+{"id":"courier","state":"active","features":{"server":true,"tui":true,"rpc":true},"source":{"type":"package","target":"opencode-courier","version":"0.3.0"}}
+```
+
+**`opencode plugin add`** (`packages/cli/src/commands/handlers/plugin/add.ts`, lines 17-45) installs the
+package with npm as before and then calls `Host.resolve` (line 21): a package with a `server`
+entrypoint is added to the global config's `plugins`, as today, whatever else it has; one with only
+`tui` is added to the TUI's config (38-44; `configurationTarget`, 47-50). Observed through the live suite's stand-in registry:
+`Plugin "opencode-courier" installed and added to …/opencode.json`, the server loading
+`…/.cache/opencode/npm/opencode-courier@latest/<timestamp>/node_modules/opencode-courier/dist/index.js`
+and reporting the three features, the RPC answering, and the TUI showing the entry.
+
+**How the TUI loads `tui`.** The TUI's plugin provider (`packages/tui/src/plugin/context.tsx`) takes the
+server's inventory and keeps the active plugins with `features.tui === true` whose source is a package
+or a local path (lines 96-103); each becomes a target with `install: false` (301-305), next to the
+TUI's own discovered and configured plugins. `resolvePlugin` (652-697) prepares a package target
+with `npm.resolve(spec)` (the CLI's `packages.prepare`, `packages/cli/src/commands/handlers/default.ts`,
+line 141), the directory the server installed, takes `Host.resolve(target).tui` (670) and imports it
+with `Host.load`, a plain `import()` (678); a local directory goes through the source reader
+(`packages/plugin/src/source.bun.ts`), which scans the file's imports to watch and hot-reload it. The
+module must default-export `{ id, setup }` (741-751), as `Plugin.define` from `@opencode/plugin/tui`
+returns (`packages/plugin/src/tui/plugin.ts`); `setup(context)` may return a cleanup. The TUI logs
+`plugin reconciliation completed … plugins=13` to `$XDG_DATA_HOME/opencode/log/opencode.log`: the
+twelve built-in parts and the courier's.
+
+**The host's runtime covers the TUI's imports; the package ships none of them.** The TUI's loader
+imports `#runtime-plugin-support` (`packages/tui/src/plugin/runtime-plugin-support.bun.ts`, lines 1-11),
+which calls `ensurePluginRuntime()`, the loader described in [From `2.0.26` to `2.0.28`](#from-2026-to-2028)
+for `effect` and `@opencode/plugin/*`, and OpenTUI's `ensureRuntimePluginSupport({ additional: {
+"@opencode/plugin/tui": … }, preserve: provides })`. OpenTUI's runtime plugin
+(`@opentui/solid/scripts/runtime-plugin-support-configure.js`, `@opentui/core/runtime-plugin.js`)
+rewrites a plugin's imports of `@opentui/core`, `@opentui/core/testing`, `@opentui/solid`,
+`@opentui/solid/components`, `@opentui/solid/jsx-runtime`, `@opentui/solid/jsx-dev-runtime`,
+`solid-js`, `solid-js/store` and `@opencode/plugin/tui` to the host's own modules, in sources outside
+`node_modules` and in ESM files under `node_modules` that need it, without resolving them on disk.
+Anything else (`solid-js/web`, `@opencode/theme`, which the context types only) is not provided and
+must not be imported at runtime. Proof: the spike's `dist/tui.js` imports `@opencode/plugin/tui`,
+`@opencode/plugin/rpc`, `@opentui/solid`, `solid-js` and `effect`, nothing is installed next to it
+(the local `dist/` has no `node_modules`; the npm install put no `@opentui` next to the package), and
+it loaded and rendered from both.
+
+**Solid's JSX must be compiled before publishing.** The host transforms JSX itself only for `.tsx` and
+`.jsx` files outside `node_modules` (`@opentui/solid/scripts/solid-plugin.js`, the `sourceFilter`),
+that is for a local plugin under development; an installed package is under `node_modules`. The
+spike builds `src/tui.tsx` with `Bun.build` and `createSolidTransformPlugin()` from
+`@opentui/solid/bun-plugin`, `packages: "external"` (`script/build-tui.ts`), the way OpenCode's own CLI
+is built (`packages/cli/script/build.ts`, lines 8, 33 and 161); the output is 2.2 KB. `tsc` keeps
+building the server half, with `src/tui.tsx` excluded from `tsconfig.build.json` and `jsx: "preserve"`,
+`jsxImportSource: "@opentui/solid"` in `tsconfig.json` for the typecheck.
+
+**Peers: none to add.** Declaring `@opentui/core: 0.5.17` as an optional peer broke `opencode plugin add`
+with npm's `ERESOLVE unable to resolve dependency tree`: npm had already picked `@opentui/solid@0.6.3`
+(published 2026-10-13) for `@opencode/plugin`'s `>=0.5.17`, and the exact pin conflicted. Without such
+peers, and with `>=` ranges marked optional alike, npm installs no `@opentui` at all, and the host
+provides the modules anyway. The pinned versions go in `devDependencies` only, for the typecheck and
+the unit tests (point 5).
+
+**Observed in the TUI** (`tmux`, 140 columns), the prompt's footer with the spike's entry between
+OpenCode's own:
+
+```
+/…/project:master     courier spike: 1 children  2 (0%)  ctrl+p commands    /…/project:master
+```
+
+### 2. One RPC round trip
+
+**The contract.** `Rpc.define` (`@opencode/plugin/rpc`, which is `@opencode/schema/rpc`,
+`packages/schema/src/rpc.ts`, lines 43-60) takes `{ id, methods: { <name>: { input, output, errors? } },
+events }`; error names starting with `rpc.` are reserved. The promise API's
+`ctx.rpc.register(definition, handlers)` (`packages/plugin/src/promise/rpc.ts`, lines 25-31) and the
+client's `client.rpc(definition)` (`@opencode/client/dist/promise/rpc.d.ts`, `RpcApi`) are typed over a
+`PortableDefinition`: Standard Schema or JSON Schema values. The Effect API's `register`
+(`effect/rpc.ts`) takes Effect schemas, which is what `@opencode/plugin-browser` does
+(`packages/plugin-browser/src/rpc.ts`, lines 548-569, registered in its `connection.ts`, line 77). The spike's
+`src/tree/rpc.ts` uses the host's `effect` and `Schema.toStandardSchemaV1(Schema.Struct(…))`, so one
+definition serves the promise half and the TUI:
+
+```ts
+export const treeRpc = Rpc.define({
+  id: "courier",
+  methods: {
+    children: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({ sessionID: Schema.String })),
+      output: Schema.toStandardSchemaV1(Schema.Struct({ children: Schema.Array(Child) })),
+    },
+  },
+  events: {},
+})
+```
+
+**The server side.** `Rpc.Service` is one per location (`packages/core/src/rpc.ts`, lines 35-40). `register`
+(69-106) keeps the registrations per id, the last one answering (`registrations.get(rpcID)?.at(-1)`,
+line 111), and disposes them with the plugin's scope (82-85), so a reload replaces the handler. `call`
+(108-142) parses the input with the schema's own kind (Effect schema decoded, Standard Schema
+validated, JSON Schema compiled to a codec; 203-224) and fails `rpc.invalid_input`, runs the handler,
+encodes a declared error, turns a defect into `rpc.internal` after logging it, races the location's
+closing (`rpc.unavailable`) and encodes the output (`rpc.invalid_output`). `events.emit` (91-104)
+publishes an ephemeral `rpc.<id>.<name>` event at the location, which a client's `events.on` receives.
+The HTTP route is `POST /api/rpc/:rpcID/:method?directory=…` with `{ "input": … }`, answering
+`{ "output": … }` (`packages/protocol/src/groups/rpc.ts`, lines 14-20; `packages/server/src/handlers/rpc.ts`,
+which waits for plugin activation first). Observed, with the spike's handler reading the roster:
+
+```
+POST /api/rpc/courier/children {"input":{"sessionID":"ses_…parent"}}
+{"output":{"children":[{"sessionID":"ses_…child","title":"Report back to your parent.","isolated":false}]}}
+POST /api/rpc/courier/children {"input":{"wrong":1}}
+{"_tag":"RpcError","type":"rpc.invalid_input","message":"Missing key\n  at [\"sessionID\"]"}
+POST /api/rpc/courier/nothing  →  {"type":"rpc.method_not_found", …}
+```
+
+**The TUI side.** The TUI context's `client` is the TUI's own `OpenCodeClient`
+(`packages/tui/src/plugin/api.tsx`, line 159), so `ctx.client.rpc(treeRpc).children({ sessionID },
+{ location })` is the whole call. `ctx.location` is `LocationRef | undefined` (`context.ts`, line 546):
+without a location the request goes to the server's default location, where the courier's handler may
+not be registered, so the spike falls back to `ctx.data.location.default()`. It puts the call in a Solid
+`createResource` keyed by the footer slot's `sessionID`, which is optional too (`PromptFooterInput`,
+`context.ts`, line 160): the prompt's footer, slot included, is on the home screen as well
+(`packages/tui/src/component/prompt/index.tsx`, line 1877), so the entry renders nothing there. The TUI's plugin context (`packages/plugin/src/tui/context.ts`, lines
+544-560) also has `data`, `ui`, `keymap`, `storage`, `attention` and `theme`, as #130 lists.
+
+**The handler's ports and the layout.** The handler takes `CourierPorts` and calls `listChildren`
+(`tree/status.ts`), what `courier_children` returns, so it reads the roster through the same use case
+as the tool. In the spike:
+
+- `src/tree/rpc.ts`: the contract, importing `@opencode/plugin/rpc` and `effect`'s `Schema` only, as a
+  `tools.ts` does.
+- `src/tree/rpc-handlers.ts`: the inbound adapter, `registerTreeRpc(ctx.rpc, ports)`, exported through
+  `tree/index.ts` and called from `src/index.ts` after the tools are added; one such file per module
+  that gets an RPC (`person/rpc-handlers.ts` for the answer path).
+- `src/rpc.ts` and `src/tui.tsx`: the two entrypoints, next to `index.ts` and `skill.ts`, taking a
+  module's contract from `<module>/rpc.ts` directly, so the TUI bundle carries the contract and nothing
+  else of the module. Three tests in `test/imports.test.ts` change for them: `effect` may be imported by a
+  `*/rpc.ts`, `rpc` joins `index` and `skill` as a top-level file, and the two entrypoints may reach
+  `<module>/rpc` directly; and its scanner reads `.tsx` files too, which it did not, so `src/tui.tsx`
+  is under the rules at all.
+- The unit tests' fake plugin context gains an `rpc.register` stub.
+
+Each location's plugin instance registers the same id in its own location's `Rpc.Service`, and a TUI
+asks at `ctx.location`; the handler reads the roster, which is one store for every location.
+
+### 3. Native `parentID` for non-isolated children
+
+Checked in the source, and on the live server by creating a child with `parentID` over HTTP next to a
+courier child made with a location (`e2e/spike-tui.sh`, step 5).
+
+- **`Session.create` takes `location` or `parentID`** (`packages/core/src/session.ts`, lines 91-92): a
+  parent given, the child's location is the parent's (266-270); an unknown parent is a `NotFoundError`.
+  The plugin API's `session.create` (`packages/core/src/plugin/host.ts`, lines 539-553) and the HTTP
+  route (`packages/server/src/handlers/session.ts`, lines 137-139) build the one or the other: with
+  `parentID` the `location` is dropped. Observed: the child's `location.directory` is the parent's, with
+  both fields sent too. An isolated child needs its worktree as location, so it cannot have a
+  `parentID`, nor can a nested isolated grandchild. For OpenCode an isolated child is therefore a root,
+  and a courier tree with isolation is several native trees, split at each isolated child.
+- **What a native child inherits** (lines 287-288): `metadata` and `permissions` when the input gives none.
+  The courier always passes its `metadata`; it passes no `permissions`, so a native child would run on
+  its parent's session-level ruleset (merged after the agent's, `packages/core/src/permission.ts`, line
+  162), where a courier child today has none. `opencode run --auto` sets no such ruleset (it answers
+  requests with `once`, `packages/cli/src/run/noninteractive.ts`, lines 166-179); the TUI's dev tools do.
+- **Affinity** (`packages/core/src/session/affinity.ts`, lines 7-8): `parentID ?? fork?.sessionID ?? id`
+  goes out as `x-session-affinity`, `X-Session-Id`, `x-opencode-session` and the `promptCacheKey`
+  (`session/model-request.ts`, lines 278-295): a native child's model requests carry its parent's id
+  for the provider's cache routing, where a courier child today carries its own. OpenCode's GitHub
+  Copilot provider goes further (`packages/core/src/plugin/provider/github-copilot.ts`, lines 286-289 and
+  512-517): a session with a `parentID` sends `X-Interaction-Type: conversation-subagent` and
+  `x-initiator: agent` instead of `conversation-agent`, which Copilot meters differently from a
+  person's own requests. Headers and a cache key, but provider-visible; this is what needs the
+  real-model rerun #130 asks for, on Copilot in particular.
+- **The two parent headers** (`model-request.ts`, lines 284 and 287): `x-opencode-parent-session-id`
+  and `x-parent-session-id`, sent only with a `parentID`; informational.
+- **Warming** (`packages/core/src/plugin/warming.ts`, lines 58-61): the context hook returns before
+  anything for a session with a `parentID`, so a native child is never kept warm. Courier children run
+  a task and end; nothing lost.
+- **Titling** (`packages/core/src/session/runner/llm.ts`, line 174): no generated title for a session
+  with a `parentID`. `courier_spawn` sets the title (`tree/spawn.ts`, lines 94-97); observed kept.
+- **`list({ parentID })`** (`packages/core/src/session/store.ts`, lines 110-112; `GET /api/session?parentID=…`):
+  lists native children; observed, the native child and not the courier child. The TUI's home and
+  session dialogs list `parentID: null` only (`packages/tui/src/app.tsx`, line 664;
+  `component/dialog-open.tsx`, line 65; `component/dialog-session-list.tsx`, lines 98, 145, 185): a native
+  courier child leaves the session lists and is reached from its parent's subagent tab
+  (`routes/session/composer/subagents-tab.tsx`, through `sessionFamily`, `util/session.ts`, lines 9-43),
+  by the "Go to parent session" command the other way (`routes/session/index.tsx`, lines 1290-1296), or
+  by id.
+- **Removal** (`session.ts`, lines 367-376): `Session.remove` interrupts the session, waits for it to
+  settle, then removes each native child the same way, recursively, and publishes `session.deleted` per
+  session, which the courier's `forgetDeleted` handles. Observed: deleting the parent deleted the native
+  child (404 after) and left the courier child made with a location (200). Today a parent's deletion
+  leaves its children; with native `parentID` it takes them, a change for the reference and for
+  `courier_cleanup`.
+- **Interrupts** (`session.ts`, line 219; `session/execution.ts`, lines 153-169): per session; no code
+  interrupts a session's children with it. Unchanged.
+- **Restarts**: nothing in the core reads `parentID` at start-up; a turn a shutdown interrupted resumes
+  the same for any session ([When a session's turn ended](#when-a-sessions-turn-ended)). The subagent
+  job recovery (`session/subagent-job.ts`) is for sessions OpenCode's own `task` tool runs as jobs, not
+  for sessions created through the API. Location eviction after inactivity is per location, which a
+  non-isolated child shares with its parent today already.
+- **The TUI's `data.session.family`** (`packages/client/src/solid/data.ts`): the family index is built from
+  each session's `parentID` as its info arrives (502-545, on `session.created` and sync, 637-700);
+  `root()` and `family()` (1364-1369); `cost()` of a root sums its family (1377-1385). A root session's
+  view lists the permission requests and forms of the root and every descendant
+  (`packages/tui/src/routes/session/index.tsx`, lines 198-211), and a child's own view lists none of its
+  own (`if (session()?.parentID) return []`): a native child's ask is answered from the root. Observed:
+  with the native child waiting on `echo courier-asks`, the parent's view showed
+
+  ```
+  ┃  △ Permission required
+  ┃
+  ┃  - echo courier-asks
+  ┃
+  ┃   Allow once   Always allow   Reject           ctrl+f fullscreen  ⇆ select  enter confirm
+  ```
+
+  The TUI also hides the sidebar in a child's view (`component/session-frame.tsx`, lines 107-108), counts
+  running descendants in the footer ("1 subagent", `feature-plugins/prompt/footer.tsx`, lines 20-26),
+  sends no desktop notification for a child and plays `subagent_done` for it
+  (`feature-plugins/system/notifications.ts`, lines 11-17 and 41), and `opencode run` streams a native
+  child's steps under its parent (`packages/tui/src/mini/stream-v2.subagent.ts`, lines 5-7, 593 and
+  1052).
+- **The app's request dock** (`packages/app/src/session/requests/session-request-tree.ts`, lines 20-50;
+  `model.ts`, lines 30-37, 39-41 and 71-79): `sessionTreeIDs` walks the `parentID` edges down from the
+  open session, syncs every descendant's forms and shows the first pending permission, question or form
+  in the tree; `primary()` (89-93) is a session without `parentID`. So a grandchild's ask would show and
+  be answered from the root session on a paired phone, by the same code path as OpenCode's own
+  subagents. Read in the source only: the app was not run (no paired device here), so this is
+  unverified live.
+- **Courier's own lineage**: `lineage` and `lineageIn` read the roster, written from
+  `metadata.courier.parentID`, for every child alike. A native `parentID` cannot replace that: isolated
+  children cannot carry one, and the roster holds what OpenCode does not (depth, group, report state,
+  retention). The metadata stays; `parentID` is set in addition, for OpenCode's UIs.
+
+**Recommendation for Phase 2: yes**, set `parentID` on non-isolated children, keeping the courier's
+metadata and roster as they are. What it buys is the request dock on a paired phone and the TUI's
+family (asks, subagent tab, footer count, cost) for every non-isolated subtree, with no UI of the
+courier's own. The risks, each to be covered in the reference and the live suite:
+
+1. Deleting a parent deletes its native children (the courier's `forgetDeleted` already cleans the
+   roster; the reference and `courier_cleanup` must say so).
+2. The affinity, the two parent headers and Copilot's `conversation-subagent` interaction type
+   change what providers see and may meter: a real-model rerun, on Copilot too.
+3. A native child inherits its parent's session-level permission ruleset when one is set.
+4. Native children leave the session lists; a child's own view answers none of its asks, the root's does.
+5. A tree with isolation shows as several trees in OpenCode's UIs, split at each isolated child; the
+   courier's `courier_tree` keeps showing the whole.
+6. `data.session.cost` of a root includes its native children.
+
+### 4. Testing a TUI part
+
+**Unit tests against a fake TUI context**, the way OpenCode tests its own parts
+(`packages/tui/test/feature-plugins/prompt-footer.test.tsx`, lines 1-60, a plain object cast
+`as unknown as Context` with only the fields the part reads; `packages/tui/test/plugin-toast.test.tsx`,
+lines 19-41, for a fake host). Headless rendering comes from OpenTUI: `testRender(() => <Part/>,
+{ width, height })` from `@opentui/solid` wraps `createTestRenderer` from `@opentui/core/testing`
+(`renderOnce`, `waitForFrame`, `captureCharFrame`, `mockInput`, `mockMouse`, `resize`), no terminal
+needed. The test file needs Solid's JSX transform: `bunfig.toml` with `[test] preload =
+["@opentui/solid/preload"]` and `jsxImportSource: "@opentui/solid"` (in `tsconfig.json` or a
+`/** @jsxImportSource @opentui/solid */` pragma). The spike's `test/tui.test.tsx` passes under
+`bun test` here:
+
+```tsx
+const context = {
+  location: { directory: "/workspace" },
+  theme: { text: { muted: RGBA.fromInts(120, 120, 120) } },
+  client: { rpc: () => ({ children: async () => ({ children: [a, b] }) }) },
+  ui: { slot: (value: SlotClaim) => { claim = value; return () => {} } },
+} as unknown as Plugin.Context
+await tui.setup(context)
+const app = await testRender(() => claim!.render({ sessionID: "ses_parent", mode: "normal", showDetails: true }), { width: 60, height: 2 })
+await app.waitForFrame((frame) => frame.includes("2 children"))
+expect(app.captureCharFrame()).toContain("courier spike: 2 children")
+```
+
+**A live check in CI**: the TUI runs in `tmux`, which worked in this cloud session (no terminal of its
+own; `script` was not needed): `tmux new-session -d -x 140 -y 40 "opencode --server $SERVER --session
+$id"`, with `OPENCODE_PASSWORD` in its environment, then `tmux capture-pane -p` and a `grep` of the
+footer line, polled for up to a minute (`e2e/spike-tui.sh`, step 3). The TUI's log at
+`$XDG_DATA_HOME/opencode/log/opencode.log` has the plugin reconciliation lines at `INFO`, the
+per-plugin setup lines at `DEBUG`. CI's `ubuntu-24.04` image does not list `tmux` among its installed
+software (`actions/runner-images`, `images/ubuntu/Ubuntu2404-Readme.md`), so the live job installs it
+with `apt-get` first.
+
+### 5. Versions, build and the live suite
+
+- **Pins.** `devDependencies` only: `@opentui/core` `0.5.17`, `@opentui/solid` `0.5.17`, `solid-js`
+  `1.9.15`, the versions OpenCode's root catalog pins at `v2.0.28` and the host's own copies, and
+  `@opencode/theme` `2.0.28` for the context's types. No new peer dependency (point 1). A pin bump must
+  now read the catalog's `@opentui/*` and `solid-js` as well as `@opencode/plugin`. OpenCode patches its
+  `solid-js` (`patches/solid-js@1.9.15.patch`, the order of cleanups in `cleanNode`); the TUI part runs on
+  that copy, the unit tests on the unpatched one.
+- **Build.** `tsc -p tsconfig.build.json && tsc -p tsconfig.tui.json && bun script/build-tui.ts`;
+  `tsconfig.json` gets `jsx: "preserve"`, `jsxImportSource: "@opentui/solid"` and `script` in
+  `include`, `tsconfig.build.json` excludes `src/tui.tsx`. `bun run typecheck`, `bun test`, `bun run build` and `publint` pass on the spike branch.
+  `@arethetypeswrong/cli`, which CI runs on the package too, flags `./tui` with "No types" when the
+  export has none, so a third, declaration-only `tsc` pass (`tsconfig.tui.json`, `emitDeclarationOnly`
+  over `src/tui.tsx`) writes `dist/tui.d.ts` and the export names it; with that, `attw --pack --profile esm-only` passes on the spike branch.
+- **The live suite stays unchanged**: `e2e/run.sh` passed on the spike branch as it is, on 2.0.28, the
+  `plugin add` scenario included; the server half behaves as before. The TUI gets its own scenario
+  (point 4), in `run.sh` or a script of its own.
+
+### Recommendations for Phase 1
+
+- **Slots.** `prompt.footer.status` for the status entry (what the spike does), `session.panel` for the
+  tree (it has focus and fullscreen, `ui.panel.open`), `ui.dialog.select` with `actions` for the inbox,
+  `attention.notify` with `question` and `permission` sounds, `keymap.layer` commands with `slash` for
+  `/courier …`. The slot map and inputs are in `packages/plugin/src/tui/context.ts`, lines 191-203.
+- **Where the code goes**, in short; the rules themselves go into `docs/research/layout.md` and
+  `test/imports.test.ts` with Phase 1, which this note does not restate afterwards. `src/tui.tsx` is a
+  second composition root, next to `index.ts`: it imports each module's contract (`<module>/rpc.ts`)
+  and its TUI adapter (`tree/tui.tsx`, `person/tui.tsx`), which import only `@opencode/plugin/tui`,
+  `solid-js`, `@opentui/*`, the module's `rpc.ts` and `text.ts`; nothing of the server half, so the
+  bundle stays small. The server adapters are `<module>/rpc-handlers.ts`, registered from `index.ts`.
+- **What the inbox answers through.** Permissions and forms through the TUI's `data.session.permission`
+  and `data.session.form.reply`, which OpenCode settles itself; questions and the "settle the parent's
+  relayed notice" rule through a `person` RPC that calls what `courier_answer` calls, so the root's
+  model is not told twice.
+- **How to test.** Unit tests with the fake context and `testRender` (point 4); one `tmux` scenario in
+  the live suite for the footer entry.
+
+Open questions, not settled here: the paired app's request dock with native `parentID` (source only;
+no device); the RPC's `events` from a TUI attached to a remote server (not tried); the providers' side
+of the affinity change (a real-model rerun); whether the TUI's own `question` dialog and the courier's
+relay compose for a native child (the relay wraps the question tool at the server; the TUI shows a
+native child's form in the root's view, so a person could answer there what the relay has already
+passed up).

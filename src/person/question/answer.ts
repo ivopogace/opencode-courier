@@ -212,7 +212,7 @@ export async function answerQuestion(ports: QuestionPorts, callerID: string, inp
 
 /**
  * Answers a question for the person, from the TUI's inbox, as courier_answer does; the top session hears it once, as
- * if answered in the asking session: its linked call is withdrawn, or else, if it was told of it, it is told settled.
+ * answered by the person: its linked call is withdrawn, or else, if it was told of it, it is told settled.
  */
 export async function answerForPerson(ports: QuestionPorts, input: QuestionAnswerInput): Promise<QuestionAnswered> {
   const { sessionID, requestID } = input

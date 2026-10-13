@@ -53,12 +53,15 @@ const clip = (text: string, max = 80) => (text.length > max ? `${text.slice(0, m
 /** What an ask is, in one line. */
 export function askTitle(ask: Ask) {
   switch (ask.kind) {
-    case "permission":
-      return clip(`Permission: ${ask.request.action}${ask.request.resources.length ? ` ${ask.request.resources.join(", ")}` : ""}`)
+    case "permission": {
+      const { action, resources } = ask.request
+      return clip(resources.length ? `Permission: ${action} ${resources.join(", ")}` : `Permission: ${action}`)
+    }
     case "question": {
-      const [first] = ask.question.questions
-      const more = ask.question.questions.length > 1 ? ` (+${ask.question.questions.length - 1} more)` : ""
-      return clip(`Question: ${first ? `${first.header}: ${first.question}` : ask.question.requestID}${more}`)
+      const [first, ...rest] = ask.question.questions
+      const what = first ? `${first.header}: ${first.question}` : ask.question.requestID
+      const more = rest.length ? ` (+${rest.length} more)` : ""
+      return clip(`Question: ${what}${more}`)
     }
     case "form":
       return clip(`Form: ${ask.form.title}`)
@@ -84,6 +87,29 @@ export function shown(field: FormField, answers: FormAnswer) {
   if ("hidden" in field && field.hidden) return false
   const when = "when" in field ? (field.when ?? []) : []
   return when.every((condition) => (condition.op === "eq" ? answers[condition.key] === condition.value : answers[condition.key] !== condition.value))
+}
+
+/** A choice offered for a question or a form field: shown by its label, answered with its value. */
+type Choice = { readonly label: string; readonly value: string; readonly description?: string }
+
+/** The options of one round of `choose`: the choices, marked when several may be picked, then the extra ones. */
+function chooseOptions(choices: ReadonlyArray<Choice>, picked: ReadonlyArray<string>, { multiple = false, own = false, optional = false }) {
+  const mark = (value: string) => {
+    if (!multiple) return ""
+    return picked.includes(value) ? "[x] " : "[ ] "
+  }
+  const theirs = picked.filter((value) => !choices.some((choice) => choice.value === value))
+  return [
+    ...choices.map((choice) => ({
+      title: `${mark(choice.value)}${choice.label}`,
+      value: choice.value as string | symbol,
+      ...(choice.description ? { description: choice.description } : {}),
+    })),
+    ...theirs.map((value) => ({ title: `[x] ${value}`, value: value as string | symbol })),
+    ...(own ? [{ title: "Type your own answer…", value: OWN as string | symbol }] : []),
+    ...(multiple ? [{ title: "Done", value: DONE as string | symbol, description: picked.length ? picked.join(", ") : "nothing chosen" }] : []),
+    ...(optional && !multiple ? [{ title: "Skip", value: SKIP as string | symbol }] : []),
+  ]
 }
 
 /** The choice that leads to a prompt for an answer of the person's own. */
@@ -135,27 +161,12 @@ export function addAsksInbox(ctx: Context) {
    */
   async function choose(
     title: string,
-    choices: ReadonlyArray<{ readonly label: string; readonly value: string; readonly description?: string }>,
+    choices: ReadonlyArray<Choice>,
     { multiple = false, own = false, optional = false } = {},
   ) {
     const picked: string[] = []
     for (;;) {
-      const mark = (value: string) => (multiple ? `${picked.includes(value) ? "[x]" : "[ ]"} ` : "")
-      const theirs = picked.filter((value) => !choices.some((choice) => choice.value === value))
-      const value = await ctx.ui.dialog.select<string | symbol>({
-        title,
-        options: [
-          ...choices.map((choice) => ({
-            title: `${mark(choice.value)}${choice.label}`,
-            value: choice.value as string | symbol,
-            ...(choice.description ? { description: choice.description } : {}),
-          })),
-          ...theirs.map((value) => ({ title: `[x] ${value}`, value })),
-          ...(own ? [{ title: "Type your own answer…", value: OWN }] : []),
-          ...(multiple ? [{ title: "Done", value: DONE, description: picked.length ? picked.join(", ") : "nothing chosen" }] : []),
-          ...(optional && !multiple ? [{ title: "Skip", value: SKIP }] : []),
-        ],
-      })
+      const value = await ctx.ui.dialog.select<string | symbol>({ title, options: chooseOptions(choices, picked, { multiple, own, optional }) })
       if (value === undefined) return undefined
       if (value === DONE) return picked
       if (value === SKIP) return []
@@ -212,6 +223,27 @@ export function addAsksInbox(ctx: Context) {
     return true
   }
 
+  /** Typed text for a field, asked again while empty and required; undefined when the person backs out. */
+  async function typed(title: string, field: { description?: string; default?: string }, optional: boolean) {
+    for (;;) {
+      const text = await ctx.ui.dialog.prompt({ title, ...(field.description ? { description: field.description } : {}), ...(field.default ? { value: field.default } : {}) })
+      if (text === undefined) return undefined
+      if (text || optional) return text || SKIP
+    }
+  }
+
+  /** A number for a field, a whole one for an integer, asked again until it is one. */
+  async function numeric(title: string, field: Extract<FormField, { type: "number" | "integer" }>, optional: boolean) {
+    const whole = field.type === "integer"
+    for (;;) {
+      const text = await typed(title, { ...(field.description ? { description: field.description } : {}) }, optional)
+      if (text === undefined || text === SKIP) return text
+      const value = Number(text)
+      if (Number.isFinite(value) && (!whole || Number.isInteger(value))) return value
+      ctx.ui.toast.show({ title: "courier", message: `${title} takes ${whole ? "a whole number" : "a number"}`, variant: "warning" })
+    }
+  }
+
   /** The person's answer to one field, or undefined when they back out; `SKIP` leaves it unanswered. */
   async function answerField(field: FormField): Promise<FormValue | typeof SKIP | undefined> {
     const title = field.title ?? field.key
@@ -220,35 +252,21 @@ export function addAsksInbox(ctx: Context) {
       case "external":
         await ctx.ui.dialog.alert({ title, message: `This form opens ${field.url}: answer it in its own session.` })
         return undefined
-      case "boolean": {
-        const value = await ctx.ui.dialog.select<boolean>({ title, options: [{ title: "Yes", value: true }, { title: "No", value: false }] })
-        return value
-      }
+      case "boolean":
+        return ctx.ui.dialog.select<boolean>({ title, options: [{ title: "Yes", value: true }, { title: "No", value: false }] })
       case "multiselect": {
         const picked = await choose(title, field.options, { multiple: true, own: !!field.custom })
-        return picked && (picked.length || !optional ? picked : SKIP)
+        if (picked?.length === 0 && optional) return SKIP
+        return picked
       }
       case "string": {
-        if (field.options?.length) {
-          const picked = await choose(title, field.options, { own: !!field.custom, optional })
-          return picked && (picked[0] ?? SKIP)
-        }
-        for (;;) {
-          const text = await ctx.ui.dialog.prompt({ title, ...(field.description ? { description: field.description } : {}), ...(field.default ? { value: field.default } : {}) })
-          if (text === undefined) return undefined
-          if (text || optional) return text || SKIP
-        }
+        if (!field.options?.length) return typed(title, field, optional)
+        const picked = await choose(title, field.options, { own: !!field.custom, optional })
+        return picked && (picked[0] ?? SKIP)
       }
       case "number":
       case "integer":
-        for (;;) {
-          const text = await ctx.ui.dialog.prompt({ title, ...(field.description ? { description: field.description } : {}) })
-          if (text === undefined) return undefined
-          if (!text.trim() && optional) return SKIP
-          const value = Number(text)
-          if (Number.isFinite(value) && (field.type === "number" || Number.isInteger(value))) return value
-          ctx.ui.toast.show({ title: "courier", message: `${title} takes ${field.type === "integer" ? "a whole number" : "a number"}`, variant: "warning" })
-        }
+        return numeric(title, field, optional)
     }
   }
 
@@ -265,8 +283,16 @@ export function addAsksInbox(ctx: Context) {
     return true
   }
 
-  const answer = (ask: Ask) =>
-    ask.kind === "permission" ? answerPermission(ask) : ask.kind === "question" ? answerQuestion(ask) : answerForm(ask)
+  const answer = (ask: Ask) => {
+    switch (ask.kind) {
+      case "permission":
+        return answerPermission(ask)
+      case "question":
+        return answerQuestion(ask)
+      case "form":
+        return answerForm(ask)
+    }
+  }
 
   let opened = false
   /** Lists the asks of the open session's tree, answers the one chosen, and lists what is left, until none is or the person leaves. */

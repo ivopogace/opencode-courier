@@ -92,9 +92,10 @@ export const deliver = (
   ports: QuestionPorts,
   asked: Asked,
   outcome: Outcome,
-  linked: Linked = { withdrawal: { by: "top", outcome }, linked: false },
+  given?: Linked,
 ): Effect.Effect<"result" | "message" | undefined, unknown> =>
   Effect.suspend(() => {
+    const linked = given ?? { withdrawal: { by: "top", outcome }, linked: false }
     const id = asked.requestID
     const wait = ports.timing.passingWaitMs
     // One answer at a time, and once, per question in this process, since storage cannot be claimed

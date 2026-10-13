@@ -4,14 +4,20 @@ import { join, posix } from "node:path"
 
 const SRC = join(import.meta.dir, "..", "src")
 
+/** The source files of src/, `.ts` and `.tsx`, each with its module: its path there without the extension, `/`-separated. */
+function sources() {
+  return readdirSync(SRC, { recursive: true, encoding: "utf8" })
+    .filter((name) => /\.tsx?$/.test(name))
+    .map((name) => ({ file: name, module: name.replace(/\.tsx?$/, "").split("\\").join("/") }))
+}
+
 /**
  * Each module of src/, by its path there without `.ts` (`platform/hub`, `person/question/relay`), with the modules of
  * src/ it imports: static, type-only, side-effect and dynamic imports alike.
  */
 function imports() {
   const graph = new Map<string, string[]>()
-  for (const file of readdirSync(SRC, { recursive: true, encoding: "utf8" }).filter((name) => name.endsWith(".ts"))) {
-    const module = file.slice(0, -3).split("\\").join("/")
+  for (const { file, module } of sources()) {
     const text = readFileSync(join(SRC, file), "utf8")
     graph.set(
       module,
@@ -26,13 +32,22 @@ function imports() {
 /** The modules of src/ each module imports with `import type` or `export type … from` only, as `module -> imported`. */
 function typeOnly() {
   const edges = new Set<string>()
-  for (const file of readdirSync(SRC, { recursive: true, encoding: "utf8" }).filter((name) => name.endsWith(".ts"))) {
-    const module = file.slice(0, -3).split("\\").join("/")
+  for (const { file, module } of sources()) {
     const text = readFileSync(join(SRC, file), "utf8")
     for (const match of text.matchAll(/\b(?:import|export)\s+type\s*(?:\{[^}]*\}|[^"'{}]*?)\s*from\s*["'](\.{1,2}\/[\w./-]+)\.js["']/g))
       edges.add(`${module} -> ${posix.normalize(posix.join(posix.dirname(module), match[1]!))}`)
   }
   return edges
+}
+
+/** Each module of src/ with the packages it imports, by their specifier: `effect`, `@opencode/plugin/tui`, `node:fs`. */
+function packages() {
+  const graph = new Map<string, string[]>()
+  for (const { file, module } of sources()) {
+    const text = readFileSync(join(SRC, file), "utf8")
+    graph.set(module, [...text.matchAll(/\b(?:from|import)\s*\(?\s*["']([^."'][^"']*)["']/g)].map((match) => match[1]!))
+  }
+  return graph
 }
 
 test("no module of src/ imports itself through others, type-only imports included", () => {
@@ -64,12 +79,11 @@ test("kernel/ imports only kernel/ and platform/json.ts, so any module can use i
   expect(kernel.flatMap(([module, imported]) => imported.filter((name) => !name.startsWith("kernel/") && name !== "platform/json").map((name) => `${module} -> ${name}`))).toEqual([])
 })
 
-test("effect is imported only by person/question/, index.ts and the tools.ts files", () => {
-  const importing = readdirSync(SRC, { recursive: true, encoding: "utf8" })
-    .filter((name) => name.endsWith(".ts"))
-    .filter((name) => /(?:from|import)\s*\(?\s*["']effect(?:\/[^"']*)?["']/.test(readFileSync(join(SRC, name), "utf8")))
-    .map((name) => name.slice(0, -3).split("\\").join("/"))
-    .filter((module) => !module.startsWith("person/question/") && module !== "index" && !/(?:^|\/)tools$/.test(module))
+test("effect is imported only by person/question/, index.ts, the tools.ts files and the rpc.ts files", () => {
+  const importing = [...packages()]
+    .filter(([, imported]) => imported.some((name) => name === "effect" || name.startsWith("effect/")))
+    .map(([module]) => module)
+    .filter((module) => !module.startsWith("person/question/") && module !== "index" && !/(?:^|\/)(?:tools|rpc)$/.test(module))
   expect(importing).toEqual([])
 })
 
@@ -98,10 +112,14 @@ const MODULES = ["tree", "person", "scheduling", "webhook"]
 /** The module a file of src/ is in, or undefined for `src/index.ts`, `skill.ts`, `kernel/` and `platform/`. */
 const moduleOf = (file: string) => MODULES.find((folder) => file.startsWith(`${folder}/`))
 
-test("a module is imported from outside only through its index.ts", () => {
+/** What an entrypoint may take of a module directly, besides its index.ts: its RPC contract, and for `tui` its TUI part. */
+const ENTRY_REACH: Record<string, readonly string[]> = { rpc: ["rpc"], tui: ["rpc", "tui"] }
+
+test("a module is imported from outside only through its index.ts, but by the tui and rpc entrypoints", () => {
   const reaching = [...imports()].flatMap(([module, imported]) =>
     imported
       .filter((name) => moduleOf(name) !== undefined && moduleOf(name) !== moduleOf(module) && name !== `${moduleOf(name)}/index`)
+      .filter((name) => !(ENTRY_REACH[module] ?? []).some((file) => name === `${moduleOf(name)}/${file}`))
       .map((name) => `${module} -> ${name}`),
   )
   expect(reaching).toEqual([])
@@ -130,8 +148,61 @@ test("every module imports only itself, platform/, kernel/ and the modules it ma
   expect(outside).toEqual([])
 })
 
-test("no file of src/ is outside a folder but index.ts, the composition root, and skill.ts", () => {
-  expect([...imports().keys()].filter((module) => !module.includes("/")).sort()).toEqual(["index", "skill"])
+test("no file of src/ is outside a folder but index.ts, skill.ts and the rpc.ts and tui.tsx entrypoints", () => {
+  const top = [...imports().keys()].filter((module) => !module.includes("/"))
+  expect(top).toEqual(expect.arrayContaining(["index", "skill"]))
+  expect(top.filter((module) => !["index", "rpc", "skill", "tui"].includes(module))).toEqual([])
+})
+
+/** The packages that are the TUI's: the host provides them to a TUI part, and nothing of the server half may import them. */
+const isTuiPackage = (name: string) =>
+  name === "@opencode/plugin/tui" || name.startsWith("@opencode/plugin/tui/") || name === "solid-js" || name.startsWith("solid-js/") || name.startsWith("@opentui/")
+
+test("a module's tui.tsx imports only the TUI's packages and its own module's rpc.ts and text.ts", () => {
+  const parts = sources().filter(({ file }) => /^[^/\\]+[/\\]tui\.tsx$/.test(file)).map(({ module }) => module)
+  const graph = imports()
+  const used = packages()
+  const reaching = parts.flatMap((module) => {
+    const own = module.slice(0, -"tui".length)
+    return [
+      ...(graph.get(module) ?? []).filter((name) => name !== `${own}rpc` && name !== `${own}text`),
+      ...(used.get(module) ?? []).filter((name) => !isTuiPackage(name)),
+    ].map((name) => `${module} -> ${name}`)
+  })
+  expect(reaching).toEqual([])
+})
+
+test("a module's rpc.ts imports only @opencode/plugin/rpc and effect, so the TUI bundle takes nothing else of the module", () => {
+  const contracts = sources().filter(({ module }) => /^[^/]+\/rpc$/.test(module)).map(({ module }) => module)
+  const graph = imports()
+  const used = packages()
+  const reaching = contracts.flatMap((module) =>
+    [...(graph.get(module) ?? []), ...(used.get(module) ?? []).filter((name) => name !== "@opencode/plugin/rpc" && name !== "effect")].map(
+      (name) => `${module} -> ${name}`,
+    ),
+  )
+  expect(reaching).toEqual([])
+})
+
+test("the tui entrypoint imports only @opencode/plugin/tui and the modules' tui.tsx and rpc.ts, the rpc entrypoint only their rpc.ts", () => {
+  const reaching = (["tui", "rpc"] as const).flatMap((entry) => {
+    const allowed = (name: string) => moduleOf(name) !== undefined && ENTRY_REACH[entry]!.some((file) => name === `${moduleOf(name)}/${file}`)
+    return [
+      ...(imports().get(entry) ?? []).filter((name) => !allowed(name)),
+      ...(packages().get(entry) ?? []).filter((name) => !(entry === "tui" && name === "@opencode/plugin/tui")),
+    ].map((name) => `${entry} -> ${name}`)
+  })
+  expect(reaching).toEqual([])
+})
+
+test("only the tui entrypoint and the modules' tui.tsx import the TUI, so the server bundle carries none of it", () => {
+  const graph = imports()
+  const isTui = (module: string) => module === "tui" || /^[^/]+\/tui$/.test(module)
+  const reaching = [
+    ...[...graph].flatMap(([module, imported]) => (module === "tui" ? [] : imported.filter(isTui).map((name) => `${module} -> ${name}`))),
+    ...[...packages()].flatMap(([module, imported]) => (isTui(module) ? [] : imported.filter(isTuiPackage).map((name) => `${module} -> ${name}`))),
+  ]
+  expect(reaching).toEqual([])
 })
 
 test("skill.ts imports only kernel/", () => {
@@ -181,9 +252,8 @@ test("tree/store.ts is imported from no file outside tree/, and tree/index.ts re
 
 test("only tree/store.ts names the tree's storage prefixes, so no other file builds its keys", () => {
   const prefix = /\b(?:roster|roster-by-child|report|group)\//
-  const naming = readdirSync(SRC, { recursive: true, encoding: "utf8" })
-    .filter((name) => name.endsWith(".ts"))
-    .map((name) => name.split("\\").join("/"))
-    .filter((name) => prefix.test(readFileSync(join(SRC, name), "utf8")))
+  const naming = sources()
+    .filter(({ file }) => prefix.test(readFileSync(join(SRC, file), "utf8")))
+    .map(({ file }) => file.split("\\").join("/"))
   expect(naming).toEqual(["tree/store.ts"])
 })

@@ -346,6 +346,8 @@ of hub state; skill stays top-level.
 src/
   index.ts            composition root: builds ports, ordered TickJob[] and EventModule[] lists,
                       wires tree's Waits port from person/scheduling/webhook, registers tools/hooks
+  tui.tsx             the `tui` entrypoint, a second composition root: each module's TUI adapter
+  rpc.ts              the `rpc` entrypoint: each module's RPC contract, for clients
   skill.ts            courier-orchestrate registration + text (spans all tools; imports kernel only)
   kernel/             shared kernel: imports platform/json only
     protocol.ts       envelope, END_TURN, clipText, defuse, describeFailure, Status
@@ -360,6 +362,9 @@ src/
     spawn.ts send.ts status.ts report.ts group.ts limits.ts subtree.ts stop.ts cleanup.ts forget.ts
     store.ts          KV adapter for roster/, reverse index, report/, group/ (keys unchanged)
     tools.ts events.ts context.ts text.ts
+    rpc.ts            the RPC contract the TUI part and the server share (rule 16)
+    rpc-handlers.ts   its server side, registered from index.ts after the tools
+    tui.tsx           the TUI adapter: the prompt footer's status entry (rule 15)
   person/             (or asks/)
     index.ts ports.ts permission.ts form.ts tools.ts events.ts text.ts
     question/         unchanged inner layout (Effect island)
@@ -388,10 +393,27 @@ imports nothing).
 7. `tree/domain.ts` imports only `kernel/**` and `platform/json`.
 8. Only `src/index.ts` imports more than one module's `index`; no module imports `src/index`.
 9. `person/**` outside `person/question/**` imports `person/question/index` only (today's rule, moved).
-10. `effect` imported only by `person/question/**`, `src/index.ts` and `*/tools.ts` (for `Schema`).
+10. `effect` imported only by `person/question/**`, `src/index.ts`, `*/tools.ts` and `*/rpc.ts` (for `Schema`).
 11. No module's `store.ts` is imported outside its module (persistence stays private).
 12. The snapshot test imports every `src/**/text.ts` and every module's tool list; a test fails if a
     `text.ts` exists that it does not import.
+
+The TUI and RPC entrypoints (#143, after the spike for #130 in `docs/plugin-api-notes.md`) add a
+second composition root and five rules. The scanner reads `.tsx` files as well as `.ts`.
+
+13. The only files of `src/` outside a folder are `index.ts`, `skill.ts`, and the entrypoints
+    `rpc.ts` and `tui.tsx`. Rule 3 holds for them too, except that `rpc.ts` may import a module's
+    `<module>/rpc.ts` and `tui.tsx` its `<module>/rpc.ts` and `<module>/tui.tsx` directly, since a
+    module's `index.ts` would pull its server half into the TUI bundle.
+14. `src/tui.tsx` imports only `@opencode/plugin/tui` and the modules' `tui.tsx` and `rpc.ts`;
+    `src/rpc.ts` only the modules' `rpc.ts`.
+15. A module's `tui.tsx`, its TUI adapter, imports only `@opencode/plugin/tui`, `solid-js`,
+    `@opentui/*` and its own module's `rpc.ts` and `text.ts`: nothing of the server half.
+16. A module's `rpc.ts`, the contract both halves share, imports only `@opencode/plugin/rpc` and
+    `effect`, so the TUI bundle takes nothing else of the module.
+17. Only `src/tui.tsx` imports a `tui.tsx`, and only the `tui` files import `@opencode/plugin/tui`,
+    `solid-js` or `@opentui/*`, so the server bundle carries no TUI code. A module's server-side
+    RPC adapter is its `rpc-handlers.ts`, exported through its `index.ts` like its `tools.ts`.
 
 If the rule set grows past this, `dependency-cruiser` [S19] or `eslint-plugin-boundaries` [S20]
 express the same rules declaratively; for twelve rules the existing test needs no new dependency.

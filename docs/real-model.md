@@ -32,6 +32,7 @@ the prompt here is trivial on purpose.
 | `COURIER_MAX_DEPTH` | `3` | With `recursive`: the `maxDepth` the checker holds the tree to. |
 | `COURIER_PERSON` | | `other-server`, with `COURIER_SCENARIO=permission`: the person answers the parent through a second server on the same data directory (see below). |
 | `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, and then for the children. |
+| `COURIER_NATIVE` | | `1` loads the plugin with [`nativeChildren`](reference.md#native-child-sessions) on, so a child started without `isolate` gets OpenCode's own `parentID`. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |
 
 The parent is asked:
@@ -428,6 +429,42 @@ On OpenCode 2.0.28 with Effect 4.0.1, after the pin moved (#135; no model-facing
 the tool schemas models are sent are the same), `longcat-2.5-preview-free` passes the fan-out, 8 of
 8, in 9 model requests: `split: 2 parts: …`, no skill loaded, both children in one join group, one
 woken turn for the group's message, every report `done`, and `RESULTS 391 1024`.
+
+With `nativeChildren` on (`COURIER_NATIVE=1`, #146, OpenCode 2.0.28), which changes what the
+provider sees of a child (its parent's id as the cache-routing id, two parent headers) and the
+wording of a form's notice, `longcat-2.5-preview-free` passes the fan-out, 8 of 8, in 11 model
+requests (`split: 2 parts: …`, no skill loaded, one join group, every report `done`, `RESULTS 391
+1024`; both children recorded with the parent as `parent_id` and an empty ruleset), the permission
+relay, 6 of 6 (the parent asked the person with a question form offering `once`, `always` and
+`reject`, and passed `once` on with `courier_answer`), and, before the owner's decision below, the
+question relay, 6 of 6, through the linked question. Each fan-out child first sent `courier_send` with `branch:
+[]`, was refused by the schema and sent it again without; that is the model's doing. Zen took the
+parent's affinity for every child without complaint; GitHub Copilot, which meters a session with a
+parent as a subagent, was not tried.
+
+After the owner's decision that a native child's question is answered once, in OpenCode's own form,
+with the top session only told (`shown="native"`), the question scenario checks that instead
+(`COURIER_NATIVE=1` makes `e2e/real-model-question.mjs` answer the child's form, as the TUI's view
+of the parent does, and fail a parent that asks with its question tool). `longcat-2.5-preview-free`
+passes it, 6 of 6. On the notice's first wording (*Do not ask them yourself*) the parent called no
+tool but wrote the question and its three options out in its reply and asked for a choice, a second
+ask in text; the wording as shipped says not to ask in the reply either and to tell the person in one
+line at most, and the parent then wrote one line, *The helper session's question is waiting for you
+to answer — which greeting would you like to use: Hello, Hi, or Hey?*, and ended its turn. The
+person's `Hi` reached the child 9 s before its report, the parent was told the question was settled
+(`answered="elsewhere"`) and replied `GREETING Hi`. Run again on the settled notice's final wording (*answered by the person*,
+which also covers an answer from the asks inbox), it passed 6 of 6 once more, the parent writing *The
+helper session is waiting for your answer to its question about which greeting you'd like to use.*
+and nothing else.
+
+The permission scenario got the same treatment after the decision that a native child's permission
+request is answered in OpenCode's own prompt, with the top session told not to ask
+(`e2e/real-model-permission.mjs` answers the child's request directly with `COURIER_NATIVE=1`, and
+fails a parent that asks with a form). `longcat-2.5-preview-free` passes it, 6 of 6: told with the
+`shown="native"` notice, the parent wrote one line, *The helper session is waiting on your
+permission to run the shell command.*, and ended its turn; the person allowed it once in
+OpenCode's prompt, the parent was told it was settled (`answered="once"`), and it replied `RESULT
+courier-permission-42` once the child had reported.
 
 What the models did on the fan-out, over some 30 runs while the tool wording was tuned:
 

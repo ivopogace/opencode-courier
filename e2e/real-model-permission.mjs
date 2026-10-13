@@ -1,5 +1,5 @@
-// The permission scenario of e2e/real-model.sh (node e2e/real-model-permission.mjs <parentSessionID>):
-// the parent asks the person about its child's permission request, and the answer reaches the child.
+// The permission scenario of e2e/real-model.sh (node e2e/real-model-permission.mjs <parentSessionID>): the parent asks
+// the person about its child's request; with COURIER_NATIVE=1 it is only told, and the person answers OpenCode's prompt.
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -11,6 +11,7 @@ const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").trim()
 const ANSWER = "Allow it once."
 const other = process.env.COURIER_OTHER_SERVER
+const NATIVE = process.env.COURIER_NATIVE === "1"
 
 async function api(path, init = {}, base = server) {
   const response = await fetch(`${base}/api/${path}`, {
@@ -107,7 +108,17 @@ let personAt = Infinity
 
 // 2. The person answers, in the form or as a new message; with COURIER_OTHER_SERVER, through that server.
 let elsewhereSaid = ""
-if (told && !answeredItself && other) {
+const noticeText = told ? told.list[told.notice].text : ""
+if (NATIVE && told && !answeredItself) {
+  how = told.form
+    ? "asked the person all the same, with a question form"
+    : `did not ask with its question tool; it said: ${short(textOf(last).trim(), 300)}`
+  personAt = Date.now()
+  const childID = noticeText.match(/<courier from="(ses_\w+)"/)?.[1]
+  const request = noticeText.match(/request="(per_\w+)"/)?.[1]
+  console.log(`  the person allows ${request} once in OpenCode's own prompt`)
+  await api(`session/${childID}/permission/${request}/reply`, { method: "POST", body: JSON.stringify({ decision: "once" }) })
+} else if (told && !answeredItself && other) {
   if (told.form) {
     how = `asked with a question form, which the person dismissed: ${short(told.form.fields.map((field) => ({ title: field.title, options: field.options?.map((option) => option.label) })), 300)}`
     console.log("  the person dismisses the parent's form")
@@ -201,16 +212,27 @@ const notPending = toolsOf(afterPerson).filter(
 )
 const report = parent.find((message) => isReport(message, child))
 const finalText = textOf(parent.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
-const checks = [
-  ["the parent spawned a child, which asked for permission, and the parent was told", Boolean(child) && Boolean(told)],
-  ["the parent did not answer the request by itself", Boolean(told) && !answeredItself],
-  ["the parent asked the person", asked],
-  other
-    ? ["the parent's courier_answer on the other server passed nothing on and named another server", notPending.length > 0]
-    : ["the parent passed on the person's choice (once) with courier_answer", passedOn.length > 0],
-  ["the child ran its command and reported what it printed", Boolean(report) && expected !== "" && report.text.includes(expected)],
-  ["the parent's final reply holds it", expected !== "" && finalText.includes(expected)],
-]
+const askedAgain = Boolean(told?.form) || toolsOf(before).some((part) => part.name === "question")
+const settledOnce = parent.some((message) => message.type === "synthetic" && / answered="once"/.test(message.text))
+const checks = NATIVE
+  ? [
+      ["the parent spawned a child, which asked for permission, and the parent was told that OpenCode shows it", Boolean(child) && noticeText.includes('shown="native"')],
+      ["the parent did not answer the request by itself", Boolean(told) && !answeredItself],
+      ["the parent did not ask the person again", Boolean(told) && !askedAgain],
+      ["the parent was told the request was settled", settledOnce],
+      ["the child ran its command and reported what it printed", Boolean(report) && expected !== "" && report.text.includes(expected)],
+      ["the parent's final reply holds it", expected !== "" && finalText.includes(expected)],
+    ]
+  : [
+      ["the parent spawned a child, which asked for permission, and the parent was told", Boolean(child) && Boolean(told)],
+      ["the parent did not answer the request by itself", Boolean(told) && !answeredItself],
+      ["the parent asked the person", asked],
+      other
+        ? ["the parent's courier_answer on the other server passed nothing on and named another server", notPending.length > 0]
+        : ["the parent passed on the person's choice (once) with courier_answer", passedOn.length > 0],
+      ["the child ran its command and reported what it printed", Boolean(report) && expected !== "" && report.text.includes(expected)],
+      ["the parent's final reply holds it", expected !== "" && finalText.includes(expected)],
+    ]
 const notes = [`the parent ${how}`]
 if (report) notes.push(`the child's report carried ${statusOf(report) ? `status ${statusOf(report)}` : "no status"}`)
 if (other) notes.push(`after courier_answer on the other server, the parent said: ${short(elsewhereSaid, 600)}`)

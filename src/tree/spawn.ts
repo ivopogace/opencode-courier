@@ -92,12 +92,16 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
     : undefined
   const base = worktree ? await ports.head(worktree) : undefined
   const title = input.title ?? titleOf(input.task)
+  // OpenCode takes a location or a parentID, never both, so an isolated child cannot be a native one.
+  const native = ports.nativeChildren === true && !worktree
   const child = await ports.session
     .create({
       title,
       ...(input.agent ? { agent: input.agent } : {}),
       ...(model ? { model } : {}),
       ...(worktree ? { location: { directory: worktree } } : {}),
+      // An empty ruleset, not none: a native child would otherwise run on its parent's session rules.
+      ...(native ? { parentID, permissions: [] } : {}),
       metadata: { courier: { parentID } },
     })
     .catch(async (error: unknown) => {
@@ -105,7 +109,15 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
       if (worktree) await dropWorktree(ports, worktree)
       throw error
     })
-  return { sessionID: child.id, title, directory: worktree ?? child.location.directory, worktree, handedDown, ...(base ? { base } : {}) }
+  return {
+    sessionID: child.id,
+    title,
+    directory: worktree ?? child.location.directory,
+    worktree,
+    handedDown,
+    ...(base ? { base } : {}),
+    ...(native ? { native: true as const } : {}),
+  }
 }
 
 /**

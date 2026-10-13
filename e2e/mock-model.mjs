@@ -181,6 +181,9 @@ function decide(body) {
     }
   // Any other child reports done, with every kind of artifact.
   if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE", status: "done", artifacts: ARTIFACTS } }
+  // A native child's question is shown to the person by OpenCode: the parent is told, and ends its turn without asking.
+  const shownNative = recent.match(/<courier from="ses_\w+" asks="question" request="(question_[\w-]+)" shown="native">/)
+  if (shownNative) return { text: `PARENT TOLD NATIVE QUESTION ${shownNative[1]}` }
   // A parent told of its child's question asks the person the same with its own question tool; the
   // RELABEL, REWORD and BOTH variants relabel, reword, or also call courier_answer in the same step.
   const notice = recent.match(QUESTION_NOTICE)
@@ -198,6 +201,9 @@ function decide(body) {
     const line = messages.flatMap((message) => textOf(message.content).split("\n")).findLast((item) => item.startsWith('{"questions"'))
     if (line) return { tool: "question", args: JSON.parse(line) }
   }
+  // A native child's request is shown to the person by OpenCode: the parent is told, and ends its turn without asking.
+  const nativeAsks = recent.match(/<courier from="ses_\w+" asks="permission" request="([^"]+)" shown="native">/)
+  if (nativeAsks) return { text: `PARENT TOLD NATIVE PERMISSION ${nativeAsks[1]}` }
   // A parent told that its child waits for permission ends its turn, as if it had asked the person;
   // the test then answers for the person with COURIER-ANSWER.
   const asks = recent.match(/<courier from="ses_\w+" asks="permission" request="([^"]+)">/)

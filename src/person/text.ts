@@ -74,7 +74,7 @@ export const STAYS_QUIET =
  * What the session at the top is told. `startedBy` names the session that started the asking one
  * when that is not the top session itself, but one started from it.
  */
-export function permissionNotice(title: string, request: PermissionRequest, startedBy?: string) {
+export function permissionNotice(title: string, request: PermissionRequest, startedBy?: string, native = false) {
   const resources = request.resources.slice(0, MAX_RESOURCES).map((resource) => `- ${clip(resource)}`)
   if (request.resources.length > MAX_RESOURCES) resources.push(`- and ${request.resources.length - MAX_RESOURCES} more`)
   return [
@@ -83,13 +83,24 @@ export function permissionNotice(title: string, request: PermissionRequest, star
     ...(resources.length ? ["On:", ...resources] : []),
     ...(request.message ? [`Note: ${request.message}`] : []),
     "",
-    "Do not decide this yourself. Ask the person you are working with (with your question tool, if you have one), offering exactly these choices:",
+    ...(native ? NATIVE_PERMISSION : PERMISSION_ASK),
     "- once: allow this request only",
     ...alwaysChoice(request),
     "- reject: refuse it, with a reason if they give one; the session's call fails and it carries on",
     `When they have chosen, call courier_answer with sessionID "${request.sessionID}", requestID "${request.id}", reply set to their choice and, with reject, message set to their reason.`,
   ].join("\n")
 }
+
+const PERMISSION_ASK = [
+  "Do not decide this yourself. Ask the person you are working with (with your question tool, if you have one), offering exactly these choices:",
+]
+
+/** For a native child's request, which OpenCode shows the person itself, in the top session's view. */
+const NATIVE_PERMISSION = [
+  "OpenCode already shows this request to the person you are working with, as its own permission prompt in your session (and in the paired app's request dock), where they answer it; you will be told once it is answered.",
+  "Do not ask them yourself, with your question tool or in your reply, and do not decide it: at most tell them in one line that this session waits on their permission, then end your turn.",
+  "Only if they ask you to answer it for them, these are the choices:",
+]
 
 /** What the session told about a permission request is told once it is answered without courier_answer. */
 export function permissionSettledNotice(title: string, requestID: string, reply: Reply) {
@@ -136,21 +147,33 @@ const WEBSEARCH_NOTE = [
   "This is OpenCode asking whether to search the web, and through which provider.",
   'It waits at most a minute; then the session\'s search fails with "Web search cancelled" and it carries on without it.',
   "The choice is kept for every session: once it is made, in any session, no session is asked again.",
-  'Besides answering in that session, the person can make it by running a web search in their own, or under OpenCode\'s "Third-party search" setting.',
+  'Besides answering the form, the person can make it by running a web search in their own session, or under OpenCode\'s "Third-party search" setting.',
 ]
 
 /**
- * What the session at the top is told about a form OpenCode shows in a session started with
- * courier_spawn, which the plugin cannot pass on or answer: only the person can, in that session.
+ * Where the person answers a form: in its own session, or, for a native child, in the view of `shownIn`, the
+ * top of its native tree, where OpenCode lists the asks of the sessions under it; `top` is the session told.
  */
-export function formNotice(title: string, form: Form, startedBy?: string) {
+function formPlace(sessionID: string, shownIn: string, top: string) {
+  if (shownIn === sessionID) return { where: `in session ${sessionID} itself`, which: "that session" }
+  const lists = "where OpenCode shows the forms of the sessions under it"
+  if (shownIn === top) return { where: `in your own session, ${lists}`, which: "your session" }
+  return { where: `in session ${shownIn}, ${lists}`, which: `session ${shownIn}` }
+}
+
+/**
+ * What the session at the top is told about a form OpenCode shows in a session started with
+ * courier_spawn, which the plugin cannot pass on or answer: only the person can, where OpenCode shows it.
+ */
+export function formNotice(title: string, form: Form, startedBy?: string, shownIn = form.sessionID, top = "") {
+  const { where, which } = formPlace(form.sessionID, shownIn, top)
   return [
     `This session, "${title}", ${origin(startedBy)} shows a form, "${clip(form.title)}", and waits until it is answered.`,
     ...formLines(form.fields),
     ...(kindOf(form) === WEBSEARCH_FORM ? ["", ...WEBSEARCH_NOTE] : []),
     "",
-    `Neither you nor courier_answer can answer it: only the person you are working with can, in session ${form.sessionID} itself.`,
-    "Do not choose for them. Tell them that session shows this form and waits on them, then carry on.",
+    `Neither you nor courier_answer can answer it: only the person you are working with can, ${where}.`,
+    `Do not choose for them. Tell them ${which} shows this form and waits on them, then carry on.`,
   ].join("\n")
 }
 
@@ -158,7 +181,7 @@ export function formNotice(title: string, form: Form, startedBy?: string) {
 export function formSettledNotice(title: string, formID: string, settled: "answered" | "cancelled") {
   return [
     settled === "answered"
-      ? `The form ${formID} of this session, "${title}", has been answered in that session, so it no longer waits on it.`
+      ? `The form ${formID} of this session, "${title}", has been answered, so it no longer waits on it.`
       : `The form ${formID} of this session, "${title}", has been withdrawn unanswered: dismissed, given up on or cut off, so it no longer waits on it.`,
     "If you told someone about it, tell them it is settled; there is nothing to pass on.",
   ].join("\n")
@@ -205,10 +228,26 @@ export function questionNotice(asked: Asked, cutOff?: CutOff) {
   ].join("\n")
 }
 
+/**
+ * What the top session is told about a native child's question, which OpenCode shows the person in the
+ * top session's own view: they answer it there, so the top session does not ask them again.
+ */
+export function nativeQuestionNotice(asked: Asked) {
+  return [
+    `This session, "${asked.title}", ${origin(asked.startedBy)} asks the question below and waits for the answer.`,
+    ...describeQuestions(asked.questions),
+    "",
+    "OpenCode shows this question to the person you are working with in your own session, and they answer it there; you will be told once it is answered.",
+    "Do not ask them yourself, with your question tool or in your reply, and do not answer it: at most tell them in one line that this session's question waits for them, then end your turn.",
+    `If they give you the answer some other way, call courier_answer with sessionID "${asked.sessionID}", requestID "${asked.requestID}" and answers: one entry per question, in order, each the label they chose or the text they gave (a list of labels where a question allows several).`,
+  ].join("\n")
+}
+
 /** How a question was settled without the top session, as its settled notice puts it. */
 function settledHow(asked: Asked, how: Elsewhere) {
-  if (how.by === "child") return `answered in its own session (${answeredText(asked.questions, how.answers)})`
-  if (how.by === "dismissed") return "dismissed in its own session, without an answer"
+  const where = asked.native ? "by the person" : "in its own session"
+  if (how.by === "child") return `answered ${where} (${answeredText(asked.questions, how.answers)})`
+  if (how.by === "dismissed") return `dismissed ${where}, without an answer`
   return `ended without an answer: its question call failed (${how.error})`
 }
 

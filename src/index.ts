@@ -33,6 +33,7 @@ import {
   inspectWorktree,
   pruneExpired,
   readLimits,
+  readNativeChildren,
   registerTreeRpc,
   shapeContext,
   together,
@@ -115,10 +116,12 @@ export const courier = () => Plugin.define({
       log,
     }
     const { limits, problems } = readLimits(ctx.options)
-    for (const problem of problems) log(`courier: ${problem}`)
+    const { nativeChildren, problems: nativeProblems } = readNativeChildren(ctx.options)
+    for (const problem of [...problems, ...nativeProblems]) log(`courier: ${problem}`)
     const roles = new Map<string, number | null>()
     const ports: CourierPorts = {
       limits,
+      nativeChildren,
       gate,
       roles,
       nudge,

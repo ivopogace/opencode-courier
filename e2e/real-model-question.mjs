@@ -1,5 +1,5 @@
-// The question scenario of e2e/real-model.sh (node e2e/real-model-question.mjs <parentSessionID>): the
-// child asks the person which greeting to use, through its parent, and COURIER_ANSWER reaches it.
+// The question scenario of e2e/real-model.sh (node e2e/real-model-question.mjs <parentSessionID>): the child asks the
+// person a greeting through its parent; with COURIER_NATIVE=1 the parent is only told, and the person answers the child's form.
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -9,6 +9,7 @@ const auth = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD}`).t
 const work = process.env.WORK
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const ANSWER = process.env.COURIER_ANSWER || "Hi"
+const NATIVE = process.env.COURIER_NATIVE === "1"
 
 async function api(path, init = {}) {
   const response = await fetch(`${server}/api/${path}`, {
@@ -49,6 +50,7 @@ const metadataOf = (part) => part.state.metadata?.metadata ?? part.state.metadat
 const childOf = (part) => (part.name === "courier_spawn" && part.state.status === "completed" ? metadataOf(part).sessionID : undefined)
 const labels = (form) => JSON.stringify(form.fields.map((field) => (field.options ?? []).map((option) => option.label).sort()))
 const isNotice = (message) => message.type === "synthetic" && /^<courier from="ses_\w+" asks="question"/.test(message.text)
+const isSettled = (message) => message.type === "synthetic" && /^<courier from="ses_\w+" answered="elsewhere"/.test(message.text)
 // A message the child sent its parent with courier_send: its envelope carries the status, when it gave one, and nothing else.
 const isReport = (message, child) => message.type === "synthetic" && new RegExp(`^<courier from="${child}"( status="\\w+")?>`).test(message.text)
 const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
@@ -82,11 +84,20 @@ function answerOf(form) {
   )
 }
 
-// 1. The child asks, with its question tool or a message, and the parent asks the person: a form in
-//    the parent's session, or a turn that ends with a question in text.
+// 1. The child asks, with its question tool or a message, and the parent asks the person (a native child's parent
+//    only ends its turn): a form in the parent's session, or a turn that ends with a question in text.
 let child
 let childForm
-const asked = await until("the parent to ask the person", async () => {
+const asked = NATIVE
+  ? await until("the parent to be told of the child's question and end its turn", async () => {
+      const list = await messages(parentID)
+      child ??= toolsOf(list).map(childOf).find(Boolean)
+      if (!child) return undefined
+      childForm ??= (await forms(child))[0]
+      const told = list.findIndex(isNotice)
+      return childForm && told >= 0 && settled(list) && list.length > told + 1 ? { list, form: (await forms(parentID))[0], native: true } : undefined
+    })
+  : await until("the parent to ask the person", async () => {
   const list = await messages(parentID)
   child ??= toolsOf(list).map(childOf).find(Boolean)
   if (!child) return undefined
@@ -113,8 +124,20 @@ const answeredItself = asked
 let how = "did not ask"
 let personAt = Infinity
 
-// 2. The person answers, in the parent's form or as a new message.
-if (asked && !answeredItself) {
+// 2. The person answers, in the parent's form or as a new message; for a native child, in the child's own form.
+if (asked?.native && !answeredItself) {
+  personAt = Date.now()
+  const answer = answerOf(childForm)
+  const reply = textOf(lastStep(asked.list))
+  const restated = ["Hello", "Hi", "Hey"].every((option) => reply.includes(option))
+  how = asked.form
+    ? "asked the person all the same, with a question form"
+    : restated
+      ? `did not ask with its question tool, but listed the options in its reply: ${short(reply.trim(), 300)}`
+      : `did not ask the person: ${short(reply.trim(), 300)}`
+  console.log(`  the person answers the child's own form with ${JSON.stringify(answer)}`)
+  await api(`session/${child}/form/${childForm.id}/reply`, { method: "POST", body: JSON.stringify({ answer }) })
+} else if (asked && !answeredItself) {
   personAt = Date.now()
   if (asked.form) {
     const answer = answerOf(asked.form)
@@ -169,18 +192,28 @@ const passedOn = toolsOf(parent).filter(
 )
 const report = parent.find((message) => isReport(message, child) && message.text.includes(ANSWER))
 const finalText = textOf(parent.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
-const checks = [
-  ["the parent spawned a child, which asked, and the parent asked the person", Boolean(child) && Boolean(asked)],
-  ["the parent did not answer by itself", Boolean(asked) && !answeredItself],
-  [
-    "the parent asked with the child's options",
-    (Boolean(asked?.form) && (route !== "question tool" || (childForm !== undefined && labels(asked.form) === labels(childForm)))) ||
-      (Boolean(asked) && !asked.form && ["Hello", "Hi", "Hey"].every((option) => textOf(lastStep(asked.list)).includes(option))),
-  ],
-  ["the parent passed on the person's answer", passedOn.length > 0],
-  ["the child got the answer and reported it", Boolean(report)],
-  ["the parent's final reply holds it", finalText.includes(ANSWER)],
-]
+const askedAgain = toolsOf(parent).some((part) => part.name === "question")
+const checks = NATIVE
+  ? [
+      ["the parent spawned a child, which asked with its question tool, and the parent was told", Boolean(child) && Boolean(asked) && route === "question tool" && Boolean(notice?.text.includes('shown="native"'))],
+      ["the parent did not answer by itself", Boolean(asked) && !answeredItself],
+      ["the parent did not ask the person again", Boolean(asked) && !askedAgain],
+      ["the child got the person's answer and reported it", Boolean(report)],
+      ["the parent was told the question was settled", parent.some(isSettled)],
+      ["the parent's final reply holds it", finalText.includes(ANSWER)],
+    ]
+  : [
+      ["the parent spawned a child, which asked, and the parent asked the person", Boolean(child) && Boolean(asked)],
+      ["the parent did not answer by itself", Boolean(asked) && !answeredItself],
+      [
+        "the parent asked with the child's options",
+        (Boolean(asked?.form) && (route !== "question tool" || (childForm !== undefined && labels(asked.form) === labels(childForm)))) ||
+          (Boolean(asked) && !asked.form && ["Hello", "Hi", "Hey"].every((option) => textOf(lastStep(asked.list)).includes(option))),
+      ],
+      ["the parent passed on the person's answer", passedOn.length > 0],
+      ["the child got the answer and reported it", Boolean(report)],
+      ["the parent's final reply holds it", finalText.includes(ANSWER)],
+    ]
 const notes = [`the child asked with: ${route}`, `the parent ${how}`]
 if (route === "question tool") {
   notes.push(`the parent was ${notice ? "" : "not "}told with a question notice`)

@@ -1,7 +1,7 @@
 import { envelope } from "../kernel/protocol.js"
 import { claim } from "../platform/bounded.js"
 import type { EventModule, HostEvent } from "../platform/events.js"
-import { allEntries, lineage } from "../tree/index.js"
+import { allEntries, lineage, nativeRootOf } from "../tree/index.js"
 import { reportForm, reportFormSettled, type FormCreated, type FormSettled } from "./form.js"
 import { listEverywhere, type PermissionAsked, type PermissionReplied } from "./permission.js"
 import { topOf, type PersonPorts, type PersonState } from "./ports.js"
@@ -20,14 +20,17 @@ export async function reportAsked(ports: PersonPorts, state: PersonState, event:
   // already relayed, from the event or from the pending list, is in `waiting`.
   if (!chain.length || state.answered.has(request.id) || !claim(state.waiting, request.id)) return []
   const startedBy = chain.length > 1 ? chain[0]!.parentID : undefined
+  // A native child's request shows as OpenCode's own prompt in its native root's view: when that is the top's, it is not asked again.
+  const native = nativeRootOf(chain) === topOf(chain)
   await ports.session.synthetic({
     sessionID: topOf(chain),
-    text: envelope(request.sessionID, permissionNotice(chain[0]!.title, request, startedBy), {
+    text: envelope(request.sessionID, permissionNotice(chain[0]!.title, request, startedBy, native), {
       asks: "permission",
       request: request.id,
+      ...(native ? { shown: "native" } : {}),
     }),
     description: `Session ${request.sessionID} asks for permission`,
-    metadata: { source: "courier", from: request.sessionID, asks: "permission", requestID: request.id },
+    metadata: { source: "courier", from: request.sessionID, asks: "permission", requestID: request.id, ...(native ? { shown: "native" } : {}) },
     delivery: "steer",
   })
   return [topOf(chain)]

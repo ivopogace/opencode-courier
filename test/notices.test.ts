@@ -247,6 +247,7 @@ describe("permission requests", () => {
     const many = Array.from({ length: 22 }, (_, i) => `file-${i}`)
     expect(person.permissionNotice("Fix the bug", { ...request, action: "edit", resources: [...many, "x".repeat(400)], save: ["git push*", "git fetch*"] })).toMatchSnapshot()
     expect(person.permissionNotice("Fix the bug", { ...request, resources: [] })).toMatchSnapshot()
+    expect(person.permissionNotice("Fix the bug", { ...request, save: ["*"] }, undefined, true)).toMatchSnapshot()
   })
   test("permissionSettledNotice", () => {
     expect(person.permissionSettledNotice("Fix the bug", "per_1", "once")).toMatchSnapshot()
@@ -290,6 +291,10 @@ describe("forms", () => {
     ]
     expect(person.formNotice("Fix the bug", { id: "frm_2", sessionID: "ses_child", title: "Settings", fields }, "ses_middle")).toMatchSnapshot()
   })
+  test("formNotice of a native child", () => {
+    expect(person.formNotice("Fix the bug", websearch, undefined, "ses_parent", "ses_parent")).toMatchSnapshot()
+    expect(person.formNotice("Fix the bug", websearch, "ses_middle", "ses_middle", "ses_root")).toMatchSnapshot()
+  })
   test("formSettledNotice", () => {
     expect(person.formSettledNotice("Fix the bug", "frm_1", "answered")).toMatchSnapshot()
     expect(person.formSettledNotice("Fix the bug", "frm_1", "cancelled")).toMatchSnapshot()
@@ -331,6 +336,11 @@ describe("questions", () => {
     expect(person.questionSettledNotice(asked, { by: "child", answers })).toMatchSnapshot()
     expect(person.questionSettledNotice(asked, { by: "dismissed" })).toMatchSnapshot()
     expect(person.questionSettledNotice(asked, { by: "failed", error: "Error: boom" })).toMatchSnapshot()
+  })
+  test("question notices of a native child", () => {
+    expect(person.nativeQuestionNotice({ ...asked, native: true })).toMatchSnapshot()
+    expect(person.questionSettledNotice({ ...asked, native: true }, { by: "child", answers })).toMatchSnapshot()
+    expect(person.questionSettledNotice({ ...asked, native: true }, { by: "dismissed" })).toMatchSnapshot()
   })
   test("DISMISSED", () => expect(person.DISMISSED).toMatchSnapshot())
   test("cutOffAnswer", () => {

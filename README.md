@@ -389,6 +389,44 @@ one), pick a question's answers or type your own, fill in a form. The session th
 once that it is settled, as when you answer in the child's own session, and does not ask you again. A new
 ask in the open tree plays OpenCode's permission or question sound ([reference](docs/reference.md#the-asks-inbox)).
 
+## Native child sessions
+
+Off by default. With `"nativeChildren": true` in the plugin's `options`, a child started without
+`isolate` is created with OpenCode's own `parentID` as well as the courier's metadata, so OpenCode
+treats it as the parent's subagent: the TUI's view of the session at the top lists and answers the
+permission requests and forms of every session under it, its subagent tab lists them, and the
+paired web, desktop or mobile app's request dock answers a grandchild's ask from the top session,
+on a phone too. Isolated children are created as before (OpenCode takes a location or a parent,
+not both), and the courier's own tree, limits and relays work as without the option.
+
+```jsonc
+{
+  "plugins": [{ "package": "opencode-courier", "options": { "nativeChildren": true } }]
+}
+```
+
+What changes with it:
+
+- **Deleting a session deletes its native children**, as OpenCode does with subagents.
+  `courier_cleanup` never deletes a session.
+- **Providers see a subagent.** A child's model requests carry its parent's id for cache routing
+  and two headers naming the parent. **On GitHub Copilot** OpenCode sends
+  `X-Interaction-Type: conversation-subagent` and `x-initiator: agent` for a session with a
+  parent, which Copilot meters differently from requests a person makes; courier was not tested on
+  Copilot.
+- **A child does not take its parent's session rules**: courier passes it an empty ruleset, so it
+  may do what it could without the option.
+- **A child's asks show in the top session's view**, not in its own, and it leaves the TUI's session
+  lists (reach it from the subagent tab). **Its permission requests and questions are answered
+  once, in OpenCode's own prompt** there: the top session's model is only told, and does not ask you
+  again. `opencode run` and the TUI's auto-accept mode answer native children's asks as their own
+  subagents'.
+- **Turn it on only with OpenCode's TUI or the paired app**, which show those prompts. A client that
+  shows none (a bare API client) leaves nobody prompting you for a native child's asks; the model
+  can still pass an answer you give it in the chat on with `courier_answer`.
+
+The details, and what was checked how: [the reference](docs/reference.md#native-child-sessions).
+
 ## Webhooks
 
 The receiver is off unless the plugin has a `webhook` option. Put it in the **global** config

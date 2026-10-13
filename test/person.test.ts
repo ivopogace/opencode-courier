@@ -44,6 +44,49 @@ describe("reportAsked", () => {
     expect(sent[0].text).toContain('This session, "Fix the bug", which ses_parent started with courier_spawn, a session started from yours,')
   })
 
+  test("a native child's request, shown by OpenCode in the top session's view: the top is told not to ask the person", async () => {
+    const { ports, sent } = fakePorts()
+    await childStore(ports.storage).record({ ...child(), native: true })
+
+    await reportAsked(ports, fresh(), asked())
+
+    expect(sent[0].text).toBe(
+      envelope("ses_child", permissionNotice("Fix the bug", request, undefined, true), { asks: "permission", request: "per_1", shown: "native" }),
+    )
+    expect(sent[0].text).toContain("OpenCode already shows this request to the person you are working with")
+    expect(sent[0].text).toContain("Do not ask them yourself")
+    expect(sent[0].text).not.toContain("Ask the person you are working with")
+    expect(sent[0].metadata).toMatchObject({ asks: "permission", requestID: "per_1", shown: "native" })
+  })
+
+  test("a native child's child, all native up to the top, is told the same way", async () => {
+    const { ports, sent } = fakePorts()
+    await childStore(ports.storage).record({ ...child(), native: true })
+    await childStore(ports.storage).record({ ...child("ses_root"), sessionID: "ses_parent", title: "Lead", native: true })
+
+    await reportAsked(ports, fresh(), asked())
+
+    expect(sent[0].sessionID).toBe("ses_root")
+    expect(sent[0].text).toContain('request="per_1" shown="native">')
+  })
+
+  test("a native child under an isolated session, an isolated child, and a child without the option: the top asks the person as before", async () => {
+    const cases = [
+      [{ ...child(), native: true as const }, { ...child("ses_root"), sessionID: "ses_parent", title: "Lead", isolated: true }],
+      [{ ...child(), isolated: true }],
+      [child()],
+    ]
+    for (const entries of cases) {
+      const { ports, sent } = fakePorts()
+      for (const entry of entries) await childStore(ports.storage).record(entry)
+
+      await reportAsked(ports, fresh(), asked())
+
+      expect(sent[0].text).not.toContain("shown=")
+      expect(sent[0].text).toContain("Do not decide this yourself. Ask the person you are working with")
+    }
+  })
+
   test("does not tell anyone about a request answered while its roster was looked up", async () => {
     const { ports, sent } = fakePorts()
     await childStore(ports.storage).record(child())
@@ -121,6 +164,24 @@ describe("reportForm", () => {
     expect(text).toContain("once it is made, in any session, no session is asked again")
     expect(text).toContain("only the person you are working with can, in session ses_child itself")
     expect([...state.forms.told.keys()]).toEqual(["frm_1"])
+  })
+
+  test("sends the person to the view OpenCode shows a native child's form in: the top's, or an isolated session's above it", async () => {
+    const { ports, sent } = fakePorts()
+    await childStore(ports.storage).record({ ...child(), native: true })
+
+    await reportForm(ports, fresh(), shown())
+    expect(sent[0].text).toContain(
+      "only the person you are working with can, in your own session, where OpenCode shows the forms of the sessions under it.",
+    )
+    expect(sent[0].text).toContain("Tell them your session shows this form")
+    expect(sent[0].text).not.toContain("in session ses_child itself")
+
+    await childStore(ports.storage).record({ ...child("ses_root"), sessionID: "ses_parent", title: "Lead", isolated: true })
+    await reportForm(ports, fresh(), shown("evt_g"))
+    expect(sent[1].sessionID).toBe("ses_root")
+    expect(sent[1].text).toContain("can, in session ses_parent, where OpenCode shows the forms of the sessions under it.")
+    expect(sent[1].text).toContain("Tell them session ses_parent shows this form")
   })
 
   test("tells about another kind of form without the web search note, and shows each kind of field", async () => {
@@ -242,7 +303,7 @@ describe("reportFormSettled", () => {
       metadata: { source: "courier", from: "ses_child", settled: "answered", formID: "frm_1" },
       delivery: "steer",
     })
-    expect(sent[2].text).toContain("has been answered in that session")
+    expect(sent[2].text).toContain("has been answered, so it no longer waits")
     expect(sent[3].text).toStartWith('<courier from="ses_child" settled="cancelled" form="frm_2">')
     expect(sent[3].text).toContain("has been withdrawn unanswered")
     expect(state.forms.told.size).toBe(0)

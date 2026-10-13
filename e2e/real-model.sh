@@ -35,6 +35,8 @@
 #   COURIER_MAX_DEPTH                recursive: the maxDepth the checker holds the tree to (default 3).
 #   COURIER_TIMEOUT                  seconds to wait for the parent's turn and then for the
 #                                     children (default 300 each).
+#   COURIER_NATIVE                   1 loads the plugin with nativeChildren on, so a child started
+#                                     without isolate gets OpenCode's own parentID.
 #
 # Transcripts (parent.json, child-*.json), timeline.txt, summary.json and the server log stay in
 # the work directory (E2E_WORK, default a new temp dir), which is printed at the end.
@@ -129,8 +131,8 @@ if [ -n "$BASE_URL" ]; then
     }
   }')
 fi
-jq -n --arg plugin "$ROOT/dist" --arg model "$PROVIDER/$MODEL" --argjson providers "$provider" --argjson permissions "$PERMISSIONS" '{
-  plugins: [$plugin],
+jq -n --arg plugin "$ROOT/dist" --arg native "${COURIER_NATIVE:-}" --arg model "$PROVIDER/$MODEL" --argjson providers "$provider" --argjson permissions "$PERMISSIONS" '{
+  plugins: [if $native == "1" then { package: $plugin, options: { nativeChildren: true } } else $plugin end],
   providers: $providers,
   model: $model,
   update: "disable",
@@ -139,7 +141,7 @@ jq -n --arg plugin "$ROOT/dist" --arg model "$PROVIDER/$MODEL" --argjson provide
 commit_config
 
 start_server
-echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL"
+echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL${COURIER_NATIVE:+, nativeChildren on}"
 if [ "${COURIER_PERSON:-}" = other-server ]; then
   # A second server on the same data directory, started once the first is up (two starting at once
   # race to create the database's tables), as in e2e/two-servers.sh.

@@ -494,6 +494,8 @@ describe("the tree panel", () => {
     fake.command("f")!.run()
     fake.command("q")!.run()
     expect(input).toEqual({ closed: 1, fullscreen: 1 })
+    // Its keys are the panel's only while it has the keyboard.
+    expect((fake.state.layers.at(-1)!() as { enabled?: () => boolean }).enabled?.()).toBe(true)
   })
 
   test("s stops the selected session through the RPC, as the panel's session, once the person confirms", async () => {

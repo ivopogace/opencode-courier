@@ -280,6 +280,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; courier: Courier; l
   }
   ctx.keymap.layer(() => ({
     priority: 10,
+    enabled: () => input.focused,
     commands: [
       { bind: "up", title: "Previous session", group: "Courier", run: () => move(-1) },
       { bind: "k", title: "Previous session", group: "Courier", run: () => move(-1) },

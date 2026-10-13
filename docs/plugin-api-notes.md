@@ -469,6 +469,37 @@ live suite's skill scenario:
   and resumes the session unless `resume` is `false`. A compaction keeps `[Skill activated: <name>]`
   and the text.
 
+## Native `parentID` for courier children (#146)
+
+What the `nativeChildren` option ([reference](reference.md#native-child-sessions)) rests on, beyond
+point 3 of the spike below; read in OpenCode's source at `v2.0.28` and checked on a 2.0.28 server.
+
+- **An empty ruleset stops the inheritance.** `Session.create` (`packages/core/src/session.ts`, line
+  288) records `input.permissions ?? parent?.permissions`, so `permissions: []` is kept as given; the
+  plugin host passes it through (`packages/core/src/plugin/host.ts`, lines 539-553), and the projector
+  stores it (`session/projector.ts`, line 463). Observed: a session created over HTTP with only
+  `parentID` under a parent with a session ruleset got the parent's, and the courier's child got `[]`
+  and still asked for what the parent's ruleset allowed.
+- **`opencode run` owns native children.** `packages/cli/src/run/noninteractive.ts`, lines 140-200 and
+  221-228: a session whose `parentID` chain leads to the run's session is the run's, so while it is
+  attached it replies `once` to its permission requests with `--auto`, rejects them without, and
+  cancels its question and other forms. The live suite drives the native scenarios through
+  `POST /api/session/:id/prompt` for that reason; the real-model fan-out, with no asks, passes under
+  `run`.
+- **The TUI's root view** (`packages/tui/src/routes/session/index.tsx`): `permissions` and `forms`
+  (lines 202-216) list the session's own first, then its descendants'; `disabled` (234) replaces the
+  prompt input while any is pending, and the permission prompt is shown before any form (1496, 1506);
+  in `autoaccept` mode (261-278) it replies `once` to every request of the family. Observed with the
+  stand-in model: a native child's permission request showed as `△ Permission required` in the root's
+  view while the courier's notice reached the root's model; with a relayed question, the root's own
+  question form showed, the child's queued behind it.
+- **Deletion.** Observed: deleting the parent deleted the native child (404), each with its
+  `session.deleted`; the plugin dropped the child's report state, and its roster entry stayed, as for
+  any deleted child.
+- **What providers see** was not inspected on the wire. The real-model rerun on OpenCode Zen
+  ([`docs/real-model.md`](real-model.md#results)) passed with the parent's id as every child's
+  affinity; Copilot's metering was not tried.
+
 ## TUI and RPC entrypoints (spike for #130)
 
 Phase 0 of [#130](https://github.com/ivopogace/opencode-courier/issues/130): can this package ship a

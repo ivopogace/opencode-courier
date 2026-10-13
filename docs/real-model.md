@@ -32,6 +32,7 @@ the prompt here is trivial on purpose.
 | `COURIER_MAX_DEPTH` | `3` | With `recursive`: the `maxDepth` the checker holds the tree to. |
 | `COURIER_PERSON` | | `other-server`, with `COURIER_SCENARIO=permission`: the person answers the parent through a second server on the same data directory (see below). |
 | `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, and then for the children. |
+| `COURIER_NATIVE` | | `1` loads the plugin with [`nativeChildren`](reference.md#native-child-sessions) on, so a child started without `isolate` gets OpenCode's own `parentID`. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |
 
 The parent is asked:
@@ -428,6 +429,19 @@ On OpenCode 2.0.28 with Effect 4.0.1, after the pin moved (#135; no model-facing
 the tool schemas models are sent are the same), `longcat-2.5-preview-free` passes the fan-out, 8 of
 8, in 9 model requests: `split: 2 parts: …`, no skill loaded, both children in one join group, one
 woken turn for the group's message, every report `done`, and `RESULTS 391 1024`.
+
+With `nativeChildren` on (`COURIER_NATIVE=1`, #146, OpenCode 2.0.28), which changes what the
+provider sees of a child (its parent's id as the cache-routing id, two parent headers) and the
+wording of a form's notice, `longcat-2.5-preview-free` passes the fan-out, 8 of 8, in 11 model
+requests (`split: 2 parts: …`, no skill loaded, one join group, every report `done`, `RESULTS 391
+1024`; both children recorded with the parent as `parent_id` and an empty ruleset), the permission
+relay, 6 of 6 (the parent asked the person with a question form offering `once`, `always` and
+`reject`, and passed `once` on with `courier_answer`), and the question relay, 6 of 6 (the child
+asked with its question tool, the parent with the child's three options, and the person's `Hi`
+went back through the linked question). Each fan-out child first sent `courier_send` with `branch:
+[]`, was refused by the schema and sent it again without; that is the model's doing. Zen took the
+parent's affinity for every child without complaint; GitHub Copilot, which meters a session with a
+parent as a subagent, was not tried.
 
 What the models did on the fan-out, over some 30 runs while the tool wording was tuned:
 

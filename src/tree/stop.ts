@@ -1,18 +1,11 @@
-import { cleanup, type CleanupPorts, type CleanupResult } from "./cleanup.js"
-import type { CourierPorts } from "./courier.js"
-import { isNotFound } from "./platform/json.js"
-import { describeFailure, envelope } from "./kernel/protocol.js"
-import { cancel, scheduledFor, type LaterPorts } from "./scheduling/index.js"
-import { stoppedNotice } from "./notices.js"
+import { isNotFound } from "../platform/json.js"
+import { describeFailure, envelope } from "../kernel/protocol.js"
+import { cleanup } from "./cleanup.js"
+import type { CleanupResult, StopPorts } from "./ports.js"
 import { settled, stopped } from "./report.js"
 import { lineage } from "./roster.js"
-import { subtree, type Below } from "./tree.js"
-
-export interface StopPorts {
-  readonly courier: CourierPorts
-  readonly later: LaterPorts
-  readonly cleanup: CleanupPorts
-}
+import { subtree, type Below } from "./subtree.js"
+import { stoppedNotice } from "./text.js"
 
 export interface StopInput {
   readonly sessionID: string
@@ -101,9 +94,7 @@ async function silence(ports: StopPorts, sessionID: string, cancelled: string[])
   const { storage, now, log } = ports.courier
   await stopped(storage, sessionID, now()).catch((error: unknown) => log(`courier_stop: could not note that ${sessionID} was stopped: ${String(error)}`))
   try {
-    const pending = await scheduledFor(storage, sessionID)
-    const dropped = await Promise.all(pending.map(async (later) => ((await cancel(ports.later, later.id)) ? later.id : undefined)))
-    cancelled.push(...dropped.filter((id) => id !== undefined))
+    cancelled.push(...(await ports.cancelScheduled(sessionID)))
   } catch (error) {
     log(`courier_stop: could not cancel the messages scheduled for ${sessionID}: ${String(error)}`)
   }

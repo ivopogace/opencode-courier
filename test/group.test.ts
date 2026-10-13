@@ -7,20 +7,19 @@ import {
   groupStanding,
   hasCompleteGroup,
   holdReport,
-  isGroupName,
   joinGroup,
   leaveGroup,
   markLeft,
   memberKey,
   memberOf,
   membershipOf,
-  standingOf,
   unholdForBlocked,
-  type GroupPorts,
   type Membership,
-} from "../src/group.js"
+} from "../src/tree/group.js"
+import { isGroupName, standingOf } from "../src/tree/domain.js"
+import type { GroupPorts } from "../src/tree/ports.js"
 import { envelope } from "../src/kernel/protocol.js"
-import { groupNotice } from "../src/notices.js"
+import { groupNotice } from "../src/tree/text.js"
 
 function fakePorts(options: { pageSize?: number; store?: Map<string, unknown> } = {}) {
   const store = options.store ?? new Map<string, unknown>()

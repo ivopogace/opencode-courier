@@ -1,48 +1,11 @@
-import type { Plugin } from "@opencode/plugin"
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { isAbsolute } from "node:path"
+import type { RosterEntry } from "./domain.js"
 import { markLeft, membershipOf } from "./group.js"
-import { keepReason } from "./notices.js"
-import { remove, rosterKey, type RosterEntry, type RosterStorage } from "./roster.js"
-
-/** What courier_cleanup did: removed the worktree, found it gone, kept it and why, or forgot a child with none; `group`, one it dropped the child from. */
-export type CleanupResult =
-  | { readonly sessionID: string; readonly directory: string; readonly outcome: "removed" | "gone" | "forgotten"; readonly group?: string }
-  | {
-      readonly sessionID: string
-      readonly directory: string
-      readonly outcome: "kept"
-      readonly reason: string
-      readonly changes: readonly string[]
-      readonly commits: readonly string[]
-    }
-
-type Context = Plugin.Context
-
-/** What would be lost by removing a worktree. */
-export interface WorktreeState {
-  /** Paths with uncommitted changes, untracked files included, as `git status --porcelain` lists them. */
-  readonly changes: readonly string[]
-  /**
-   * Commits reachable from the worktree's HEAD but from no branch, tag or remote-tracking ref, nor
-   * from the commit the worktree was made from, newest first.
-   */
-  readonly commits: readonly string[]
-}
-
-export interface CleanupPorts {
-  readonly storage: RosterStorage
-  readonly worktree: Pick<Context["worktree"], "remove">
-  /** The project of the plugin's location, for roster entries recorded before they carried their project. */
-  readonly projectID: string
-  /** The worktree's state, or undefined when its directory no longer exists; `base` is the commit it was made from. */
-  readonly inspect: (directory: string, base?: string) => Promise<WorktreeState | undefined>
-  /** When a member still out is dropped from its group. */
-  readonly now: () => number
-  /** Has the scheduler deliver what is due now: a group the forgotten child may have been the last member out of. */
-  readonly nudge: () => void
-}
+import type { CleanupPorts, CleanupResult, WorktreeState } from "./ports.js"
+import { remove, rosterKey } from "./roster.js"
+import { keepReason } from "./text.js"
 
 export interface CleanupInput {
   readonly sessionID: string

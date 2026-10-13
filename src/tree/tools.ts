@@ -1,26 +1,18 @@
 import { Schema } from "effect"
-import { cleanup, type CleanupPorts } from "./cleanup.js"
-import { stop, type StopPorts } from "./stop.js"
-import { tree } from "./tree.js"
-import { STATUSES } from "./kernel/protocol.js"
-import { rethrow, type ToolEditor } from "./kernel/tool.js"
-import { listChildren, send, spawn, status, type CourierPorts } from "./courier.js"
-import { addSchedulingTools, type LaterPorts } from "./scheduling/index.js"
-import {
-  childrenText,
-  cleanupText,
-  sendText,
-  spawnText,
-  statusText,
-  stopText,
-  treeText,
-} from "./notices.js"
-import { addPersonTools, type PersonToolPorts } from "./person/index.js"
-import { addWebhookTools, type WebhookPorts } from "./webhook/index.js"
+import { STATUSES } from "../kernel/protocol.js"
+import { rethrow, type ToolEditor } from "../kernel/tool.js"
+import { cleanup } from "./cleanup.js"
+import type { CleanupPorts, CourierPorts, StopPorts } from "./ports.js"
+import { send } from "./send.js"
+import { spawn } from "./spawn.js"
+import { listChildren, status } from "./status.js"
+import { stop } from "./stop.js"
+import { tree } from "./subtree.js"
+import { childrenText, cleanupText, sendText, spawnText, statusText, stopText, treeText } from "./text.js"
 
 /**
- * The core courier tools: their input schemas, descriptions, and what each returns. The descriptions are
- * model-facing like the texts in `notices.ts`, and snapshotted with them in `test/notices.test.ts`.
+ * The tree's courier tools: their input schemas, descriptions, and what each returns. The descriptions are
+ * model-facing like the texts in `text.ts`, and snapshotted with them in `test/notices.test.ts`.
  */
 
 export const SpawnInput = Schema.Struct({
@@ -109,21 +101,15 @@ export const CleanupInput = Schema.Struct({
   ),
 })
 
-export type { ToolEditor }
-
-/** What the tools run on: one plugin instance's ports. */
-export interface ToolPorts extends PersonToolPorts {
+/** What the tree's tools run on: one plugin instance's ports. */
+export interface TreeToolPorts {
   readonly courier: CourierPorts
   readonly cleanup: CleanupPorts
   readonly stop: StopPorts
-  readonly later: LaterPorts
-  readonly hooks: WebhookPorts
-  /** Whether a webhook receiver runs in this server. */
-  readonly receiving: () => Promise<boolean>
 }
 
-/** Adds the courier tools, each a direct tool rather than a code-mode one. */
-export function addTools(tools: ToolEditor, ports: ToolPorts) {
+/** Adds the tree's courier tools, each a direct tool rather than a code-mode one. */
+export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
   tools.add({
     name: "courier_spawn",
     options: { codemode: false },
@@ -232,8 +218,4 @@ export function addTools(tools: ToolEditor, ports: ToolPorts) {
       return { content: cleanupText(result), metadata: result }
     },
   })
-
-  addPersonTools(tools, ports)
-  addSchedulingTools(tools, ports.later)
-  addWebhookTools(tools, ports)
 }

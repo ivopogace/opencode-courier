@@ -1,8 +1,18 @@
 /** The permission, form and question notices and the result of courier_answer, snapshotted with the other texts. */
 import { END_TURN } from "../kernel/protocol.js"
-import type { Asked, Elsewhere, Outcome, Prompt, QuestionAnswered, Withdrawal } from "./question/index.js"
-import type { Form, FormField } from "./form.js"
-import type { PermissionAnswered, PermissionRequest, Reply } from "./permission.js"
+import type {
+  Asked,
+  Elsewhere,
+  Form,
+  FormField,
+  Outcome,
+  PermissionAnswered,
+  PermissionRequest,
+  Prompt,
+  QuestionAnswered,
+  Reply,
+  Withdrawal,
+} from "./ports.js"
 
 /**
  * What courier_answer did: a permission request's result carries the reply, a question's whether its

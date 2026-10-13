@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { listChildren, send, spawn, status, type CourierPorts } from "../src/courier.js"
-import { DEFAULT_LIMITS } from "../src/limits.js"
+import { spawn } from "../src/tree/spawn.js"
+import { send } from "../src/tree/send.js"
+import { listChildren, status } from "../src/tree/status.js"
+import type { CourierPorts } from "../src/tree/ports.js"
+import { DEFAULT_LIMITS } from "../src/tree/domain.js"
 import { describeFailure, envelope } from "../src/kernel/protocol.js"
-import { childBrief, reportBody } from "../src/notices.js"
-import { joinGroup, memberKey } from "../src/group.js"
-import { progressKey, settledKey } from "../src/report.js"
-import { record, rosterKey } from "../src/roster.js"
+import { childBrief, reportBody } from "../src/tree/text.js"
+import { joinGroup, memberKey } from "../src/tree/group.js"
+import { progressKey, settledKey } from "../src/tree/report.js"
+import { record, rosterKey } from "../src/tree/roster.js"
 
 type Call = { method: string; input: any }
 

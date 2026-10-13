@@ -1,15 +1,29 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
+import type { ToolEditor } from "../src/kernel/tool.js"
 import * as kernel from "../src/kernel/protocol.js"
-import * as notices from "../src/notices.js"
-import { addTools, type ToolEditor, type ToolPorts } from "../src/tools.js"
+import * as skill from "../src/skill.js"
+import * as tree from "../src/tree/text.js"
+import * as person from "../src/person/text.js"
+import * as scheduling from "../src/scheduling/text.js"
+import * as webhook from "../src/webhook/text.js"
+import { addTreeTools } from "../src/tree/index.js"
+import { addPersonTools } from "../src/person/index.js"
+import { addSchedulingTools } from "../src/scheduling/index.js"
+import { addWebhookTools } from "../src/webhook/index.js"
 import { githubEvent } from "../src/webhook/receiver.js"
 
-// Every model-facing string, built from fixed inputs and kept in __snapshots__/notices.test.ts.snap.
-// A wording change shows up there as a snapshot diff; after one, rerun e2e/real-model.sh (CLAUDE.md).
+// Every model-facing string, built from fixed inputs and kept in __snapshots__/notices.test.ts.snap: every
+// src/**/text.ts, imported each by its path (test/imports.test.ts checks none is missing), the skill and the
+// tools. A wording change shows up there as a snapshot diff; after one, rerun e2e/real-model.sh (CLAUDE.md).
 
 const registered: any[] = []
-addTools({ add: (tool: unknown) => registered.push(tool) } as unknown as ToolEditor, {} as ToolPorts)
+const editor = { add: (tool: unknown) => registered.push(tool) } as unknown as ToolEditor
+// In the order src/index.ts adds them.
+addTreeTools(editor, {} as never)
+addPersonTools(editor, {} as never)
+addSchedulingTools(editor, {} as never)
+addWebhookTools(editor, {} as never)
 
 describe("tools", () => {
   test("are the twelve courier tools, each a direct tool", () => {
@@ -26,36 +40,36 @@ describe("envelope and child brief", () => {
   test("END_TURN", () => expect(kernel.END_TURN).toMatchSnapshot())
   const limits = { maxDepth: 3, maxChildren: 5, maxTotal: 20 }
   test("childBrief", () => {
-    expect(notices.childBrief("ses_parent", "Fix the bug\nin src/a.ts", 1, limits)).toMatchSnapshot()
-    expect(notices.childBrief("ses_parent", "Fix the bug\nin src/a.ts", 3, limits)).toMatchSnapshot()
-    expect(notices.childBrief("ses_parent", "Fix the bug", 1, limits, notices.childBranch("ses_child"))).toMatchSnapshot()
-    expect(notices.childBrief("ses_parent", "Fix the bug", 3, limits, notices.childBranch("ses_child"))).toMatchSnapshot()
+    expect(tree.childBrief("ses_parent", "Fix the bug\nin src/a.ts", 1, limits)).toMatchSnapshot()
+    expect(tree.childBrief("ses_parent", "Fix the bug\nin src/a.ts", 3, limits)).toMatchSnapshot()
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits, tree.childBranch("ses_child"))).toMatchSnapshot()
+    expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits, tree.childBranch("ses_child"))).toMatchSnapshot()
   })
   test("rolePart", () => {
-    for (const depth of [0, 1, 2, 3, null]) expect(notices.rolePart(depth, limits)).toMatchSnapshot()
-    for (const depth of [0, 1, 2, 3, null]) expect(notices.rolePart(depth, limits)).toStartWith(notices.ROLE_PREFIX)
+    for (const depth of [0, 1, 2, 3, null]) expect(tree.rolePart(depth, limits)).toMatchSnapshot()
+    for (const depth of [0, 1, 2, 3, null]) expect(tree.rolePart(depth, limits)).toStartWith(tree.ROLE_PREFIX)
   })
   test("the courier-orchestrate skill", () => {
-    expect(notices.SKILL_ID).toBe("courier-orchestrate")
-    expect(notices.SKILL_DESCRIPTION).toMatchSnapshot()
-    expect(notices.SKILL_CONTENT).toMatchSnapshot()
+    expect(kernel.SKILL_ID).toBe("courier-orchestrate")
+    expect(skill.SKILL_DESCRIPTION).toMatchSnapshot()
+    expect(skill.SKILL_CONTENT).toMatchSnapshot()
     // The description is what the model reads in every session's skill list; the content, only once loaded.
-    expect(notices.SKILL_DESCRIPTION.length).toBeLessThan(400)
-    expect(notices.SKILL_CONTENT).toContain("Never start exactly one session")
-    expect(notices.SKILL_CONTENT).toContain("Never hand the checking to another session")
+    expect(skill.SKILL_DESCRIPTION.length).toBeLessThan(400)
+    expect(skill.SKILL_CONTENT).toContain("Never start exactly one session")
+    expect(skill.SKILL_CONTENT).toContain("Never hand the checking to another session")
     // The split line reads the same wherever it is asked for: the skill, the brief and the root's pointer.
-    expect(notices.SKILL_CONTENT).toContain(notices.SPLIT_LINE)
-    expect(notices.SKILL_CONTENT).toContain("bun run <script>")
-    expect(notices.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(notices.SPLIT_LINE)
-    expect(notices.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
-    expect(notices.rolePart(null, limits)).toContain(notices.SPLIT_LINE)
-    expect(notices.rolePart(null, limits)).toContain(notices.SKILL_ID)
+    expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
+    expect(skill.SKILL_CONTENT).toContain("bun run <script>")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(kernel.SPLIT_LINE)
+    expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
+    expect(tree.rolePart(null, limits)).toContain(kernel.SPLIT_LINE)
+    expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
   })
   test("refusals", () => {
-    expect(notices.depthRefusal(3, 3)).toMatchSnapshot()
-    expect(notices.childrenRefusal(5, 5)).toMatchSnapshot()
-    expect(notices.childrenRefusal(1, 1)).toMatchSnapshot()
-    expect(notices.totalRefusal(20, 20)).toMatchSnapshot()
+    expect(tree.depthRefusal(3, 3)).toMatchSnapshot()
+    expect(tree.childrenRefusal(5, 5)).toMatchSnapshot()
+    expect(tree.childrenRefusal(1, 1)).toMatchSnapshot()
+    expect(tree.totalRefusal(20, 20)).toMatchSnapshot()
   })
   test("envelope", () => {
     expect(kernel.envelope("ses_child", "done")).toMatchSnapshot()
@@ -73,48 +87,48 @@ describe("envelope and child brief", () => {
         { command: "bun run typecheck", result: "clean" },
       ],
     }
-    expect(notices.reportBody("Fixed the total in checkout.", artifacts)).toMatchSnapshot()
-    expect(notices.reportBody("Fixed it.", { branch: "fix/checkout" })).toMatchSnapshot()
-    expect(notices.reportBody("Fixed it.", undefined)).toBe("Fixed it.")
-    expect(notices.reportBody("Fixed it.", {})).toBe("Fixed it.")
-    expect(notices.reportBody("Fixed it.", { branch: "  ", commits: [], files: [], checks: [] })).toBe("Fixed it.")
+    expect(tree.reportBody("Fixed the total in checkout.", artifacts)).toMatchSnapshot()
+    expect(tree.reportBody("Fixed it.", { branch: "fix/checkout" })).toMatchSnapshot()
+    expect(tree.reportBody("Fixed it.", undefined)).toBe("Fixed it.")
+    expect(tree.reportBody("Fixed it.", {})).toBe("Fixed it.")
+    expect(tree.reportBody("Fixed it.", { branch: "  ", commits: [], files: [], checks: [] })).toBe("Fixed it.")
     // OpenCode does not check the schema: what is not a list of strings, or a check without a command, is left out.
     expect(
-      notices.reportBody("Fixed it.", { commits: ["abc", 7, " def "], files: "src/a.ts", checks: [{ command: "bun test" }, { result: "?" }, "lint"] } as never),
+      tree.reportBody("Fixed it.", { commits: ["abc", 7, " def "], files: "src/a.ts", checks: [{ command: "bun test" }, { result: "?" }, "lint"] } as never),
     ).toBe("Fixed it.\n\nArtifacts:\n- commits: abc, def\n- checks:\n  - bun test: (no result given)")
   })
 })
 
 describe("tool results", () => {
   test("spawnText", () => {
-    expect(notices.spawnText({ sessionID: "ses_child", directory: "/repo" })).toMatchSnapshot()
-    expect(notices.spawnText({ sessionID: "ses_child", directory: "/wt", rosterError: "roster failed: disk full" })).toMatchSnapshot()
-    expect(notices.spawnText({ sessionID: "ses_child", directory: "/repo", group: "reviews" })).toMatchSnapshot()
-    expect(notices.spawnText({ sessionID: "ses_child", directory: "/repo", groupError: "group failed: disk full" })).toMatchSnapshot()
+    expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo" })).toMatchSnapshot()
+    expect(tree.spawnText({ sessionID: "ses_child", directory: "/wt", rosterError: "roster failed: disk full" })).toMatchSnapshot()
+    expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", group: "reviews" })).toMatchSnapshot()
+    expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", groupError: "group failed: disk full" })).toMatchSnapshot()
   })
   test("spawnText for a child started from its parent's HEAD", () => {
-    expect(notices.spawnText({ sessionID: "ses_child", directory: "/wt", fromParent: true })).toMatchSnapshot()
-    expect(notices.spawnText({ sessionID: "ses_child", directory: "/wt", fromParent: true, uncommitted: true })).toMatchSnapshot()
+    expect(tree.spawnText({ sessionID: "ses_child", directory: "/wt", fromParent: true })).toMatchSnapshot()
+    expect(tree.spawnText({ sessionID: "ses_child", directory: "/wt", fromParent: true, uncommitted: true })).toMatchSnapshot()
   })
   test("sendText", () => {
-    expect(notices.sendText("ses_parent")).toMatchSnapshot()
-    expect(notices.sendText("ses_parent", { report: true, status: "done" })).toMatchSnapshot()
-    expect(notices.sendText("ses_parent", { report: true })).toMatchSnapshot()
-    expect(notices.sendText("ses_parent", { report: false })).toMatchSnapshot()
-    expect(notices.sendText("ses_other", { status: "done" })).toMatchSnapshot()
-    expect(notices.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 1, members: 3 } })).toMatchSnapshot()
-    expect(notices.sendText("ses_parent", { report: true, status: "failed", held: { group: "reviews", reported: 3, members: 3 } })).toMatchSnapshot()
-    expect(notices.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews" } })).toMatchSnapshot()
+    expect(tree.sendText("ses_parent")).toMatchSnapshot()
+    expect(tree.sendText("ses_parent", { report: true, status: "done" })).toMatchSnapshot()
+    expect(tree.sendText("ses_parent", { report: true })).toMatchSnapshot()
+    expect(tree.sendText("ses_parent", { report: false })).toMatchSnapshot()
+    expect(tree.sendText("ses_other", { status: "done" })).toMatchSnapshot()
+    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 1, members: 3 } })).toMatchSnapshot()
+    expect(tree.sendText("ses_parent", { report: true, status: "failed", held: { group: "reviews", reported: 3, members: 3 } })).toMatchSnapshot()
+    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews" } })).toMatchSnapshot()
   })
-  test("statusText", () => expect(notices.statusText({ sessionID: "ses_child", title: "Fix", idle: 3 })).toMatchSnapshot())
+  test("statusText", () => expect(tree.statusText({ sessionID: "ses_child", title: "Fix", idle: 3 })).toMatchSnapshot())
   test("childrenText", () => {
-    expect(notices.childrenText([])).toMatchSnapshot()
-    expect(notices.childrenText([{ sessionID: "ses_child", isolated: false }])).toMatchSnapshot()
+    expect(tree.childrenText([])).toMatchSnapshot()
+    expect(tree.childrenText([{ sessionID: "ses_child", isolated: false }])).toMatchSnapshot()
   })
   test("treeText", () => {
-    expect(notices.treeText({ sessions: [] })).toMatchSnapshot()
-    expect(notices.treeText({ sessions: [{ sessionID: "ses_child", depth: 1 }] })).toMatchSnapshot()
-    expect(notices.treeText({ sessions: [{ sessionID: "ses_child", depth: 1 }], truncated: 20 })).toMatchSnapshot()
+    expect(tree.treeText({ sessions: [] })).toMatchSnapshot()
+    expect(tree.treeText({ sessions: [{ sessionID: "ses_child", depth: 1 }] })).toMatchSnapshot()
+    expect(tree.treeText({ sessions: [{ sessionID: "ses_child", depth: 1 }], truncated: 20 })).toMatchSnapshot()
   })
   test("stopText", () => {
     const stopped = [
@@ -122,10 +136,10 @@ describe("tool results", () => {
       { sessionID: "ses_mid", outcome: "idle" },
       { sessionID: "ses_odd", outcome: "failed", error: "session.interrupt failed: boom" },
     ]
-    expect(notices.stopText({ sessionID: "ses_mid", stopped, cancelled: [] })).toMatchSnapshot()
-    expect(notices.stopText({ sessionID: "ses_mid", stopped, cancelled: ["later_1", "later_2"], told: "ses_top" })).toMatchSnapshot()
+    expect(tree.stopText({ sessionID: "ses_mid", stopped, cancelled: [] })).toMatchSnapshot()
+    expect(tree.stopText({ sessionID: "ses_mid", stopped, cancelled: ["later_1", "later_2"], told: "ses_top" })).toMatchSnapshot()
     expect(
-      notices.stopText({
+      tree.stopText({
         sessionID: "ses_mid",
         stopped,
         cancelled: [],
@@ -136,62 +150,62 @@ describe("tool results", () => {
         ],
       }),
     ).toMatchSnapshot()
-    expect(notices.stopText({ sessionID: "ses_mid", stopped, cancelled: [], cleanup: [] })).toMatchSnapshot()
+    expect(tree.stopText({ sessionID: "ses_mid", stopped, cancelled: [], cleanup: [] })).toMatchSnapshot()
   })
-  test("stoppedNotice", () => expect(notices.stoppedNotice("Review a.ts", "ses_root")).toMatchSnapshot())
+  test("stoppedNotice", () => expect(tree.stoppedNotice("Review a.ts", "ses_root")).toMatchSnapshot())
   test("cleanupText", () => {
-    expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "removed" })).toMatchSnapshot()
-    expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "gone" })).toMatchSnapshot()
-    expect(notices.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "kept", reason: "1 uncommitted change (a.ts)", changes: ["a.ts"], commits: [] })).toMatchSnapshot()
-    expect(notices.cleanupText({ sessionID: "ses_child", directory: "/repo", outcome: "forgotten" })).toMatchSnapshot()
-    expect(notices.cleanupText({ sessionID: "ses_child", directory: "/repo", outcome: "forgotten", group: "reviews" })).toMatchSnapshot()
+    expect(tree.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "removed" })).toMatchSnapshot()
+    expect(tree.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "gone" })).toMatchSnapshot()
+    expect(tree.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "kept", reason: "1 uncommitted change (a.ts)", changes: ["a.ts"], commits: [] })).toMatchSnapshot()
+    expect(tree.cleanupText({ sessionID: "ses_child", directory: "/repo", outcome: "forgotten" })).toMatchSnapshot()
+    expect(tree.cleanupText({ sessionID: "ses_child", directory: "/repo", outcome: "forgotten", group: "reviews" })).toMatchSnapshot()
   })
   test("keepReason", () => {
-    expect(notices.keepReason({ changes: [], commits: [] })).toBeUndefined()
-    expect(notices.keepReason({ changes: ["a.ts"], commits: [] })).toMatchSnapshot()
-    expect(notices.keepReason({ changes: ["a", "b", "c", "d", "e", "f"], commits: ["abc1234", "def5678"] })).toMatchSnapshot()
+    expect(tree.keepReason({ changes: [], commits: [] })).toBeUndefined()
+    expect(tree.keepReason({ changes: ["a.ts"], commits: [] })).toMatchSnapshot()
+    expect(tree.keepReason({ changes: ["a", "b", "c", "d", "e", "f"], commits: ["abc1234", "def5678"] })).toMatchSnapshot()
   })
   test("answerText", () => {
     const base = { sessionID: "ses_child", requestID: "per_1" }
-    expect(notices.answerText({ ...base, reply: "once" as const, answered: false })).toMatchSnapshot()
-    expect(notices.answerText({ ...base, reply: "always" as const, answered: true })).toMatchSnapshot()
+    expect(person.answerText({ ...base, reply: "once" as const, answered: false })).toMatchSnapshot()
+    expect(person.answerText({ ...base, reply: "always" as const, answered: true })).toMatchSnapshot()
     const question = { sessionID: "ses_child", requestID: "question_1" }
-    expect(notices.answerText({ ...question, answered: false })).toMatchSnapshot()
-    expect(notices.answerText({ ...question, answered: true, by: "result", answers: [["Hi"]] })).toMatchSnapshot()
-    expect(notices.answerText({ ...question, answered: true, by: "message", answers: [["Hi"]] })).toMatchSnapshot()
+    expect(person.answerText({ ...question, answered: false })).toMatchSnapshot()
+    expect(person.answerText({ ...question, answered: true, by: "result", answers: [["Hi"]] })).toMatchSnapshot()
+    expect(person.answerText({ ...question, answered: true, by: "message", answers: [["Hi"]] })).toMatchSnapshot()
   })
   test("laterText", () => {
     const entry = { id: "later_1", sessionID: "ses_parent" }
-    expect(notices.laterText(entry, "2026-10-07T12:00:00.000Z", true)).toMatchSnapshot()
-    expect(notices.laterText(entry, "2026-10-07T12:00:00.000Z", false)).toMatchSnapshot()
+    expect(scheduling.laterText(entry, "2026-10-07T12:00:00.000Z", true)).toMatchSnapshot()
+    expect(scheduling.laterText(entry, "2026-10-07T12:00:00.000Z", false)).toMatchSnapshot()
   })
   test("cancelText", () => {
-    expect(notices.cancelText("later_1", true)).toMatchSnapshot()
-    expect(notices.cancelText("later_1", false)).toMatchSnapshot()
+    expect(scheduling.cancelText("later_1", true)).toMatchSnapshot()
+    expect(scheduling.cancelText("later_1", false)).toMatchSnapshot()
   })
   test("subscribeText", () => {
-    expect(notices.subscribeText("ses_parent", "github:octo/repo#5", true)).toMatchSnapshot()
-    expect(notices.subscribeText("ses_parent", "github:octo/repo#5", false)).toMatchSnapshot()
+    expect(webhook.subscribeText("ses_parent", "github:octo/repo#5", true)).toMatchSnapshot()
+    expect(webhook.subscribeText("ses_parent", "github:octo/repo#5", false)).toMatchSnapshot()
   })
   test("unsubscribeText", () => {
-    expect(notices.unsubscribeText("ses_parent", ["github:octo/repo", "deploys"])).toMatchSnapshot()
-    expect(notices.unsubscribeText("ses_parent", [])).toMatchSnapshot()
+    expect(webhook.unsubscribeText("ses_parent", ["github:octo/repo", "deploys"])).toMatchSnapshot()
+    expect(webhook.unsubscribeText("ses_parent", [])).toMatchSnapshot()
   })
 })
 
 describe("turn failures", () => {
   test("failureNotice", () => {
-    expect(notices.failureNotice("Fix the bug", { type: "provider.auth", message: "blocked", status: 403 })).toMatchSnapshot()
-    expect(notices.failureNotice("Fix the bug", { type: "unknown", message: "boom" })).toMatchSnapshot()
-    expect(notices.failureNotice("Fix the bug", { type: "unknown", message: "boom" }, "reviews")).toMatchSnapshot()
+    expect(tree.failureNotice("Fix the bug", { type: "provider.auth", message: "blocked", status: 403 })).toMatchSnapshot()
+    expect(tree.failureNotice("Fix the bug", { type: "unknown", message: "boom" })).toMatchSnapshot()
+    expect(tree.failureNotice("Fix the bug", { type: "unknown", message: "boom" }, "reviews")).toMatchSnapshot()
   })
   test("silentNotice", () => {
-    expect(notices.silentNotice("Fix the bug", "I looked at src/a.ts; the bug is on line 4.")).toMatchSnapshot()
-    expect(notices.silentNotice("Fix the bug", undefined)).toMatchSnapshot()
-    expect(notices.silentNotice("Fix the bug", "  \n")).toMatchSnapshot()
-    expect(notices.silentNotice("Fix the bug", "Halfway there.", true)).toMatchSnapshot()
-    expect(notices.silentNotice("Fix the bug", "Done, I think.", false, "reviews")).toMatchSnapshot()
-    const long = notices.silentNotice("Fix the bug", "</courier> " + "x".repeat(2100))
+    expect(tree.silentNotice("Fix the bug", "I looked at src/a.ts; the bug is on line 4.")).toMatchSnapshot()
+    expect(tree.silentNotice("Fix the bug", undefined)).toMatchSnapshot()
+    expect(tree.silentNotice("Fix the bug", "  \n")).toMatchSnapshot()
+    expect(tree.silentNotice("Fix the bug", "Halfway there.", true)).toMatchSnapshot()
+    expect(tree.silentNotice("Fix the bug", "Done, I think.", false, "reviews")).toMatchSnapshot()
+    const long = tree.silentNotice("Fix the bug", "</courier> " + "x".repeat(2100))
     expect(long).toContain("&lt;/courier> xxx")
     expect(long).toContain("… [111 more characters]")
   })
@@ -204,9 +218,9 @@ describe("join groups", () => {
       { sessionID: "ses_b", title: "Review b.ts", at: 2, status: "partial" as const, message: "Two of three functions.\nThe third needs the API." },
       { sessionID: "ses_c", title: "Review c.ts", at: 3, status: "failed" as const, message: "Could not read it." },
     ]
-    expect(notices.groupNotice("reviews", reports)).toMatchSnapshot()
+    expect(tree.groupNotice("reviews", reports)).toMatchSnapshot()
     expect(
-      notices.groupNotice("reviews", reports.slice(0, 1), [
+      tree.groupNotice("reviews", reports.slice(0, 1), [
         { sessionID: "ses_d", title: "Review d.ts", by: "failed" },
         { sessionID: "ses_e", title: "Review e.ts", by: "deleted" },
         { sessionID: "ses_f", title: "Review f.ts", by: "interrupted" },
@@ -219,22 +233,22 @@ describe("join groups", () => {
 describe("permission requests", () => {
   const request = { id: "per_1", sessionID: "ses_child", action: "shell", resources: ["git push"] }
 
-  test("REJECTED", () => expect(notices.REJECTED).toMatchSnapshot())
+  test("REJECTED", () => expect(person.REJECTED).toMatchSnapshot())
   test("origin and STAYS_QUIET", () => {
-    expect(notices.origin()).toMatchSnapshot()
-    expect(notices.origin("ses_middle")).toMatchSnapshot()
-    expect(notices.STAYS_QUIET).toMatchSnapshot()
+    expect(person.origin()).toMatchSnapshot()
+    expect(person.origin("ses_middle")).toMatchSnapshot()
+    expect(person.STAYS_QUIET).toMatchSnapshot()
   })
   test("permissionNotice", () => {
-    expect(notices.permissionNotice("Fix the bug", request)).toMatchSnapshot()
-    expect(notices.permissionNotice("Fix the bug", { ...request, save: ["*"], message: "Push the fix" }, "ses_middle")).toMatchSnapshot()
+    expect(person.permissionNotice("Fix the bug", request)).toMatchSnapshot()
+    expect(person.permissionNotice("Fix the bug", { ...request, save: ["*"], message: "Push the fix" }, "ses_middle")).toMatchSnapshot()
     const many = Array.from({ length: 22 }, (_, i) => `file-${i}`)
-    expect(notices.permissionNotice("Fix the bug", { ...request, action: "edit", resources: [...many, "x".repeat(400)], save: ["git push*", "git fetch*"] })).toMatchSnapshot()
-    expect(notices.permissionNotice("Fix the bug", { ...request, resources: [] })).toMatchSnapshot()
+    expect(person.permissionNotice("Fix the bug", { ...request, action: "edit", resources: [...many, "x".repeat(400)], save: ["git push*", "git fetch*"] })).toMatchSnapshot()
+    expect(person.permissionNotice("Fix the bug", { ...request, resources: [] })).toMatchSnapshot()
   })
   test("permissionSettledNotice", () => {
-    expect(notices.permissionSettledNotice("Fix the bug", "per_1", "once")).toMatchSnapshot()
-    expect(notices.permissionSettledNotice("Fix the bug", "per_1", "reject")).toMatchSnapshot()
+    expect(person.permissionSettledNotice("Fix the bug", "per_1", "once")).toMatchSnapshot()
+    expect(person.permissionSettledNotice("Fix the bug", "per_1", "reject")).toMatchSnapshot()
   })
 })
 
@@ -260,11 +274,11 @@ describe("forms", () => {
   }
 
   test("kindOf", () => {
-    expect(notices.kindOf(websearch)).toBe("websearch.provider")
-    expect(notices.kindOf({ ...websearch, metadata: { kind: "bad kind" } })).toBeUndefined()
+    expect(person.kindOf(websearch)).toBe("websearch.provider")
+    expect(person.kindOf({ ...websearch, metadata: { kind: "bad kind" } })).toBeUndefined()
   })
   test("formNotice", () => {
-    expect(notices.formNotice("Fix the bug", websearch)).toMatchSnapshot()
+    expect(person.formNotice("Fix the bug", websearch)).toMatchSnapshot()
     const fields = [
       { key: "login", type: "external", title: "Sign in", url: "https://example.com/login" },
       { key: "name", type: "string" },
@@ -272,11 +286,11 @@ describe("forms", () => {
       { key: "pick", type: "select", options: Array.from({ length: 22 }, (_, i) => ({ value: `${i}`, label: `Option ${i}` })) },
       ...Array.from({ length: 20 }, (_, i) => ({ key: `extra${i}`, type: "boolean" })),
     ]
-    expect(notices.formNotice("Fix the bug", { id: "frm_2", sessionID: "ses_child", title: "Settings", fields }, "ses_middle")).toMatchSnapshot()
+    expect(person.formNotice("Fix the bug", { id: "frm_2", sessionID: "ses_child", title: "Settings", fields }, "ses_middle")).toMatchSnapshot()
   })
   test("formSettledNotice", () => {
-    expect(notices.formSettledNotice("Fix the bug", "frm_1", "answered")).toMatchSnapshot()
-    expect(notices.formSettledNotice("Fix the bug", "frm_1", "cancelled")).toMatchSnapshot()
+    expect(person.formSettledNotice("Fix the bug", "frm_1", "answered")).toMatchSnapshot()
+    expect(person.formSettledNotice("Fix the bug", "frm_1", "cancelled")).toMatchSnapshot()
   })
 })
 
@@ -303,39 +317,39 @@ describe("questions", () => {
   const answers = [["Hi"], ["English", "German"]]
 
   test("answeredText", () => {
-    expect(notices.answeredText(prompts, answers)).toMatchSnapshot()
-    expect(notices.answeredText(prompts, [["Hi"]])).toMatchSnapshot()
+    expect(person.answeredText(prompts, answers)).toMatchSnapshot()
+    expect(person.answeredText(prompts, [["Hi"]])).toMatchSnapshot()
   })
   test("questionNotice", () => {
-    expect(notices.questionNotice(asked)).toMatchSnapshot()
-    expect(notices.questionNotice({ ...asked, startedBy: "ses_middle" }, "stopped")).toMatchSnapshot()
-    expect(notices.questionNotice(asked, "restarted")).toMatchSnapshot()
+    expect(person.questionNotice(asked)).toMatchSnapshot()
+    expect(person.questionNotice({ ...asked, startedBy: "ses_middle" }, "stopped")).toMatchSnapshot()
+    expect(person.questionNotice(asked, "restarted")).toMatchSnapshot()
   })
   test("questionSettledNotice", () => {
-    expect(notices.questionSettledNotice(asked, { by: "child", answers })).toMatchSnapshot()
-    expect(notices.questionSettledNotice(asked, { by: "dismissed" })).toMatchSnapshot()
-    expect(notices.questionSettledNotice(asked, { by: "failed", error: "Error: boom" })).toMatchSnapshot()
+    expect(person.questionSettledNotice(asked, { by: "child", answers })).toMatchSnapshot()
+    expect(person.questionSettledNotice(asked, { by: "dismissed" })).toMatchSnapshot()
+    expect(person.questionSettledNotice(asked, { by: "failed", error: "Error: boom" })).toMatchSnapshot()
   })
-  test("DISMISSED", () => expect(notices.DISMISSED).toMatchSnapshot())
+  test("DISMISSED", () => expect(person.DISMISSED).toMatchSnapshot())
   test("cutOffAnswer", () => {
-    expect(notices.cutOffAnswer(asked, { answers })).toMatchSnapshot()
-    expect(notices.cutOffAnswer(asked, { dismissed: true })).toMatchSnapshot()
+    expect(person.cutOffAnswer(asked, { answers })).toMatchSnapshot()
+    expect(person.cutOffAnswer(asked, { dismissed: true })).toMatchSnapshot()
   })
   test("unlinkedNote", () => {
-    expect(notices.unlinkedNote([asked, { sessionID: "ses_other", requestID: "question_2" }])).toMatchSnapshot()
+    expect(person.unlinkedNote([asked, { sessionID: "ses_other", requestID: "question_2" }])).toMatchSnapshot()
   })
   test("withdrawnText", () => {
-    expect(notices.withdrawnText(asked, { by: "top", outcome: { answers } })).toMatchSnapshot()
-    expect(notices.withdrawnText(asked, { by: "top", outcome: { dismissed: true } })).toMatchSnapshot()
-    expect(notices.withdrawnText(asked, { by: "child", answers })).toMatchSnapshot()
-    expect(notices.withdrawnText(asked, { by: "dismissed" })).toMatchSnapshot()
-    expect(notices.withdrawnText(asked, { by: "failed", error: "Error: boom" })).toMatchSnapshot()
+    expect(person.withdrawnText(asked, { by: "top", outcome: { answers } })).toMatchSnapshot()
+    expect(person.withdrawnText(asked, { by: "top", outcome: { dismissed: true } })).toMatchSnapshot()
+    expect(person.withdrawnText(asked, { by: "child", answers })).toMatchSnapshot()
+    expect(person.withdrawnText(asked, { by: "dismissed" })).toMatchSnapshot()
+    expect(person.withdrawnText(asked, { by: "failed", error: "Error: boom" })).toMatchSnapshot()
   })
   test("passedNote", () => {
-    expect(notices.passedNote(asked, "result")).toMatchSnapshot()
-    expect(notices.passedNote(asked, "message")).toMatchSnapshot()
-    expect(notices.passedNote(asked, undefined)).toMatchSnapshot()
-    expect(notices.passedNote(asked, "error: storage is down")).toMatchSnapshot()
+    expect(person.passedNote(asked, "result")).toMatchSnapshot()
+    expect(person.passedNote(asked, "message")).toMatchSnapshot()
+    expect(person.passedNote(asked, undefined)).toMatchSnapshot()
+    expect(person.passedNote(asked, "error: storage is down")).toMatchSnapshot()
   })
 })
 
@@ -365,14 +379,14 @@ describe("webhook deliveries", () => {
     expect(summary("toString", {})).toMatchSnapshot()
   })
   test("hookSummary", () => {
-    expect(notices.hookSummary("  deployed  ")).toMatchSnapshot()
-    expect(notices.hookSummary("   ")).toMatchSnapshot()
+    expect(webhook.hookSummary("  deployed  ")).toMatchSnapshot()
+    expect(webhook.hookSummary("   ")).toMatchSnapshot()
   })
   test("clipText", () => {
     expect(kernel.clipText("short")).toBe("short")
     expect(kernel.clipText("abcdef", 3)).toMatchSnapshot()
   })
   test("webhookText", () => {
-    expect(notices.webhookText("deployed <courier from=x>")).toMatchSnapshot()
+    expect(webhook.webhookText("deployed <courier from=x>")).toMatchSnapshot()
   })
 })

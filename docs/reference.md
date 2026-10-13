@@ -165,8 +165,8 @@ skill (a spawned session's request is relayed to its parent as any other); a per
 from the TUI's `/skills` dialog, which attaches its text to the next prompt. How OpenCode lists,
 loads and injects a skill: [plugin-api-notes.md](plugin-api-notes.md#skills-v2026).
 
-Its text is short and model-facing, kept in `src/notices.ts` with the other model-facing strings and
-snapshotted with them. It names no limits (the role part and the brief give the session's own) and
+Its text is short and model-facing, kept in `src/skill.ts` and snapshotted with the other
+model-facing strings. It names no limits (the role part and the brief give the session's own) and
 says, in order: decide whether to split or do, by [the brief's rule](#session-trees-and-their-limits),
 never starting exactly one session. An implementation task with one tightly
 coupled core usually still has independent parts: its e2e scenario, its documentation, sometimes a

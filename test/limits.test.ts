@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { DateTime } from "effect"
-import { spawn, type CourierPorts } from "../src/courier.js"
-import { admit, busy, DEFAULT_LIMITS, readLimits, shapeContext, type ContextPorts, type LimitPorts, type SpawnGate } from "../src/limits.js"
-import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, SKILL_ID, SPLIT_LINE, totalRefusal } from "../src/notices.js"
-import { reportOf, prompted, settled } from "../src/report.js"
-import { record } from "../src/roster.js"
+import { spawn } from "../src/tree/spawn.js"
+import { admit } from "../src/tree/limits.js"
+import { shapeContext } from "../src/tree/context.js"
+import { busy, DEFAULT_LIMITS, readLimits } from "../src/tree/domain.js"
+import type { ContextPorts, CourierPorts, LimitPorts, SpawnGate } from "../src/tree/ports.js"
+import { SKILL_ID, SPLIT_LINE } from "../src/kernel/protocol.js"
+import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/tree/text.js"
+import { reportOf, prompted, settled } from "../src/tree/report.js"
+import { record } from "../src/tree/roster.js"
 
 /** Whether a spawned session owes its parent a report, as `reportOf` reads it. */
 const owesReport = async (storage: Parameters<typeof reportOf>[0], sessionID: string) => (await reportOf(storage, sessionID))?.owes

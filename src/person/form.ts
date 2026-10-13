@@ -1,31 +1,8 @@
 import { envelope } from "../kernel/protocol.js"
 import { claim, SEEN_MAX, setBounded } from "../platform/bounded.js"
-import { lineage } from "../roster.js"
-import { topOf, type PersonPorts, type PersonState } from "./ports.js"
+import { lineage } from "../tree/index.js"
+import { topOf, type Form, type PersonPorts, type PersonState } from "./ports.js"
 import { formNotice, formSettledNotice, kindOf } from "./text.js"
-
-/** One field of an OpenCode form, as much of it as a notice shows. */
-export interface FormField {
-  readonly key: string
-  readonly type: string
-  readonly title?: string
-  readonly description?: string
-  readonly options?: ReadonlyArray<{ readonly value: string; readonly label: string; readonly description?: string }>
-  readonly url?: string
-  /** Not shown to the person. */
-  readonly hidden?: boolean
-  /** Conditions on earlier answers; the field is shown only when they hold. */
-  readonly when?: ReadonlyArray<unknown>
-}
-
-/** An OpenCode form, as its `form.created` event carries it. */
-export interface Form {
-  readonly id: string
-  readonly sessionID: string
-  readonly title: string
-  readonly metadata?: Readonly<Record<string, unknown>>
-  readonly fields: ReadonlyArray<FormField>
-}
 
 /** The `metadata.kind` of the forms OpenCode's question tool asks with; the question relay passes those on. */
 export const QUESTION_FORM = "question"

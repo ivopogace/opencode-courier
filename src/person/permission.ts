@@ -1,8 +1,8 @@
 import type { Plugin } from "@opencode/plugin"
-import type { Pending } from "../courier.js"
+import type { Pending } from "../tree/index.js"
 import { describeFailure } from "../kernel/protocol.js"
 import { REJECTED } from "./text.js"
-import { answeringTop, type RosterStorage } from "../roster.js"
+import { answeringTop, type RosterStorage } from "../tree/index.js"
 
 /** The answers to a permission request, as OpenCode's own prompt offers them. */
 export const REPLIES = ["once", "always", "reject"] as const

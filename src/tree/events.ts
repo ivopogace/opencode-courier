@@ -1,45 +1,12 @@
-import type { Plugin } from "@opencode/plugin"
-import { lastReply } from "./courier.js"
+import { envelope } from "../kernel/protocol.js"
+import { claim, SEEN_MAX, setBounded } from "../platform/bounded.js"
+import type { EventModule, HostEvent } from "../platform/events.js"
 import { dropGroups, hasCompleteGroup, markLeft, membershipOf, type Membership } from "./group.js"
-import { envelope } from "./kernel/protocol.js"
-import { failureNotice, silentNotice } from "./notices.js"
-import { claim, SEEN_MAX, setBounded } from "./platform/bounded.js"
-import type { EventModule, HostEvent } from "./platform/events.js"
+import type { ExecutionError, RosterEntry, Waits, WatchPorts, WatchState } from "./ports.js"
 import { awaited, forgetReport, prompted, reportOf, settled, stoppedSincePrompt, told, untold } from "./report.js"
-import { children, entriesOf, entryUnder, indexedEntry, indexedParent, type RosterEntry, type RosterStorage } from "./roster.js"
-
-/** The error of OpenCode's `session.execution.failed` event. */
-export interface ExecutionError {
-  readonly type: string
-  readonly message: string
-  readonly status?: number
-}
-
-type Context = Plugin.Context
-
-export interface WatchPorts {
-  readonly storage: RosterStorage
-  /** `context` reads the last reply of a session that ended its turn without reporting. */
-  readonly session: Pick<Context["session"], "synthetic" | "context">
-  readonly event: Pick<Context["event"], "subscribe">
-  /** The permission domains of every loaded location, which the `Waits` suppliers ask; an isolated child's are in its worktree's. */
-  readonly permissions: () => Iterable<Pick<Context["permission"], "list">>
-  /** The clock, in epoch milliseconds, for an event that carries no `created`. */
-  readonly now: () => number
-  readonly log: (message: string) => void
-  /** Has the scheduler deliver what is due now rather than at its next tick: a group completed, or its parent's turn ended. */
-  readonly nudge: () => void
-}
-
-/**
- * What every plugin instance in the process shares. Several subscriptions and copies see the same
- * events, so each is claimed synchronously and handled once.
- */
-export interface WatchState {
-  readonly seen: Set<string>
-  /** The type of each item enqueued for a spawned session, by inbox id, for its delivery to look up. */
-  readonly inbox: Map<string, string>
-}
+import { children, entriesOf, entryUnder, indexedEntry, indexedParent } from "./roster.js"
+import { lastReply } from "./status.js"
+import { failureNotice, silentNotice } from "./text.js"
 
 /** The part of OpenCode's `session.execution.failed` event the notice is made from. */
 export interface ExecutionFailed {
@@ -188,12 +155,6 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   if (completed) ports.nudge()
   return forgotten
 }
-
-/**
- * Whether a session waits, since `since`, on what the tree does not keep: asked by the silent-turn
- * rule after the tree's own checks, through the watcher's ports; `src/index.ts` composes it.
- */
-export type Waits = (ports: Pick<WatchPorts, "storage" | "permissions">, sessionID: string, since: number) => Promise<boolean>
 
 /** A `Waits` asking `suppliers` one after another, cheapest first: the first that waits answers. */
 export const waitsOn =

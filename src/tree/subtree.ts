@@ -1,6 +1,7 @@
-import { described, type CourierPorts } from "./courier.js"
+import type { CourierPorts, RosterEntry, RosterStorage } from "./ports.js"
 import { lastStatus, reportOf } from "./report.js"
-import { children, type RosterEntry, type RosterStorage } from "./roster.js"
+import { children } from "./roster.js"
+import { described } from "./status.js"
 
 /** A session below the one a subtree is read from, with how many levels below it is: a child is at depth 1. */
 export interface Below {

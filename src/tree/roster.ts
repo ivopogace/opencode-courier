@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs"
 import { dropMember } from "./group.js"
 import { forgetReport, reportKeys } from "./report.js"
-import { scanAll, scanEntries, type Storage } from "./platform/storage.js"
+import { scanAll, scanEntries } from "../platform/storage.js"
+import { lineageIn, type RosterEntry } from "./domain.js"
+import type { RosterStorage } from "./ports.js"
 
 /**
  * Entries older than this are dropped when their parent's roster is read, and on plugin setup,
@@ -16,26 +18,6 @@ const PREFIX = "roster/"
  */
 const BY_CHILD = "roster-by-child/"
 
-/** A session started with courier_spawn, recorded under the session that started it. */
-export interface RosterEntry {
-  readonly sessionID: string
-  readonly parentID: string
-  readonly title: string
-  readonly directory: string
-  readonly isolated: boolean
-  readonly createdAt: number
-  /** For an isolated child, the directory its worktree was made from; for the record, nothing acts on it. */
-  readonly source?: string
-  /** For an isolated child, the project its worktree belongs to; courier_cleanup removes it from there. */
-  readonly project?: string
-  /** For an isolated child, the commit its worktree was made from; its own work is what came after. */
-  readonly base?: string
-  /** `"status"` when its brief asked for a report with a status; absent for a child an earlier release briefed. */
-  readonly reports?: "status"
-  /** The join group courier_spawn put it in, whose release holds its report; absent for a child in none. */
-  readonly group?: string
-}
-
 /**
  * What the reverse index holds for a child: the sessions above it, its parent first and the top
  * session, which courier_spawn did not start, last; each is the parent of the one before it.
@@ -43,8 +25,6 @@ export interface RosterEntry {
 export interface ReverseEntry {
   readonly ancestors: ReadonlyArray<string>
 }
-
-export type RosterStorage = Storage
 
 export function rosterKey(parentID: string, sessionID: string) {
   return `${PREFIX}${parentID}/${sessionID}`
@@ -170,23 +150,6 @@ async function walkIndex(storage: RosterStorage, sessionID: string, first: Rever
     below = top
     indexed = above
   }
-}
-
-/** `lineage` over roster entries already read. */
-export function lineageIn(entries: ReadonlyArray<RosterEntry>, sessionID: string) {
-  return lineageBy(bySession(entries), sessionID)
-}
-
-/** Roster entries by their session, for `lineageBy`. */
-export function bySession(entries: ReadonlyArray<RosterEntry>) {
-  return new Map(entries.map((entry) => [entry.sessionID, entry]))
-}
-
-/** `lineage` over roster entries already read and mapped by `bySession`. */
-export function lineageBy(bySession: ReadonlyMap<string, RosterEntry>, sessionID: string) {
-  const chain: RosterEntry[] = []
-  for (let entry = bySession.get(sessionID); entry && !chain.includes(entry); entry = bySession.get(entry.parentID)) chain.push(entry)
-  return chain
 }
 
 /**

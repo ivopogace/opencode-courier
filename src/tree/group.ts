@@ -1,26 +1,9 @@
-import type { Plugin } from "@opencode/plugin"
-import { isNotFound, millis, num, obj, str } from "./platform/json.js"
-import { envelope, isStatus, type Status } from "./kernel/protocol.js"
-import { groupNotice } from "./notices.js"
-import type { Artifacts } from "./report.js"
-import { scanEntries, type Storage } from "./platform/storage.js"
-
-/** A report held with its group: its status, text and artifacts, as courier_send was given them, and when. */
-export interface HeldReport {
-  readonly at: number
-  readonly status: Status
-  readonly message: string
-  readonly artifacts?: Artifacts
-}
-
-/** A member of a group that left it without a report, and why: its turn failed or was interrupted, it was deleted, or courier_cleanup dropped it. */
-export interface LeftMember {
-  readonly sessionID: string
-  readonly title: string
-  readonly by: "failed" | "interrupted" | "deleted" | "dropped"
-}
-
-type Context = Plugin.Context
+import { isNotFound, millis, num, obj, str } from "../platform/json.js"
+import { envelope, isStatus } from "../kernel/protocol.js"
+import { scanEntries, type Storage } from "../platform/storage.js"
+import { complete, standingOf, type Artifacts, type HeldReport, type LeftMember, type Member } from "./domain.js"
+import type { GroupPorts } from "./ports.js"
+import { groupNotice } from "./text.js"
 
 /**
  * Join groups: each member of a parent's group under `group/<parentID>/<name>/<sessionID>`, with its
@@ -28,40 +11,17 @@ type Context = Plugin.Context
  */
 const PREFIX = "group/"
 
-/** What a group may be called: short, and with no `/`, which separates the parts of its keys, or `"`, which closes an attribute. */
-const NAME = /^[\w.-]{1,60}$/
-
-export const isGroupName = (value: unknown): value is string => typeof value === "string" && NAME.test(value)
-
 export const memberKey = (parentID: string, group: string, sessionID: string) => `${PREFIX}${parentID}/${group}/${sessionID}`
 
 /** The key prefix of a parent's groups, and of one group's members. */
 export const groupsPrefix = (parentID: string) => `${PREFIX}${parentID}/`
 export const groupPrefix = (parentID: string, group: string) => `${groupsPrefix(parentID)}${group}/`
 
-/** A member of a group, as stored: its title for the release notice, and its report or how it left. */
-export interface Member {
-  readonly title: string
-  readonly joinedAt: number
-  readonly report?: HeldReport
-  readonly left?: { readonly at: number; readonly by: LeftMember["by"] }
-}
-
 /** A member with where it is kept. */
 export interface Membership extends Member {
   readonly parentID: string
   readonly group: string
   readonly sessionID: string
-}
-
-/** What is known of a member's standing: its report is held, still out, or it left, or it is no longer in an open group. */
-export type Standing = "held" | "out" | LeftMember["by"] | "released"
-
-/** A member's standing from its stored value, or `released` when there is none. */
-export function standingOf(member: Member | undefined): Standing {
-  if (!member) return "released"
-  if (member.report) return "held"
-  return member.left?.by ?? "out"
 }
 
 function readMember(value: unknown): Member | undefined {
@@ -111,9 +71,6 @@ export async function memberOf(storage: Pick<Storage, "get">, parentID: string, 
 export async function joinGroup(storage: Pick<Storage, "set">, parentID: string, group: string, sessionID: string, title: string, at: number) {
   await storage.set(memberKey(parentID, group, sessionID), stored({ title, joinedAt: at }))
 }
-
-/** Whether every member of a group has a held report or has left: released once the parent's turn has ended. */
-const complete = (members: ReadonlyArray<Member>) => members.every((member) => member.report || member.left)
 
 /** The members of each group among `members`, by the claim key of the group. */
 function byGroup(members: ReadonlyArray<Membership>) {
@@ -203,12 +160,6 @@ export async function unholdReport(storage: Pick<Storage, "remove">, membership:
 export async function dropGroups(storage: Pick<Storage, "scan" | "remove">, parentID: string) {
   const members = await membersUnder(storage, groupsPrefix(parentID))
   await Promise.all(members.map((member) => storage.remove(memberKey(parentID, member.group, member.sessionID))))
-}
-
-export interface GroupPorts {
-  readonly storage: Storage
-  readonly session: Pick<Context["session"], "synthetic" | "get">
-  readonly log: (message: string) => void
 }
 
 /** The claim key of a group's release, in the hub's shared set of deliveries under way. */

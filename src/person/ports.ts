@@ -1,7 +1,11 @@
 import type { Plugin } from "@opencode/plugin"
 import type { FormsTold } from "../platform/hub.js"
-import type { RosterEntry, RosterStorage } from "../roster.js"
+import type { RosterEntry, RosterStorage } from "../tree/index.js"
 import type { Waiting } from "./permission.js"
+
+// What `text.ts` takes of the files that own it, so it reads its module's types from here alone.
+export type { PermissionAnswered, PermissionRequest, Reply } from "./permission.js"
+export type { Asked, Elsewhere, Outcome, Prompt, QuestionAnswered, Withdrawal } from "./question/index.js"
 
 type Context = Plugin.Context
 
@@ -33,3 +37,26 @@ export interface PersonState {
 
 /** The session at the top of a lineage: where its permission requests go, since that is where the person is. */
 export const topOf = (chain: RosterEntry[]) => chain.at(-1)!.parentID
+
+/** One field of an OpenCode form, as much of it as a notice shows. */
+export interface FormField {
+  readonly key: string
+  readonly type: string
+  readonly title?: string
+  readonly description?: string
+  readonly options?: ReadonlyArray<{ readonly value: string; readonly label: string; readonly description?: string }>
+  readonly url?: string
+  /** Not shown to the person. */
+  readonly hidden?: boolean
+  /** Conditions on earlier answers; the field is shown only when they hold. */
+  readonly when?: ReadonlyArray<unknown>
+}
+
+/** An OpenCode form, as its `form.created` event carries it. */
+export interface Form {
+  readonly id: string
+  readonly sessionID: string
+  readonly title: string
+  readonly metadata?: Readonly<Record<string, unknown>>
+  readonly fields: ReadonlyArray<FormField>
+}

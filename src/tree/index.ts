@@ -1,0 +1,23 @@
+// What the rest of the plugin uses of the session tree: its tools, event module, context hook and tick job
+// for `src/index.ts`, and the lineage queries and types `person/` reads.
+export { dirtyOf, headOf, inspectWorktree } from "./cleanup.js"
+export { shapeContext } from "./context.js"
+export { readLimits, lineageIn } from "./domain.js"
+export { together, treeEvents, waitsOn } from "./events.js"
+export { deliverReleased } from "./group.js"
+export type {
+  CleanupPorts,
+  CourierPorts,
+  GroupPorts,
+  Pending,
+  PendingPrompt,
+  RosterEntry,
+  RosterStorage,
+  SpawnGate,
+  Waits,
+  WatchPorts,
+  WatchState,
+} from "./ports.js"
+export { allEntries, answeringTop, lineage, pruneExpired, RETENTION_MS } from "./roster.js"
+export { addTreeTools } from "./tools.js"
+export type { TreeToolPorts } from "./tools.js"

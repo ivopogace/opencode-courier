@@ -209,7 +209,8 @@ Each tool's parameters: [the reference](docs/reference.md#the-tools).
   `courier_cleanup`, and the group is released without it. [More](docs/reference.md#join-groups).
 - **A child that fails, or ends its turn without reporting, is reported** to its parent by the
   plugin, with the error or its last reply, waking it if idle; one that waits on a request, its own
-  children, a scheduled message or a webhook is not. [More](docs/reference.md#a-child-that-fails).
+  children, a scheduled message or a webhook is not, nor is one that answers what you typed in its
+  session. [More](docs/reference.md#a-child-that-fails).
 - **Permission requests and questions reach you.** A child's request or question is passed to the
   session at the top of its tree, any number of levels down; that session asks you and passes your
   answer back, or links its own question to the child's so your pick goes straight to it. Whichever

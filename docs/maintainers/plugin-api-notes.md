@@ -78,7 +78,8 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.28`); paths be
   seconds to see whether a shutdown or its instance's unload follows.
 - `GET /api/plugin?directory=<worktree>` does not boot that worktree's location; a session run from
   the directory does. A session whose location's directory no longer exists answers 404 with
-  `LocationNotFoundError`. The server's health route is `/api/info` (version, pid, urls).
+  `LocationNotFoundError`, on routes the courier does not call; the webhook's test for a session OpenCode
+  no longer knows (an error tag with `NotFound`) would match it too. The server's health route is `/api/info` (version, pid, urls).
 
 ## Permission requests
 

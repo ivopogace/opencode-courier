@@ -8,7 +8,7 @@ const root = resolve(import.meta.dir, "..")
 const markdownUnder = (dir: string): string[] =>
   readdirSync(join(root, dir), { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name)
-    if (entry.isDirectory()) return markdownUnder(path)
+    if (entry.isDirectory()) return ["node_modules", "worktrees"].includes(entry.name) ? [] : markdownUnder(path)
     return entry.name.endsWith(".md") ? [path] : []
   })
 

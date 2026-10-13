@@ -42,7 +42,7 @@ describe("the @opencode/plugin pin", () => {
   })
 
   // The host provides the TUI part's packages: devDependencies at its catalog's versions, never
-  // peers, which broke `opencode plugin add` in the spike for #130 (docs/maintainers/plugin-api-notes.md).
+  // peers, which broke `opencode plugin add` (docs/maintainers/plugin-api-notes.md, § TUI and RPC entrypoints).
   test("adds no peer for the TUI part, whose packages are exact devDependencies only, beside effect", () => {
     expect(Object.keys(manifest.peerDependencies)).toEqual(["@opencode/plugin", "effect"])
     for (const name of ["@opentui/core", "@opentui/solid", "solid-js", "@opencode/theme"])

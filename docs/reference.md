@@ -17,7 +17,7 @@ Nothing in OpenCode checks the version: `opencode plugin add` installs the plugi
 and the loader warns about nothing. The plugin loads on hosts from 2.0.4 on, and fails to load on
 2.0.0 to 2.0.3, which lack a domain the plugin API gained in 2.0.4. On a newer host, tools may still
 break. The terminal part relies on the host to provide its UI modules and is tested on OpenCode
-2.0.28 only; the server part works as before on older V2 hosts.
+2.0.28 only; the server part works as before on older V2 hosts, that is from 2.0.4 on.
 
 When the running OpenCode reports a version other than the pinned one, the plugin writes one line
 to the server log (`opencode serve --print-logs` shows it) when it loads:
@@ -323,7 +323,8 @@ its parent, and that a message without a status is progress, not its report. `co
 the status as an attribute of the envelope the parent reads, `<courier from="<child>"
 status="done">`, and in the delivered message's metadata (`status`), so the receiving model, and
 [join groups](#join-groups), can branch on it without parsing prose. A status that is none of the
-four is refused ([why](maintainers/plugin-api-notes.md#tools)); `null` counts as none.
+four is refused, since OpenCode does not check a tool's schema
+([plugin-api-notes.md](maintainers/plugin-api-notes.md#tools)); `null` counts as none.
 
 With the status, a report may list `artifacts`: `branch`, a string, `commits` and `files`, lists of
 strings, and `checks`, a list of `{ command, result }`. They go in the message body after the text,

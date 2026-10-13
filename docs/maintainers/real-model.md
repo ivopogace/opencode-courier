@@ -54,10 +54,11 @@ The default. The parent is asked:
 > reports the number it printed. Start them with courier_spawn and do not run the commands
 > yourself. When both have reported back, reply with one line: RESULTS \<first\> \<second\>
 
-The sleeps stand in for real work, so each report finds the parent idle, 20 seconds apart. Eight
+The sleeps stand in for real work, so each report finds the parent idle, 20 seconds apart: without
+them the reports were steered into the parent's still-open first turn, and the wake was never tested. Eight
 checks: the parent spawned two children; it ended its first turn after spawning, with no reports in
 it; it did not poll (any `courier_status`, `courier_children` or `sleep` right after spawning, or more
-than one in a later turn); both children called `courier_send` to the parent; both reports woke it
+than one in a later turn; a single look after being woken is only noted); both children called `courier_send` to the parent; both reports woke it
 (each arrived after its first turn and got a reply); each report carries a status; each holds its
 child's answer; and the final reply holds both. A `courier_later` check-in is not a report.
 
@@ -71,10 +72,6 @@ reports*; the checker takes the group's message as the report of each member it 
 | `longcat-2.5-preview-free` | 2.0.28 | 8/8 in 9 model requests: a `split: 2 parts: …` line, both children in one join group it named itself, one woken turn, every report `done`, `RESULTS 391 1024`. |
 | `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 8/8 in 11 requests; both children recorded with the parent as `parent_id` and an empty ruleset. |
 | `longcat-2.5-preview-free`, two `isolate: true` helpers that each commit a file | 2.0.26 | Pass: both created `courier/<their session ID>`, committed on it and named it in their report. |
-| `nemotron-3-ultra-free` | 2.0.24, earlier wording | Ended its first turn in four runs of five; in the fifth a 44-second provider step let the first report land in the open turn. |
-| `muse-spark-1.3-contributor-free` | 2.0.24, earlier wording | Passed every run that was not rate limited. |
-| `mimo-v2.6-flash-free` | 2.0.24, earlier wording | Sends `delayMinutes` as a string, which `courier_later` takes. |
-| `big-pickle` | 2.0.24, earlier wording | Right as a parent; rate limits stopped its woken turn and one child before `courier_send`. |
 
 ## The permission relay
 
@@ -102,9 +99,8 @@ OpenCode's prompt in the parent's view would, and fails a parent that asks with 
 | Model | OpenCode | Result |
 |---|---|---|
 | `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 6/6: told with the `shown="native"` notice, the parent wrote one line (*The helper session is waiting on your permission to run the shell command.*) and ended its turn; after the person allowed it, it was told `answered="once"` and replied `RESULT courier-permission-42`. |
-| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` before native children got their own notice | 2.0.28 | 6/6, on the notice every other child gets: asked the person with a question form offering `once`, `always` and `reject`, and passed `once` on with `courier_answer`. |
+| `longcat-2.5-preview-free`, `COURIER_NATIVE=1`, run before native children got their own notice, so on the notice every other child gets | 2.0.28 | 6/6: asked the person with a question form offering `once`, `always` and `reject`, and passed `once` on with `courier_answer`. |
 | `longcat-2.5-preview-free` | 2.0.26 | Pass, with the status on `courier_send` and again with the skill listed. |
-| `longcat-2.5-preview-free`, `COURIER_PERSON=other-server` | 2.0.24, earlier wording | Pass: told the person the sentence `courier_answer`'s result gives it to pass on. |
 
 ## The question relay
 
@@ -123,7 +119,8 @@ answer by itself; it asked with the child's options; it passed the answer on (a 
 `courier_answer` or `courier_send`); the child got it and reported it; the final reply holds it. Its
 notes say how the child asked and how the answer went on. With `COURIER_NATIVE=1` the script answers
 the child's form, as the TUI's view of the parent does, and fails a parent that asks with its question
-tool.
+tool. The person answers in the parent's session or the child's form, never through the TUI's asks
+inbox, so the inbox's settled-notice wording is checked by the unit and live suites only.
 
 | Model | OpenCode | Result |
 |---|---|---|
@@ -159,9 +156,6 @@ scheduled a check-in or had a spawn refused, and each report's status.
 | Model | OpenCode | Result |
 |---|---|---|
 | `longcat-2.5-preview-free` | 2.0.26 | 8/9: every file right and all four reports `done` through two groups; only the root's last turn was lost to a refused request. Two more runs were refused by Zen's free quota (`provider.quota`) after the root had loaded the skill and split into a group. |
-| `longcat-2.5-preview-free` | 2.0.26, before rule 1 started the remaining parts only when 2 or more remain | 9/9, twice, in 26 and 24 requests: the root loaded the skill, the "numbers" session split into a group of its own, every report `done`. |
-| `nemotron-3-ultra-free` | 2.0.26, earlier wording | 6/9: the right tree and every file, but the root did not end its turn (it scheduled, cancelled and polled until the reports were steered in), and the "numbers" session reported `done` twice, before its halves had. |
-| `muse-spark-1.3-contributor-free` | 2.0.26, earlier wording | Inconclusive: rate limited on its first request. |
 
 ## Caveats
 
@@ -169,5 +163,9 @@ This is a smoke test, not a benchmark: a handful of runs per model, on free mode
 limited and change without notice, and Zen publishes no versions beyond the names. A model that passes
 here can still poll or forget to report on a harder task, so the `courier_later` safety net in [Using
 it](../../README.md#using-it) still applies. Which session loads the skill varies from run to run;
-on one-result tasks such as the fan-out and the relays, models do not load it. A row marked *earlier
-wording* predates a model-facing change since; re-run it before relying on it.
+on one-result tasks such as the fan-out and the relays, models do not load it. The tables hold runs
+on the current wording only. Not re-run on it: `COURIER_PERSON=other-server` and the models other than
+`longcat-2.5-preview-free`; their earlier results are in this file's history. Once, in the recursive
+scenario, a "numbers" session started without a group had its second half's report land in its inbox
+with no turn opened for it, and the server log held nothing for that minute; it never reported upward.
+Nothing in the plugin decides whether OpenCode opens a turn for a delivered message.

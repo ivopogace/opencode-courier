@@ -52,7 +52,7 @@ const REPORT_KEYS: Readonly<Record<ReportField, (sessionID: string) => string>> 
 
 /**
  * Join groups: each member of a parent's group under `group/<parentID>/<name>/<sessionID>`, with its
- * held report or how it left; released and dropped once none is out. docs/reference.md, § Join groups.
+ * held report or how it left; released and dropped once none is out. docs/maintainers/architecture.md, § Storage.
  */
 const GROUP_PREFIX = "group/"
 

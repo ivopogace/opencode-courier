@@ -502,8 +502,8 @@ root `package.json`'s catalog pins `@opentui/core` and `@opentui/solid` `0.5.17`
 
 **How they are found.** `Host.resolve` (`packages/plugin/src/host.ts`, lines 17-44) looks up three
 module specifiers per plugin and returns a file URL for each it resolves, `undefined` for the rest:
-`server` is the package itself (then `<name>/server`), `tui` is `<name>/tui` and `rpc` is
-`<name>/rpc`, each through `resolveModule(specifier, directory)`, which is `Bun.resolveSync`
+`server` is `<name>/server` when the package exports it, else the package itself, `tui` is
+`<name>/tui` and `rpc` is `<name>/rpc`, each through `resolveModule(specifier, directory)`, which is `Bun.resolveSync`
 (`packages/util/src/runtime/import.bun.ts`, lines 7-10). For a package that is Node's export
 resolution, so `package.json` needs `exports["./tui"]` and `exports["./rpc"]`. For a configured local
 directory the specifiers are `path.resolve(directory, "tui")` and `"rpc"`, and Bun's extension
@@ -522,7 +522,8 @@ with `src/tui.tsx` built to `dist/tui.js` (its types in point 5) and `src/rpc.ts
 `files` stays `["dist"]`.
 
 **What the server does with them.** `PluginModule.load` (`packages/core/src/plugin/module.ts`) resolves
-the three at load (lines 112-115) and records `features: { tui: true, rpc: true }` from their presence
+the three at load (lines 112-115; a local plugin configured by a file path rather than a directory gets
+`server` only, so the `dist/` directory is what a local configuration names) and records `features: { tui: true, rpc: true }` from their presence
 (137-140); it imports and runs only `server`. The features show in `GET /api/plugin` (`Plugin.Info`,
 `packages/schema/src/plugin.ts`, lines 23-27 and 37-42), the inventory of a booted location
 (`packages/core/src/plugin.ts`, lines 42-44; before a session has run in the project the list is
@@ -603,7 +604,7 @@ events }`; error names starting with `rpc.` are reserved. The promise API's
 client's `client.rpc(definition)` (`@opencode/client/dist/promise/rpc.d.ts`, `RpcApi`) are typed over a
 `PortableDefinition`: Standard Schema or JSON Schema values. The Effect API's `register`
 (`effect/rpc.ts`) takes Effect schemas, which is what `@opencode/plugin-browser` does
-(`packages/plugin-browser/src/rpc.ts`, lines 548-569, registered in its `tools.ts`). The spike's
+(`packages/plugin-browser/src/rpc.ts`, lines 548-569, registered in its `connection.ts`, line 77). The spike's
 `src/tree/rpc.ts` uses the host's `effect` and `Schema.toStandardSchemaV1(Schema.Struct(…))`, so one
 definition serves the promise half and the TUI:
 
@@ -642,8 +643,12 @@ POST /api/rpc/courier/nothing  →  {"type":"rpc.method_not_found", …}
 
 **The TUI side.** The TUI context's `client` is the TUI's own `OpenCodeClient`
 (`packages/tui/src/plugin/api.tsx`, line 159), so `ctx.client.rpc(treeRpc).children({ sessionID },
-{ location: ctx.location })` is the whole call; the spike puts it in a Solid `createResource` keyed by
-the footer slot's `sessionID`. The TUI's plugin context (`packages/plugin/src/tui/context.ts`, lines
+{ location })` is the whole call. `ctx.location` is `LocationRef | undefined` (`context.ts`, line 546):
+without a location the request goes to the server's default location, where the courier's handler may
+not be registered, so the spike falls back to `ctx.data.location.default()`. It puts the call in a Solid
+`createResource` keyed by the footer slot's `sessionID`, which is optional too (`PromptFooterInput`,
+`context.ts`, line 160): the prompt's footer, slot included, is on the home screen as well
+(`packages/tui/src/component/prompt/index.tsx`, line 1877), so the entry renders nothing there. The TUI's plugin context (`packages/plugin/src/tui/context.ts`, lines
 544-560) also has `data`, `ui`, `keymap`, `storage`, `attention` and `theme`, as #130 lists.
 
 **The handler's ports and the layout.** The handler takes `CourierPorts` and calls `listChildren`
@@ -657,8 +662,10 @@ as the tool. In the spike:
   that gets an RPC (`person/rpc-handlers.ts` for the answer path).
 - `src/rpc.ts` and `src/tui.tsx`: the two entrypoints, next to `index.ts` and `skill.ts`, taking a
   module's contract from `<module>/rpc.ts` directly, so the TUI bundle carries the contract and nothing
-  else of the module. Two import rules in `test/imports.test.ts` are widened for them: `effect` may be
-  imported by a `*/rpc.ts`, and `rpc` and `tui` are top-level files reaching `<module>/rpc`.
+  else of the module. Three tests in `test/imports.test.ts` change for them: `effect` may be imported by a
+  `*/rpc.ts`, `rpc` joins `index` and `skill` as a top-level file, and the two entrypoints may reach
+  `<module>/rpc` directly; and its scanner reads `.tsx` files too, which it did not, so `src/tui.tsx`
+  is under the rules at all.
 - The unit tests' fake plugin context gains an `rpc.register` stub.
 
 Each location's plugin instance registers the same id in its own location's `Rpc.Service`, and a TUI
@@ -685,8 +692,12 @@ courier child made with a location (`e2e/spike-tui.sh`, step 5).
 - **Affinity** (`packages/core/src/session/affinity.ts`, lines 7-8): `parentID ?? fork?.sessionID ?? id`
   goes out as `x-session-affinity`, `X-Session-Id`, `x-opencode-session` and the `promptCacheKey`
   (`session/model-request.ts`, lines 278-295): a native child's model requests carry its parent's id
-  for the provider's cache routing, where a courier child today carries its own. Headers and a cache
-  key only; this is what needs the real-model rerun #130 asks for.
+  for the provider's cache routing, where a courier child today carries its own. OpenCode's GitHub
+  Copilot provider goes further (`packages/core/src/plugin/provider/github-copilot.ts`, lines 286-289 and
+  512-517): a session with a `parentID` sends `X-Interaction-Type: conversation-subagent` and
+  `x-initiator: agent` instead of `conversation-agent`, which Copilot meters differently from a
+  person's own requests. Headers and a cache key, but provider-visible; this is what needs the
+  real-model rerun #130 asks for, on Copilot in particular.
 - **The two parent headers** (`model-request.ts`, lines 284 and 287): `x-opencode-parent-session-id`
   and `x-parent-session-id`, sent only with a `parentID`; informational.
 - **Warming** (`packages/core/src/plugin/warming.ts`, lines 58-61): the context hook returns before
@@ -735,7 +746,8 @@ courier child made with a location (`e2e/spike-tui.sh`, step 5).
   running descendants in the footer ("1 subagent", `feature-plugins/prompt/footer.tsx`, lines 20-26),
   sends no desktop notification for a child and plays `subagent_done` for it
   (`feature-plugins/system/notifications.ts`, lines 11-17 and 41), and `opencode run` streams a native
-  child's steps under its parent (`mini/stream-v2.subagent.ts`, lines 5-7, 593 and 1052).
+  child's steps under its parent (`packages/tui/src/mini/stream-v2.subagent.ts`, lines 5-7, 593 and
+  1052).
 - **The app's request dock** (`packages/app/src/session/requests/session-request-tree.ts`, lines 20-50;
   `model.ts`, lines 30-37, 39-41 and 71-79): `sessionTreeIDs` walks the `parentID` edges down from the
   open session, syncs every descendant's forms and shows the first pending permission, question or form
@@ -755,7 +767,8 @@ courier's own. The risks, each to be covered in the reference and the live suite
 
 1. Deleting a parent deletes its native children (the courier's `forgetDeleted` already cleans the
    roster; the reference and `courier_cleanup` must say so).
-2. The affinity and the two parent headers change what providers see: a real-model rerun.
+2. The affinity, the two parent headers and Copilot's `conversation-subagent` interaction type
+   change what providers see and may meter: a real-model rerun, on Copilot too.
 3. A native child inherits its parent's session-level permission ruleset when one is set.
 4. Native children leave the session lists; a child's own view answers none of its asks, the root's does.
 5. A tree with isolation shows as several trees in OpenCode's UIs, split at each isolated child; the
@@ -821,11 +834,12 @@ with `apt-get` first.
   tree (it has focus and fullscreen, `ui.panel.open`), `ui.dialog.select` with `actions` for the inbox,
   `attention.notify` with `question` and `permission` sounds, `keymap.layer` commands with `slash` for
   `/courier …`. The slot map and inputs are in `packages/plugin/src/tui/context.ts`, lines 191-203.
-- **Where the code goes.** `src/tui.tsx` is a second composition root, next to `index.ts`: it imports
-  each module's contract (`<module>/rpc.ts`) and its TUI adapter (`tree/tui.tsx`, `person/tui.tsx`), which
-  import only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, the module's `rpc.ts` and `text.ts`;
-  nothing of the server half, so the bundle stays small. The server adapters are `<module>/rpc-handlers.ts`,
-  registered from `index.ts`. The import test learns the two entrypoints and the `rpc.ts` files.
+- **Where the code goes**, in short; the rules themselves go into `docs/research/layout.md` and
+  `test/imports.test.ts` with Phase 1, which this note does not restate afterwards. `src/tui.tsx` is a
+  second composition root, next to `index.ts`: it imports each module's contract (`<module>/rpc.ts`)
+  and its TUI adapter (`tree/tui.tsx`, `person/tui.tsx`), which import only `@opencode/plugin/tui`,
+  `solid-js`, `@opentui/*`, the module's `rpc.ts` and `text.ts`; nothing of the server half, so the
+  bundle stays small. The server adapters are `<module>/rpc-handlers.ts`, registered from `index.ts`.
 - **What the inbox answers through.** Permissions and forms through the TUI's `data.session.permission`
   and `data.session.form.reply`, which OpenCode settles itself; questions and the "settle the parent's
   relayed notice" rule through a `person` RPC that calls what `courier_answer` calls, so the root's

@@ -478,7 +478,9 @@ below are at that tag), and checked on a real OpenCode 2.0.28, server and TUI, w
 branch [`spike-130-tui`](https://github.com/ivopogace/opencode-courier/tree/spike-130-tui): a minimal
 `tui` entrypoint (one `prompt.footer.status` entry), a minimal `rpc` definition with one server
 handler, the build for them, a unit test of the TUI part, and `e2e/spike-tui.sh`, the live script
-whose output is quoted here. Nothing of it is in the shipped plugin.
+whose output is quoted here. The entrypoints, the build, the RPC and the footer entry it proved ship
+since [#143](https://github.com/ivopogace/opencode-courier/issues/143) (`docs/reference.md`, *In the
+terminal*); the spike's own code, and its native-`parentID` checks, stay on the branch.
 
 #130 was written against `v2.0.26`. Of the files it cites and this note reads, these changed between
 `v2.0.26` and `v2.0.28`, none in what is cited: `packages/core/src/plugin/host.ts` (`credential.activate`

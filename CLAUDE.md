@@ -20,6 +20,12 @@ the import rules and the reasons for them.
   that imports more than one module's `index.ts`; nothing imports it.
 - `skill.ts`: the `courier-orchestrate` skill and its text, registered through the skill domain; it
   imports only `kernel/`.
+- `tui.tsx`: the package's `tui` entrypoint, a second composition root, adding each module's TUI part
+  (`addTreeStatus`); it imports only `@opencode/plugin/tui` and the modules' `tui.tsx` and `rpc.ts`.
+  Bundled alone to `dist/tui.js` by `script/build-tui.ts` (OpenTUI's Solid transform, every package
+  external, as the host provides them); `tsconfig.build.json` leaves the `tui.tsx` files out and
+  `tsconfig.tui.json` writes `dist/tui.d.ts`. `rpc.ts`: the `rpc` entrypoint, the modules' RPC
+  contracts (`treeRpc`). Neither is imported by the server half.
 - `kernel/protocol.ts`: what the models see of the protocol in every module: `envelope`, `END_TURN`,
   `clipText`, `defuse`, `describeFailure`, `Status`, `SPLIT_LINE` and `SKILL_ID`. It imports only
   `kernel/**` and `platform/json.ts`. `kernel/tool.ts`: `ToolEditor` and `rethrow` for the `tools.ts`
@@ -52,6 +58,11 @@ the import rules and the reasons for them.
   with them and their delivery from the scheduler's tick (`deliverReleased`); `roster.ts` the
   retention of each parent's children (`current`, `pruneExpired`) and the lineage queries `person/`
   reads (`lineage`, `allEntries`, `answeringTop`). Inbound: `tools.ts` the seven tree tools (`addTreeTools`);
+  `rpc.ts` the tree's RPC contract (`treeRpc`, Standard Schema from `effect`'s `Schema`), which imports only
+  `@opencode/plugin/rpc` and `effect`, and `rpc-handlers.ts` its server side (`registerTreeRpc`, called
+  from `src/index.ts` after the tools), whose `summary` is `summary.ts`'s, read through the subtree walk,
+  `busy`, the pending port and `groupStanding`; `tui.tsx` the TUI part, the prompt footer's status entry
+  (`addTreeStatus`), which imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, `rpc.ts` and `text.ts`;
   `events.ts` `treeEvents`, which tells a parent that a child's turn failed or ended without a report,
   with `waitsOn` and `together` to compose the `Waits` port the silent-turn rule asks, supplied by
   `person/`, `scheduling/` and `webhook/`; `context.ts` the `context` hook naming each spawned
@@ -105,7 +116,8 @@ the import rules and the reasons for them.
 
 `test/imports.test.ts` checks these import rules, `tree/store.ts`'s privacy and that no other file
 names its key prefixes; `test/store.test.ts` pins the exact keys and values the stores write.
-`test/notices.test.ts` snapshots every `text.ts`,
+`test/tui.test.tsx` renders the TUI part against a fake TUI context with OpenTUI's `testRender`
+(`bunfig.toml` preloads its Solid transform). `test/notices.test.ts` snapshots every `text.ts`,
 imported each by its path (the import test fails on one it misses), the skill and the twelve tools'
 descriptions and schemas, so a wording change shows up as a diff in `test/__snapshots__/`; update it
 with `bun test --update-snapshots`.
@@ -118,6 +130,8 @@ process-wide state between them, `fixtures/events.ts` has the fake ports and eve
 scripted OpenAI-compatible stand-in model, with `search-plugin` as a stand-in web search provider,
 `probe-plugin` logging the events each location's instance receives, and `kv.ts` to read, remove or
 set the plugin's storage keys in OpenCode's database. New behaviour gets a scenario there.
+`tui.sh`, in CI after `run.sh`: the TUI part live, the TUI in `tmux` (CI installs it with `apt-get`),
+its footer entry and the RPC behind it, from `dist/` and from the package `opencode plugin add` installs.
 `two-servers.sh`, not in CI: two servers on one data directory; its findings are in
 `docs/plugin-api-notes.md`. `real-model.sh` (with `real-model.mjs`, `real-model-permission.mjs`,
 `real-model-question.mjs` and `real-model-recursive.mjs` for `COURIER_SCENARIO=permission`, `question`
@@ -126,8 +140,8 @@ after any change to `src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` o
 (in a `src/**/tools.ts`), which is every model-facing string; `docs/real-model.md`
 describes it and its results.
 
-`.github/workflows/ci.yml`: both suites on every push to `main` and every pull request, and the
-live suite once more on the `latest` OpenCode release, allowed to fail. Its `sonar` job scans
+`.github/workflows/ci.yml`: both suites on every push to `main` and every pull request (the live one is
+`run.sh` then `tui.sh`), and the live suite once more on the `latest` OpenCode release, allowed to fail. Its `sonar` job scans
 `src/` on SonarCloud with the unit coverage and fails when the quality gate does: no new bug,
 vulnerability or unreviewed hotspot, and at least 80% coverage on new code. `release-start.yml`,
 `release-tag.yml` and `release.yml`: the release flow, `docs/releasing.md`.
@@ -138,10 +152,11 @@ vulnerability or unreviewed hotspot, and at least 80% coverage on new code. `rel
 bun install
 bun run typecheck
 bun test
-bun run build
+bun run build      # dist/: tsc for the server half and rpc, script/build-tui.ts for tui
 # live test: install the CLI once, at the version of the pinned plugin API
 npm install --prefix <scratch>/oc @opencode/cli@2.0.28
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # ~2 min, no API key
+OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TUI part, needs tmux
 ```
 
 ## Rules
@@ -155,7 +170,10 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # ~2 min
   with each release tagged (`v2.0.28`). A pin bump adds a row to README.md's Supported OpenCode
   version table, moves the version README names elsewhere (Quickstart, OpenCode V2 native, the
   install command; a unit test checks them), and adds a section to `docs/plugin-api-notes.md` on
-  what changed.
+  what changed. It also reads OpenCode's root `package.json` catalog at the new tag for `@opentui/*`
+  and `solid-js`, and moves the devDependencies `@opentui/core`, `@opentui/solid`, `solid-js` and
+  `@opencode/theme` to its versions; they are never peers (the host provides them to the TUI part,
+  and a peer broke `opencode plugin add`; a unit test checks).
 - Every tool is registered with `options: { codemode: false }`, returns metadata without
   `undefined` values, and rethrows failures through `describeFailure`.
 - Behaviour changes come with unit tests and an e2e scenario, and update README.md and

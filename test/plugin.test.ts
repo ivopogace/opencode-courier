@@ -44,10 +44,12 @@ async function setUp(
   app: { name: string; version: string; channel: string } = pinned,
   // Storage scans outside the scheduler's messages wait for it, as a slow storage's would.
   hold: Promise<unknown> = Promise.resolve(),
+  overrides: Record<string, unknown> = {},
 ) {
   const store = new Map(Object.entries(stored))
   const tools = new Map<string, any>()
   const skills = new Map<string, any>()
+  const rpcs = new Map<string, { definition: any; handlers: any }>()
   const hooks = new Map<string, (event: any) => Promise<void> | void>()
   const calls: { method: string; input: any }[] = []
   const record = (method: string, result: unknown) => async (input: any) => {
@@ -112,10 +114,16 @@ async function setUp(
         return { dispose: async () => {} }
       },
     },
+    rpc: {
+      register: async (definition: any, handlers: any) => {
+        rpcs.set(definition.id, { definition, handlers })
+        return { dispose: async () => {}, events: { emit: async () => {} } }
+      },
+    },
   }
-  const cleanup = await courier().setup(ctx as any)
+  const cleanup = await courier().setup({ ...ctx, ...overrides } as any)
   if (cleanup) cleanups.push(cleanup)
-  return { tools, skills, hooks, calls, store, emit: events.emit, location: ctx.location, cleanup, subscriptions: () => events.counted.subscriptions }
+  return { tools, skills, rpcs, hooks, calls, store, emit: events.emit, location: ctx.location, cleanup, subscriptions: () => events.counted.subscriptions }
 }
 
 test("OpenCode loads an Effect plugin, which runs the promise one and wraps the question tool", () => {
@@ -200,6 +208,27 @@ test("registers the courier tools", async () => {
     "courier_subscribe",
     "courier_unsubscribe",
   ])
+})
+
+test("registers the courier RPC for the TUI part, its summary read from this location's storage", async () => {
+  const { rpcs } = await setUp()
+
+  expect([...rpcs.keys()]).toEqual(["courier"])
+  expect(await rpcs.get("courier")!.handlers.summary({ sessionID: "ses_none" })).toEqual({ running: 0, waiting: 0, idle: 0, groups: [] })
+})
+
+test("loads all the same when the host cannot register the RPC, and logs it", async () => {
+  const logged: string[] = []
+  const error = spyOn(console, "error").mockImplementation((message: unknown) => void logged.push(String(message)))
+  try {
+    const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { rpc: undefined })
+
+    expect(tools.size).toBe(12)
+    expect(hooks.has("context")).toBe(true)
+    expect(logged.filter((line) => line.startsWith("courier rpc: not registered"))).toHaveLength(1)
+  } finally {
+    error.mockRestore()
+  }
 })
 
 test("registers the courier-orchestrate skill, with a description so it is listed, and the playbook as its text", async () => {

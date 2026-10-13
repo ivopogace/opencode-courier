@@ -11,7 +11,9 @@
     "declaration": true,
     "outDir": "dist",
     "rootDir": ".",
-    "types": ["bun"]
+    "types": ["bun"],
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid"
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "script"]
 }

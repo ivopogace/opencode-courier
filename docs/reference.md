@@ -663,6 +663,60 @@ A stopped session is not forgotten: it stays on the roster and in `courier_tree`
 A session of the subtree that a running turn of its own starts between the first look and the
 last cannot be stopped.
 
+## In the terminal
+
+The package has three entrypoints: the server plugin (`.`, `dist/index.js`), a TUI part (`./tui`,
+`dist/tui.js`) and its RPC contract (`./rpc`, `dist/rpc.js`). The server finds the other two next to
+the first and reports `features: { server: true, tui: true, rpc: true }` in `GET /api/plugin`; it runs
+only the server plugin, and the TUI loads `tui` for a plugin with that feature (`docs/plugin-api-notes.md`,
+*TUI and RPC entrypoints*). The TUI part is a view: courier without a TUI attached, as under `opencode
+serve`, `opencode service` or the paired app, behaves the same, and no model sees anything of it.
+
+**The status entry.** In the prompt's footer (`prompt.footer.status`), for the open session:
+
+```
+courier 2 running · 1 waiting on you · 1 idle · group pair 1/2
+```
+
+It counts the sessions under the open session, those it started with `courier_spawn` and those they
+started, at most `maxTotal` as `courier_tree` reads them (past that, `first <maxTotal> counted`), each
+by what it does:
+
+- `waiting on you`: it waits on a permission request or a question, those `courier_status` lists as
+  `pending`, which go to the person at the top of its tree;
+- `running`: its turn runs, or something reached it after its last turn ended, and it waits on no
+  request;
+- `idle`: neither, whether it has reported or waits for a message.
+
+A session OpenCode no longer knows is not counted. Then, for each join group of the open session's own
+children still open, `group <name> <reported>/<members>`: the members whose report is held out of
+those that have not left (a group of a grandchild's is its parent's to wait on, and not shown). A part
+that is zero is left out; the entry shows nothing on the home screen, where there is no session, for a
+session that started none, and when the RPC fails, as on a server without it. It asks again 250 ms
+after the first of the events that may change it (a session created or deleted, a turn started or
+ended, a permission request asked or answered, a form created or settled, a message delivered), once
+per burst, at the open session's own location (where the plugin is loaded), else the TUI's, else the
+server's default one. A server that cannot register the RPC logs `courier rpc: not registered` and
+loads the rest as before.
+
+**The RPC.** `courier.summary`, registered by every instance at its location as the tools are, through
+the same use cases as `courier_tree` and `courier_children` (the roster, the sessions' times, their
+pending requests, the groups' standing); the roster is one store for every location. Over HTTP:
+
+```
+POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_…"}}
+{"output":{"running":0,"waiting":1,"idle":1,"groups":[{"name":"pair","reported":1,"members":2}]}}
+```
+
+with `truncated: <maxTotal>` when the subtree was cut. An input without a `sessionID` is refused as
+`rpc.invalid_input`. The contract is `treeRpc` from `opencode-courier/rpc`, for a client's
+`client.rpc(treeRpc)`.
+
+**The build.** `dist/tui.js` is bundled by `script/build-tui.ts` with OpenTUI's Solid transform and
+every package left external: the host provides `@opencode/plugin/tui`, `solid-js`, `@opentui/*` and
+`effect` to a TUI part, so the package declares none of them for it. `e2e/tui.sh` checks it live, in
+`tmux`.
+
 ## Worktree cleanup
 
 An isolated child works in a git worktree under OpenCode's data directory

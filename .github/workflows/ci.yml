@@ -73,7 +73,7 @@ jobs:
     # newest release and may fail.
     name: Live test against OpenCode V2
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -93,6 +93,14 @@ jobs:
         env:
           E2E_WORK: ${{ runner.temp }}/e2e
           KEEP: "1"
+      # The runner image lists no tmux, which the TUI's live test runs the TUI in.
+      - name: Install tmux
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq tmux
+      - name: Run the live test of the TUI part
+        run: OPENCODE_BIN="$(command -v opencode)" e2e/tui.sh
+        env:
+          E2E_WORK: ${{ runner.temp }}/e2e-tui
+          KEEP: "1"
       - name: Upload server and model logs
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -101,6 +109,10 @@ jobs:
           path: |
             ${{ runner.temp }}/e2e/*.log
             ${{ runner.temp }}/e2e/*.out
+            ${{ runner.temp }}/e2e-tui/*.log
+            ${{ runner.temp }}/e2e-tui/*.out
+            ${{ runner.temp }}/e2e-tui/*.err
+            ${{ runner.temp }}/e2e-tui/*.txt
           if-no-files-found: ignore
 
   e2e-latest:
@@ -111,7 +123,7 @@ jobs:
     # artifact.
     name: Live test against OpenCode V2 latest (may fail)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -152,6 +164,13 @@ jobs:
         env:
           E2E_WORK: ${{ runner.temp }}/e2e
           KEEP: "1"
+      - name: Install tmux
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq tmux
+      - name: Run the live test of the TUI part
+        run: OPENCODE_BIN="$(command -v opencode)" e2e/tui.sh
+        env:
+          E2E_WORK: ${{ runner.temp }}/e2e-tui
+          KEEP: "1"
       - name: Report the outcome
         if: always()
         env:
@@ -171,4 +190,8 @@ jobs:
           path: |
             ${{ runner.temp }}/e2e/*.log
             ${{ runner.temp }}/e2e/*.out
+            ${{ runner.temp }}/e2e-tui/*.log
+            ${{ runner.temp }}/e2e-tui/*.out
+            ${{ runner.temp }}/e2e-tui/*.err
+            ${{ runner.temp }}/e2e-tui/*.txt
           if-no-files-found: ignore

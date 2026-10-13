@@ -345,6 +345,23 @@ or areas, decide whether to split it, and say which in one line of its reply (`s
 considered: <the parts you weighed>` or `split: 3 parts: …`); once it has started a session, that
 line becomes a `root orchestrator` part with the limits. The details: [the reference](docs/reference.md#session-trees-and-their-limits).
 
+## In the terminal
+
+The package ships a part for OpenCode's terminal UI next to the server plugin; installed with
+`opencode plugin add`, the TUI loads it from the server's plugin list, and the server half behaves
+the same whether or not a TUI is attached. In a session that started sessions with `courier_spawn`,
+the prompt's footer shows what the tree under it is doing:
+
+```
+courier 2 running · 1 waiting on you · group pair 1/2
+```
+
+How many sessions under it run, wait on a permission request or a question (which go to you), or
+are idle, and for each [join group](docs/reference.md#join-groups) the session opened, how many of its
+members have reported out of those that have not left. Nothing shows on the home screen or in a
+session that started none. The TUI reads it through the plugin's RPC, `courier.summary`, and asks
+again after each change ([reference](docs/reference.md#in-the-terminal)).
+
 ## Webhooks
 
 The receiver is off unless the plugin has a `webhook` option. Put it in the **global** config
@@ -413,6 +430,7 @@ bun test           # unit tests, with a fake plugin context
 npm run typecheck
 npm run build      # emits dist/
 OPENCODE_BIN=$(which opencode) npm run test:e2e   # live test, about two minutes, no API key
+OPENCODE_BIN=$(which opencode) e2e/tui.sh         # live test of the TUI part, in tmux
 OPENCODE_BIN=$(which opencode) e2e/real-model.sh  # smoke test with a real model, not in CI
 ```
 
@@ -420,6 +438,9 @@ The live test (`e2e/run.sh`) starts a real OpenCode V2 server in a throwaway pro
 directory, with this plugin loaded and a scripted OpenAI-compatible stand-in model, and walks every
 tool through the behaviour above. It needs node, npm, bun, git, curl, jq and openssl. New behaviour
 gets a scenario there.
+`e2e/tui.sh` runs the [terminal part](#in-the-terminal) the same way, with the TUI in `tmux`, and
+checks its footer entry and the RPC behind it, from `dist/` and from the package `opencode plugin add`
+installs.
 
 The smoke test (`e2e/real-model.sh`) runs the same server with a real model (by default a free one
 on [OpenCode Zen](https://opencode.ai/zen), no key needed) and checks that the parent spawns instead

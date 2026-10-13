@@ -35,14 +35,23 @@ export async function holdReport(groups: GroupStore, membership: Membership, rep
   await groups.put(parentID, group, sessionID, { title, joinedAt, report })
 }
 
+/** How many of these members of a group have reported and how many have not left, and whether the group is complete. */
+const tally = (members: ReadonlyArray<Member>) => ({
+  reported: members.filter((member) => member.report).length,
+  members: members.filter((member) => !member.left).length,
+  complete: complete(members),
+})
+
 /** How many members of a group have reported and how many have not left, and whether the group is complete. */
 export async function groupStanding(groups: GroupStore, parentID: string, group: string) {
-  const members = await groups.ofGroup(parentID, group)
-  return {
-    reported: members.filter((member) => member.report).length,
-    members: members.filter((member) => !member.left).length,
-    complete: complete(members),
-  }
+  return tally(await groups.ofGroup(parentID, group))
+}
+
+/** `groupStanding` of each open group of a parent, by name, from one read of its members. */
+export async function groupStandings(groups: Pick<GroupStore, "ofParent">, parentID: string) {
+  const byName = new Map<string, Membership[]>()
+  for (const member of await groups.ofParent(parentID)) byName.set(member.group, [...(byName.get(member.group) ?? []), member])
+  return [...byName].map(([name, members]) => ({ name, ...tally(members) }))
 }
 
 /** A session's membership of a parent's group, if it is a member; `out` says whether the group still waits for its report. */

@@ -4,5 +4,6 @@
     "rootDir": "src",
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/tui.tsx", "src/*/tui.tsx"]
 }

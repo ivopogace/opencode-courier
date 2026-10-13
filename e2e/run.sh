@@ -949,17 +949,29 @@ api_prompt "$parent" "COURIER-ANSWER once"
 check "courier_answer passed the answer on, the command ran, and the child reported back" "$(has_text "$parent" "CHILD DONE shell" 45)"
 check "nobody else answered it" "$(notices_with "$parent" answered | jq -r 'length == 0')"
 
-echo "nativeChildren: a question of a native grandchild goes to the session at the top"
+# The owner's decision on #146: a native child's question is answered once, in OpenCode's own form,
+# which the TUI shows in the top session's view; the top session is told, and its question tool is not linked.
+echo "nativeChildren: a native grandchild's question is answered in OpenCode's own form, and the top session is only told"
 parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
 api_prompt "$parent" "COURIER-QUESTION nested"
 middle=$(spawned_by "$parent" 45)
-parent_form=$(form_of "$parent" "" 60)
-check "the parent at the top asks the person" "$([ -n "$parent_form" ] && echo true || echo false)"
-leaf=$(spawned_by "$middle" 30)
-check "the grandchild is a native child of the child, which is one of the top" \
-  "$([ "$(session_info "$leaf" | jq -r '.parentID')" = "$middle" ] && [ "$(session_info "$middle" | jq -r '.parentID')" = "$parent" ] && echo true || echo false)"
-check "the person answers in the top session" "$(answer_form "$parent" "$parent_form" '"Hey"')"
+leaf=$(spawned_by "$middle" 45)
+leaf_form=$(form_of "$leaf" "" 60)
+check "the grandchild is a native child of the child, which is one of the top, and shows its question" \
+  "$([ -n "$leaf_form" ] && [ "$(session_info "$leaf" | jq -r '.parentID')" = "$middle" ] && [ "$(session_info "$middle" | jq -r '.parentID')" = "$parent" ] && echo true || echo false)"
+check "the top session was told once, as a question OpenCode shows the person" \
+  "$(has_text "$parent" "PARENT TOLD NATIVE QUESTION" 45 >/dev/null; notices_with "$parent" asks | jq -r 'length == 1 and (.[0] | contains("shown=\"native\"") and contains("Do not ask them yourself"))')"
+check "and asks the person nothing itself" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
+check "the person answers the grandchild's form, as the TUI's view of the top session does" "$(answer_form "$leaf" "$leaf_form" '"Hey"')"
 check "the grandchild got it and reported to the child" "$(has_text "$middle" 'CHILD GOT [["Hey"]]' 45)"
+check "the top session was told once that it is settled, and asked nothing" \
+  "$(has_text "$parent" "PARENT SETTLED" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"elsewhere\""))')" = true ] &&
+    [ "$(notices_with "$parent" asks | jq length)" = 1 ] && [ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
+
+echo "nativeChildren: an isolated child's question is still linked to the top session's"
+ask_question "COURIER-QUESTION isolate"
+check "the person answers in the parent's session" "$(answer_form "$parent" "$parent_form" '"Hi"')"
+check "the child got it and reported back" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
 
 echo "nativeChildren: deleting a parent deletes its native children, and their report state goes"
 check "the child's roster entry and report state are there" \

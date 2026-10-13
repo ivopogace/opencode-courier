@@ -452,7 +452,10 @@ ask in text; the wording as shipped says not to ask in the reply either and to t
 line at most, and the parent then wrote one line, *The helper session's question is waiting for you
 to answer — which greeting would you like to use: Hello, Hi, or Hey?*, and ended its turn. The
 person's `Hi` reached the child 9 s before its report, the parent was told the question was settled
-(`answered="elsewhere"`) and replied `GREETING Hi`.
+(`answered="elsewhere"`) and replied `GREETING Hi`. Run again on the settled notice's final wording (*answered by the person*,
+which also covers an answer from the asks inbox), it passed 6 of 6 once more, the parent writing *The
+helper session is waiting for your answer to its question about which greeting you'd like to use.*
+and nothing else.
 
 The permission scenario got the same treatment after the decision that a native child's permission
 request is answered in OpenCode's own prompt, with the top session told not to ask

@@ -436,10 +436,10 @@ describe("the tree panel", () => {
     fake.emit("session.tool.called")
     await settle()
     // A burst is asked once, a second after its first event, as each ask reads every row's messages.
-    expect(fake.calls.length).toBe(asked)
+    expect(fake.calls).toHaveLength(asked)
     await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS - SETTLE_MS))
     await app.waitForFrame((frame) => frame.includes("2/2 reported"))
-    expect(fake.calls.length).toBe(asked + 1)
+    expect(fake.calls).toHaveLength(asked + 1)
     expect(app.captureCharFrame()).toContain("CHILD-ASKS  idle · reported done · group pair held")
   })
 

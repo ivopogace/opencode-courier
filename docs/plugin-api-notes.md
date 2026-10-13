@@ -24,7 +24,9 @@ pin moved, and what was found out about OpenCode's behaviour on the way. For con
   checks and transformations from the plugin's copy do not survive that: `Schema.Finite` refuses
   the number `2` ("Expected a finite number"), and `Schema.FiniteFromString` fails with "Cannot
   convert a symbol to a number". Tool inputs use plain schemas and the tools validate the values
-  themselves; a unit test keeps it that way.
+  themselves; a unit test keeps it that way. That was seen while the plugin ran on its own copy;
+  from 2.0.25 on it runs on OpenCode's ([From `2.0.26` to `2.0.28`](#from-2026-to-2028)), but
+  hosts before that still load it.
 - `Schema.Number` advertises the strings `"Infinity"`, `"-Infinity"` and `"NaN"` in its JSON
   Schema, so models are offered a string where a number is meant. Some send numbers as strings
   regardless, so `courier_later` takes `delayMinutes` as either.
@@ -67,8 +69,9 @@ pin moved, and what was found out about OpenCode's behaviour on the way. For con
   from `@opencode/plugin/promise/adapter`, which is what OpenCode does with a promise plugin,
   then wraps the question tool with the Effect API, where the original `execute` is an Effect
   that can be raced and interrupted. The plugin's `effect` is the same version as OpenCode's
-  (`4.0.0-rc.112` at the pinned version), and Effects of the two copies compose. A plugin loaded
-  after this one that replaces `question` as well would drop the relay.
+  (`4.0.1` at the pinned version), and Effects of the two copies compose; since 2.0.25 a plugin
+  runs on OpenCode's copy anyway ([From `2.0.26` to `2.0.28`](#from-2026-to-2028)). A plugin
+  loaded after this one that replaces `question` as well would drop the relay.
 - The promise adapter builds the promise plugin's context with the very `location` object the
   Effect half is handed. The question relay, in the Effect half, relies on that to find its
   instance's ports in the hub: were a later adapter to copy the object, the relay would find no
@@ -175,13 +178,69 @@ the pin moved, and passed it again after):
 - `@opencode/plugin` gained a `runtime` export (`dist/runtime.js`, `runtime-modules.js`): under
   Bun, it registers a loader that makes a plugin's imports of `@opencode/plugin` and `effect`
   resolve to OpenCode's own copies, and the Bun source scanner skips those packages once it has.
-  Nothing in the package or in the loader calls it at 2.0.26, so a plugin still runs on the copy
-  installed next to it, as [below](#the-peer-dependency-is-a-statement-not-a-check); once OpenCode
-  does call it, the host's copies take over, which the question relay (whose Effects must compose
-  with the host's) is built for either way. A pin bump should re-check which it is.
+  This note first said nothing called it at 2.0.26; the CLI does, from 2.0.25 on, and a plugin runs
+  on OpenCode's copies: see [From `2.0.26` to `2.0.28`](#from-2026-to-2028).
 - OpenCode's plugin loader (`packages/core/src/plugin/module.ts`) now consults the managed policy
   before loading a plugin, and refuses one an organisation's policy denies (`integration.use` on
   `plugin:<name>`); the load reports `blocked`. An administrator's setting, not the plugin's.
+
+## From `2.0.26` to `2.0.28`
+
+2.0.27 came out on 2026-10-12 and 2.0.28 on 2026-10-13; the pin skips 2.0.27. Read from
+`@opencode/plugin@2.0.26`, `@2.0.27` and `@2.0.28` as published, from OpenCode's source at the three
+tags, and checked by the live suite on 2.0.28 and by a probe on all three hosts. The code needed no
+change; one unit test did (the schema snapshots, below).
+
+2.0.27:
+
+- `@opencode/plugin` moves `effect` from `4.0.0-rc.112` to the stable `4.0.1`, and so does
+  OpenCode itself (the root `package.json`'s catalog), so the courier's `effect` moves with it. The
+  only code change in the package is in `dist/promise/adapter.js`, which imports
+  `effect/http-api` instead of `effect/unstable/httpapi`; the courier imports neither.
+- Effect 4.0.1 renders a `Schema.Struct` as an open object by default, `additionalProperties: true`
+  ([Effect-TS/effect#8147](https://github.com/Effect-TS/effect/pull/8147)), and drops the
+  per-schema `parseOptions` annotation ([#8131](https://github.com/Effect-TS/effect/pull/8131)):
+  a closed object is asked for per call, with `{ onExcessProperty: "error" }`. OpenCode does so for
+  every tool (`Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })` in
+  `packages/core/src/tool/runtime.ts`, line 175, at both tags), so models are still sent
+  `additionalProperties: false`, as at 2.0.26. `test/notices.test.ts` renders the tool schemas the
+  same way, and its snapshots did not move.
+- An undeclared key in a tool's input never reaches the courier, as before: OpenCode's own
+  `tool-input-repair` plugin (`packages/core/src/plugin/tool-input-repair.ts`, the same at the
+  three tags) deletes, on `execute.before`, each key a closed schema does not declare, and the
+  decode ignores it too. OpenCode removes keys from a tool's input and never adds one. A renamed
+  optional key would therefore have to stay declared under its old name for as long as it is
+  accepted.
+
+2.0.28:
+
+- `@opencode/plugin` adds `credential.activate` to both plugin contexts (`Pick<CredentialApi,
+  "activate">`, anomalyco/opencode#52797), which the courier does not use; `@opencode/schema`
+  and `@opencode/protocol` change only around models and providers, which it does not read
+  either.
+- The promise adapter runs a promise tool's `execute` with `Effect.tryPromise` instead of
+  `Effect.promise` (anomalyco/opencode#54913): a throw becomes a `Tool.Error` carrying the message
+  and the thrown value, instead of a defect, and a permission decline or dismissed question a tool
+  rethrows is recognised inside it. The courier's tools throw their refusals and failures through
+  `describeFailure`. What the model gets did not change: `courier_status` for an unknown session
+  gives it `{"type":"unknown","message":"courier_status failed: Session.NotFoundError ses_missing"}`
+  as the tool's error, and the turn goes on, on 2.0.26, 2.0.27 and 2.0.28 alike.
+
+The `runtime` loader, re-checked: OpenCode's CLI calls it, and has since 2.0.25. Its entrypoint,
+`packages/cli/src/index.ts`, imports `ensurePluginRuntime` from `@opencode/plugin/runtime` (line 3)
+and calls it before anything else (line 21), at `v2.0.26`, `v2.0.27` and `v2.0.28` alike; it came in
+with "fix(cli): give plugins the host's Effect" (anomalyco/opencode#53422, first released in
+2.0.25), which also makes the compiled binary list the host's `effect` and `@opencode/plugin`
+modules at build time (`packages/cli/script/build.ts`). Under it, every import of `effect`, a public
+`effect/*` path or `@opencode/plugin*` from a plugin or its dependencies resolves to OpenCode's own
+copy (`build.module` in `packages/plugin/src/runtime.ts`), and loading a file of either package from
+a plugin's `node_modules` fails with an error naming it. A live probe confirmed it on all three
+hosts: a plugin whose own `node_modules/effect` sets a marker when it runs, and that has no
+`@opencode/plugin` installed at all, loaded with the marker never set and
+`@opencode/plugin/promise/adapter` imported. So on 2.0.25 and later the courier runs on OpenCode's
+`effect` and plugin API, whatever is installed next to it: its `effect` dependency and the peer copy
+serve the build, the unit tests and hosts before 2.0.25. The question relay's Effects and the host's
+are one copy there, and the live suite, the question relay's scenarios included, passes on 2.0.28.
 
 ## The peer dependency is a statement, not a check
 
@@ -207,12 +266,15 @@ home directory, with the plugin served from the live suite's stand-in registry:
 
 So a mismatched host installs and loads the plugin without a word, and what breaks does so on use.
 The plugin's own load-time log line ([the reference](reference.md#the-opencode-version)) is the
-only runtime signal. The peer dependency does do one thing: it picks the copy of the plugin API
-that `plugin add` installs next to the plugin, and that the plugin then runs on, on every host.
-With an exact version that copy is the one the plugin was built and tested with; with a range such
-as `^2.0.22` it would be the newest version on npm that satisfies it, a copy nothing has run the
-suite with. That is why the peer dependency stays exact, the same version as the devDependency,
-and why the README's table keeps one version per row.
+only runtime signal. The peer dependency picks the copy of the plugin API that `plugin add`
+installs next to the plugin. On the six hosts above, all before 2.0.25, that is the copy the plugin
+runs on; from 2.0.25 on it is installed but not run, as the CLI resolves a plugin's imports of
+`@opencode/plugin` and `effect` to its own copies ([From `2.0.26` to `2.0.28`](#from-2026-to-2028)),
+and the pin says which OpenCode the plugin was tested on, which the live suite on that version
+checks. Either way the peer stays exact, the same version as the devDependency: on an older host a
+range such as `^2.0.22` would install the newest version on npm that satisfies it, a copy nothing
+has run the suite with, and on a newer one the pin names exactly one tested version. The README's
+table keeps one version per row for the same reason.
 
 ## Update checks skip a plugin pinned to an exact version
 
@@ -302,7 +364,7 @@ requests.
 `e2e/two-servers.sh` measures what that does, at the pinned version:
 
 ```bash
-npm install --prefix <scratch>/oc @opencode/cli@2.0.26
+npm install --prefix <scratch>/oc @opencode/cli@2.0.28
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh   # a few minutes, no API key; KEEP=1 keeps the logs
 ```
 

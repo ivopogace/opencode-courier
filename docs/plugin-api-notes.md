@@ -104,8 +104,8 @@ Names:
   The sub-packages are renamed the same way (`@opencode/client`, `@opencode/schema`,
   `@opencode/protocol`, `@opencode/ai`, `@opencode/util`).
 - `@opencode/plugin@2.0.22` depends on `effect@4.0.0-rc.112`, the same version as the beta, so the
-  courier's own `effect` dependency stays there (the two copies must compose, see the question
-  relay above).
+  courier's own `effect` dependency (a peer since #141) stays there (the two copies must compose,
+  see the question relay above).
 
 What the new types forced in the code:
 
@@ -238,7 +238,7 @@ a plugin's `node_modules` fails with an error naming it. A live probe confirmed 
 hosts: a plugin whose own `node_modules/effect` sets a marker when it runs, and that has no
 `@opencode/plugin` installed at all, loaded with the marker never set and
 `@opencode/plugin/promise/adapter` imported. So on 2.0.25 and later the courier runs on OpenCode's
-`effect` and plugin API, whatever is installed next to it: its `effect` dependency and the peer copy
+`effect` and plugin API, whatever is installed next to it: its `effect` and `@opencode/plugin` peers
 serve the build, the unit tests and hosts before 2.0.25. The question relay's Effects and the host's
 are one copy there, and the live suite, the question relay's scenarios included, passes on 2.0.28.
 
@@ -275,6 +275,13 @@ checks. Either way the peer stays exact, the same version as the devDependency: 
 range such as `^2.0.22` would install the newest version on npm that satisfies it, a copy nothing
 has run the suite with, and on a newer one the pin names exactly one tested version. The README's
 table keeps one version per row for the same reason.
+
+The `effect` peer states that the host supplies `effect`: from 2.0.25 on, OpenCode resolves the
+plugin's imports to its own copy, and the installed one serves the build, the tests and hosts
+before that. It is exact and equal to the `effect` the pinned `@opencode/plugin` depends on, so the
+courier names no `effect` version of its own that could drift from it; a unit test keeps both. The
+exact peer can make an `npm install` fail with ERESOLVE in a project that already uses another
+`effect`; `opencode plugin add` installs into an empty directory, so it never meets that.
 
 ## Update checks skip a plugin pinned to an exact version
 

@@ -14,10 +14,8 @@ const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
 type Listener = (event: { type: string; data?: unknown; details: { type: string } }) => void
 
 /**
- * A fake TUI context whose RPC answers `answer` for each session's summary and `tree` for its tree; the calls, the slots
- * claimed, the keymap layers, the event listeners, the toasts, the notifications, the dialogs shown, the panels opened
- * and the commands dispatched are kept. Its route and panel are signals, and a route to another session closes the
- * panel, as the host's do.
+ * A fake TUI context whose RPC answers `answer` for each session's summary and `tree` for its tree, keeping what it is
+ * asked and shown; its route and panel are signals, and a route to another session closes the panel, as the host's do.
  */
 function fakeContext(
   answer: (sessionID: string) => Promise<Summary>,

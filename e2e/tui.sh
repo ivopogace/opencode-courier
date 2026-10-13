@@ -170,17 +170,25 @@ result=$(summary_until "$parent" 60 "$idle")
 echo "  $result"
 check "the summary follows: both children idle, the group released" "$([ "$result" = "$idle" ] && echo true || echo false)"
 check "the panel follows the report: 2 of 2 parts reported" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-reported)"
-# enter opens the selected child; the panel follows it there, with the parent's tree and the child marked (#158).
-tmux send-keys -t "$TMUX_SESSION" Enter
-check "enter on a child row keeps the panel in the child's view, the child marked" "$(shows "(on screen)" 30 tui-panel-followed)"
-check "with the parent's tree" "$(grep -qF "courier tree  [██████████] 2/2 reported" "$WORK/tui-panel-followed.txt" && echo true || echo false)"
-# q closes the panel, which has the keyboard while it is open; back on the parent, the footer is whole again.
+# q closes the panel, which has the keyboard while it is open; the footer is whole again.
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes the panel" "$(hides "courier tree" 10 tui-panel-closed)"
-open_tui tui "$parent"
 check "the footer follows it" "$(shows "courier 2 idle" 30 tui-released)"
 echo "  $(footer tui-released)"
 check "and the group is gone from it" "$([[ $(footer tui-released) != *"group pair"* ]] && echo true || echo false)"
+# Reopened, enter opens the selected child; the panel follows it there, with the parent's tree and the child marked (#158).
+tmux send-keys -t "$TMUX_SESSION" "/courier tree"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "the panel opens again" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-again)"
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "enter on a child row keeps the panel in the child's view, the child marked" "$(shows "(on screen)" 30 tui-panel-followed)"
+check "with the parent's tree" "$(grep -qF "courier tree  [██████████] 2/2 reported" "$WORK/tui-panel-followed.txt" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" q
+check "q closes it there" "$(hides "courier tree" 10 tui-panel-followed-closed)"
+# /courier stop stops as the open session, so back to the parent.
+open_tui tui "$parent"
+check "the TUI is back on the parent" "$(shows "courier 2 idle" 60 tui-parent-again)"
 echo "/courier stop stops a child after a confirm, through courier_stop's path"
 refused=$(rpc stop "{\"sessionID\":\"$asking\",\"by\":\"$asking\"}")
 echo "  $refused"
@@ -269,7 +277,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-followed tui-panel-closed tui-released tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

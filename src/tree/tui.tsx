@@ -396,10 +396,8 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
 export const USAGE = "/courier tree opens the session tree; /courier stop [session] stops a session and those under it"
 
 /**
- * Adds the tree panel to the `session.panel` slot, opened by `/courier tree` or the command palette, and `/courier
- * stop <session>`, which stops a session under the open one after the person confirms. The host's panel belongs to one
- * session, so while it is open the panel follows the person to the next one: with the same tree inside it, else that
- * session's own tree, or closed when it started none.
+ * Adds the tree panel to the `session.panel` slot, opened by `/courier tree` or the palette, which follows the person
+ * between sessions while open, and `/courier stop <session>`, which stops a session under the open one once confirmed.
  */
 export function addTreePanel(ctx: Context) {
   const { courier, location } = courierOf(ctx)

@@ -1,4 +1,4 @@
-import { leave, markLeft, membershipOf } from "./group.js"
+import { leave, markLeft, membershipFor } from "./group.js"
 import type { CleanupPorts, GroupStore, Membership, ReportKeys, RosterEntry, RosterStorage, WatchPorts } from "./ports.js"
 import { childStore, groupStore } from "./store.js"
 
@@ -37,7 +37,7 @@ export async function forgetChild(storage: RosterStorage, parentID: string, sess
  */
 export async function forgetDropped(ports: Pick<CleanupPorts, "storage" | "now" | "nudge">, entry: RosterEntry) {
   const groups = groupStore(ports.storage)
-  const member = entry.group ? await membershipOf(groups, entry.parentID, entry.group, entry.sessionID) : undefined
+  const member = await membershipFor(groups, entry)
   if (member?.out && (await markLeft(groups, member, "dropped", ports.now()))) ports.nudge()
   await forgetChild(ports.storage, entry.parentID, entry.sessionID)
   return member?.out ? member.group : undefined

@@ -104,8 +104,8 @@ Names:
   The sub-packages are renamed the same way (`@opencode/client`, `@opencode/schema`,
   `@opencode/protocol`, `@opencode/ai`, `@opencode/util`).
 - `@opencode/plugin@2.0.22` depends on `effect@4.0.0-rc.112`, the same version as the beta, so the
-  courier's own `effect` dependency stays there (the two copies must compose, see the question
-  relay above).
+  courier's own `effect` dependency (a peer since #141) stays there (the two copies must compose,
+  see the question relay above).
 
 What the new types forced in the code:
 
@@ -279,7 +279,9 @@ table keeps one version per row for the same reason.
 The `effect` peer states that the host supplies `effect`: from 2.0.25 on, OpenCode resolves the
 plugin's imports to its own copy, and the installed one serves the build, the tests and hosts
 before that. It is exact and equal to the `effect` the pinned `@opencode/plugin` depends on, so the
-courier names no `effect` version of its own that could drift from it; a unit test keeps both.
+courier names no `effect` version of its own that could drift from it; a unit test keeps both. The
+exact peer can make an `npm install` fail with ERESOLVE in a project that already uses another
+`effect`; `opencode plugin add` installs into an empty directory, so it never meets that.
 
 ## Update checks skip a plugin pinned to an exact version
 

@@ -908,7 +908,8 @@ notified once per TUI.
 
 **The build.** `dist/tui.js` is bundled by `script/build-tui.ts` with OpenTUI's Solid transform and
 every package left external: the host provides `@opencode/plugin/tui`, `solid-js`, `@opentui/*` and
-`effect` to a TUI part, so the package declares none of them for it. `e2e/tui.sh` checks it live, in
+`effect` to a TUI part, so the package declares none of them for it (the `effect` peer is the server
+half's). `e2e/tui.sh` checks it live, in
 `tmux`: the footer entry, the panel opened with `/courier tree` on two children with its bar moving
 from 1/2 to 2/2 when the second reports, `q` closing it, and `/courier stop` with its confirm.
 

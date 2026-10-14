@@ -119,10 +119,8 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
 }
 
 /**
- * Drops the report state, and the groups, of a session OpenCode deleted, and the report state of the sessions it
- * started, whose reports can no longer be delivered; it leaves its own group. Its roster entry goes too, unless it
- * is isolated (courier_cleanup needs it) or has children on the roster (their lineage runs through it).
- * Returns the sessions forgotten.
+ * Forgets what a deleted session leaves (report state, groups) and, unless isolated or a parent on the roster, its
+ * entry. Returns the sessions forgotten.
  */
 export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const { sessionID } = event.data

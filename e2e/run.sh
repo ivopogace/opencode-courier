@@ -228,7 +228,7 @@ status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASS
 # named groups, to try one while changing it. The weight is the seconds a group took in CI, which the
 # shards balance; update it when a group changes much. `restart-question` and `roster` restart the
 # server, and share a shard. `epilogue` runs last in every shard and in every run.
-SUITE="reports:188 permission:34 depth:9 answer:38 search:10 questions:142 restart-question:14 probe:36 skill:2 later:43 roster:39 webhook:17 cleanup:13 subtree:9 nest:27 inbox:37 native:49 plugin-add:15"
+SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 roster:36 webhook:10 cleanup:4 subtree:2 nest:6 inbox:37 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -426,6 +426,9 @@ run_reports() {
   check "the child answered the person in its own session" "$([ -n "$(reply_time "$child" "CHILD ANSWERS PERSON")" ] && echo true || echo false)"
   check "and its parent was not told it ended without a report" "$(turn_ended "$child"; notices_with "$parent" ended | jq -r 'length == 0')"
 
+}
+
+run_reports_groups() {
   scenario "a join group: the parent is woken once, with both reports in one message"
   out=$(prompt "COURIER-GROUP")
   turn_ended=$(now_ms)
@@ -748,6 +751,9 @@ run_questions() {
   check "and no longer shown" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
   check "the child carried on with the answer" "$(has_text "$parent" 'CHILD GOT [["Hey"]]' 45)"
 
+}
+
+run_questions_more() {
   scenario "the person dismisses the question in the child's session"
   ask_question COURIER-QUESTION
   check "dismissed in the child's session" "$([ "$(dismiss_form "$child" "$child_form")" = 204 ] && echo true || echo false)"

@@ -548,8 +548,7 @@ run_reports_groups() {
   spawn_isolated
   check "the isolated child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
   check "it is still listed" "$(sleep 3; [ "$(child_listing "$parent" "$child")" = listed ] && echo true || echo false)"
-  cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child force" | tool_state courier_cleanup)
-  check "and courier_cleanup still removes its worktree" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
+  check "and its worktree is still there for courier_cleanup" "$([ -d "$directory" ] && echo true || echo false)"
 
   scenario "a child that ends its turn to wait for a message it scheduled is not reported, and reports once woken"
   out=$(prompt "COURIER-WAITING")

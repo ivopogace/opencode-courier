@@ -261,7 +261,7 @@ are idle, and for each [join group](docs/reference.md#join-groups) how many of i
 reported:
 
 ```
-courier 2 running · 1 waiting on you · group pair 1/2
+courier 1 waiting on you · 2 running · group pair 1/2
 ```
 
 `/courier tree` opens a panel beside the session with the tree under it, a row per session indented

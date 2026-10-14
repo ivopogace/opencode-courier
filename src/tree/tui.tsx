@@ -49,15 +49,26 @@ export const PANEL = "courier-tree"
 /** How often the panel redraws its running times and how long ago each last tool call was. */
 export const TICK_MS = 1000
 
-/** The status entry's text, such as "courier 2 running · 1 waiting on you · group pair 1/2"; empty when there is nothing to show. */
-export function summaryLine(summary: Summary) {
+/**
+ * The status entry's text, such as "courier 1 waiting on you · 2 running · group pair 1/2"; empty when there is nothing to show.
+ * Within `maxWidth` it keeps whole parts, most important first, and counts the groups it drops: "· +2 groups".
+ */
+export function summaryLine(summary: Summary, maxWidth = Infinity) {
+  const groups = summary.groups.map((group) => `group ${group.name} ${group.reported}/${group.members}`)
   const parts = [
-    summary.running ? `${summary.running} running` : "",
     summary.waiting ? `${summary.waiting} waiting on you` : "",
+    summary.running ? `${summary.running} running` : "",
+    ...groups,
     summary.idle ? `${summary.idle} idle` : "",
-    ...summary.groups.map((group) => `group ${group.name} ${group.reported}/${group.members}`),
   ].filter(Boolean)
-  return parts.length ? `courier ${parts.join(" · ")}` : ""
+  if (!parts.length) return ""
+  const line = (kept: number) => {
+    const dropped = groups.filter((group) => parts.indexOf(group) >= kept).length
+    return ["courier", parts.slice(0, kept).join(" · "), dropped ? `· +${counted(dropped, "group")}` : ""].filter(Boolean).join(" ")
+  }
+  for (let kept = parts.length; kept > 0; kept--) if (line(kept).length <= maxWidth) return line(kept)
+  // Not even the first part fits with its "courier": it stays without, as the person must see that something waits.
+  return parts[0]!
 }
 
 /** A span of time, coarsest first: "45s", "3m 05s", "2h 07m". */
@@ -178,9 +189,9 @@ export function addTreeStatus(ctx: Context, onWaiting?: (sessionID: string) => v
         () => (input.sessionID ? { sessionID: input.sessionID, changed: changed() } : undefined),
         ({ sessionID }) =>
           courier.summary({ sessionID }, { location: location(sessionID) }).then(
-            (summary) => ({ sessionID, line: summaryLine(summary), waiting: summary.waiting }),
+            (summary) => ({ sessionID, summary, waiting: summary.waiting }),
             // A server without the courier's RPC, or one that fails, leaves the entry empty rather than the footer noisy.
-            () => ({ sessionID, line: "", waiting: 0 }),
+            () => ({ sessionID, summary: undefined, waiting: 0 }),
           ),
       )
       // The latest answer, but only for the session shown: another session's lingers while the new one is asked.
@@ -189,17 +200,31 @@ export function addTreeStatus(ctx: Context, onWaiting?: (sessionID: string) => v
         const latest = read.state === "ready" || read.state === "refreshing" ? read.latest : undefined
         return latest && latest.sessionID === input.sessionID ? latest : undefined
       }
-      const line = () => shown()?.line ?? ""
+      // The box's width, which is unknown until it is laid out: the text waits for it rather than flash clipped.
+      const [width, setWidth] = createSignal(0)
+      const present = () => (shown()?.summary ? summaryLine(shown()!.summary!) : "")
+      // The leading space is the entry's own.
+      const line = () => (width() && shown()?.summary ? summaryLine(shown()!.summary!, width() - 1) : "")
       const click = () => {
         const latest = shown()
         if (latest?.waiting) onWaiting?.(latest.sessionID)
       }
       return (
-        <Show when={line()}>
-          <text fg={ctx.theme.text.muted} wrapMode="none" onMouseUp={click}>
-            {" "}
-            {line()}
-          </text>
+        <Show when={present()}>
+          <box
+            flexGrow={1}
+            flexShrink={1}
+            minWidth={0}
+            onSizeChange={function () {
+              // A box not laid out yet is 0 wide, which is no measure.
+              if (this.width > 0) setWidth(this.width)
+            }}
+          >
+            <text fg={ctx.theme.text.muted} wrapMode="none" onMouseUp={click}>
+              {" "}
+              {line()}
+            </text>
+          </box>
         </Show>
       )
     },

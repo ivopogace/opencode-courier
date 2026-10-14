@@ -866,7 +866,8 @@ update or a rename, and redraws its times every second. Its keys, while it has t
 when it opens; `<leader>left` and `<leader>right` move it between the session and the panel): `↑`/`k` and
 `↓`/`j` move the selection, `enter` opens the selected session, `s` stops it, `r` asks again, `f` toggles
 fullscreen and `q` closes the panel. While open, the panel follows the person to another session (its own
-`enter`, a tab, "go to parent"), as it was shown and taking the keyboard only if it had it: to a session
+`enter`, a tab, "go to parent"), as it was asked for (a panel shown fullscreen only because the terminal is
+too narrow to split reopens as a panel) and taking the keyboard only if it had it: to a session
 of its tree it keeps that tree, and its stops, with the session on screen marked `(on screen)` in its
 row; to another it shows that session's tree. In a session that started none, and on the home screen
 (`/new`), it hides, and shows again in the next session with a tree, that one included once it starts

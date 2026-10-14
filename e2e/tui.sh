@@ -64,10 +64,10 @@ summary_until() {
   done
   echo "$last"
 }
-# Opens the TUI in a fresh tmux session, 160 columns wide, its stderr to $WORK/$1.err: on session $2, or the home screen.
+# Opens the TUI in a fresh tmux session, 220 columns wide, its stderr to $WORK/$1.err: on session $2, or the home screen.
 open_tui() {
   tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
-  tmux new-session -d -s "$TMUX_SESSION" -x 160 -y 40 \
+  tmux new-session -d -s "$TMUX_SESSION" -x 220 -y 40 \
     "cd '$WORK/project' && LANG=C.UTF-8 OPENCODE_PASSWORD='$OPENCODE_PASSWORD' TERM=xterm-256color '$OPENCODE' --server '$SERVER' ${2:+--session '$2'} 2>'$WORK/$1.err'; sleep 600"
 }
 # Whether the TUI's screen shows the line $1 within $2 s; the screen is kept in $WORK/$3.txt.
@@ -152,7 +152,7 @@ check "a session that started none has an empty summary" \
 
 echo "the TUI shows the entry in the prompt's footer, and follows the answer"
 open_tui tui "$parent"
-check "the footer shows what the RPC gave" "$(shows "courier 1 waiting on you · 1 idle · group pair 1/2" 60 tui-waiting)"
+check "the footer shows what the RPC gave" "$(shows "courier 1 waiting on you · group pair 1/2 · 1 idle" 60 tui-waiting)"
 echo "  $(footer tui-waiting)"
 echo "the tree panel: /courier tree opens it on both children, with the bar of the parts reported"
 rows=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[] | {depth, state, report: .report.state, group: .group.standing}] | sort_by(.state)')

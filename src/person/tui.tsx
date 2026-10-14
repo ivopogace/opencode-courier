@@ -125,6 +125,8 @@ const OWN = Symbol("own")
 const DONE = Symbol("done")
 /** The choice that leaves a field that is not required unanswered. */
 const SKIP = Symbol("skip")
+/** The disabled first option carrying a field's description; never chosen. */
+const NOTE = Symbol("note")
 
 /**
  * Adds the asks inbox: what the open session's courier tree waits on the person for, read through the person's RPC and
@@ -175,11 +177,14 @@ export function addAsksInbox(ctx: Context) {
   async function choose(
     title: string,
     choices: ReadonlyArray<Choice>,
-    { multiple = false, own = false, optional = false } = {},
+    { multiple = false, own = false, optional = false, asks = "" } = {},
   ) {
     const picked: string[] = []
     for (;;) {
-      const value = await ctx.ui.dialog.select<string | symbol>({ title, options: chooseOptions(choices, picked, { multiple, own, optional }) })
+      const value = await ctx.ui.dialog.select<string | symbol>({
+        title,
+        options: [...(asks ? [{ title: asks, value: NOTE, disabled: true }] : []), ...chooseOptions(choices, picked, { multiple, own, optional })],
+      })
       if (value === undefined) return undefined
       if (value === DONE) return picked
       if (value === SKIP) return []
@@ -245,34 +250,40 @@ export function addAsksInbox(ctx: Context) {
 
   /** A number for a field, a whole one for an integer, asked again until it is one. */
   async function numeric(title: string, field: Extract<FormField, { type: "number" | "integer" }>, optional: boolean) {
+    const label = field.title ?? field.key
     const whole = field.type === "integer"
     for (;;) {
       const text = await typed(title, { ...(field.description ? { description: field.description } : {}) }, optional)
       if (text === undefined || text === SKIP) return text
       const value = Number(text)
       if (Number.isFinite(value) && (!whole || Number.isInteger(value))) return value
-      ctx.ui.toast.show({ title: "courier", message: `${title} takes ${whole ? "a whole number" : "a number"}`, variant: "warning" })
+      ctx.ui.toast.show({ title: "courier", message: `${label} takes ${whole ? "a whole number" : "a number"}`, variant: "warning" })
     }
   }
 
   /** The person's answer to one field, or undefined when they back out; `SKIP` leaves it unanswered. */
-  async function answerField(field: FormField): Promise<FormValue | typeof SKIP | undefined> {
-    const title = field.title ?? field.key
+  async function answerField(form: { title?: string }, field: FormField): Promise<FormValue | typeof SKIP | undefined> {
+    const label = field.title ?? field.key
+    const title = form.title ? `${form.title} · ${label}` : label
+    const asks = field.description ?? ""
     const optional = !("required" in field && field.required)
     switch (field.type) {
       case "external":
         await ctx.ui.dialog.alert({ title, message: `This form opens ${field.url}: answer it in its own session.` })
         return undefined
       case "boolean":
-        return ctx.ui.dialog.select<boolean>({ title, options: [{ title: "Yes", value: true }, { title: "No", value: false }] })
+        return ctx.ui.dialog.select<boolean | symbol>({
+          title,
+          options: [...(asks ? [{ title: asks, value: NOTE, disabled: true }] : []), { title: "Yes", value: true }, { title: "No", value: false }],
+        }) as Promise<boolean | undefined>
       case "multiselect": {
-        const picked = await choose(title, field.options, { multiple: true, own: !!field.custom })
+        const picked = await choose(title, field.options, { multiple: true, own: !!field.custom, asks })
         if (picked?.length === 0 && optional) return SKIP
         return picked
       }
       case "string": {
         if (!field.options?.length) return typed(title, field, optional)
-        const picked = await choose(title, field.options, { own: !!field.custom, optional })
+        const picked = await choose(title, field.options, { own: !!field.custom, optional, asks })
         return picked && (picked[0] ?? SKIP)
       }
       case "number":
@@ -286,7 +297,7 @@ export function addAsksInbox(ctx: Context) {
     const answer: Record<string, FormValue> = {}
     for (const field of form.fields) {
       if (!shown(field, answer)) continue
-      const value = await answerField(field)
+      const value = await answerField(form, field)
       if (value === undefined) return false
       if (value !== SKIP) answer[field.key] = value
     }

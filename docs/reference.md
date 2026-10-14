@@ -800,8 +800,12 @@ paths as `courier_answer` and `courier_stop`, so a model sees only what those wo
 **The status entry.** In the prompt's footer, for the open session:
 
 ```
-courier 2 running · 1 waiting on you · 1 idle · group pair 1/2
+courier 1 waiting on you · 2 running · group pair 1/2 · 1 idle
 ```
+
+The parts come in that order, and on a narrow terminal the entry keeps as many whole parts as fit,
+replacing the groups it drops with a count (`courier 1 waiting on you · 2 running · +3 groups`);
+`/courier tree` has the full detail. `waiting on you` is always shown.
 
 It counts the sessions under the open session, those it started with `courier_spawn` and those they
 started, every one of them (so a tree that has started more than `maxTotal` sessions over time is
@@ -876,7 +880,8 @@ messages were cancelled, or why the stop was refused. `/courier` with anything e
 
 **Attention.** A join group's reports released to a session call for attention, with a notification
 when the terminal is not focused and the `done` sound; a child's report to its parent (a message with a
-status) plays the `subagent_done` sound, without a notification. A report held with its group sounds
+status) plays the `subagent_done` sound, without a notification, unless the reporting session is a native
+child, whose turn ending OpenCode already sounds with `subagent_done`. A report held with its group sounds
 once, with its group's release. Each delivery is notified once per TUI.
 
 **The RPC.** `courier`, registered by every instance at its location as the tools are, through the same

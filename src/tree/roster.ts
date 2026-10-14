@@ -41,13 +41,15 @@ export async function answeringTop(storage: RosterStorage, sessionID: string, ca
 export type Exists = (directory: string) => boolean
 
 /**
- * Forgets the given entries that were recorded more than `RETENTION_MS` before `now`, and returns
- * the rest. An isolated child is kept while its worktree exists, so it can still be cleaned up.
+ * Whether an entry is past retention at `now`: recorded more than `RETENTION_MS` before, unless it is an isolated
+ * child whose worktree exists, which is kept so it can still be cleaned up.
  */
+export const isExpired = (entry: RosterEntry, now: number, exists: Exists = existsSync) =>
+  now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory))
+
+/** Forgets the given entries that are expired at `now`, and returns the rest. */
 async function dropExpired(storage: RosterStorage, entries: RosterEntry[], now: number, exists: Exists) {
-  const expired = new Set(
-    entries.filter((entry) => now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory))),
-  )
+  const expired = new Set(entries.filter((entry) => isExpired(entry, now, exists)))
   await Promise.all([...expired].map((entry) => forgetChild(storage, entry.parentID, entry.sessionID, entry.group)))
   return entries.filter((entry) => !expired.has(entry))
 }

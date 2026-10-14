@@ -178,7 +178,8 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
     description:
       "List the whole tree of sessions under this one (or under sessionID): every session started with courier_spawn " +
       "from it, directly or through others, each with its depth, what courier_children shows, and whether it still " +
-      "owes a report, sent progress, or ended without one. For a one-off look, not for waiting; long trees are cut at maxTotal sessions.",
+      "owes a report, sent progress, or ended without one. For a one-off look, not for waiting. A long tree lists at most " +
+      "maxTotal sessions, the live ones first, then the newest, and says how many older ones are left out.",
     input: TreeInput,
     execute: async (input, context) => {
       const result = await tree(ports.courier, input.sessionID || context.sessionID).catch(rethrow("courier_tree"))

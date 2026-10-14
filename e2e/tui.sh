@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Live test of the TUI part: a real OpenCode V2 server loads the package's `tui` and `rpc`
 # entrypoints, its RPC answers over HTTP, and the TUI, in tmux, shows the prompt footer's entry and
-# follows a change, opens the tree panel with /courier tree, follows it into a child, and stops a child with /courier stop.
+# follows a change, opens the tree panel with /courier tree, follows it into a child, and stops a child with /courier stop;
+# a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188).
 # Then the same from the package `opencode plugin add` installs. Driven by e2e/mock-model.mjs's
 # COURIER-TUI, so no API key is needed.
 #
@@ -41,11 +42,16 @@ check() {
   if [ "$2" = true ]; then echo "  PASS $1"; else echo "  FAIL $1"; failures=$((failures + 1)); fi
 }
 prompt() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json "$1" </dev/null); }
+prompt_in() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --session "$1" "$2" </dev/null); }
 location() { node -p 'encodeURIComponent(process.argv[1])' "$WORK/project"; }
 plugins() { api "plugin?directory=$(location)"; }
-# The courier's RPC over HTTP: method $1 with input $2, at the project's location.
+# The courier's RPC over HTTP: method $1 with input $2, at the project's location; person_rpc the person's.
 rpc() {
   curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier/$1?directory=$(location)" \
+    -H 'content-type: application/json' -d "{\"input\":$2}"
+}
+person_rpc() {
+  curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier-person/$1?directory=$(location)" \
     -H 'content-type: application/json' -d "{\"input\":$2}"
 }
 # Waits up to $2 s until the summary of session $1 is $3 (compact JSON); prints the last one read.
@@ -95,7 +101,7 @@ build_plugin
 
 cat >"$WORK/project/opencode.json" <<EOT
 {
-  "plugins": [{ "package": "$ROOT/dist" }],
+  "plugins": [{ "package": "$ROOT/dist", "options": { "maxTotal": 2 } }],
   "providers": {
     "mock": {
       "package": "aisdk:@ai-sdk/openai-compatible",
@@ -250,6 +256,53 @@ check "the parent was told once that it is settled" "$(sleep 2; [ "$(settled_not
 check "the child carried on and reported" \
   "$(for _ in $(seq 1 45); do api "session/$asker_parent/message" | jq -e '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD DONE"))] | length > 0' >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
 
+# A tree past maxTotal (#188): the limit counts live sessions, so children started one after another outgrow it; every
+# read looks every one up, and a listing keeps the live ones first, then the newest, saying how many older are left out.
+echo "a tree that has started more sessions than maxTotal still shows the newest child and what it asks"
+one_idle='{"running":0,"waiting":0,"idle":1,"groups":[]}'
+check "the first child has ended its turn" "$([ "$(summary_until "$asker_parent" 60 "$one_idle")" = "$one_idle" ] && echo true || echo false)"
+out=$(prompt_in "$asker_parent" "COURIER-TEST")
+second=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out" | head -1)
+check "the limit admits a second child once the first is done" "$([ -n "$second" ] && echo true || echo false)"
+two_idle='{"running":0,"waiting":0,"idle":2,"groups":[]}'
+check "the second child reported and ended its turn" "$([ "$(summary_until "$asker_parent" 90 "$two_idle")" = "$two_idle" ] && echo true || echo false)"
+out=$(prompt_in "$asker_parent" "COURIER-ASK")
+third=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out" | head -1)
+check "and a third, which asks for a permission" "$([ -n "$third" ] && echo true || echo false)"
+for _ in $(seq 1 45); do [ "$(api "session/$third/permission" | jq -r '.data | length')" = 1 ] && break; sleep 1; done
+check "the third child waits on its request" "$([ "$(api "session/$third/permission" | jq -r '.data | length')" = 1 ] && echo true || echo false)"
+one_waits='{"running":0,"waiting":1,"idle":2,"groups":[]}'
+result=$(summary_until "$asker_parent" 30 "$one_waits")
+echo "  $result"
+check "the summary counts all three: one waiting on the person, two idle" "$([ "$result" = "$one_waits" ] && echo true || echo false)"
+rows=$(rpc tree "{\"sessionID\":\"$asker_parent\"}" | jq -c '.output | {rows: [.rows[] | {sessionID, state}], truncated}')
+echo "  $rows"
+check "the tree lists the newest two, the waiting one among them, and counts the older one left out" \
+  "$(jq -r --arg second "$second" --arg third "$third" '.rows == [{sessionID: $second, state: "idle"}, {sessionID: $third, state: "waiting"}] and .truncated == 1' <<<"$rows")"
+seen=$(prompt_in "$asker_parent" "COURIER-SUBTREE-TREE" | jq -c 'select(.type == "tool_use" and .part.tool == "courier_tree") | .part.state')
+echo "  $(jq -c '{sessions: [.metadata.metadata.sessions[] | .sessionID], truncated: .metadata.metadata.truncated}' <<<"$seen")"
+check "courier_tree lists the same two to the model, with the count left out and the note" \
+  "$(jq -r --arg second "$second" --arg third "$third" '.status == "completed" and (.metadata.metadata.sessions | map(.sessionID)) == [$second, $third] and .metadata.metadata.truncated == 1 and (.output | contains("1 older session is not listed: at most maxTotal are, the live ones first, then the newest"))' <<<"$seen")"
+inbox=$(person_rpc asks "{\"sessionID\":\"$asker_parent\"}" | jq -c '.output | {sessions: (.sessions | length), permissions: [.permissions[] | .sessionID], truncated}')
+echo "  $inbox"
+check "the asks list every session and the third child's request, uncut" \
+  "$(jq -r --arg third "$third" '.sessions == 3 and .permissions == [$third] and .truncated == null' <<<"$inbox")"
+open_tui tui-past "$asker_parent"
+check "the footer says one waits on the person, and counts the two idle" "$(shows "courier 1 waiting on you · 2 idle" 60 tui-past)"
+echo "  $(footer tui-past)"
+tmux send-keys -t "$TMUX_SESSION" C-x k
+check "the inbox lists the request" \
+  "$([ "$(shows "Waiting on you (1)" 20 tui-past-inbox)" = true ] && grep -qF "Permission: shell echo courier-asks" "$WORK/tui-past-inbox.txt" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" Escape
+check "Escape closes it" "$(hides "Waiting on you" 10 tui-past-inbox-closed)"
+tmux send-keys -t "$TMUX_SESSION" "/courier tree"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "the panel lists the asking child and says one older session is left out" \
+  "$([ "$(shows "1 older left out" 30 tui-past-panel)" = true ] && grep -qF "CHILD-ASKS  waiting on you · owes a report" "$WORK/tui-past-panel.txt" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" q
+check "q closes the panel" "$(hides "courier tree" 10 tui-past-panel-closed)"
+
 echo "opencode plugin add installs the package with its tui and rpc entrypoints"
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 stop_server
@@ -284,7 +337,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

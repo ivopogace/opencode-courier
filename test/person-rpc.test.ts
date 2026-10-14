@@ -8,6 +8,7 @@ import { reportForm, reportFormSettled } from "../src/person/form.js"
 import { shared as relayState } from "../src/person/question/shared.js"
 import { stopRelay } from "../src/person/question/runtime.js"
 import type { QuestionPorts } from "../src/person/question/index.js"
+import { RETENTION_MS } from "../src/tree/roster.js"
 import { childStore } from "../src/tree/store.js"
 import { resetHub } from "./fixtures/reset.js"
 import { asked, child, fakePorts, fresh, replied, settled, shown } from "./fixtures/events.js"
@@ -30,7 +31,7 @@ const entry = (sessionID: string, parentID: string, title: string, group?: strin
 const greeting = [{ question: "Which greeting?", header: "Greeting", options: [{ label: "Hi", description: "" }] }]
 
 /** The RPC's ports over a map: a tree ses_root › ses_a › ses_b, with a permission request of ses_b's pending in a second location. */
-async function setUp(maxTotal = 20) {
+async function setUp() {
   const store = new Map<string, unknown>()
   const told: any[] = []
   const questions = {
@@ -56,7 +57,6 @@ async function setUp(maxTotal = 20) {
       { list: async () => [], reply: async () => undefined },
       { list: async ({ sessionID }: { sessionID: string }) => requests.filter((item) => item.sessionID === sessionID), reply: async () => undefined },
     ] as never,
-    maxTotal,
   }
   const children = childStore(questions.storage as never)
   await children.record(entry("ses_a", "ses_root", "Fix the bug"))
@@ -82,10 +82,22 @@ describe("the asks method", () => {
     for (const sessionID of ["ses_root", "ses_a", "ses_b"]) expect(await asks(ports, sessionID)).toEqual(expected)
   })
 
-  test("a session no courier tree knows has an empty inbox, and a large tree is read up to maxTotal", async () => {
-    const { ports } = await setUp(1)
-    expect(await asks({ ...ports, maxTotal: 20 }, "ses_alone")).toEqual({ top: "ses_alone", sessions: [], permissions: [], questions: [] })
-    expect(await asks(ports, "ses_root")).toMatchObject({ sessions: [{ sessionID: "ses_a" }], permissions: [], truncated: 1 })
+  test("a session no courier tree knows has an empty inbox", async () => {
+    const { ports } = await setUp()
+    expect(await asks(ports, "ses_alone")).toEqual({ top: "ses_alone", sessions: [], permissions: [], questions: [] })
+  })
+
+  test("reads every session of a tree past maxTotal, so the newest one's request is listed, and none past retention", async () => {
+    const { ports } = await setUp()
+    const children = childStore(ports.questions.storage as never)
+    for (const index of [1, 2, 3]) await children.record({ ...entry(`ses_more_${index}`, "ses_root", `More ${index}`), createdAt: 2 + index })
+    await children.record({ ...entry("ses_old", "ses_root", "Old"), createdAt: ports.questions.now() - RETENTION_MS - 1 })
+    ;(ports.permissions as any) = () => [{ list: async ({ sessionID }: { sessionID: string }) => (sessionID === "ses_more_3" ? [{ id: "per_new", sessionID, action: "shell", resources: ["echo"] }] : []), reply: async () => undefined }]
+
+    const read = await asks(ports, "ses_root")
+    expect(read.sessions.map((session) => session.sessionID)).toEqual(["ses_a", "ses_b", "ses_more_1", "ses_more_2", "ses_more_3"])
+    expect(read.permissions).toEqual([{ sessionID: "ses_more_3", requestID: "per_new", action: "shell", resources: ["echo"] }])
+    expect(read).not.toHaveProperty("truncated")
   })
 
   test("its schemas take the listing, and refuse an input without a session", async () => {

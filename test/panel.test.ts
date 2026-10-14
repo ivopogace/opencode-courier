@@ -182,14 +182,21 @@ describe("panel", () => {
     expect(rows[2]!.title).toBe("entry ses_gone")
   })
 
-  test("is empty for a session that started none, and reads at most maxTotal sessions, saying so", async () => {
-    const { ports } = fakePorts({ ses_a: { updated: 5 }, ses_b: { updated: 5 }, ses_c: { updated: 5 } }, {}, 2)
-    for (const child of ["ses_a", "ses_b", "ses_c"]) await childStore(ports.storage).record(entry(child, "ses_root"))
+  test("is empty for a session that started none, and lists at most maxTotal sessions: the live ones first, then the newest, counting the rest", async () => {
+    const { ports } = fakePorts(
+      { ses_a: { updated: 5, idle: 5 }, ses_b: { updated: 5, idle: 5 }, ses_c: { updated: 5, idle: 5 }, ses_d: { updated: 9, idle: 5 } },
+      { ses_d: [{ type: "permission", requestID: "per_1", action: "shell", resources: ["echo hi"] }] },
+      2,
+    )
+    for (const [index, child] of ["ses_a", "ses_b", "ses_c", "ses_d"].entries())
+      await childStore(ports.storage).record(entry(child, "ses_root", { createdAt: 900 + index }))
 
     expect(await panel(ports, "ses_none")).toEqual({ rows: [] })
     const read = await panel(ports, "ses_root")
-    expect(read.rows.map((row) => row.sessionID)).toEqual(["ses_a", "ses_b"])
+    expect(read.rows.map((row) => [row.sessionID, row.state])).toEqual([["ses_c", "idle"], ["ses_d", "waiting"]])
     expect(read.truncated).toBe(2)
+    ;(ports as any).limits = { ...DEFAULT_LIMITS, maxTotal: 1 }
+    expect((await panel(ports, "ses_root")).rows.map((row) => row.sessionID)).toEqual(["ses_d"])
   })
 })
 

@@ -7,6 +7,7 @@ import { stoppedSincePrompt } from "../src/tree/report.js"
 import { childStore, groupStore, memberKey, progressKey, promptKey, settledKey, stoppedKey } from "../src/tree/store.js"
 import type { RosterEntry, StopPorts } from "../src/tree/ports.js"
 import { stop } from "../src/tree/stop.js"
+import { RETENTION_MS } from "../src/tree/roster.js"
 import { subtree, tree } from "../src/tree/subtree.js"
 
 type Call = { method: string; input: any }
@@ -84,19 +85,20 @@ describe("subtree", () => {
   test("lists each session before what it started, siblings oldest first, with depths", async () => {
     const { ports } = await fixture()
 
-    const { nodes, truncated } = await subtree(ports.courier.storage, "root")
+    const { nodes } = await subtree(ports.courier.storage, "root")
 
     expect(nodes.map((node) => [node.entry.sessionID, node.depth])).toEqual([["mid", 1], ["leaf1", 2], ["leaf2", 2], ["side", 1]])
-    expect(truncated).toBe(false)
   })
 
-  test("is cut at max, and says so", async () => {
+  test("with retention, leaves out the expired entries and what is under them, an isolated one with its worktree kept", async () => {
     const { ports } = await fixture()
+    const now = RETENTION_MS + 3
 
-    const { nodes, truncated } = await subtree(ports.courier.storage, "root", 3)
+    const read = (exists: (directory: string) => boolean) => subtree(ports.courier.storage, "root", { now, exists }).then(({ nodes }) => nodes.map((node) => node.entry.sessionID))
 
-    expect(nodes.map((node) => node.entry.sessionID).sort()).toEqual(["leaf1", "mid", "side"])
-    expect(truncated).toBe(true)
+    expect(await read(() => true)).toEqual(["mid", "leaf1", "leaf2"])
+    expect(await read(() => false)).toEqual([])
+    expect((await subtree(ports.courier.storage, "root", { now: 4, exists: () => false })).nodes).toHaveLength(4)
   })
 
   test("reads one prefix per parent, never the whole roster", async () => {
@@ -145,15 +147,22 @@ describe("tree", () => {
     expect(Object.values(mid!).includes(undefined)).toBe(false)
   })
 
-  test("is cut at maxTotal", async () => {
-    const { ports } = await fixture()
+  test("lists at most maxTotal sessions, the live ones first, then the newest with what is above them, and counts the rest", async () => {
+    const { ports, store } = await fixture()
     ;(ports.courier.limits as any).maxTotal = 2
+    const newest = await tree(ports.courier, "root")
+    expect(newest.sessions.map((one) => one.sessionID)).toEqual(["mid", "leaf2"])
+    expect(newest.truncated).toBe(2)
+    expect(treeText(newest)).toContain("2 older sessions are not listed: at most maxTotal are, the live ones first, then the newest")
 
-    const result = await tree(ports.courier, "root")
-
-    expect(result.sessions).toHaveLength(2)
-    expect(result.truncated).toBe(2)
-    expect(treeText(result)).toContain("Only the first 2 sessions are listed")
+    // The oldest owes a report, so it is live and listed; the one next to it comes first by its place in the tree.
+    store.set(promptKey("side"), { at: 10 })
+    const live = await tree(ports.courier, "root")
+    expect(live.sessions.map((one) => one.sessionID)).toEqual(["mid", "side"])
+    expect(treeText(live)).toContain("2 older sessions are not listed")
+    ;(ports.courier.limits as any).maxTotal = 1
+    expect((await tree(ports.courier, "root")).sessions.map((one) => one.sessionID)).toEqual(["side"])
+    expect(treeText(await tree(ports.courier, "root"))).toContain("3 older sessions are not listed")
   })
 
   test("is empty for a session that started none", async () => {

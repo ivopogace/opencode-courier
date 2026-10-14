@@ -204,7 +204,9 @@ export function cleanupText(result: CleanupResult) {
 /** courier_tree's result: the sessions under a session, drawn depth first, as JSON. */
 export function treeText(tree: { readonly sessions: ReadonlyArray<unknown>; readonly truncated?: number }) {
   if (!tree.sessions.length) return "No sessions started with courier_spawn."
-  const note = tree.truncated === undefined ? "" : `\nOnly the first ${tree.truncated} sessions are listed (maxTotal); courier_tree on one of them lists what is under it.`
+  if (tree.truncated === undefined) return JSON.stringify(tree, null, 2)
+  const older = tree.truncated === 1 ? "1 older session is" : `${tree.truncated} older sessions are`
+  const note = `\n${older} not listed: at most maxTotal are, the live ones first, then the newest; courier_tree on a listed session lists what is under it.`
   return JSON.stringify(tree, null, 2) + note
 }
 

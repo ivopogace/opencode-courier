@@ -266,7 +266,9 @@ courier 2 running · 1 waiting on you · group pair 1/2
 
 `/courier tree` opens a panel beside the session with the tree under it, a row per session indented
 by depth, with what it does, its report and its group's standing; a session that started others gets
-a bar of the parts reported, a leaf how long it ran, its last tool call and its cost. `↑`/`↓` select,
+a bar of the parts reported, a leaf how long it ran, its last tool call and its cost. A tree that has
+started more than `maxTotal` sessions over time is listed live ones first, then newest, and the header
+says how many older ones are left out; the footer counts them all. `↑`/`↓` select,
 `enter` opens the session, `s` stops it and everything under it after you confirm, as `courier_stop`
 would, and `q` closes the panel; `/courier stop <session>` stops from the prompt. While open, the panel
 follows you between sessions: into one of its tree it keeps that tree, the session on screen marked
@@ -275,8 +277,8 @@ or on the home screen, and shows again once you are back in one; only `q` closes
 
 `ctrl+x k` (the leader key, then `k`), `/asks` (or `/ask`), the palette's "Courier: what waits on you" or a click
 on "waiting on you" opens the asks inbox: every permission request, question and form waiting
-anywhere in the tree, oldest first, with where it comes from, answered in a dialog with no model in
-between; the session that started the tree hears once that you settled it. The TUI plays OpenCode's
+anywhere in the tree, however many sessions it has, oldest first, with where it comes from, answered in
+a dialog with no model in between; the session that started the tree hears once that you settled it. The TUI plays OpenCode's
 sounds for a child's report, a group's release and a new ask ([more](docs/reference.md#in-the-terminal)).
 
 While a permission prompt or form is shown in the session, OpenCode hides the footer, so open the

@@ -184,7 +184,6 @@ describe("summaryLine", () => {
       "courier 2 running · 1 waiting on you · group pair 1/2",
     )
     expect(summaryLine({ ...empty, idle: 3 })).toBe("courier 3 idle")
-    expect(summaryLine({ ...empty, running: 20, truncated: 20 })).toBe("courier 20 running · first 20 counted")
   })
 
   test("is empty for a session that started none", () => {
@@ -472,7 +471,7 @@ describe("the tree panel", () => {
     await app.waitForFrame((frame) => frame.includes("ses_leaf"))
     const frame = app.captureCharFrame()
     expect(frame).toContain("[░░░░░░░░░░] 0/1 reported")
-    expect(frame).toContain("first 2 shown")
+    expect(frame).toContain("2 older left out")
     expect(frame).toMatch(/\n ▸ ses_mid {2}idle/)
     expect(frame).toMatch(/\n {5}ses_leaf {2}idle/)
 
@@ -789,5 +788,18 @@ describe("the footer's waiting on you", () => {
       await app.mockMouse.click(4, 0)
       expect(clicked).toEqual([...opened])
     }
+  })
+})
+
+describe("a tree past maxTotal (#188)", () => {
+  test("the panel's header counts the older sessions its listing left out, and the footer counts every session", async () => {
+    const fake = fakeContext(async () => ({ ...empty, waiting: 1, idle: 30 }))
+    fake.state.tree = async () => ({ rows: [row("ses_new", { state: "waiting", waits: [{ type: "permission", action: "shell", resources: ["echo hi"] }] })], truncated: 30 })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+    await app.waitForFrame((frame) => frame.includes("ses_new"))
+    expect(app.captureCharFrame()).toContain("30 older left out")
+
+    expect(summaryLine({ ...empty, waiting: 1, idle: 30 })).toBe("courier 1 waiting on you · 30 idle")
   })
 })

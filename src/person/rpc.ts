@@ -51,8 +51,6 @@ const Asks = Schema.Struct({
   sessions: Schema.Array(Session),
   permissions: Schema.Array(Permission),
   questions: Schema.Array(Question),
-  /** Set when the tree had more sessions than `maxTotal`, which were not read. */
-  truncated: Schema.optionalKey(Count),
 })
 
 export type Asks = typeof Asks.Type

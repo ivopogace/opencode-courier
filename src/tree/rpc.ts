@@ -19,8 +19,6 @@ const Summary = Schema.Struct({
   /** Not running: done, or waiting for a message. */
   idle: Count,
   groups: Schema.Array(Group),
-  /** Set when the subtree had more sessions than `maxTotal`, which were not counted. */
-  truncated: Schema.optionalKey(Count),
 })
 
 export type Summary = typeof Summary.Type
@@ -59,10 +57,10 @@ const Row = Schema.Struct({
   waits: Schema.Array(Wait),
 })
 
-/** The sessions under a session, as courier_tree reads them, in the order a tree is drawn. */
+/** The sessions under a session, as courier_tree lists them, in the order a tree is drawn. */
 const Tree = Schema.Struct({
   rows: Schema.Array(Row),
-  /** Set when the subtree had more sessions than `maxTotal`, which were left out. */
+  /** How many older sessions the listing left out, when it had more than `maxTotal`: the live ones come first, then the newest. */
   truncated: Schema.optionalKey(Count),
 })
 

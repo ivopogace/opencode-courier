@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { DEFAULT_LIMITS, type RosterEntry } from "../src/tree/domain.js"
 import { holdReport, joinGroup, leaveGroup } from "../src/tree/group.js"
 import type { CourierPorts, Pending, StopPorts } from "../src/tree/ports.js"
+import { RETENTION_MS } from "../src/tree/roster.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
 import { childStore, groupStore } from "../src/tree/store.js"
@@ -122,11 +123,25 @@ describe("summary", () => {
     expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 0, idle: 1, groups: [{ name: "trio", reported: 1, members: 1 }] })
   })
 
-  test("counts at most maxTotal sessions, as courier_tree reads them, and says so", async () => {
-    const { ports } = fakePorts({ ses_a: { updated: 5 }, ses_b: { updated: 5 }, ses_c: { updated: 5 } }, {}, 2)
-    for (const child of ["ses_a", "ses_b", "ses_c"]) await childStore(ports.storage).record(entry(child, "ses_root"))
+  test("counts every session of a tree past maxTotal, the newest one waiting on the person among them", async () => {
+    const { ports } = fakePorts(
+      { ses_a: { updated: 5, idle: 5 }, ses_b: { updated: 5, idle: 5 }, ses_c: { updated: 9, idle: 5 } },
+      { ses_c: [asks] },
+      2,
+    )
+    for (const [index, child] of ["ses_a", "ses_b", "ses_c"].entries()) await childStore(ports.storage).record({ ...entry(child, "ses_root"), createdAt: 900 + index })
 
-    expect(await summary(ports, "ses_root")).toEqual({ running: 2, waiting: 0, idle: 0, groups: [], truncated: 2 })
+    expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 1, idle: 2, groups: [] })
+  })
+
+  test("leaves out an entry past retention, as courier_children does", async () => {
+    const { ports } = fakePorts({ ses_old: { updated: 5 }, ses_new: { updated: 5 } })
+    ;(ports as any).now = () => RETENTION_MS + 1_000
+    await childStore(ports.storage).record({ ...entry("ses_old", "ses_root"), createdAt: 999 })
+    await childStore(ports.storage).record({ ...entry("ses_new", "ses_root"), createdAt: 1_000 })
+
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, groups: [] })
+    expect(await childStore(ports.storage).children("ses_root")).toHaveLength(2)
   })
 })
 

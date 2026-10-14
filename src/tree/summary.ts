@@ -3,7 +3,7 @@ import { groupStandings } from "./group.js"
 import type { CourierPorts } from "./ports.js"
 import type { Summary } from "./rpc.js"
 import { groupStore } from "./store.js"
-import { readTree, type Looked } from "./subtree.js"
+import { lookUp, type Looked } from "./subtree.js"
 
 type Activity = "running" | "waiting" | "idle"
 
@@ -19,8 +19,8 @@ function activity({ info, pending }: Looked): Activity | undefined {
  * children, with how far each has reported.
  */
 export async function summary(ports: CourierPorts, sessionID: string): Promise<Summary> {
-  const [{ all }, standings] = await Promise.all([readTree(ports, sessionID), groupStandings(groupStore(ports.storage), sessionID)])
-  const activities = all.map(activity)
+  const [looked, standings] = await Promise.all([lookUp(ports, sessionID), groupStandings(groupStore(ports.storage), sessionID)])
+  const activities = looked.map(activity)
   const count = (kind: Activity) => activities.filter((item) => item === kind).length
   return {
     running: count("running"),

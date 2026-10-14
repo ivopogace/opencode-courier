@@ -256,10 +256,8 @@ check "the parent was told once that it is settled" "$(sleep 2; [ "$(settled_not
 check "the child carried on and reported" \
   "$(for _ in $(seq 1 45); do api "session/$asker_parent/message" | jq -e '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD DONE"))] | length > 0' >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
 
-# A tree past maxTotal (#188): the limit counts live sessions, so a parent that works through its children one after
-# another starts more than maxTotal of them over time. The reads look every one up and list the live ones first,
-# then the newest: the footer counts them all, the inbox lists the newest child's request, the panel lists it and
-# says how many older sessions are left out.
+# A tree past maxTotal (#188): the limit counts live sessions, so children started one after another outgrow it; every
+# read looks every one up, and a listing keeps the live ones first, then the newest, saying how many older are left out.
 echo "a tree that has started more sessions than maxTotal still shows the newest child and what it asks"
 one_idle='{"running":0,"waiting":0,"idle":1,"groups":[]}'
 check "the first child has ended its turn" "$([ "$(summary_until "$asker_parent" 60 "$one_idle")" = "$one_idle" ] && echo true || echo false)"
@@ -281,6 +279,10 @@ rows=$(rpc tree "{\"sessionID\":\"$asker_parent\"}" | jq -c '.output | {rows: [.
 echo "  $rows"
 check "the tree lists the newest two, the waiting one among them, and counts the older one left out" \
   "$(jq -r --arg second "$second" --arg third "$third" '.rows == [{sessionID: $second, state: "idle"}, {sessionID: $third, state: "waiting"}] and .truncated == 1' <<<"$rows")"
+seen=$(prompt_in "$asker_parent" "COURIER-SUBTREE-TREE" | jq -c 'select(.type == "tool_use" and .part.tool == "courier_tree") | .part.state')
+echo "  $(jq -c '{sessions: [.metadata.metadata.sessions[] | .sessionID], truncated: .metadata.metadata.truncated}' <<<"$seen")"
+check "courier_tree lists the same two to the model, with the count left out and the note" \
+  "$(jq -r --arg second "$second" --arg third "$third" '.status == "completed" and (.metadata.metadata.sessions | map(.sessionID)) == [$second, $third] and .metadata.metadata.truncated == 1 and (.output | contains("1 older session is not listed: at most maxTotal are, the live ones first, then the newest"))' <<<"$seen")"
 inbox=$(person_rpc asks "{\"sessionID\":\"$asker_parent\"}" | jq -c '.output | {sessions: (.sessions | length), permissions: [.permissions[] | .sessionID], truncated}')
 echo "  $inbox"
 check "the asks list every session and the third child's request, uncut" \

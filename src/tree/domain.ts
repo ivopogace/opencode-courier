@@ -46,11 +46,11 @@ type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 export const busy = (time: Pick<Times, "updated" | "idle">) => time.idle === undefined || millis(time.updated) > millis(time.idle)
 
 /**
- * Whether a session a tree is read of is live, as the limits count it: it runs, waits on a request, or owes a report;
- * one OpenCode no longer knows is not.
+ * Whether a session a tree is read of is live: it runs (as the limits count it: busy, and its turn has not failed or
+ * been interrupted since its last prompt), waits on a request, or owes a report; one OpenCode no longer knows is not.
  */
-export const isLive = (time: Pick<Times, "updated" | "idle"> | undefined, waits: number, owes: boolean) =>
-  time !== undefined && (busy(time) || waits > 0 || owes)
+export const isLive = (time: Pick<Times, "updated" | "idle"> | undefined, waits: number, report: { readonly owes: boolean; readonly ended: boolean } | undefined) =>
+  time !== undefined && ((busy(time) && !report?.ended) || waits > 0 || (report?.owes ?? false))
 
 /** A session of a tree read, as `cut` takes it: where it is in the tree, when it was started, and whether it is live. */
 export interface Cuttable {
@@ -62,8 +62,7 @@ export interface Cuttable {
 
 /**
  * Which sessions a listing of at most `max` keeps, of a tree read in the order it is drawn: the live ones first, then
- * the newest, each with the sessions above it so the tree still draws; `leftOut` counts the rest, the oldest
- * finished ones. The kept stay in the order given.
+ * the newest, each with the sessions above it so the tree still draws; `leftOut` counts the rest.
  */
 export function cut<T extends Cuttable>(nodes: ReadonlyArray<T>, max: number) {
   const byID = new Map(nodes.map((node) => [node.sessionID, node]))

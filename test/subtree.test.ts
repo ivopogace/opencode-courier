@@ -5,7 +5,7 @@ import { cut, DEFAULT_LIMITS, isLive, type RosterEntry } from "../src/tree/domai
 import type { Pending } from "../src/tree/ports.js"
 import { RETENTION_MS } from "../src/tree/roster.js"
 import { childStore } from "../src/tree/store.js"
-import { readTree, type ReadPorts } from "../src/tree/subtree.js"
+import { lookUp, readTree, type ReadPorts } from "../src/tree/subtree.js"
 
 const node = (sessionID: string, parentID: string, createdAt: number, live = false) => ({ sessionID, parentID, createdAt, live })
 
@@ -36,12 +36,19 @@ describe("cut", () => {
 describe("isLive", () => {
   const running = { updated: 9, idle: 5 }
   const idle = { updated: 5, idle: 5 }
+  const owes = { owes: true, ended: false }
+  const ended = { owes: false, ended: true }
   test("a session that runs, waits on a request or owes a report is live; one OpenCode no longer knows is not", () => {
-    expect(isLive(running, 0, false)).toBe(true)
-    expect(isLive(idle, 1, false)).toBe(true)
-    expect(isLive(idle, 0, true)).toBe(true)
-    expect(isLive(idle, 0, false)).toBe(false)
-    expect(isLive(undefined, 1, true)).toBe(false)
+    expect(isLive(running, 0, undefined)).toBe(true)
+    expect(isLive(idle, 1, undefined)).toBe(true)
+    expect(isLive(idle, 0, owes)).toBe(true)
+    expect(isLive(idle, 0, { owes: false, ended: false })).toBe(false)
+    expect(isLive(undefined, 1, owes)).toBe(false)
+  })
+
+  test("one whose turn failed or was interrupted since its last prompt is not, as the limits count it, though it still reads busy", () => {
+    expect(isLive({ updated: 5 }, 0, ended)).toBe(false)
+    expect(isLive({ updated: 5 }, 1, ended)).toBe(true)
   })
 })
 
@@ -86,7 +93,7 @@ const entry = (sessionID: string, parentID: string, createdAt: number, more: Par
 const asks: Pending = { type: "permission", requestID: "per_1", action: "shell", resources: ["echo hi"] }
 
 describe("readTree", () => {
-  test("looks up every session under the root and lists the live ones first, then the newest, counting the rest", async () => {
+  test("lists the live ones first, then the newest, counting the rest", async () => {
     const { ports } = fakePorts(
       { ses_a: { updated: 5, idle: 5 }, ses_b: { updated: 5, idle: 5 }, ses_c: { updated: 5, idle: 5 }, ses_d: { updated: 9, idle: 5 } },
       { ses_d: [asks] },
@@ -96,17 +103,25 @@ describe("readTree", () => {
     for (const [index, child] of ["ses_a", "ses_b", "ses_c", "ses_d"].entries()) await children.record(entry(child, "ses_root", 900 + index))
     await children.prompted("ses_a", 950)
 
-    const { all, kept, leftOut } = await readTree(ports, "ses_root")
+    const { kept, leftOut } = await readTree(ports, "ses_root")
 
-    expect(all.map((node) => [node.entry.sessionID, node.live, node.pending.length, node.report?.owes])).toEqual([
+    expect(kept.map((node) => [node.entry.sessionID, node.live, node.pending.length, node.report?.owes])).toEqual([
       ["ses_a", true, 0, true],
-      ["ses_b", false, 0, undefined],
-      ["ses_c", false, 0, undefined],
       ["ses_d", true, 1, undefined],
     ])
-    expect(kept.map((node) => node.entry.sessionID)).toEqual(["ses_a", "ses_d"])
     expect(leftOut).toBe(2)
     expect((await readTree(ports, "ses_root", 3)).kept.map((node) => node.entry.sessionID)).toEqual(["ses_a", "ses_c", "ses_d"])
+    expect((await readTree(ports, "ses_root", 4)).kept.map((node) => node.live)).toEqual([true, false, false, true])
+  })
+
+  test("a child whose first prompt failed reads busy but is not live, so the newest finished ones come before it", async () => {
+    const { ports } = fakePorts({ ses_failed: { updated: 5 }, ses_a: { updated: 5, idle: 5 }, ses_b: { updated: 5, idle: 5 } }, {}, 2)
+    const children = childStore(ports.storage)
+    for (const [index, child] of ["ses_failed", "ses_a", "ses_b"].entries()) await children.record(entry(child, "ses_root", 900 + index))
+    await children.prompted("ses_failed", 950)
+    await children.settled("ses_failed", "failed", 951)
+
+    expect((await readTree(ports, "ses_root")).kept.map((node) => node.entry.sessionID)).toEqual(["ses_a", "ses_b"])
   })
 
   test("a session OpenCode no longer knows, or whose requests cannot be read, is looked up as far as it can be", async () => {
@@ -118,9 +133,9 @@ describe("readTree", () => {
     await children.record(entry("ses_a", "ses_root", 900))
     await children.record(entry("ses_gone", "ses_root", 901))
 
-    const { all, leftOut } = await readTree(ports, "ses_root")
+    const { kept, leftOut } = await readTree(ports, "ses_root")
 
-    expect(all.map((node) => [node.entry.sessionID, node.info?.id, node.live, node.pending])).toEqual([
+    expect(kept.map((node) => [node.entry.sessionID, node.info?.id, node.live, node.pending])).toEqual([
       ["ses_a", "ses_a", true, []],
       ["ses_gone", undefined, false, []],
     ])
@@ -136,9 +151,9 @@ describe("readTree", () => {
     await children.record(entry("ses_kept", "ses_root", 999, { isolated: true, directory: import.meta.dir }))
     await children.record(entry("ses_new", "ses_root", 1_000))
 
-    const { all } = await readTree(ports, "ses_root")
+    const looked = await lookUp(ports, "ses_root")
 
-    expect(all.map((node) => node.entry.sessionID)).toEqual(["ses_kept", "ses_new"])
+    expect(looked.map((node) => node.entry.sessionID)).toEqual(["ses_kept", "ses_new"])
     expect([...store.keys()].filter((key) => key.startsWith("roster/"))).toHaveLength(4)
   })
 })

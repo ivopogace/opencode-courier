@@ -49,46 +49,56 @@ function drawn(byParent: ReadonlyMap<string, Below[]>, parentID: string): Below[
 
 type Info = Awaited<ReturnType<Plugin.Context["session"]["get"]>>
 
-/** A session of a tree as a read looks it up: OpenCode's info of it, if it still knows it, what it waits on, and its report state. */
+/** A session of a tree as a read looks it up: OpenCode's info of it, if it still knows it, and what it waits on. */
 export interface Looked extends Below {
   readonly info: Info | undefined
   readonly pending: ReadonlyArray<Pending>
+}
+
+/** A session as a listing looks it up: `Looked` plus its report state, and whether it is live (`isLive`). */
+export interface Listed extends Looked {
   readonly report: Awaited<ReturnType<typeof reportOf>>
-  /** It runs, waits on a request or owes a report, as the limits count it. */
   readonly live: boolean
 }
 
 export type ReadPorts = Pick<CourierPorts, "storage" | "session" | "pending" | "now" | "limits">
 
+/** Every session under a session, without those past retention, each looked up, in the order a tree is drawn. */
+export async function lookUp(ports: ReadPorts, rootID: string): Promise<Looked[]> {
+  const { nodes } = await subtree(ports.storage, rootID, { now: ports.now() })
+  return Promise.all(
+    nodes.map(async (node) => {
+      const [info, pending] = await Promise.all([
+        ports.session.get({ sessionID: node.entry.sessionID }).catch(() => undefined),
+        ports.pending(node.entry.sessionID).catch((): ReadonlyArray<Pending> => []),
+      ])
+      return { ...node, info, pending }
+    }),
+  )
+}
+
 /**
- * The sessions under a session, each looked up (`all`), and the listing of at most `max` of them (`kept`): the live
- * ones first, then the newest, with what is above them, in the order a tree is drawn; `leftOut` counts the rest.
+ * The listing of at most `max` of the sessions under a session: the live ones first, then the newest, with what is
+ * above them, in the order a tree is drawn (`cut`); `leftOut` counts the rest.
  */
 export async function readTree(ports: ReadPorts, rootID: string, max = ports.limits.maxTotal) {
-  const { nodes } = await subtree(ports.storage, rootID, { now: ports.now() })
   const children = childStore(ports.storage)
   const all = await Promise.all(
-    nodes.map(async (node): Promise<Looked> => {
-      const { sessionID } = node.entry
-      const [info, pending, report] = await Promise.all([
-        ports.session.get({ sessionID }).catch(() => undefined),
-        ports.pending(sessionID).catch((): ReadonlyArray<Pending> => []),
-        reportOf(children, sessionID).catch(() => undefined),
-      ])
-      return { ...node, info, pending, report, live: isLive(info?.time, pending.length, report?.owes ?? false) }
+    (await lookUp(ports, rootID)).map(async (node): Promise<Listed> => {
+      const report = await reportOf(children, node.entry.sessionID).catch(() => undefined)
+      return { ...node, report, live: isLive(node.info?.time, node.pending.length, report) }
     }),
   )
   const listing = cut(
     all.map((node) => ({ sessionID: node.entry.sessionID, parentID: node.entry.parentID, createdAt: node.entry.createdAt, live: node.live, node })),
     max,
   )
-  return { all, kept: listing.kept.map(({ node }) => node), leftOut: listing.leftOut }
+  return { kept: listing.kept.map(({ node }) => node), leftOut: listing.leftOut }
 }
 
 /**
- * The subtree under a session as courier_tree lists it: at most `maxTotal` sessions, the live ones first, then the
- * newest, each as courier_children shows it plus its depth, its parent and its report state; `truncated` counts
- * the older ones left out.
+ * The subtree under a session as courier_tree lists it (`readTree`): each session as courier_children shows it, plus
+ * its depth, its parent and its report state; `truncated` counts the older sessions left out.
  */
 export async function tree(ports: CourierPorts, rootID: string) {
   const { kept, leftOut } = await readTree(ports, rootID)

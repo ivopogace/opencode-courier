@@ -5,7 +5,7 @@ import { lastStatus } from "./report.js"
 import type { Row, Tree, Wait } from "./rpc.js"
 import { standingIn } from "./status.js"
 import { childStore } from "./store.js"
-import { readTree, type Looked } from "./subtree.js"
+import { readTree, type Listed } from "./subtree.js"
 
 type Messages = Awaited<ReturnType<CourierPorts["session"]["context"]>>
 
@@ -26,7 +26,7 @@ export const waitOf = (pending: Pending): Wait =>
     : { type: "question", question: pending.questions[0]?.question ?? "" }
 
 /** A session's report since its last prompt, as the panel shows it; none for one spawned before this was kept. */
-function reportRow(report: Looked["report"], status: Status | undefined): Pick<Row, "report"> {
+function reportRow(report: Listed["report"], status: Status | undefined): Pick<Row, "report"> {
   if (!report) return {}
   if (report.owes) return { report: { state: "owed", progressed: report.progressed } }
   if (report.ended) return { report: { state: "ended", progressed: report.progressed } }
@@ -40,7 +40,7 @@ function stateOf(info: unknown, waits: number, running: boolean): Row["state"] {
   return running ? "running" : "idle"
 }
 /** One session of the panel: what it is doing, its report and group standing, its last tool call and its cost. */
-async function row(ports: CourierPorts, { entry, depth, info, pending, report }: Looked): Promise<Row> {
+async function row(ports: CourierPorts, { entry, depth, info, pending, report }: Listed): Promise<Row> {
   const { sessionID } = entry
   const [messages, status, standing] = await Promise.all([
     ports.session.context({ sessionID }).catch((): Messages => []),

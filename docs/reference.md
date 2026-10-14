@@ -599,7 +599,8 @@ as well). For a request the parent was told about, the plugin then sends it a sh
 `answered="<reply>"` saying the request is settled, so it does not pass on a stale question; after a
 rejection, the message adds that the child may have stopped, and that `courier_send` gets it going
 again. A `courier_answer` that comes later anyway passes nothing on and says so, as does one whose
-request was answered that way while you were being asked in the parent's session. The TUI's [asks
+request was answered that way while you were being asked in the parent's session; the prompt there
+stays open until you answer it, and allowing it then passes nothing on. The TUI's [asks
 inbox](#the-asks-inbox) answers as you, through OpenCode's reply, and never through
 `permission.assert`, so the parent hears the same.
 

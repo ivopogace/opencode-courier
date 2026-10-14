@@ -1,6 +1,5 @@
-// The permission scenario of e2e/real-model.sh (node e2e/real-model-permission.mjs <parentSessionID>): the parent
-// proposes once with courier_answer, and OpenCode asks the person in the parent's session, as its own permission prompt,
-// which this script answers; with COURIER_NATIVE=1 the parent is only told, and the person answers the child's prompt.
+// The permission scenario of e2e/real-model.sh (node e2e/real-model-permission.mjs <parentSessionID>): the parent proposes
+// once, OpenCode's prompt in its session is answered here; with COURIER_NATIVE=1 it is only told, and the child's prompt is.
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -138,8 +137,8 @@ if (NATIVE && told && !answeredItself) {
   await api(`session/${childID}/permission/${request}/reply`, { method: "POST", body: JSON.stringify({ decision: "once" }) })
 } else if (told && !answeredItself && other) {
   if (told.prompt) {
-    // The person who answers through the other server rejects the prompt here without a reason, which ends the
-    // parent's step and leaves the child's request waiting, as a courier_answer never made would.
+    // The person rejects the prompt on the first server without a reason, which ends the parent's step and leaves the
+    // child's request waiting, then answers through the other server, where courier_answer finds no request.
     how = "proposed once with courier_answer, whose prompt the person rejected without a reason"
     await answerPrompt("reject")
     await until("the parent's turn to end after the rejection", async () => settled(await messages(parentID)))
@@ -223,10 +222,13 @@ console.log(timeline)
 
 const answers = toolsOf(parent).filter((part) => part.name === "courier_answer")
 const afterPerson = parent.filter((message) => message.type === "assistant" && message.time.created >= personAt)
-const passedOn = toolsOf(afterPerson).filter(
+// A courier_answer that completed once the person had answered: its call began before, so its message is older.
+const completedAfter = (part) => (part.state.time?.end ?? personAt) >= personAt
+const passedOn = toolsOf(parent).filter(
   (part) =>
     part.name === "courier_answer" &&
     part.state.status === "completed" &&
+    completedAfter(part) &&
     part.state.input?.reply === "once" &&
     part.state.input?.sessionID === child &&
     (part.state.metadata?.answered ?? part.state.metadata?.metadata?.answered) === true,

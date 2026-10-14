@@ -95,11 +95,11 @@ export function permissionNotice(title: string, request: PermissionRequest, star
 }
 
 const PERMISSION_ASK = [
-  "You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose an answer. Do not ask them in your reply or with your question tool first; propose one of these:",
+  "You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose once. Do not ask them in your reply or with your question tool first; propose one of these:",
 ]
 
 const PERMISSION_PROPOSE = [
-  "Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one), and a refusal there fails the call with their reason, which the session is given.",
+  "Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one). A refusal there with a reason fails the call with it, which the session is given; one without a reason ends your turn, and the session waits on.",
 ]
 
 /** For a native child's request, which OpenCode shows the person itself, in the top session's view. */

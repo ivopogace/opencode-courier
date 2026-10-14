@@ -130,10 +130,8 @@ function refusalOf(error: unknown) {
 }
 
 /**
- * Has OpenCode check the child's request against the caller's session rules, which asks the person
- * there when they say so, with the request's own action and resources, never the model's words, and
- * nothing to save. Gives the reason when refused with one, nothing when allowed; a plain rejection
- * and any other failure are thrown.
+ * OpenCode's check of the child's request under the caller's rules, which asks the person in the caller's session, with the
+ * request's own action and resources and nothing to save: the reason when refused with one, nothing when allowed, else thrown.
  */
 async function askCaller(ports: AnswerPorts, callerID: string, request: PermissionRequest, call?: AnswerCall) {
   try {
@@ -180,9 +178,8 @@ async function passOn(ports: AnswerPorts, waiting: Waiting, found: Located, repl
 }
 
 /**
- * Answers a permission request of a session started, directly or through others, from the caller,
- * which must be the top session; `answered` is false when no location loaded here holds the request.
- * A proposed `once` is passed on only once OpenCode has allowed it in the caller's session.
+ * Answers a permission request of a session started, directly or through others, from the caller, which must be the top
+ * session, a proposed `once` only once OpenCode allowed it there; `answered` is false when no location loaded here holds it.
  */
 export async function answer(ports: AnswerPorts, waiting: Waiting, callerID: string, input: AnswerInput): Promise<PermissionAnswered> {
   const reply = proposalOf(input.reply)

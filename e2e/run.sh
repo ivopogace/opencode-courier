@@ -482,9 +482,8 @@ own_request() {
     sleep 1
   done
 }
-# A proposed once goes through permission.assert in the parent's session (#164): OpenCode asks the person
-# there, for what the child asked, and the reply is passed on once they have answered. The parent's turn
-# runs through the API: `opencode run --auto` answers the parent's own prompt itself, as the scenarios above show.
+# A proposed once goes through permission.assert in the parent's session (#164), where OpenCode asks the person; the
+# parent's turn runs through the API, since `opencode run --auto` answers the parent's own prompt itself, as above.
 echo "a parent's courier_answer is held until the person answers OpenCode's prompt in the parent's session"
 ask_permission ""
 api_prompt "$parent" "COURIER-ANSWER once"

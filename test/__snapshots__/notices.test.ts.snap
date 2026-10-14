@@ -1054,11 +1054,11 @@ It asks for: shell
 On:
 - git push
 
-You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose an answer. Do not ask them in your reply or with your question tool first; propose one of these:
+You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose once. Do not ask them in your reply or with your question tool first; propose one of these:
 - once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it
 - reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on
 Call courier_answer with sessionID "ses_child", requestID "per_1", reply set to the choice and, with reject, message set to the reason.
-Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one), and a refusal there fails the call with their reason, which the session is given."
+Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one). A refusal there with a reason fails the call with it, which the session is given; one without a reason ends your turn, and the session waits on."
 `;
 
 exports[`permission requests permissionNotice 2`] = `
@@ -1068,11 +1068,11 @@ On:
 - git push
 Note: Push the fix
 
-You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose an answer. Do not ask them in your reply or with your question tool first; propose one of these:
+You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose once. Do not ask them in your reply or with your question tool first; propose one of these:
 - once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it
 - reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on
 Call courier_answer with sessionID "ses_child", requestID "per_1", reply set to the choice and, with reject, message set to the reason.
-Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one), and a refusal there fails the call with their reason, which the session is given."
+Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one). A refusal there with a reason fails the call with it, which the session is given; one without a reason ends your turn, and the session waits on."
 `;
 
 exports[`permission requests permissionNotice 3`] = `
@@ -1101,22 +1101,22 @@ On:
 - file-19
 - and 3 more
 
-You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose an answer. Do not ask them in your reply or with your question tool first; propose one of these:
+You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose once. Do not ask them in your reply or with your question tool first; propose one of these:
 - once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it
 - reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on
 Call courier_answer with sessionID "ses_child", requestID "per_1", reply set to the choice and, with reject, message set to the reason.
-Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one), and a refusal there fails the call with their reason, which the session is given."
+Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one). A refusal there with a reason fails the call with it, which the session is given; one without a reason ends your turn, and the session waits on."
 `;
 
 exports[`permission requests permissionNotice 4`] = `
 "This session, "Fix the bug", which you started with courier_spawn, is waiting for permission and does nothing until it is answered.
 It asks for: shell
 
-You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose an answer. Do not ask them in your reply or with your question tool first; propose one of these:
+You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose once. Do not ask them in your reply or with your question tool first; propose one of these:
 - once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it
 - reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on
 Call courier_answer with sessionID "ses_child", requestID "per_1", reply set to the choice and, with reject, message set to the reason.
-Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one), and a refusal there fails the call with their reason, which the session is given."
+Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one). A refusal there with a reason fails the call with it, which the session is given; one without a reason ends your turn, and the session waits on."
 `;
 
 exports[`permission requests permissionNotice 5`] = `

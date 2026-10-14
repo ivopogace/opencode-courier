@@ -190,7 +190,8 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   `@opencode/theme` to its versions; they are never peers (the host provides them to the TUI part,
   and a peer broke `opencode plugin add`; a unit test checks).
 - Every tool is registered with `options: { codemode: false }`, returns metadata without
-  `undefined` values, and rethrows failures through `describeFailure`.
+  `undefined` values, and rethrows failures through `describeFailure`, except the plain permission
+  decline `courier_answer` rethrows as it is, which ends the step as OpenCode's own tools do.
 - Behaviour changes come with unit tests and an e2e scenario, and update README.md and
   `docs/reference.md`.
 - Feature work goes on a branch and through a PR with green CI; `Closes #N` in the body.

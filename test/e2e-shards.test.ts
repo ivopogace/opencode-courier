@@ -26,7 +26,7 @@ describe("e2e/run.sh shards", () => {
       expect(shards.flat().toSorted()).toEqual(all.toSorted())
       for (const shard of shards) expect(shard).toEqual(all.filter((group) => shard.includes(group)))
       const restarts = shards.filter((shard) => shard.includes("restart-question") || shard.includes("roster"))
-      expect(restarts.length).toBe(1)
+      expect(restarts).toHaveLength(1)
       expect(restarts[0]).toContain("restart-question")
       expect(restarts[0]).toContain("roster")
       // `native` leaves nativeChildren on, and plugin-add swaps the plugin: both come last in their shard, in this order.

@@ -88,7 +88,9 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
     keymap: { layer: (factory: () => any) => void layers.push(factory) },
   } as unknown as Plugin.Context
   const emit = (type: string, sessionID?: string) => {
-    for (const listener of listeners) listener({ details: { type, ...(sessionID ? { data: { sessionID } } : {}) } } as never)
+    // As the host sends them: a form's session is in its form.
+    const data = type === "form.created" ? { form: { sessionID } } : { sessionID }
+    for (const listener of listeners) listener({ details: { type, ...(sessionID ? { data } : {}) } } as never)
   }
   return {
     context,

@@ -441,17 +441,17 @@ export function addAsksInbox(ctx: Context) {
   }
 
   // A new ask in the open session's tree sounds once: read after a burst of asks, the ones not seen before.
-  // A tree's first read only records the asks waiting, but for those of the sessions the events named.
+  // A tree's first read only records the asks waiting there, except those in sessions the events named.
   const sounded = new Set<string>()
   const readTops = new Set<string>()
   let named = new Set<string>()
   let settling: ReturnType<typeof setTimeout> | undefined
   const sound = async () => {
     const sessionID = openSession()
-    if (!sessionID) return
+    if (!sessionID) return void named.clear()
+    const { asks, listed } = await read(sessionID)
     const eventSessions = named
     named = new Set()
-    const { asks, listed } = await read(sessionID)
     const top = ctx.data.session.get(asks.top)?.title ?? asks.top
     const first = !readTops.has(asks.top)
     readTops.add(asks.top)
@@ -470,7 +470,8 @@ export function addAsksInbox(ctx: Context) {
   void sound().catch(() => undefined)
   const unlisten = ctx.data.listen(({ details }) => {
     if (details.type !== "permission.asked" && details.type !== "form.created") return
-    const eventSession = (details as { data?: { sessionID?: string } }).data?.sessionID
+    const data = (details as { data?: { sessionID?: string; form?: { sessionID?: string } } }).data
+    const eventSession = data?.sessionID ?? data?.form?.sessionID
     if (eventSession) named.add(eventSession)
     if (settling) return
     settling = setTimeout(() => {

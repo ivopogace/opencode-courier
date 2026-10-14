@@ -380,3 +380,13 @@ describe("a choice field's dialog says what it asks", () => {
     expect(dialog.options.options.map((option: any) => option.title)).toEqual(["Yes", "No"])
   })
 })
+
+test("the description row of a boolean's dialog shares no value with Yes or No", async () => {
+  const form = { id: "frm_s", sessionID: "ses_a", title: "Web Search", fields: [{ key: "ok", type: "boolean", description: "Allow?" }] }
+  const fake = fakeContext(empty, { ses_a: [form] })
+  fake.answers.push(pick("Form"), pick("Yes"))
+  await addAsksInbox(fake.context).open()
+  const values = fake.dialogs[1]!.options.options.map((option: any) => option.value)
+  expect(new Set(values).size).toBe(3)
+  expect(fake.calls.find((call) => call.method === "form.reply")).toMatchObject({ method: "form.reply", input: { answer: { ok: true } } })
+})

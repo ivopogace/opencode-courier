@@ -265,10 +265,10 @@ export function addAsksInbox(ctx: Context) {
         await ctx.ui.dialog.alert({ title, message: `This form opens ${field.url}: answer it in its own session.` })
         return undefined
       case "boolean":
-        return ctx.ui.dialog.select<boolean>({
+        return ctx.ui.dialog.select<boolean | symbol>({
           title,
-          options: [...(asks ? [{ title: asks, value: true, disabled: true }] : []), { title: "Yes", value: true }, { title: "No", value: false }],
-        })
+          options: [...(asks ? [{ title: asks, value: NOTE, disabled: true }] : []), { title: "Yes", value: true }, { title: "No", value: false }],
+        }) as Promise<boolean | undefined>
       case "multiselect": {
         const picked = await choose(title, field.options, { multiple: true, own: !!field.custom, asks })
         if (picked?.length === 0 && optional) return SKIP

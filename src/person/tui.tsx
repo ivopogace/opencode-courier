@@ -356,16 +356,21 @@ export function addAsksInbox(ctx: Context) {
   }
 
   // A new ask in the open session's tree sounds once: read after a burst of asks, the ones not seen before.
+  // A tree's first read, made at start, only records the asks already waiting.
   const sounded = new Set<string>()
+  const readTops = new Set<string>()
   let settling: ReturnType<typeof setTimeout> | undefined
   const sound = async () => {
     const sessionID = openSession()
     if (!sessionID) return
     const { asks, listed } = await read(sessionID)
     const top = ctx.data.session.get(asks.top)?.title ?? asks.top
+    const first = !readTops.has(asks.top)
+    readTops.add(asks.top)
     for (const ask of listed) {
       if (sounded.has(ask.key)) continue
       sounded.add(ask.key)
+      if (first) continue
       void ctx.attention.notify({
         title: pathOf(asks, ask.session.sessionID, top, currentTitle),
         message: askTitle(ask),
@@ -374,6 +379,7 @@ export function addAsksInbox(ctx: Context) {
       })
     }
   }
+  void sound().catch(() => undefined)
   const unlisten = ctx.data.listen(({ details }) => {
     if ((details.type !== "permission.asked" && details.type !== "form.created") || settling) return
     settling = setTimeout(() => {

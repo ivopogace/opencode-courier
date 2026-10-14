@@ -209,7 +209,8 @@ describe("answering a permission request", () => {
       expect(fake.replies()).toEqual([{ method: "permission.reply", input: { sessionID: "ses_b", requestID: "per_1", decision } }])
       // Listed again, without the one answered, and so nothing is left.
       expect(fake.dialogs.map((dialog) => dialog.kind)).toEqual(["select", "select"])
-      expect(fake.calls.filter(({ method }) => method === "asks")).toHaveLength(2)
+      // The start-up read, then the two the inbox makes.
+      expect(fake.calls.filter(({ method }) => method === "asks")).toHaveLength(3)
     }
   })
 
@@ -322,9 +323,11 @@ describe("answering a form", () => {
 
 describe("attention", () => {
   test("a new ask in the open session's tree sounds once, a permission request's or a question's sound", async () => {
-    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const fake = fakeContext(empty)
     addAsksInbox(fake.context)
+    await settle()
 
+    fake.state.asks = { ...empty, permissions: [bash] }
     fake.emit("permission.asked")
     fake.emit("permission.asked")
     await settle()
@@ -354,10 +357,12 @@ describe("attention", () => {
   })
 
   test("names where an ask comes from by the sessions' current titles, the RPC's as the fallback", async () => {
-    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const fake = fakeContext(empty)
     const get = fake.context.data.session.get
     fake.context.data.session.get = (id: string) => (id === "ses_a" ? ({ id, title: "Renamed", location: { directory: "/workspace" } } as any) : get(id))
     const inbox = addAsksInbox(fake.context)
+    await settle()
+    fake.state.asks = { ...empty, permissions: [bash] }
     await inbox.open()
     expect((fake.dialogs[0]!.options as any).options[0].description).toBe("Root › Renamed › Write tests")
 
@@ -417,4 +422,14 @@ test("the description row of a boolean's dialog shares no value with Yes or No",
   const values = fake.dialogs[1]!.options.options.map((option: any) => option.value)
   expect(new Set(values).size).toBe(3)
   expect(fake.calls.find((call) => call.method === "form.reply")).toMatchObject({ method: "form.reply", input: { answer: { ok: true } } })
+})
+
+test("an unrelated request does not sound asks that were already waiting", async () => {
+  const fake = fakeContext({ ...empty, permissions: [bash], questions: [greeting] })
+  addAsksInbox(fake.context)
+  await settle()
+  // A permission request in a session outside this tree; the tree's two asks were there before.
+  fake.emit("permission.asked")
+  await settle()
+  expect(fake.notified).toEqual([])
 })

@@ -970,7 +970,8 @@ each answer and closes once nothing is left.
 session's tree and plays, for each ask it has not sounded before, OpenCode's `permission` sound for a
 permission request and its `question` sound for a question or a form, with a notification (the ask and
 where it comes from) when the terminal is not focused. OpenCode's own TUI sounds for every request and
-form it sees as well.
+form it sees as well. The asks already waiting when the TUI starts, or when a tree is first read, stay
+silent, except those of the sessions the events name.
 
 **The RPC.** `courier-person`, registered by every instance next to `courier`; its contract is
 `personRpc` from `opencode-courier/rpc`:

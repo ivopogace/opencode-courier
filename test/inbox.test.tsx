@@ -315,7 +315,7 @@ describe("answering a form", () => {
     fake.answers.push(pick("Form"), () => undefined)
     await addAsksInbox(fake.context).open()
 
-    expect(fake.dialogs[1]).toEqual({ kind: "alert", options: { title: "login", message: "This form opens https://example.com: answer it in its own session." } })
+    expect(fake.dialogs[1]).toEqual({ kind: "alert", options: { title: "Sign in · login", message: "This form opens https://example.com: answer it in its own session." } })
     expect(fake.replies()).toEqual([])
   })
 })
@@ -351,5 +351,32 @@ describe("attention", () => {
 
     inbox.cleanup()
     expect(fake.listeners.size).toBe(0)
+  })
+})
+
+describe("a choice field's dialog says what it asks", () => {
+  const ask = async (field: Record<string, unknown>, answer: (dialog: Dialog) => unknown) => {
+    const form = { id: "frm_s", sessionID: "ses_a", title: "Web Search", fields: [{ key: "choice", description: "Allow OpenCode to search the web?", ...field }] }
+    const fake = fakeContext(empty, { ses_a: [form] })
+    fake.answers.push(pick("Form"), answer)
+    await addAsksInbox(fake.context).open()
+    return fake.dialogs[1]!
+  }
+  const options = [{ value: "allow", label: "Allow" }, { value: "disable", label: "Disable" }]
+
+  test.each([
+    ["a boolean", { type: "boolean" }],
+    ["a multiselect", { type: "multiselect", options }],
+    ["a string with options", { type: "string", required: true, options }],
+  ])("%s shows the description first, and the form and field in its title", async (_name, field) => {
+    const dialog = await ask(field, () => undefined)
+    expect(dialog.options.title).toBe("Web Search · choice")
+    expect(dialog.options.options[0]).toMatchObject({ title: "Allow OpenCode to search the web?", disabled: true })
+  })
+
+  test("a field's own title replaces its key, and without a description there is no extra option", async () => {
+    const dialog = await ask({ type: "boolean", title: "Search", description: undefined }, () => undefined)
+    expect(dialog.options.title).toBe("Web Search · Search")
+    expect(dialog.options.options.map((option: any) => option.title)).toEqual(["Yes", "No"])
   })
 })

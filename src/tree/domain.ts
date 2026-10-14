@@ -45,6 +45,41 @@ type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 /** Whether a session with these times runs: it has never finished a turn, or something reached it after the last one ended. */
 export const busy = (time: Pick<Times, "updated" | "idle">) => time.idle === undefined || millis(time.updated) > millis(time.idle)
 
+/**
+ * Whether a session a tree is read of is live, as the limits count it: it runs, waits on a request, or owes a report;
+ * one OpenCode no longer knows is not.
+ */
+export const isLive = (time: Pick<Times, "updated" | "idle"> | undefined, waits: number, owes: boolean) =>
+  time !== undefined && (busy(time) || waits > 0 || owes)
+
+/** A session of a tree read, as `cut` takes it: where it is in the tree, when it was started, and whether it is live. */
+export interface Cuttable {
+  readonly sessionID: string
+  readonly parentID: string
+  readonly createdAt: number
+  readonly live: boolean
+}
+
+/**
+ * Which sessions a listing of at most `max` keeps, of a tree read in the order it is drawn: the live ones first, then
+ * the newest, each with the sessions above it so the tree still draws; `leftOut` counts the rest, the oldest
+ * finished ones. The kept stay in the order given.
+ */
+export function cut<T extends Cuttable>(nodes: ReadonlyArray<T>, max: number) {
+  const byID = new Map(nodes.map((node) => [node.sessionID, node]))
+  const ranked = nodes
+    .map((node, order) => ({ node, order }))
+    .sort((a, b) => Number(b.node.live) - Number(a.node.live) || b.node.createdAt - a.node.createdAt || a.order - b.order)
+  const kept = new Set<string>()
+  for (const { node } of ranked) {
+    const chain: string[] = []
+    for (let above: T | undefined = node; above && !kept.has(above.sessionID); above = byID.get(above.parentID)) chain.push(above.sessionID)
+    if (kept.size + chain.length > max) continue
+    for (const sessionID of chain) kept.add(sessionID)
+  }
+  return { kept: nodes.filter((node) => kept.has(node.sessionID)), leftOut: nodes.length - kept.size }
+}
+
 /** A session started with courier_spawn, recorded under the session that started it. */
 export interface RosterEntry {
   readonly sessionID: string

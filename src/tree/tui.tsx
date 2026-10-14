@@ -56,7 +56,6 @@ export function summaryLine(summary: Summary) {
     summary.waiting ? `${summary.waiting} waiting on you` : "",
     summary.idle ? `${summary.idle} idle` : "",
     ...summary.groups.map((group) => `group ${group.name} ${group.reported}/${group.members}`),
-    summary.truncated ? `first ${summary.truncated} counted` : "",
   ].filter(Boolean)
   return parts.length ? `courier ${parts.join(" · ")}` : ""
 }
@@ -346,7 +345,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
         </Show>
         <Show when={latest()?.tree?.truncated}>
           <text fg={theme.text.feedback.warning.base} wrapMode="none">
-            first {latest()?.tree?.truncated} shown
+            {latest()?.tree?.truncated} older left out
           </text>
         </Show>
       </box>

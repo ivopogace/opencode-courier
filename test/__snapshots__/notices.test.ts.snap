@@ -318,7 +318,7 @@ exports[`tools courier_children 1`] = `
 
 exports[`tools courier_tree 1`] = `
 {
-  "description": "List the whole tree of sessions under this one (or under sessionID): every session started with courier_spawn from it, directly or through others, each with its depth, what courier_children shows, and whether it still owes a report, sent progress, or ended without one. For a one-off look, not for waiting; long trees are cut at maxTotal sessions.",
+  "description": "List the whole tree of sessions under this one (or under sessionID): every session started with courier_spawn from it, directly or through others, each with its depth, what courier_children shows, and whether it still owes a report, sent progress, or ended without one. For a one-off look, not for waiting. A long tree lists at most maxTotal sessions, the live ones first, then the newest, and says how many older ones are left out.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -846,7 +846,7 @@ exports[`tool results treeText 3`] = `
   ],
   "truncated": 20
 }
-Only the first 20 sessions are listed (maxTotal); courier_tree on one of them lists what is under it."
+20 older sessions are not listed: at most maxTotal are, the live ones first, then the newest; courier_tree on a listed session lists what is under it."
 `;
 
 exports[`tool results stopText 1`] = `

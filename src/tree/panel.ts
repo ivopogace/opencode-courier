@@ -1,11 +1,11 @@
 import type { Status } from "../kernel/protocol.js"
 import { busy } from "./domain.js"
-import type { CourierPorts, Pending, RosterEntry } from "./ports.js"
-import { lastStatus, reportOf } from "./report.js"
+import type { CourierPorts, Pending } from "./ports.js"
+import { lastStatus, type reportOf } from "./report.js"
 import type { Row, Tree, Wait } from "./rpc.js"
 import { standingIn } from "./status.js"
 import { childStore } from "./store.js"
-import { subtree } from "./subtree.js"
+import { readTree, type Looked } from "./subtree.js"
 
 type Messages = Awaited<ReturnType<CourierPorts["session"]["context"]>>
 
@@ -40,15 +40,11 @@ function stateOf(info: unknown, waits: number, running: boolean): Row["state"] {
   return running ? "running" : "idle"
 }
 /** One session of the panel: what it is doing, its report and group standing, its last tool call and its cost. */
-async function row(ports: CourierPorts, entry: RosterEntry, depth: number): Promise<Row> {
+async function row(ports: CourierPorts, { entry, depth, info, pending, report }: Looked): Promise<Row> {
   const { sessionID } = entry
-  const children = childStore(ports.storage)
-  const [info, messages, pending, report, status, standing] = await Promise.all([
-    ports.session.get({ sessionID }).catch(() => undefined),
+  const [messages, status, standing] = await Promise.all([
     ports.session.context({ sessionID }).catch((): Messages => []),
-    ports.pending(sessionID).catch((): ReadonlyArray<Pending> => []),
-    reportOf(children, sessionID).catch(() => undefined),
-    lastStatus(children, sessionID).catch(() => undefined),
+    lastStatus(childStore(ports.storage), sessionID).catch(() => undefined),
     entry.group ? standingIn(ports, entry, entry.group) : undefined,
   ])
   const running = info !== undefined && busy(info.time)
@@ -71,9 +67,12 @@ async function row(ports: CourierPorts, entry: RosterEntry, depth: number): Prom
   }
 }
 
-/** The tree panel's rows: the sessions courier_tree reads under a session, at most `maxTotal`, each as `row` reads it. */
+/**
+ * The tree panel's rows: the sessions under a session as courier_tree lists them, at most `maxTotal`, the live ones
+ * first, then the newest, each as `row` reads it; `truncated` counts the older ones left out.
+ */
 export async function panel(ports: CourierPorts, rootID: string): Promise<Tree> {
-  const { nodes, truncated } = await subtree(ports.storage, rootID, ports.limits.maxTotal)
-  const rows = await Promise.all(nodes.map(({ entry, depth }) => row(ports, entry, depth)))
-  return { rows, ...(truncated ? { truncated: ports.limits.maxTotal } : {}) }
+  const { kept, leftOut } = await readTree(ports, rootID)
+  const rows = await Promise.all(kept.map((node) => row(ports, node)))
+  return { rows, ...(leftOut ? { truncated: leftOut } : {}) }
 }

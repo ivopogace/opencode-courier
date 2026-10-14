@@ -51,7 +51,7 @@ const Asks = Schema.Struct({
   sessions: Schema.Array(Session),
   permissions: Schema.Array(Permission),
   questions: Schema.Array(Question),
-  /** Set when the tree had more sessions than `maxTotal`, which were not read. */
+  /** Never set: every session of the tree is read. Kept in the contract for a reader that names it. */
   truncated: Schema.optionalKey(Count),
 })
 

@@ -8,18 +8,16 @@ import { personRpc, type Answered, type Asks } from "./rpc.js"
 export interface PersonRpcPorts {
   readonly questions: QuestionPorts
   readonly permissions: () => Iterable<Permissions>
-  /** At most this many sessions of a tree are read, as courier_tree reads them. */
-  readonly maxTotal: number
 }
 
 /**
- * The permission requests and questions waiting in the courier tree a session is in, from the roster: read from the
- * top of its lineage down, so each session of the tree sees the same inbox.
+ * The permission requests and questions waiting in the courier tree a session is in, from the roster: every session
+ * of it, read from the top of its lineage down, so each session of the tree sees the same inbox.
  */
 export async function asks(ports: PersonRpcPorts, sessionID: string): Promise<Asks> {
   const { storage } = ports.questions
   const top = (await lineage(storage, sessionID)).at(-1)?.parentID ?? sessionID
-  const { nodes, truncated } = await subtree(storage, top, ports.maxTotal)
+  const { nodes } = await subtree(storage, top, { now: ports.questions.now() })
   const waiting = await Promise.all(
     nodes.map(({ entry }) =>
       Promise.all([
@@ -60,7 +58,6 @@ export async function asks(ports: PersonRpcPorts, sessionID: string): Promise<As
         ...(stopped ? { stopped } : {}),
       })),
     ),
-    ...(truncated ? { truncated: ports.maxTotal } : {}),
   }
 }
 

@@ -972,8 +972,7 @@ POST /api/rpc/courier-person/answer?directory=<location> {"input":{"sessionID":"
 {"output":{"answered":true,"by":"result"}}
 ```
 
-`sessions` has `group` for a member of a join group; `truncated` is never set, as every session of the tree
-is read. `answer` gives `{"answered": false}` for a question that no longer waits, and `problem` with the
+`sessions` has `group` for a member of a join group. `answer` gives `{"answered": false}` for a question that no longer waits, and `problem` with the
 reason when the answers do not fit. Forms are not in `asks`: the TUI lists them itself
 (`GET /api/session/:id/form`).
 

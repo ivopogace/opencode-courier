@@ -19,8 +19,6 @@ const Summary = Schema.Struct({
   /** Not running: done, or waiting for a message. */
   idle: Count,
   groups: Schema.Array(Group),
-  /** Never set: every session under it is counted. Kept in the contract for a reader that names it. */
-  truncated: Schema.optionalKey(Count),
 })
 
 export type Summary = typeof Summary.Type

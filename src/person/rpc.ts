@@ -51,8 +51,6 @@ const Asks = Schema.Struct({
   sessions: Schema.Array(Session),
   permissions: Schema.Array(Permission),
   questions: Schema.Array(Question),
-  /** Never set: every session of the tree is read. Kept in the contract for a reader that names it. */
-  truncated: Schema.optionalKey(Count),
 })
 
 export type Asks = typeof Asks.Type

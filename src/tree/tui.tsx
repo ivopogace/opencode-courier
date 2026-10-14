@@ -283,6 +283,9 @@ const FOCUS_PROMPT = "pane.focus.left"
  */
 type Following = { root: string; at?: string; to?: string; presentation: PanelPresentation; focused: boolean; refocus?: boolean; tree?: Tree }
 
+/** A title on one line: line breaks become spaces. */
+const oneLine = (title: string) => title.replace(/\s*[\r\n]+\s*/g, " ")
+
 /** What a panel opened in a session shows: the tree it follows there, and whether to give the keyboard back to the prompt. */
 type View = { root: string; tree?: Tree; refocus: boolean; note: (fields: Partial<Following>) => void }
 
@@ -402,14 +405,18 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
             const indent = "  ".repeat(row.depth - 1)
             return (
               <box id={`courier-row-${index()}`} flexDirection="column" flexShrink={0} backgroundColor={chosen() && input.focused ? theme.background.raised.high : undefined}>
-                <text fg={rowColor(row)} wrapMode="none">
-                  {indent}
-                  {chosen() ? "▸ " : "  "}
-                  {row.title}
-                  {row.sessionID === input.sessionID ? " (on screen)" : ""}
-                  {"  "}
-                  <span style={{ fg: theme.text.muted }}>{statusLine(row)}</span>
-                </text>
+                <box flexDirection="row" flexShrink={0}>
+                  <text fg={rowColor(row)} wrapMode="none" flexShrink={1} minWidth={0}>
+                    {indent}
+                    {chosen() ? "▸ " : "  "}
+                    {oneLine(row.title)}
+                    {row.sessionID === input.sessionID ? " (on screen)" : ""}
+                  </text>
+                  <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
+                    {"  "}
+                    {statusLine(row)}
+                  </text>
+                </box>
                 <For each={detailLines(row, rows(), now())}>
                   {(line) => (
                     <text fg={theme.text.muted} wrapMode="none">

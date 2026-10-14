@@ -953,3 +953,19 @@ describe("/courier stop with nothing to pick (#181)", () => {
     expect(fake.state.toasts.at(-1)).toMatchObject({ message: "closing", variant: "error" })
   })
 })
+
+test("a long title keeps the row's status in view, and a line break stays on the row", async () => {
+  const fake = fakeContext(async () => empty)
+  fake.state.tree = async () => ({ rows: [
+    row("ses_a", { title: "Refactor the session tree panel so that it renders well…", state: "waiting", waits: [{ type: "permission", action: "shell", resources: ["rm -rf build"] }] }),
+    row("ses_b", { title: "Line one\nline two" }),
+  ] })
+  await tui.setup(fake.context)
+  const render = fake.claim("session.panel")!.render as (input: unknown) => any
+  const app = await testRender(() => render({ ...panelInput().value, width: 60 }), { width: 60, height: 12 })
+  renderers.push(app)
+  await app.waitForFrame((frame) => frame.includes("Refactor"))
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("waiting on you")
+  expect(frame).not.toMatch(/\n line two/)
+})

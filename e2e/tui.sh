@@ -184,6 +184,13 @@ check "the panel opens again" "$(shows "courier tree  [████████�
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "enter on a child row keeps the panel in the child's view, the child marked" "$(shows "(on screen)" 30 tui-panel-followed)"
 check "with the parent's tree" "$(grep -qF "courier tree  [██████████] 2/2 reported" "$WORK/tui-panel-followed.txt" && echo true || echo false)"
+# A new session's home screen hides it; back on the parent's tab, the first, it shows again.
+tmux send-keys -t "$TMUX_SESSION" C-x n
+check "the home screen of /new hides the panel" "$(hides "courier tree" 10 tui-panel-home)"
+tmux send-keys -t "$TMUX_SESSION" C-x
+sleep 0.3
+tmux send-keys -t "$TMUX_SESSION" 1
+check "back on the parent, the panel shows again" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-back)"
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes it there" "$(hides "courier tree" 10 tui-panel-followed-closed)"
 # /courier stop stops as the open session, so back to the parent.
@@ -277,7 +284,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

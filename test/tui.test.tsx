@@ -616,7 +616,7 @@ describe("the tree panel following navigation", () => {
     expect(app.captureCharFrame()).toContain("CHILD-ASKS")
   })
 
-  test("outside its tree, shows the new session's own tree, or closes when it started none", async () => {
+  test("outside its tree, shows the new session's own tree, or hides until a session with a tree", async () => {
     const fake = await opened({ ses_parent: pair(1), ses_other: { rows: [row("ses_far", { parentID: "ses_other", title: "Far away" })] } })
 
     fake.state.route = { type: "session", sessionID: "ses_other" }
@@ -630,18 +630,50 @@ describe("the tree panel following navigation", () => {
     await settle()
     expect(fake.state.opened).toHaveLength(2)
     expect(fake.context.ui.panel.current()).toBeUndefined()
-    // Closed, it no longer follows.
-    fake.state.route = { type: "session", sessionID: "ses_other" }
+    // Hidden, not closed: back in a session with a tree, it shows again.
+    fake.state.route = { type: "session", sessionID: "ses_parent" }
     await settle()
-    expect(fake.state.opened).toHaveLength(2)
+    expect(fake.state.opened).toHaveLength(3)
+    expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_parent" })
   })
 
-  test("the home screen ends the following", async () => {
+  test("hidden in a session without a tree, shows once that session starts one", async () => {
+    const fake = await opened({ ses_parent: pair(1) })
+    fake.state.route = { type: "session", sessionID: "ses_lonely" }
+    await settle()
+    expect(fake.state.opened).toHaveLength(1)
+
+    fake.state.tree = async (sessionID) => (sessionID === "ses_lonely" ? { rows: [row("ses_new", { parentID: "ses_lonely" })] } : pair(1))
+    fake.emit("session.created")
+    await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS + 100))
+    expect(fake.state.opened).toHaveLength(2)
+    expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_lonely" })
+  })
+
+  test("the home screen hides it, and it shows again in a session of its tree", async () => {
+    const fake = await opened({ ses_parent: pair(1) }, { presentation: "fullscreen" })
+    fake.state.route = { type: "home" }
+    await settle()
+    expect(fake.state.opened).toEqual([PANEL])
+
+    fake.state.route = { type: "session", sessionID: "ses_parent" }
+    await settle()
+    expect(fake.state.opened).toEqual([PANEL, PANEL])
+    expect(fake.state.presentations.at(-1)).toBe("fullscreen")
+    expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_parent" })
+  })
+
+  test("closed with q while hidden elsewhere is not undone: q ends it, and then nothing brings it back", async () => {
     const fake = await opened({ ses_parent: pair(1) })
     fake.state.route = { type: "home" }
     fake.state.route = { type: "session", sessionID: "ses_parent" }
     await settle()
-    expect(fake.state.opened).toEqual([PANEL])
+    expect(fake.state.opened).toHaveLength(2)
+    fake.context.ui.panel.close()
+    fake.state.route = { type: "home" }
+    fake.state.route = { type: "session", sessionID: "ses_parent" }
+    await settle()
+    expect(fake.state.opened).toHaveLength(2)
   })
 })
 

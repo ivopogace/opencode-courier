@@ -266,7 +266,8 @@ a bar of the parts reported, a leaf how long it ran, its last tool call and its 
 `enter` opens the session, `s` stops it and everything under it after you confirm, as `courier_stop`
 would, and `q` closes the panel; `/courier stop <session>` stops from the prompt. While open, the panel
 follows you between sessions: into one of its tree it keeps that tree, the session on screen marked
-`(on screen)`; elsewhere it shows that session's tree, or closes if it started none.
+`(on screen)`; elsewhere it shows that session's tree, or hides while you are in a session without one,
+or on the home screen, and shows again once you are back in one; only `q` closes it for good.
 
 `ctrl+x k` (the leader key, then `k`), `/asks` (or `/ask`), the palette's "Courier: what waits on you" or a click
 on "waiting on you" opens the asks inbox: every permission request, question and form waiting

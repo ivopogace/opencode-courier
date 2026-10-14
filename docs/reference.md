@@ -65,7 +65,7 @@ Each tool's parameters, `?` marking an optional one; the sections below say how 
 | `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `queue?` | Delivers a message to a session, signed with the sender's id, waking it if idle: steered into its running turn, or, with `queue: true`, after the turn ends. From a child to its parent, a `status` makes it the child's [report](#a-childs-report), with its `artifacts` (`branch`, `commits`, `files`, `checks`) listed in the body; from a member of a join group, a `done`, `partial` or `failed` report is held with the group instead, and the result says so. |
 | `courier_status` | `sessionID` | One look at a session: the outcome of its last turn, how long it has been idle, its last reply and the permission requests and questions it waits on (`pending`). For check-ins, not for waiting. |
 | `courier_children` | `sessionID?` | Lists the sessions this one (or `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated, when it was started and, for one started in a group, the group and its [report's standing](#join-groups). |
-| `courier_tree` | `sessionID?` | Lists the [whole tree](#seeing-and-stopping-a-subtree) under this session (or `sessionID`), depth first, each with what `courier_children` shows plus its depth, its parent and its report state. Cut at `maxTotal` sessions. |
+| `courier_tree` | `sessionID?` | Lists the [whole tree](#seeing-and-stopping-a-subtree) under this session (or `sessionID`), depth first, each with what `courier_children` shows plus its depth, its parent and its report state. At most `maxTotal` sessions: the live ones first, then the newest. |
 | `courier_stop` | `sessionID`, `cleanup?` | [Stops](#seeing-and-stopping-a-subtree) a session started from this one, directly or through others, and every session under it, deepest first, and cancels the `courier_later` messages scheduled for them; `cleanup: true` also removes their worktrees by `courier_cleanup`'s rules. |
 | `courier_cleanup` | `sessionID`, `force?` | Removes the git worktree of a child started with `isolate: true` and drops the child from `courier_children`; a worktree with uncommitted changes or commits on no branch, tag or remote is kept and listed unless `force: true` ([worktree cleanup](#worktree-cleanup)). A child without a worktree is only forgotten; either way a join group member that has not reported is [dropped from its group](#join-groups). |
 | `courier_answer` | `sessionID`, `requestID`, `reply?`, `message?`, `answers?` | Answers a [permission request](#a-child-that-asks-for-permission) (`reply`: `once`, which OpenCode first asks the person about in this session, or `reject`, with an optional `message`) or passes the person's answer to a [question](#a-child-that-asks-a-question) (`answers`) that a session started from this one waits on. |
@@ -719,8 +719,10 @@ that can no longer be looked up is still listed, with the error instead of its s
 also where a session's depth and tree are read from, for the [limits](#session-trees-and-their-limits).
 Whether a child [owes its parent a report](#a-child-that-ends-without-a-report), and its place in a
 [join group](#join-groups), are kept next to it, and dropped with its entry. Entries are dropped 14 days
-after the child was started, when that parent's roster is read or the plugin is next loaded, except
-isolated children whose worktree is still there (see [Worktree cleanup](#worktree-cleanup)). Loading
+after the child was started, when `courier_children` reads that parent's roster or the plugin is next
+loaded, except isolated children whose worktree is still there (see [Worktree cleanup](#worktree-cleanup));
+every other read of a tree (`courier_tree`, the [terminal part](#in-the-terminal)) leaves such entries
+out, and what is under them, without dropping them. Loading
 the plugin also removes, best-effort, report state whose session has no entry left, as a cleanup that
 failed part-way leaves it. If the roster cannot be written, the child still gets its task and
 `courier_spawn` says it is not on the list.
@@ -728,10 +730,14 @@ failed part-way leaves it. If the roster cannot be written, the child still gets
 ## Seeing and stopping a subtree
 
 **`courier_tree`** lists the sessions under the calling session, or under `sessionID`: those it
-started with `courier_spawn`, and those they started, and so on, at most `maxTotal` sessions; past
-that the result says `truncated` and the number, and `courier_tree` on one of the listed sessions lists
-what is under it. The result is flat, in the order a tree is drawn (each session followed by what it
-started, siblings oldest first). Each entry is what `courier_children` shows (`sessionID`, `title`,
+started with `courier_spawn`, and those they started, and so on, every one of them looked up, at most
+`maxTotal` of them listed: the live ones first (running, waiting on a request, or [owing a
+report](#a-child-that-ends-without-a-report)), then the newest, each with the sessions above it, so every
+live session is listed (at most `maxTotal` are live at once) and a cut takes only the oldest finished
+ones. Past that the result says `truncated` with how many older sessions were left out, and
+`courier_tree` on one of the listed sessions lists what is under it. The result is flat, in the order a
+tree is drawn (each session followed by what it started, siblings oldest first). Each entry is what
+`courier_children` shows (`sessionID`, `title`,
 `outcome`, `lastText`, `pending`, `directory`, `isolated`, `created`, and `group: { name, report }` for a
 member of a join group) plus:
 
@@ -797,8 +803,8 @@ courier 2 running · 1 waiting on you · 1 idle · group pair 1/2
 ```
 
 It counts the sessions under the open session, those it started with `courier_spawn` and those they
-started, at most `maxTotal` as `courier_tree` reads them (past that, `first <maxTotal> counted`), each by
-what it does:
+started, every one of them (so a tree that has started more than `maxTotal` sessions over time is
+counted whole, with the ones [past retention](#roster) left out), each by what it does:
 
 - `waiting on you`: it waits on a permission request or a question, those `courier_status` lists as
   `pending`, which go to the person at the top of its tree;
@@ -817,8 +823,9 @@ A server that cannot register the RPC logs `courier rpc: not registered` and loa
 
 **The tree panel.** `/courier tree` (or *Courier session tree* in the command palette) opens a panel
 beside the open session (fullscreen when the session is too narrow to split): `courier_tree` for people.
-It reads the sessions under the open session as `courier_tree` does, at most `maxTotal` (past that,
-`first <maxTotal> shown`), in the order a tree is drawn, two spaces deeper per level:
+It lists the sessions under the open session as `courier_tree` does: at most `maxTotal`, the live
+ones first, then the newest, each with the sessions above it, in the order a tree is drawn, two spaces
+deeper per level; past that the header says how many older sessions are left out (`12 older left out`):
 
 ```
 courier tree  [█████░░░░░] 1/2 reported
@@ -882,15 +889,15 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_�
 {"output":{"running":0,"waiting":1,"idle":1,"groups":[{"name":"pair","reported":1,"members":2}]}}
 ```
 
-- `summary {sessionID}`: the status entry's counts, with `truncated: <maxTotal>` when the subtree was
-  cut. An input without a `sessionID` is refused as `rpc.invalid_input`.
+- `summary {sessionID}`: the status entry's counts, of every session under it. An input without a
+  `sessionID` is refused as `rpc.invalid_input`.
 - `tree {sessionID}`: the panel's rows. Each row: `sessionID`, `parentID`, `title`, `depth` (a child of
   the session asked is at 1), `state` (`running`, `waiting`, `idle` or `gone`), `outcome` of its last
   turn, `report` (`state`: `owed`, `reported` or `ended`, with the report's `status` once reported, and
   `progressed`), `group` (`name`, `standing`), `isolated`, `created`, `idle` (when its last turn ended, if
   it is not running), `cost` in US dollars, `tool` (its last tool call's `name` and `at`, when it ran) and
   `waits` (`{type: "permission", action, resources}` or `{type: "question", question}`); times in epoch
-  milliseconds. `truncated` as for the summary.
+  milliseconds. `truncated` is how many older sessions the listing left out, when it had more than `maxTotal`.
 - `stop {sessionID, by}`: `courier_stop` for `sessionID`, called from `by`, which must be above it;
   answers `{stopped: [{sessionID, title, outcome}], cancelled: <count>}`, deepest first, or fails with
   the declared error `refused` and `courier_stop`'s message.
@@ -908,7 +915,8 @@ the footer is hidden, so open the inbox with `ctrl+x k` (or `/asks` once the pro
 
 **What it lists.** The tree is courier's own, read from the roster, not OpenCode's `parentID`: from the
 top of the open session's lineage down, so every session of a tree, the root or a grandchild, lists the
-same, at most `maxTotal` sessions as `courier_tree` reads them. It lists the tree's permission requests
+same, every session of the tree, however many it has started over time (those past retention left out),
+so an ask is never hidden behind older sessions. It lists the tree's permission requests
 and questions as `courier_status` lists them (`pending`), and each session's forms, leaving out the
 question tool's own forms, which are listed as their questions. One line per ask, oldest first (in the
 order the inbox first saw them, and in the tree's order among those seen together):
@@ -964,8 +972,8 @@ POST /api/rpc/courier-person/answer?directory=<location> {"input":{"sessionID":"
 {"output":{"answered":true,"by":"result"}}
 ```
 
-`sessions` has `group` for a member of a join group, the output `truncated: <maxTotal>` when the tree was
-cut. `answer` gives `{"answered": false}` for a question that no longer waits, and `problem` with the
+`sessions` has `group` for a member of a join group; `truncated` is never set, as every session of the tree
+is read. `answer` gives `{"answered": false}` for a question that no longer waits, and `problem` with the
 reason when the answers do not fit. Forms are not in `asks`: the TUI lists them itself
 (`GET /api/session/:id/form`).
 

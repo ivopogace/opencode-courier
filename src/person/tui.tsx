@@ -160,8 +160,14 @@ export function addAsksInbox(ctx: Context) {
     return { asks, listed }
   }
 
+  /** The host's client throws an RPC error as a plain `{ type, message }` object, not an `Error`. */
+  const reason = (error: unknown) => {
+    if (error instanceof Error) return error.message
+    return typeof error === "object" && error && "message" in error ? String(error.message) : String(error)
+  }
+
   const fail = (what: string) => (error: unknown) =>
-    ctx.ui.toast.show({ title: "courier", message: `${what}: ${error instanceof Error ? error.message : String(error)}`, variant: "error" })
+    ctx.ui.toast.show({ title: "courier", message: `${what}: ${reason(error)}`, variant: "error" })
 
   /**
    * Asks the person to pick one or more of `choices`, each answered with its value, or to give an answer of their

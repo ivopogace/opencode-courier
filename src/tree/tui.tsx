@@ -503,10 +503,14 @@ export function addTreePanel(ctx: Context) {
   const stopUnder = async (target: string) => {
     const route = ctx.ui.router.current()
     if (route.type !== "session") return ctx.ui.toast.show({ title: "courier", message: "Open a session first", variant: "warning" })
-    const rows = await courier.tree({ sessionID: route.sessionID }, { location: location(route.sessionID) }).then(
-      (tree) => tree.rows,
-      (): Row[] => [],
+    const read = await courier.tree({ sessionID: route.sessionID }, { location: location(route.sessionID) }).then(
+      (tree) => ({ rows: tree.rows }),
+      (error: unknown) => ({ rows: [] as Row[], error }),
     )
+    const rows = read.rows
+    if (!target && "error" in read) return ctx.ui.toast.show({ title: "courier stop", message: reason(read.error), variant: "error" })
+    if (!target && !rows.length)
+      return ctx.ui.toast.show({ title: "courier stop", message: "No session started with courier_spawn under this one.", variant: "warning" })
     const sessionID =
       target ||
       (await ctx.ui.dialog.select({

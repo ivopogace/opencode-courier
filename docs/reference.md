@@ -805,9 +805,9 @@ with its group or delivered, `ended without a report` when its turn failed or wa
 for a session spawned before report notes were kept), its join group's standing (`group <name> held`,
 `out`, how it left, or `released`), and `isolated`. Under it:
 
-- an **orchestrator**, any session with children among the rows, and the panel's own session in the
-  header, gets a bar of the parts reported: its children whose report arrived out of the children it
-  started;
+- an **orchestrator**, any session with children among the rows, and the session whose tree the panel
+  shows, in the header, gets a bar of the parts reported: its children whose report arrived out of the
+  children it started;
 - a session **waiting on the person** gets one line per request: `asks permission: <action>
   <resources>` or `asks: <its first question>`;
 - a **leaf** gets its activity: how long it ran (from its creation to the end of its last turn, or to
@@ -819,15 +819,19 @@ asks again a second after the first of a burst of the status entry's events and 
 update or a rename, and redraws its times every second. Its keys, while it has the keyboard (it takes it
 when it opens; `<leader>left` and `<leader>right` move it between the session and the panel): `↑`/`k` and
 `↓`/`j` move the selection, `enter` opens the selected session, `s` stops it, `r` asks again, `f` toggles
-fullscreen and `q` closes the panel. Opening a session leaves the panel with the session it was opened in.
+fullscreen and `q` closes the panel. While open, the panel follows the person to another session (its own
+`enter`, a tab, "go to parent"), as it was shown and taking the keyboard only if it had it: to a session
+of its tree it keeps that tree, and its stops, with the session on screen marked `(on screen)` in its
+row; to another it shows that session's tree, or closes when it started none. Closed with `q` or by
+OpenCode, it stays closed.
 
 **Stopping from the TUI.** `s` in the panel, or `/courier stop <session>` in the prompt (`/courier stop`
 alone lists the open session's tree to pick from), asks the person to confirm with the session's title
-and how many sessions are under it, then stops it with the open session as the caller: the same stop as
-`courier_stop`, so only a session under the open one can be stopped, deepest first, its scheduled
-messages cancelled and its failure and silent-turn notices kept quiet, and the target's parent, when its
-turn was interrupted, is told with the usual notice unless it is the open session itself (the person is
-there to tell it). A toast says how many sessions were stopped and interrupted and how many scheduled
+and how many sessions are under it, then stops it with the open session as the caller (the panel's, the session whose tree it
+shows): the same stop as `courier_stop`, so only a session under the caller can be stopped, deepest
+first, its scheduled messages cancelled and its failure and silent-turn notices kept quiet, and the
+target's parent, when its turn was interrupted, is told with the usual notice unless it is the caller
+itself (the person is there to tell it). A toast says how many sessions were stopped and interrupted and how many scheduled
 messages were cancelled, or why the stop was refused. `/courier` with anything else shows its usage.
 
 **Attention.** A join group's reports released to a session call for attention, with a notification

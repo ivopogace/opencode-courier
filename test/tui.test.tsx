@@ -4,7 +4,7 @@ import type { Plugin } from "@opencode/plugin/tui"
 import type { SlotClaim } from "@opencode/plugin/tui/context"
 import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
-import { createSignal } from "solid-js"
+import { batch, createSignal } from "solid-js"
 import type { Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
 import { activityLine, addTreeStatus, bar, detailLines, duration, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
 import tui from "../src/tui.js"
@@ -14,8 +14,8 @@ const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
 type Listener = (event: { type: string; data?: unknown; details: { type: string } }) => void
 
 /**
- * A fake TUI context whose RPC answers `answer` for each session's summary and `tree` for its tree; the calls, the slots
- * claimed, the keymap layers, the event listeners, the toasts, the notifications and the dialogs shown are kept.
+ * A fake TUI context whose RPC answers `answer` for each session's summary and `tree` for its tree, keeping what it is
+ * asked and shown; its route and panel are signals, and a route to another session closes the panel, as the host's do.
  */
 function fakeContext(
   answer: (sessionID: string) => Promise<Summary>,
@@ -26,6 +26,9 @@ function fakeContext(
   const calls: unknown[] = []
   const listeners = new Set<Listener>()
   const typed = new Map<string, Set<Listener>>()
+  type Route = { type: string; sessionID?: string }
+  const [route, setRoute] = createSignal<Route>({ type: "session", sessionID: "ses_parent" })
+  const [panel, setPanel] = createSignal<{ name: string; sessionID: string }>()
   const state = {
     claims: [] as SlotClaim[],
     released: 0,
@@ -34,7 +37,17 @@ function fakeContext(
     notified: [] as any[],
     navigated: [] as unknown[],
     opened: [] as string[],
-    route: { type: "session", sessionID: "ses_parent" } as { type: string; sessionID?: string },
+    presentations: [] as (string | undefined)[],
+    dispatched: [] as string[],
+    get route(): Route {
+      return route()
+    },
+    set route(value: Route) {
+      batch(() => {
+        setRoute(value)
+        if (panel()?.sessionID !== value.sessionID) setPanel(undefined)
+      })
+    },
     confirms: [] as { title: string; message: string }[],
     confirm: true as boolean | undefined,
     select: undefined as string | undefined,
@@ -89,7 +102,10 @@ function fakeContext(
         return { ok: true, notification: true, sound: true }
       },
     },
-    keymap: { layer: (factory: () => { commands?: readonly any[] }) => void state.layers.push(factory) },
+    keymap: {
+      layer: (factory: () => { commands?: readonly any[] }) => void state.layers.push(factory),
+      dispatch: (id: string) => void state.dispatched.push(id),
+    },
     ui: {
       slot: (value: SlotClaim) => {
         state.claims.push(value)
@@ -101,11 +117,15 @@ function fakeContext(
         navigate: (destination: unknown) => void state.navigated.push(destination),
       },
       panel: {
-        open: (name: string) => {
+        open: (name: string, options?: { presentation?: string }) => {
           if (state.route.type !== "session") return false
           state.opened.push(name)
+          state.presentations.push(options?.presentation)
+          setPanel({ name, sessionID: state.route.sessionID! })
           return true
         },
+        close: () => setPanel(undefined),
+        current: panel,
       },
       dialog: {
         confirm: async (options: { title: string; message: string }) => {
@@ -368,7 +388,7 @@ describe("the tree panel's lines", () => {
 })
 
 /** A panel's input, as the host gives the `session.panel` slot, for the panel opened in `sessionID`. */
-function panelInput(sessionID = "ses_parent", name = PANEL) {
+function panelInput(sessionID = "ses_parent", name = PANEL, { presentation = "panel", focused = true }: { presentation?: "panel" | "fullscreen"; focused?: boolean } = {}) {
   const input = { closed: 0, fullscreen: 0 }
   return {
     input,
@@ -376,8 +396,8 @@ function panelInput(sessionID = "ses_parent", name = PANEL) {
       name,
       sessionID,
       width: 100,
-      presentation: "panel" as const,
-      focused: true,
+      presentation,
+      focused,
       focus: () => {},
       close: () => void input.closed++,
       toggleFullscreen: () => void input.fullscreen++,
@@ -530,6 +550,98 @@ describe("the tree panel", () => {
     fake.command("s")!.run()
     await settle()
     expect(fake.state.toasts.at(-1)).toMatchObject({ message: "ses_x is not above ses_a", variant: "error" })
+  })
+})
+
+describe("the tree panel following navigation", () => {
+  /** A context whose panel was opened with /courier tree in ses_parent, over `trees`, and drawn as `fields` say. */
+  async function opened(trees: Record<string, Tree>, fields: Parameters<typeof panelInput>[2] = {}) {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async (sessionID) => trees[sessionID] ?? { rows: [] }
+    await tui.setup(fake.context)
+    await fake.command("courier.command")!.run("tree")
+    const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_parent", PANEL, fields).value)
+    await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
+    return fake
+  }
+  const trees = (fake: ReturnType<typeof fakeContext>) => fake.calls.filter((call) => Array.isArray(call) && call[0] === "tree").map((call) => (call as any)[1].sessionID)
+
+  test("reopens in a session of its tree with the same presentation, showing the root's tree with that session marked", async () => {
+    const fake = await opened({ ses_parent: pair(1) }, { presentation: "fullscreen" })
+
+    fake.state.route = { type: "session", sessionID: "ses_two" }
+    expect(fake.state.opened).toEqual([PANEL, PANEL])
+    expect(fake.state.presentations.at(-1)).toBe("fullscreen")
+    expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_two" })
+
+    const asked = trees(fake).length
+    const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_two").value)
+    // The tree last read shows at once, then the root's is asked again, not the child's.
+    await app.renderOnce()
+    expect(app.captureCharFrame()).toContain("▸ CHILD-ASKS (on screen)  waiting on you")
+    await settle()
+    expect(trees(fake).slice(asked)).toEqual(["ses_parent"])
+    expect(app.captureCharFrame()).toContain("courier tree  [█████░░░░░] 1/2 reported")
+    // The panel had the keyboard, so it keeps it.
+    expect(fake.state.dispatched).toEqual([])
+
+    fake.state.route = { type: "session", sessionID: "ses_parent" }
+    expect(fake.state.opened).toHaveLength(3)
+  })
+
+  test("gives the keyboard back to the prompt when the panel did not have it", async () => {
+    const fake = await opened({ ses_parent: pair(1) }, { focused: false })
+    fake.state.route = { type: "session", sessionID: "ses_one" }
+    await renderPanel(fake.claim("session.panel"), panelInput("ses_one").value)
+    await settle()
+    expect(fake.state.dispatched).toEqual(["pane.focus.left"])
+  })
+
+  test("stays closed once closed with q or by the host", async () => {
+    const fake = await opened({ ses_parent: pair(1) })
+    fake.context.ui.panel.close()
+    fake.state.route = { type: "session", sessionID: "ses_two" }
+    await settle()
+    expect(fake.state.opened).toEqual([PANEL])
+  })
+
+  test("a child spawned since the tree was read is looked up in the root's tree, which it keeps", async () => {
+    const fake = await opened({ ses_parent: pair(1) })
+    fake.state.tree = async (sessionID) => (sessionID === "ses_parent" ? { rows: [...pair(1).rows, row("ses_new")] } : { rows: [] })
+    fake.state.route = { type: "session", sessionID: "ses_new" }
+    await settle()
+    expect(fake.state.opened).toHaveLength(2)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_new").value)
+    await app.waitForFrame((frame) => frame.includes("ses_new (on screen)"))
+    expect(app.captureCharFrame()).toContain("CHILD-ASKS")
+  })
+
+  test("outside its tree, shows the new session's own tree, or closes when it started none", async () => {
+    const fake = await opened({ ses_parent: pair(1), ses_other: { rows: [row("ses_far", { parentID: "ses_other", title: "Far away" })] } })
+
+    fake.state.route = { type: "session", sessionID: "ses_other" }
+    await settle()
+    expect(fake.state.opened).toHaveLength(2)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_other").value)
+    await app.waitForFrame((frame) => frame.includes("Far away"))
+    expect(app.captureCharFrame()).not.toContain("CHILD-ASKS")
+
+    fake.state.route = { type: "session", sessionID: "ses_lonely" }
+    await settle()
+    expect(fake.state.opened).toHaveLength(2)
+    expect(fake.context.ui.panel.current()).toBeUndefined()
+    // Closed, it no longer follows.
+    fake.state.route = { type: "session", sessionID: "ses_other" }
+    await settle()
+    expect(fake.state.opened).toHaveLength(2)
+  })
+
+  test("the home screen ends the following", async () => {
+    const fake = await opened({ ses_parent: pair(1) })
+    fake.state.route = { type: "home" }
+    fake.state.route = { type: "session", sessionID: "ses_parent" }
+    await settle()
+    expect(fake.state.opened).toEqual([PANEL])
   })
 })
 

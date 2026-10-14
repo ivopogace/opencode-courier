@@ -264,7 +264,9 @@ courier 2 running · 1 waiting on you · group pair 1/2
 by depth, with what it does, its report and its group's standing; a session that started others gets
 a bar of the parts reported, a leaf how long it ran, its last tool call and its cost. `↑`/`↓` select,
 `enter` opens the session, `s` stops it and everything under it after you confirm, as `courier_stop`
-would, and `q` closes the panel; `/courier stop <session>` stops from the prompt.
+would, and `q` closes the panel; `/courier stop <session>` stops from the prompt. While open, the panel
+follows you between sessions: into one of its tree it keeps that tree, the session on screen marked
+`(on screen)`; elsewhere it shows that session's tree, or closes if it started none.
 
 `ctrl+x k` (the leader key, then `k`), `/asks` (or `/ask`), the palette's "Courier: what waits on you" or a click
 on "waiting on you" opens the asks inbox: every permission request, question and form waiting

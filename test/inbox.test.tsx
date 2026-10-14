@@ -87,8 +87,10 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
     attention: { notify: async (options: unknown) => (notified.push(options), { ok: true }) },
     keymap: { layer: (factory: () => any) => void layers.push(factory) },
   } as unknown as Plugin.Context
-  const emit = (type: string) => {
-    for (const listener of listeners) listener({ details: { type } })
+  const emit = (type: string, sessionID?: string) => {
+    // As the host sends them: a form's session is in its form.
+    const data = type === "form.created" ? { form: { sessionID } } : { sessionID }
+    for (const listener of listeners) listener({ details: { type, ...(sessionID ? { data } : {}) } } as never)
   }
   return {
     context,
@@ -103,6 +105,7 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
     sizes,
     emit,
     goHome: () => void (route = { type: "home" }),
+    goSession: (sessionID: string) => void (route = { type: "session", sessionID }),
     replies: () => calls.filter(({ method }) => method !== "asks"),
   }
 }
@@ -215,7 +218,8 @@ describe("answering a permission request", () => {
       expect(fake.replies()).toEqual([{ method: "permission.reply", input: { sessionID: "ses_b", requestID: "per_1", decision } }])
       // Listed again, without the one answered, and so nothing is left.
       expect(fake.dialogs.map((dialog) => dialog.kind)).toEqual(["select", "select"])
-      expect(fake.calls.filter(({ method }) => method === "asks")).toHaveLength(2)
+      // The start-up read, then the two the inbox makes.
+      expect(fake.calls.filter(({ method }) => method === "asks")).toHaveLength(3)
     }
   })
 
@@ -328,9 +332,11 @@ describe("answering a form", () => {
 
 describe("attention", () => {
   test("a new ask in the open session's tree sounds once, a permission request's or a question's sound", async () => {
-    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const fake = fakeContext(empty)
     addAsksInbox(fake.context)
+    await settle()
 
+    fake.state.asks = { ...empty, permissions: [bash] }
     fake.emit("permission.asked")
     fake.emit("permission.asked")
     await settle()
@@ -360,10 +366,12 @@ describe("attention", () => {
   })
 
   test("names where an ask comes from by the sessions' current titles, the RPC's as the fallback", async () => {
-    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const fake = fakeContext(empty)
     const get = fake.context.data.session.get
     fake.context.data.session.get = (id: string) => (id === "ses_a" ? ({ id, title: "Renamed", location: { directory: "/workspace" } } as any) : get(id))
     const inbox = addAsksInbox(fake.context)
+    await settle()
+    fake.state.asks = { ...empty, permissions: [bash] }
     await inbox.open()
     expect((fake.dialogs[0]!.options as any).options[0].description).toBe("Root › Renamed › Write tests")
 
@@ -561,4 +569,26 @@ describe("a form field's default", () => {
     await addAsksInbox(fake.context).open()
     expect(fake.dialogs[1]!.options).toEqual({ title: "N · N" })
   })
+})
+
+test("an unrelated request does not sound asks that were already waiting", async () => {
+  const fake = fakeContext({ ...empty, permissions: [bash], questions: [greeting] })
+  addAsksInbox(fake.context)
+  await settle()
+  // A permission request in a session outside this tree; the tree's two asks were there before.
+  fake.emit("permission.asked", "ses_elsewhere")
+  await settle()
+  expect(fake.notified).toEqual([])
+})
+
+test("the first ask in a tree reached after start sounds, the ones already waiting there do not", async () => {
+  const fake = fakeContext({ ...empty, permissions: [bash], questions: [greeting] })
+  fake.goHome()
+  addAsksInbox(fake.context)
+  await settle()
+  fake.goSession("ses_root")
+  // bash waits in ses_b; the event names the session of the new ask.
+  fake.emit("form.created", "ses_a")
+  await settle()
+  expect(fake.notified.map((options) => options.message)).toEqual([expect.stringContaining("Greeting")])
 })

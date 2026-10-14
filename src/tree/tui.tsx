@@ -277,6 +277,9 @@ async function confirmStop(ctx: Context, courier: Courier, location: (sessionID:
 /** The host's command that gives the keyboard back to the prompt; a newly shown panel takes it. */
 const FOCUS_PROMPT = "pane.focus.left"
 
+/** OpenCode splits a panel from the side only on a terminal wider than this. */
+const SPLIT_WIDTH = 80
+
 /**
  * The panel following the person: the session whose tree it shows, the one it is open in (or goes `to` while it looks,
  * or is hidden in, with no tree there), how it was shown, whether it had the keyboard, and the root's tree last read.
@@ -308,7 +311,11 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
     const tree = latest()?.tree
     if (tree) view.note({ tree })
   })
-  createEffect(() => view.note({ presentation: input.presentation, focused: input.focused }))
+  // OpenCode shows fullscreen whatever was asked while it cannot split, so only a wider terminal's value says what was asked.
+  createEffect(() => {
+    const { presentation, focused } = input
+    view.note(ctx.renderer.width > SPLIT_WIDTH ? { presentation, focused } : { focused })
+  })
   onMount(() => {
     if (!view.refocus) return
     const giveBack = setTimeout(() => ctx.keymap.dispatch(FOCUS_PROMPT))

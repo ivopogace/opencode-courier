@@ -32,6 +32,7 @@ function fakeContext(
   const [panel, setPanel] = createSignal<{ name: string; sessionID: string }>()
   const state = {
     claims: [] as SlotClaim[],
+    width: 160,
     released: 0,
     layers: [] as (() => { commands?: readonly any[] })[],
     toasts: [] as { message: string; variant?: string }[],
@@ -58,6 +59,7 @@ function fakeContext(
   }
   const color = RGBA.fromInts(120, 120, 120)
   const context = {
+    renderer: { get width() { return state.width } },
     location,
     data: {
       location: { default: () => ({ directory: "/default" }) },
@@ -635,6 +637,19 @@ describe("the tree panel following navigation", () => {
     return fake
   }
   const trees = (fake: ReturnType<typeof fakeContext>) => fake.calls.filter((call) => Array.isArray(call) && call[0] === "tree").map((call) => (call as any)[1].sessionID)
+
+  test("a panel shown fullscreen only because the terminal is narrow reopens as a panel once followed", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.width = 80
+    fake.state.tree = async (sessionID) => ({ ses_parent: pair(1) })[sessionID as "ses_parent"] ?? { rows: [] }
+    await tui.setup(fake.context)
+    await fake.command("courier.command")!.run("tree")
+    const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_parent", PANEL, { presentation: "fullscreen" }).value)
+    await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
+
+    fake.state.route = { type: "session", sessionID: "ses_two" }
+    expect(fake.state.presentations.at(-1)).toBe("panel")
+  })
 
   test("reopens in a session of its tree with the same presentation, showing the root's tree with that session marked", async () => {
     const fake = await opened({ ses_parent: pair(1) }, { presentation: "fullscreen" })

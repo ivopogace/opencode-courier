@@ -8,6 +8,7 @@ import { batch, createSignal } from "solid-js"
 import type { Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
 import { activityLine, addTreeStatus, bar, detailLines, duration, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
 import tui from "../src/tui.js"
+import hostNotifications from "./host-notifications.js"
 
 const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
 
@@ -902,6 +903,39 @@ describe("the footer status entry's width", () => {
       else expect(shown).toContain("1 waiting on you")
     })
   }
+})
+
+describe("a native child's report (#177)", () => {
+  const reported = (from: string) => ({
+    sessionID: "ses_parent",
+    inboxID: `msg_${from}`,
+    item: { type: "synthetic", payload: { text: "", metadata: { source: "courier", from, status: "done" } }, delivery: "steer" },
+  })
+  const setup = async (native: boolean) => {
+    const fake = fakeContext(async () => empty, { location: { directory: "/w" }, sessions: { ses_parent: { title: "Parent" }, ses_one: { title: "One" } } })
+    const session = fake.context.data.session as any
+    const get = session.get
+    session.get = (id: string) => (native && id === "ses_one" ? { ...get(id), parentID: "ses_parent" } : get(id))
+    await tui.setup(fake.context)
+    await (hostNotifications as any).setup(fake.context)
+    return fake
+  }
+  const subagentDone = (fake: Awaited<ReturnType<typeof setup>>) => fake.state.notified.filter((n: any) => n.sound.name === "subagent_done")
+
+  test("sounds subagent_done once, OpenCode's, for a native child", async () => {
+    const fake = await setup(true)
+    fake.emit("session.inbox.enqueued", reported("ses_one"))
+    fake.emit("session.execution.succeeded", { sessionID: "ses_one" })
+    expect(subagentDone(fake)).toHaveLength(1)
+  })
+
+  test("a child without a parent still sounds the courier's subagent_done once", async () => {
+    const fake = await setup(false)
+    fake.emit("session.inbox.enqueued", reported("ses_one"))
+    fake.emit("session.execution.succeeded", { sessionID: "ses_one" })
+    expect(subagentDone(fake)).toHaveLength(1)
+    expect(fake.state.notified.map((n: any) => n.sound.name)).toEqual(["subagent_done", "done"])
+  })
 })
 
 describe("/courier stop with nothing to pick (#181)", () => {

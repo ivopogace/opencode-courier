@@ -880,7 +880,8 @@ messages were cancelled, or why the stop was refused. `/courier` with anything e
 
 **Attention.** A join group's reports released to a session call for attention, with a notification
 when the terminal is not focused and the `done` sound; a child's report to its parent (a message with a
-status) plays the `subagent_done` sound, without a notification. A report held with its group sounds
+status) plays the `subagent_done` sound, without a notification, unless the reporting session is a native
+child, whose turn ending OpenCode already sounds with `subagent_done`. A report held with its group sounds
 once, with its group's release. Each delivery is notified once per TUI.
 
 **The RPC.** `courier`, registered by every instance at its location as the tools are, through the same

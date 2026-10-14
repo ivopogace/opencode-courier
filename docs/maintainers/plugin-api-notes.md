@@ -1,9 +1,9 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around, or relies on, at the
-pinned version: `@opencode/plugin@2.0.28` and OpenCode 2.0.28. A pin bump re-checks each trap and
+pinned version: `@opencode/plugin@2.0.29` and OpenCode 2.0.29. A pin bump re-checks each trap and
 updates the ones it changes. OpenCode's source is on the `v2` branch of
-https://github.com/anomalyco/opencode, each release tagged (`v2.0.28`); paths below are in it. The
+https://github.com/anomalyco/opencode, each release tagged (`v2.0.29`); paths below are in it. The
 [reference](../reference.md) says what the plugin does.
 
 ## Tools
@@ -59,7 +59,9 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.28`); paths be
   `.succeeded`. An interrupt with `resume` while a steer waits publishes `.interrupted` (`user`),
   then `.started` and the steer's `inbox.delivered`, so the session owes a report again.
 - `session.inbox.delivered` (`data.inboxID` only) is published as each prompt, synthetic message,
-  requested compaction or move reaches the session; the runner's own compactions skip the inbox.
+  requested compaction or move reaches the session; the runner's own compactions skip the inbox, as
+  does the synthetic message it adds to continue a response cut off at the output token limit, so a
+  continued turn owes no report again. After two such continuations the turn fails as `output-limit`.
   The message it makes is stamped with that event's `created`. Only `session.inbox.enqueued`,
   published as the item is admitted, carries its type (`data.item.type`: `user`, `synthetic`,
   `compaction` or `move`; a `session.prompt` is `user`), so the plugin remembers it until delivery.
@@ -222,7 +224,7 @@ claim sets, the event bus and pending permission requests. So:
 `e2e/two-servers.sh` measures it (not in CI; a few minutes, no API key; `KEEP=1` keeps the logs):
 
 ```bash
-npm install --prefix <scratch>/oc @opencode/cli@2.0.28
+npm install --prefix <scratch>/oc @opencode/cli@2.0.29
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh
 ```
 
@@ -327,7 +329,7 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   npm's `ERESOLVE`, against the newer `@opentui/solid` npm picked for `@opencode/plugin`'s `>=`
   range; with no such peer npm installs no `@opentui` and the host provides them. The TUI's packages
   are devDependencies at the versions OpenCode's root `package.json` catalog pins (`@opentui/*`
-  `0.5.17`, `solid-js` `1.9.15` at `v2.0.28`), and `@opencode/theme` at the pin, for the typecheck and
+  `0.5.17`, `solid-js` `1.9.15` at `v2.0.29`), and `@opencode/theme` at the pin, for the typecheck and
   the tests.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles `src/tui.tsx` with `Bun.build`,

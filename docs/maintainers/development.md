@@ -12,7 +12,7 @@ bun run typecheck
 bun test           # unit tests, with a fake plugin context
 bun run build      # dist/: tsc for the server half and rpc, script/build-tui.ts for tui
 # the live suites: install the CLI once, at the version of the pinned plugin API
-npm install --prefix <scratch>/oc @opencode/cli@2.0.28
+npm install --prefix <scratch>/oc @opencode/cli@2.0.29
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e      # e2e/run.sh, about two minutes, no API key
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh            # the TUI part, in tmux
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh     # a real model, not in CI

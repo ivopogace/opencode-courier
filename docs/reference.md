@@ -68,7 +68,7 @@ Each tool's parameters, `?` marking an optional one; the sections below say how 
 | `courier_tree` | `sessionID?` | Lists the [whole tree](#seeing-and-stopping-a-subtree) under this session (or `sessionID`), depth first, each with what `courier_children` shows plus its depth, its parent and its report state. Cut at `maxTotal` sessions. |
 | `courier_stop` | `sessionID`, `cleanup?` | [Stops](#seeing-and-stopping-a-subtree) a session started from this one, directly or through others, and every session under it, deepest first, and cancels the `courier_later` messages scheduled for them; `cleanup: true` also removes their worktrees by `courier_cleanup`'s rules. |
 | `courier_cleanup` | `sessionID`, `force?` | Removes the git worktree of a child started with `isolate: true` and drops the child from `courier_children`; a worktree with uncommitted changes or commits on no branch, tag or remote is kept and listed unless `force: true` ([worktree cleanup](#worktree-cleanup)). A child without a worktree is only forgotten; either way a join group member that has not reported is [dropped from its group](#join-groups). |
-| `courier_answer` | `sessionID`, `requestID`, `reply?`, `message?`, `answers?` | Passes the person's answer to a [permission request](#a-child-that-asks-for-permission) (`reply`: `once`, `always` or `reject`, with an optional `message`) or a [question](#a-child-that-asks-a-question) (`answers`) that a session started from this one waits on. |
+| `courier_answer` | `sessionID`, `requestID`, `reply?`, `message?`, `answers?` | Answers a [permission request](#a-child-that-asks-for-permission) (`reply`: `once`, which OpenCode first asks the person about in this session, or `reject`, with an optional `message`) or passes the person's answer to a [question](#a-child-that-asks-a-question) (`answers`) that a session started from this one waits on. |
 | `courier_later` | `message`, `sessionID?`, `delayMinutes?` or `at?` | Schedules a message for a session (this one by default) in `delayMinutes` (a number, or a string of one) or `at` an ISO 8601 time, and returns its id. When due it is delivered like `courier_send`, queued behind any running turn and waking the session if idle ([scheduled messages](#scheduled-messages)). |
 | `courier_cancel` | `id` | Drops a message scheduled with `courier_later`, e.g. because the child it was waiting for reported first. |
 | `courier_subscribe` | `topic`, `sessionID?` | Subscribes a session (this one by default) to [webhook](#webhooks) deliveries for a topic: `owner/repo`, `owner/repo#12` (one pull request or issue) or a name for `/hook/<name>`. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. |
@@ -169,12 +169,16 @@ every question of an isolated child.
 whose native root is the top session is not put to the person by the model. OpenCode shows it in the
 top session's view as its own permission prompt, bound to that request, and on the paired app's dock;
 the plugin tells the top session's model with a notice marked `shown="native"`, which says so, tells
-it not to ask the person, with its question tool or in its reply, nor to decide, and to tell them in
-one line at most and end its turn, and still lists the choices for `courier_answer`, for a person who
-asks the model to answer for them. Once the person answers in OpenCode's prompt, the model is told it
-is settled (`answered="<reply>"`). Approval stays with the host's prompt, which a model cannot answer
-for the person; a model that ignores the notice and asks anyway does no more than without the option,
-and the first answer counts. A native child under an isolated session, an isolated child, and every
+it not to ask the person, with its question tool or in its reply, nor to call `courier_answer`, which
+would only ask them a second time, and to tell them in one line at most and end its turn; it names
+the request's ids only for a person who tells the model to answer for them. Once the person answers
+in OpenCode's prompt, the model is told it is settled (`answered="<reply>"`). Approval stays with the
+host's prompt, which a model cannot answer for the person: a `courier_answer` it calls all the same
+prompts the person [again](#a-child-that-asks-for-permission), in the top session, before anything is
+passed on, so the person is asked once in the normal flow and twice only when the model proposes
+anyway or they have it answer for them (the live smoke test's first run on the earlier wording, which
+listed the choices, saw the model propose unasked); a model that ignores the notice and asks anyway
+does no more than without the option, and the first answer counts. A native child under an isolated session, an isolated child, and every
 child with the option off get the notice as without the option.
 
 Turn the option on only where the person sees OpenCode's own prompts and forms: the TUI, or the
@@ -540,25 +544,49 @@ it), OpenCode holds the call until someone answers in the child's session, which
 in the parent's session does not see. For a spawned session the plugin sends the parent a message
 from that child, marked `asks="permission"` and `request="<id>"`, waking the parent if it is idle. The
 message says what the child asks for (the action, such as `shell` or `edit`, and its resources, such
-as the command or the paths), lists the choices OpenCode's own prompt offers, and tells the parent to
-ask the person rather than decide:
+as the command or the paths), and tells the parent that it cannot decide this, you do, in OpenCode's
+own permission prompt, which opens in the parent's session once the parent proposes an answer with
+`courier_answer { sessionID, requestID, reply, message? }`:
 
-- `once`: allow this request only;
-- `always`: allow it and save the rule for the project; offered only when the request says what to
-  save, as in OpenCode's prompt;
-- `reject`: refuse it, with a reason if the person gives one.
+- `once`: allow this request only. `courier_answer` first calls OpenCode's `permission.assert` in the
+  parent's own session with the child's request as OpenCode received it, its action and resources,
+  never the model's words, and nothing to save: OpenCode checks the parent's permission rules and,
+  when they say ask, shows you its own permission prompt there (and on the paired app's dock), bound
+  to the `courier_answer` call and carrying the child's session and request id in its metadata. The
+  call returns only once you have answered, and `once` is passed on to the child only when you
+  allowed it. A rule that allows the action in the parent's session passes without a prompt, as the
+  parent could run it itself; a rule that denies it refuses it without one.
+- `reject`: refuse it, with a reason if there is one; passed on as it is, since refusing needs no
+  approval.
 
-The parent asks you, with its question tool if it has one, and calls
-`courier_answer { sessionID, requestID, reply, message? }` with your choice. The plugin passes it on,
-and the child carries on. With [`nativeChildren`](#native-child-sessions) on, a native child's request
-is answered in OpenCode's own prompt in the top session's view instead, and the parent is told not to
-ask you.
+The parent is told to propose `once` unless you have told it to refuse, or the request plainly goes
+against what you asked of it, and not to ask you first: proposing is not deciding. Nothing the parent's
+model writes counts as an approval. In the prompt:
+
+- *Allow once* passes `once` on, and the child carries on;
+- *Reject* with a reason, or a deny rule in the parent's session, fails the parent's `courier_answer`
+  with that reason and refuses the child's request with the same reason, so the child's call fails
+  and it carries on, as after `reject`;
+- a plain *Reject* ends the parent's step, as it would for the parent's own tool call: `courier_answer`
+  gives no result, and the child's request waits on, for you to answer in the child's session, in the
+  [asks inbox](#the-asks-inbox), or through the parent once you prompt it again.
+
+`always` is not offered through `courier_answer`, and it refuses it: `permission.assert` says nothing
+about whether you chose *once* or *always* in the prompt, and an `always` there would save a standing
+rule for the parent's whole project, so the plugin never asks for one and never grants one. A standing
+rule for the child is granted where OpenCode's own prompt shows the child's request: in the child's
+session, in the asks inbox, or in the top session's view with
+[`nativeChildren`](#native-child-sessions) on. With that option, a native child's request is answered
+in OpenCode's own prompt in the top session's view, and the parent is told not to ask you nor answer;
+only if you ask it to answer for you does it propose with `courier_answer`, which prompts you again,
+in its session, before anything is passed on.
 
 A request of a child's child goes to the session at the top, the one you started the first child from,
 and so on down any number of levels, since that is where you are; the message names the session that
 started the asking one. Only that top session can answer it. A session started with `courier_spawn`
 cannot answer what its own children ask, so it cannot get around a rule that makes it ask by starting
-a child to do the job and approving it.
+a child to do the job and approving it; and since the top session's own rules are checked before
+anything is passed on, it cannot approve for a child what it may not do itself.
 
 OpenCode ends the child's turn when a request is rejected without a message, and the child would then
 never report back. So `courier_answer` always sends a message with a rejection, the person's reason or
@@ -571,8 +599,11 @@ answer (an `always` that covers it, or a rejection, which rejects the session's 
 as well). For a request the parent was told about, the plugin then sends it a short message marked
 `answered="<reply>"` saying the request is settled, so it does not pass on a stale question; after a
 rejection, the message adds that the child may have stopped, and that `courier_send` gets it going
-again. A `courier_answer` that comes later anyway passes nothing on and says so. The TUI's [asks
-inbox](#the-asks-inbox) answers through OpenCode's reply too, so the parent hears the same.
+again. A `courier_answer` that comes later anyway passes nothing on and says so, as does one whose
+request was answered that way while you were being asked in the parent's session; the prompt there
+stays open until you answer it, and allowing it then passes nothing on. The TUI's [asks
+inbox](#the-asks-inbox) answers as you, through OpenCode's reply, and never through
+`permission.assert`, so the parent hears the same.
 
 `courier_status` and `courier_children` list the requests a session waits on under `pending`, so a
 parent that has lost the message, after a compaction for example, can still find them. Whenever the
@@ -1037,7 +1068,7 @@ questions) but not its memory. So:
   clocks, so they should be one machine's.
 - **`courier_answer` passes an answer on only from a turn on that same server.** Pending requests live
   in the memory of the process running the child, and the plugin API offers no channel between servers.
-  From the other server it finds no request pending and says so: the request was answered some other
+  From the other server it finds no request pending, asks the person nothing, and says so: the request was answered some other
   way, or the session stopped waiting, or it waits in another OpenCode server on the same data
   directory, where the person has to answer it, in the child's session. `courier_status` likewise lists
   only the requests waiting on its own server.

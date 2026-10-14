@@ -82,22 +82,32 @@ reports*; the checker takes the group's message as the report of each member it 
 > back what it printed. Start it with courier_spawn and do not run the command yourself. When it has
 > reported back, reply with one line: RESULT \<what it printed\>
 
-The script plays the person: it answers the parent's question form with the option for "once", or
-replies "Allow it once." if the parent asked in text. Six checks: the parent spawned a child, which
-asked, and the parent was told; it did not answer by itself; it asked the person; it passed `once` on
-with `courier_answer`; the child ran its command and reported `courier-permission-42`; the final reply
-holds it. The parent is started over the HTTP API, as a TUI session would be: `opencode run` cancels
-question forms in its session while attached.
+The script plays the person: it answers OpenCode's permission prompt in the parent's session, the one
+`courier_answer`'s `permission.assert` opens for the child's request, with `once`. A parent that asks
+the person first, with a question form or in text, gets its form answered with the option for "once"
+or the reply "Allow it once.", and the prompt is then answered all the same. Seven checks: the parent
+spawned a child, which asked, and the parent was told; nothing was passed on before the person had
+answered; the parent proposed `once` with `courier_answer` without asking first; OpenCode asked the
+person in the parent's session for what the child asked, holding the call; `courier_answer` passed
+`once` on after the person allowed it; the child ran its command and reported
+`courier-permission-42`; the final reply holds it. The parent is started over the HTTP API, as a TUI
+session would be: `opencode run` answers the prompts in its own session itself, and cancels question
+forms there while attached.
 
-`COURIER_PERSON=other-server` adds a second server on the same data directory: the person dismisses
-the parent's form and sends "Allow it once." through the second server, whose `courier_answer` holds
-no request, so the fourth check becomes "the parent's courier_answer on the other server passed
-nothing on and named another server". The person then allows the request in the child's own session
-on the first server. With `COURIER_NATIVE=1` the script answers the child's request directly, as
-OpenCode's prompt in the parent's view would, and fails a parent that asks with a form.
+`COURIER_PERSON=other-server` adds a second server on the same data directory: the person rejects
+the parent's prompt without a reason, which ends the parent's step and leaves the child's request
+waiting (or dismisses the parent's form, for a parent that asked first), and sends "Allow it once."
+through the second server, whose `courier_answer` holds no request, so the fifth check becomes "the
+parent's courier_answer on the other server passed nothing on and named another server". The person
+then allows the request in the child's own session on the first server. With `COURIER_NATIVE=1` the
+script answers the child's request directly, as OpenCode's prompt in the parent's view would, and
+fails a parent that asks with a form.
 
 | Model | OpenCode | Result |
 |---|---|---|
+| `longcat-2.5-preview-free` | 2.0.29 | 7/7: told, the parent proposed `once` with `courier_answer` at once, asking nothing itself; the call was held while OpenCode's prompt in its session showed the child's command, and once the person allowed it there the child ran it, reported `done`, and the parent replied `RESULT courier-permission-42`. |
+| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.29 | 6/6: told with the `shown="native"` notice, the parent wrote one line (*The helper session is waiting on your permission to run the `echo` shell command.*) and ended its turn, calling nothing; told `answered="once"` after the person allowed it in OpenCode's prompt, it replied `RESULT courier-permission-42`. |
+| `longcat-2.5-preview-free`, `COURIER_NATIVE=1`, run on an earlier wording of the native notice, which still listed `once` and `reject` for a person who asks the model to answer for them | 2.0.29 | 0/6: told with the `shown="native"` notice, the parent wrote one line and then proposed `once` with `courier_answer` all the same ("Proposing approval to the user now"), so OpenCode asked the person a second time, in the parent's session, and held the call; the notice now says not to call `courier_answer`, and names the ids only for a person who tells the model to. |
 | `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 6/6: told with the `shown="native"` notice, the parent wrote one line (*The helper session is waiting on your permission to run the shell command.*) and ended its turn; after the person allowed it, it was told `answered="once"` and replied `RESULT courier-permission-42`. |
 | `longcat-2.5-preview-free`, `COURIER_NATIVE=1`, run before native children got their own notice, so on the notice every other child gets | 2.0.28 | 6/6: asked the person with a question form offering `once`, `always` and `reject`, and passed `once` on with `courier_answer`. |
 | `longcat-2.5-preview-free` | 2.0.26 | Pass, with the status on `courier_send` and again with the skill listed. |

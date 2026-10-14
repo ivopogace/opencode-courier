@@ -356,7 +356,7 @@ for mode in shared isolate; do
   ask_permission "$([ "$mode" = isolate ] && echo isolate)"
   check "with what it asks for and the choices" "$(jq -r --arg child "$child" '.[0] // "" |
     contains("<courier from=\"" + $child + "\" asks=\"permission\"") and contains("It asks for: shell") and
-    contains("echo courier-asks") and contains("- once:") and contains("- reject:") and contains("Do not decide this yourself")' <<<"$notice")"
+    contains("echo courier-asks") and contains("- once:") and contains("- reject:") and contains("You cannot decide this") and (contains("- always") | not)' <<<"$notice")"
   check "courier_status shows the child waiting on it" \
     "$(prompt "COURIER-STATUS $child" | tool_state courier_status | jq -r --arg request "$request" '.status == "completed" and (.output | contains($request))')"
   choice=$([ "$mode" = isolate ] && echo reject || echo once)
@@ -402,6 +402,10 @@ person() {
   local body=${2:-'{}'}
   curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$body" "$SERVER/api/$1"
 }
+api_post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
+# A turn of session $1 with text $2 through the API: `opencode run --auto` answers a request in its own session itself,
+# and takes a native child's asks for its own and answers them.
+api_prompt() { api_post "session/$1/prompt" "{\"text\":\"$2\"}" >/dev/null; }
 # The person dismisses form $2 of session $1, as the TUI does; prints the HTTP status.
 dismiss_form() {
   curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$1/form/$2"
@@ -464,6 +468,68 @@ check "deleting the session in between forgets the report state of the leaf that
   "$([ -n "$(kv get "report/$leaf/settled")" ] &&
     [[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$middle") == 20* ]] &&
     for _ in $(seq 1 20); do [ -z "$(kv get "report/$leaf/prompt")$(kv get "report/$leaf/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+
+# The state of the last courier_answer call of session $1, from its transcript.
+answer_state() {
+  api "session/$1/message" | jq -c '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_answer") | .state] | last // empty'
+}
+# The request OpenCode asks the person in session $1 for request $2 of a child, waiting up to $3 (default 30) s.
+own_request() {
+  for _ in $(seq 1 "${3:-30}"); do
+    local id
+    id=$(api "session/$1/permission" | jq -r --arg request "$2" '[.data[] | select(.metadata.requestID == $request) | .id] | first // empty')
+    if [ -n "$id" ]; then echo "$id"; return; fi
+    sleep 1
+  done
+}
+# A proposed once goes through permission.assert in the parent's session (#164), where OpenCode asks the person; the
+# parent's turn runs through the API, since `opencode run --auto` answers the parent's own prompt itself, as above.
+echo "a parent's courier_answer is held until the person answers OpenCode's prompt in the parent's session"
+ask_permission ""
+api_prompt "$parent" "COURIER-ANSWER once"
+own=$(own_request "$parent" "$request" 30)
+check "OpenCode asks the person in the parent's session, bound to the child's request and the courier_answer call"   "$([ -n "$own" ] && api "session/$parent/permission" | jq -r --arg own "$own" --arg child "$child" '.data[] | select(.id == $own) |
+    .sessionID != $child and .action == "shell" and .resources == ["echo courier-asks"] and ((.save // []) | length == 0) and
+    .metadata.from == $child and .source.type == "tool" and (.source.messageID | startswith("msg"))' || echo false)"
+check "the child's request still waits" "$(api "session/$child/permission" | jq -r --arg request "$request" '[.data[].id] | index($request) != null')"
+check "and courier_answer has not returned" "$(answer_state "$parent" | jq -r '.status == "running"')"
+check "the person allows it in the parent's prompt" "$([ "$(person "session/$parent/permission/$own/reply" '{"decision":"once"}')" = 204 ] && echo true || echo false)"
+check "courier_answer then passed once on" \
+  "$(for _ in $(seq 1 30); do s=$(answer_state "$parent"); [ "$(jq -r '.status == "completed"' <<<"$s")" = true ] && { jq -r '.metadata.answered == true and ([.content[].text] | join("") | contains("Allowed in your session"))' <<<"$s"; exit; }; sleep 1; done; echo false)"
+check "the child's command ran, and it reported back" \
+  "$(has_text "$parent" "CHILD DONE shell" 45 >/dev/null; api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD DONE shell"))] | join("") | contains("courier-asks") and (contains("Refused") | not)')"
+check "the parent was told nothing about its own request" \
+  "$([ "$(notices_with "$parent" answered | jq length)" = 0 ] && [ "$(notices_with "$parent" asks | jq length)" = 1 ] && echo true || echo false)"
+
+echo "the person refuses the parent's prompt with a reason: courier_answer fails with it, and the child's request is refused with the same reason"
+ask_permission ""
+api_prompt "$parent" "COURIER-ANSWER once"
+own=$(own_request "$parent" "$request" 30)
+check "the person rejects it in the parent's prompt, with a reason" \
+  "$([ -n "$own" ] && [ "$(person "session/$parent/permission/$own/reply" '{"decision":"reject","message":"Not here"}')" = 204 ] && echo true || echo false)"
+check "courier_answer failed with the reason, and the parent carried on" \
+  "$(has_text "$parent" "TOOL DONE courier_answer" 45 >/dev/null; answer_state "$parent" | jq -r '.status == "error" and (.error.message | contains("not allowed in your session (Not here)") and contains("passed on with that reason"))')"
+check "the child's call was refused with it, and the child carried on and reported back" \
+  "$(has_text "$parent" "CHILD DONE shell" 45 >/dev/null; report=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD DONE shell"))] | join("")');
+    [[ $report == *'"error"'* && $report != *"exited with code"* ]] && echo true || echo false)"
+check "the request is settled in the child's session" "$(api "session/$child/permission" | jq -r --arg request "$request" '[.data[].id] | index($request) == null')"
+check "and the parent was told nothing stale" "$([ "$(notices_with "$parent" answered | jq length)" = 0 ] && echo true || echo false)"
+
+echo "a plain rejection of the parent's prompt ends the parent's step, and the child's request waits on"
+ask_permission ""
+api_prompt "$parent" "COURIER-ANSWER once"
+own=$(own_request "$parent" "$request" 30)
+check "the person rejects it in the parent's prompt, without a reason" \
+  "$([ -n "$own" ] && [ "$(person "session/$parent/permission/$own/reply" '{"decision":"reject"}')" = 204 ] && echo true || echo false)"
+check "the parent's call ended on the decline, as its own tool call would" \
+  "$(for _ in $(seq 1 30); do [ "$(answer_state "$parent" | jq -r '.status == "error"')" = true ] && break; sleep 1; done
+    answer_state "$parent" | jq -r '.status == "error" and .error.type == "aborted" and (.error.message | contains("declined"))')"
+check "the child's request still waits" "$(api "session/$child/permission" | jq -r --arg request "$request" '[.data[].id] | index($request) != null')"
+check "the person answers it in the child's session, and the child carries on" \
+  "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"once"}')" = 204 ] && [ "$(has_text "$parent" "CHILD DONE shell" 45)" = true ] && echo true || echo false)"
+check "which the parent was told once, and its model got no courier_answer result meanwhile" \
+  "$(has_text "$parent" "PARENT SETTLED" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"once\""))')" = true ] &&
+    [ "$(has_text "$parent" "TOOL DONE courier_answer" 1)" != true ] && echo true || echo false)"
 
 # The first web search of this run: no provider has been chosen, which OpenCode keeps for every session.
 echo "a child's web search asks for a provider with a form: the parent is told, and told when it is answered"
@@ -946,9 +1012,6 @@ mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
 git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "nativeChildren"
 start_server
 session_info() { api "session/$1" | jq -c '.data // .'; }
-api_post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
-# A turn of session $1 with text $2 through the API: `opencode run` takes a native child's asks for its own and answers them.
-api_prompt() { api_post "session/$1/prompt" "{\"text\":\"$2\"}" >/dev/null; }
 # The session session $1 started with courier_spawn, waiting up to $2 (default 30) s.
 spawned_by() {
   for _ in $(seq 1 "${2:-30}"); do

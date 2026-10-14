@@ -64,8 +64,9 @@ a self-contained task that needs nothing from you on the way. Use courier when t
 - **Worktree isolation:** `isolate: true` gives a child its own git worktree, so children can edit
   files in parallel; each commits on `courier/<its session ID>` and reports that branch for its
   parent to merge ([nested isolation](docs/reference.md#nested-isolation)).
-- **Relaying to you:** a child's permission requests and questions reach you through the parent,
-  and your answers go back; a form only you can answer is pointed out to you.
+- **Relaying to you:** a child's permission requests and questions reach you through the parent:
+  a request is approved in OpenCode's own permission prompt in the parent's session, never by its
+  model, and your answers go back; a form only you can answer is pointed out to you.
 
 ## How it works
 
@@ -162,7 +163,7 @@ From a local clone, `bun install && npm run build`, then list its `dist` **direc
    as `opencode serve` next to it, cannot pass your answer on to a child the other runs
    ([why](docs/reference.md#two-servers-on-one-data-directory)).
 2. Give the agents that run children the permissions their work needs: a child that hits an approval
-   prompt waits until you answer it through its parent. Let them use the `question` tool if they
+   prompt waits until you answer OpenCode's prompt for it in the parent's session. Let them use the `question` tool if they
    should be able to ask you. Choose a web search provider before children search the web (run one
    web search in your own session, or use OpenCode's "Third-party search" setting), or the first
    child to search shows that prompt in its own session, which only you can answer there.
@@ -189,7 +190,7 @@ From a local clone, `bun install && npm run build`, then list its `dist` **direc
 | `courier_tree` | Lists the whole tree under a session, depth first, with each one's depth and report state. |
 | `courier_stop` | Interrupts a session below you and everything under it, and cancels their scheduled messages; `cleanup: true` removes their worktrees too. |
 | `courier_cleanup` | Removes an isolated child's worktree, unless it holds unsaved work, and forgets the child. |
-| `courier_answer` | Passes your answer to a permission request or a question that a session under this one waits on. |
+| `courier_answer` | Answers a permission request that a session under this one waits on, after OpenCode has asked you in this session, or passes your answer to its question. |
 | `courier_later` | Schedules a message for a session (this one by default) in `delayMinutes` or `at` a time. |
 | `courier_cancel` | Drops a message scheduled with `courier_later`. |
 | `courier_subscribe` | Subscribes a session to webhook deliveries for a topic (`owner/repo`, `owner/repo#12` or a name). |
@@ -213,9 +214,11 @@ Each tool's parameters: [the reference](docs/reference.md#the-tools).
   children, a scheduled message or a webhook is not, nor is one that answers what you typed in its
   session. [More](docs/reference.md#a-child-that-fails).
 - **Permission requests and questions reach you.** A child's request or question is passed to the
-  session at the top of its tree, any number of levels down; that session asks you and passes your
-  answer back, or links its own question to the child's so your pick goes straight to it. Whichever
-  answer comes first counts, and the other is withdrawn.
+  session at the top of its tree, any number of levels down. For a request, that session proposes an
+  answer with `courier_answer`, and OpenCode asks you in its own permission prompt, in that session
+  and under its rules, before anything is passed on: its model cannot approve, only propose. For a
+  question, it asks you and passes your answer back, or links its own question to the child's so your
+  pick goes straight to it. Whichever answer comes first counts, and the other is withdrawn.
   [More](docs/reference.md#a-child-that-asks-for-permission).
 - **Some forms only you can answer**, such as OpenCode's web search asking for a provider: the top
   session is told, and you answer in the child's session. [More](docs/reference.md#a-child-that-shows-a-form).
@@ -300,7 +303,8 @@ the courier's own tree, limits and relays work as without the option. What chang
   top session's model is only told. `opencode run` and the TUI's auto-accept mode answer them as their
   own subagents'.
 - **Turn it on only with OpenCode's TUI or the paired app**, which show those prompts; with a bare
-  API client nobody prompts you, and only `courier_answer` is left.
+  API client nobody prompts you, and only `courier_answer` is left, which prompts you in the top
+  session before it passes anything on.
 
 ## Webhooks
 

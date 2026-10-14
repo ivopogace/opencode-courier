@@ -144,7 +144,7 @@ export const courier = () => Plugin.define({
       },
     }
     const cleanupPorts: CleanupPorts = { ...ports, inspect: inspectWorktree }
-    const answerPorts: AnswerPorts = { storage: ctx.storage, permissions }
+    const answerPorts: AnswerPorts = { storage: ctx.storage, permissions, assert: (input) => ctx.permission.assert(input) }
     const later: LaterPorts = {
       storage: ctx.storage,
       session: ctx.session,

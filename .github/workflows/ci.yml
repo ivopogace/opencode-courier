@@ -106,11 +106,18 @@ jobs:
           echo "Changes beyond documentation: $code" >> "$GITHUB_STEP_SUMMARY"
 
   e2e-run:
-    name: Live suite (run.sh)
+    # The live suite in four shards, each on its own runner with its own server, mock model and
+    # stand-in registry: e2e/run.sh with E2E_SHARD=k/4 (see docs/maintainers/development.md). The
+    # number of shards is in the matrix and in E2E_SHARD below; keep them equal.
+    name: Live suite (run.sh, shard ${{ matrix.shard }} of 4)
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -128,16 +135,18 @@ jobs:
       - name: Run the live test
         run: OPENCODE_BIN="$(command -v opencode)" e2e/run.sh
         env:
+          E2E_SHARD: ${{ matrix.shard }}/4
           E2E_WORK: ${{ runner.temp }}/e2e
           KEEP: "1"
       - name: Upload server and model logs
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-logs
+          name: e2e-logs-shard-${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/e2e/*.log
             ${{ runner.temp }}/e2e/*.out
+            ${{ runner.temp }}/e2e/timings.tsv
           if-no-files-found: ignore
 
   e2e-tui:
@@ -180,8 +189,8 @@ jobs:
           if-no-files-found: ignore
 
   e2e:
-    # The required check: the host at the pinned version, run.sh and tui.sh together, as the one job
-    # that ran them both was. It is a job of its own so the name stays what the branch ruleset
+    # The required check: the host at the pinned version, every run.sh shard and tui.sh together, as the
+    # one job that ran them both was. It is a job of its own so the name stays what the branch ruleset
     # requires while the suites run as separate jobs, and so a pull request that changes only
     # documentation passes it with the live jobs skipped (a skipped job is a pass; a skipped
     # workflow would leave the check pending).
@@ -194,7 +203,7 @@ jobs:
       RESULTS: ${{ join(needs.*.result, ' ') }}
     steps:
       - run: |
-          echo "changes, run.sh, tui.sh: $RESULTS"
+          echo "changes, run.sh shards, tui.sh: $RESULTS"
           case " $RESULTS " in
             *" failure "* | *" cancelled "*) exit 1 ;;
           esac

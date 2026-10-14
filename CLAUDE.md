@@ -139,7 +139,8 @@ with `bun test --update-snapshots`.
 process-wide state between them, `fixtures/events.ts` has the fake ports and events the event-module tests share, and
 `fixtures/two-copies.ts` loads two copies of the platform.
 
-`e2e/`: `run.sh` is the live test against a real OpenCode V2 server, driven by `mock-model.mjs`, a
+`e2e/`: `run.sh` is the live test against a real OpenCode V2 server, in groups of scenarios that
+`E2E_SHARD=k/n` deals out to shards (`docs/maintainers/development.md`), driven by `mock-model.mjs`, a
 scripted OpenAI-compatible stand-in model, with `search-plugin` as a stand-in web search provider,
 `probe-plugin` logging the events each location's instance receives, and `kv.ts` to read, remove or
 set the plugin's storage keys in OpenCode's database. New behaviour gets a scenario there.
@@ -154,7 +155,7 @@ after any change to `src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` o
 describes it and holds a results table per scenario, which a re-run updates.
 
 `.github/workflows/ci.yml`: both suites on every push to `main` and every pull request, in jobs of their
-own: `run.sh` and `tui.sh` in parallel, both skipped on a pull request that changes only documentation. The
+own: `run.sh` in four shards and `tui.sh` in parallel, all skipped on a pull request that changes only documentation. The
 required `Live test against OpenCode V2` job is the gate over them and passes with both skipped. Its `sonar`
 job scans `src/` on SonarCloud with the unit coverage and fails when the quality gate does: no new bug,
 vulnerability or unreviewed hotspot, and at least 80% coverage on new code. `latest.yml`: the live suite on

@@ -82,11 +82,16 @@ export function askFooter(ask: Ask) {
 /** The sound an ask arriving plays: a permission request's, or a question's for questions and forms. */
 export const soundOf = (ask: Ask): AttentionSoundName => (ask.kind === "permission" ? "permission" : "question")
 
-/** Whether a form field is shown, given the answers so far: hidden ones never, conditional ones when their conditions hold. */
+/** Whether a form field is shown, given the answers so far: hidden ones never, conditional ones when their conditions hold, as OpenCode reads them (a condition on an unanswered field is false; on a multiselect, `eq` means includes). */
 export function shown(field: FormField, answers: FormAnswer) {
   if ("hidden" in field && field.hidden) return false
   const when = "when" in field ? (field.when ?? []) : []
-  return when.every((condition) => (condition.op === "eq" ? answers[condition.key] === condition.value : answers[condition.key] !== condition.value))
+  return when.every(({ key, op, value }) => {
+    const answer = answers[key]
+    if (answer === undefined) return false
+    const hit = Array.isArray(answer) ? answer.some((item) => item === value) : answer === value
+    return op === "eq" ? hit : !hit
+  })
 }
 
 /** A choice offered for a question or a form field: shown by its label, answered with its value. */

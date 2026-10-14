@@ -134,7 +134,13 @@ describe("what the inbox lists", () => {
     expect(shown({ ...field, hidden: true }, {})).toBe(false)
     expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, { a: "yes" })).toBe(true)
     expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, { a: "no" })).toBe(false)
-    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "yes" }] }, {})).toBe(true)
+    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "yes" }] }, {})).toBe(false)
+    expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, {})).toBe(false)
+    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "yes" }] }, { a: "no" })).toBe(true)
+    expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "ts" }] }, { a: ["ts", "go"] })).toBe(true)
+    expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "ts" }] }, { a: ["go"] })).toBe(false)
+    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "go" }] }, { a: ["ts", "go"] })).toBe(false)
+    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "go" }] }, { a: ["ts"] })).toBe(true)
   })
 })
 
@@ -417,4 +423,23 @@ test("the description row of a boolean's dialog shares no value with Yes or No",
   const values = fake.dialogs[1]!.options.options.map((option: any) => option.value)
   expect(new Set(values).size).toBe(3)
   expect(fake.calls.find((call) => call.method === "form.reply")).toMatchObject({ method: "form.reply", input: { answer: { ok: true } } })
+})
+
+test("asks the fields OpenCode's form service treats as active", async () => {
+  const form = {
+    id: "frm_w", sessionID: "ses_b", title: "When",
+    fields: [
+      { key: "a", type: "string", title: "A" },
+      { key: "b", type: "string", title: "B", when: [{ key: "a", op: "neq", value: "x" }] },
+      { key: "langs", type: "multiselect", title: "Langs", options: [{ value: "ts", label: "TS" }, { value: "go", label: "Go" }] },
+      { key: "tsconfig", type: "string", title: "TS config", required: true, when: [{ key: "langs", op: "eq", value: "ts" }] },
+      { key: "nogo", type: "string", title: "No Go", when: [{ key: "langs", op: "neq", value: "go" }] },
+    ],
+  }
+  const fake = fakeContext(empty, { ses_b: [form] })
+  // a: skipped; then TS and Go picked.
+  fake.answers.push(pick("Form"), type(""), pick("[ ] TS"), pick("[ ] Go"), pick("Done"), type("cfg"))
+  await addAsksInbox(fake.context).open()
+  expect(fake.dialogs.map((d) => d.options.title)).toEqual(["Waiting on you (1)", "When · A", "When · Langs", "When · Langs", "When · Langs", "When · TS config"])
+  expect(fake.replies()[0]!.input).toMatchObject({ answer: { langs: ["ts", "go"], tsconfig: "cfg" } })
 })

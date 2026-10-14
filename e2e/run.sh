@@ -522,14 +522,15 @@ api_prompt "$parent" "COURIER-ANSWER once"
 own=$(own_request "$parent" "$request" 30)
 check "the person rejects it in the parent's prompt, without a reason" \
   "$([ -n "$own" ] && [ "$(person "session/$parent/permission/$own/reply" '{"decision":"reject"}')" = 204 ] && echo true || echo false)"
-check "the parent's step ended on the decline, as on its own tool call, with no courier_answer result for the model" \
-  "$(for _ in $(seq 1 30); do [ "$(api "session/$parent/message" | jq -r '.data[-1].type == "idle"')" = true ] && break; sleep 1; done
-    [ "$(api "session/$parent/message" | jq -r '.data[-1].type == "idle"')" = true ] && [ "$(has_text "$parent" "TOOL DONE courier_answer" 1)" != true ] &&
-    [ "$(answer_state "$parent" | jq -r '.status == "error" and .error.type == "aborted" and (.error.message | contains("declined"))')" = true ] && echo true || echo false)"
+check "the parent's call ended on the decline, as its own tool call would" \
+  "$(for _ in $(seq 1 30); do [ "$(answer_state "$parent" | jq -r '.status == "error"')" = true ] && break; sleep 1; done
+    answer_state "$parent" | jq -r '.status == "error" and .error.type == "aborted" and (.error.message | contains("declined"))')"
 check "the child's request still waits" "$(api "session/$child/permission" | jq -r --arg request "$request" '[.data[].id] | index($request) != null')"
 check "the person answers it in the child's session, and the child carries on" \
   "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"once"}')" = 204 ] && [ "$(has_text "$parent" "CHILD DONE shell" 45)" = true ] && echo true || echo false)"
-check "which the parent was told once" "$(has_text "$parent" "PARENT SETTLED" 45 >/dev/null; notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"once\""))')"
+check "which the parent was told once, and its model got no courier_answer result meanwhile" \
+  "$(has_text "$parent" "PARENT SETTLED" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"once\""))')" = true ] &&
+    [ "$(has_text "$parent" "TOOL DONE courier_answer" 1)" != true ] && echo true || echo false)"
 
 # The first web search of this run: no provider has been chosen, which OpenCode keeps for every session.
 echo "a child's web search asks for a provider with a form: the parent is told, and told when it is answered"

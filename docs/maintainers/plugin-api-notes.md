@@ -111,6 +111,9 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.29`); paths be
   rejection rejects with the `Permission.DeclinedError` itself (`_tag` `Permission.DeclinedError`),
   which the promise tool wrapper attaches to a `Tool.Error` and `SessionModelRequest.executeTool`
   recovers to end the step, so the tool must rethrow it untouched, not through `describeFailure`.
+  The tool part then ends with `error.type` `aborted` ("The user declined this tool call") and the
+  model is not called again, but neither the session's `time.idle` nor an `idle` message in the
+  transcript marks that turn's end, unlike one that ends normally.
   `opencode run --auto` replies `once` to every request asked in its own session, the asserted
   ones included (`packages/cli/src/run/noninteractive.ts`), so the live suite's parent answers its
   own prompt; the scenario that holds the prompt drives the parent through the API instead. The

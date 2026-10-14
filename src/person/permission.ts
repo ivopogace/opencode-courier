@@ -152,37 +152,18 @@ async function askCaller(ports: AnswerPorts, callerID: string, request: Permissi
   }
 }
 
-/**
- * Answers a permission request of a session started, directly or through others, from the caller,
- * which must be the top session; `answered` is false when no location loaded here holds the request.
- * A proposed `once` is passed on only once OpenCode has allowed it in the caller's session.
- */
-export async function answer(ports: AnswerPorts, waiting: Waiting, callerID: string, input: AnswerInput): Promise<PermissionAnswered> {
-  const reply = input.reply as Proposal
-  if (!PROPOSALS.includes(reply)) {
-    const always = input.reply === "always" ? ": courier_answer grants no standing rule; the person grants one in OpenCode's own prompt, in the asking session or the asks inbox" : ""
-    throw new Error(`reply must be once or reject, not "${input.reply}"${always}.`)
-  }
-  const { sessionID, requestID } = input
-  await answeringTop(ports.storage, sessionID, callerID, "permission requests")
-  let found = await locate(ports, sessionID, requestID)
-  if (!found) {
-    waiting.delete(requestID)
-    return { sessionID, requestID, reply, answered: false }
-  }
-  let message = reply === "reject" ? input.message || REJECTED : undefined
-  let refused: string | undefined
-  if (reply === "once") {
-    refused = await askCaller(ports, callerID, found.request, input.call)
-    // Answered meanwhile, in the child's session or the asks inbox, while the person was asked.
-    found = await locate(ports, sessionID, requestID)
-    if (!found) {
-      waiting.delete(requestID)
-      return { sessionID, requestID, reply, answered: false }
-    }
-    if (refused !== undefined) message = refused
-  }
-  const decision = refused === undefined ? reply : "reject"
+/** The reply as a proposal courier_answer passes on; anything else, `always` in particular, is refused. */
+function proposalOf(reply: string): Proposal {
+  if ((PROPOSALS as readonly string[]).includes(reply)) return reply as Proposal
+  const always = reply === "always" ? ": courier_answer grants no standing rule; the person grants one in OpenCode's own prompt, in the asking session or the asks inbox" : ""
+  throw new Error(`reply must be once or reject, not "${reply}"${always}.`)
+}
+
+type Located = NonNullable<Awaited<ReturnType<typeof locate>>>
+
+/** Replies where the request is pending; a reply that fails leaves the request waiting, unless it no longer does. */
+async function passOn(ports: AnswerPorts, waiting: Waiting, found: Located, reply: { sessionID: string; requestID: string; decision: Reply; message?: string }) {
+  const { sessionID, requestID, decision, message } = reply
   // Off the waiting list first, so the reply event this answer causes does not come back as a notice.
   waiting.delete(requestID)
   try {
@@ -196,6 +177,30 @@ export async function answer(ports: AnswerPorts, waiting: Waiting, callerID: str
       `${describeFailure("permission.reply", error).message}, but ${requestID} no longer waits, so it was answered, possibly by this call.`,
     )
   }
+}
+
+/**
+ * Answers a permission request of a session started, directly or through others, from the caller,
+ * which must be the top session; `answered` is false when no location loaded here holds the request.
+ * A proposed `once` is passed on only once OpenCode has allowed it in the caller's session.
+ */
+export async function answer(ports: AnswerPorts, waiting: Waiting, callerID: string, input: AnswerInput): Promise<PermissionAnswered> {
+  const reply = proposalOf(input.reply)
+  const { sessionID, requestID } = input
+  await answeringTop(ports.storage, sessionID, callerID, "permission requests")
+  let found = await locate(ports, sessionID, requestID)
+  let refused: string | undefined
+  if (found && reply === "once") {
+    refused = await askCaller(ports, callerID, found.request, input.call)
+    // Answered meanwhile, in the child's session or the asks inbox, while the person was asked.
+    found = await locate(ports, sessionID, requestID)
+  }
+  if (!found) {
+    waiting.delete(requestID)
+    return { sessionID, requestID, reply, answered: false }
+  }
+  const message = refused ?? (reply === "reject" ? input.message || REJECTED : undefined)
+  await passOn(ports, waiting, found, { sessionID, requestID, decision: refused === undefined ? reply : "reject", ...(message ? { message } : {}) })
   if (refused !== undefined) throw new Error(refusedText(sessionID, requestID, refused))
   return { sessionID, requestID, reply, answered: true }
 }

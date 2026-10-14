@@ -51,6 +51,13 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh    # two
   through. A new scenario goes into the group it belongs to, or a new group, which then must not rely
   on state another leaves behind: a group that needs an isolated child's worktree starts one, as
   `probe` does. The run ends with the seconds each scenario took, the slowest first.
+
+  The mock model holds a child's reply back by `CHILD_DELAY_MS` (5 s), so the parent's turn has ended
+  and it is idle when the reply lands. A scenario that does not depend on that asks for less with
+  `child_delay 1000` after its heading (the mock reads the delay from `$E2E_WORK/child-delay` at each
+  request; the next heading resets it). A check that something did not happen waits for the event it
+  would follow where there is one (`turn_ended`, the stop noted in storage, a message scheduled next
+  delivered at the same tick), and sleeps only a second or two where there is none.
 - **The TUI suite** (`e2e/tui.sh`) runs the TUI part live, the TUI in `tmux`: the footer entry and the
   RPC behind it, the tree panel, `/courier stop` and the asks inbox, from `dist/` and from the package
   `opencode plugin add` installs.

@@ -166,21 +166,21 @@ bun run typecheck
 bun test
 bun run build      # dist/: tsc for the server half and rpc, script/build-tui.ts for tui
 # live test: install the CLI once, at the version of the pinned plugin API
-npm install --prefix <scratch>/oc @opencode/cli@2.0.28
+npm install --prefix <scratch>/oc @opencode/cli@2.0.29
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # ~2 min, no API key
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TUI part, needs tmux
 ```
 
 ## Rules
 
-- The V2 plugin API is pinned to an exact version, `@opencode/plugin@2.0.28`, as devDependency and
+- The V2 plugin API is pinned to an exact version, `@opencode/plugin@2.0.29`, as devDependency and
   as peer dependency alike (the peer picks the copy `opencode plugin add` installs next to the
   plugin, which OpenCode 2.0.25 and later replace with their own at load, see
   `docs/maintainers/plugin-api-notes.md`; a unit test keeps the two equal; the exact `effect` peer and
   devDependency move with it, to the `effect` the new `@opencode/plugin` depends on), and the live
   test installs `@opencode/cli` at that same version. Read the API's types in `node_modules` rather than
   guessing; the OpenCode V2 source is on the `v2` branch of https://github.com/anomalyco/opencode,
-  with each release tagged (`v2.0.28`). A release that keeps the pin adds itself to the current row of
+  with each release tagged (`v2.0.29`). A release that keeps the pin adds itself to the current row of
   README.md's Supported OpenCode version table. A pin bump adds a row to that table, moves the version README names elsewhere (Quickstart, OpenCode V2 native, the
   install command, the terminal part's line under the table; a unit test checks the first three), and
   updates the affected traps in `docs/maintainers/plugin-api-notes.md` and the version they are

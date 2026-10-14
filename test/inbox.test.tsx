@@ -353,6 +353,24 @@ describe("attention", () => {
     expect(fake.listeners.size).toBe(0)
   })
 
+  test("names where an ask comes from by the sessions' current titles, the RPC's as the fallback", async () => {
+    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const get = fake.context.data.session.get
+    fake.context.data.session.get = (id: string) => (id === "ses_a" ? ({ id, title: "Renamed", location: { directory: "/workspace" } } as any) : get(id))
+    const inbox = addAsksInbox(fake.context)
+    await inbox.open()
+    expect((fake.dialogs[0]!.options as any).options[0].description).toBe("Root › Renamed › Write tests")
+
+    fake.emit("permission.asked")
+    await settle()
+    expect(fake.notified[0].title).toBe("Root › Renamed › Write tests")
+  })
+
+  test("pathOf falls back to the RPC's title for a session the TUI does not know or that has none yet", () => {
+    expect(pathOf(empty, "ses_b", "Root", (id) => (id === "ses_a" ? "" : undefined))).toBe("Root › Fix the bug › Write tests")
+    expect(pathOf(empty, "ses_b", "Root", (id) => (id === "ses_b" ? "Tests, renamed" : undefined))).toBe("Root › Fix the bug › Tests, renamed")
+  })
+
   test("an RPC failure, thrown as OpenCode's client throws it, says why", async () => {
     const ans = fakeContext({ ...empty, questions: [greeting] })
     const rpc = ans.context.client.rpc as any

@@ -40,11 +40,11 @@ export function asksOf(asks: Asks, forms: ReadonlyMap<string, ReadonlyArray<Form
   ])
 }
 
-/** Where an ask comes from: the titles from the top session down to the asking one, as "root › child › grandchild". */
-export function pathOf(asks: Asks, sessionID: string, topTitle: string) {
+/** Where an ask comes from: the titles from the top session down to the asking one, as "root › child › grandchild", each as the TUI knows it now, else as spawned. */
+export function pathOf(asks: Asks, sessionID: string, topTitle: string, currentTitle: (sessionID: string) => string | undefined = () => undefined) {
   const byID = new Map(asks.sessions.map((session) => [session.sessionID, session]))
   const titles: string[] = []
-  for (let at = byID.get(sessionID); at && titles.length <= byID.size; at = byID.get(at.parentID)) titles.unshift(at.title)
+  for (let at = byID.get(sessionID); at && titles.length <= byID.size; at = byID.get(at.parentID)) titles.unshift(currentTitle(at.sessionID) || at.title)
   return [topTitle, ...titles].join(" › ")
 }
 
@@ -134,6 +134,7 @@ const NOTE = Symbol("note")
  */
 export function addAsksInbox(ctx: Context) {
   const person = ctx.client.rpc(personRpc)
+  const currentTitle = (sessionID: string) => ctx.data.session.get(sessionID)?.title
   // Where the session runs, which has the plugin loaded, as the footer asks.
   const location = (sessionID: string) => ctx.data.session.get(sessionID)?.location ?? ctx.location ?? ctx.data.location.default()
   const openSession = () => {
@@ -337,7 +338,7 @@ export function addAsksInbox(ctx: Context) {
         const choosing = ctx.ui.dialog.select<Ask>({
           title: `Waiting on you (${listed.length})`,
           placeholder: "Search",
-          options: listed.map((ask) => ({ title: askTitle(ask), value: ask, description: pathOf(asks, ask.session.sessionID, top), footer: askFooter(ask) })),
+          options: listed.map((ask) => ({ title: askTitle(ask), value: ask, description: pathOf(asks, ask.session.sessionID, top, currentTitle), footer: askFooter(ask) })),
         })
         // Wider than a dialog opens, for where each ask comes from.
         ctx.ui.dialog.set({ size: "large" })
@@ -366,7 +367,7 @@ export function addAsksInbox(ctx: Context) {
       if (sounded.has(ask.key)) continue
       sounded.add(ask.key)
       void ctx.attention.notify({
-        title: pathOf(asks, ask.session.sessionID, top),
+        title: pathOf(asks, ask.session.sessionID, top, currentTitle),
         message: askTitle(ask),
         notification: { when: "blurred" },
         sound: { name: soundOf(ask), when: "always" },

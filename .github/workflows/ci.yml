@@ -107,8 +107,8 @@ jobs:
 
   e2e-run:
     # The live suite in four shards, each on its own runner with its own server, mock model and
-    # stand-in registry: e2e/run.sh with E2E_SHARD=k/4 (see docs/maintainers/development.md). The
-    # number of shards is in the matrix and in E2E_SHARD below; keep them equal.
+    # stand-in registry: e2e/run.sh with E2E_SHARD=k/4 (docs/maintainers/development.md). The count is
+    # in the matrix, in E2E_SHARD and in the name; keep them equal.
     name: Live suite (run.sh, shard ${{ matrix.shard }} of 4)
     needs: changes
     if: needs.changes.outputs.code == 'true'

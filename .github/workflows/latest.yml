@@ -94,6 +94,7 @@ jobs:
           path: |
             ${{ runner.temp }}/e2e/*.log
             ${{ runner.temp }}/e2e/*.out
+            ${{ runner.temp }}/e2e/timings.tsv
             ${{ runner.temp }}/e2e-tui/*.log
             ${{ runner.temp }}/e2e-tui/*.out
             ${{ runner.temp }}/e2e-tui/*.err

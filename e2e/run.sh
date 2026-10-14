@@ -3,6 +3,7 @@
 # stand-in model (e2e/mock-model.mjs), so no API key is needed.
 #
 #   OPENCODE_BIN=/path/to/opencode e2e/run.sh      # KEEP=1 keeps the temp dir and logs
+#   E2E_SHARD=2/4 e2e/run.sh   # one of four shards; E2E_GROUPS=a,b only those groups; E2E_PLAN=1 prints the plan
 #
 # E2E_WORK picks the working directory (CI points it somewhere it can upload the logs from).
 #
@@ -221,13 +222,8 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-# The scenarios come in groups, each a function `run_<name>` below that needs no other group: it starts
-# its own parents and children and takes the server as any earlier group leaves it. A full run goes
-# through them in this order. E2E_SHARD=k/n runs the k-th of n shards, which CI runs as a matrix, each
-# on its own runner with its own server, mock model and stand-in registry; E2E_GROUPS=a,b runs only the
-# named groups, to try one while changing it. The weight is the seconds a group took in CI, which the
-# shards balance; update it when a group changes much. `restart-question` and `roster` restart the
-# server, and share a shard. `epilogue` runs last in every shard and in every run.
+# Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI.
+# `restart-question` and `roster` restart the server and share a shard; `epilogue` ends every run.
 SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 roster:36 webhook:10 cleanup:4 subtree:2 nest:6 inbox:37 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
@@ -1166,7 +1162,7 @@ run_inbox() {
 }
 
 run_native() {
-  # The nativeChildren option, on for the rest of the run: the server reloads the plugin with it.
+  # The nativeChildren option, on for the groups after this one: the server reloads the plugin with it.
   scenario "nativeChildren: a child started without isolate gets OpenCode's own parentID"
   child_delay 1000
   stop_server
@@ -1327,7 +1323,7 @@ run_plugin_add() {
 }
 
 run_epilogue() {
-  # The reload, the reinstall and the restarts above unloaded every instance. An instance's unload
+  # Any reload, reinstall or restart in this run unloaded every instance. An instance's unload
   # waits for the work it started (the roster's prune, the notice of cut-off questions, the relay of
   # the requests already pending as its subscription started), so none of it fails against a location
   # that has closed: the lines those failures log are absent.

@@ -14,6 +14,12 @@ const plan = (env: Record<string, string>) => {
 const all = plan({}).groups
 
 describe("e2e/run.sh shards", () => {
+  test("every run_<name> function in e2e/run.sh is in SUITE, or a group would silently never run", () => {
+    const script = readFileSync(resolve(root, "e2e/run.sh"), "utf8")
+    const functions = [...script.matchAll(/^run_(\w+)\(\) \{/gm)].map((match) => match[1]!.replaceAll("_", "-"))
+    expect(functions.toSorted()).toEqual([...all, "epilogue"].toSorted())
+  })
+
   test("a run without a shard goes through every group, plugin-add last", () => {
     expect(all.length).toBeGreaterThan(10)
     expect(new Set(all).size).toBe(all.length)

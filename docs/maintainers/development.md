@@ -54,7 +54,7 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh    # two
 
   The mock model holds a child's reply back by `CHILD_DELAY_MS` (5 s), so the parent's turn has ended
   and it is idle when the reply lands. A scenario that does not depend on that asks for less with
-  `child_delay 1000` after its heading (the mock reads the delay from `$E2E_WORK/child-delay` at each
+  `child_delay 1000` after its heading (the mock reads the delay from a file in the run's work directory at each
   request; the next heading resets it). A check that something did not happen waits for the event it
   would follow where there is one (`turn_ended`, the stop noted in storage, a message scheduled next
   delivered at the same tick), and sleeps only a second or two where there is none.
@@ -83,9 +83,9 @@ request cancels its running CI:
 - **The live test**, with the CLI at the pinned version: `e2e/run.sh` in four shards and `e2e/tui.sh`,
   five jobs in parallel; a shard's logs and timings are uploaded as `e2e-logs-shard-k` when it fails.
   A pull request that changes only documentation (`README.md`, other Markdown, `docs/**`,
-  `.claude/**`) skips both; the unit job, with `test/links.test.ts`, still runs. The job named `Live
+  `.claude/**`) skips all of them; the unit job, with `test/links.test.ts`, still runs. The job named `Live
   test against OpenCode V2` waits for all of them and fails if any does; it is the one the branch ruleset
-  requires, and it passes with both skipped, which a skipped workflow would not.
+  requires, and it passes with all of them skipped, which a skipped workflow would not.
 
 `.github/workflows/latest.yml` runs the live test once more on the newest `@opencode/cli` release,
 with the build still on the pinned plugin API: on every push to `main` and nightly, never on a pull

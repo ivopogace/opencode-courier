@@ -842,3 +842,19 @@ describe("a tree past maxTotal (#188)", () => {
     expect(summaryLine({ ...empty, waiting: 1, idle: 30 })).toBe("courier 1 waiting on you · 30 idle")
   })
 })
+
+describe("/courier stop with nothing to pick (#181)", () => {
+  test("/courier stop with nothing to pick, or a tree it cannot read, says so instead of an empty picker", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async () => ({ rows: [] })
+    await tui.setup(fake.context)
+    await fake.command("courier.command")!.run("stop")
+    expect(fake.state.selects).toEqual([])
+    expect(fake.state.toasts.at(-1)?.message).toContain("No session")
+
+    fake.state.tree = async () => Promise.reject({ type: "rpc.unavailable", message: "closing" })
+    await fake.command("courier.command")!.run("stop")
+    expect(fake.state.selects).toEqual([])
+    expect(fake.state.toasts.at(-1)).toMatchObject({ message: "closing", variant: "error" })
+  })
+})

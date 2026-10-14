@@ -94,6 +94,64 @@ export function shown(field: FormField, answers: FormAnswer) {
   })
 }
 
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const isDate = (text: string) => /^\d{4}-\d{2}-\d{2}$/.test(text) && new Date(`${text}T00:00:00.000Z`).toISOString().slice(0, 10) === text
+
+/** What is wrong with a field's answer by the limits OpenCode's form service checks on reply, worded as its form view does; undefined when it fits. */
+export function misfit(field: FormField, value: FormValue): string | undefined {
+  if (field.type === "string") {
+    if (typeof value !== "string") return "Expected text"
+    if (field.required && !value) return "Answer required"
+    if (field.minLength !== undefined && value.length < field.minLength) return `Must be at least ${field.minLength} characters`
+    if (field.maxLength !== undefined && value.length > field.maxLength) return `Must be at most ${field.maxLength} characters`
+    if (field.pattern !== undefined) {
+      try {
+        if (!new RegExp(field.pattern).test(value)) return `Must match pattern: ${field.pattern}`
+      } catch {
+        return `Invalid pattern: ${field.pattern}`
+      }
+    }
+    if (field.format === "email" && !EMAIL.test(value)) return "Expected an email address"
+    if (field.format === "uri" && !URL.canParse(value)) return "Expected a URL"
+    if (field.format === "date" && !isDate(value)) return "Expected a date (YYYY-MM-DD)"
+    if (field.format === "date-time" && Number.isNaN(new Date(value).getTime())) return "Expected a date and time"
+    return undefined
+  }
+  if (field.type === "number" || field.type === "integer") {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "Expected a number"
+    if (field.type === "integer" && !Number.isInteger(value)) return "Expected an integer"
+    if (typeof field.minimum === "number" && value < field.minimum) return `Must be at least ${field.minimum}`
+    if (typeof field.maximum === "number" && value > field.maximum) return `Must be at most ${field.maximum}`
+    return undefined
+  }
+  if (field.type === "multiselect") {
+    if (!Array.isArray(value)) return "Expected selections"
+    if (field.required && !value.length) return "Select at least one option"
+    if (field.minItems !== undefined && value.length < field.minItems) return `Select at least ${field.minItems}`
+    if (field.maxItems !== undefined && value.length > field.maxItems) return `Select at most ${field.maxItems}`
+  }
+  return undefined
+}
+
+const numberOf = (limit: unknown) => (typeof limit === "number" ? limit : undefined)
+
+/** The limits of a typed field as a prompt's placeholder: "1-5", "at least 3 characters", "email"; undefined without any. */
+export function limitsOf(field: FormField): string | undefined {
+  const range = (low: number | undefined, high: number | undefined, unit = "") => {
+    if (low !== undefined && high !== undefined) return `${low}-${high}${unit}`
+    if (low !== undefined) return `at least ${low}${unit}`
+    if (high !== undefined) return `at most ${high}${unit}`
+    return undefined
+  }
+  const parts =
+    field.type === "number" || field.type === "integer"
+      ? [range(numberOf(field.minimum), numberOf(field.maximum))]
+      : field.type === "string"
+        ? [range(field.minLength, field.maxLength, " characters"), field.format, field.pattern ? `/${field.pattern}/` : undefined]
+        : []
+  return parts.filter(Boolean).join(", ") || undefined
+}
+
 /** A choice offered for a question or a form field: shown by its label, answered with its value. */
 type Choice = { readonly label: string; readonly value: string; readonly description?: string }
 
@@ -245,9 +303,14 @@ export function addAsksInbox(ctx: Context) {
   }
 
   /** Typed text for a field, asked again while empty and required; undefined when the person backs out. */
-  async function typed(title: string, field: { description?: string; default?: string }, optional: boolean) {
+  async function typed(title: string, field: { description?: string; default?: string; placeholder?: string }, optional: boolean) {
     for (;;) {
-      const text = await ctx.ui.dialog.prompt({ title, ...(field.description ? { description: field.description } : {}), ...(field.default ? { value: field.default } : {}) })
+      const text = await ctx.ui.dialog.prompt({
+        title,
+        ...(field.description ? { description: field.description } : {}),
+        ...(field.placeholder ? { placeholder: field.placeholder } : {}),
+        ...(field.default ? { value: field.default } : {}),
+      })
       if (text === undefined) return undefined
       if (text || optional) return text || SKIP
     }
@@ -258,7 +321,7 @@ export function addAsksInbox(ctx: Context) {
     const label = field.title ?? field.key
     const whole = field.type === "integer"
     for (;;) {
-      const text = await typed(title, { ...(field.description ? { description: field.description } : {}) }, optional)
+      const text = await typed(title, { ...(field.description ? { description: field.description } : {}), ...placeholder(field) }, optional)
       if (text === undefined || text === SKIP) return text
       const value = Number(text)
       if (Number.isFinite(value) && (!whole || Number.isInteger(value))) return value
@@ -266,8 +329,23 @@ export function addAsksInbox(ctx: Context) {
     }
   }
 
-  /** The person's answer to one field, or undefined when they back out; `SKIP` leaves it unanswered. */
+  const placeholder = (field: FormField) => {
+    const limits = limitsOf(field)
+    return limits ? { placeholder: limits } : {}
+  }
+
+  /** The person's answer to one field, asked again with a warning until it fits the field's limits; undefined when they back out, `SKIP` for none. */
   async function answerField(form: { title?: string }, field: FormField): Promise<FormValue | typeof SKIP | undefined> {
+    for (;;) {
+      const value = await askField(form, field)
+      if (value === undefined || value === SKIP) return value
+      const problem = misfit(field, value)
+      if (!problem) return value
+      ctx.ui.toast.show({ title: "courier", message: `${field.title ?? field.key}: ${problem}`, variant: "warning" })
+    }
+  }
+
+  async function askField(form: { title?: string }, field: FormField): Promise<FormValue | typeof SKIP | undefined> {
     const label = field.title ?? field.key
     const title = form.title ? `${form.title} · ${label}` : label
     const asks = field.description ?? ""
@@ -287,7 +365,7 @@ export function addAsksInbox(ctx: Context) {
         return picked
       }
       case "string": {
-        if (!field.options?.length) return typed(title, field, optional)
+        if (!field.options?.length) return typed(title, { ...field, ...placeholder(field) }, optional)
         const picked = await choose(title, field.options, { own: !!field.custom, optional, asks })
         return picked && (picked[0] ?? SKIP)
       }

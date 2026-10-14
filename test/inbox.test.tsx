@@ -443,3 +443,80 @@ test("asks the fields OpenCode's form service treats as active", async () => {
   expect(fake.dialogs.map((d) => d.options.title)).toEqual(["Waiting on you (1)", "When · A", "When · Langs", "When · Langs", "When · Langs", "When · TS config"])
   expect(fake.replies()[0]!.input).toMatchObject({ answer: { langs: ["ts", "go"], tsconfig: "cfg" } })
 })
+
+describe("a form field's limits", () => {
+  const reply = (formID: string, answer: unknown) => [{ method: "form.reply", input: { sessionID: "ses_b", formID, answer } }]
+  const run = async (field: Record<string, unknown>, ...answers: ((dialog: Dialog) => unknown)[]) => {
+    const fake = fakeContext(empty, { ses_b: [{ id: "frm_l", sessionID: "ses_b", title: "L", fields: [{ key: "f", title: "F", ...field }] }] })
+    fake.answers.push(pick("Form"), ...answers)
+    await addAsksInbox(fake.context).open()
+    return fake
+  }
+
+  test("asks a field again until its answer fits the field's limits", async () => {
+    const form = {
+      id: "frm_c", sessionID: "ses_b", title: "Limits",
+      fields: [
+        { key: "n", type: "integer", title: "N", minimum: 1, maximum: 5 },
+        { key: "tags", type: "multiselect", title: "Tags", required: true, options: [{ value: "a", label: "A" }] },
+        { key: "name", type: "string", title: "Name", minLength: 3, pattern: "^[a-z]+$" },
+      ],
+    }
+    const fake = fakeContext(empty, { ses_b: [form] })
+    fake.answers.push(pick("Form"), type("0"), type("2"), pick("Done"), pick("[ ] A"), pick("Done"), type("X1"), type("abc"))
+    await addAsksInbox(fake.context).open()
+    expect(fake.replies()).toEqual([{ method: "form.reply", input: { sessionID: "ses_b", formID: "frm_c", answer: { n: 2, tags: ["a"], name: "abc" } } }])
+    expect(fake.toasts.map((toast) => [toast.variant, toast.message])).toEqual([
+      ["warning", "N: Must be at least 1"],
+      ["warning", "Tags: Select at least one option"],
+      ["warning", "Name: Must be at least 3 characters"],
+    ])
+  })
+
+  test("a number above its maximum is asked again", async () => {
+    const fake = await run({ type: "number", maximum: 2.5 }, type("3"), type("2"))
+    expect(fake.toasts.map((toast) => toast.message)).toEqual(["F: Must be at most 2.5"])
+    expect(fake.replies()).toEqual(reply("frm_l", { f: 2 }))
+  })
+
+  test("a text longer than its maximum length is asked again", async () => {
+    const fake = await run({ type: "string", maxLength: 3 }, type("abcd"), type("abc"))
+    expect(fake.toasts.map((toast) => toast.message)).toEqual(["F: Must be at most 3 characters"])
+    expect(fake.replies()).toEqual(reply("frm_l", { f: "abc" }))
+  })
+
+  test.each([
+    ["email", "nope", "a@b.de", "Expected an email address"],
+    ["uri", "no uri", "https://x.test", "Expected a URL"],
+    ["date", "2026-02-30", "2026-02-28", "Expected a date (YYYY-MM-DD)"],
+    ["date-time", "later", "2026-02-28T10:00:00Z", "Expected a date and time"],
+  ])("a %s format is checked", async (format, bad, good, message) => {
+    const fake = await run({ type: "string", format }, type(bad), type(good))
+    expect(fake.toasts.map((toast) => toast.message)).toEqual([`F: ${message}`])
+    expect(fake.replies()).toEqual(reply("frm_l", { f: good }))
+  })
+
+  test("a multiselect with too few or too many picks is asked again", async () => {
+    const options = [{ value: "a", label: "A" }, { value: "b", label: "B" }, { value: "c", label: "C" }]
+    const fake = await run(
+      { type: "multiselect", minItems: 2, maxItems: 2, options },
+      pick("[ ] A"), pick("Done"), pick("[ ] A"), pick("[ ] B"), pick("[ ] C"), pick("Done"), pick("[ ] A"), pick("[ ] B"), pick("Done"),
+    )
+    expect(fake.toasts.map((toast) => toast.message)).toEqual(["F: Select at least 2", "F: Select at most 2"])
+    expect(fake.replies()).toEqual(reply("frm_l", { f: ["a", "b"] }))
+  })
+
+  test("an optional multiselect left empty is skipped, whatever its minimum", async () => {
+    const fake = await run({ type: "multiselect", minItems: 2, options: [{ value: "a", label: "A" }] }, pick("Done"))
+    expect(fake.toasts).toEqual([])
+    expect(fake.replies()).toEqual(reply("frm_l", {}))
+  })
+
+  test("a typed field's prompt shows its limits as the placeholder", async () => {
+    const placeholders = async (field: Record<string, unknown>) => (await run(field, () => undefined)).dialogs[1]!.options.placeholder
+    expect(await placeholders({ type: "integer", minimum: 1, maximum: 5 })).toBe("1-5")
+    expect(await placeholders({ type: "number", minimum: 0 })).toBe("at least 0")
+    expect(await placeholders({ type: "string", minLength: 3, maxLength: 9, format: "email" })).toBe("3-9 characters, email")
+    expect(await placeholders({ type: "string" })).toBeUndefined()
+  })
+})

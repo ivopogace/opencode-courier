@@ -284,7 +284,7 @@ const FOCUS_PROMPT = "pane.focus.left"
 type Following = { root: string; at?: string; to?: string; presentation: PanelPresentation; focused: boolean; refocus?: boolean; tree?: Tree }
 
 /** A title on one line: line breaks become spaces. */
-const oneLine = (title: string) => title.replace(/\s*[\r\n]+\s*/g, " ")
+const oneLine = (title: string) => title.replace(/[\r\n]+/g, " ")
 
 /** What a panel opened in a session shows: the tree it follows there, and whether to give the keyboard back to the prompt. */
 type View = { root: string; tree?: Tree; refocus: boolean; note: (fields: Partial<Following>) => void }

@@ -824,7 +824,7 @@ fullscreen and `q` closes the panel. While open, the panel follows the person to
 of its tree it keeps that tree, and its stops, with the session on screen marked `(on screen)` in its
 row; to another it shows that session's tree. In a session that started none, and on the home screen
 (`/new`), it hides, and shows again in the next session with a tree, that one included once it starts
-one. Closed with `q`, it stays closed.
+one, without taking the keyboard. Closed with `q` or by OpenCode, it stays closed.
 
 **Stopping from the TUI.** `s` in the panel, or `/courier stop <session>` in the prompt (`/courier stop`
 alone lists the open session's tree to pick from), asks the person to confirm with the session's title

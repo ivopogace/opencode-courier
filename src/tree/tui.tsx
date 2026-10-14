@@ -457,19 +457,21 @@ export function addTreePanel(ctx: Context) {
       untrack(() => {
         if (!following || (shown && shown.sessionID === sessionID) || (!following.at && following.to === sessionID)) return
         // Closed where it was open, by q or the host: it stays closed.
-        if (!shown && following.at === sessionID) following = undefined
+        if (!shown && sessionID && following.at === sessionID) following = undefined
         else if (!sessionID) hide(following)
         else follow(following, sessionID)
       })
     })
-    // Hidden in a session without a tree, it shows once that session starts one.
+    // Hidden in a session without a tree, it shows once that session starts one, leaving the keyboard to the prompt.
     createEffect(
       on(
         changed,
         () =>
           untrack(() => {
             const route = ctx.ui.router.current()
-            if (following && !following.at && route.type === "session" && following.to === route.sessionID && !ctx.ui.panel.current()) follow(following, route.sessionID)
+            if (!following || following.at || route.type !== "session" || following.to !== route.sessionID || ctx.ui.panel.current()) return
+            following.focused = false
+            follow(following, route.sessionID)
           }),
         { defer: true },
       ),

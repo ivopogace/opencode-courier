@@ -648,6 +648,22 @@ describe("the tree panel following navigation", () => {
     await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS + 100))
     expect(fake.state.opened).toHaveLength(2)
     expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_lonely" })
+    // It opened without the person moving, so the prompt keeps the keyboard.
+    await renderPanel(fake.claim("session.panel"), panelInput("ses_lonely").value)
+    await settle()
+    expect(fake.state.dispatched).toEqual(["pane.focus.left"])
+  })
+
+  test("hidden in a session without a tree, the home screen keeps it hidden, and it shows again in its tree", async () => {
+    const fake = await opened({ ses_parent: pair(1) })
+    fake.state.route = { type: "session", sessionID: "ses_lonely" }
+    await settle()
+    fake.state.route = { type: "home" }
+    await settle()
+    fake.state.route = { type: "session", sessionID: "ses_parent" }
+    await settle()
+    expect(fake.state.opened).toHaveLength(2)
+    expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_parent" })
   })
 
   test("the home screen hides it, and it shows again in a session of its tree", async () => {
@@ -663,7 +679,7 @@ describe("the tree panel following navigation", () => {
     expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_parent" })
   })
 
-  test("closed with q while hidden elsewhere is not undone: q ends it, and then nothing brings it back", async () => {
+  test("closed with q where it shows again, it stays closed through the home screen and back", async () => {
     const fake = await opened({ ses_parent: pair(1) })
     fake.state.route = { type: "home" }
     fake.state.route = { type: "session", sessionID: "ses_parent" }

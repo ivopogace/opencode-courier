@@ -98,9 +98,10 @@ texts() {
 # that event: the point a session that never gets a notice would have got it, for a "not told" check.
 turn_ended() {
   for _ in $(seq 1 $((${2:-30} * 2))); do
-    [ "$(finished "$1")" = true ] && break
+    [ "$(finished "$1")" = true ] && { sleep 1; return 0; }
     sleep 0.5
   done
+  echo "turn_ended: session $1 did not end its turn in ${2:-30} s" >&2
   sleep 1
 }
 # Whether session $1 has a text containing $2, waiting up to $3 (default 30) s.
@@ -272,8 +273,13 @@ selected_groups() {
 }
 GROUP_LIST=$(selected_groups) || exit 2
 # E2E_PLAN=1 prints the groups this run would go through, and runs nothing.
-if [ "${E2E_PLAN:-}" = 1 ]; then echo "$GROUP_LIST"; exit 0; fi
-echo "live suite${E2E_SHARD:+, shard $E2E_SHARD}${E2E_GROUPS:+, groups $E2E_GROUPS}: $(tr '\n' ' ' <<<"$GROUP_LIST") epilogue"
+if [ "${E2E_PLAN:-}" = 1 ]; then
+  trap - EXIT
+  [ -n "${E2E_WORK:-}" ] || rm -rf "$WORK"
+  echo "$GROUP_LIST"
+  exit 0
+fi
+echo "live suite${E2E_GROUPS:+, groups $E2E_GROUPS}${E2E_GROUPS:-${E2E_SHARD:+, shard $E2E_SHARD}}: $(tr '\n' ' ' <<<"$GROUP_LIST") epilogue"
 
 mkdir -p "$WORK/project" "$HOME"
 WEBHOOK_SECRET=courier-e2e-webhook-secret
@@ -1088,8 +1094,8 @@ run_subtree() {
     "$(jq -r --arg middle "$middle" --arg leaf "$leaf" '.status == "completed" and (.metadata.metadata.stopped | map([.sessionID, .outcome]) == [[$leaf, "interrupted"], [$middle, "interrupted"]])' <<<"$stopped")"
   ended() { for _ in $(seq 1 30); do [ "$(api "session/$1" | jq -r '(.data // .) | .outcome')" = interrupted ] && { echo true; return; }; sleep 1; done; echo false; }
   check "both sessions ended interrupted" "$([ "$(ended "$leaf")" = true ] && [ "$(ended "$middle")" = true ] && echo true || echo false)"
-  # The plugin notes each stop as it handles the interrupt, the event a notice of a failure or a silent end would follow.
-  for _ in $(seq 1 30); do [ -n "$(kv get "report/$leaf/stopped")" ] && [ -n "$(kv get "report/$middle/stopped")" ] && break; sleep 1; done
+  # The probe plugin logs each event the plugins get: both interrupts reached them, where a failure or a silent end would follow.
+  for _ in $(seq 1 30); do [ "$(jq -sr --arg a "$leaf" --arg b "$middle" '[.[] | select(.type == "session.execution.interrupted" and (.sessionID == $a or .sessionID == $b)) | .sessionID] | unique | length == 2' "$WORK/probe.log")" = true ] && break; sleep 1; done
   sleep 1
   check "neither parent was told of the stop, nor that a session ended without a report" \
     "$([ "$(notices_with "$root" ended)" = '[]' ] && [ "$(notices_with "$middle" ended)" = '[]' ] && echo true || echo false)"

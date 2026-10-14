@@ -40,7 +40,7 @@ export function asksOf(asks: Asks, forms: ReadonlyMap<string, ReadonlyArray<Form
   ])
 }
 
-/** Where an ask comes from: the titles from the top session down to the asking one, as "root › child › grandchild". */
+/** Where an ask comes from: the titles from the top session down to the asking one, as "root › child › grandchild", each as the TUI knows it now, else as spawned. */
 export function pathOf(asks: Asks, sessionID: string, topTitle: string, currentTitle: (sessionID: string) => string | undefined = () => undefined) {
   const byID = new Map(asks.sessions.map((session) => [session.sessionID, session]))
   const titles: string[] = []
@@ -132,8 +132,8 @@ const SKIP = Symbol("skip")
  */
 export function addAsksInbox(ctx: Context) {
   const person = ctx.client.rpc(personRpc)
-  // Where the session runs, which has the plugin loaded, as the footer asks.
   const currentTitle = (sessionID: string) => ctx.data.session.get(sessionID)?.title
+  // Where the session runs, which has the plugin loaded, as the footer asks.
   const location = (sessionID: string) => ctx.data.session.get(sessionID)?.location ?? ctx.location ?? ctx.data.location.default()
   const openSession = () => {
     const route = ctx.ui.router.current()

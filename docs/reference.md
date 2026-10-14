@@ -928,6 +928,8 @@ Waiting on you (2)
   Question: Greeting: Which greeting?         Root › Fix the bug                 depth 1
 ```
 
+Each session is named by its current title, so a renamed one shows its new name; one the terminal does not know keeps the title it was spawned with.
+
 A question whose call was cut off says `cut off, answered by message`. Searching filters the list.
 
 **Answering.** Choosing an ask opens its dialog; `esc` goes back to the list, which is read again after

@@ -562,6 +562,7 @@ export function addTreeAttention(ctx: Context) {
     const from = typeof metadata.from === "string" ? metadata.from : ""
     if (!group && !status) return
     notified.add(inboxID)
+    if (!group && ctx.data.session.get(from)?.parentID !== undefined) return
     if (notified.size > NOTIFIED_MAX) notified.delete(notified.values().next().value!)
     void (group
       ? ctx.attention.notify({

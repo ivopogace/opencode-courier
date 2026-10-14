@@ -123,7 +123,8 @@ between.
 
 1. **Deleting a session deletes its native children**, and theirs, as OpenCode deletes a subagent's
    session with its parent; their isolated children are left. The plugin forgets each deleted child
-   as it does any [deleted child](#worktree-cleanup). `courier_cleanup` and `courier_stop` never
+   as it does any [deleted child](#worktree-cleanup), roster entry included when it has no children of
+   its own on the roster and is not isolated. `courier_cleanup` and `courier_stop` never
    delete a session.
 2. **What providers see.** A native child's model requests carry its parent's id as the
    cache-routing id (`x-session-affinity`, `X-Session-Id`, `x-opencode-session` and the
@@ -719,7 +720,9 @@ track after a compaction or a server restart can call `courier_children` to find
 that can no longer be looked up is still listed, with the error instead of its state. The roster is
 also where a session's depth and tree are read from, for the [limits](#session-trees-and-their-limits).
 Whether a child [owes its parent a report](#a-child-that-ends-without-a-report), and its place in a
-[join group](#join-groups), are kept next to it, and dropped with its entry. Entries are dropped 14 days
+[join group](#join-groups), are kept next to it, and dropped with its entry. A child deleted in OpenCode
+is forgotten at once, unless it is isolated or has children of its own on the roster (see
+[Worktree cleanup](#worktree-cleanup)). Other entries are dropped 14 days
 after the child was started, when `courier_children` reads that parent's roster or the plugin is next
 loaded, except isolated children whose worktree is still there (see [Worktree cleanup](#worktree-cleanup));
 every other read of a tree (`courier_tree`, the [terminal part](#in-the-terminal)) leaves such entries
@@ -994,9 +997,15 @@ parent's directory and has no worktree: `courier_cleanup` only forgets it (outco
 dropping its roster entry and report state, and, for a member of a join group that has not reported,
 [dropping it from the group](#join-groups). `courier_cleanup` never deletes a session. Deleting one in
 OpenCode (the TUI, the app or `DELETE /api/session/<id>`) drops its report state and groups, and the
-report state of the sessions it started; its roster entry stays, listed with the error, until its 14
-days are up. With [`nativeChildren`](#native-child-sessions) on, it also deletes the session's native
-children, and theirs, which are forgotten the same way.
+report state of the sessions it started. Its roster entry is forgotten at once when the child is not
+isolated and has no children of its own on the roster. An isolated child's entry stays, so
+`courier_cleanup` can still remove its worktree; so does that of a session whose own children are still
+on the roster, as their lineage (the limits, the inbox's top, `courier_stop`'s "is above" check) runs
+through it. Both stay, listed with the error, until `courier_cleanup` or the 14 days are up. With
+[`nativeChildren`](#native-child-sessions) on, it also deletes the session's native children, and
+theirs, which are forgotten the same way: each deletion forgets its own entry first if it is a leaf, so
+the whole chain goes when the deletions arrive leaf first, and when the parent's arrives first its entry
+stays (its children were still on the roster) until it expires.
 
 ### Nested isolation
 

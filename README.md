@@ -226,7 +226,8 @@ Each tool's parameters: [the reference](docs/reference.md#the-tools).
   [terminal](#in-the-terminal). [More](docs/reference.md#seeing-and-stopping-a-subtree).
 
 Children, held reports, scheduled messages and open questions survive a compaction or a restart;
-entries are dropped after 14 days ([roster](docs/reference.md#roster)).
+entries are dropped after 14 days, or at once when OpenCode deletes the child, unless it is isolated
+([roster](docs/reference.md#roster)).
 
 ## Session trees
 

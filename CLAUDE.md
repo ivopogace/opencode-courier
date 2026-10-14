@@ -143,7 +143,7 @@ process-wide state between them, `fixtures/events.ts` has the fake ports and eve
 scripted OpenAI-compatible stand-in model, with `search-plugin` as a stand-in web search provider,
 `probe-plugin` logging the events each location's instance receives, and `kv.ts` to read, remove or
 set the plugin's storage keys in OpenCode's database. New behaviour gets a scenario there.
-`tui.sh`, in CI after `run.sh`: the TUI part live, the TUI in `tmux` (CI installs it with `apt-get`),
+`tui.sh`, in CI as a job next to `run.sh`: the TUI part live, the TUI in `tmux` (CI installs it with `apt-get`),
 its footer entry and the RPC behind it, from `dist/` and from the package `opencode plugin add` installs.
 `two-servers.sh`, not in CI: two servers on one data directory; its findings are in
 `docs/maintainers/plugin-api-notes.md`. `real-model.sh` (with `real-model.mjs`, `real-model-permission.mjs`,

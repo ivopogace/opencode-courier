@@ -10,8 +10,9 @@ and what the webhook receiver does with a delivery. The [README](../README.md) h
 Each release of the plugin is built and tested against one OpenCode V2 version, the exact
 `@opencode/plugin` version pinned in its `package.json` (the README's [Supported OpenCode
 version](../README.md#supported-opencode-version) table). The end-to-end suite runs on that version
-with every change, and once more on the newest `@opencode/cli` release, where a failure is a warning
-rather than a red build, so a host release that breaks the plugin shows up in CI first.
+with every change to the code, and once more on the newest `@opencode/cli` release on every push to
+`main` and nightly, where a failure is a warning rather than a red build, so a host release that
+breaks the plugin shows up in CI first.
 
 Nothing in OpenCode checks the version: `opencode plugin add` installs the plugin on any V2 host,
 and the loader warns about nothing. The plugin loads on hosts from 2.0.4 on, and fails to load on

@@ -517,6 +517,45 @@ describe("the tree panel", () => {
     expect((fake.state.layers.at(-1)!() as { enabled?: () => boolean }).enabled?.()).toBe(true)
   })
 
+  test("the selection stays on its session when rows are added above it", async () => {
+    const fake = fakeContext(async () => empty)
+    let rows = [row("ses_a", { title: "Alpha" }), row("ses_b", { title: "Bravo" }), row("ses_c", { title: "Charlie" })]
+    fake.state.tree = async () => ({ rows })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+    await app.waitForFrame((frame) => frame.includes("Charlie"))
+    fake.command("down")!.run()
+    await app.waitForFrame((frame) => frame.includes("▸ Bravo"))
+    rows = [rows[0]!, row("ses_a1", { title: "Alpha's child", parentID: "ses_a", depth: 2 }), rows[1]!, rows[2]!]
+    fake.command("r")!.run()
+    await app.waitForFrame((frame) => frame.includes("Alpha's child"))
+    expect(app.captureCharFrame()).toContain("▸ Bravo")
+    fake.state.confirm = false
+    fake.command("s")!.run()
+    await settle()
+    expect(fake.state.confirms.at(-1)?.message).toStartWith('Stop "Bravo" (ses_b)')
+  })
+
+  test("the selection stays at its place when the selected session disappears", async () => {
+    const fake = fakeContext(async () => empty)
+    let rows = [row("ses_a", { title: "Alpha" }), row("ses_b", { title: "Bravo" }), row("ses_c", { title: "Charlie" }), row("ses_d", { title: "Delta" })]
+    fake.state.tree = async () => ({ rows })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+    await app.waitForFrame((frame) => frame.includes("Delta"))
+    fake.command("down")!.run()
+    await app.waitForFrame((frame) => frame.includes("▸ Bravo"))
+    rows = [rows[0]!, rows[2]!, rows[3]!]
+    fake.command("r")!.run()
+    await app.waitForFrame((frame) => !frame.includes("Bravo"))
+    expect(app.captureCharFrame()).toContain("▸ Charlie")
+    // The selection now belongs to Charlie, so a row added above it does not move it.
+    rows = [row("ses_z", { title: "Zulu" }), ...rows]
+    fake.command("r")!.run()
+    await app.waitForFrame((frame) => frame.includes("Zulu"))
+    expect(app.captureCharFrame()).toContain("▸ Charlie")
+  })
+
   test("s stops the selected session through the RPC, as the panel's session, once the person confirms", async () => {
     const fake = fakeContext(async () => empty)
     fake.state.tree = async () => ({ rows: [row("ses_mid", { title: "Mid" }), row("ses_leaf", { parentID: "ses_mid", depth: 2 })] })

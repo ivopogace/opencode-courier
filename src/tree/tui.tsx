@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode/plugin/tui"
 import type { PanelInput, PanelPresentation } from "@opencode/plugin/tui/context"
 import type { ScrollBoxRenderable } from "@opentui/core"
-import { createEffect, createResource, createRoot, createSignal, For, on, onCleanup, onMount, Show, untrack, type Accessor } from "solid-js"
+import { createEffect, createMemo, createResource, createRoot, createSignal, For, on, onCleanup, onMount, Show, untrack, type Accessor } from "solid-js"
 import { treeRpc, type Row, type Stopped, type Summary, type Tree, type Wait } from "./rpc.js"
 
 type Context = Plugin.Context
@@ -289,21 +289,36 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
   const [now, setNow] = createSignal(Date.now())
   const tick = setInterval(() => setNow(Date.now()), TICK_MS)
   onCleanup(() => clearInterval(tick))
-  const [selected, setSelected] = createSignal(0)
+  const [selectedID, setSelectedID] = createSignal<string>()
   let placed = false
   createEffect(() => {
-    const index = placed ? -1 : rows().findIndex((row) => row.sessionID === input.sessionID)
-    if (index < 0) return
+    const found = placed ? undefined : rows().find((row) => row.sessionID === input.sessionID)
+    if (!found) return
     placed = true
-    setSelected(index)
+    setSelectedID(found.sessionID)
   })
-  const current = () => rows()[Math.min(selected(), rows().length - 1)]
+  let at = 0
+  const selected = createMemo(() => {
+    const id = selectedID()
+    const found = rows().findIndex((row) => row.sessionID === id)
+    const index = found >= 0 ? found : Math.min(at, rows().length - 1)
+    at = Math.max(index, 0)
+    return index
+  })
+  // A selected session that is gone leaves the selection at its place; take the session now there.
+  createEffect(() => {
+    const row = rows()[selected()]
+    if (row && row.sessionID !== selectedID()) setSelectedID(row.sessionID)
+  })
+  const current = () => rows()[selected()]
   let scroll: ScrollBoxRenderable | undefined
   createEffect(() => {
-    const index = Math.min(selected(), rows().length - 1)
-    if (index >= 0) scroll?.scrollChildIntoView(`courier-row-${index}`)
+    if (selected() >= 0) scroll?.scrollChildIntoView(`courier-row-${selected()}`)
   })
-  const move = (by: number) => setSelected((index) => Math.max(0, Math.min(rows().length - 1, Math.min(index, rows().length - 1) + by)))
+  const move = (by: number) => {
+    const next = rows()[Math.max(0, Math.min(rows().length - 1, selected() + by))]
+    if (next) setSelectedID(next.sessionID)
+  }
   const open = () => {
     const row = current()
     if (row) ctx.ui.router.navigate({ type: "session", sessionID: row.sessionID })
@@ -358,7 +373,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
       <scrollbox ref={(value: ScrollBoxRenderable) => (scroll = value)} flexGrow={1}>
         <For each={rows()}>
           {(row, index) => {
-            const chosen = () => index() === Math.min(selected(), rows().length - 1)
+            const chosen = () => index() === selected()
             const indent = "  ".repeat(row.depth - 1)
             return (
               <box id={`courier-row-${index()}`} flexDirection="column" flexShrink={0} backgroundColor={chosen() && input.focused ? theme.background.raised.high : undefined}>

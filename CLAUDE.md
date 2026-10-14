@@ -143,7 +143,7 @@ process-wide state between them, `fixtures/events.ts` has the fake ports and eve
 scripted OpenAI-compatible stand-in model, with `search-plugin` as a stand-in web search provider,
 `probe-plugin` logging the events each location's instance receives, and `kv.ts` to read, remove or
 set the plugin's storage keys in OpenCode's database. New behaviour gets a scenario there.
-`tui.sh`, in CI after `run.sh`: the TUI part live, the TUI in `tmux` (CI installs it with `apt-get`),
+`tui.sh`, in CI as a job next to `run.sh`: the TUI part live, the TUI in `tmux` (CI installs it with `apt-get`),
 its footer entry and the RPC behind it, from `dist/` and from the package `opencode plugin add` installs.
 `two-servers.sh`, not in CI: two servers on one data directory; its findings are in
 `docs/maintainers/plugin-api-notes.md`. `real-model.sh` (with `real-model.mjs`, `real-model-permission.mjs`,
@@ -153,10 +153,12 @@ after any change to `src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` o
 (in a `src/**/tools.ts`), which is every model-facing string; `docs/maintainers/real-model.md`
 describes it and holds a results table per scenario, which a re-run updates.
 
-`.github/workflows/ci.yml`: both suites on every push to `main` and every pull request (the live one is
-`run.sh` then `tui.sh`), and the live suite once more on the `latest` OpenCode release, allowed to fail. Its `sonar` job scans
-`src/` on SonarCloud with the unit coverage and fails when the quality gate does: no new bug,
-vulnerability or unreviewed hotspot, and at least 80% coverage on new code. `release-start.yml`,
+`.github/workflows/ci.yml`: both suites on every push to `main` and every pull request, in jobs of their
+own: `run.sh` and `tui.sh` in parallel, both skipped on a pull request that changes only documentation. The
+required `Live test against OpenCode V2` job is the gate over them and passes with both skipped. Its `sonar`
+job scans `src/` on SonarCloud with the unit coverage and fails when the quality gate does: no new bug,
+vulnerability or unreviewed hotspot, and at least 80% coverage on new code. `latest.yml`: the live suite on
+the `latest` OpenCode release, on pushes to `main` and nightly only, allowed to fail. `release-start.yml`,
 `release-tag.yml` and `release.yml`: the release flow, `docs/maintainers/releasing.md`.
 
 ## Commands

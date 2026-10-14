@@ -7,9 +7,10 @@ on:
   # The release workflow runs both suites through this before publishing.
   workflow_call:
 
+# A new push to a pull request cancels its running CI; a push to `main` and a release's run finish.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -68,10 +69,46 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  e2e:
-    # Required: the host at the pinned version. The `latest` leg below is the same suite on the
-    # newest release and may fail.
-    name: Live test against OpenCode V2
+  changes:
+    # Whether the pull request touches more than documentation. The live suites run only if it does:
+    # anything but README.md, other Markdown, docs/ and .claude/. Every other event, a push to
+    # `main` or a release's run, runs them. The unit job runs either way, with test/links.test.ts.
+    name: Changed files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      # The merge commit of the pull request and its two parents: HEAD^1 is the base it merges into.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          code=true
+          if [ "$EVENT" = pull_request ] && git rev-parse --verify -q 'HEAD^2' >/dev/null; then
+            code=false
+            # --no-renames: a file renamed into docs/ still shows up under the path it came from.
+            while IFS= read -r file; do
+              case $file in
+                README.md | docs/* | .claude/* | *.md) ;;
+                *)
+                  code=true
+                  echo "not documentation: $file"
+                  ;;
+              esac
+            done < <(git diff --no-renames --name-only 'HEAD^1' HEAD)
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "Changes beyond documentation: $code" >> "$GITHUB_STEP_SUMMARY"
+
+  e2e-run:
+    name: Live suite (run.sh)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -93,14 +130,6 @@ jobs:
         env:
           E2E_WORK: ${{ runner.temp }}/e2e
           KEEP: "1"
-      # The runner image lists no tmux, which the TUI's live test runs the TUI in.
-      - name: Install tmux
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq tmux
-      - name: Run the live test of the TUI part
-        run: OPENCODE_BIN="$(command -v opencode)" e2e/tui.sh
-        env:
-          E2E_WORK: ${{ runner.temp }}/e2e-tui
-          KEEP: "1"
       - name: Upload server and model logs
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -109,22 +138,14 @@ jobs:
           path: |
             ${{ runner.temp }}/e2e/*.log
             ${{ runner.temp }}/e2e/*.out
-            ${{ runner.temp }}/e2e-tui/*.log
-            ${{ runner.temp }}/e2e-tui/*.out
-            ${{ runner.temp }}/e2e-tui/*.err
-            ${{ runner.temp }}/e2e-tui/*.txt
           if-no-files-found: ignore
 
-  e2e-latest:
-    # The same suite on the newest `@opencode/cli` release, so a host release that breaks the plugin
-    # shows up on the next push rather than in a user's session. The build still uses the pinned
-    # `@opencode/plugin`. Allowed to fail: a red run here is a warning, and the pinned leg above
-    # stays the required one. The step summary names the version that ran, and so does the log
-    # artifact.
-    name: Live test against OpenCode V2 latest (may fail)
+  e2e-tui:
+    name: Live suite of the TUI part (tui.sh)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    continue-on-error: true
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -136,34 +157,9 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
-      - name: Install the latest OpenCode V2
-        id: install
-        run: |
-          npm install -g @opencode/cli@latest
-          opencode --version
-          # From the installed package, not from `opencode --version`, whose output may carry more
-          # than the version.
-          version=$(node -p "require('$(npm root -g)/@opencode/cli/package.json').version")
-          pinned=$(node -p "require('./package.json').peerDependencies['@opencode/plugin']")
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          {
-            echo "## Live test against OpenCode V2 latest"
-            echo
-            echo "| | version |"
-            echo "|---|---|"
-            echo "| \`@opencode/cli@latest\` | $version |"
-            echo "| \`@opencode/plugin\` the build uses | $pinned |"
-            if [ "$version" = "$pinned" ]; then
-              echo
-              echo "\`latest\` is the pinned version today, so this run repeats the pinned leg."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "::notice title=OpenCode latest::The latest leg runs on @opencode/cli@$version (the plugin is built against @opencode/plugin@$pinned)"
-      - name: Run the live test
-        run: OPENCODE_BIN="$(command -v opencode)" e2e/run.sh
-        env:
-          E2E_WORK: ${{ runner.temp }}/e2e
-          KEEP: "1"
+      - name: Install OpenCode V2
+        run: npm install -g "@opencode/cli@$(node -p "require('./package.json').peerDependencies['@opencode/plugin']")"
+      # The runner image lists no tmux, which the TUI's live test runs the TUI in.
       - name: Install tmux
         run: sudo apt-get update -qq && sudo apt-get install -y -qq tmux
       - name: Run the live test of the TUI part
@@ -171,27 +167,35 @@ jobs:
         env:
           E2E_WORK: ${{ runner.temp }}/e2e-tui
           KEEP: "1"
-      - name: Report the outcome
-        if: always()
-        env:
-          # Empty when the install step itself failed.
-          VERSION: ${{ steps.install.outputs.version || 'unknown' }}
-          OUTCOME: ${{ job.status }}
-        run: |
-          echo "Outcome on @opencode/cli@$VERSION: $OUTCOME" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$OUTCOME" != success ]; then
-            echo "::warning title=OpenCode latest::The live suite did not pass on @opencode/cli@$VERSION; the pinned leg decides"
-          fi
-      - name: Upload server and model logs
+      - name: Upload server and model logs and the TUI's screens
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-logs-latest-${{ steps.install.outputs.version || 'unknown' }}
+          name: e2e-tui-logs
           path: |
-            ${{ runner.temp }}/e2e/*.log
-            ${{ runner.temp }}/e2e/*.out
             ${{ runner.temp }}/e2e-tui/*.log
             ${{ runner.temp }}/e2e-tui/*.out
             ${{ runner.temp }}/e2e-tui/*.err
             ${{ runner.temp }}/e2e-tui/*.txt
           if-no-files-found: ignore
+
+  e2e:
+    # The required check: the host at the pinned version, run.sh and tui.sh together, as the one job
+    # that ran them both was. It is a job of its own so the name stays what the branch ruleset
+    # requires while the suites run as separate jobs, and so a pull request that changes only
+    # documentation passes it with the live jobs skipped (a skipped job is a pass; a skipped
+    # workflow would leave the check pending).
+    name: Live test against OpenCode V2
+    needs: [changes, e2e-run, e2e-tui]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - run: |
+          echo "changes, run.sh, tui.sh: $RESULTS"
+          case " $RESULTS " in
+            *" failure "* | *" cancelled "*) exit 1 ;;
+          esac
+

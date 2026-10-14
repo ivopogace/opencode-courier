@@ -51,17 +51,24 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh    # two
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request; a new push to a pull
+request cancels its running CI:
 
 - **Typecheck, unit tests, build**, then `publint` and `@arethetypeswrong/cli` on the package as
   published.
 - **SonarCloud** scans `src/` with the unit coverage and fails when the quality gate does: no new bug,
   vulnerability or unreviewed hotspot, and at least 80% coverage on new code. It runs on `main` and on
   pull requests from this repository, not on a fork's.
-- **The live test**, `e2e/run.sh` then `e2e/tui.sh`, with the CLI at the pinned version.
-- **The live test on `latest`**: the same on the newest `@opencode/cli` release, with the build still
-  on the pinned plugin API. Allowed to fail: a red run is a warning, so a host release that breaks the
-  plugin shows up here before it reaches a user.
+- **The live test**, with the CLI at the pinned version: `e2e/run.sh` and `e2e/tui.sh` as two jobs in
+  parallel. A pull request that changes only documentation (`README.md`, other Markdown, `docs/**`,
+  `.claude/**`) skips both; the unit job, with `test/links.test.ts`, still runs. The job named `Live
+  test against OpenCode V2` waits for both and fails if either does; it is the one the branch ruleset
+  requires, and it passes with both skipped, which a skipped workflow would not.
+
+`.github/workflows/latest.yml` runs the live test once more on the newest `@opencode/cli` release,
+with the build still on the pinned plugin API: on every push to `main` and nightly, never on a pull
+request. Allowed to fail: a red run is a warning, so a host release that breaks the plugin shows up
+here before it reaches a user. Run it by hand with `gh workflow run latest.yml`.
 
 The release workflows (`release-start.yml`, `release-tag.yml`, `release.yml`) run CI again on the
 tag: [releasing.md](releasing.md).

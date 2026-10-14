@@ -44,7 +44,7 @@ export function asksOf(asks: Asks, forms: ReadonlyMap<string, ReadonlyArray<Form
 export function pathOf(asks: Asks, sessionID: string, topTitle: string, currentTitle: (sessionID: string) => string | undefined = () => undefined) {
   const byID = new Map(asks.sessions.map((session) => [session.sessionID, session]))
   const titles: string[] = []
-  for (let at = byID.get(sessionID); at && titles.length <= byID.size; at = byID.get(at.parentID)) titles.unshift(currentTitle(at.sessionID) ?? at.title)
+  for (let at = byID.get(sessionID); at && titles.length <= byID.size; at = byID.get(at.parentID)) titles.unshift(currentTitle(at.sessionID) || at.title)
   return [topTitle, ...titles].join(" › ")
 }
 

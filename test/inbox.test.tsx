@@ -365,4 +365,9 @@ describe("attention", () => {
     await settle()
     expect(fake.notified[0].title).toBe("Root › Renamed › Write tests")
   })
+
+  test("pathOf falls back to the RPC's title for a session the TUI does not know or that has none yet", () => {
+    expect(pathOf(empty, "ses_b", "Root", (id) => (id === "ses_a" ? "" : undefined))).toBe("Root › Fix the bug › Write tests")
+    expect(pathOf(empty, "ses_b", "Root", (id) => (id === "ses_b" ? "Tests, renamed" : undefined))).toBe("Root › Fix the bug › Tests, renamed")
+  })
 })

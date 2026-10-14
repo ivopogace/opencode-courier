@@ -448,7 +448,10 @@ export function addAsksInbox(ctx: Context) {
   let settling: ReturnType<typeof setTimeout> | undefined
   const sound = async () => {
     const sessionID = openSession()
-    if (!sessionID) return void named.clear()
+    if (!sessionID) {
+      named.clear()
+      return
+    }
     const { asks, listed } = await read(sessionID)
     const eventSessions = named
     named = new Set()

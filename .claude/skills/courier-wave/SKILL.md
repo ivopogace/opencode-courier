@@ -34,7 +34,11 @@ PR itself and merges.
 
 ## 2. Spawn
 
-`create_session` per issue: `source_url` the repo, `outcome_branch` `issue-<N>-<slug>`, title
+First assign each issue to the owner on GitHub (`issue_write`, method `update`, `assignees`), so
+nobody else starts on it; note it in the roster. One already assigned to someone else is not
+reassigned or spawned: tell the owner who has it. An issue the wave drops unmerged is unassigned.
+
+Then `create_session` per issue: `source_url` the repo, `outcome_branch` `issue-<N>-<slug>`, title
 `opencode-courier #<N>: <scope>`, tags `opencode-courier`, `wave-<K>`, `issue:<N>`, and the prompt
 from `references/child-prompt.md` with every bracket filled. Put in the prompt what the owner has
 already decided for that issue so the child does not ask again. Never `permission_mode: plan`: no

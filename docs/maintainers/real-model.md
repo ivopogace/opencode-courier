@@ -105,6 +105,8 @@ fails a parent that asks with a form.
 
 | Model | OpenCode | Result |
 |---|---|---|
+| `longcat-2.5-preview-free` | 2.0.29 | 7/7: told, the parent proposed `once` with `courier_answer` at once, asking nothing itself; the call was held while OpenCode's prompt in its session showed the child's command, and once the person allowed it there the child ran it, reported `done`, and the parent replied `RESULT courier-permission-42`. |
+| `longcat-2.5-preview-free`, `COURIER_NATIVE=1`, run on an earlier wording of the native notice, which still listed `once` and `reject` for a person who asks the model to answer for them | 2.0.29 | 0/6: told with the `shown="native"` notice, the parent wrote one line and then proposed `once` with `courier_answer` all the same ("Proposing approval to the user now"), so OpenCode asked the person a second time, in the parent's session, and held the call; the notice now says not to call `courier_answer`, and names the ids only for a person who tells the model to. |
 | `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 6/6: told with the `shown="native"` notice, the parent wrote one line (*The helper session is waiting on your permission to run the shell command.*) and ended its turn; after the person allowed it, it was told `answered="once"` and replied `RESULT courier-permission-42`. |
 | `longcat-2.5-preview-free`, `COURIER_NATIVE=1`, run before native children got their own notice, so on the notice every other child gets | 2.0.28 | 6/6: asked the person with a question form offering `once`, `always` and `reject`, and passed `once` on with `courier_answer`. |
 | `longcat-2.5-preview-free` | 2.0.26 | Pass, with the status on `courier_send` and again with the skill listed. |

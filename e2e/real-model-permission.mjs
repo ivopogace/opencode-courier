@@ -98,7 +98,8 @@ const told = await until("the parent to be told of the request, and to propose o
   const notice = list.findIndex(isNotice)
   if (notice < 0) return undefined
   const request = list[notice].text.match(/request="(per_\w+)"/)?.[1]
-  const prompt = NATIVE ? undefined : await promptFor(request)
+  // With nativeChildren, a prompt in the parent's session means the parent proposed although told not to.
+  const prompt = await promptFor(request)
   if (prompt) return { list, notice, prompt, held: lastAnswer(list)?.state.status === "running" }
   const forms = (await api(`session/${parentID}/form`)).data
   if (forms.length) return { list, notice, form: forms[0] }
@@ -127,14 +128,18 @@ async function answerPrompt(decision) {
 let elsewhereSaid = ""
 const noticeText = told ? told.list[told.notice].text : ""
 if (NATIVE && told && !answeredItself) {
-  how = told.form
-    ? "asked the person all the same, with a question form"
-    : `did not ask with its question tool; it said: ${short(textOf(last).trim(), 300)}`
+  how = told.prompt
+    ? "proposed once with courier_answer all the same, so OpenCode asked the person a second time, in the parent's session"
+    : told.form
+      ? "asked the person all the same, with a question form"
+      : `did not ask with its question tool; it said: ${short(textOf(last).trim(), 300)}`
   personAt = Date.now()
   const childID = noticeText.match(/<courier from="(ses_\w+)"/)?.[1]
   const request = noticeText.match(/request="(per_\w+)"/)?.[1]
   console.log(`  the person allows ${request} once in OpenCode's own prompt`)
   await api(`session/${childID}/permission/${request}/reply`, { method: "POST", body: JSON.stringify({ decision: "once" }) })
+  // The second prompt, if any, is rejected without a reason, which ends the parent's held call as a decline would.
+  if (told.prompt) await answerPrompt("reject")
 } else if (told && !answeredItself && other) {
   if (told.prompt) {
     // The person rejects the prompt on the first server without a reason, which ends the parent's step and leaves the
@@ -242,7 +247,7 @@ const notPending = toolsOf(afterPerson).filter(
 )
 const report = parent.find((message) => isReport(message, child))
 const finalText = textOf(parent.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
-const askedAgain = Boolean(told?.form) || toolsOf(before).some((part) => part.name === "question")
+const askedAgain = Boolean(told?.form) || Boolean(NATIVE && told?.prompt) || toolsOf(before).some((part) => part.name === "question")
 const settledOnce = parent.some((message) => message.type === "synthetic" && / answered="once"/.test(message.text))
 const prompted = Boolean(told?.prompt) && told.prompt.action === "shell" && told.prompt.resources.some((item) => item.includes("courier-permission"))
 const checks = NATIVE

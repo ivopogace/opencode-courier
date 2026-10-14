@@ -86,28 +86,25 @@ export function permissionNotice(title: string, request: PermissionRequest, star
     ...(resources.length ? ["On:", ...resources] : []),
     ...(request.message ? [`Note: ${request.message}`] : []),
     "",
-    ...(native ? NATIVE_PERMISSION : PERMISSION_ASK),
-    "- once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it",
-    "- reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on",
-    `Call courier_answer with sessionID "${request.sessionID}", requestID "${request.id}", reply set to the choice and, with reject, message set to the reason.`,
-    ...(native ? [] : PERMISSION_PROPOSE),
+    ...(native ? nativePermission(request) : permissionAsk(request)),
   ].join("\n")
 }
 
-const PERMISSION_ASK = [
+const permissionAsk = (request: PermissionRequest) => [
   "You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose once. Do not ask them in your reply or with your question tool first; propose one of these:",
-]
-
-const PERMISSION_PROPOSE = [
+  "- once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it",
+  "- reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on",
+  `Call courier_answer with sessionID "${request.sessionID}", requestID "${request.id}", reply set to the choice and, with reject, message set to the reason.`,
   "Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one). A refusal there with a reason fails the call with it, which the session is given; one without a reason ends your turn, and the session waits on.",
 ]
 
-/** For a native child's request, which OpenCode shows the person itself, in the top session's view. */
-const NATIVE_PERMISSION = [
+/** For a native child's request, which OpenCode shows the person itself, in the top session's view: nothing to call. */
+const nativePermission = (request: PermissionRequest) => [
   "OpenCode already shows this request to the person you are working with, as its own permission prompt in your session (and in the paired app's request dock), where they answer it; you will be told once it is answered.",
-  "Do not ask them yourself, with your question tool or in your reply, and do not answer it: at most tell them in one line that this session waits on their permission, then end your turn.",
-  "Only if they ask you to answer it for them, propose one of these with courier_answer, which has OpenCode ask them in your session first:",
+  "Do not ask them yourself, with your question tool or in your reply, and do not call courier_answer for it, which would only ask them a second time: at most tell them in one line that this session waits on their permission, then end your turn.",
+  `Only if they tell you to answer it for them, call courier_answer with sessionID "${request.sessionID}", requestID "${request.id}" and reply set to once or reject (with reject, message set to the reason); with once, OpenCode asks them again in your session before it is passed on.`,
 ]
+
 
 /** What the session told about a permission request is told once it is answered without courier_answer. */
 export function permissionSettledNotice(title: string, requestID: string, reply: Reply) {

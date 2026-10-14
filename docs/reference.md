@@ -169,15 +169,16 @@ every question of an isolated child.
 whose native root is the top session is not put to the person by the model. OpenCode shows it in the
 top session's view as its own permission prompt, bound to that request, and on the paired app's dock;
 the plugin tells the top session's model with a notice marked `shown="native"`, which says so, tells
-it not to ask the person, with its question tool or in its reply, nor to answer, and to tell them in
-one line at most and end its turn, and still lists the choices for `courier_answer`, for a person who
-asks the model to answer for them. Once the person answers in OpenCode's prompt, the model is told it
-is settled (`answered="<reply>"`). Approval stays with the host's prompt, which a model cannot answer
-for the person: a `courier_answer` it calls all the same prompts the person
-[again](#a-child-that-asks-for-permission), in the top session, before anything is passed on, so the
-person is asked once in the normal flow and twice only when they have the model answer for them; a
-model that ignores the notice and asks anyway does no more than without the option, and the first
-answer counts. A native child under an isolated session, an isolated child, and every
+it not to ask the person, with its question tool or in its reply, nor to call `courier_answer`, which
+would only ask them a second time, and to tell them in one line at most and end its turn; it names
+the request's ids only for a person who tells the model to answer for them. Once the person answers
+in OpenCode's prompt, the model is told it is settled (`answered="<reply>"`). Approval stays with the
+host's prompt, which a model cannot answer for the person: a `courier_answer` it calls all the same
+prompts the person [again](#a-child-that-asks-for-permission), in the top session, before anything is
+passed on, so the person is asked once in the normal flow and twice only when the model proposes
+anyway or they have it answer for them (the live smoke test's first run on the earlier wording, which
+listed the choices, saw the model propose unasked); a model that ignores the notice and asks anyway
+does no more than without the option, and the first answer counts. A native child under an isolated session, an isolated child, and every
 child with the option off get the notice as without the option.
 
 Turn the option on only where the person sees OpenCode's own prompts and forms: the TUI, or the

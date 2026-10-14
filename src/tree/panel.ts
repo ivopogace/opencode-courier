@@ -1,7 +1,7 @@
 import type { Status } from "../kernel/protocol.js"
 import { busy } from "./domain.js"
 import type { CourierPorts, Pending } from "./ports.js"
-import { lastStatus, type reportOf } from "./report.js"
+import { lastStatus } from "./report.js"
 import type { Row, Tree, Wait } from "./rpc.js"
 import { standingIn } from "./status.js"
 import { childStore } from "./store.js"
@@ -26,7 +26,7 @@ export const waitOf = (pending: Pending): Wait =>
     : { type: "question", question: pending.questions[0]?.question ?? "" }
 
 /** A session's report since its last prompt, as the panel shows it; none for one spawned before this was kept. */
-function reportRow(report: Awaited<ReturnType<typeof reportOf>>, status: Status | undefined): Pick<Row, "report"> {
+function reportRow(report: Looked["report"], status: Status | undefined): Pick<Row, "report"> {
   if (!report) return {}
   if (report.owes) return { report: { state: "owed", progressed: report.progressed } }
   if (report.ended) return { report: { state: "ended", progressed: report.progressed } }

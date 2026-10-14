@@ -540,6 +540,15 @@ run_reports_groups() {
   check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
   check "and its report state is gone" \
     "$(for _ in $(seq 1 20); do [ -z "$(kv get "report/$child/prompt")$(kv get "report/$child/told")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+  check "and so is its roster entry, so courier_children no longer lists it" \
+    "$(for _ in $(seq 1 20); do [ "$(child_listing "$parent" "$child")" = unlisted ] && { echo true; exit; }; sleep 1; done; echo false)"
+
+  scenario "a deleted isolated child stays on courier_children, for courier_cleanup"
+  child_delay 1000
+  spawn_isolated
+  check "the isolated child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
+  check "it is still listed" "$(sleep 3; [ "$(child_listing "$parent" "$child")" = listed ] && echo true || echo false)"
+  check "and its worktree is still there for courier_cleanup" "$([ -d "$directory" ] && echo true || echo false)"
 
   scenario "a child that ends its turn to wait for a message it scheduled is not reported, and reports once woken"
   out=$(prompt "COURIER-WAITING")

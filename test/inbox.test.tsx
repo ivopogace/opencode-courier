@@ -352,4 +352,17 @@ describe("attention", () => {
     inbox.cleanup()
     expect(fake.listeners.size).toBe(0)
   })
+
+  test("names where an ask comes from by the sessions' current titles, the RPC's as the fallback", async () => {
+    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const get = fake.context.data.session.get
+    fake.context.data.session.get = (id: string) => (id === "ses_a" ? ({ id, title: "Renamed", location: { directory: "/workspace" } } as any) : get(id))
+    const inbox = addAsksInbox(fake.context)
+    await inbox.open()
+    expect((fake.dialogs[0]!.options as any).options[0].description).toBe("Root › Renamed › Write tests")
+
+    fake.emit("permission.asked")
+    await settle()
+    expect(fake.notified[0].title).toBe("Root › Renamed › Write tests")
+  })
 })

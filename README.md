@@ -45,8 +45,8 @@ sometimes stall on a request; if nothing moves for a few minutes, send the promp
 Courier is built on OpenCode V2's plugin API (`@opencode/plugin`), not the V1 one
 (`@opencode-ai/plugin`), and needs OpenCode V2. Each release is pinned to one V2 version and tested
 against it end to end; the current one is tested on **OpenCode 2.0.29**. CI also runs the live
-suite on the newest OpenCode release, so a host release that breaks the plugin shows up there
-first. Older releases and their versions: [Supported OpenCode version](#supported-opencode-version).
+suite on the newest OpenCode release, on `main` and nightly, so a host release that breaks the
+plugin shows up there first. Older releases and their versions: [Supported OpenCode version](#supported-opencode-version).
 
 ## Courier or the built-in subagent tool?
 

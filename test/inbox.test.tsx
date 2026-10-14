@@ -87,8 +87,8 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
     attention: { notify: async (options: unknown) => (notified.push(options), { ok: true }) },
     keymap: { layer: (factory: () => any) => void layers.push(factory) },
   } as unknown as Plugin.Context
-  const emit = (type: string) => {
-    for (const listener of listeners) listener({ details: { type } })
+  const emit = (type: string, sessionID?: string) => {
+    for (const listener of listeners) listener({ details: { type, ...(sessionID ? { data: { sessionID } } : {}) } } as never)
   }
   return {
     context,
@@ -103,6 +103,7 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
     sizes,
     emit,
     goHome: () => void (route = { type: "home" }),
+    goSession: (sessionID: string) => void (route = { type: "session", sessionID }),
     replies: () => calls.filter(({ method }) => method !== "asks"),
   }
 }
@@ -134,7 +135,13 @@ describe("what the inbox lists", () => {
     expect(shown({ ...field, hidden: true }, {})).toBe(false)
     expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, { a: "yes" })).toBe(true)
     expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, { a: "no" })).toBe(false)
-    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "yes" }] }, {})).toBe(true)
+    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "yes" }] }, {})).toBe(false)
+    expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, {})).toBe(false)
+    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "yes" }] }, { a: "no" })).toBe(true)
+    expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "ts" }] }, { a: ["ts", "go"] })).toBe(true)
+    expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "ts" }] }, { a: ["go"] })).toBe(false)
+    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "go" }] }, { a: ["ts", "go"] })).toBe(false)
+    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "go" }] }, { a: ["ts"] })).toBe(true)
   })
 })
 
@@ -424,12 +431,162 @@ test("the description row of a boolean's dialog shares no value with Yes or No",
   expect(fake.calls.find((call) => call.method === "form.reply")).toMatchObject({ method: "form.reply", input: { answer: { ok: true } } })
 })
 
+test("asks the fields OpenCode's form service treats as active", async () => {
+  const form = {
+    id: "frm_w", sessionID: "ses_b", title: "When",
+    fields: [
+      { key: "a", type: "string", title: "A" },
+      { key: "b", type: "string", title: "B", when: [{ key: "a", op: "neq", value: "x" }] },
+      { key: "langs", type: "multiselect", title: "Langs", options: [{ value: "ts", label: "TS" }, { value: "go", label: "Go" }] },
+      { key: "tsconfig", type: "string", title: "TS config", required: true, when: [{ key: "langs", op: "eq", value: "ts" }] },
+      { key: "nogo", type: "string", title: "No Go", when: [{ key: "langs", op: "neq", value: "go" }] },
+    ],
+  }
+  const fake = fakeContext(empty, { ses_b: [form] })
+  // a: skipped; then TS and Go picked.
+  fake.answers.push(pick("Form"), type(""), pick("[ ] TS"), pick("[ ] Go"), pick("Done"), type("cfg"))
+  await addAsksInbox(fake.context).open()
+  expect(fake.dialogs.map((d) => d.options.title)).toEqual(["Waiting on you (1)", "When · A", "When · Langs", "When · Langs", "When · Langs", "When · TS config"])
+  expect(fake.replies()[0]!.input).toMatchObject({ answer: { langs: ["ts", "go"], tsconfig: "cfg" } })
+})
+
+describe("a form field's limits", () => {
+  const reply = (formID: string, answer: unknown) => [{ method: "form.reply", input: { sessionID: "ses_b", formID, answer } }]
+  const run = async (field: Record<string, unknown>, ...answers: ((dialog: Dialog) => unknown)[]) => {
+    const fake = fakeContext(empty, { ses_b: [{ id: "frm_l", sessionID: "ses_b", title: "L", fields: [{ key: "f", title: "F", ...field }] }] })
+    fake.answers.push(pick("Form"), ...answers)
+    await addAsksInbox(fake.context).open()
+    return fake
+  }
+
+  test("asks a field again until its answer fits the field's limits", async () => {
+    const form = {
+      id: "frm_c", sessionID: "ses_b", title: "Limits",
+      fields: [
+        { key: "n", type: "integer", title: "N", minimum: 1, maximum: 5 },
+        { key: "tags", type: "multiselect", title: "Tags", required: true, options: [{ value: "a", label: "A" }] },
+        { key: "name", type: "string", title: "Name", minLength: 3, pattern: "^[a-z]+$" },
+      ],
+    }
+    const fake = fakeContext(empty, { ses_b: [form] })
+    fake.answers.push(pick("Form"), type("0"), type("2"), pick("Done"), pick("[ ] A"), pick("Done"), type("X1"), type("abc"))
+    await addAsksInbox(fake.context).open()
+    expect(fake.replies()).toEqual([{ method: "form.reply", input: { sessionID: "ses_b", formID: "frm_c", answer: { n: 2, tags: ["a"], name: "abc" } } }])
+    expect(fake.toasts.map((toast) => [toast.variant, toast.message])).toEqual([
+      ["warning", "N: Must be at least 1"],
+      ["warning", "Tags: Select at least one option"],
+      ["warning", "Name: Must be at least 3 characters"],
+    ])
+  })
+
+  test("a number above its maximum is asked again", async () => {
+    const fake = await run({ type: "number", maximum: 2.5 }, type("3"), type("2"))
+    expect(fake.toasts.map((toast) => toast.message)).toEqual(["F: Must be at most 2.5"])
+    expect(fake.replies()).toEqual(reply("frm_l", { f: 2 }))
+  })
+
+  test("a text longer than its maximum length is asked again", async () => {
+    const fake = await run({ type: "string", maxLength: 3 }, type("abcd"), type("abc"))
+    expect(fake.toasts.map((toast) => toast.message)).toEqual(["F: Must be at most 3 characters"])
+    expect(fake.replies()).toEqual(reply("frm_l", { f: "abc" }))
+  })
+
+  test.each([
+    ["email", "nope", "a@b.de", "Expected an email address"],
+    ["uri", "no uri", "https://x.test", "Expected a URL"],
+    ["date", "2026-02-30", "2026-02-28", "Expected a date (YYYY-MM-DD)"],
+    ["date-time", "later", "2026-02-28T10:00:00Z", "Expected a date and time"],
+  ])("a %s format is checked", async (format, bad, good, message) => {
+    const fake = await run({ type: "string", format }, type(bad), type(good))
+    expect(fake.toasts.map((toast) => toast.message)).toEqual([`F: ${message}`])
+    expect(fake.replies()).toEqual(reply("frm_l", { f: good }))
+  })
+
+  test("a multiselect with too few or too many picks is asked again", async () => {
+    const options = [{ value: "a", label: "A" }, { value: "b", label: "B" }, { value: "c", label: "C" }]
+    const fake = await run(
+      { type: "multiselect", minItems: 2, maxItems: 2, options },
+      pick("[ ] A"), pick("Done"), pick("[ ] A"), pick("[ ] B"), pick("[ ] C"), pick("Done"), pick("[ ] A"), pick("[ ] B"), pick("Done"),
+    )
+    expect(fake.toasts.map((toast) => toast.message)).toEqual(["F: Select at least 2", "F: Select at most 2"])
+    expect(fake.replies()).toEqual(reply("frm_l", { f: ["a", "b"] }))
+  })
+
+  test("an optional multiselect left empty is skipped, whatever its minimum", async () => {
+    const fake = await run({ type: "multiselect", minItems: 2, options: [{ value: "a", label: "A" }] }, pick("Done"))
+    expect(fake.toasts).toEqual([])
+    expect(fake.replies()).toEqual(reply("frm_l", {}))
+  })
+
+  test("a typed field's prompt shows its limits as the placeholder", async () => {
+    const placeholders = async (field: Record<string, unknown>) => (await run(field, () => undefined)).dialogs[1]!.options.placeholder
+    expect(await placeholders({ type: "integer", minimum: 1, maximum: 5 })).toBe("1-5")
+    expect(await placeholders({ type: "number", minimum: 0 })).toBe("at least 0")
+    expect(await placeholders({ type: "string", minLength: 3, maxLength: 9, format: "email" })).toBe("3-9 characters, email")
+    expect(await placeholders({ type: "string" })).toBeUndefined()
+  })
+})
+
+describe("a form field's default", () => {
+  test("starts each field on its default", async () => {
+    const form = {
+      id: "frm_d", sessionID: "ses_b", title: "Defaults",
+      fields: [
+        { key: "n", type: "integer", title: "N", default: 3 },
+        { key: "ok", type: "boolean", title: "OK", default: true },
+        { key: "tags", type: "multiselect", title: "Tags", default: ["a"], options: [{ value: "a", label: "A" }, { value: "b", label: "B" }] },
+      ],
+    }
+    const fake = fakeContext(empty, { ses_b: [form] })
+    fake.answers.push(pick("Form"), (dialog) => dialog.options.value, (dialog) => dialog.options.current, pick("Done"))
+    await addAsksInbox(fake.context).open()
+    expect(fake.dialogs[1]!.options.value).toBe("3")
+    expect(fake.dialogs[2]!.options.current).toBe(true)
+    expect(fake.dialogs[3]!.options.options.map((option: any) => option.title)).toEqual(["[x] A", "[ ] B", "Done"])
+    expect(fake.replies()[0]!.input).toMatchObject({ answer: { n: 3, ok: true, tags: ["a"] } })
+  })
+
+  test("a string with options starts on its default, which may be the person's own earlier value", async () => {
+    const options = [{ value: "prod", label: "Production" }, { value: "dev", label: "Development" }]
+    const form = {
+      id: "frm_e", sessionID: "ses_b", title: "Env",
+      fields: [{ key: "env", type: "string", title: "Env", default: "dev", options }, { key: "other", type: "string", title: "Other", default: "qa", custom: true, options }],
+    }
+    const fake = fakeContext(empty, { ses_b: [form] })
+    fake.answers.push(pick("Form"), (dialog) => dialog.options.current, (dialog) => dialog.options.current)
+    await addAsksInbox(fake.context).open()
+    expect(fake.dialogs[1]!.options.current).toBe("dev")
+    expect(fake.dialogs[2]!.options.current).toBe("qa")
+    expect(fake.dialogs[2]!.options.options.map((option: any) => option.title)).toContain("[x] qa")
+    expect(fake.replies()[0]!.input).toMatchObject({ answer: { env: "dev", other: "qa" } })
+  })
+
+  test("a field without a default starts empty", async () => {
+    const fake = fakeContext(empty, { ses_b: [{ id: "frm_n", sessionID: "ses_b", title: "N", fields: [{ key: "n", type: "number", title: "N" }, { key: "ok", type: "boolean", title: "OK" }] }] })
+    fake.answers.push(pick("Form"), () => undefined)
+    await addAsksInbox(fake.context).open()
+    expect(fake.dialogs[1]!.options).toEqual({ title: "N · N" })
+  })
+})
+
 test("an unrelated request does not sound asks that were already waiting", async () => {
   const fake = fakeContext({ ...empty, permissions: [bash], questions: [greeting] })
   addAsksInbox(fake.context)
   await settle()
   // A permission request in a session outside this tree; the tree's two asks were there before.
-  fake.emit("permission.asked")
+  fake.emit("permission.asked", "ses_elsewhere")
   await settle()
   expect(fake.notified).toEqual([])
+})
+
+test("the first ask in a tree reached after start sounds, the ones already waiting there do not", async () => {
+  const fake = fakeContext({ ...empty, permissions: [bash], questions: [greeting] })
+  fake.goHome()
+  addAsksInbox(fake.context)
+  await settle()
+  fake.goSession("ses_root")
+  // bash waits in ses_b; the event names the session of the new ask.
+  fake.emit("form.created", "ses_a")
+  await settle()
+  expect(fake.notified.map((options) => options.message)).toEqual([expect.stringContaining("Greeting")])
 })

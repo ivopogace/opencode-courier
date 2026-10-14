@@ -1,12 +1,22 @@
 // A scripted OpenAI-compatible chat model for the end-to-end test. It decides each reply from the
 // conversation so far, so the parent, the child and the woken parent each get a predictable turn.
-import { appendFileSync } from "node:fs"
+import { appendFileSync, readFileSync } from "node:fs"
 import { createServer } from "node:http"
 
 const port = Number(process.env.MOCK_PORT ?? 4599)
 const log = process.env.MOCK_LOG
 // Holds the child's report (or its failure) back, so the parent's turn has ended and it is idle when it lands.
 const childDelay = Number(process.env.MOCK_CHILD_DELAY_MS ?? 0)
+// A file holding the delay in ms, read at each request, so the test can change it between scenarios.
+const delayFile = process.env.MOCK_CHILD_DELAY_FILE
+const currentDelay = () => {
+  try {
+    const ms = Number.parseInt(readFileSync(delayFile, "utf8"), 10)
+    return Number.isFinite(ms) ? ms : childDelay
+  } catch {
+    return childDelay
+  }
+}
 // How long a `hold` reply is held back: a turn that is still running when the test stops it.
 const holdMs = Number(process.env.MOCK_HOLD_MS ?? 90_000)
 
@@ -333,8 +343,9 @@ createServer((request, response) => {
     const body = raw ? JSON.parse(raw) : {}
     const reply = decide(body)
     if (reply.hold) await new Promise((resolve) => setTimeout(resolve, holdMs))
-    if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status || reply.delayed) && !reply.quick && childDelay)
-      await new Promise((resolve) => setTimeout(resolve, childDelay))
+    const delay = currentDelay()
+    if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status || reply.delayed) && !reply.quick && delay)
+      await new Promise((resolve) => setTimeout(resolve, delay))
     // The session, and the courier role its system prompt names (`root` is the pointer to the skill), for the recursion scenario.
     const session = request.headers["x-opencode-session-id"]
     const system = (body.messages ?? []).filter((message) => message.role === "system").map((message) => textOf(message.content)).join("\n")

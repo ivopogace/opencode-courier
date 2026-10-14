@@ -125,7 +125,8 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   `version.ts`: the log line on an OpenCode version other than the pinned one.
 
 `test/imports.test.ts` checks these import rules, `tree/store.ts`'s privacy and that no other file
-names its key prefixes; `test/store.test.ts` pins the exact keys and values the stores write;
+names its key prefixes; `test/store.test.ts` pins the exact keys and values the stores write; `test/e2e-shards.test.ts`
+checks that every live-suite group is in exactly one shard of any count;
 `test/links.test.ts` resolves every relative Markdown link and `#anchor` in README.md, CLAUDE.md,
 `docs/**` and `.claude/**`, so a moved file or heading fails it.
 `test/tui.test.tsx` renders the TUI part against a fake TUI context with OpenTUI's `testRender`
@@ -139,7 +140,8 @@ with `bun test --update-snapshots`.
 process-wide state between them, `fixtures/events.ts` has the fake ports and events the event-module tests share, and
 `fixtures/two-copies.ts` loads two copies of the platform.
 
-`e2e/`: `run.sh` is the live test against a real OpenCode V2 server, driven by `mock-model.mjs`, a
+`e2e/`: `run.sh` is the live test against a real OpenCode V2 server, in groups of scenarios that
+`E2E_SHARD=k/n` deals out to shards (`docs/maintainers/development.md`), driven by `mock-model.mjs`, a
 scripted OpenAI-compatible stand-in model, with `search-plugin` as a stand-in web search provider,
 `probe-plugin` logging the events each location's instance receives, and `kv.ts` to read, remove or
 set the plugin's storage keys in OpenCode's database. New behaviour gets a scenario there.
@@ -154,8 +156,8 @@ after any change to `src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` o
 describes it and holds a results table per scenario, which a re-run updates.
 
 `.github/workflows/ci.yml`: both suites on every push to `main` and every pull request, in jobs of their
-own: `run.sh` and `tui.sh` in parallel, both skipped on a pull request that changes only documentation. The
-required `Live test against OpenCode V2` job is the gate over them and passes with both skipped. Its `sonar`
+own: `run.sh` in four shards and `tui.sh` in parallel, all skipped on a pull request that changes only documentation. The
+required `Live test against OpenCode V2` job is the gate over them and passes with all of them skipped. Its `sonar`
 job scans `src/` on SonarCloud with the unit coverage and fails when the quality gate does: no new bug,
 vulnerability or unreviewed hotspot, and at least 80% coverage on new code. `latest.yml`: the live suite on
 the `latest` OpenCode release, on pushes to `main` and nightly only, allowed to fail. `release-start.yml`,
@@ -170,7 +172,7 @@ bun test
 bun run build      # dist/: tsc for the server half and rpc, script/build-tui.ts for tui
 # live test: install the CLI once, at the version of the pinned plugin API
 npm install --prefix <scratch>/oc @opencode/cli@2.0.29
-OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # ~2 min, no API key
+OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # every scenario in one run, no API key; E2E_SHARD=k/n for a part
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TUI part, needs tmux
 ```
 

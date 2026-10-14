@@ -520,3 +520,45 @@ describe("a form field's limits", () => {
     expect(await placeholders({ type: "string" })).toBeUndefined()
   })
 })
+
+describe("a form field's default", () => {
+  test("starts each field on its default", async () => {
+    const form = {
+      id: "frm_d", sessionID: "ses_b", title: "Defaults",
+      fields: [
+        { key: "n", type: "integer", title: "N", default: 3 },
+        { key: "ok", type: "boolean", title: "OK", default: true },
+        { key: "tags", type: "multiselect", title: "Tags", default: ["a"], options: [{ value: "a", label: "A" }, { value: "b", label: "B" }] },
+      ],
+    }
+    const fake = fakeContext(empty, { ses_b: [form] })
+    fake.answers.push(pick("Form"), (dialog) => dialog.options.value, (dialog) => dialog.options.current, pick("Done"))
+    await addAsksInbox(fake.context).open()
+    expect(fake.dialogs[1]!.options.value).toBe("3")
+    expect(fake.dialogs[2]!.options.current).toBe(true)
+    expect(fake.dialogs[3]!.options.options.map((option: any) => option.title)).toEqual(["[x] A", "[ ] B", "Done"])
+    expect(fake.replies()[0]!.input).toMatchObject({ answer: { n: 3, ok: true, tags: ["a"] } })
+  })
+
+  test("a string with options starts on its default, which may be the person's own earlier value", async () => {
+    const options = [{ value: "prod", label: "Production" }, { value: "dev", label: "Development" }]
+    const form = {
+      id: "frm_e", sessionID: "ses_b", title: "Env",
+      fields: [{ key: "env", type: "string", title: "Env", default: "dev", options }, { key: "other", type: "string", title: "Other", default: "qa", custom: true, options }],
+    }
+    const fake = fakeContext(empty, { ses_b: [form] })
+    fake.answers.push(pick("Form"), (dialog) => dialog.options.current, (dialog) => dialog.options.current)
+    await addAsksInbox(fake.context).open()
+    expect(fake.dialogs[1]!.options.current).toBe("dev")
+    expect(fake.dialogs[2]!.options.current).toBe("qa")
+    expect(fake.dialogs[2]!.options.options.map((option: any) => option.title)).toContain("[x] qa")
+    expect(fake.replies()[0]!.input).toMatchObject({ answer: { env: "dev", other: "qa" } })
+  })
+
+  test("a field without a default starts empty", async () => {
+    const fake = fakeContext(empty, { ses_b: [{ id: "frm_n", sessionID: "ses_b", title: "N", fields: [{ key: "n", type: "number", title: "N" }, { key: "ok", type: "boolean", title: "OK" }] }] })
+    fake.answers.push(pick("Form"), () => undefined)
+    await addAsksInbox(fake.context).open()
+    expect(fake.dialogs[1]!.options).toEqual({ title: "N · N" })
+  })
+})

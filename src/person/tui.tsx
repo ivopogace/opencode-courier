@@ -240,12 +240,13 @@ export function addAsksInbox(ctx: Context) {
   async function choose(
     title: string,
     choices: ReadonlyArray<Choice>,
-    { multiple = false, own = false, optional = false, asks = "" } = {},
+    { multiple = false, own = false, optional = false, asks = "", start = [] as ReadonlyArray<string> } = {},
   ) {
-    const picked: string[] = []
+    const picked = [...start]
     for (;;) {
       const value = await ctx.ui.dialog.select<string | symbol>({
         title,
+        ...(!multiple && start[0] !== undefined ? { current: start[0] } : {}),
         options: [...(asks ? [{ title: asks, value: NOTE, disabled: true }] : []), ...chooseOptions(choices, picked, { multiple, own, optional })],
       })
       if (value === undefined) return undefined
@@ -321,7 +322,7 @@ export function addAsksInbox(ctx: Context) {
     const label = field.title ?? field.key
     const whole = field.type === "integer"
     for (;;) {
-      const text = await typed(title, { ...(field.description ? { description: field.description } : {}), ...placeholder(field) }, optional)
+      const text = await typed(title, { ...(field.description ? { description: field.description } : {}), ...placeholder(field), ...(field.default !== undefined ? { default: String(field.default) } : {}) }, optional)
       if (text === undefined || text === SKIP) return text
       const value = Number(text)
       if (Number.isFinite(value) && (!whole || Number.isInteger(value))) return value
@@ -357,16 +358,17 @@ export function addAsksInbox(ctx: Context) {
       case "boolean":
         return ctx.ui.dialog.select<boolean | symbol>({
           title,
+          ...(field.default !== undefined ? { current: field.default } : {}),
           options: [...(asks ? [{ title: asks, value: NOTE, disabled: true }] : []), { title: "Yes", value: true }, { title: "No", value: false }],
         }) as Promise<boolean | undefined>
       case "multiselect": {
-        const picked = await choose(title, field.options, { multiple: true, own: !!field.custom, asks })
+        const picked = await choose(title, field.options, { multiple: true, own: !!field.custom, asks, start: field.default ?? [] })
         if (picked?.length === 0 && optional) return SKIP
         return picked
       }
       case "string": {
         if (!field.options?.length) return typed(title, { ...field, ...placeholder(field) }, optional)
-        const picked = await choose(title, field.options, { own: !!field.custom, optional, asks })
+        const picked = await choose(title, field.options, { own: !!field.custom, optional, asks, start: field.default === undefined ? [] : [field.default] })
         return picked && (picked[0] ?? SKIP)
       }
       case "number":

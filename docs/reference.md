@@ -949,7 +949,7 @@ each answer and closes once nothing is left.
 - A form: each field it shows in turn (hidden ones and those whose `when` fails on the answers so far are
   skipped): a choice for one with options (and an answer of the person's own where the field allows it),
   a yes or no for a boolean, several choices for a multiselect, typed text or a number otherwise; an
-  optional field can be skipped. A field is asked again, with a warning saying what is wrong, until its
+  optional field can be skipped. Each field starts on its `default`, as in OpenCode's own form view. A field is asked again, with a warning saying what is wrong, until its
   answer fits its limits (`minimum` and `maximum`, `minLength`, `maxLength`, `pattern` and `format`, a
   required or `minItems`/`maxItems` multiselect), so OpenCode does not reject the reply and lose the
   other answers; a typed field's prompt shows its limits as the placeholder. The answer goes through OpenCode's own form reply, and the session told

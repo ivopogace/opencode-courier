@@ -401,7 +401,7 @@ exports[`tools courier_cleanup 1`] = `
 
 exports[`tools courier_answer 1`] = `
 {
-  "description": "Pass on the answer to a permission request or a question that a session you started with courier_spawn (or one started from it) waits on, after a notice from it named the request. The answer is the person's, not yours: first ask the person you are working with, offering the choices the notice lists, then call this with what they chose: reply for a permission request, answers for a question. Never choose for them. The session carries on once it has the answer.",
+  "description": "Pass on the answer to a permission request or a question that a session you started with courier_spawn (or one started from it) waits on, after a notice from it named the request. For a permission request, reply is the answer you propose, once or reject: proposing is not deciding. With once, OpenCode asks the person you are working with in your session, as its own permission prompt for what that session asked, under your permission rules, and the call returns once they have answered; what they allow is passed on, and a refusal with a reason fails this call and is passed on with the reason. Do not ask them in your reply or with your question tool first. For a question, answers is what the person chose: ask them first, with your question tool if you have one, and never answer for them. The session carries on once it has the answer.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -432,7 +432,7 @@ exports[`tools courier_answer 1`] = `
       "message": {
         "anyOf": [
           {
-            "description": "For a permission request, with reject: the person's reason, passed on with the refusal.",
+            "description": "For a permission request, with reject: the reason, passed on with the refusal.",
             "type": "string",
           },
           {
@@ -443,10 +443,9 @@ exports[`tools courier_answer 1`] = `
       "reply": {
         "anyOf": [
           {
-            "description": "For a permission request: the choice the person made, once, always (only when the notice offers it) or reject.",
+            "description": "For a permission request: the answer you propose, once or reject. With once, OpenCode first asks the person in your session, and it is passed on only once they have allowed it; always is not granted through this tool.",
             "enum": [
               "once",
-              "always",
               "reject",
             ],
             "type": "string",
@@ -912,13 +911,15 @@ exports[`tool results keepReason 2`] = `"6 uncommitted changes (a, b, c, d, e, .
 
 exports[`tool results answerText 1`] = `"Nothing was passed on: no request per_1 of ses_child is pending in this OpenCode server. It was answered some other way, or the session stopped waiting, or it waits in another OpenCode server on the same data directory, which this one cannot reach; only the person can see which. Tell them: "Your answer was not passed on. If the session still waits, its request is in another OpenCode server: answer it there, in that session." Do not message the session about it or answer it again from here. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
-exports[`tool results answerText 2`] = `"Passed on always for request per_1 of ses_child, which carries on and reports back with courier_send. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+exports[`tool results answerText 2`] = `"Allowed in your session, by the person in OpenCode's prompt or by your rules, and passed on once for request per_1 of ses_child, which carries on and reports back with courier_send. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
-exports[`tool results answerText 3`] = `"ses_child no longer waits on question question_1: it was answered some other way, or the session stopped waiting. Nothing was passed on; tell the person their answer is not needed."`;
+exports[`tool results answerText 3`] = `"Passed on reject for request per_1 of ses_child; its call fails and it carries on, and reports back with courier_send. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
-exports[`tool results answerText 4`] = `"Passed the answers to question question_1 on to ses_child; it carries on and reports back with courier_send. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+exports[`tool results answerText 4`] = `"ses_child no longer waits on question question_1: it was answered some other way, or the session stopped waiting. Nothing was passed on; tell the person their answer is not needed."`;
 
-exports[`tool results answerText 5`] = `"Passed the answers to question question_1 on to ses_child as a message, since its question had been cut off; it carries on and reports back with courier_send. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+exports[`tool results answerText 5`] = `"Passed the answers to question question_1 on to ses_child; it carries on and reports back with courier_send. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+
+exports[`tool results answerText 6`] = `"Passed the answers to question question_1 on to ses_child as a message, since its question had been cut off; it carries on and reports back with courier_send. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`tool results laterText 1`] = `"Scheduled later_1 for 2026-10-07T12:00:00.000Z, to ses_parent. It arrives when due, after your current turn if one is running, so do not wait for it: once nothing else is left to do now, end your turn by replying without calling more tools. If what it checks on reports first, cancel it then with courier_cancel."`;
 
@@ -1039,6 +1040,8 @@ Check and integrate each one yourself. The sessions that reported are idle; mess
 
 exports[`permission requests REJECTED 1`] = `"Refused by the session that started you. Do without it, or report back why you cannot."`;
 
+exports[`permission requests refusedText 1`] = `"not allowed in your session (Not on main). The refusal was passed on with that reason to request per_1 of ses_child, so its call fails and it carries on; it reports back with courier_send. Tell the person, and do not propose it again unless they ask."`;
+
 exports[`permission requests origin and STAYS_QUIET 1`] = `"which you started with courier_spawn,"`;
 
 exports[`permission requests origin and STAYS_QUIET 2`] = `"which ses_middle started with courier_spawn, a session started from yours,"`;
@@ -1051,10 +1054,11 @@ It asks for: shell
 On:
 - git push
 
-Do not decide this yourself. Ask the person you are working with (with your question tool, if you have one), offering exactly these choices:
-- once: allow this request only
-- reject: refuse it, with a reason if they give one; the session's call fails and it carries on
-When they have chosen, call courier_answer with sessionID "ses_child", requestID "per_1", reply set to their choice and, with reject, message set to their reason."
+You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose an answer. Do not ask them in your reply or with your question tool first; propose one of these:
+- once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it
+- reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on
+Call courier_answer with sessionID "ses_child", requestID "per_1", reply set to the choice and, with reject, message set to the reason.
+Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one), and a refusal there fails the call with their reason, which the session is given."
 `;
 
 exports[`permission requests permissionNotice 2`] = `
@@ -1064,11 +1068,11 @@ On:
 - git push
 Note: Push the fix
 
-Do not decide this yourself. Ask the person you are working with (with your question tool, if you have one), offering exactly these choices:
-- once: allow this request only
-- always: allow it, and from now on every shell request in this project
-- reject: refuse it, with a reason if they give one; the session's call fails and it carries on
-When they have chosen, call courier_answer with sessionID "ses_child", requestID "per_1", reply set to their choice and, with reject, message set to their reason."
+You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose an answer. Do not ask them in your reply or with your question tool first; propose one of these:
+- once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it
+- reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on
+Call courier_answer with sessionID "ses_child", requestID "per_1", reply set to the choice and, with reject, message set to the reason.
+Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one), and a refusal there fails the call with their reason, which the session is given."
 `;
 
 exports[`permission requests permissionNotice 3`] = `
@@ -1097,21 +1101,22 @@ On:
 - file-19
 - and 3 more
 
-Do not decide this yourself. Ask the person you are working with (with your question tool, if you have one), offering exactly these choices:
-- once: allow this request only
-- always: allow it, and from now on requests matching git push*, git fetch* in this project
-- reject: refuse it, with a reason if they give one; the session's call fails and it carries on
-When they have chosen, call courier_answer with sessionID "ses_child", requestID "per_1", reply set to their choice and, with reject, message set to their reason."
+You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose an answer. Do not ask them in your reply or with your question tool first; propose one of these:
+- once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it
+- reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on
+Call courier_answer with sessionID "ses_child", requestID "per_1", reply set to the choice and, with reject, message set to the reason.
+Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one), and a refusal there fails the call with their reason, which the session is given."
 `;
 
 exports[`permission requests permissionNotice 4`] = `
 "This session, "Fix the bug", which you started with courier_spawn, is waiting for permission and does nothing until it is answered.
 It asks for: shell
 
-Do not decide this yourself. Ask the person you are working with (with your question tool, if you have one), offering exactly these choices:
-- once: allow this request only
-- reject: refuse it, with a reason if they give one; the session's call fails and it carries on
-When they have chosen, call courier_answer with sessionID "ses_child", requestID "per_1", reply set to their choice and, with reject, message set to their reason."
+You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose an answer. Do not ask them in your reply or with your question tool first; propose one of these:
+- once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it
+- reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on
+Call courier_answer with sessionID "ses_child", requestID "per_1", reply set to the choice and, with reject, message set to the reason.
+Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one), and a refusal there fails the call with their reason, which the session is given."
 `;
 
 exports[`permission requests permissionNotice 5`] = `
@@ -1121,12 +1126,11 @@ On:
 - git push
 
 OpenCode already shows this request to the person you are working with, as its own permission prompt in your session (and in the paired app's request dock), where they answer it; you will be told once it is answered.
-Do not ask them yourself, with your question tool or in your reply, and do not decide it: at most tell them in one line that this session waits on their permission, then end your turn.
-Only if they ask you to answer it for them, these are the choices:
-- once: allow this request only
-- always: allow it, and from now on every shell request in this project
-- reject: refuse it, with a reason if they give one; the session's call fails and it carries on
-When they have chosen, call courier_answer with sessionID "ses_child", requestID "per_1", reply set to their choice and, with reject, message set to their reason."
+Do not ask them yourself, with your question tool or in your reply, and do not answer it: at most tell them in one line that this session waits on their permission, then end your turn.
+Only if they ask you to answer it for them, propose one of these with courier_answer, which has OpenCode ask them in your session first:
+- once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it
+- reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on
+Call courier_answer with sessionID "ses_child", requestID "per_1", reply set to the choice and, with reject, message set to the reason."
 `;
 
 exports[`permission requests permissionSettledNotice 1`] = `

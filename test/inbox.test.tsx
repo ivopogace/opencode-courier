@@ -74,7 +74,10 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
         }
       },
       session: { form: { list: async ({ sessionID }: { sessionID: string }) => state.forms[sessionID] ?? [] } },
-      permission: { reply: async (input: unknown) => void calls.push({ method: "permission.reply", input }) },
+      permission: {
+        reply: async (input: unknown) => void calls.push({ method: "permission.reply", input }),
+        assert: async (input: unknown) => void calls.push({ method: "permission.assert", input }),
+      },
     },
     ui: {
       router: { current: () => route },
@@ -199,9 +202,10 @@ describe("answering a permission request", () => {
     return fake
   }
 
-  test("allows it once or always through OpenCode's reply, then lists what is left", async () => {
+  test("allows it once or always through OpenCode's reply, as the person, never through assert, then lists what is left", async () => {
     for (const [choice, decision] of [["Allow once", "once"], ["Always allow", "always"]] as const) {
       const fake = await answer(pick(choice))
+      // The inbox answers as the person, so no prompt is asked anywhere: the reply alone, straight to OpenCode.
       expect(fake.replies()).toEqual([{ method: "permission.reply", input: { sessionID: "ses_b", requestID: "per_1", decision } }])
       // Listed again, without the one answered, and so nothing is left.
       expect(fake.dialogs.map((dialog) => dialog.kind)).toEqual(["select", "select"])

@@ -95,6 +95,30 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.29`); paths be
 - A request rejected without a message ends the asking session's turn ("The user declined this
   tool call"); with a message only the tool call fails, and its model is told the call could not
   be run, not the message. `courier_answer` and the asks inbox always send one with a rejection.
+- `permission.assert({ sessionID, action, resources, save?, metadata?, source?, agent? })` evaluates
+  the session's rules (the agent's and the session's, then the project's saved ones) for every
+  resource and, when any says ask, creates a pending request in that session, publishes
+  `permission.asked` and waits for the reply (`packages/core/src/permission.ts`). It resolves with
+  nothing, so the request's id and whether the person chose `once` or `always` are not given back;
+  only the session's `permission.asked` and `permission.replied` events carry them, matched by
+  action and resources, which another request of the session can share. With `save`, an `always`
+  reply saves an allow rule for the whole project (`PermissionSaved`, read by every session in it)
+  and OpenCode answers every other pending request of that location the rule now allows, with
+  `always`, a shared child's included. So `courier_answer` asserts without `save` and passes `once`.
+  Through the promise API it rejects with a `Tool.Error` (`_tag` `Tool.Error`, the reason in
+  `message`) whose `error` is OpenCode's `Permission.BlockedError` (a deny rule) or
+  `Permission.CorrectedError` (a rejection with feedback), or `Session.NotFoundError`; a plain
+  rejection rejects with the `Permission.DeclinedError` itself (`_tag` `Permission.DeclinedError`),
+  which the promise tool wrapper attaches to a `Tool.Error` and `SessionModelRequest.executeTool`
+  recovers to end the step, so the tool must rethrow it untouched, not through `describeFailure`.
+  `opencode run --auto` replies `once` to every request asked in its own session, the asserted
+  ones included (`packages/cli/src/run/noninteractive.ts`), so the live suite's parent answers its
+  own prompt; the scenario that holds the prompt drives the parent through the API instead. The
+  TUI's prompt (`packages/tui/src/routes/session/permission.tsx`) shows the action and resources,
+  and a `source` of type `tool` adds that tool part's input to the presentation (a shell command
+  from `input.command`, nothing from `courier_answer`'s input); `metadata` is read only for a few
+  keys (`url`, `query`, `provider`, `files`, `diff`), so the child's ids in it are not shown, and
+  the request's `message` cannot be set through `assert`.
 - `worktree.create`, `worktree.remove` and `worktree.list` take the project, `projectID`
   (`location.project.id`), not a location; `agent.get` takes `location`.
 

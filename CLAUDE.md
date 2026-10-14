@@ -73,9 +73,10 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   `person/`, `scheduling/` and `webhook/`; `context.ts` the `context` hook naming each spawned
   session's role and hiding `courier_spawn` from a leaf.
 - `person/`: what a spawned session needs the person for: its permission requests, forms and questions.
-  `index.ts` is its public API; `permission.ts` passes a permission answer back (`answer`), lists a
-  session's pending requests (`pendingOf`) and says whether it waits on one (`asksPermission`, a `Waits`
-  supplier); `form.ts` the forms OpenCode shows in a spawned session, which only the person can answer,
+  `index.ts` is its public API; `permission.ts` passes a permission answer back (`answer`: a proposed
+  `once` first goes through OpenCode's `permission.assert` in the caller's session, which asks the
+  person there, and `isDeclined` tells the plain rejection the tool rethrows), lists a session's pending
+  requests (`pendingOf`) and says whether it waits on one (`asksPermission`, a `Waits` supplier); `form.ts` the forms OpenCode shows in a spawned session, which only the person can answer,
   and the notices of one shown and one settled; `events.ts` `personEvents`, the event module: permission
   asked and replied, forms created and settled, `relayPending` on every (re)subscribe, and the signals to
   the question relay (events followed or left, forms shown, locations closing); `ports.ts` its

@@ -57,6 +57,7 @@ async function setUp(
     return result
   }
   const events = fakeEvents()
+  let declines: Error | undefined
   const ctx = {
     app,
     options,
@@ -92,6 +93,11 @@ async function setUp(
         calls.push({ method: "permission.reply", input })
         permissions.splice(permissions.findIndex((item) => item.id === input.requestID), 1)
       },
+      // The caller's session allows what is asked, unless the test has the person decline it there.
+      assert: async (input: any) => {
+        calls.push({ method: "permission.assert", input })
+        if (declines) throw declines
+      },
     },
     storage: {
       get: async (key: string) => store.get(key),
@@ -123,7 +129,19 @@ async function setUp(
   }
   const cleanup = await courier().setup({ ...ctx, ...overrides } as any)
   if (cleanup) cleanups.push(cleanup)
-  return { tools, skills, rpcs, hooks, calls, store, emit: events.emit, location: ctx.location, cleanup, subscriptions: () => events.counted.subscriptions }
+  return {
+    tools,
+    skills,
+    rpcs,
+    hooks,
+    calls,
+    store,
+    emit: events.emit,
+    location: ctx.location,
+    cleanup,
+    subscriptions: () => events.counted.subscriptions,
+    decline: (error?: Error) => void (declines = error),
+  }
 }
 
 test("OpenCode loads an Effect plugin, which runs the promise one and wraps the question tool", () => {
@@ -331,7 +349,7 @@ test("courier_answer tells a question from a permission request by its id, and s
   )
   await expect(call({ requestID: "question_1" })).rejects.toThrow("question_1 is a question: answers is required")
   await expect(call({ requestID: "per_1", answers: ["Hi"] })).rejects.toThrow(
-    "per_1 is a permission request: pass the person's choice in reply (once, always or reject), not answers.",
+    "per_1 is a permission request: pass the answer you propose in reply (once or reject), not answers.",
   )
   await expect(call({ requestID: "per_1" })).rejects.toThrow("per_1 is a permission request: reply is required")
 })
@@ -437,7 +455,7 @@ test("two instances follow OpenCode's events, one as a standby, and a third take
 
 test("a spawned child's permission request reaches its parent, and courier_answer passes the choice back", async () => {
   const request = { id: "per_1", sessionID: "ses_child", action: "shell", resources: ["git push"] }
-  const { tools, calls, emit } = await setUp({}, undefined, [request])
+  const { tools, calls, emit, decline } = await setUp({}, undefined, [request])
   await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
 
   emit({ id: `evt_${Math.random()}`, type: "permission.asked", data: request })
@@ -449,9 +467,31 @@ test("a spawned child's permission request reaches its parent, and courier_answe
   const status = await tools.get("courier_status").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })
   expect(status.metadata.pending).toEqual([{ type: "permission", requestID: "per_1", action: "shell", resources: ["git push"] }])
 
-  const answered = await tools.get("courier_answer").execute({ sessionID: "ses_child", requestID: "per_1", reply: "once" }, { sessionID: "ses_parent" })
+  // The person's plain rejection of the caller's own prompt ends its step: the error goes back as it is, and the child waits on.
+  const declines = Object.assign(new Error(""), { _tag: "Permission.DeclinedError" })
+  decline(declines)
+  const declined = await tools
+    .get("courier_answer")
+    .execute({ sessionID: "ses_child", requestID: "per_1", reply: "once" }, { sessionID: "ses_parent", messageID: "msg_p", id: "call_1" })
+    .then(() => undefined, (error: unknown) => error)
+  expect(declined).toBe(declines)
+  expect(calls.filter((call) => call.method === "permission.reply")).toHaveLength(0)
+  decline(undefined)
+
+  const answered = await tools
+    .get("courier_answer")
+    .execute({ sessionID: "ses_child", requestID: "per_1", reply: "once" }, { sessionID: "ses_parent", messageID: "msg_p", id: "call_1" })
   expect(answered.metadata).toEqual({ sessionID: "ses_child", requestID: "per_1", reply: "once", answered: true })
-  expect(answered.content).toContain("Passed on once for request per_1 of ses_child")
+  expect(calls.filter((call) => call.method === "permission.assert").map((call) => call.input)).toEqual(
+    Array(2).fill({
+      sessionID: "ses_parent",
+      action: "shell",
+      resources: ["git push"],
+      metadata: { source: "courier", from: "ses_child", asks: "permission", requestID: "per_1" },
+      source: { type: "tool", messageID: "msg_p", id: "call_1" },
+    }),
+  )
+  expect(answered.content).toContain("Allowed in your session, by the person in OpenCode's prompt or by your rules, and passed on once for request per_1 of ses_child")
   expect(calls.find((call) => call.method === "permission.reply")!.input).toEqual({ sessionID: "ses_child", requestID: "per_1", decision: "once" })
 
   // The reply event that answer causes is not reported back as a stale notice.

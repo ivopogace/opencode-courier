@@ -82,19 +82,26 @@ reports*; the checker takes the group's message as the report of each member it 
 > back what it printed. Start it with courier_spawn and do not run the command yourself. When it has
 > reported back, reply with one line: RESULT \<what it printed\>
 
-The script plays the person: it answers the parent's question form with the option for "once", or
-replies "Allow it once." if the parent asked in text. Six checks: the parent spawned a child, which
-asked, and the parent was told; it did not answer by itself; it asked the person; it passed `once` on
-with `courier_answer`; the child ran its command and reported `courier-permission-42`; the final reply
-holds it. The parent is started over the HTTP API, as a TUI session would be: `opencode run` cancels
-question forms in its session while attached.
+The script plays the person: it answers OpenCode's permission prompt in the parent's session, the one
+`courier_answer`'s `permission.assert` opens for the child's request, with `once`. A parent that asks
+the person first, with a question form or in text, gets its form answered with the option for "once"
+or the reply "Allow it once.", and the prompt is then answered all the same. Seven checks: the parent
+spawned a child, which asked, and the parent was told; nothing was passed on before the person had
+answered; the parent proposed `once` with `courier_answer` without asking first; OpenCode asked the
+person in the parent's session for what the child asked, holding the call; `courier_answer` passed
+`once` on after the person allowed it; the child ran its command and reported
+`courier-permission-42`; the final reply holds it. The parent is started over the HTTP API, as a TUI
+session would be: `opencode run` answers the prompts in its own session itself, and cancels question
+forms there while attached.
 
-`COURIER_PERSON=other-server` adds a second server on the same data directory: the person dismisses
-the parent's form and sends "Allow it once." through the second server, whose `courier_answer` holds
-no request, so the fourth check becomes "the parent's courier_answer on the other server passed
-nothing on and named another server". The person then allows the request in the child's own session
-on the first server. With `COURIER_NATIVE=1` the script answers the child's request directly, as
-OpenCode's prompt in the parent's view would, and fails a parent that asks with a form.
+`COURIER_PERSON=other-server` adds a second server on the same data directory: the person rejects
+the parent's prompt without a reason, which ends the parent's step and leaves the child's request
+waiting (or dismisses the parent's form, for a parent that asked first), and sends "Allow it once."
+through the second server, whose `courier_answer` holds no request, so the fifth check becomes "the
+parent's courier_answer on the other server passed nothing on and named another server". The person
+then allows the request in the child's own session on the first server. With `COURIER_NATIVE=1` the
+script answers the child's request directly, as OpenCode's prompt in the parent's view would, and
+fails a parent that asks with a form.
 
 | Model | OpenCode | Result |
 |---|---|---|

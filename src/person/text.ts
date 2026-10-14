@@ -36,8 +36,10 @@ export function answerText(result: AnswerResult) {
       `${result.sessionID} no longer waits on question ${result.requestID}: it was answered some other way, or the ` +
       "session stopped waiting. Nothing was passed on; tell the person their answer is not needed."
     )
+  if ("reply" in result && result.reply === "reject")
+    return `Passed on reject for request ${result.requestID} of ${result.sessionID}; its call fails and it carries on, and reports back with courier_send. ${END_TURN}`
   if ("reply" in result)
-    return `Passed on ${result.reply} for request ${result.requestID} of ${result.sessionID}, which carries on and reports back with courier_send. ${END_TURN}`
+    return `Allowed in your session, by the person in OpenCode's prompt or by your rules, and passed on ${result.reply} for request ${result.requestID} of ${result.sessionID}, which carries on and reports back with courier_send. ${END_TURN}`
   const how = result.by === "message" ? " as a message, since its question had been cut off" : ""
   return `Passed the answers to question ${result.requestID} on to ${result.sessionID}${how}; it carries on and reports back with courier_send. ${END_TURN}`
 }
@@ -50,17 +52,18 @@ export function answerText(result: AnswerResult) {
  */
 export const REJECTED = "Refused by the session that started you. Do without it, or report back why you cannot."
 
+/**
+ * The failure of a courier_answer whose proposed once OpenCode refused in the caller's session: a rule
+ * denies the action there, or the person rejected the prompt with a reason, which the child was given.
+ */
+export function refusedText(sessionID: string, requestID: string, reason: string) {
+  return `not allowed in your session (${reason}). The refusal was passed on with that reason to request ${requestID} of ${sessionID}, so its call fails and it carries on; it reports back with courier_send. Tell the person, and do not propose it again unless they ask.`
+}
+
 const MAX_RESOURCES = 20
 const MAX_RESOURCE_LENGTH = 300
 
 const clip = (text: string) => (text.length > MAX_RESOURCE_LENGTH ? `${text.slice(0, MAX_RESOURCE_LENGTH - 3)}...` : text)
-
-function alwaysChoice(request: PermissionRequest) {
-  const save = request.save ?? []
-  if (!save.length) return []
-  const scope = save.length === 1 && save[0] === "*" ? `every ${request.action} request` : `requests matching ${save.join(", ")}`
-  return [`- always: allow it, and from now on ${scope} in this project`]
-}
 
 /** How a notice names where the asking session came from, to the session at the top of its lineage. */
 export const origin = (startedBy?: string) =>
@@ -84,22 +87,26 @@ export function permissionNotice(title: string, request: PermissionRequest, star
     ...(request.message ? [`Note: ${request.message}`] : []),
     "",
     ...(native ? NATIVE_PERMISSION : PERMISSION_ASK),
-    "- once: allow this request only",
-    ...alwaysChoice(request),
-    "- reject: refuse it, with a reason if they give one; the session's call fails and it carries on",
-    `When they have chosen, call courier_answer with sessionID "${request.sessionID}", requestID "${request.id}", reply set to their choice and, with reject, message set to their reason.`,
+    "- once: allow this request only; OpenCode first asks the person in your session, under your permission rules, and it is passed on only once they have allowed it",
+    "- reject: refuse it, with a reason if the person gave one; the session's call fails and it carries on",
+    `Call courier_answer with sessionID "${request.sessionID}", requestID "${request.id}", reply set to the choice and, with reject, message set to the reason.`,
+    ...(native ? [] : PERMISSION_PROPOSE),
   ].join("\n")
 }
 
 const PERMISSION_ASK = [
-  "Do not decide this yourself. Ask the person you are working with (with your question tool, if you have one), offering exactly these choices:",
+  "You cannot decide this: the person you are working with does, in OpenCode's own permission prompt, which opens in your session when you propose an answer. Do not ask them in your reply or with your question tool first; propose one of these:",
+]
+
+const PERMISSION_PROPOSE = [
+  "Propose once unless the person has told you to refuse it, or the request plainly goes against what they asked of you; with once, the call returns when they have answered the prompt (or your rules allow the action without one), and a refusal there fails the call with their reason, which the session is given.",
 ]
 
 /** For a native child's request, which OpenCode shows the person itself, in the top session's view. */
 const NATIVE_PERMISSION = [
   "OpenCode already shows this request to the person you are working with, as its own permission prompt in your session (and in the paired app's request dock), where they answer it; you will be told once it is answered.",
-  "Do not ask them yourself, with your question tool or in your reply, and do not decide it: at most tell them in one line that this session waits on their permission, then end your turn.",
-  "Only if they ask you to answer it for them, these are the choices:",
+  "Do not ask them yourself, with your question tool or in your reply, and do not answer it: at most tell them in one line that this session waits on their permission, then end your turn.",
+  "Only if they ask you to answer it for them, propose one of these with courier_answer, which has OpenCode ask them in your session first:",
 ]
 
 /** What the session told about a permission request is told once it is answered without courier_answer. */

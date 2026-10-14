@@ -170,7 +170,8 @@ describe("tool results", () => {
   test("answerText", () => {
     const base = { sessionID: "ses_child", requestID: "per_1" }
     expect(person.answerText({ ...base, reply: "once" as const, answered: false })).toMatchSnapshot()
-    expect(person.answerText({ ...base, reply: "always" as const, answered: true })).toMatchSnapshot()
+    expect(person.answerText({ ...base, reply: "once" as const, answered: true })).toMatchSnapshot()
+    expect(person.answerText({ ...base, reply: "reject" as const, answered: true })).toMatchSnapshot()
     const question = { sessionID: "ses_child", requestID: "question_1" }
     expect(person.answerText({ ...question, answered: false })).toMatchSnapshot()
     expect(person.answerText({ ...question, answered: true, by: "result", answers: [["Hi"]] })).toMatchSnapshot()
@@ -236,6 +237,7 @@ describe("permission requests", () => {
   const request = { id: "per_1", sessionID: "ses_child", action: "shell", resources: ["git push"] }
 
   test("REJECTED", () => expect(person.REJECTED).toMatchSnapshot())
+  test("refusedText", () => expect(person.refusedText("ses_child", "per_1", "Not on main")).toMatchSnapshot())
   test("origin and STAYS_QUIET", () => {
     expect(person.origin()).toMatchSnapshot()
     expect(person.origin("ses_middle")).toMatchSnapshot()

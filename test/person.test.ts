@@ -83,7 +83,7 @@ describe("reportAsked", () => {
       await reportAsked(ports, fresh(), asked())
 
       expect(sent[0].text).not.toContain("shown=")
-      expect(sent[0].text).toContain("Do not decide this yourself. Ask the person you are working with")
+      expect(sent[0].text).toContain("You cannot decide this: the person you are working with does, in OpenCode's own permission prompt")
     }
   })
 

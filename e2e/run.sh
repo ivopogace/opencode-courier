@@ -23,6 +23,8 @@ REGISTRY_PID=
 source "$ROOT/e2e/lib.sh"
 
 cleanup() {
+  end_scenario
+  print_timings
   stop_server
   [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null
   if [ -n "$REGISTRY_PID" ]; then
@@ -32,6 +34,31 @@ cleanup() {
   if [ "${KEEP:-}" = 1 ]; then echo "kept $WORK"; else rm -rf "$WORK"; fi
 }
 trap cleanup EXIT
+
+# Each scenario's heading is `scenario "<title>"`, which ends the one before and times it: the timings
+# print as the run ends (on a failure too), the slowest first.
+SCENARIO=
+SCENARIO_START=0
+TIMINGS=$WORK/timings.tsv
+end_scenario() {
+  [ -n "$SCENARIO" ] || return 0
+  local seconds=$((SECONDS - SCENARIO_START))
+  printf '%s\t%s\n' "$seconds" "$SCENARIO" >>"$TIMINGS"
+  echo "  (${seconds} s)"
+  SCENARIO=
+}
+scenario() {
+  end_scenario
+  SCENARIO=$1
+  SCENARIO_START=$SECONDS
+  echo "$1"
+}
+print_timings() {
+  [ -s "$TIMINGS" ] || return 0
+  echo
+  echo "scenario timings, slowest first (total $(awk -F'\t' '{ sum += $1 } END { print sum }' "$TIMINGS") s)"
+  sort -t$'\t' -k1,1nr "$TIMINGS" | awk -F'\t' '{ printf "%5d s  %s\n", $1, $2 }'
+}
 
 prompt() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json "$1" </dev/null); }
 # Like prompt, but a new turn in the existing session $1.
@@ -107,7 +134,7 @@ start_server
 echo "OpenCode $("$OPENCODE" --version) on $SERVER"
 
 for mode in shared isolate; do
-  echo "spawn, then wake the idle parent ($mode)"
+  scenario "spawn, then wake the idle parent ($mode)"
   message="COURIER-TEST"
   [ "$mode" = isolate ] && message="COURIER-TEST isolate"
   out=$(prompt "$message")
@@ -130,20 +157,20 @@ for mode in shared isolate; do
     "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains(" ended="))] | length == 0')"
 done
 
-echo "courier_status"
+scenario "courier_status"
 out=$(prompt "COURIER-STATUS $parent")
 check "reports the parent's last reply" "$(jq -r 'select(.type == "tool_use") | .part.state | .status == "completed" and (.output | contains("PARENT WOKE"))' <<<"$out")"
 out=$(prompt "COURIER-STATUS ses_missing")
 check "names the error for an unknown session" "$(jq -r 'select(.type == "tool_use") | .part.state.error | contains("NotFoundError")' <<<"$out")"
 
-echo "a child runs on its parent's model, not the default one"
+scenario "a child runs on its parent's model, not the default one"
 out=$(cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --model mock/other "COURIER-TEST" </dev/null)
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
 check "the child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
 check "every reply of the child came from the parent's model"   "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .model.id] | length > 0 and all(. == "other")')"
 
-echo "a child whose turn fails is reported to its idle parent"
+scenario "a child whose turn fails is reported to its idle parent"
 out=$(prompt "COURIER-FAIL")
 turn_ended=$(now_ms)
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
@@ -156,7 +183,7 @@ check "the parent was told once" "$(jq -r 'length == 1' <<<"$notices")"
 check "which child failed, and with what error"   "$(jq -r --arg child "$child" 'join("") | contains("<courier from=\"" + $child + "\" failed=") and contains("not available in your country")' <<<"$notices")"
 
 
-echo "a child whose turn ends without a report is reported to its idle parent"
+scenario "a child whose turn ends without a report is reported to its idle parent"
 out=$(prompt "COURIER-SILENT")
 turn_ended=$(now_ms)
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
@@ -175,7 +202,7 @@ check "which settled its report" "$(kv get "report/$child/settled" | jq -r '.by 
 check "and its reported turn was not told as one without a report" \
   "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 1')"
 
-echo "a message without a status is progress: a child that then ends its turn is reported, and the notice says so"
+scenario "a message without a status is progress: a child that then ends its turn is reported, and the notice says so"
 out=$(prompt "COURIER-PROGRESS")
 turn_ended=$(now_ms)
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
@@ -195,7 +222,7 @@ check "told to report, the child did, with a status" "$(has_text "$parent" "<cou
 check "which settled its report, with the status" "$(kv get "report/$child/settled" | jq -r '.by == "report" and .status == "done"')"
 check "and its reported turn was not told as one without a report" "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 1')"
 
-echo "a child an older release briefed, whose roster entry says nothing of statuses, reports without one, as before"
+scenario "a child an older release briefed, whose roster entry says nothing of statuses, reports without one, as before"
 out=$(prompt "COURIER-SILENT")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -208,7 +235,7 @@ check "told to report, the child did, without a status" "$(has_text "$parent" "C
 check "which settled its report, with no status" "$(kv get "report/$child/settled" | jq -r '.by == "report" and (has("status") | not)')"
 check "and its parent was not told again" "$(sleep 2; notices_with "$parent" ended | jq -r 'length == 1')"
 
-echo "what the person types in a child that has reported does not make it owe a report"
+scenario "what the person types in a child that has reported does not make it owe a report"
 out=$(prompt "COURIER-TEST")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -217,7 +244,7 @@ prompt_in "$child" "PERSON-ASKS" >/dev/null
 check "the child answered the person in its own session" "$([ -n "$(reply_time "$child" "CHILD ANSWERS PERSON")" ] && echo true || echo false)"
 check "and its parent was not told it ended without a report" "$(sleep 3; notices_with "$parent" ended | jq -r 'length == 0')"
 
-echo "a join group: the parent is woken once, with both reports in one message"
+scenario "a join group: the parent is woken once, with both reports in one message"
 out=$(prompt "COURIER-GROUP")
 turn_ended=$(now_ms)
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
@@ -240,7 +267,7 @@ check "the delivered group is gone from storage" "$(for id in $members; do [ -z 
 check "courier_children shows each child's group as released" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
   jq -r '.status == "completed" and ([.metadata.metadata.children[].group] == [{name: "pair", report: "released"}, {name: "pair", report: "released"}])')"
 
-echo "a member's blocked report reaches the parent at once; the other's is held until that member reports"
+scenario "a member's blocked report reaches the parent at once; the other's is held until that member reports"
 out=$(prompt "COURIER-GROUP-BLOCKED")
 turn_ended=$(now_ms)
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
@@ -264,7 +291,7 @@ check "answered, the blocked member reported, and the group went to the parent i
     contains("reports=\"2\"") and contains("CHILD DONE AFTER NUDGE") and contains("\": done\nCHILD DONE\n"))')"
 check "and the group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
 
-echo "a member that ends silently, dropped with courier_cleanup, releases its group without it, and its late report comes on its own"
+scenario "a member that ends silently, dropped with courier_cleanup, releases its group without it, and its late report comes on its own"
 out=$(prompt "COURIER-GROUP-DROP")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
@@ -291,7 +318,7 @@ check "told to report after all, the dropped member's report reached the parent 
   "$(has_text "$parent" "<courier from=\"$silent\" status=\"done\">" 45)"
 check "and no group was opened again for it" "$([ -z "$(kv get "group/$parent/pair/$silent")" ] && notices_with "$parent" group | jq -r 'length == 1')"
 
-echo "a group whose members report before the parent's turn has ended goes out once it has, in one message"
+scenario "a group whose members report before the parent's turn has ended goes out once it has, in one message"
 out=$(prompt "COURIER-GROUP-SPLIT")
 turn_ended=$(now_ms)
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
@@ -309,7 +336,7 @@ check "the group's reports started a new turn within 3 s of the parent's turn en
 check "the parent got exactly one message, with both reports" "$(sleep 2; api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] |
   length == 1 and (.[0] | contains("reports=\"2\"") and (split("CHILD DONE QUICKLY") | length == 3))')"
 
-echo "a sub-orchestrator whose group reports during its turn gets it once that turn ends, and is not told of as silent"
+scenario "a sub-orchestrator whose group reports during its turn gets it once that turn ends, and is not told of as silent"
 out=$(prompt "COURIER-GROUP-NESTED")
 root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -318,7 +345,7 @@ check "it got exactly one message, with both of its leaves' reports" "$(api "ses
   length == 1 and (.[0] | contains("reports=\"2\"") and (split("CHILD DONE QUICKLY") | length == 3))')"
 check "and the root was not told it ended without a report" "$(sleep 3; notices_with "$root" ended | jq -r 'length == 0')"
 
-echo "a deleted child that owes a report is forgotten"
+scenario "a deleted child that owes a report is forgotten"
 out=$(prompt "COURIER-SILENT")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -327,7 +354,7 @@ check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "
 check "and its report state is gone" \
   "$(for _ in $(seq 1 20); do [ -z "$(kv get "report/$child/prompt")$(kv get "report/$child/told")" ] && { echo true; exit; }; sleep 1; done; echo false)"
 
-echo "a child that ends its turn to wait for a message it scheduled is not reported, and reports once woken"
+scenario "a child that ends its turn to wait for a message it scheduled is not reported, and reports once woken"
 out=$(prompt "COURIER-WAITING")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -352,7 +379,7 @@ ask_permission() {
 }
 
 for mode in shared isolate; do
-  echo "a child's permission request reaches its idle parent, and the answer goes back ($mode)"
+  scenario "a child's permission request reaches its idle parent, and the answer goes back ($mode)"
   ask_permission "$([ "$mode" = isolate ] && echo isolate)"
   check "with what it asks for and the choices" "$(jq -r --arg child "$child" '.[0] // "" |
     contains("<courier from=\"" + $child + "\" asks=\"permission\"") and contains("It asks for: shell") and
@@ -373,7 +400,7 @@ for mode in shared isolate; do
   check "the parent got no stale notice" "$(notices_with "$parent" answered | jq -r 'length == 0')"
 done
 
-echo "a request answered in the child's own session leaves no stale question with the parent"
+scenario "a request answered in the child's own session leaves no stale question with the parent"
 ask_permission ""
 code=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
   --data '{"decision":"once"}' "$SERVER/api/session/$child/permission/$request/reply")
@@ -427,7 +454,7 @@ ask_question() {
 
 # With maxDepth 2, a child starts two leaves; one tries courier_spawn as its tool list stands, the
 # other once the probe plugin has put the tool back, so OpenCode refuses the first and courier the second.
-echo "a leaf at maxDepth does not see courier_spawn, and is refused when it calls it anyway"
+scenario "a leaf at maxDepth does not see courier_spawn, and is refused when it calls it anyway"
 out=$(prompt "COURIER-DEPTH")
 root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -484,7 +511,7 @@ own_request() {
 }
 # A proposed once goes through permission.assert in the parent's session (#164), where OpenCode asks the person; the
 # parent's turn runs through the API, since `opencode run --auto` answers the parent's own prompt itself, as above.
-echo "a parent's courier_answer is held until the person answers OpenCode's prompt in the parent's session"
+scenario "a parent's courier_answer is held until the person answers OpenCode's prompt in the parent's session"
 ask_permission ""
 api_prompt "$parent" "COURIER-ANSWER once"
 own=$(own_request "$parent" "$request" 30)
@@ -501,7 +528,7 @@ check "the child's command ran, and it reported back" \
 check "the parent was told nothing about its own request" \
   "$([ "$(notices_with "$parent" answered | jq length)" = 0 ] && [ "$(notices_with "$parent" asks | jq length)" = 1 ] && echo true || echo false)"
 
-echo "the person refuses the parent's prompt with a reason: courier_answer fails with it, and the child's request is refused with the same reason"
+scenario "the person refuses the parent's prompt with a reason: courier_answer fails with it, and the child's request is refused with the same reason"
 ask_permission ""
 api_prompt "$parent" "COURIER-ANSWER once"
 own=$(own_request "$parent" "$request" 30)
@@ -515,7 +542,7 @@ check "the child's call was refused with it, and the child carried on and report
 check "the request is settled in the child's session" "$(api "session/$child/permission" | jq -r --arg request "$request" '[.data[].id] | index($request) == null')"
 check "and the parent was told nothing stale" "$([ "$(notices_with "$parent" answered | jq length)" = 0 ] && echo true || echo false)"
 
-echo "a plain rejection of the parent's prompt ends the parent's step, and the child's request waits on"
+scenario "a plain rejection of the parent's prompt ends the parent's step, and the child's request waits on"
 ask_permission ""
 api_prompt "$parent" "COURIER-ANSWER once"
 own=$(own_request "$parent" "$request" 30)
@@ -532,7 +559,7 @@ check "which the parent was told once, and its model got no courier_answer resul
     [ "$(has_text "$parent" "TOOL DONE courier_answer" 1)" != true ] && echo true || echo false)"
 
 # The first web search of this run: no provider has been chosen, which OpenCode keeps for every session.
-echo "a child's web search asks for a provider with a form: the parent is told, and told when it is answered"
+scenario "a child's web search asks for a provider with a form: the parent is told, and told when it is answered"
 out=$(prompt "COURIER-SEARCH")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -556,7 +583,7 @@ check "the child's search ran on it, and the child reported back" "$(has_text "$
 check "each form was told once, and settled once" \
   "$([ "$(notices_with "$parent" asks | jq length)" = 2 ] && [ "$(notices_with "$parent" settled | jq length)" = 2 ] && echo true || echo false)"
 
-echo "a child's question reaches its idle parent, which asks the person; their choice goes back"
+scenario "a child's question reaches its idle parent, which asks the person; their choice goes back"
 ask_question COURIER-QUESTION
 notice=$(notices_with "$parent" asks)
 check "the parent was told once, with the question and its options" "$(jq -r --arg child "$child" 'length == 1 and (.[0] |
@@ -571,52 +598,52 @@ check "the parent's question passed the answer on, without courier_answer" "$(ha
 check "the child carried on with it and reported back" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
 check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
 
-echo "a multi-select question"
+scenario "a multi-select question"
 ask_question COURIER-QUESTION-MULTI
 check "the parent asks it as one too" "$(fields_of "$parent" | jq -r '.[0].type == "multiselect"')"
 check "the person picks two in the parent's session" "$(answer_form "$parent" "$parent_form" '["Hello","Hey"]')"
 check "the child got both" "$(has_text "$parent" 'CHILD GOT [["Hello","Hey"]]' 45)"
 
-echo "an isolated child's question, answered with the person's own text"
+scenario "an isolated child's question, answered with the person's own text"
 ask_question "COURIER-QUESTION isolate"
 check "the person types an answer in the parent's session" "$(answer_form "$parent" "$parent_form" '"Something else"')"
 check "the child got it" "$(has_text "$parent" 'CHILD GOT [["Something else"]]' 45)"
 check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
 
-echo "a parent that relabels the options passes the answer on with courier_answer"
+scenario "a parent that relabels the options passes the answer on with courier_answer"
 ask_question COURIER-QUESTION-RELABEL
 check "the person answers the parent's reworded question" "$(answer_form "$parent" "$parent_form" '"hi"')"
 check "courier_answer passed it on" "$(has_text "$parent" "Passed the answers to question")"
 check "the child got it" "$(has_text "$parent" 'CHILD GOT [["hi"]]' 45)"
 check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
 
-echo "a parent that rewords the question is not linked, is told so, and passes the answer on with courier_answer"
+scenario "a parent that rewords the question is not linked, is told so, and passes the answer on with courier_answer"
 ask_question COURIER-QUESTION-REWORD
 check "the person answers the parent's reworded question" "$(answer_form "$parent" "$parent_form" '"Hey"')"
 check "the parent's question said it was not passed on" "$(has_text "$parent" "these answers were not passed on by themselves")"
 check "courier_answer passed it on" "$(has_text "$parent" "Passed the answers to question")"
 check "the child got it" "$(has_text "$parent" 'CHILD GOT [["Hey"]]' 45)"
 
-echo "the person answers in the child's session instead"
+scenario "the person answers in the child's session instead"
 ask_question COURIER-QUESTION
 check "the person answers in the child's session" "$(answer_form "$child" "$child_form" '"Hey"')"
 check "the parent's question is withdrawn" "$(has_text "$parent" "Session $child no longer waits on this question: it was answered in its own session")"
 check "and no longer shown" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
 check "the child carried on with the answer" "$(has_text "$parent" 'CHILD GOT [["Hey"]]' 45)"
 
-echo "the person dismisses the question in the child's session"
+scenario "the person dismisses the question in the child's session"
 ask_question COURIER-QUESTION
 check "dismissed in the child's session" "$([ "$(dismiss_form "$child" "$child_form")" = 204 ] && echo true || echo false)"
 check "the parent's question is withdrawn, saying so" "$(has_text "$parent" "dismissed in its own session, which ends its turn")"
 check "and no longer shown" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
 
-echo "the person dismisses the question in the parent's session"
+scenario "the person dismisses the question in the parent's session"
 ask_question COURIER-QUESTION
 check "dismissed in the parent's session" "$([ "$(dismiss_form "$parent" "$parent_form")" = 204 ] && echo true || echo false)"
 check "the child was told, carried on and reported" "$(has_text "$parent" "CHILD DISMISSED" 45)"
 check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
 
-echo "the parent asks again while its dismissal is held: the new question is withdrawn, and the child carries on without the answers"
+scenario "the parent asks again while its dismissal is held: the new question is withdrawn, and the child carries on without the answers"
 ask_question COURIER-QUESTION
 check "dismissed in the parent's session" "$([ "$(dismiss_form "$parent" "$parent_form")" = 204 ] && echo true || echo false)"
 # Within the two seconds the dismissal is held, over the API as a prompt from the TUI would come
@@ -629,7 +656,7 @@ check "the child was told, carried on and reported" "$(has_text "$parent" "CHILD
 
 # A model slip: the parent asks the person and calls courier_answer in the same step, so its
 # question is linked and answered at once.
-echo "the parent asks the person and calls courier_answer in one step: its question is withdrawn, and the courier_answer pick counts"
+scenario "the parent asks the person and calls courier_answer in one step: its question is withdrawn, and the courier_answer pick counts"
 out=$(prompt "COURIER-QUESTION-BOTH")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -642,7 +669,7 @@ check "the parent's form is gone, unanswered" "$([ "$(forms_of "$parent")" = 0 ]
 check "the child carried on with the courier_answer pick" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
 check "the child's question is no longer shown" "$([ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
 
-echo "the child's turn is stopped while the parent asks the person; their answer reaches it as a message"
+scenario "the child's turn is stopped while the parent asks the person; their answer reaches it as a message"
 ask_question COURIER-QUESTION
 check "the child's turn is interrupted" "$([[ $(person "session/$child/interrupt") == 20* ]] && echo true || echo false)"
 check "the child's question is no longer shown" "$(for _ in $(seq 1 15); do [ "$(forms_of "$child")" = 0 ] && { echo true; exit; }; sleep 1; done; echo false)"
@@ -651,7 +678,7 @@ check "the parent's question passed it on as a message" "$(has_text "$parent" "a
 check "which woke the child, and it carried on" "$(has_text "$parent" 'CHILD GOT [["Hello"]]' 45)"
 
 # What OpenCode's inactivity sweep does to a location after an hour: it interrupts every turn there.
-echo "both turns are stopped while the question is open; the parent is told and asks again"
+scenario "both turns are stopped while the question is open; the parent is told and asks again"
 ask_question COURIER-QUESTION
 person "session/$child/interrupt" >/dev/null
 person "session/$parent/interrupt" >/dev/null
@@ -661,7 +688,7 @@ check "and asks the person again" "$([ -n "$again" ] && echo true || echo false)
 check "the person answers" "$(answer_form "$parent" "$again" '"Hi"')"
 check "the child woke with the answer and carried on" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
 
-echo "a question of a child's child goes to the session at the top"
+scenario "a question of a child's child goes to the session at the top"
 out=$(prompt "COURIER-QUESTION nested")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -671,7 +698,7 @@ check "its notice names the session in between" "$(notices_with "$parent" asks |
 check "the person answers in the top session" "$(answer_form "$parent" "$parent_form" '"Hey"')"
 check "the child's child got it and reported to the session in between" "$(has_text "$middle" 'CHILD GOT [["Hey"]]' 45)"
 
-echo "a question open across a server restart"
+scenario "a question open across a server restart"
 ask_question COURIER-QUESTION
 stop_server
 start_server
@@ -687,7 +714,7 @@ check "the child woke with the answer and carried on" "$(has_text "$parent" 'CHI
 # instance sees through event.subscribe(), as the courier's watcher follows them. The child, in
 # its own worktree, asks for a permission, shows two question forms, one answered in its own
 # session and one withdrawn by the relay when the person answers in the parent's, and then fails.
-echo "an isolated child's events reach the plugin instance of every location"
+scenario "an isolated child's events reach the plugin instance of every location"
 canonical() { node -p 'require("node:fs").realpathSync(process.argv[1])' "$1"; }
 # A third location, neither the parent's nor the child's: an earlier isolated child's worktree (the
 # first one listed is the project itself), opened by a session of its own, which loads the plugins there.
@@ -746,14 +773,14 @@ done
 # new one loads: as each subscription's instance unloads, the other keeps following the events and
 # a new one starts through another instance, or the first new instances start both again, and a
 # child's request is still told once.
-echo "after OpenCode reloads every location, a child's permission request still reaches its parent once"
+scenario "after OpenCode reloads every location, a child's permission request still reaches its parent once"
 check "every location reloads" "$([ "$(person location/reload)" = 204 ] && echo true || echo false)"
 ask_permission isolate
 answered=$(prompt_in "$parent" "COURIER-ANSWER once" | tool_state courier_answer)
 check "courier_answer passed it on" "$(jq -r '.status == "completed" and .metadata.metadata.answered == true' <<<"$answered")"
 check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
 
-echo "the courier-orchestrate skill is listed in a session with the plugin loaded, and its text reaches the model"
+scenario "the courier-orchestrate skill is listed in a session with the plugin loaded, and its text reaches the model"
 out=$(prompt "COURIER-SKILL")
 session=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 check "OpenCode lists it for the project, with its description" \
@@ -767,7 +794,7 @@ check "the model loaded it with the skill tool and got the playbook" \
 check "attached to the person's prompt, its text reached the model" \
   "$([[ $(person "session/$session/prompt" '{"text":"COURIER-SKILL-ATTACHED","skills":[{"id":"courier-orchestrate"}]}') == 20* ]] && has_text "$session" "SKILL SEEN" 30)"
 
-echo "courier_later wakes the idle parent, with the delay sent as a string as some models do"
+scenario "courier_later wakes the idle parent, with the delay sent as a string as some models do"
 out=$(prompt "COURIER-LATER-STRING 0.05")
 turn_ended=$(now_ms)
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
@@ -776,14 +803,14 @@ woke=$(reply_time "$parent" "PARENT WOKE" 45)
 check "the scheduled message started a new turn after the parent's had ended" \
   "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
 
-echo "courier_cancel stops a scheduled message"
+scenario "courier_cancel stops a scheduled message"
 out=$(prompt "COURIER-LATER-CANCEL 0.05")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 check "courier_cancel cancelled it" "$(tool_state courier_cancel <<<"$out" | jq -r '.status == "completed" and (.output | startswith("Cancelled"))')"
 woke=$(reply_time "$parent" "PARENT WOKE" 25)
 check "the cancelled message never arrived" "$([ -z "$woke" ] && echo true || echo false)"
 
-echo "courier_children lists the sessions a parent spawned"
+scenario "courier_children lists the sessions a parent spawned"
 out=$(prompt "COURIER-ROSTER")
 roster_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 spawned=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
@@ -796,7 +823,7 @@ indexed_under() { kv get "roster-by-child/$1" | jq -r '.ancestors[0] // empty'; 
 check "each child is indexed under its parent" \
   "$(for id in $spawned; do [ "$(indexed_under "$id")" = "$roster_parent" ] || { echo false; exit; }; done; echo true)"
 
-echo "a scheduled message survives a server restart, delivered once another server's owner key expires"
+scenario "a scheduled message survives a server restart, delivered once another server's owner key expires"
 out=$(prompt "COURIER-LATER 0.25")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 check "courier_later completed" "$(tool_state courier_later <<<"$out" | jq -r '.status == "completed"')"
@@ -826,7 +853,7 @@ check "it was delivered after the restart" "$([ -n "$woke" ] && [ "$woke" -gt "$
 check "only once the other server's key had expired" "$([ -n "$woke" ] && [ "$woke" -ge "$expires" ] && echo true || echo false)"
 check "and this server holds the key now" "$(kv get scheduler/owner | jq -r '.server != "another server"')"
 
-echo "the roster survives a restart and can be read from another session"
+scenario "the roster survives a restart and can be read from another session"
 out=$(prompt "COURIER-CHILDREN $roster_parent")
 listed=$(tool_state courier_children <<<"$out" | jq -c 'select(.status == "completed") | .metadata.metadata.children')
 check "lists both children" "$(jq -r --arg ids "$spawned" '[.[].sessionID] | sort == ($ids | split("\n") | sort)' <<<"$listed")"
@@ -839,7 +866,7 @@ check "report state with no roster entry was swept when the plugin loaded" \
 check "while a live child's report state was kept" \
   "$(for id in $spawned; do [ -n "$(kv get "report/$id/prompt")" ] || { echo false; exit; }; done; echo true)"
 
-echo "a signed GitHub webhook wakes a subscribed idle session"
+scenario "a signed GitHub webhook wakes a subscribed idle session"
 out=$(prompt "COURIER-SUBSCRIBE Codertocat/Hello-World#2")
 turn_ended=$(now_ms)
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
@@ -864,7 +891,7 @@ check "the turn got the event summary" "$([[ $summary == *"changes_requested"* &
 check "the session got the event exactly once" \
   "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic")] | length == 1')"
 
-echo "a child that subscribes to a webhook and ends its turn to wait is not reported, and reports once a delivery wakes it"
+scenario "a child that subscribes to a webhook and ends its turn to wait is not reported, and reports once a delivery wakes it"
 out=$(prompt "COURIER-HOOKED")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -892,7 +919,7 @@ child_listing() {
     jq -r --arg child "$2" 'if .status != "completed" then "error" elif any(.metadata.metadata.children[]; .sessionID == $child) then "listed" else "unlisted" end'
 }
 
-echo "courier_cleanup removes a clean worktree"
+scenario "courier_cleanup removes a clean worktree"
 spawn_isolated
 check "its worktree exists" "$([ -d "$directory" ] && echo true || echo false)"
 check "it is indexed under its parent" "$([ "$(indexed_under "$child")" = "$parent" ] && echo true || echo false)"
@@ -903,7 +930,7 @@ check "its reverse key is gone too" "$([ -z "$(kv get "roster-by-child/$child")"
 check "git no longer lists the worktree" "$(git -C "$WORK/project" worktree list | grep -qF "$directory" && echo false || echo true)"
 check "the child is off courier_children" "$([ "$(child_listing "$parent" "$child")" = unlisted ] && echo true || echo false)"
 
-echo "courier_cleanup keeps a worktree with uncommitted changes"
+scenario "courier_cleanup keeps a worktree with uncommitted changes"
 spawn_isolated
 echo "work in progress" >"$directory/notes.txt"
 cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child" | tool_state courier_cleanup)
@@ -915,7 +942,7 @@ cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child force" | tool_state courie
 check "with force, courier_cleanup removed it" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
 check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
 
-echo "courier_tree shows a three-level tree, and courier_stop from the root stops all of it"
+scenario "courier_tree shows a three-level tree, and courier_stop from the root stops all of it"
 out=$(prompt "COURIER-SUBTREE-START")
 root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -937,7 +964,7 @@ check "neither parent was told of the stop, nor that a session ended without a r
 check "the stop is noted for both" "$([ -n "$(kv get "report/$leaf/stopped")" ] && [ -n "$(kv get "report/$middle/stopped")" ] && echo true || echo false)"
 check "a failure notice did not follow either" "$(notices_with "$root" failed | jq -r 'length == 0')"
 
-echo "nested isolation: a grandchild starts from its isolated parent's HEAD"
+scenario "nested isolation: a grandchild starts from its isolated parent's HEAD"
 out=$(prompt "COURIER-NEST")
 nest_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 nest_mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -964,7 +991,7 @@ inbox() {
   curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier-person/$1?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" \
     -H 'content-type: application/json' -d "{\"input\":$2}"
 }
-echo "the asks inbox lists a child's permission request, and answers it as the TUI does"
+scenario "the asks inbox lists a child's permission request, and answers it as the TUI does"
 ask_permission ""
 listed=$(inbox asks "{\"sessionID\":\"$parent\"}" | jq -c '.output')
 check "it lists the request, from the parent's tree" \
@@ -978,7 +1005,7 @@ check "the parent was told it is settled, once" \
 check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
 check "and nothing is left in the inbox" "$(inbox asks "{\"sessionID\":\"$parent\"}" | jq -r '.output.permissions == [] and .output.questions == []')"
 
-echo "the asks inbox answers a child's question through the person's RPC, while the parent asks the person"
+scenario "the asks inbox answers a child's question through the person's RPC, while the parent asks the person"
 ask_question COURIER-QUESTION
 question=$(inbox asks "{\"sessionID\":\"$parent\"}" | jq -r --arg child "$child" '.output.questions[] | select(.sessionID == $child) | .requestID')
 check "it lists the question" "$([[ $question == question_* ]] && echo true || echo false)"
@@ -992,7 +1019,7 @@ check "and no notice besides" "$(sleep 2; notices_with "$parent" answered | jq -
 check "answering it again passes nothing on" \
   "$(inbox answer "{\"sessionID\":\"$child\",\"requestID\":\"$question\",\"answers\":[[\"Hey\"]]}" | jq -r '.output == {answered: false}')"
 
-echo "the asks inbox answers a child's question the parent was told of and did not ask: the parent hears it answered by the person"
+scenario "the asks inbox answers a child's question the parent was told of and did not ask: the parent hears it answered by the person"
 out=$(prompt "COURIER-QUESTION-WAIT")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -1005,7 +1032,7 @@ check "the parent was told once that the person answered it, not its own session
   "$(sleep 2; notices_with "$parent" answered | jq -r --arg question "$question" 'length == 1 and (.[0] | contains("request=\"" + $question + "\"") and contains("was answered by the person (") and (contains("in its own session") | not))')"
 
 # The nativeChildren option, on for the rest of the run: the server reloads the plugin with it.
-echo "nativeChildren: a child started without isolate gets OpenCode's own parentID"
+scenario "nativeChildren: a child started without isolate gets OpenCode's own parentID"
 stop_server
 jq '.plugins[0].options.nativeChildren = true' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
 mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
@@ -1035,7 +1062,7 @@ check "OpenCode lists it under its parent" \
 check "the roster records it as native" "$(kv get "roster/$native_parent/$native_child" | jq -r '.native == true and .isolated == false')"
 check "it reported back, waking the parent" "$([ -n "$(reply_time "$native_parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
 
-echo "nativeChildren: an isolated child is created as before, without a parentID"
+scenario "nativeChildren: an isolated child is created as before, without a parentID"
 out=$(prompt "COURIER-TEST isolate")
 parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
 child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -1046,7 +1073,7 @@ check "it reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] &&
 
 # The decision on #146: a native child's request is answered once, in OpenCode's own permission prompt;
 # the top session is told not to ask, then that it is settled.
-echo "nativeChildren: a child does not run on its parent's session rules; its request is answered in OpenCode's own prompt"
+scenario "nativeChildren: a child does not run on its parent's session rules; its request is answered in OpenCode's own prompt"
 rules='[{"action":"shell","resource":"echo courier-asks*","effect":"allow"}]'
 parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"},\"permissions\":$rules}" | jq -r '.data.id')
 inherited=$(api_post session "{\"parentID\":\"$parent\"}" | jq -r '.data.id')
@@ -1069,7 +1096,7 @@ check "the parent was told once that it is settled, and asked nothing" \
 
 # The owner's decision on #146: a native child's question is answered once, in OpenCode's own form,
 # which the TUI shows in the top session's view; the top session is told, and its question tool is not linked.
-echo "nativeChildren: a native grandchild's question is answered in OpenCode's own form, and the top session is only told"
+scenario "nativeChildren: a native grandchild's question is answered in OpenCode's own form, and the top session is only told"
 parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
 api_prompt "$parent" "COURIER-QUESTION nested"
 middle=$(spawned_by "$parent" 45)
@@ -1086,12 +1113,12 @@ check "the top session was told once that it is settled, and asked nothing" \
   "$(has_text "$parent" "PARENT SETTLED" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"elsewhere\""))')" = true ] &&
     [ "$(notices_with "$parent" asks | jq length)" = 1 ] && [ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
 
-echo "nativeChildren: an isolated child's question is still linked to the top session's"
+scenario "nativeChildren: an isolated child's question is still linked to the top session's"
 ask_question "COURIER-QUESTION isolate"
 check "the person answers in the parent's session" "$(answer_form "$parent" "$parent_form" '"Hi"')"
 check "the child got it and reported back" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
 
-echo "nativeChildren: deleting a parent deletes its native children, and their report state goes"
+scenario "nativeChildren: deleting a parent deletes its native children, and their report state goes"
 check "the child's roster entry and report state are there" \
   "$([ -n "$(kv get "roster/$native_parent/$native_child")" ] && [ -n "$(kv get "report/$native_child/settled")" ] && echo true || echo false)"
 check "the parent is deleted" \
@@ -1101,7 +1128,7 @@ check "whose report state is gone, as for any deleted child" \
   "$(for _ in $(seq 1 20); do [ -z "$(kv get "report/$native_child/prompt")$(kv get "report/$native_child/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
 
 # Last, because it swaps the local plugin for the installed one.
-echo "opencode plugin add installs the packed package and its tools load"
+scenario "opencode plugin add installs the packed package and its tools load"
 stop_server
 rm -rf "$WORK/pack"
 mkdir -p "$WORK/pack"
@@ -1175,7 +1202,7 @@ check "no line says the versions could not be compared" "$(grep -qF "cannot comp
 # waits for the work it started (the roster's prune, the notice of cut-off questions, the relay of
 # the requests already pending as its subscription started), so none of it fails against a location
 # that has closed: the lines those failures log are absent.
-echo "the work an unloading instance started finished before its location closed"
+scenario "the work an unloading instance started finished before its location closed"
 check "no prune, cut-off notice or pending relay failed" \
   "$(grep -qE "courier roster prune:|courier question: stored questions:|courier watch: could not relay pending requests:" "$WORK/server.log" && echo false || echo true)"
 

@@ -28,9 +28,8 @@ export interface PersonPorts {
 export type FormsShown = Map<string, { readonly sessionID: string; readonly title: string }>
 
 /**
- * What every plugin instance in the process shares of the person events: the handled event ids, shared
- * with the tree's, the requests and forms the top sessions were told about or that were answered first,
- * and the forms shown now.
+ * What every plugin instance in the process shares of the person events: the handled event ids (the tree's too),
+ * the requests and forms told about or answered first, and the forms shown now.
  */
 export interface PersonState {
   readonly seen: Set<string>

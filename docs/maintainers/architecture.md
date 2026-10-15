@@ -103,10 +103,11 @@ claimed once before any instance acts on it, so nothing is delivered or told twi
 instance or copy sees it first. The hub runs the scheduler once per process and follows OpenCode's
 events through two instances, one a standby, so that an instance unloading leaves no gap in which an
 event or a child's question is missed. A webhook receiver started by one instance is the one the
-others join, so two never contend for the port. The `courier_spawn` calls under way, and the types
-of the items entering spawned sessions' inboxes, are kept process-wide under fixed keys of their own,
-so spawns in every location and copy count each other against the limits, and whichever instance
-sees an item's delivery knows what it was.
+others join, so two never contend for the port. The `courier_spawn` calls under way, the types
+of the items entering spawned sessions' inboxes, and the forms shown now are kept process-wide under
+fixed keys of their own, so spawns in every location and copy count each other against the limits,
+whichever instance sees an item's delivery knows what it was, and every instance's footer and tree
+panel see a form whichever instance followed its events.
 
 The hub carries a version, `HUB_VERSION`, which changes only when its shape or the meaning of a field
 does, not with every release (it is 2 since the join groups: the tick delivers released groups too,

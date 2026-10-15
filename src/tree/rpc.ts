@@ -12,7 +12,7 @@ const Group = Schema.Struct({ name: Schema.String, reported: Count, members: Cou
 
 /** The sessions started under a session, as the prompt footer's status entry shows them. */
 const Summary = Schema.Struct({
-  /** Running, and waiting on no request. */
+  /** Running, and waiting on no request or form. */
   running: Count,
   /** Waiting on a permission request, a question or a form it shows, which go to the person. */
   waiting: Count,

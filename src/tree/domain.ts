@@ -47,7 +47,7 @@ export const busy = (time: Pick<Times, "updated" | "idle">) => time.idle === und
 
 /**
  * Whether a session a tree is read of is live: it runs (as the limits count it: busy, and its turn has not failed or
- * been interrupted since its last prompt), waits on a request, or owes a report; one OpenCode no longer knows is not.
+ * been interrupted since its last prompt), waits on a request or form, or owes a report; one OpenCode no longer knows is not.
  */
 export const isLive = (time: Pick<Times, "updated" | "idle"> | undefined, waits: number, report: { readonly owes: boolean; readonly ended: boolean } | undefined) =>
   time !== undefined && ((busy(time) && !report?.ended) || waits > 0 || (report?.owes ?? false))

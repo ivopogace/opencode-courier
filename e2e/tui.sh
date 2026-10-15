@@ -332,7 +332,7 @@ check "the child's view shows OpenCode's permission prompt" "$(shows "Allow once
 tmux send-keys -t "$TMUX_SESSION" C-x k
 check "its key opens the inbox, the parent's prompt first, worded as the top session's" \
   "$([ "$(shows "Waiting on you (2)" 20 tui-top-inbox)" = true ] &&
-    grep -nF -e 'Permission (top session): courier_answer once for "shell echo courier-asks"' -e "Permission: shell echo courier-asks" "$WORK/tui-top-inbox.txt" | head -1 | grep -qF "(top session)" && echo true || echo false)"
+    grep -F -e "Permission (top session)" -e "Permission: shell" "$WORK/tui-top-inbox.txt" | head -1 | grep -qF "Permission (top session): courier_answer once" && echo true || echo false)"
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "choosing it offers the answers" "$(shows "Reject with a reason" 20 tui-top-answers)"
 tmux send-keys -t "$TMUX_SESSION" Enter

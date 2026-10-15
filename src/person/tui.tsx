@@ -85,14 +85,13 @@ export function askTitle(ask: Ask) {
   }
 }
 
-/** The line under an ask: its depth and group, that a question's call was cut off, and how a request and the top's prompt for it go together. */
+/** The line under an ask: its depth (the top's own say so) and group, that a question's call was cut off, or that the top's courier_answer prompt asks for it. */
 export function askFooter(ask: Ask) {
   const top = ask.session.depth === 0
   return [
     top ? "top session" : `depth ${ask.session.depth}`,
     ask.session.group ? `group ${ask.session.group}` : "",
-    ask.kind === "permission" && top && ask.request.passesOn ? "allowing it passes the request below on" : "",
-    ask.kind === "permission" && ask.prompted ? "the top session's prompt asks for it" : "",
+    ask.kind === "permission" && ask.prompted ? "the top's prompt asks" : "",
     ask.kind === "question" && ask.question.stopped ? "cut off, answered by message" : "",
   ]
     .filter(Boolean)

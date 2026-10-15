@@ -408,9 +408,9 @@ describe("the top session's own permission requests", () => {
     expect(listed.map((ask) => ask.key)).toEqual(["permission per_top", "permission per_own", "permission per_1"])
     expect(listed.map(askTitle)).toEqual(['Permission (top session): courier_answer once for "bash bun test"', "Permission (top session): edit src/a.ts", "Permission: bash bun test"])
     expect(listed.map(askFooter)).toEqual([
-      "top session · allowing it passes the request below on",
       "top session",
-      "depth 2 · group pair · the top session's prompt asks for it",
+      "top session",
+      "depth 2 · group pair · the top's prompt asks",
     ])
     expect(pathOf(withTop, "ses_root", "Root")).toBe("Root")
   })

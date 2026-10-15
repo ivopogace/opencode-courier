@@ -952,8 +952,8 @@ question tool's own forms, which are listed as their questions. It also lists th
 permission requests, first: chiefly the prompt [`courier_answer`'s `once`](#a-child-that-asks-for-permission)
 has OpenCode show there, which holds the child's request up and which OpenCode shows only in the top
 session's view, so a person looking at a child would not see it otherwise. Such a prompt reads
-`Permission (top session): courier_answer once for "<action> <resources>"`, says `allowing it passes the
-request below on`, and the child's request it is for says `the top session's prompt asks for it`: allowing
+`Permission (top session): courier_answer once for "<action> <resources>"`, marked `top session`, and the
+child's request it is for says `the top's prompt asks`: allowing
 the prompt passes `once` on to the child, so the child's request needs no answer of its own (answered
 directly, it settles and the prompt, once allowed, passes nothing on). Any other request of the top's own
 reads `Permission (top session): <action> <resources>`. The top's own requests are answered as the others
@@ -962,8 +962,8 @@ saw them, and in the tree's order among those seen together):
 
 ```
 Waiting on you (3)
-  Permission (top session): courier_answer once for "shell echo courier-asks"   Root   top session · allowing it passes the request below on
-  Permission: shell echo courier-asks         Root › Fix the bug › Write tests   depth 2 · group pair · the top session's prompt asks for it
+  Permission (top session): courier_answer once for "shell echo courier-asks"   Root                 top session
+  Permission: shell echo courier-asks         Root › Fix the bug › Write tests   depth 2 · group pair · the top's prompt asks
   Question: Greeting: Which greeting?         Root › Fix the bug                 depth 1
 ```
 

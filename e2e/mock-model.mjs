@@ -51,6 +51,12 @@ function decide(body) {
     // The middle session of COURIER-SUBTREE-START has started its leaf and then waits for a model reply that does not come in time.
     if (call?.function?.name === "courier_spawn" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-SUBTREE-MID"))
       return { text: "MID HOLDING", hold: true }
+    // COURIER-STALL's root ends its turn once its middle is started.
+    if (call?.function?.name === "courier_spawn" && prompt.includes("COURIER-STALL")) return { text: "ROOT SPAWNED" }
+    // COURIER-STALL's middle has started its leaf and ends its turn; the test stages a revert on it, so the
+    // leaf's report, held back by the delay, is admitted without a wake.
+    if (call?.function?.name === "courier_spawn" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-STALL-MID"))
+      return { text: "MID SPAWNED" }
     // Any user message, not just the last: a child's report may already have been steered in.
     const roster = messages.some((message) => message.role === "user" && textOf(message.content).includes("COURIER-ROSTER"))
     if (call?.function?.name === "courier_spawn" && roster) {
@@ -189,6 +195,9 @@ function decide(body) {
       tool: "courier_send",
       args: { sessionID: startedBy[1], message: answered[1] ? "CHILD DISMISSED" : `CHILD GOT ${JSON.stringify(answersIn(recent))}`, status: "done" },
     }
+  // The middle of COURIER-STALL starts a leaf and ends its turn; the leaf's report is held back by the
+  // delay, so the test stages a revert on the middle before it lands.
+  if (parent && recent.includes("CHILD-STALL-MID")) return { tool: "courier_spawn", args: { task: "CHILD-STALL-LEAF" } }
   // Any other child reports done, with every kind of artifact.
   if (parent) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE", status: "done", artifacts: ARTIFACTS } }
   // A native child's question is shown to the person by OpenCode: the parent is told, and ends its turn without asking.
@@ -256,6 +265,10 @@ function decide(body) {
   const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)
   if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
   if (recent.includes("COURIER-SUBTREE-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-MID" } }
+  // COURIER-STALL: the root starts a middle session, which starts a leaf and ends its turn; the test
+  // stages a revert on the middle, so the leaf's report is admitted without a wake, and the stall watch
+  // re-wakes it once and flags it stalled.
+  if (recent.includes("COURIER-STALL")) return { tool: "courier_spawn", args: { task: "CHILD-STALL-MID" } }
   if (recent.includes("COURIER-SUBTREE-TREE")) return { tool: "courier_tree", args: {} }
   const stopping = recent.match(/COURIER-SUBTREE-STOP (ses_\w+)/)
   if (stopping) return { tool: "courier_stop", args: { sessionID: stopping[1] } }

@@ -66,8 +66,8 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   `@opencode/plugin/rpc` and `effect`, and `rpc-handlers.ts` its server side (`registerTreeRpc`, called
   from `src/index.ts` after the tools with the stop ports), whose `summary` is `summary.ts`'s, read through the subtree walk,
   `busy`, the pending port and `groupStanding`, whose `tree` is `panel.ts`'s (the tree panel's rows: the
-  subtree walk, the report notes, each session's times, last tool call, cost and pending requests) and whose
-  `stop` is `stop.ts`'s; `tui.tsx` the TUI part, the prompt footer's status entry (`addTreeStatus`), the
+  subtree walk, the report notes, each session's times, last tool call, cost and pending requests), whose
+  `stop` is `stop.ts`'s and whose `cleanup` is `cleanup.ts`'s, run as the target's parent once `by` is above it; `tui.tsx` the TUI part, the prompt footer's status entry (`addTreeStatus`), the
   tree panel and the `/courier` command (`addTreePanel`) and the report sounds (`addTreeAttention`), which imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, `rpc.ts` and `text.ts`;
   `events.ts` `treeEvents`, which tells a parent that a child's turn failed or ended without a report,
   with `waitsOn` and `together` to compose the `Waits` port the silent-turn rule asks, supplied by

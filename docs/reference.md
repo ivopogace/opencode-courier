@@ -867,8 +867,8 @@ There is no progress a session reports of itself: a bar counts only reports cour
 asks again a second after the first of a burst of the status entry's events and of a tool call, a usage
 update or a rename, and redraws its times every second. Its keys, while it has the keyboard (it takes it
 when it opens; `<leader>left` and `<leader>right` move it between the session and the panel): `↑`/`k` and
-`↓`/`j` move the selection, `enter` opens the selected session, `s` stops it, `r` asks again, `f` toggles
-fullscreen and `q` closes the panel. While open, the panel follows the person to another session (its own
+`↓`/`j` move the selection, `enter` opens the selected session, `s` stops it, `x` forgets a `gone` one,
+`r` asks again, `f` toggles fullscreen and `q` closes the panel. While open, the panel follows the person to another session (its own
 `enter`, a tab, "go to parent"), as it was asked for (a panel shown fullscreen only because the terminal is
 too narrow to split reopens as a panel) and taking the keyboard only if it had it: to a session
 of its tree it keeps that tree, and its stops, with the session on screen marked `(on screen)` in its
@@ -885,6 +885,17 @@ target's parent, when its turn was interrupted, is told with the usual notice un
 itself (the person is there to tell it). A toast says how many sessions were stopped and interrupted and how many scheduled
 messages were cancelled, or why the stop was refused. `/courier` with anything else shows its usage.
 
+**Forgetting from the TUI.** `x` in the panel, on a `gone` row (a session OpenCode no longer knows, which
+stays on the roster until its retention runs out: one that is isolated or has children of its own on
+the roster, as the rest are forgotten at once; see [Worktree cleanup](#worktree-cleanup)), asks the person to confirm with the session's title and id and what happens: an
+isolated session's worktree is removed unless it has uncommitted changes or commits found nowhere else.
+It then forgets the session as `courier_cleanup` called from its own parent, never with `force`, once the
+open session (the panel's) is found above it. A toast says what it did: `Forgot "<title>"`, with `and
+removed its worktree` or `; its worktree was already gone`, or `Kept "<title>" and its worktree: <reason>`
+when there are changes or commits to lose, which only the parent's `courier_cleanup` with `force` removes;
+or why it was refused. On a live row `x` forgets nothing and says so: forgetting a session that runs or
+waits would lose the report it owes, and could remove its worktree from under it.
+
 **Attention.** A join group's reports released to a session call for attention, with a notification
 when the terminal is not focused and the `done` sound; a child's report to its parent (a message with a
 status) plays the `subagent_done` sound, without a notification, unless the reporting session is a native
@@ -892,7 +903,7 @@ child, whose turn ending OpenCode already sounds with `subagent_done`. A report 
 once, with its group's release. Each delivery is notified once per TUI.
 
 **The RPC.** `courier`, registered by every instance at its location as the tools are, through the same
-use cases as `courier_tree`, `courier_children` and `courier_stop`; the roster is one store for every
+use cases as `courier_tree`, `courier_children`, `courier_stop` and `courier_cleanup`; the roster is one store for every
 location. Its contract is `treeRpc` from `opencode-courier/rpc`, for a client's `client.rpc(treeRpc)`.
 The TUI asks at the open session's own location (where the plugin is loaded), else the TUI's, else the
 server's default one. Over HTTP:
@@ -915,6 +926,9 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_�
 - `stop {sessionID, by}`: `courier_stop` for `sessionID`, called from `by`, which must be above it;
   answers `{stopped: [{sessionID, title, outcome}], cancelled: <count>}`, deepest first, or fails with
   the declared error `refused` and `courier_stop`'s message.
+- `cleanup {sessionID, by}`: `courier_cleanup` for `sessionID`, called from its own parent once `by` is
+  found above it, without `force`; answers `{outcome}`, one of `forgotten`, `removed` or `gone` (its
+  worktree was already gone), or `{outcome: "kept", reason}`, or fails with the declared error `refused`.
 
 ### The asks inbox
 

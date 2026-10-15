@@ -5,8 +5,8 @@ import type { SlotClaim } from "@opencode/plugin/tui/context"
 import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { batch, createSignal } from "solid-js"
-import type { Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, addTreeStatus, bar, detailLines, duration, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
+import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
+import { activityLine, addTreeStatus, bar, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
 
@@ -56,6 +56,7 @@ function fakeContext(
     selects: [] as any[],
     tree: async (_sessionID: string): Promise<Tree> => ({ rows: [] }),
     stop: async (_input: { sessionID: string; by: string }): Promise<Stopped> => ({ stopped: [], cancelled: 0 }),
+    cleanup: async (_input: { sessionID: string; by: string }): Promise<Forgotten> => ({ outcome: "forgotten" }),
   }
   const color = RGBA.fromInts(120, 120, 120)
   const context = {
@@ -96,6 +97,10 @@ function fakeContext(
         stop: async (input: { sessionID: string; by: string }, options: unknown) => {
           calls.push(["stop", input, options])
           return state.stop(input)
+        },
+        cleanup: async (input: { sessionID: string; by: string }, options: unknown) => {
+          calls.push(["cleanup", input, options])
+          return state.cleanup(input)
         },
       }),
     },
@@ -410,6 +415,11 @@ describe("the tree panel's lines", () => {
     expect(detailLines(row("ses_gone", { state: "gone", idle: undefined, cost: undefined }), rows, NOW)).toEqual([])
   })
 
+  test("after a forget, a toast says what courier_cleanup did, on one line", () => {
+    expect(forgottenLine("Fix\nthe bug", { outcome: "forgotten" })).toBe('Forgot "Fix the bug"')
+    expect(forgottenLine("a", { outcome: "kept", reason: "2 commits on no branch, tag or remote (x, y)" })).toBe('Kept "a" and its worktree: 2 commits on no branch, tag or remote (x, y)')
+  })
+
   test("after a stop, a toast says how many sessions were interrupted and how many messages cancelled", () => {
     const stopped: Stopped = {
       stopped: [
@@ -625,6 +635,66 @@ describe("the tree panel", () => {
     fake.command("s")!.run()
     await settle()
     expect(fake.state.toasts.at(-1)).toMatchObject({ message: "ses_x is not above ses_a", variant: "error" })
+  })
+
+  test("x on a gone row forgets it through the RPC, as the panel's session, once the person confirms, and reads the tree again", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async () => ({ rows: [row("ses_gone", { title: "Fix the bug", state: "gone", isolated: true })] })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+    await app.waitForFrame((frame) => frame.includes("Fix the bug"))
+    expect(app.captureCharFrame()).toContain("s stop · x forget · r refresh")
+
+    fake.state.confirm = false
+    fake.command("x")!.run()
+    await settle()
+    expect(fake.state.confirms.at(-1)).toMatchObject({
+      title: "Forget session",
+      message: 'Forget "Fix the bug" (ses_gone)? Its worktree is removed unless it has uncommitted changes or commits found nowhere else.',
+    })
+    expect(fake.calls.filter((call) => Array.isArray(call) && call[0] === "cleanup")).toEqual([])
+
+    fake.state.confirm = true
+    const reads = fake.calls.filter((call) => Array.isArray(call) && call[0] === "tree").length
+    fake.state.cleanup = async () => ({ outcome: "removed" })
+    fake.command("x")!.run()
+    await settle()
+    expect(fake.calls).toContainEqual(["cleanup", { sessionID: "ses_gone", by: "ses_parent" }, { location: { directory: "/workspace" } }])
+    expect(fake.state.toasts.at(-1)).toMatchObject({ message: 'Forgot "Fix the bug" and removed its worktree', variant: "success" })
+    expect(fake.calls.filter((call) => Array.isArray(call) && call[0] === "tree").length).toBeGreaterThan(reads)
+
+    const outcomes: [Forgotten, string, string][] = [
+      [{ outcome: "forgotten" }, 'Forgot "Fix the bug"', "success"],
+      [{ outcome: "gone" }, 'Forgot "Fix the bug"; its worktree was already gone', "success"],
+      [{ outcome: "kept", reason: "1 uncommitted change (a.ts)" }, 'Kept "Fix the bug" and its worktree: 1 uncommitted change (a.ts)', "warning"],
+    ]
+    for (const [result, message, variant] of outcomes) {
+      fake.state.cleanup = async () => result
+      fake.command("x")!.run()
+      await settle()
+      expect(fake.state.toasts.at(-1)).toMatchObject({ message, variant })
+    }
+  })
+
+  test("x on a live row forgets nothing and says why; a non-isolated gone row's confirm names no worktree; a refusal shows why", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async () => ({ rows: [row("ses_live", { title: "Live" }), row("ses_gone", { title: "Gone", state: "gone" })] })
+    fake.state.cleanup = async () => Promise.reject({ type: "refused", message: "ses_x is not above ses_gone" })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+    await app.waitForFrame((frame) => frame.includes("Gone"))
+
+    fake.command("x")!.run()
+    await settle()
+    expect(fake.state.confirms).toEqual([])
+    expect(fake.state.toasts.at(-1)).toMatchObject({ message: 'x forgets only a gone session; "Live" is idle.', variant: "warning" })
+
+    fake.command("down")!.run()
+    await app.waitForFrame((frame) => frame.includes("▸ Gone"))
+    fake.command("x")!.run()
+    await settle()
+    expect(fake.state.confirms.at(-1)?.message).toBe('Forget "Gone" (ses_gone)? It leaves this tree and courier_children.')
+    expect(fake.state.toasts.at(-1)).toMatchObject({ message: "ses_x is not above ses_gone", variant: "error" })
   })
 })
 

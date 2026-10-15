@@ -80,6 +80,14 @@ const Stopped = Schema.Struct({
 
 export type Stopped = typeof Stopped.Type
 
+/** What courier_cleanup did: forgot it, removed its worktree, found that already gone, or kept the worktree, saying why. */
+const Forgotten = Schema.Union([
+  Schema.Struct({ outcome: Schema.Literals(["forgotten", "removed", "gone"]) }),
+  Schema.Struct({ outcome: Schema.Literal("kept"), reason: Schema.String }),
+])
+
+export type Forgotten = typeof Forgotten.Type
+
 export const treeRpc = Rpc.define({
   id: "courier",
   methods: {
@@ -95,6 +103,12 @@ export const treeRpc = Rpc.define({
     stop: {
       input: Schema.toStandardSchemaV1(Schema.Struct({ sessionID: Schema.String, by: Schema.String })),
       output: Schema.toStandardSchemaV1(Stopped),
+      errors: { refused: Schema.toStandardSchemaV1(Schema.Struct({})) },
+    },
+    /** Forgets `sessionID` as courier_cleanup called from its parent, without `force`; `by` must be above it. */
+    cleanup: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({ sessionID: Schema.String, by: Schema.String })),
+      output: Schema.toStandardSchemaV1(Forgotten),
       errors: { refused: Schema.toStandardSchemaV1(Schema.Struct({})) },
     },
   },

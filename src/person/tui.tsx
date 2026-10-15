@@ -426,6 +426,29 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     if (ticket === reads && shown?.sessionID === sessionID && keysOf(found.listed) !== shown.keys) shown.replace(found)
   }
 
+  /** Shows the list of `found` and waits for the person's choice, or for a newer read of the tree to show in its place. */
+  async function showList(sessionID: string, { asks, listed }: Found) {
+    let replace: (found: Found) => void = () => undefined
+    const newer = new Promise<Found>((resolve) => {
+      replace = resolve
+    })
+    listing = { sessionID, keys: keysOf(listed), replace }
+    const top = ctx.data.session.get(asks.top)?.title ?? asks.top
+    const choosing = ctx.ui.dialog.select<Ask>({
+      title: `Waiting on you (${listed.length})`,
+      placeholder: "Search",
+      options: listed.map((ask) => ({ title: askTitle(ask), value: ask, description: pathOf(asks, ask.session.sessionID, top, currentTitle), footer: askFooter(ask) })),
+    })
+    // Wider than a dialog opens, for where each ask comes from.
+    ctx.ui.dialog.set({ size: "large" })
+    try {
+      // A newer list replaces this one, whose select then resolves with nothing.
+      return await Promise.race([choosing.then((chosen) => ({ chosen })), newer.then((read) => ({ read }))])
+    } finally {
+      listing = undefined
+    }
+  }
+
   let opened = false
   /**
    * Lists the asks of the open session's tree, answers the one chosen, and lists what is left, until none is or the person
@@ -440,35 +463,25 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     opened = true
     try {
       let found = await read(sessionID).catch(fail("The asks could not be read"))
+      let first = true
       // Whether this read replaces a list still on screen.
       let shown = false
-      for (let first = true; found; first = false) {
-        const { asks, listed } = found
-        if (!listed.length) {
+      while (found) {
+        if (!found.listed.length) {
           if (first) ctx.ui.toast.show({ title: "courier", message: "Nothing in this courier tree waits on you.", variant: "info" })
           // All settled elsewhere while it was shown: the list closes.
           if (shown) ctx.ui.dialog.clear()
           return
         }
-        const top = ctx.data.session.get(asks.top)?.title ?? asks.top
-        const newer = new Promise<Found>((replace) => void (listing = { sessionID, keys: keysOf(listed), replace }))
-        const choosing = ctx.ui.dialog.select<Ask>({
-          title: `Waiting on you (${listed.length})`,
-          placeholder: "Search",
-          options: listed.map((ask) => ({ title: askTitle(ask), value: ask, description: pathOf(asks, ask.session.sessionID, top, currentTitle), footer: askFooter(ask) })),
-        })
-        // Wider than a dialog opens, for where each ask comes from.
-        ctx.ui.dialog.set({ size: "large" })
-        // A newer list replaces this one, whose select then resolves with nothing.
-        const next = await Promise.race([choosing.then((chosen) => ({ chosen })), newer.then((read) => ({ read }))])
-        listing = undefined
+        first = false
+        const next = await showList(sessionID, found)
         shown = "read" in next
         if ("read" in next) {
           found = next.read
           continue
         }
-        const { chosen } = next
-        if (!chosen) return
+        if (!next.chosen) return
+        const chosen = next.chosen
         const done = await answer(chosen).catch((error: unknown) => {
           fail("The answer was not passed on")(error)
           return false
@@ -478,7 +491,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
       }
     } finally {
       opened = false
-      listing = undefined
       clearTimeout(following)
       following = undefined
     }

@@ -1160,9 +1160,8 @@ run_nest() {
 }
 
 run_stall() {
-  # OpenCode 2.0.29 skips the wake of a message enqueued while the session has a staged revert: the report is
-  # admitted with no turn behind it, a real missed wake on a real courier delivery. Sending it again under its
-  # inbox id cannot wake the session either, so the watch flags it stalled: the summary and the panel's row.
+  # A staged revert skips the wake of a message enqueued meanwhile, and of the same message sent again under its
+  # inbox id: a real courier report with no turn behind it, which the watch flags stalled.
   scenario "a report whose wake a staged revert suppresses is sent again once, then flagged stalled (#218)"
   # The leaf's report is held back long enough to stage the revert on the middle while it is idle and
   # before the report lands, so the delivery is admitted with no wake.

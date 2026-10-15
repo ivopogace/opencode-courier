@@ -4,7 +4,7 @@ import { joinGroup } from "../src/tree/group.js"
 import { cancelScheduled, schedule, type LaterPorts } from "../src/scheduling/index.js"
 import { stoppedNotice, stopText, treeText } from "../src/tree/text.js"
 import { stoppedSincePrompt } from "../src/tree/report.js"
-import { childStore, groupStore, memberKey, progressKey, promptKey, settledKey, stoppedKey } from "../src/tree/store.js"
+import { childStore, groupStore, memberKey, progressKey, promptKey, settledKey, stoppedKey, wakeStore } from "../src/tree/store.js"
 import type { RosterEntry, StopPorts } from "../src/tree/ports.js"
 import { stop } from "../src/tree/stop.js"
 import { RETENTION_MS } from "../src/tree/roster.js"
@@ -176,6 +176,17 @@ describe("tree", () => {
 })
 
 describe("stop", () => {
+  test("drops the wake watch of what waits in a stopped session's inbox, so nothing wakes it again", async () => {
+    const { ports, store } = await fixture()
+    const waiting = { at: 1, text: "report", running: true }
+    await wakeStore(ports.courier.storage).put({ sessionID: "leaf2", inboxID: "msg_1", ...waiting })
+    await wakeStore(ports.courier.storage).put({ sessionID: "side", inboxID: "msg_2", ...waiting })
+
+    await stop(ports, "root", { sessionID: "mid" })
+
+    expect([...store.keys()].filter((key) => key.startsWith("wake/"))).toEqual(["wake/side/msg_2"])
+  })
+
   test("interrupts the session and everything under it, deepest first", async () => {
     const { ports, calls } = await fixture()
 

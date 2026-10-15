@@ -262,9 +262,9 @@ does not. Each spawned session's brief says when to split its task and when to d
 
 The package ships a part for OpenCode's terminal UI, which the TUI loads from the server's plugin
 list; the server half behaves the same whether or not a TUI is attached. In a session that started
-sessions, the prompt's footer shows what the tree under it is doing: how many are
-[stalled](docs/reference.md#a-missed-wake), run, wait on you (a permission request, a question or a
-form they show) or are idle, and for each [join group](docs/reference.md#join-groups) how many of its members have
+sessions, the prompt's footer shows what the tree under it is doing: how many wait on you (a
+permission request, a question or a form they show), are [stalled](docs/reference.md#a-missed-wake),
+run or are idle, and for each [join group](docs/reference.md#join-groups) how many of its members have
 reported:
 
 ```

@@ -232,7 +232,7 @@ function routeWake(ports: WatchPorts, event: HostEvent) {
   return undefined
 }
 
-/** The tree's handling of an event, then the wake watch's, which never fails the tree's. */
+/** The tree's handling of an event alongside the wake watch's, which touches other keys and never fails the tree's. */
 async function route(ports: WatchPorts, state: WatchState, outside: Waits, event: HostEvent) {
   const watched = routeWake(ports, event)?.catch((error: unknown) => ports.log(`courier watch: wake of ${event.type}: ${String(error)}`))
   try {

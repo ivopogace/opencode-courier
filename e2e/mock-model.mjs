@@ -265,9 +265,8 @@ function decide(body) {
   const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)
   if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
   if (recent.includes("COURIER-SUBTREE-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-MID" } }
-  // COURIER-STALL: the root starts a middle session, which starts a leaf and ends its turn; the test
-  // stages a revert on the middle, so the leaf's report is admitted without a wake, and the stall watch
-  // re-wakes it once and flags it stalled.
+  // COURIER-STALL: the root starts a middle session, which starts a leaf and ends its turn; the test stages a
+  // revert on the middle, so the leaf's report is admitted without a wake.
   if (recent.includes("COURIER-STALL")) return { tool: "courier_spawn", args: { task: "CHILD-STALL-MID" } }
   if (recent.includes("COURIER-SUBTREE-TREE")) return { tool: "courier_tree", args: {} }
   const stopping = recent.match(/COURIER-SUBTREE-STOP (ses_\w+)/)

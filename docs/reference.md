@@ -558,7 +558,8 @@ has not taken it 30 seconds after that is stalled: the plugin logs it, the [foot
 counts it (`courier 1 stalled`, the open session itself included), and the tree panel shows its row as
 `stalled`, with since when its message waits, and a line at the top when the panel's own session is.
 Prompting the session, as the person can in its own view, delivers the waiting message with the prompt,
-which ends the stall. Nothing is sent a third time.
+which ends the stall. Nothing is sent a third time, and nothing at all to a session `courier_stop` stopped, whose
+watch it drops, as it cancels its scheduled messages.
 
 The scheduler checks every 15 seconds, so a wake is sent again 30 to 45 seconds after the session went
 idle with the message waiting, and flagged stalled up to 45 seconds after that. Only the server that
@@ -837,19 +838,19 @@ courier 1 waiting on you · 2 running · group pair 1/2 · 1 idle
 
 The parts come in that order, and on a narrow terminal the entry keeps as many whole parts as fit,
 replacing the groups it drops with a count (`courier 1 waiting on you · 2 running · +3 groups`);
-`/courier tree` has the full detail. `waiting on you` is always shown, and so is `stalled`, which
-comes before it.
+`/courier tree` has the full detail. `waiting on you` is always shown, and `stalled` comes right
+after it.
 
 It counts the sessions under the open session, those it started with `courier_spawn` and those they
 started, every one of them (so a tree that has started more than `maxTotal` sessions over time is
 counted whole, with the ones [past retention](#roster) left out), each by what it does:
 
-- `stalled`: a message the plugin delivered waits in its inbox, and sending it again did not start a
-  turn ([a missed wake](#a-missed-wake)); the open session itself is counted too when it is stalled;
 - `waiting on you`: it waits on a permission request or a question, those `courier_status` lists as
   `pending`, which go to the person at the top of its tree, or its running turn shows a form (web
   search's provider form, a plugin's), which only the person can answer; the [asks inbox](#the-asks-inbox)
   lists all three;
+- `stalled`: a message the plugin delivered waits in its inbox, and sending it again did not start a
+  turn ([a missed wake](#a-missed-wake)); the open session itself is counted too when it is stalled;
 - `running`: its turn runs, or something reached it after its last turn ended, and it waits on no
   request, shows no form and is not stalled;
 - `idle`: neither, whether it has reported or waits for a message.

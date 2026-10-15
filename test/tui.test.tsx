@@ -229,8 +229,9 @@ describe("summaryLine", () => {
     expect(summaryLine(empty)).toBe("")
   })
 
-  test("puts the stalled sessions first, as nothing moves them but the person", () => {
-    expect(summaryLine({ ...empty, stalled: 1, waiting: 1, running: 2 })).toBe("courier 1 stalled · 1 waiting on you · 2 running")
+  test("puts the stalled sessions right after those waiting on you, which stays first", () => {
+    expect(summaryLine({ ...empty, stalled: 1, waiting: 1, running: 2 })).toBe("courier 1 waiting on you · 1 stalled · 2 running")
+    expect(summaryLine({ ...empty, stalled: 1, waiting: 1, running: 2 }, 30)).toBe("courier 1 waiting on you")
     expect(summaryLine({ ...empty, stalled: 2 }, 12)).toBe("2 stalled")
   })
 })
@@ -421,6 +422,10 @@ describe("the tree panel's lines", () => {
     expect(detailLines(row("ses_mid", { state: "stalled", stalled: NOW - 65_000 }), rows, NOW)).toEqual([
       "[██████████] 1/1 reported",
       "a message waits in its inbox since 1m 05s, woken again in vain",
+    ])
+    // What it waits on the person for comes first: that is what the person can act on.
+    expect(detailLines(row("ses_ask", { state: "waiting", stalled: NOW - 65_000, waits: [{ type: "form", title: "Web Search" }] }), rows, NOW)).toEqual([
+      "shows a form: Web Search",
     ])
     // A session OpenCode no longer knows has no activity to show.
     expect(detailLines(row("ses_gone", { state: "gone", idle: undefined, cost: undefined }), rows, NOW)).toEqual([])

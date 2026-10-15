@@ -72,7 +72,8 @@ export async function wakeStarted(ports: Pick<WatchPorts, "storage">, event: Exe
  * A session's turn ended: a message it took is no longer watched, as its delivery may have been missed by this
  * subscription; one still waiting is watched as waiting in an idle session from now.
  */
-export async function wakeEnded(ports: WatchPorts, event: Execution) {
+export async function wakeEnded(ports: WatchPorts, event: Execution & { readonly data: { readonly reason?: string } }) {
+  if (event.data.reason === "shutdown") return
   const { sessionID } = event.data
   const store = wakeStore(ports.storage)
   const waiting = await store.of(sessionID)
@@ -84,7 +85,7 @@ export async function wakeEnded(ports: WatchPorts, event: Execution) {
   )
 }
 
-/** Forgets the messages watched in a deleted session's inbox. */
+/** Forgets the messages watched in a session's inbox: it was deleted, or stopped, which nothing is to wake again. */
 export async function forgetWakes(ports: Pick<WatchPorts, "storage">, sessionID: string) {
   const store = wakeStore(ports.storage)
   await Promise.all((await store.of(sessionID)).map((wake) => store.remove(sessionID, wake.inboxID)))
@@ -94,9 +95,8 @@ export async function forgetWakes(ports: Pick<WatchPorts, "storage">, sessionID:
 export type WakePorts = GroupPorts & { readonly now: () => number }
 
 /**
- * Wakes, once, each session that has left a courier message waiting while idle for `WAKE_MS`, sending the message again
- * under its inbox id, which OpenCode takes for the one waiting rather than a second; one that still does not take it
- * `WAKE_MS` later is stalled. Run by the scheduler's owner, so one server acts; `claimed` keeps a tick alongside off it.
+ * Sends once more, under its inbox id, each courier message an idle session has left waiting for `WAKE_MS`, and flags
+ * stalled one still waiting `WAKE_MS` later; run by the scheduler's owner, `claimed` keeping a tick alongside off it.
  */
 export async function wakeMissed(ports: WakePorts, claimed: Set<string>) {
   const store = wakeStore(ports.storage)
@@ -124,6 +124,8 @@ async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, 
       ports.log(`courier wake: ${wake.sessionID} has not taken message ${wake.inboxID} since it was woken again; flagged stalled`)
       return await store.put({ ...current, stalled: now })
     }
+    // Noted before the send: the turn it starts may take the message, and drop the watch, before the send returns.
+    await store.put({ ...current, rewoken: now })
     await ports.session.synthetic({
       sessionID: wake.sessionID,
       id: wake.inboxID,
@@ -131,9 +133,11 @@ async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, 
       ...(wake.description !== undefined ? { description: wake.description } : {}),
       metadata: { source: "courier", wake: "again" },
       delivery: "steer",
+    }).catch(async (error: unknown) => {
+      await store.put(current)
+      throw error
     })
     ports.log(`courier wake: ${wake.sessionID} left message ${wake.inboxID} waiting while idle; woken again`)
-    await store.put({ ...current, rewoken: now })
   } catch (error) {
     ports.log(`courier wake: could not wake ${wake.sessionID} again for ${wake.inboxID}: ${String(error)}`)
   }

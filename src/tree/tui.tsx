@@ -56,8 +56,8 @@ export const TICK_MS = 1000
 export function summaryLine(summary: Summary, maxWidth = Infinity) {
   const groups = summary.groups.map((group) => `group ${group.name} ${group.reported}/${group.members}`)
   const parts = [
-    summary.stalled ? `${summary.stalled} stalled` : "",
     summary.waiting ? `${summary.waiting} waiting on you` : "",
+    summary.stalled ? `${summary.stalled} stalled` : "",
     summary.running ? `${summary.running} running` : "",
     ...groups,
     summary.idle ? `${summary.idle} idle` : "",
@@ -145,8 +145,8 @@ export function stalledLine(since: number, now: number) {
 /** The lines a row shows under its title: an orchestrator's bar, a paused or stalled session's wait, or else a live leaf's activity. */
 export function detailLines(row: Row, rows: ReadonlyArray<Row>, now: number) {
   const started = parts(rows, row.sessionID)
-  if (row.stalled !== undefined) return [...(started.started ? [bar(started)] : []), stalledLine(row.stalled, now)]
   if (row.waits.length) return [...(started.started ? [bar(started)] : []), ...row.waits.map(waitLine)]
+  if (row.stalled !== undefined) return [...(started.started ? [bar(started)] : []), stalledLine(row.stalled, now)]
   if (started.started) return [bar(started)]
   return row.state === "gone" ? [] : [activityLine(row, now)]
 }
@@ -192,7 +192,7 @@ function reason(error: unknown) {
 
 /**
  * Adds the tree's entry to the prompt's footer: what the sessions under the open session do, asked of the RPC after each
- * change; nothing on the home screen. Clicked while some wait on the person, it calls `onWaiting` with the open session.
+ * change and every `REREAD_MS`; nothing on the home screen. Clicked while some wait on the person, it calls `onWaiting`.
  */
 export function addTreeStatus(ctx: Context, onWaiting?: (sessionID: string) => void) {
   const { courier, location } = courierOf(ctx)

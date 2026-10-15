@@ -202,6 +202,28 @@ describe("waking a session whose wake was missed", () => {
     expect(sent).toHaveLength(1)
   })
 
+  test("a turn the wake again starts may take the message before the send returns, and the watch stays over", async () => {
+    const { ports, sent, at } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    const synthetic = ports.session.synthetic
+    ;(ports.session as { synthetic: unknown }).synthetic = async (input: any) => {
+      await handle(ports, event("session.execution.started", "ses_parent", 140_000))
+      await handle(ports, event("session.inbox.delivered", "ses_parent", 140_000, { inboxID: "msg_report" }))
+      return synthetic(input)
+    }
+    at(100_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toHaveLength(1)
+    expect(await wakeStore(ports.storage).all()).toEqual([])
+  })
+
+  test("a turn a shutdown stops, which resumes on the next start, leaves the watch as it was", async () => {
+    const { ports } = fakePorts({ ses_parent: [assistant()] })
+    await handle(ports, enqueued())
+    await handle(ports, event("session.execution.interrupted", "ses_parent", 200_000, { reason: "shutdown" }))
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: true })
+  })
+
   test("a message another tick of the process has claimed is left to it", async () => {
     const { ports, sent, at } = fakePorts({ ses_parent: [idle()] })
     await handle(ports, enqueued())

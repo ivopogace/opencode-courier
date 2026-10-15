@@ -65,6 +65,23 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.29`); paths be
   The message it makes is stamped with that event's `created`. Only `session.inbox.enqueued`,
   published as the item is admitted, carries its type (`data.item.type`: `user`, `synthetic`,
   `compaction` or `move`; a `session.prompt` is `user`), so the plugin remembers it until delivery.
+- A synthetic message steered to an idle session starts its turn in a fixed order: `session.synthetic({ delivery: "steer" })`
+  (`Session.synthetic`, `packages/core/src/session/session.ts`) admits the item — `session.inbox.enqueued`,
+  and a pending row in the session inbox table — then rings the process-local run coordinator's doorbell
+  (`execution.wake`, `packages/core/src/session/run-coordinator.ts`), whose fiber publishes `session.execution.started`
+  with a write-ahead claim in the session store and drains: the runner promotes the pending steer —
+  `session.inbox.delivered`, the row deleted — and runs the turn to its one terminal event. A healthy wake is
+  `enqueued → started → delivered → … → succeeded`; a courier-delivered message is owed a turn when `enqueued` has
+  no `started` behind it, and only a new synthetic, prompt or resume for that session rings the doorbell again.
+- A lost wake is silent in the events: `enqueued` with no `started` (and no `delivered`, which only a drain publishes).
+  The host's own paths to it: `synthetic` skips the wake while the session has a staged revert (`session.revert`),
+  holding the input until the revert commits on the next prompt or compaction; and an interrupt landing between the
+  doorbell and the execution's stop clears the pending wake, leaving the row pending with no error and no log
+  (`reportLifecycle` swallows interrupt-only causes). `delivered` without `started` cannot be produced by the host's
+  ordering — promote runs only inside a drain, which follows `started` — so that signature means this instance missed
+  the `started` event (a subscription gap) or the events were reordered. No host bug was confirmed at this pin: neither
+  path reproduces on demand, and the recursive run's stall matches the rare doorbell race above, so the plugin's
+  missed-wake watch keys on the first signature rather than waiting on an upstream fix.
 - Every event carries `created`, the epoch milliseconds OpenCode published it at, which the report
   state compares with the server's clock at `courier_send`.
 - `session.context()` returns the session's stored messages (`SessionMessage.Info[]`), not the

@@ -462,11 +462,14 @@ export function addAsksInbox(ctx: Context) {
       if (sounded.has(ask.key)) continue
       sounded.add(ask.key)
       if (first && !eventSessions.has(ask.session.sessionID)) continue
+      // OpenCode sounds every ask and notifies for a session that is not a native child; the courier adds
+      // the tree path as a notification for a native child, whose OpenCode one is off.
+      if (!ctx.data.session.get(ask.session.sessionID)?.parentID) continue
       void ctx.attention.notify({
         title: pathOf(asks, ask.session.sessionID, top, currentTitle),
         message: askTitle(ask),
         notification: { when: "blurred" },
-        sound: { name: soundOf(ask), when: "always" },
+        sound: false,
       })
     }
   }

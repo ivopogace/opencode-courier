@@ -539,6 +539,20 @@ progress. A prompt the person types, a compaction someone asks for (OpenCode's c
 move of the session, which OpenCode delivers like a message, counts as one only when the plugin did
 not see it enter the inbox; the compactions OpenCode makes on its own as the context fills never do.
 
+## A missed wake
+
+A message the courier delivers to an idle session — a spawned child's task, a report to its parent, a
+released group's notice — owes it a turn. When no turn follows within a short grace (30 seconds, two
+ticks of the scheduler), the scheduler's owner re-wakes the session exactly once: a synthetic message
+pointing at the one waiting in its inbox. If the turn still does not start within another grace, the
+session is flagged stalled. The flag is durable across restarts; the re-wake is once per missed wake.
+Only one copy or server acts, the scheduler's owner.
+
+The person sees the stall in the tree panel, where the session's row shows it as stalled, and in the
+footer, which counts "N stalled"; the tree RPC's `summary` returns `stalled: N`. A started turn
+clears the flag. A stalled top session is not flagged in its own view — the flag shows for a session
+listed under the open one.
+
 ## A child that asks for permission
 
 When a child's tool call needs an approval (a permission rule with `"effect": "ask"`, or no rule for

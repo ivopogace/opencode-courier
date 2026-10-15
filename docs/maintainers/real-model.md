@@ -178,4 +178,6 @@ on the current wording only. Not re-run on it: `COURIER_PERSON=other-server` and
 `longcat-2.5-preview-free`; their earlier results are in this file's history. Once, in the recursive
 scenario, a "numbers" session started without a group had its second half's report land in its inbox
 with no turn opened for it, and the server log held nothing for that minute; it never reported upward.
-Nothing in the plugin decides whether OpenCode opens a turn for a delivered message.
+The plugin now watches for exactly this: it re-wakes the session once, then flags it stalled in the
+panel and footer for the person ([reference](../reference.md#a-missed-wake)). Nothing in the plugin
+decides whether OpenCode opens a turn for a delivered message.

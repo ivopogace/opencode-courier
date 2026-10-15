@@ -213,6 +213,10 @@ Each tool's parameters: [the reference](docs/reference.md#the-tools).
   plugin, with the error or its last reply, waking it if idle; one that waits on a request, its own
   children, a scheduled message or a webhook is not, nor is one that answers what you typed in its
   session. [More](docs/reference.md#a-child-that-fails).
+- **A missed wake is caught.** When a message delivered to an idle session — a child's task, a
+  report to its parent, a released group's notice — is not followed by a turn within a short grace,
+  the plugin re-wakes the session once, then flags it stalled in the panel and footer for you.
+  [More](docs/reference.md#a-missed-wake).
 - **Permission requests and questions reach you.** A child's request or question is passed to the
   session at the top of its tree, any number of levels down. For a request, that session proposes an
   answer with `courier_answer`, and OpenCode asks you in its own permission prompt, in that session

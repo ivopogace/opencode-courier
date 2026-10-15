@@ -948,12 +948,22 @@ top of the open session's lineage down, so every session of a tree, the root or 
 same, every session of the tree, however many it has started over time (those past retention left out),
 so an ask is never hidden behind older sessions. It lists the tree's permission requests
 and questions as `courier_status` lists them (`pending`), and each session's forms, leaving out the
-question tool's own forms, which are listed as their questions. One line per ask, oldest first (in the
-order the inbox first saw them, and in the tree's order among those seen together):
+question tool's own forms, which are listed as their questions. It also lists the top session's own
+permission requests, first: chiefly the prompt [`courier_answer`'s `once`](#a-child-that-asks-for-permission)
+has OpenCode show there, which holds the child's request up and which OpenCode shows only in the top
+session's view, so a person looking at a child would not see it otherwise. Such a prompt reads
+`Permission (top session): courier_answer once for "<action> <resources>"`, says `allowing it passes the
+request below on`, and the child's request it is for says `the top session's prompt asks for it`: allowing
+the prompt passes `once` on to the child, so the child's request needs no answer of its own (answered
+directly, it settles and the prompt, once allowed, passes nothing on). Any other request of the top's own
+reads `Permission (top session): <action> <resources>`. The top's own requests are answered as the others
+are, in the top session. One line per ask, the top's first, then oldest first (in the order the inbox first
+saw them, and in the tree's order among those seen together):
 
 ```
-Waiting on you (2)
-  Permission: shell echo courier-asks         Root › Fix the bug › Write tests   depth 2 · group pair
+Waiting on you (3)
+  Permission (top session): courier_answer once for "shell echo courier-asks"   Root   top session · allowing it passes the request below on
+  Permission: shell echo courier-asks         Root › Fix the bug › Write tests   depth 2 · group pair · the top session's prompt asks for it
   Question: Greeting: Which greeting?         Root › Fix the bug                 depth 1
 ```
 
@@ -1013,13 +1023,17 @@ first read, are not announced, except those of the sessions the events name.
 ```
 POST /api/rpc/courier-person/asks?directory=<location> {"input":{"sessionID":"ses_…"}}
 {"output":{"top":"ses_…","sessions":[{"sessionID":"ses_…","title":"Fix the bug","parentID":"ses_…","depth":1}],
-  "permissions":[{"sessionID":"ses_…","requestID":"per_…","action":"shell","resources":["echo hi"],"save":["echo *"]}],
+  "permissions":[{"sessionID":"ses_top","requestID":"per_…","action":"shell","resources":["echo hi"],"passesOn":{"sessionID":"ses_…","requestID":"per_…"}},
+    {"sessionID":"ses_…","requestID":"per_…","action":"shell","resources":["echo hi"],"save":["echo *"]}],
   "questions":[{"sessionID":"ses_…","requestID":"question_…","questions":[…],"stopped":true}]}}
 POST /api/rpc/courier-person/answer?directory=<location> {"input":{"sessionID":"ses_…","requestID":"question_…","answers":[["Hi"]]}}
 {"output":{"answered":true,"by":"result"}}
 ```
 
-`sessions` has `group` for a member of a join group. `answer` gives `{"answered": false}` for a question that no longer waits, and `problem` with the
+`sessions` has `group` for a member of a join group. `permissions` starts with the top session's own
+requests, whose `sessionID` is `top` (not in `sessions`), for a tree with at least one session below the
+top; one that `courier_answer` asked has `passesOn`, the child's request allowing it passes `once` on to,
+read from the request's `metadata`. `answer` gives `{"answered": false}` for a question that no longer waits, and `problem` with the
 reason when the answers do not fit. Forms are not in `asks`: the TUI lists them itself
 (`GET /api/session/:id/form`).
 

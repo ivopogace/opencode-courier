@@ -188,8 +188,7 @@ const NOTE = Symbol("note")
 
 /**
  * Adds the asks inbox: what the open session's courier tree waits on the person for, read through the person's RPC and
- * answered in dialogs, opened by its command; a sound for each new ask. Its open list is read again on the events of
- * `follows`. Returns its opener and its cleanup.
+ * answered in dialogs, opened by its command, its open list read again on `follows`; a sound for each new ask.
  */
 export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
   const person = ctx.client.rpc(personRpc)

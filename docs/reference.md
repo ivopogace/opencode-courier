@@ -950,7 +950,7 @@ with them. It closes once nothing is left. Shown again, the list starts with an 
 select is not given a query; a read that finds the same asks leaves it as it is, search and all.
 
 **Answering.** Choosing an ask opens its dialog; `esc` goes back to the list, which is read again after
-each answer and closes once nothing is left. While an ask is being answered the list follows nothing; a
+each answer and closes once nothing is left. While an ask is being answered the list follows nothing;
 an ask settled elsewhere meanwhile is reported when its answer is sent.
 
 - A permission request: `Allow once`, `Always allow` (only when the request has something to save, which

@@ -225,7 +225,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI.
 # `restart-question` and `roster` restart the server and share a shard; `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 roster:36 webhook:10 cleanup:4 subtree:2 nest:6 inbox:37 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 roster:36 webhook:10 cleanup:4 subtree:2 nest:6 stall:150 inbox:37 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1132,6 +1132,66 @@ run_nest() {
   check "and the child's commit is in its history" "$(git -C "$leaf_dir" log --format=%s | grep -qx 'mid work' && echo true || echo false)"
   check "the grandchild committed on courier/<its session>" "$(git -C "$WORK/project" log -1 --format=%s "courier/$nest_leaf" 2>/dev/null | grep -qx 'leaf work' && echo true || echo false)"
   check "the child merged it into its own worktree" "$([ -f "$mid_dir/leaf.txt" ] && echo true || echo false)"
+}
+
+run_stall() {
+  # A message the courier delivers to an idle session owes it a turn, and OpenCode 2.0.29 skips the wake
+  # while the session has a staged revert: the report is admitted with no turn behind it — a real missed
+  # wake on a real courier delivery. The missed-wake watch re-wakes the session once, with a synthetic
+  # the revert suppresses too, and then flags it stalled: the tree panel row, the footer and the summary.
+  scenario "a report whose wake a staged revert suppresses is re-woken once, then flagged stalled"
+  # The leaf's report is held back long enough to stage the revert on the middle while it is idle and
+  # before the report lands, so the delivery is admitted with no wake.
+  child_delay 15000
+  out=$(prompt "COURIER-STALL")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the root started a middle session" "$([ -n "$middle" ] && echo true || echo false)"
+  leaf=$(spawned_by "$middle")
+  check "the middle started a leaf" "$([ -n "$leaf" ] && echo true || echo false)"
+  for _ in $(seq 1 30); do [ "$(finished "$middle")" = true ] && break; sleep 1; done
+  check "the middle ended its turn before the report" "$([ "$(finished "$middle")" = true ] && echo true || echo false)"
+  # The deterministic missed-wake lever: POSTing to session/<id>/revert/stage stages a revert, which
+  # holds the session's input — and skips the wake of the next synthetic — until the revert commits.
+  message=$(api "session/$middle/message" | jq -r '.data[0].id')
+  staged=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
+    --data "{\"messageID\":\"$message\"}" "$SERVER/api/session/$middle/revert/stage")
+  check "the revert is staged on the idle middle" "$([[ $staged == 20* ]] && echo true || echo false)"
+  # What the middle's location saw, in order: after the middle's last turn ended, its inbox gets the
+  # leaf's report and then the watch's re-wake synthetic, and no turn starts after either of them.
+  wake_missed() {
+    jq -sr --arg session "$middle" '
+      [.[] | select(.sessionID == $session)] as $events
+      | ([$events | to_entries[] | select(.value.type == "session.execution.succeeded") | .key] | last) as $end
+      | if $end == null then false
+        else $events[$end + 1:] | map(.type) as $after
+        | ($after | map(select(. == "session.inbox.enqueued")) | length) >= 2 and ($after | map(. == "session.execution.started") | any | not)
+        end' "$WORK/probe.log"
+  }
+  for _ in $(seq 1 120); do [ "$(wake_missed)" = true ] && break; sleep 1; done
+  check "the report and the re-wake synthetic were admitted, and no turn started after either" "$(wake_missed)"
+  # The scheduler's owner flags the middle stalled once its re-woken grace has passed too: the summary
+  # of the root's tree counts it.
+  tree_summary() {
+    curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier/summary?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" \
+      -H 'content-type: application/json' -d "{\"input\":{\"sessionID\":\"$root\"}}" | jq -c '.output'
+  }
+  for _ in $(seq 1 120); do [ "$(jq -r '.stalled // 0' <<<"$(tree_summary)")" = 1 ] && break; sleep 1; done
+  summary=$(tree_summary)
+  echo "  $summary"
+  check "the root's tree summary counts the stalled middle" "$(jq -r '.stalled == 1' <<<"$summary")"
+  # The TUI's footer counts it too, on the root's session screen.
+  tmux kill-session -t courier-stall-tui 2>/dev/null || true
+  tmux new-session -d -s courier-stall-tui -x 220 -y 40 \
+    "cd '$WORK/project' && LANG=C.UTF-8 OPENCODE_PASSWORD='$OPENCODE_PASSWORD' TERM=xterm-256color '$OPENCODE' --server '$SERVER' --session '$root' 2>'$WORK/stall-tui.err'; sleep 600"
+  shown=false
+  for _ in $(seq 1 40); do
+    if tmux capture-pane -pt courier-stall-tui 2>/dev/null | grep -qF "1 stalled"; then shown=true; break; fi
+    sleep 1
+  done
+  tmux capture-pane -pt courier-stall-tui >"$WORK/stall-tui.txt" 2>/dev/null || true
+  tmux kill-session -t courier-stall-tui 2>/dev/null || true
+  check "the TUI footer counts the stalled middle" "$shown"
 }
 
 run_inbox() {

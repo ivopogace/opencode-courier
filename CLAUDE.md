@@ -23,7 +23,8 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
 - `skill.ts`: the `courier-orchestrate` skill and its text, registered through the skill domain; it
   imports only `kernel/`.
 - `tui.tsx`: the package's `tui` entrypoint, a second composition root, adding each module's TUI part
-  (`addAsksInbox`, then `addTreeStatus`, whose "waiting on you" opens the inbox, `addTreePanel` and
+  (`addAsksInbox`, whose open list follows the footer's events, `tree/tui.tsx`'s `CHANGES`, then
+  `addTreeStatus`, whose "waiting on you" opens the inbox, `addTreePanel` and
   `addTreeAttention`); it imports only `@opencode/plugin/tui` and the modules' `tui.tsx` and `rpc.ts`.
   Bundled alone to `dist/tui.js` by `script/build-tui.ts` (OpenTUI's Solid transform, every package
   external, as the host provides them); `tsconfig.build.json` leaves the `tui.tsx` files out and

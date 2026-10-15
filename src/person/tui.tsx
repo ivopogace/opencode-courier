@@ -188,9 +188,10 @@ const NOTE = Symbol("note")
 
 /**
  * Adds the asks inbox: what the open session's courier tree waits on the person for, read through the person's RPC and
- * answered in dialogs, opened by its command; a sound for each new ask. Returns its opener and its cleanup.
+ * answered in dialogs, opened by its command; a sound for each new ask. Its open list is read again on the events of
+ * `follows`. Returns its opener and its cleanup.
  */
-export function addAsksInbox(ctx: Context) {
+export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
   const person = ctx.client.rpc(personRpc)
   const currentTitle = (sessionID: string) => ctx.data.session.get(sessionID)?.title
   // Where the session runs, which has the plugin loaded, as the footer asks.
@@ -409,8 +410,27 @@ export function addAsksInbox(ctx: Context) {
     }
   }
 
+  type Found = Awaited<ReturnType<typeof read>>
+  /** The list on screen: its tree, its asks' keys, and how to show a newer read of it in its place. */
+  let listing: { readonly sessionID: string; readonly keys: string; readonly replace: (found: Found) => void } | undefined
+  let following: ReturnType<typeof setTimeout> | undefined
+  const keysOf = (listed: ReadonlyArray<Ask>) => listed.map((ask) => ask.key).join("\n")
+  let reads = 0
+  /** Reads the tree of the list on screen again, and shows the new list when its asks changed; of overlapping reads, the last. */
+  const follow = async () => {
+    const sessionID = listing?.sessionID
+    if (!sessionID) return
+    const ticket = ++reads
+    const found = await read(sessionID)
+    const shown = listing
+    if (ticket === reads && shown?.sessionID === sessionID && keysOf(found.listed) !== shown.keys) shown.replace(found)
+  }
+
   let opened = false
-  /** Lists the asks of the open session's tree, answers the one chosen, and lists what is left, until none is or the person leaves. */
+  /**
+   * Lists the asks of the open session's tree, answers the one chosen, and lists what is left, until none is or the person
+   * leaves; while the list is shown it follows the tree, shown again as asks arrive or are settled elsewhere.
+   */
   async function open(sessionID = openSession()) {
     if (!sessionID) {
       ctx.ui.toast.show({ title: "courier", message: "Open a session to see what its sessions ask you.", variant: "info" })
@@ -419,15 +439,19 @@ export function addAsksInbox(ctx: Context) {
     if (opened) return
     opened = true
     try {
-      for (let first = true; ; first = false) {
-        const found = await read(sessionID).catch(fail("The asks could not be read"))
-        if (!found) return
+      let found = await read(sessionID).catch(fail("The asks could not be read"))
+      // Whether this read replaces a list still on screen.
+      let shown = false
+      for (let first = true; found; first = false) {
         const { asks, listed } = found
         if (!listed.length) {
           if (first) ctx.ui.toast.show({ title: "courier", message: "Nothing in this courier tree waits on you.", variant: "info" })
+          // All settled elsewhere while it was shown: the list closes.
+          if (shown) ctx.ui.dialog.clear()
           return
         }
         const top = ctx.data.session.get(asks.top)?.title ?? asks.top
+        const newer = new Promise<Found>((replace) => void (listing = { sessionID, keys: keysOf(listed), replace }))
         const choosing = ctx.ui.dialog.select<Ask>({
           title: `Waiting on you (${listed.length})`,
           placeholder: "Search",
@@ -435,16 +459,28 @@ export function addAsksInbox(ctx: Context) {
         })
         // Wider than a dialog opens, for where each ask comes from.
         ctx.ui.dialog.set({ size: "large" })
-        const chosen = await choosing
+        // A newer list replaces this one, whose select then resolves with nothing.
+        const next = await Promise.race([choosing.then((chosen) => ({ chosen })), newer.then((read) => ({ read }))])
+        listing = undefined
+        shown = "read" in next
+        if ("read" in next) {
+          found = next.read
+          continue
+        }
+        const { chosen } = next
         if (!chosen) return
         const done = await answer(chosen).catch((error: unknown) => {
           fail("The answer was not passed on")(error)
           return false
         })
         if (done) answered.add(chosen.key)
+        found = await read(sessionID).catch(fail("The asks could not be read"))
       }
     } finally {
       opened = false
+      listing = undefined
+      clearTimeout(following)
+      following = undefined
     }
   }
 
@@ -483,6 +519,11 @@ export function addAsksInbox(ctx: Context) {
   }
   void sound().catch(() => undefined)
   const unlisten = ctx.data.listen(({ details }) => {
+    if (listing && follows.has(details.type) && !following)
+      following = setTimeout(() => {
+        following = undefined
+        void follow().catch(() => undefined)
+      }, SETTLE_MS)
     if (details.type !== "permission.asked" && details.type !== "form.created") return
     const data = (details as { data?: { sessionID?: string; form?: { sessionID?: string } } }).data
     const eventSession = data?.sessionID ?? data?.form?.sessionID
@@ -514,6 +555,7 @@ export function addAsksInbox(ctx: Context) {
     open,
     cleanup: () => {
       clearTimeout(settling)
+      clearTimeout(following)
       unlisten()
     },
   }

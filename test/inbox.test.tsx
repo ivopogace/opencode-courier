@@ -1,7 +1,7 @@
 // The asks inbox, the person module's TUI part, against a fake TUI context whose dialogs a test answers.
 import { describe, expect, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin/tui"
-import { addAsksInbox, askFooter, askTitle, asksOf, INBOX_COMMAND, pathOf, SETTLE_MS, shown, soundOf, type Ask } from "../src/person/tui.js"
+import { addAsksInbox, askFooter, askTitle, asksOf, INBOX_COMMAND, pathOf, SETTLE_MS, shown, type Ask } from "../src/person/tui.js"
 import type { Answered, Asks } from "../src/person/rpc.js"
 import { REJECTED } from "../src/person/text.js"
 
@@ -135,7 +135,6 @@ describe("what the inbox lists", () => {
     expect(pathOf(empty, "ses_b", "Root")).toBe("Root › Fix the bug › Write tests")
     expect(listed.map(askFooter)).toEqual(["depth 1", "depth 1", "depth 2 · group pair"])
     expect(askFooter({ ...listed[0]!, question: { ...greeting, stopped: true } } as Ask)).toBe("depth 1 · cut off, answered by message")
-    expect(listed.map(soundOf)).toEqual(["question", "question", "permission"])
   })
 
   test("a form field is asked unless hidden or its conditions on earlier answers fail", () => {

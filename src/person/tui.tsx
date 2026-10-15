@@ -1,5 +1,4 @@
 import type { Plugin } from "@opencode/plugin/tui"
-import type { AttentionSoundName } from "@opencode/plugin/tui/context"
 import { personRpc, type AskedPermission, type AskedQuestion, type Asks, type TreeSession } from "./rpc.js"
 import { REJECTED } from "./text.js"
 
@@ -78,9 +77,6 @@ export function askFooter(ask: Ask) {
     .filter(Boolean)
     .join(" · ")
 }
-
-/** The sound an ask arriving plays: a permission request's, or a question's for questions and forms. */
-export const soundOf = (ask: Ask): AttentionSoundName => (ask.kind === "permission" ? "permission" : "question")
 
 /** Whether a form field is shown, given the answers so far: hidden ones never, conditional ones when their conditions hold, as OpenCode reads them (a condition on an unanswered field is false; on a multiselect, `eq` means includes). */
 export function shown(field: FormField, answers: FormAnswer) {

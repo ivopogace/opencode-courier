@@ -377,6 +377,8 @@ describe("the tree panel's lines", () => {
     )
     expect(statusLine(row("ses_a", { state: "waiting", isolated: true }))).toBe("waiting on you · owes a report · isolated")
     expect(statusLine(row("ses_a", { outcome: "failed", report: { state: "ended", progressed: false } }))).toBe("failed · ended without a report")
+    expect(statusLine(row("ses_a", { outcome: "interrupted", stopped: true, report: { state: "ended", progressed: false } }))).toBe("stopped")
+    expect(statusLine(row("ses_a", { stopped: true, report: { state: "owed", progressed: false } }))).toBe("stopped · owes a report")
     const { report: _, ...unreported } = row("ses_a", { state: "running" })
     expect(statusLine(unreported)).toBe("running")
   })

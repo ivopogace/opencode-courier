@@ -40,6 +40,8 @@ const Row = Schema.Struct({
   state: Schema.Literals(["running", "waiting", "idle", "gone"]),
   /** How its last turn ended. */
   outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "interrupted"])),
+  /** Set when courier_stop stopped it since its last prompt. */
+  stopped: Schema.optionalKey(Schema.Boolean),
   /** Its report since its last prompt: still owed, arrived (held with its group or delivered), or its turn ended without one. */
   report: Schema.optionalKey(
     Schema.Struct({ state: Schema.Literals(["owed", "reported", "ended"]), status: Schema.optionalKey(Schema.String), progressed: Schema.Boolean }),

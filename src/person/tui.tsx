@@ -219,7 +219,7 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     const route = ctx.ui.router.current()
     return route.type === "session" ? route.sessionID : undefined
   }
-  // When the inbox first saw each ask, so it lists the oldest first; and those it answered, which the server may list a moment longer.
+  // When the inbox first saw each ask, so it lists the oldest first after the top's own; and those it answered, which the server may list a moment longer.
   const firstSeen = new Map<string, number>()
   const answered = new Set<string>()
   let seen = 0

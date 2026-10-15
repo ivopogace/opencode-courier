@@ -11,9 +11,8 @@ export interface PersonRpcPorts {
 }
 
 /**
- * The permission requests and questions waiting in the courier tree a session is in, from the roster: every session
- * of it, read from the top of its lineage down, so each session of the tree sees the same inbox; and the top's own
- * permission requests, such as the prompt courier_answer asks there.
+ * The permission requests and questions waiting in the courier tree a session is in, the top's own requests first, read from the
+ * roster from the top of its lineage down, so each session of the tree sees the same inbox.
  */
 export async function asks(ports: PersonRpcPorts, sessionID: string): Promise<Asks> {
   const { storage } = ports.questions

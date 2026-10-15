@@ -184,7 +184,7 @@ const polledIn = (turns) => looksIn(turns[0] ?? []) > 0 || turns.slice(1).some((
 const pollers = orchestrators.filter(([, entry]) => polledIn(turnsOf(entry.list))).map(([id]) => id)
 // The sessions a turn started; an orchestrator starts its batch in one turn, never one session alone.
 const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length
-const splitOnce = (list) => turnsOf(list).every((turn) => spawnsIn(turn) !== 1)
+const notOneInAll = (list) => spawnsOf(list).length !== 1
 const finalText = textOf(root.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
 // A session's report, as its parent got it; the first one, since the brief asks for exactly one.
 const reportOf = (id) => deliveriesFrom(tree.get(tree.get(id).parentID).list, id)[0]
@@ -208,8 +208,8 @@ const checks = [
   ["the root ended its first turn after spawning, with no reports in it", ended(first.at(-1)) && !failed(first.at(-1)) && !first.some((message) => reportersOf(message).some((from) => tree.has(from)))],
   ["no orchestrator polled (courier_status, courier_children, courier_tree, sleep)", pollers.length === 0],
   [
-    "at least one child spawned at least two of its own in one turn, and no session ever started exactly one",
-    subOrchestrators.some(([, entry]) => spawnsIn(turnsOf(entry.list)[0] ?? []) >= 2) && orchestrators.every(([, entry]) => splitOnce(entry.list)),
+    "at least one child spawned at least two of its own in one turn, and no session started exactly one in all",
+    subOrchestrators.some(([, entry]) => spawnsIn(turnsOf(entry.list)[0] ?? []) >= 2) && orchestrators.every(([, entry]) => notOneInAll(entry.list)),
   ],
   [`no session went past maxDepth ${maxDepth}`, [...tree.values()].every((entry) => entry.depth <= maxDepth)],
   ["every spawned session reported to its parent, with a status", spawned.length > 0 && spawned.every(([id]) => reportOf(id) !== undefined)],

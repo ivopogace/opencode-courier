@@ -241,7 +241,7 @@ the top of a tree.
 **The brief says when to split.** A spawned session is told its depth and the limits. Below
 `maxDepth` it is given a rule: split the task when it has 2 or more independent, substantial parts
 touching separate files or areas, one session per part; do it itself when it is small, sequential or
-tightly coupled, and never start exactly one session; and say which in one line of its reply,
+tightly coupled, and never start exactly one session for the whole task; and say which in one line of its reply,
 `split: no, because …; considered: <the parts you weighed>` or `split: <n> parts: …`, so that a
 transcript tells a reasoned decision to do the task itself from one never made, and a reviewer can
 see which parts were weighed. A session that splits orchestrates: it ends its turn while its children
@@ -294,16 +294,21 @@ dialog, which attaches its text to the next prompt. How OpenCode lists, loads an
 
 Its text is short and model-facing. It names no limits (the role part and the brief give the
 session's own) and says, in order: decide whether to split or do, by [the brief's
-rule](#session-trees-and-their-limits), never starting exactly one session. An implementation task
-with one tightly coupled core usually still has independent parts: its e2e scenario, its
-documentation, sometimes a second test file, and a review of the core by a session with fresh
-context, which reads the committed diff against the task and the repository's rules and reports its
-findings (`isolate: false`, it edits nothing). The skill asks the session to weigh each of them, to do
-the core itself first and commit it, so that the names and texts the other parts depend on are fixed,
-then, if 2 or more remain, to start one session per remaining part in one group. Then it says which
+rule](#session-trees-and-their-limits), never starting exactly one session for the whole task, and
+keeping the deciding, checking and integrating while handing off the long reading and writing, since
+what a session reads and writes stays in its context for every later turn. An implementation task with
+one tightly coupled core usually still has independent parts: finding out what the change needs (a
+session with `isolate: false` reads the code, or a library's or a host's source, and reports what it
+found), its e2e scenario, its documentation, sometimes a second test file, and a review of the core by
+a session with fresh context, which reads the committed diff against the task and the repository's
+rules and reports its findings (`isolate: false`, it edits nothing). The skill asks the session to
+weigh each of them and, when the other parts depend on names and texts the core fixes, to split in
+stages: the core first, itself when it is small or by one session when it is big, merged and committed
+before the rest start, then, if 2 or more parts remain, one session per remaining part in one group. Then it says which
 in one line of the reply before starting, `split: no, because …; considered: <the parts you weighed>`
 or `split: <n> parts: …`; plan the parts so that no two edit the same files, each task complete
-enough to be done without the orchestrator; start them with one `courier_spawn` per part, all in one
+enough to be done without the orchestrator and telling the session to run its checks through the
+project's scripts, since each permission request below the orchestrator wakes it and waits on the person; start them with one `courier_spawn` per part, all in one
 [join group](#join-groups), `isolate: true` where parts edit files in parallel; end the turn, without
 polling; read each [report](#a-childs-report) by its status and artifacts, and what to do on `done`,
 `partial`, `blocked` and `failed`; verify first-hand, never through another session (a review

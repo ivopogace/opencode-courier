@@ -157,7 +157,7 @@ checker (`e2e/real-model-recursive.mjs`) reads every session reached from the ro
 `courier_spawn` calls, waits until the tree has settled, and makes nine checks: the root spawned at
 least two children in its first turn; it ended that turn with no reports in it; no orchestrator polled
 (`courier_status`, `courier_children`, `courier_tree`, `sleep`, by the fan-out's rule); at least one
-child spawned at least two of its own in one turn, and no session ever started exactly one; no session
+child spawned at least two of its own in one turn, and no session started exactly one in all; no session
 went past `maxDepth`; every spawned session reported to its parent with a status; each sub-orchestrator
 reported upward once, after its own children had reported to it; the files hold the expected values;
 and the root's final reply holds them. Its notes say which sessions loaded the skill, used a join group,
@@ -166,6 +166,7 @@ scheduled a check-in or had a spawn refused, and each report's status.
 | Model | OpenCode | Result |
 |---|---|---|
 | `longcat-2.5-preview-free` | 2.0.26 | 8/9: every file right and all four reports `done` through two groups; only the root's last turn was lost to a refused request. Two more runs were refused by Zen's free quota (`provider.quota`) after the root had loaded the skill and split into a group. |
+| `longcat-2.5-preview-free`, through OpenCode's catalog (`COURIER_BASE_URL` empty) | 2.0.29 | Inconclusive, 5/9: the root loaded the skill and started both parts in one group, the "numbers" session split its halves into a group of its own, both leaves said `split: no` and did their part, and no session polled or started exactly one; then Zen's free quota refused 8 of the 15 requests (`provider.quota`), before any file was written or any report sent. A second run was refused on its second request. |
 
 ## Caveats
 

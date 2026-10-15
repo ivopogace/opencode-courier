@@ -16,17 +16,22 @@ export const SKILL_CONTENT = [
     "opencode-courier role line in your system prompt, names your depth in the session tree and its limits.",
   "",
   "1. Decide: split or do. Split when the task has 2 or more independent, substantial parts touching separate files or " +
-    "areas; do it yourself when it is small, sequential or tightly coupled. Never start exactly one session. " +
-    "An implementation task with one tightly coupled core usually still has independent parts: its e2e scenario, its " +
+    "areas; do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole " +
+    "task: it only adds a hop. What you read and write yourself stays in your context for every later turn, so keep the " +
+    "deciding, checking and integrating, and hand off the long reading and writing. An implementation task with one tightly " +
+    "coupled core usually still has independent parts: finding out what the change needs (a session with isolate: false " +
+    "reads the code, or a library's or a host's source, tries things and reports what it found), its e2e scenario, its " +
     "documentation, sometimes a second test file, and a review of the core by a session with fresh context, which reads the " +
     "committed diff against the task and the repository's rules and reports its findings (isolate: false, it edits nothing). " +
-    "Weigh each of them: do the core yourself first and commit it, so that the names and texts the other parts depend on are " +
-    "fixed, then, if 2 or more remain, start one session per remaining part, in one group. A part that is itself big and " +
-    "divisible is split again by the session that gets it; at the deepest level a session does its part itself. " +
+    "Weigh each of them. When the other parts depend on names and texts the core fixes, split in stages: the core first, " +
+    "yourself when it is small or by one session when it is big, merged and committed before the rest start; then, if 2 or " +
+    "more parts remain, one session per remaining part, in one group. A part that is itself big and divisible is split again " +
+    "by the session that gets it; at the deepest level a session does its part itself. " +
     `Say which in one line of your reply, before you start: ${SPLIT_LINE}, so that a reasoned decision to do it ` +
     "yourself can be told from one never made.",
   "2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to " +
-    "produce and where, how to check it, what to report. Say if it may split its part further.",
+    "produce and where, how to check it, what to report. Say if it may split its part further, and to run its checks " +
+    "through the project's scripts (step 6): each permission request of a session below you wakes you and waits on the person.",
   "3. Start them: one courier_spawn per part, all with the same group name, so you are woken once with every report; " +
     "isolate: true for each part that edits files in parallel with another (commit your own work first if you are isolated " +
     "yourself). For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.",

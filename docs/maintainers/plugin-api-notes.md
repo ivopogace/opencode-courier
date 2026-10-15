@@ -82,6 +82,14 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.29`); paths be
   the `started` event (a subscription gap) or the events were reordered. No host bug was confirmed at this pin: neither
   path reproduces on demand, and the recursive run's stall matches the rare doorbell race above, so the plugin's
   missed-wake watch keys on the first signature rather than waiting on an upstream fix.
+- An item waiting in the inbox bumps the session's `time.updated` (seen: `updated` equal to the item's
+  `time.created`, `idle` unchanged), so `busy()` reads a session with an undelivered message as running. The
+  plugin API cannot list the inbox (`GET /api/session/:id/inbox` can); a delivered item becomes the stored
+  message with the same id. `session.synthetic` with the `id` of an item still waiting, or already delivered,
+  returns that item (`reconcile` in `packages/core/src/session/inbox.ts` matches on session and type only,
+  publishing nothing) and still wakes the session, so a wake sent again adds no second message. `resume: false`
+  admits an item without the wake, which the live test uses to stage a missed one. `session.status` and
+  `session.idle` are in the schema but published by nothing in core.
 - Every event carries `created`, the epoch milliseconds OpenCode published it at, which the report
   state compares with the server's clock at `courier_send`.
 - `session.context()` returns the session's stored messages (`SessionMessage.Info[]`), not the

@@ -16,24 +16,14 @@ export type RosterStorage = Storage
 /** How a session's wait for a report ended: it reported to its parent, or its turn failed or was interrupted. */
 export type Settled = "report" | "failed" | "interrupted"
 
-/** The notes kept of a spawned session's report state, and its missed-wake expectation; docs/maintainers/architecture.md has each. */
-export type ReportField = "prompt" | "settled" | "progress" | "told" | "stopped" | "wake"
+/** The notes kept of a spawned session's report state; docs/maintainers/architecture.md has each. */
+export type ReportField = "prompt" | "settled" | "progress" | "told" | "stopped"
 
 /** A report note as read: when it was made, and for `settled` how the wait ended and the report's status, as stored. */
 export interface ReportNote {
   readonly at: number | undefined
   readonly by: unknown
   readonly status: unknown
-}
-
-/** The states of a missed-wake expectation: due, re-woken once by the scheduler, then stalled. */
-export type WakeState = "due" | "rewoken" | "stalled"
-
-/** A wake expectation as stored: when the message was delivered, its state, and the text it was delivered with. */
-export interface WakeNote {
-  readonly at: number
-  readonly state: WakeState
-  readonly text: string
 }
 
 /** A stored value, as `Storage` gives and takes it. */
@@ -90,20 +80,43 @@ export interface ChildStore {
   peek(sessionID: string, field: "settled" | "progress"): Promise<Stored | undefined>
   /** Puts back a note `peek` read; one that was not there is removed. */
   restore(sessionID: string, field: "settled" | "progress", value: Stored | undefined): Promise<void>
-  /** Notes that a message delivered at `at` owes `sessionID` a turn with the text `text`, unless one is already expected. */
-  expectWake(sessionID: string, at: number, text: string): Promise<void>
-  /** A session's missed-wake expectation as stored, if any. */
-  wake(sessionID: string): Promise<WakeNote | undefined>
-  /** Puts a session's wake expectation back with a new state, keeping its text. */
-  noteWake(sessionID: string, note: WakeNote): Promise<void>
-  /** Drops a session's wake expectation: its turn started, and takes the message waiting for it. */
-  forgetWake(sessionID: string): Promise<void>
   /** Drops a session's report state. */
   forgetReport(sessionID: string): Promise<void>
   /** Every report key, by the session it is about. */
   reported(): Promise<ReportKeys>
   /** Removes report keys `reported` found, each best effort. */
   dropReported(keys: ReadonlyArray<string>): Promise<void>
+}
+
+/**
+ * A courier message waiting in a session's inbox, watched until it is delivered: `running` while the session runs a
+ * turn, which takes it at its next step; `idleAt` since the session was last seen idle with it waiting.
+ */
+export interface Wake {
+  readonly sessionID: string
+  readonly inboxID: string
+  /** When OpenCode enqueued it. */
+  readonly at: number
+  /** Its text and description, which waking the session again sends under the same inbox id. */
+  readonly text: string
+  readonly description?: string
+  readonly running: boolean
+  readonly idleAt?: number
+  /** When the scheduler woke the session again, the message still waiting. */
+  readonly rewoken?: number
+  /** When the session was found still not woken after that: it is stalled. */
+  readonly stalled?: number
+}
+
+export interface WakeStore {
+  /** Writes a watched message, replacing what was kept of it. */
+  put(wake: Wake): Promise<void>
+  /** The messages watched in a session's inbox. */
+  of(sessionID: string): Promise<Wake[]>
+  /** Every message watched. */
+  all(): Promise<Wake[]>
+  /** Stops watching a message: delivered, cancelled, or its session gone. */
+  remove(sessionID: string, inboxID: string): Promise<void>
 }
 
 /** A member of a join group with where it is kept. */
@@ -276,8 +289,6 @@ export interface StopPorts {
 export interface GroupPorts {
   readonly storage: Storage
   readonly session: Pick<Context["session"], "synthetic" | "get">
-  /** The clock, in epoch milliseconds, for the wake expectation a release notes. */
-  readonly now: () => number
   readonly log: (message: string) => void
 }
 
@@ -310,8 +321,6 @@ export interface WatchState {
   readonly seen: Set<string>
   /** The type of each item enqueued for a spawned session, by inbox id, for its delivery to look up. */
   readonly inbox: Map<string, string>
-  /** The sessions with a turn under way — a `started` with no terminal since — which the missed-wake watch reads. */
-  readonly running: Set<string>
 }
 
 /**

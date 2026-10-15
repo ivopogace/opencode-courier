@@ -8,6 +8,7 @@ import { awaited, reportOf, stoppedSincePrompt } from "./report.js"
 import { childStore, groupStore } from "./store.js"
 import { lastReply } from "./status.js"
 import { failureNotice, silentNotice } from "./text.js"
+import { forgetWakes, settleWake, wakeEnded, wakeStarted, watchWake, type Enqueued, type Execution, type InboxSettled } from "./wake.js"
 
 /** The part of OpenCode's `session.execution.failed` event the notice is made from. */
 export interface ExecutionFailed {
@@ -98,18 +99,6 @@ export async function notePrompt(
   const children = childStore(ports.storage)
   if ((await children.indexedParent(sessionID)) === undefined) return false
   await children.prompted(sessionID, event.created ?? ports.now())
-  return true
-}
-
-/**
- * Notes that a session's turn started, which clears its wake expectation: the turn takes the message waiting
- * for it. Claims nothing, like `noteEnqueued`: the clear is the same twice, and storage is shared, so any
- * server's watch clears it.
- */
-export async function noteStarted(ports: WatchPorts, event: SessionEvent) {
-  await childStore(ports.storage)
-    .forgetWake(event.data.sessionID)
-    .catch((error: unknown) => ports.log(`courier watch: could not clear the wake of ${event.data.sessionID}: ${String(error)}`))
   return true
 }
 
@@ -222,32 +211,35 @@ async function sealGroups(ports: WatchPorts, event: SessionEvent) {
   }
 }
 
-/** Notes a session's turn under way or ended, for the missed-wake watch: a `started` with no terminal since is running. */
-function turn(state: WatchState, sessionID: string | undefined, underWay: boolean) {
-  if (!sessionID) return
-  if (underWay) state.running.add(sessionID)
-  else state.running.delete(sessionID)
-}
-
 /** The events of spawned sessions' turns and inboxes, and their deletion: the tree's. */
 function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: HostEvent) {
-  const { sessionID } = (event.data ?? {}) as { sessionID?: string }
-  if (event.type === "session.execution.started") {
-    turn(state, sessionID, true)
-    return noteStarted(ports, event as unknown as SessionEvent)
-  }
-  if (event.type === "session.execution.succeeded" || event.type === "session.execution.failed" || event.type === "session.execution.interrupted")
-    turn(state, sessionID, false)
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent, outside)
   if (event.type === "session.execution.interrupted") return noteInterrupted(ports, event as unknown as SessionEvent)
   if (event.type === "session.inbox.enqueued") return noteEnqueued(ports, state.inbox, event as unknown as InboxEnqueued)
   if (event.type === "session.inbox.delivered") return notePrompt(ports, event as unknown as SessionEvent, state.inbox)
-  if (event.type === "session.deleted") {
-    turn(state, sessionID, false)
-    return noteDeleted(ports, event as unknown as SessionEvent)
-  }
+  if (event.type === "session.deleted") return noteDeleted(ports, event as unknown as SessionEvent)
   return undefined
+}
+
+/** The events that move a courier message waiting in a session's inbox: enqueued, taken, cancelled, and the turns around it. */
+function routeWake(ports: WatchPorts, event: HostEvent) {
+  if (event.type === "session.inbox.enqueued") return watchWake(ports, event as unknown as Enqueued)
+  if (event.type === "session.inbox.delivered" || event.type === "session.inbox.cancelled") return settleWake(ports, event as unknown as InboxSettled)
+  if (event.type === "session.execution.started") return wakeStarted(ports, event as unknown as Execution)
+  if (TURN_ENDS.has(event.type)) return wakeEnded(ports, event as unknown as Execution)
+  if (event.type === "session.deleted") return forgetWakes(ports, (event as unknown as SessionEvent).data.sessionID)
+  return undefined
+}
+
+/** The tree's handling of an event, then the wake watch's, which never fails the tree's. */
+async function route(ports: WatchPorts, state: WatchState, outside: Waits, event: HostEvent) {
+  const watched = routeWake(ports, event)?.catch((error: unknown) => ports.log(`courier watch: wake of ${event.type}: ${String(error)}`))
+  try {
+    return await routeTree(ports, state, outside, event)
+  } finally {
+    await watched
+  }
 }
 
 /**
@@ -256,7 +248,7 @@ function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: 
  */
 export function treeEvents(state: WatchState, outside: Waits): EventModule<WatchPorts> {
   return {
-    handle: (ports, event) => routeTree(ports, state, outside, event),
+    handle: (ports, event) => route(ports, state, outside, event),
     // After: a silent end is judged while the group the nudge may deliver is still there to wait on.
     after: (ports, event) => (TURN_ENDS.has(event.type) ? sealGroups(ports, event as unknown as SessionEvent) : undefined),
   }

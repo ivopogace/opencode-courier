@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs"
 import { forgetChild, forgetReports } from "./forget.js"
 import type { ReportKeys, RosterEntry, RosterStorage } from "./ports.js"
-import { childStore, wakeKey } from "./store.js"
+import { childStore } from "./store.js"
 
 /**
  * Entries older than this are dropped when their parent's roster is read, and on plugin setup,
@@ -72,13 +72,8 @@ export async function pruneExpired(storage: RosterStorage, now: number, exists: 
   await Promise.all([children.backfill(entries), dropOrphanedReports(storage, reported, entries)])
 }
 
-/**
- * Removes the report keys read of sessions that have no roster entry — except a session's wake
- * expectation, which is durable: a group's reports reach a parent that has no roster entry, and the
- * expectation is cleared by a turn starting rather than by the roster.
- */
+/** Removes the report keys read of sessions that have no roster entry. */
 async function dropOrphanedReports(storage: RosterStorage, reported: ReportKeys, entries: ReadonlyArray<RosterEntry>) {
   const sessions = new Set(entries.map((entry) => entry.sessionID))
-  const kept = new Map([...reported].map(([sessionID, keys]) => [sessionID, keys.filter((key) => key !== wakeKey(sessionID))]))
-  await forgetReports(storage, kept, [...reported.keys()].filter((sessionID) => !sessions.has(sessionID)))
+  await forgetReports(storage, reported, [...reported.keys()].filter((sessionID) => !sessions.has(sessionID)))
 }

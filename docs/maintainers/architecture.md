@@ -45,7 +45,7 @@ The import rules:
 Why it is shaped so:
 
 - **The platform does not import features.** Features register with it instead: `index.ts` hands the
-  scheduler its ordered tick jobs (`dueJob`, then `deliverReleased`, then the missed-wake watch) and
+  scheduler its ordered tick jobs (`dueJob`, `deliverReleased`, then `wakeMissed`) and
   the event follower its ordered event modules (`treeEvents`, then `personEvents`), each with phases
   (`handle` in list order, `after` in a `finally`, `followed`, `left` and `subscribed` around the
   subscription). There is no application event bus: OpenCode's event stream already is one, and a
@@ -75,11 +75,11 @@ directory, so a key or a stored value never changes shape. `test/store.test.ts` 
 | `report/<sessionID>/progress` | `{ at }`: when it last messaged its parent without a status. |
 | `report/<sessionID>/told` | `{ at }`: when its parent was last told it ended a turn without a report. |
 | `report/<sessionID>/stopped` | `{ at }`: when `courier_stop` stopped it. |
-| `report/<sessionID>/wake` | `{ at, state, text }`: a delivered message owes the session a turn; `state` is `due`, `rewoken` (the scheduler re-woken it once) or `stalled` (still no turn), `text` the delivered message. Durable, and cleared by a turn starting, so a restart loses nothing. |
 | `group/<parentID>/<name>/<sessionID>` | A join group member: title, `joinedAt`, its held report (`at`, status, text, artifacts) or how it left (`left: { at, by }`, `by` being `failed`, `interrupted`, `deleted` or `dropped`). |
 | `later/<id>` | A pending `courier_later` message. |
 | `question/<requestID>` | A relayed question, kept until answered (the 100 newest). |
 | `webhook/<topic, URI-encoded>/<sessionID>` | A webhook subscription. |
+| `wake/<sessionID>/<inboxID>` | A courier message waiting in a session's inbox, until delivered or cancelled: `at`, `text`, `description`, `running`, `idleAt`, `rewoken`, `stalled` ([a missed wake](../reference.md#a-missed-wake)). |
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers ([below](#two-servers)). |
 
 A session owes a report while `prompt` is later than `settled`, and its parent waits for it while
@@ -105,9 +105,8 @@ instance or copy sees it first. The hub runs the scheduler once per process and 
 events through two instances, one a standby, so that an instance unloading leaves no gap in which an
 event or a child's question is missed. A webhook receiver started by one instance is the one the
 others join, so two never contend for the port. The `courier_spawn` calls under way, the types
-of the items entering spawned sessions' inboxes, the sessions with a turn under way (which the
-missed-wake watch reads), and the forms shown now are kept process-wide under fixed keys of their
-own, so spawns in every location and copy count each other against the limits, whichever instance
+of the items entering spawned sessions' inboxes, and the forms shown now are kept process-wide under
+fixed keys of their own, so spawns in every location and copy count each other against the limits, whichever instance
 sees an item's delivery knows what it was, and every instance's footer and tree panel see a form
 whichever instance followed its events.
 
@@ -136,7 +135,7 @@ loading. Past that, what is under way finishes on its own.
 
 Two OpenCode servers on one data directory share the storage but not the hub
 ([plugin-api-notes.md](plugin-api-notes.md#two-servers-on-one-data-directory)). The scheduler's owner
-key, `scheduler/owner`, picks the one that delivers `courier_later` messages and released groups:
+key, `scheduler/owner`, picks the one that delivers `courier_later` messages and released groups, and wakes a session whose wake was missed:
 
 - A server's scheduler delivers while it holds the key, renewing it as it goes, and skips its tick
   while another server's key is less than 60 seconds old (four ticks, so a tick or two skipped by a

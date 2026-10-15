@@ -30,6 +30,7 @@ import { addSkill } from "./skill.js"
 import {
   addTreeTools,
   deliverReleased,
+  wakeMissed,
   dirtyOf,
   headOf,
   inspectWorktree,
@@ -37,12 +38,10 @@ import {
   readLimits,
   readNativeChildren,
   registerTreeRpc,
-  running,
   shapeContext,
   together,
   treeEvents,
   waitsOn,
-  wakeJob,
   type CleanupPorts,
   type CourierPorts,
   type SpawnGate,
@@ -70,13 +69,12 @@ const shown = sharedState<FormsShown>("formsShown", () => new Map())
 
 /**
  * What each tick of the scheduler does, in order, through the first loaded member, of whichever copy:
- * due `courier_later` messages, then released join groups, then the missed-wake watch. Every hub-v2
- * member's `later` is its LaterPorts, and its `watch` its WatchPorts.
+ * due `courier_later` messages, released join groups, then missed wakes. Every hub-v2 member's `later` is its LaterPorts.
  */
 const jobs: TickJob[] = [
   dueJob,
   (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
-  wakeJob,
+  (owner, claimed) => wakeMissed(owner.later as LaterPorts, claimed),
 ]
 
 const { join, track, nudge } = openInProcess(jobs)
@@ -87,7 +85,7 @@ const permissions = domains as () => Iterable<Permissions>
 // One set of handled events and of told permission requests for every instance in the process, since
 // several subscriptions and copies see the same events. The scheduler's claim set is the hub's own.
 const { watched } = hub
-const watchState: WatchState = { seen: watched.seen, inbox, running }
+const watchState: WatchState = { seen: watched.seen, inbox }
 const personState: PersonState = { ...watched, forms: hub.forms, shown }
 
 /**

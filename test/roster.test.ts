@@ -291,20 +291,6 @@ describe("roster", () => {
       )
     })
 
-    test("pruning on load keeps a wake expectation with no roster entry, which a restart would lose", async () => {
-      const { storage, store } = fakeStorage()
-      const now = 10 * RETENTION_MS
-      await childStore(storage).record(entry("ses_live", "ses_top", now))
-      // A group's reports reach a parent that has no roster entry: its expectation is durable.
-      store.set("report/ses_parent/wake", { at: 1, state: "due", text: "m" })
-      store.set("report/ses_orphan/prompt", { at: 1 })
-
-      await pruneExpired(storage, now)
-
-      expect(store.get("report/ses_parent/wake")).toEqual({ at: 1, state: "due", text: "m" })
-      expect(store.has("report/ses_orphan/prompt")).toBe(false)
-    })
-
     test("pruning on load keeps report state of a child spawned while it sweeps", async () => {
       const { storage, store } = fakeStorage()
       const now = 10 * RETENTION_MS

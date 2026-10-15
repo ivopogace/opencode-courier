@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { forgetChild } from "../src/tree/forget.js"
 import { holdReport, joinGroup, membershipOf } from "../src/tree/group.js"
 import type { RosterStorage } from "../src/tree/ports.js"
-import { childStore, groupStore } from "../src/tree/store.js"
+import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 
 /** A storage that logs every write and removal with the value as JSON, the form another copy or server reads it in. */
 function loggingStorage() {
@@ -76,8 +76,27 @@ test("the stores write a child's roster entry, reverse key, report state and gro
     "remove report/ses_child/progress",
     "remove report/ses_child/told",
     "remove report/ses_child/stopped",
-    "remove report/ses_child/wake",
   ])
   // The held report outlives the child's entry: it still goes to the parent with its group.
   expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_child"])
+})
+
+test("the wake store keeps a watched message under wake/<sessionID>/<inboxID>, without its key's ids, and reads back what it wrote", async () => {
+  const { storage, writes } = loggingStorage()
+  const wakes = wakeStore(storage)
+  await wakes.put({ sessionID: "ses_parent", inboxID: "msg_1", at: 10, text: "report", description: "Message from ses_child", running: false, idleAt: 10 })
+  await wakes.put({ sessionID: "ses_parent", inboxID: "msg_1", at: 10, text: "report", running: false, idleAt: 10, rewoken: 40, stalled: 70 })
+  await wakes.put({ sessionID: "ses_other", inboxID: "msg_2", at: 20, text: "notice", running: true })
+  expect(writes).toEqual([
+    'set wake/ses_parent/msg_1 {"at":10,"text":"report","description":"Message from ses_child","running":false,"idleAt":10}',
+    'set wake/ses_parent/msg_1 {"at":10,"text":"report","running":false,"idleAt":10,"rewoken":40,"stalled":70}',
+    'set wake/ses_other/msg_2 {"at":20,"text":"notice","running":true}',
+  ])
+  expect(await wakes.of("ses_parent")).toEqual([
+    { sessionID: "ses_parent", inboxID: "msg_1", at: 10, text: "report", running: false, idleAt: 10, rewoken: 40, stalled: 70 },
+  ])
+  expect((await wakes.all()).map((wake) => wake.inboxID)).toEqual(["msg_2", "msg_1"])
+  writes.length = 0
+  await wakes.remove("ses_parent", "msg_1")
+  expect(writes).toEqual(["remove wake/ses_parent/msg_1"])
 })

@@ -6,7 +6,7 @@ import type { Row, Tree, Wait } from "./rpc.js"
 import { standingIn } from "./status.js"
 import { childStore } from "./store.js"
 import { readTree, type Listed } from "./subtree.js"
-import { stalled } from "./wake.js"
+import { stalledAmong } from "./wake.js"
 
 type Messages = Awaited<ReturnType<CourierPorts["session"]["context"]>>
 
@@ -37,21 +37,24 @@ function reportRow(report: Listed["report"], status: Status | undefined): Pick<R
   return { report: { state: "reported", progressed: report.progressed, ...(status ? { status } : {}) } }
 }
 
-/** What a session does: waiting on a request to the person or a form it shows them, running, idle, or gone when OpenCode no longer knows it. */
-function stateOf(info: unknown, waits: number, running: boolean): Row["state"] {
+/**
+ * What a session does: waiting on a request to the person or a form it shows them, stalled, running, idle, or gone when
+ * OpenCode no longer knows it. A message waiting in its inbox makes a stalled session look busy.
+ */
+function stateOf(info: unknown, waits: number, stalled: boolean, running: boolean): Row["state"] {
   if (!info) return "gone"
   if (waits) return "waiting"
+  if (stalled) return "stalled"
   return running ? "running" : "idle"
 }
 /** One session of the panel: what it is doing, its report and group standing, its last tool call and its cost. */
-async function row(ports: CourierPorts, { entry, depth, info, pending, forms, report }: Listed): Promise<Row> {
+async function row(ports: CourierPorts, { entry, depth, info, pending, forms, report }: Listed, stalled: number | undefined): Promise<Row> {
   const { sessionID } = entry
-  const [messages, status, standing, stopped, stalledRow] = await Promise.all([
+  const [messages, status, standing, stopped] = await Promise.all([
     ports.session.context({ sessionID }).catch((): Messages => []),
     lastStatus(childStore(ports.storage), sessionID).catch(() => undefined),
     entry.group ? standingIn(ports, entry, entry.group) : undefined,
     stoppedSincePrompt(childStore(ports.storage), sessionID).catch(() => false),
-    stalled(ports.storage, sessionID).catch(() => false),
   ])
   const running = info !== undefined && busy(info.time)
   const tool = lastTool(messages)
@@ -60,10 +63,10 @@ async function row(ports: CourierPorts, { entry, depth, info, pending, forms, re
     parentID: entry.parentID,
     title: info?.title ?? entry.title,
     depth,
-    state: stateOf(info, pending.length + forms.length, running),
+    state: stateOf(info, pending.length + forms.length, stalled !== undefined, running),
+    ...(stalled !== undefined ? { stalled } : {}),
     ...(info?.outcome ? { outcome: info.outcome } : {}),
     ...(stopped ? { stopped } : {}),
-    ...(stalledRow ? { stalled: true } : {}),
     ...reportRow(report, status),
     ...(entry.group && standing ? { group: { name: entry.group, standing } } : {}),
     isolated: entry.isolated,
@@ -77,10 +80,12 @@ async function row(ports: CourierPorts, { entry, depth, info, pending, forms, re
 
 /**
  * The tree panel's rows: the sessions under a session as courier_tree lists them, at most `maxTotal`, the live ones
- * first, then the newest, each as `row` reads it; `truncated` counts the older ones left out.
+ * first, then the newest, each as `row` reads it; `truncated` counts the older ones left out, and `stalled` says the root is.
  */
 export async function panel(ports: CourierPorts, rootID: string): Promise<Tree> {
   const { kept, leftOut } = await readTree(ports, rootID)
-  const rows = await Promise.all(kept.map((node) => row(ports, node)))
-  return { rows, ...(leftOut ? { truncated: leftOut } : {}) }
+  const stalled = await stalledAmong(ports, [rootID, ...kept.map((node) => node.entry.sessionID)])
+  const rows = await Promise.all(kept.map((node) => row(ports, node, stalled.get(node.entry.sessionID))))
+  const own = stalled.get(rootID)
+  return { rows, ...(leftOut ? { truncated: leftOut } : {}), ...(own !== undefined ? { stalled: own } : {}) }
 }

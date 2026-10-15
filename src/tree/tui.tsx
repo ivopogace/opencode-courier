@@ -56,8 +56,8 @@ export const TICK_MS = 1000
 export function summaryLine(summary: Summary, maxWidth = Infinity) {
   const groups = summary.groups.map((group) => `group ${group.name} ${group.reported}/${group.members}`)
   const parts = [
-    summary.waiting ? `${summary.waiting} waiting on you` : "",
     summary.stalled ? `${summary.stalled} stalled` : "",
+    summary.waiting ? `${summary.waiting} waiting on you` : "",
     summary.running ? `${summary.running} running` : "",
     ...groups,
     summary.idle ? `${summary.idle} idle` : "",
@@ -106,10 +106,10 @@ export function statusLine(row: Row) {
     .join(" · ")
 }
 
-/** What a session does, one the courier re-woken after a missed wake, an idle one stopped, or whose last turn failed or was interrupted, saying so. */
+/** What a session does, an idle one stopped, or whose last turn failed or was interrupted, saying so. */
 function stateWord(row: Row) {
-  if (row.stalled) return "stalled"
   if (row.state === "waiting") return "waiting on you"
+  if (row.state === "stalled") return "stalled"
   if (row.state === "idle" && row.stopped) return "stopped"
   if (row.state === "idle" && (row.outcome === "failed" || row.outcome === "interrupted")) return row.outcome
   return row.state
@@ -137,9 +137,15 @@ export function activityLine(row: Row, now: number) {
     .join(" · ")
 }
 
-/** The lines a row shows under its title: an orchestrator's bar, a paused session's requests, or else a live leaf's activity. */
+/** What a stalled session's row, or the panel of one, says of it: "a message waits in its inbox since 2m 05s, woken again in vain". */
+export function stalledLine(since: number, now: number) {
+  return `a message waits in its inbox since ${duration(now - since)}, woken again in vain`
+}
+
+/** The lines a row shows under its title: an orchestrator's bar, a paused or stalled session's wait, or else a live leaf's activity. */
 export function detailLines(row: Row, rows: ReadonlyArray<Row>, now: number) {
   const started = parts(rows, row.sessionID)
+  if (row.stalled !== undefined) return [...(started.started ? [bar(started)] : []), stalledLine(row.stalled, now)]
   if (row.waits.length) return [...(started.started ? [bar(started)] : []), ...row.waits.map(waitLine)]
   if (started.started) return [bar(started)]
   return row.state === "gone" ? [] : [activityLine(row, now)]
@@ -153,9 +159,13 @@ function courierOf(ctx: Context) {
   return { courier, location }
 }
 
-/** A counter bumped once `settle` ms after the first of a burst of the `types` of events, and its cleanup. */
+/** How often the footer and the panel ask again with no event: the scheduler flags a stalled session without one. */
+export const REREAD_MS = 15_000
+
+/** A counter bumped once `settle` ms after the first of a burst of the `types` of events, and every `REREAD_MS`; and its cleanup. */
 function changes(ctx: Context, types: ReadonlySet<string>, settle: number) {
   const [changed, setChanged] = createSignal(0)
+  const reread = setInterval(() => setChanged((count) => count + 1), REREAD_MS)
   let settling: ReturnType<typeof setTimeout> | undefined
   const unlisten = ctx.data.listen(({ details }) => {
     if (!types.has(details.type) || settling) return
@@ -168,6 +178,7 @@ function changes(ctx: Context, types: ReadonlySet<string>, settle: number) {
     changed,
     () => {
       clearTimeout(settling)
+      clearInterval(reread)
       unlisten()
     },
   ] as const
@@ -431,6 +442,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
   }))
   const root = () => parts(rows(), view.root)
   const rowColor = (row: Row) => {
+    if (row.state === "stalled") return theme.text.feedback.error.base
     if (row.state === "waiting") return theme.text.feedback.warning.base
     return row.state === "gone" ? theme.text.muted : theme.text.base
   }
@@ -453,6 +465,9 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
       </box>
       <Show when={latest()?.error}>
         <text fg={theme.text.feedback.error.base}>courier RPC failed: {latest()?.error}</text>
+      </Show>
+      <Show when={latest()?.tree?.stalled}>
+        <text fg={theme.text.feedback.error.base}>This session is stalled: {stalledLine(latest()!.tree!.stalled!, now())}</text>
       </Show>
       <Show when={latest()?.tree && !rows().length}>
         <text fg={theme.text.muted}>No session started with courier_spawn under this one.</text>

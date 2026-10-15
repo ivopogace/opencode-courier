@@ -15,7 +15,7 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
 
 - `index.ts`: the plugin, an Effect plugin running the promise one, and the composition root. Builds
   the ports, adds the tools in a fixed order (`addTreeTools`, `addPersonTools`, `addSchedulingTools`,
-  `addWebhookTools`), hands the platform the ordered tick jobs (`dueJob`, then `deliverReleased`) and
+  `addWebhookTools`), hands the platform the ordered tick jobs (`dueJob`, `deliverReleased`, then `wakeMissed`) and
   event modules (`treeEvents`, then `personEvents`), composes the `Waits` port from its suppliers,
   wires `courier_stop` to `scheduling/`'s `cancelScheduled`, and starts the webhook receiver; the
   Effect half wraps the question tool and binds it to its instance's member in the hub. The only file
@@ -46,9 +46,9 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   `platform/json.ts` (and OpenCode's types); `text.ts` the child brief, the role part, the
   refusals, the report body, the failure, silent, stopped and group notices and the tool results.
   Outbound: `store.ts`, the only file that knows the storage keys and layouts of `roster/`,
-  `roster-by-child/`, `report/` and `group/`: `childStore(storage)` (a child's roster entry, its
-  reverse index and its report state, which go together) and `groupStore(storage)` (join groups'
-  members and held reports), built inside `tree/` from the `storage` its ports already carry; no file
+  `roster-by-child/`, `report/`, `group/` and `wake/`: `childStore(storage)` (a child's roster entry, its
+  reverse index and its report state, which go together), `groupStore(storage)` (join groups'
+  members and held reports) and `wakeStore(storage)` (the courier messages waiting in an inbox), built inside `tree/` from the `storage` its ports already carry; no file
   outside `tree/` imports it. `forget.ts`, the one cleanup service: forgetting a child (`forgetChild`:
   its entry and report state and, at once and best effort, its group membership, as a held report
   outlives the entry), courier_cleanup's (`forgetDropped`), expired entries', a deleted session's
@@ -69,6 +69,9 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   subtree walk, the report notes, each session's times, last tool call, cost and pending requests), whose
   `stop` is `stop.ts`'s and whose `cleanup` is `cleanup.ts`'s, run as the target's parent once `by` is above it; `tui.tsx` the TUI part, the prompt footer's status entry (`addTreeStatus`), the
   tree panel and the `/courier` command (`addTreePanel`) and the report sounds (`addTreeAttention`), which imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, `rpc.ts` and `text.ts`;
+  `wake.ts` the missed wake: it watches each courier message from its enqueue to its delivery (`watchWake`,
+  `wakeStarted`, `wakeEnded`, from `events.ts`), sends it again under its inbox id from the scheduler's
+  tick (`wakeMissed`) and says which sessions are stalled (`stalledAmong`, for `summary.ts` and `panel.ts`);
   `events.ts` `treeEvents`, which tells a parent that a child's turn failed or ended without a report,
   with `waitsOn` and `together` to compose the `Waits` port the silent-turn rule asks, supplied by
   `person/`, `scheduling/` and `webhook/`; `context.ts` the `context` hook naming each spawned

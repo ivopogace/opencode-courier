@@ -2,7 +2,6 @@ import { envelope, isStatus, STATUSES, type Status } from "../kernel/protocol.js
 import { groupStanding, holdReport, membershipFor, unholdForBlocked } from "./group.js"
 import type { Artifacts, CourierPorts, Held, HeldReport, Membership, RosterEntry, Sent } from "./ports.js"
 import { childStore, groupStore } from "./store.js"
-import { expectWake } from "./wake.js"
 import { reportBody } from "./text.js"
 
 export interface SendInput {
@@ -26,20 +25,15 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
   try {
     const held = noted?.member && status && status !== "blocked" ? await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) }) : undefined
     if (held) return { status, report: true, held }
-    const text = envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {})
     const delivered = await ports.session.synthetic({
       sessionID: input.sessionID,
-      text,
+      text: envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {}),
       description: `Message from ${from}`,
       metadata: { source: "courier", from, ...(status ? { status } : {}) },
       delivery: input.queue ? "queue" : "steer",
     })
     // A blocked report, once delivered, is the member's latest word: an earlier report held for it would be stale.
     if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)
-    // The delivered message owes the target a turn; if its wake is missed, the scheduler re-wakes it.
-    await expectWake(ports.storage, ports.now, input.sessionID, text).catch((error: unknown) =>
-      ports.log(`courier_send: could not note the wake of ${input.sessionID}: ${String(error)}`),
-    )
     return { messageID: delivered.id, ...(status ? { status } : {}), ...(noted ? { report: noted.report } : {}) }
   } catch (error) {
     await noted?.undo().catch(() => undefined)

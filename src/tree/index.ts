@@ -1,4 +1,4 @@
-// What the rest of the plugin uses of the session tree: its tools, RPC, event module, context hook and tick job
+// What the rest of the plugin uses of the session tree: its tools, RPC, event module, context hook and tick jobs
 // for `src/index.ts`, and the lineage and subtree queries and types `person/` reads.
 export { dirtyOf, headOf, inspectWorktree } from "./cleanup.js"
 export { shapeContext } from "./context.js"
@@ -22,4 +22,4 @@ export { allEntries, answeringTop, lineage, pruneExpired, RETENTION_MS } from ".
 export { subtree } from "./subtree.js"
 export { registerTreeRpc } from "./rpc-handlers.js"
 export { addTreeTools } from "./tools.js"
-export { expectWake, running, stalled, wakeJob, GRACE_MS } from "./wake.js"
+export { wakeMissed } from "./wake.js"

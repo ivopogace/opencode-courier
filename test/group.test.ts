@@ -13,7 +13,7 @@ import {
   unholdForBlocked,
 } from "../src/tree/group.js"
 import { dropGroups, dropMember } from "../src/tree/forget.js"
-import { groupStore, memberKey, wakeKey } from "../src/tree/store.js"
+import { groupStore, memberKey } from "../src/tree/store.js"
 import { isGroupName, standingOf } from "../src/tree/domain.js"
 import type { GroupPorts, Membership } from "../src/tree/ports.js"
 import { envelope } from "../src/kernel/protocol.js"
@@ -48,7 +48,6 @@ function fakePorts(options: { pageSize?: number; store?: Map<string, unknown> } 
       }) as any,
       get: (async () => ({ time: { idle: parent.idle } })) as any,
     },
-    now: () => 1_000,
     log: (message) => logs.push(message),
   }
   return { ports, store, delivered, logs, parent }
@@ -230,7 +229,6 @@ describe("deliverReleased", () => {
     expect(delivered.map((one) => one.text)).toEqual([
       envelope("ses_a", groupNotice("pair", [{ sessionID: "ses_a", title: "First", ...report("done", "Did it.") }], left), { group: "pair", reports: "1" }),
     ])
-    store.delete(wakeKey("ses_parent")) // the release's wake expectation, not the group's
     expect(store.size).toBe(0)
   })
 
@@ -257,7 +255,6 @@ describe("deliverReleased", () => {
       },
     ])
     expect(delivered[0].text).toContain('[1/2] ses_a "First": done\nDid it.\n\n[2/2] ses_b "Second": failed\nCould not.\n\nArtifacts:\n- branch: b/work\n- checks:\n  - bun test: ok')
-    store.delete(wakeKey("ses_parent")) // the release's wake expectation, not the group's
     expect([...store.keys()]).toEqual([memberKey("ses_parent", "open", "ses_c")])
   })
 
@@ -275,7 +272,6 @@ describe("deliverReleased", () => {
     expect(delivered[0].text).toContain('1 report of 2 members (1 done)')
     expect(delivered[0].text).toContain('Without a report: ses_b "Second" (its turn failed).')
     expect(delivered[0].metadata.from).toBe("ses_a")
-    store.delete(wakeKey("ses_parent")) // the release's wake expectation, not the group's
     expect(store.size).toBe(0)
   })
 
@@ -296,7 +292,6 @@ describe("deliverReleased", () => {
     parent.idle = DateTime.makeUnsafe(1) as never
     await deliverReleased(ports, new Set())
     expect(delivered).toHaveLength(1)
-    store.delete(wakeKey("ses_parent")) // the release's wake expectation, not the group's
     expect(store.size).toBe(0)
   })
 
@@ -418,7 +413,6 @@ describe("deliverReleased", () => {
     ;(ports.session as any).synthetic = synthetic
     await deliverReleased(ports, new Set())
     expect(delivered).toHaveLength(1)
-    store.delete(wakeKey("ses_parent")) // the release's wake expectation, not the group's
     expect(store.size).toBe(0)
   })
 
@@ -436,14 +430,12 @@ describe("deliverReleased", () => {
 
     await deliverReleased(ports, new Set())
     expect(delivered).toHaveLength(1)
-    store.delete(wakeKey("ses_parent")) // the release's wake expectation, not the group's
     expect([...store.keys()]).toEqual([memberKey("ses_parent", "pair", "ses_b")])
 
     ;(ports.session as any).synthetic = synthetic
     await deliverReleased(ports, new Set())
     expect(delivered).toHaveLength(2)
     expect(delivered[1].text).toContain('[1/1] ses_b "Second": done\nLate.')
-    store.delete(wakeKey("ses_parent")) // the release's wake expectation, not the group's
     expect(store.size).toBe(0)
   })
 
@@ -460,7 +452,6 @@ describe("deliverReleased", () => {
     await deliverReleased(ports, new Set())
 
     expect(delivered.map((message: any) => message.metadata.group).sort()).toEqual(["next", "pair"])
-    store.delete(wakeKey("ses_parent")) // the release's wake expectation, not the group's
     expect([...store.keys()]).toEqual([memberKey("ses_parent", "pair", "ses_b")])
     expect(logs).toEqual(["courier group pair of ses_parent: delivered, but ses_b could not be dropped: Error: locked"])
   })
@@ -491,7 +482,6 @@ describe("deliverReleased", () => {
 
     expect(delivered).toHaveLength(1)
     expect(delivered[0].metadata.reports).toBe(5)
-    store.delete(wakeKey("ses_parent")) // the release's wake expectation, not the group's
     expect([...store.keys()].sort()).toEqual(["group/ses_parent/five", "group/ses_parent/odd/ses_x"])
   })
 })

@@ -1,89 +1,151 @@
-/**
- * The missed-wake watch: a message the courier delivers to an idle session owes it a turn, and a turn that
- * does not start within a short grace is re-woken once by the scheduler, then flagged as stalled for the
- * person. The expectation is durable in the storage, so the scheduler's owner can act on it, a restart loses
- * nothing, and any server's watch clears it when a turn starts.
- */
-import { sharedState, type TickJob } from "../platform/hub.js"
-import type { RosterStorage, WatchPorts } from "./ports.js"
-import { childStore, wakeKey } from "./store.js"
+import type { GroupPorts, Wake, WatchPorts } from "./ports.js"
+import { wakeStore } from "./store.js"
 
-/** How long after a delivery a turn is expected before its wake is missed: two ticks of the 15 s scheduler. */
-export const GRACE_MS = 30_000
+/** How long a courier message may wait in an idle session's inbox before its wake counts as missed. */
+export const WAKE_MS = 30_000
 
-/**
- * The sessions with a turn under way — a `started` with no terminal since — which the watch keeps and the
- * deliveries and the missed-wake job read. Process-wide like the inbox, so every copy and instance agrees.
- */
-export const running = sharedState("running", () => new Set<string>())
-
-/**
- * Notes that a message the courier delivered owes `sessionID` a turn, unless its turn is already under way —
- * a running turn takes the message at its next step, so no turn is owed until it ends — or one is already
- * expected, which the re-wake points at.
- */
-export async function expectWake(storage: RosterStorage, now: () => number, sessionID: string, text: string): Promise<void> {
-  if (running.has(sessionID)) return
-  await childStore(storage).expectWake(sessionID, now(), text)
-}
-
-/**
- * The scheduler's missed-wake job, the third tick job after `dueJob` and `deliverReleased`: every expectation
- * the storage holds whose grace has passed without a turn is re-woken once, and one whose re-woken grace has
- * passed is flagged stalled. Only the scheduler's owner runs it.
- */
-export const wakeJob: TickJob = (owner) => checkWakes(owner.watch as WatchPorts)
-
-async function checkWakes(ports: WatchPorts) {
-  const children = childStore(ports.storage)
-  for (const [sessionID, keys] of await children.reported()) {
-    if (!keys.includes(wakeKey(sessionID))) continue
-    const note = await children.wake(sessionID)
-    if (!note) continue
-    // A turn under way takes the message at its next step, whatever the events said.
-    if (running.has(sessionID)) {
-      await children.forgetWake(sessionID).catch(() => undefined)
-      continue
-    }
-    const past = ports.now() - note.at
-    if (note.state === "due" && past >= GRACE_MS) {
-      // Marked before the re-wake, so the same episode is never re-woken twice; if the mark cannot be
-      // written, the re-wake waits for a later tick rather than risking a second one.
-      const marked = await children.noteWake(sessionID, { ...note, state: "rewoken", at: ports.now() }).then(
-        () => true,
-        (error: unknown) => {
-          ports.log(`courier wake: could not note the re-wake of ${sessionID}: ${String(error)}`)
-          return false
-        },
-      )
-      if (marked)
-        await reWake(ports, sessionID, note.text).catch((error: unknown) =>
-          ports.log(`courier wake: could not re-woken ${sessionID}: ${String(error)}`),
-        )
-    } else if (note.state === "rewoken" && past >= GRACE_MS) {
-      await children.noteWake(sessionID, { ...note, state: "stalled" }).catch((error: unknown) =>
-        ports.log(`courier wake: could not note the stall of ${sessionID}: ${String(error)}`),
-      )
+/** OpenCode's `session.inbox.enqueued`, with the item's payload, which carries the courier's metadata. */
+export interface Enqueued {
+  readonly created?: number
+  readonly data: {
+    readonly sessionID: string
+    readonly inboxID: string
+    readonly item: {
+      readonly type: string
+      readonly payload?: { readonly text?: unknown; readonly description?: unknown; readonly metadata?: { readonly source?: unknown } }
     }
   }
 }
 
-/**
- * Re-wakes a session whose missed wake left a message waiting in its inbox: exactly one synthetic, pointing at
- * that message — the delivered text, which the expectation stored. The re-wake is this detector's own action,
- * not an owed wake, so it is a raw synthetic rather than a `send`, `spawn` or `release`, and is not tracked.
- */
-async function reWake(ports: WatchPorts, sessionID: string, text: string) {
-  await ports.session.synthetic({
-    sessionID,
-    text,
-    description: `Session ${sessionID} did not start its turn`,
-    metadata: { source: "courier", wake: "rewoken" },
-    delivery: "steer",
-  })
+/** OpenCode's `session.inbox.delivered` and `session.inbox.cancelled`. */
+export interface InboxSettled {
+  readonly data: { readonly sessionID: string; readonly inboxID: string }
 }
 
-/** Whether a session's wake expectation is stalled — re-woken, and still no turn; the panel and footer flag it. */
-export async function stalled(storage: RosterStorage, sessionID: string): Promise<boolean> {
-  return (await childStore(storage).wake(sessionID))?.state === "stalled"
+/** OpenCode's `session.execution.*` events, which frame a session's busy period. */
+export interface Execution {
+  readonly created?: number
+  readonly data: { readonly sessionID: string }
+}
+
+type Messages = Awaited<ReturnType<WatchPorts["session"]["context"]>>
+
+/** Whether a session's stored messages end with the marker of an ended turn; one with none yet is taken to run. */
+const endsIdle = (messages: Messages) => messages.at(-1)?.type === "idle"
+
+/**
+ * Watches a courier message enqueued for a session until it is delivered, noting whether the session runs: a running
+ * turn takes it at its next step, an idle session is woken for it. Returns whether it is watched.
+ */
+export async function watchWake(ports: WatchPorts, event: Enqueued) {
+  const { sessionID, inboxID, item } = event.data
+  const payload = item.payload
+  if (item.type !== "synthetic" || payload?.metadata?.source !== "courier" || typeof payload.text !== "string") return false
+  const at = event.created ?? ports.now()
+  // Read after the enqueue: a turn it started has stored messages since, and an unknown session is taken to run.
+  const idle = await ports.session.context({ sessionID }).then(endsIdle, () => false)
+  await wakeStore(ports.storage).put({
+    sessionID,
+    inboxID,
+    at,
+    text: payload.text,
+    ...(typeof payload.description === "string" ? { description: payload.description } : {}),
+    running: !idle,
+    ...(idle ? { idleAt: at } : {}),
+  })
+  return true
+}
+
+/** Stops watching a message once it is delivered or cancelled. */
+export async function settleWake(ports: Pick<WatchPorts, "storage">, event: InboxSettled) {
+  await wakeStore(ports.storage).remove(event.data.sessionID, event.data.inboxID)
+}
+
+/** A turn started in a session: the messages waiting there are its to take. */
+export async function wakeStarted(ports: Pick<WatchPorts, "storage">, event: Execution) {
+  const store = wakeStore(ports.storage)
+  const waiting = await store.of(event.data.sessionID)
+  await Promise.all(waiting.filter((wake) => !wake.running).map(({ idleAt: _, ...wake }) => store.put({ ...wake, running: true })))
+}
+
+/**
+ * A session's turn ended: a message it took is no longer watched, as its delivery may have been missed by this
+ * subscription; one still waiting is watched as waiting in an idle session from now.
+ */
+export async function wakeEnded(ports: WatchPorts, event: Execution) {
+  const { sessionID } = event.data
+  const store = wakeStore(ports.storage)
+  const waiting = await store.of(sessionID)
+  if (!waiting.length) return
+  const at = event.created ?? ports.now()
+  const stored = new Set((await ports.session.context({ sessionID }).catch((): Messages => [])).map((message) => message.id))
+  await Promise.all(
+    waiting.map((wake) => (stored.has(wake.inboxID) ? store.remove(sessionID, wake.inboxID) : store.put({ ...wake, running: false, idleAt: at }))),
+  )
+}
+
+/** Forgets the messages watched in a deleted session's inbox. */
+export async function forgetWakes(ports: Pick<WatchPorts, "storage">, sessionID: string) {
+  const store = wakeStore(ports.storage)
+  await Promise.all((await store.of(sessionID)).map((wake) => store.remove(sessionID, wake.inboxID)))
+}
+
+/** The ports the scheduler's tick wakes sessions through: what every hub member's `later` ports have. */
+export type WakePorts = GroupPorts & { readonly now: () => number }
+
+/**
+ * Wakes, once, each session that has left a courier message waiting while idle for `WAKE_MS`, sending the message again
+ * under its inbox id, which OpenCode takes for the one waiting rather than a second; one that still does not take it
+ * `WAKE_MS` later is stalled. Run by the scheduler's owner, so one server acts; `claimed` keeps a tick alongside off it.
+ */
+export async function wakeMissed(ports: WakePorts, claimed: Set<string>) {
+  const store = wakeStore(ports.storage)
+  const now = ports.now()
+  const due = (await store.all()).filter((wake) => missed(wake, now) && !claimed.has(claimOf(wake)))
+  for (const wake of due) claimed.add(claimOf(wake))
+  await Promise.all(due.map((wake) => wakeAgain(ports, store, wake, now).finally(() => claimed.delete(claimOf(wake)))))
+}
+
+const claimOf = (wake: Wake) => `wake ${wake.sessionID} ${wake.inboxID}`
+
+/** Whether a message has waited in an idle session past `WAKE_MS`, and since a wake again, if one was sent; a stalled one is done. */
+export function missed(wake: Wake, now: number) {
+  if (wake.running || wake.stalled !== undefined) return false
+  const since = Math.max(wake.idleAt ?? wake.at, wake.rewoken ?? 0)
+  return now - since >= WAKE_MS
+}
+
+async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, wake: Wake, now: number) {
+  try {
+    // Re-read: the message may have been delivered, or the session woken, since the scan.
+    const current = (await store.of(wake.sessionID)).find((one) => one.inboxID === wake.inboxID)
+    if (!current || !missed(current, now)) return
+    if (current.rewoken !== undefined) {
+      ports.log(`courier wake: ${wake.sessionID} has not taken message ${wake.inboxID} since it was woken again; flagged stalled`)
+      return await store.put({ ...current, stalled: now })
+    }
+    await ports.session.synthetic({
+      sessionID: wake.sessionID,
+      id: wake.inboxID,
+      text: wake.text,
+      ...(wake.description !== undefined ? { description: wake.description } : {}),
+      metadata: { source: "courier", wake: "again" },
+      delivery: "steer",
+    })
+    ports.log(`courier wake: ${wake.sessionID} left message ${wake.inboxID} waiting while idle; woken again`)
+    await store.put({ ...current, rewoken: now })
+  } catch (error) {
+    ports.log(`courier wake: could not wake ${wake.sessionID} again for ${wake.inboxID}: ${String(error)}`)
+  }
+}
+
+/** The sessions among `sessionIDs` flagged stalled, each with when its oldest stalled message was enqueued. */
+export async function stalledAmong(ports: Pick<WatchPorts, "storage">, sessionIDs: ReadonlyArray<string>) {
+  const wanted = new Set(sessionIDs)
+  const stalled = new Map<string, number>()
+  for (const wake of await wakeStore(ports.storage).all()) {
+    if (wake.stalled === undefined || !wanted.has(wake.sessionID)) continue
+    stalled.set(wake.sessionID, Math.min(stalled.get(wake.sessionID) ?? wake.at, wake.at))
+  }
+  return stalled
 }

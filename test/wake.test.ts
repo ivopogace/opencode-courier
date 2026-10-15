@@ -1,275 +1,236 @@
-// The missed-wake watch: a delivery to an idle session whose turn never starts is re-woken once by the
-// scheduler, then flagged stalled; a delivery to a running one is taken at its next step, and not tracked.
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { envelope } from "../src/kernel/protocol.js"
-import { deliverReleased, joinGroup } from "../src/tree/group.js"
-import type { GroupPorts } from "../src/tree/ports.js"
-import type { Member } from "../src/platform/hub.js"
-import { send } from "../src/tree/send.js"
-import type { CourierPorts, WatchPorts } from "../src/tree/ports.js"
-import { reportBody } from "../src/tree/text.js"
-import { expectWake, GRACE_MS, running, stalled, wakeJob } from "../src/tree/wake.js"
-import type { WatchState } from "../src/tree/ports.js"
-import { childStore, groupStore, wakeKey } from "../src/tree/store.js"
-import { treeEvents, type SessionEvent } from "../src/tree/events.js"
-import { child, fakePorts } from "./fixtures/events.js"
+import { describe, expect, test } from "bun:test"
+import type { WatchPorts } from "../src/tree/ports.js"
+import { wakeKey, wakeStore } from "../src/tree/store.js"
+import { treeEvents } from "../src/tree/events.js"
+import { missed, stalledAmong, WAKE_MS, wakeMissed, type WakePorts } from "../src/tree/wake.js"
 
-/** Ports whose clock a test moves, over a store it can read; the parent's last turn ended long before any join. */
-function fakeClock() {
-  let now = 1_000
-  const { ports, store, sent } = fakePorts()
-  const clock = { ...ports, now: () => now, session: { ...ports.session, get: async () => ({ time: { idle: 1_000 } }) } } as WatchPorts
-  return { ports: clock, store, sent, setNow: (value: number) => (now = value) }
+type Message = { id: string; type: string }
+
+/** Ports over an in-memory store, each session's stored messages as given, the clock as set. */
+function fakePorts(messages: Record<string, Message[]> = {}) {
+  const store = new Map<string, unknown>()
+  const sent: any[] = []
+  const logged: string[] = []
+  let now = 100_000
+  const ports = {
+    storage: {
+      get: async (key: string) => store.get(key),
+      set: async (key: string, value: unknown) => void store.set(key, value),
+      remove: async (key: string) => void store.delete(key),
+      scan: async ({ prefix }: { prefix: string }) => ({
+        entries: [...store].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
+      }),
+    },
+    session: {
+      context: async ({ sessionID }: { sessionID: string }) => messages[sessionID] ?? [],
+      synthetic: async (input: { id?: string }) => {
+        sent.push(input)
+        return { id: input.id ?? "msg_new" }
+      },
+      get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID }),
+    },
+    now: () => now,
+    log: (message: string) => void logged.push(message),
+    nudge: () => undefined,
+    permissions: () => [],
+  }
+  return {
+    ports: ports as unknown as WatchPorts & WakePorts,
+    store,
+    sent,
+    logged,
+    messages,
+    at: (time: number) => void (now = time),
+  }
 }
 
-/** courier_send through the courier's own ports, at the clock's now. */
-function sendFrom(ports: WatchPorts, from: string, to: string, message = "done") {
-  const courier = { session: { synthetic: async () => ({ id: "msg_r" }) }, storage: ports.storage, now: ports.now, nudge: ports.nudge } as unknown as CourierPorts
-  return send(courier, from, { sessionID: to, message, status: "done" })
-}
+const idle = (id = "msg_idle"): Message => ({ id, type: "idle" })
+const assistant = (id = "msg_a"): Message => ({ id, type: "assistant" })
 
-/** Runs the missed-wake job through a fake owner whose watch ports are `ports`. */
-function tick(ports: WatchPorts) {
-  return wakeJob({ watch: ports } as unknown as Member, new Set())
-}
-
-/** Handles one OpenCode event through the tree's module, as a hub's subscription would, over a state of its own. */
-function handle(ports: WatchPorts, event: SessionEvent & { type: string }) {
-  const state: WatchState = { seen: new Set(), inbox: new Map(), running: new Set() }
-  return treeEvents(state, () => Promise.resolve(false)).handle!(ports, event)
-}
-
-const started = (sessionID: string): SessionEvent & { type: string } => ({
-  id: "evt_start",
-  type: "session.execution.started",
-  created: 500,
-  data: { sessionID },
+/** A courier message enqueued for `sessionID`, as OpenCode publishes it. */
+const enqueued = (sessionID = "ses_parent", inboxID = "msg_report", created = 100_000, metadata: object = { source: "courier", from: "ses_child" }) => ({
+  id: `evt_enq_${inboxID}`,
+  type: "session.inbox.enqueued",
+  created,
+  data: { sessionID, inboxID, item: { type: "synthetic", payload: { text: "<courier from=\"ses_child\">done</courier>", description: "Message from ses_child", metadata }, delivery: "steer" } },
 })
 
-// The running set is process-wide, so these tests leave it as they found it for the other suites.
-beforeEach(() => running.clear())
-afterEach(() => running.clear())
+const event = (type: string, sessionID = "ses_parent", created = 100_000, extra: object = {}) => ({
+  id: `evt_${type}_${created}`,
+  type,
+  created,
+  data: { sessionID, ...extra },
+})
 
-describe("expectWake", () => {
-  test("notes that a delivered message owes an idle session a turn, with the text it was delivered with", async () => {
-    const { ports, store } = fakeClock()
-    await childStore(ports.storage).record(child())
+/** The tree's event module over `ports`, as a hub subscription runs it. */
+const handle = (ports: WatchPorts, e: { type: string; data?: unknown }) =>
+  treeEvents({ seen: new Set(), inbox: new Map() }, async () => false).handle!(ports, e as never)
 
-    await expectWake(ports.storage, ports.now, "ses_child", "the task")
-
-    expect(store.get(wakeKey("ses_child"))).toEqual({ at: 1_000, state: "due", text: "the task" })
+describe("watching a courier message until it is delivered", () => {
+  test("a courier message enqueued for an idle session is watched as waiting since it arrived", async () => {
+    const { ports, store } = fakePorts({ ses_parent: [assistant(), idle()] })
+    await handle(ports, enqueued())
+    expect(store.get(wakeKey("ses_parent", "msg_report"))).toEqual({
+      at: 100_000,
+      text: "<courier from=\"ses_child\">done</courier>",
+      description: "Message from ses_child",
+      running: false,
+      idleAt: 100_000,
+    })
   })
 
-  test("notes nothing for a session whose turn is already under way: it takes the message at its next step", async () => {
-    const { ports, store } = fakeClock()
-    await childStore(ports.storage).record(child())
-    running.add("ses_child")
-
-    await expectWake(ports.storage, ports.now, "ses_child", "the task")
-
-    expect(store.has(wakeKey("ses_child"))).toBe(false)
+  test("one enqueued for a session running a turn is watched as running, and the person's prompts and others' messages not at all", async () => {
+    const { ports, store } = fakePorts({ ses_parent: [assistant()] })
+    await handle(ports, enqueued())
+    await handle(ports, enqueued("ses_parent", "msg_other", 100_000, { source: "someone" }))
+    await handle(ports, { ...enqueued("ses_parent", "msg_user"), data: { sessionID: "ses_parent", inboxID: "msg_user", item: { type: "user", payload: { text: "hi" } } } })
+    expect([...store.keys()]).toEqual([wakeKey("ses_parent", "msg_report")])
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: true })
   })
 
-  test("keeps the first expectation when a second message is delivered within the grace", async () => {
-    const { ports, store } = fakeClock()
-    await childStore(ports.storage).record(child())
-
-    await expectWake(ports.storage, ports.now, "ses_child", "first")
-    await expectWake(ports.storage, () => 2_000, "ses_child", "second")
-
-    expect(store.get(wakeKey("ses_child"))).toEqual({ at: 1_000, state: "due", text: "first" })
+  test("its delivery or cancellation ends the watch", async () => {
+    const { ports, store } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    await handle(ports, enqueued("ses_parent", "msg_second"))
+    await handle(ports, event("session.inbox.delivered", "ses_parent", 100_100, { inboxID: "msg_report" }))
+    await handle(ports, event("session.inbox.cancelled", "ses_parent", 100_100, { inboxID: "msg_second" }))
+    expect(store.size).toBe(0)
   })
 
-  test("replaces a stored value that is not a valid expectation, rather than being blocked by it", async () => {
-    const { ports, store } = fakeClock()
-    await childStore(ports.storage).record(child())
-    await ports.storage.set(wakeKey("ses_child"), { at: 1, state: "nonsense" })
+  test("a turn starting marks it running; one ending keeps it waiting from then, unless the turn took it", async () => {
+    const { ports, messages } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    await handle(ports, enqueued("ses_parent", "msg_taken"))
+    await handle(ports, event("session.execution.started", "ses_parent", 100_500))
+    expect((await wakeStore(ports.storage).of("ses_parent")).map((wake) => [wake.running, wake.idleAt])).toEqual([
+      [true, undefined],
+      [true, undefined],
+    ])
+    // The turn took msg_taken, whose delivery this subscription missed, and left msg_report waiting.
+    messages.ses_parent = [idle(), { id: "msg_taken", type: "synthetic" }, assistant(), idle("msg_idle_2")]
+    await handle(ports, event("session.execution.succeeded", "ses_parent", 101_000))
+    expect(await wakeStore(ports.storage).of("ses_parent")).toEqual([
+      expect.objectContaining({ inboxID: "msg_report", running: false, idleAt: 101_000 }),
+    ])
+  })
 
-    await expectWake(ports.storage, ports.now, "ses_child", "the task")
-
-    expect(store.get(wakeKey("ses_child"))).toEqual({ at: 1_000, state: "due", text: "the task" })
+  test("a deleted session's watched messages are forgotten", async () => {
+    const { ports, store } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    await handle(ports, event("session.deleted"))
+    expect(store.size).toBe(0)
   })
 })
 
-describe("the missed-wake job", () => {
-  test("re-wakes an idle session once when its turn does not start within the grace, then flags it stalled", async () => {
-    const { ports, store, sent, setNow } = fakeClock()
-    await childStore(ports.storage).record(child())
-    const text = envelope("ses_child", reportBody("done", undefined), { status: "done" })
-    await sendFrom(ports, "ses_child", "ses_parent")
-
-    // The expectation is due, pointing at the message that reached the parent.
-    expect(store.get(wakeKey("ses_parent"))).toEqual({ at: 1_000, state: "due", text })
+describe("waking a session whose wake was missed", () => {
+  test("a message left waiting in an idle session is sent again under its inbox id once WAKE_MS has passed, and only once", async () => {
+    const { ports, sent, at } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    at(100_000 + WAKE_MS - 1)
+    await wakeMissed(ports, new Set())
     expect(sent).toEqual([])
-
-    // One tick within the grace: nothing yet.
-    setNow(1_000 + GRACE_MS - 1)
-    await tick(ports)
-    expect(sent).toEqual([])
-
-    // Past the grace: exactly one re-wake, pointing at the message; the episode is marked rewoken.
-    setNow(1_000 + GRACE_MS)
-    await tick(ports)
+    at(100_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
     expect(sent).toEqual([
       {
         sessionID: "ses_parent",
-        text,
-        description: "Session ses_parent did not start its turn",
-        metadata: { source: "courier", wake: "rewoken" },
+        id: "msg_report",
+        text: "<courier from=\"ses_child\">done</courier>",
+        description: "Message from ses_child",
+        metadata: { source: "courier", wake: "again" },
         delivery: "steer",
       },
     ])
-    expect(store.get(wakeKey("ses_parent"))).toMatchObject({ state: "rewoken", text })
-
-    // The same episode is never re-woken twice, however many ticks pass.
-    setNow(1_000 + 2 * GRACE_MS)
-    await tick(ports)
-    await tick(ports)
+    await wakeMissed(ports, new Set())
     expect(sent).toHaveLength(1)
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ rewoken: 100_000 + WAKE_MS })
+  })
 
-    // Past the second grace, still no turn: flagged stalled.
-    setNow(1_000 + 2 * GRACE_MS + GRACE_MS)
-    await tick(ports)
-    expect(store.get(wakeKey("ses_parent"))).toMatchObject({ state: "stalled", text })
-    expect(await stalled(ports.storage, "ses_parent")).toBe(true)
-    // Nothing more is sent: the stall is for the person to see, not another re-wake.
+  test("a session that still does not take it WAKE_MS after the wake again is flagged stalled, and is not woken a third time", async () => {
+    const { ports, sent, at, logged } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    at(100_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
+    at(100_000 + 2 * WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toHaveLength(1)
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ stalled: 100_000 + 2 * WAKE_MS })
+    expect(await stalledAmong(ports, ["ses_parent", "ses_other"])).toEqual(new Map([["ses_parent", 100_000]]))
+    at(100_000 + 5 * WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toHaveLength(1)
+    expect(logged.some((line) => line.includes("flagged stalled"))).toBe(true)
+  })
+
+  test("a stalled session's flag goes once the message is delivered, as when the person prompts it", async () => {
+    const { ports, at } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    at(100_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
+    at(100_000 + 2 * WAKE_MS)
+    await wakeMissed(ports, new Set())
+    await handle(ports, event("session.inbox.delivered", "ses_parent", 200_000, { inboxID: "msg_report" }))
+    expect(await stalledAmong(ports, ["ses_parent"])).toEqual(new Map())
+  })
+
+  test("a wake that was only slow, whose turn started within WAKE_MS, is left alone", async () => {
+    const { ports, sent, at } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    await handle(ports, event("session.execution.started", "ses_parent", 100_000 + WAKE_MS - 1_000))
+    at(100_000 + 3 * WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toEqual([])
+  })
+
+  test("a session that was running anyway is not woken, however long its turn takes", async () => {
+    const { ports, sent, at } = fakePorts({ ses_parent: [assistant()] })
+    await handle(ports, enqueued())
+    at(100_000 + 10 * WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toEqual([])
+  })
+
+  test("but one whose turn ends without taking it is woken WAKE_MS after that end", async () => {
+    const { ports, sent, at } = fakePorts({ ses_parent: [assistant()] })
+    await handle(ports, enqueued())
+    await handle(ports, event("session.execution.interrupted", "ses_parent", 200_000, { reason: "user" }))
+    at(200_000 + WAKE_MS - 1)
+    await wakeMissed(ports, new Set())
+    expect(sent).toEqual([])
+    at(200_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
     expect(sent).toHaveLength(1)
   })
 
-  test("a re-wake the mark could not record waits for a later tick rather than risking a second", async () => {
-    const { ports, store, sent, setNow } = fakeClock()
-    await childStore(ports.storage).record(child())
-    await sendFrom(ports, "ses_child", "ses_parent")
+  test("a message another tick of the process has claimed is left to it", async () => {
+    const { ports, sent, at } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    at(100_000 + WAKE_MS)
+    await wakeMissed(ports, new Set(["wake ses_parent msg_report"]))
+    expect(sent).toEqual([])
+  })
 
-    // The mark's write fails: no re-wake goes out, and the episode stays due.
-    const set = ports.storage.set
-    ;(ports.storage as any).set = async (key: string, value: unknown) => {
-      if (key.endsWith("/wake")) throw new Error("disk full")
-      return set(key, value as never)
+  test("a wake again that fails is logged, and tried again at the next tick", async () => {
+    const { ports, sent, at, logged } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    const synthetic = ports.session.synthetic
+    ;(ports.session as { synthetic: unknown }).synthetic = async () => {
+      throw new Error("session not found")
     }
-    setNow(1_000 + GRACE_MS)
-    await tick(ports)
-    expect(sent).toEqual([])
-    expect(store.get(wakeKey("ses_parent"))).toMatchObject({ state: "due" })
-
-    // The write works again: the mark lands, and exactly one re-wake follows.
-    ;(ports.storage as any).set = set
-    setNow(1_000 + 2 * GRACE_MS)
-    await tick(ports)
+    at(100_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(logged.some((line) => line.includes("could not wake ses_parent again"))).toBe(true)
+    ;(ports.session as { synthetic: unknown }).synthetic = synthetic
+    await wakeMissed(ports, new Set())
     expect(sent).toHaveLength(1)
-    expect(store.get(wakeKey("ses_parent"))).toMatchObject({ state: "rewoken" })
   })
+})
 
-  test("a delivery to a running session is not tracked, so the job has nothing to act on", async () => {
-    const { ports, store, sent } = fakeClock()
-    await childStore(ports.storage).record(child())
-    running.add("ses_parent")
-
-    await sendFrom(ports, "ses_child", "ses_parent")
-
-    expect(store.has(wakeKey("ses_parent"))).toBe(false)
-    await tick(ports)
-    expect(sent).toEqual([])
-  })
-
-  test("a turn that starts within the grace clears the expectation: no re-wake, no flag", async () => {
-    const { ports, store, sent } = fakeClock()
-    await childStore(ports.storage).record(child())
-    await sendFrom(ports, "ses_child", "ses_parent")
-
-    await handle(ports, started("ses_parent"))
-    expect(store.has(wakeKey("ses_parent"))).toBe(false)
-
-    await tick(ports)
-    expect(sent).toEqual([])
-    expect(await stalled(ports.storage, "ses_parent")).toBe(false)
-  })
-
-  test("a turn under way when the job runs clears the expectation, however old", async () => {
-    const { ports, store, sent } = fakeClock()
-    await childStore(ports.storage).record(child())
-    await sendFrom(ports, "ses_child", "ses_parent")
-    running.add("ses_parent")
-
-    await tick(ports)
-
-    expect(store.has(wakeKey("ses_parent"))).toBe(false)
-    expect(sent).toEqual([])
-  })
-
-  test("a deleted session leaves the running set, so it is not still turning", async () => {
-    const { ports } = fakeClock()
-    await childStore(ports.storage).record(child())
-    running.add("ses_child")
-    const state: WatchState = { seen: new Set(), inbox: new Map(), running }
-    const event = { id: "evt_d", type: "session.deleted", created: 1, data: { sessionID: "ses_child" } } as SessionEvent & { type: string }
-    await treeEvents(state, () => Promise.resolve(false)).handle!(ports, event)
-    expect(running.has("ses_child")).toBe(false)
-  })
-
-  test("a released group's delivery to the parent is tracked like a report", async () => {
-    const { ports, store, sent, setNow } = fakeClock()
-    await childStore(ports.storage).record({ ...child(), sessionID: "ses_a", title: "A", group: "pair" })
-    await joinGroup(groupStore(ports.storage), "ses_parent", "pair", "ses_a", "A", 1)
-    await groupStore(ports.storage).put("ses_parent", "pair", "ses_a", {
-      title: "A",
-      joinedAt: 1,
-      report: { at: 1, status: "done", message: "Did it." },
-    })
-    await deliverReleased(ports as unknown as GroupPorts, new Set())
-
-    // The group's message owes the parent a turn; the job re-wakes it past the grace.
-    expect(store.get(wakeKey("ses_parent"))).toMatchObject({ state: "due" })
-    expect(sent).toHaveLength(1) // the group's own notice
-    setNow(1_000 + GRACE_MS)
-    await tick(ports)
-    expect(sent).toHaveLength(2) // …then the re-wake, pointing at the message
-    expect(sent[1]!.sessionID).toBe("ses_parent")
-    expect(store.get(wakeKey("ses_parent"))).toMatchObject({ state: "rewoken" })
-  })
-
-  test("the expectation survives a restart: a new store over the same storage acts on it", async () => {
-    const first = fakeClock()
-    await childStore(first.ports.storage).record(child())
-    await sendFrom(first.ports, "ses_child", "ses_parent")
-
-    const second = fakePorts([], [], first.store)
-    const moved = { ...second.ports, now: () => 1_000 + GRACE_MS } as WatchPorts
-    await tick(moved)
-
-    expect(second.sent).toHaveLength(1)
-    expect(second.sent[0]!.sessionID).toBe("ses_parent")
-    expect(first.store.get(wakeKey("ses_parent"))).toMatchObject({ state: "rewoken" })
-  })
-
-  test("a stalled expectation clears when a turn starts, and is dropped with the report state", async () => {
-    const { ports, store, setNow } = fakeClock()
-    await childStore(ports.storage).record(child())
-    await sendFrom(ports, "ses_child", "ses_parent")
-
-    // One transition per tick: due to re-woken past the first grace, then stalled past the second.
-    setNow(1_000 + GRACE_MS)
-    await tick(ports)
-    expect(store.get(wakeKey("ses_parent"))).toMatchObject({ state: "rewoken" })
-    setNow(1_000 + 2 * GRACE_MS)
-    await tick(ports)
-    expect(store.get(wakeKey("ses_parent"))).toMatchObject({ state: "stalled" })
-
-    // A turn starts at last: the stall flag clears with it.
-    await handle(ports, started("ses_parent"))
-    expect(store.has(wakeKey("ses_parent"))).toBe(false)
-
-    // A new stall can be flagged again after a fresh delivery and its graces.
-    setNow(2_000)
-    await sendFrom(ports, "ses_child", "ses_parent")
-    setNow(2_000 + GRACE_MS)
-    await tick(ports)
-    setNow(2_000 + 2 * GRACE_MS)
-    await tick(ports)
-    expect(store.get(wakeKey("ses_parent"))).toMatchObject({ state: "stalled" })
-
-    // It is dropped with the session's other report notes when it is forgotten.
-    await childStore(ports.storage).forgetReport("ses_parent")
-    expect(store.has(wakeKey("ses_parent"))).toBe(false)
-  })
+test("missed reads only the stored watch: idle past WAKE_MS since it arrived, went idle or was woken again", () => {
+  const wake = { sessionID: "s", inboxID: "m", at: 0, text: "t", running: false }
+  expect(missed(wake, WAKE_MS)).toBe(true)
+  expect(missed({ ...wake, idleAt: 10 }, WAKE_MS)).toBe(false)
+  expect(missed({ ...wake, rewoken: 10 }, WAKE_MS)).toBe(false)
+  expect(missed({ ...wake, running: true }, WAKE_MS)).toBe(false)
+  expect(missed({ ...wake, stalled: 5 }, 10 * WAKE_MS)).toBe(false)
 })

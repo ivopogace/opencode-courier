@@ -7,7 +7,7 @@ import { lastTool, panel } from "../src/tree/panel.js"
 import type { CleanupPorts, CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/ports.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
-import { childStore, groupStore, wakeKey } from "../src/tree/store.js"
+import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 
 type Session = { updated: number; idle?: number; outcome?: string; cost?: number; title?: string; messages?: unknown[] }
 
@@ -188,6 +188,21 @@ describe("panel", () => {
     expect(rows[2]!.title).toBe("entry ses_gone")
   })
 
+  test("marks a stalled session stalled, since its oldest message woken again in vain was enqueued, and the root's own stall", async () => {
+    const { ports } = fakePorts({ ses_stalled: { updated: 9, idle: 5 }, ses_root: { updated: 9, idle: 5 } })
+    await childStore(ports.storage).record(entry("ses_stalled", "ses_root"))
+    const wakes = wakeStore(ports.storage)
+    const stalled = { text: "report", running: false, rewoken: 7, stalled: 8 }
+    await wakes.put({ sessionID: "ses_stalled", inboxID: "msg_2", at: 6, ...stalled })
+    await wakes.put({ sessionID: "ses_stalled", inboxID: "msg_1", at: 4, ...stalled })
+
+    const tree = await panel(ports, "ses_root")
+    expect(tree.rows.map(({ state, stalled }) => ({ state, stalled }))).toEqual([{ state: "stalled", stalled: 4 }])
+    expect(tree).not.toHaveProperty("stalled")
+    await wakes.put({ sessionID: "ses_root", inboxID: "msg_3", at: 3, ...stalled })
+    expect((await panel(ports, "ses_root")).stalled).toBe(3)
+  })
+
   test("says a running session showing a form waits, one line per form after its requests, and not an idle one's form, whose withdrawal was missed", async () => {
     const { ports } = fakePorts(
       { ses_form: { updated: 5 }, ses_both: { updated: 5 }, ses_stale: { updated: 5, idle: 5 } },
@@ -221,18 +236,6 @@ describe("panel", () => {
       },
       { sessionID: "ses_stale", state: "idle", waits: [] },
     ])
-  })
-
-  test("marks a session whose re-woken turn still did not start as stalled, and not one whose wake is only due", async () => {
-    const { ports } = fakePorts({ ses_stalled: { updated: 5, idle: 5 }, ses_due: { updated: 5, idle: 5 } })
-    await childStore(ports.storage).record(entry("ses_stalled", "ses_root"))
-    await childStore(ports.storage).record(entry("ses_due", "ses_root"))
-    await ports.storage.set(wakeKey("ses_stalled"), { at: 900, state: "stalled", text: "m" })
-    await ports.storage.set(wakeKey("ses_due"), { at: 900, state: "due", text: "m" })
-
-    const { rows } = await panel(ports, "ses_root")
-    expect(rows.find((row) => row.sessionID === "ses_stalled")).toMatchObject({ stalled: true })
-    expect(rows.find((row) => row.sessionID === "ses_due")).not.toHaveProperty("stalled")
   })
 
   test("marks a session courier_stop stopped since its last prompt, and not one prompted again", async () => {

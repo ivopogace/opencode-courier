@@ -340,7 +340,7 @@ describe("the scheduler", () => {
     nudge()
     await settle()
     expect(delivered).toEqual(["/a pair"])
-    expect([...store.keys()]).toEqual([OWNER_KEY, "report/ses_parent/wake"])
+    expect([...store.keys()]).toEqual([OWNER_KEY])
 
     store.set("group/ses_parent/next/ses_c", held("ses_c"))
     fire()

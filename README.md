@@ -213,10 +213,11 @@ Each tool's parameters: [the reference](docs/reference.md#the-tools).
   plugin, with the error or its last reply, waking it if idle; one that waits on a request, its own
   children, a scheduled message or a webhook is not, nor is one that answers what you typed in its
   session. [More](docs/reference.md#a-child-that-fails).
-- **A missed wake is caught.** When a message delivered to an idle session — a child's task, a
-  report to its parent, a released group's notice — is not followed by a turn within a short grace,
-  the plugin re-wakes the session once, then flags it stalled in the panel and footer for you.
-  [More](docs/reference.md#a-missed-wake).
+- **A message that fails to wake its session is sent again.** A report, notice or scheduled message
+  that waits in an idle session's inbox for 30 seconds without a turn starting for it is sent once
+  more under the same inbox id, which OpenCode takes for the same message, not a second one. If the
+  session still does not take it, the footer and the tree panel show it as `stalled`, for you to
+  prompt it. [More](docs/reference.md#a-missed-wake).
 - **Permission requests and questions reach you.** A child's request or question is passed to the
   session at the top of its tree, any number of levels down. For a request, that session proposes an
   answer with `courier_answer`, and OpenCode asks you in its own permission prompt, in that session
@@ -261,8 +262,9 @@ does not. Each spawned session's brief says when to split its task and when to d
 
 The package ships a part for OpenCode's terminal UI, which the TUI loads from the server's plugin
 list; the server half behaves the same whether or not a TUI is attached. In a session that started
-sessions, the prompt's footer shows what the tree under it is doing: how many run, wait on you (a
-permission request, a question or a form they show) or are idle, and for each [join group](docs/reference.md#join-groups) how many of its members have
+sessions, the prompt's footer shows what the tree under it is doing: how many are
+[stalled](docs/reference.md#a-missed-wake), run, wait on you (a permission request, a question or a
+form they show) or are idle, and for each [join group](docs/reference.md#join-groups) how many of its members have
 reported:
 
 ```
@@ -271,7 +273,7 @@ courier 1 waiting on you · 2 running · group pair 1/2
 
 `/courier tree` opens a panel beside the session with the tree under it, a row per session indented
 by depth, with what it does, its report and its group's standing; a session waiting on you gets a line per
-request or form (`shows a form: Web Search`), a session that started others gets
+request or form (`shows a form: Web Search`), a stalled one since when its message waits, a session that started others gets
 a bar of the parts reported, a leaf how long it ran, its last tool call and its cost. A tree that has
 started more than `maxTotal` sessions over time is listed live ones first, then newest, and the header
 says how many older ones are left out; the footer counts them all. `↑`/`↓` select,

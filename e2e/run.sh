@@ -225,7 +225,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI.
 # `restart-question` and `roster` restart the server and share a shard; `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 roster:36 webhook:10 cleanup:4 subtree:2 nest:6 stall:150 inbox:37 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 nest:6 stall:150 inbox:37 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -938,6 +938,31 @@ run_skill() {
     "$([[ $(person "session/$session/prompt" '{"text":"COURIER-SKILL-ATTACHED","skills":[{"id":"courier-orchestrate"}]}') == 20* ]] && has_text "$session" "SKILL SEEN" 30)"
 }
 
+run_wake() {
+  scenario "a courier message left waiting in an idle session, its wake missed, is sent again under its inbox id and wakes it (#218)"
+  out=$(prompt "COURIER-TEST")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  check "the child's report woke the parent" "$(has_text "$parent" "PARENT WOKE" 45)"
+  turn_ended "$parent" >/dev/null
+  # resume: false enqueues without waking the session, as a missed wake leaves a message.
+  inbox=$(api_post "session/$parent/synthetic" \
+    '{"text":"<courier from=\"ses_e2e\">WAKE AGAIN</courier>","description":"Message from ses_e2e","metadata":{"source":"courier","from":"ses_e2e"},"delivery":"steer","resume":false}' |
+    jq -r '.data.id // empty')
+  check "a courier message was enqueued for the idle parent ($inbox)" "$([ -n "$inbox" ] && echo true || echo false)"
+  delivered() { api "session/$parent/message" | jq -r --arg id "$inbox" '[.data[] | select(.id == $id)] | length'; }
+  sleep 5
+  check "no turn took it: it waits in the parent's inbox" \
+    "$([ "$(delivered)" = 0 ] && api "session/$parent/inbox" | jq -e --arg id "$inbox" 'any(.data[]; .id == $id)' >/dev/null && echo true || echo false)"
+  check "the courier watches it, waiting in an idle session" "$(kv get "wake/$parent/$inbox" | jq -r '.running == false')"
+  # Missed after WAKE_MS (30 s), found at the scheduler's next tick, up to 15 s later.
+  for _ in $(seq 1 75); do [ "$(delivered)" = 1 ] && break; sleep 1; done
+  check "the scheduler woke the parent again, which took the message once" "$([ "$(delivered)" = 1 ] && echo true || echo false)"
+  check "and replied to it in a new turn" \
+    "$(for _ in $(seq 1 30); do [ "$(texts "$parent" | grep -cF "PARENT WOKE")" -ge 2 ] && { echo true; exit; }; sleep 1; done; echo false)"
+  check "the server log says it was woken again" "$(grep -qF "courier wake: $parent left message $inbox waiting while idle; woken again" "$WORK/server.log" && echo true || echo false)"
+  check "and the watch is over" "$(for _ in $(seq 1 10); do [ -z "$(kv get "wake/$parent/$inbox")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+}
+
 run_later() {
   scenario "courier_later wakes the idle parent, with the delay sent as a string as some models do"
   out=$(prompt "COURIER-LATER-STRING 0.05")
@@ -1135,11 +1160,10 @@ run_nest() {
 }
 
 run_stall() {
-  # A message the courier delivers to an idle session owes it a turn, and OpenCode 2.0.29 skips the wake
-  # while the session has a staged revert: the report is admitted with no turn behind it — a real missed
-  # wake on a real courier delivery. The missed-wake watch re-wakes the session once, with a synthetic
-  # the revert suppresses too, and then flags it stalled: the tree panel row, the footer and the summary.
-  scenario "a report whose wake a staged revert suppresses is re-woken once, then flagged stalled"
+  # OpenCode 2.0.29 skips the wake of a message enqueued while the session has a staged revert: the report is
+  # admitted with no turn behind it, a real missed wake on a real courier delivery. Sending it again under its
+  # inbox id cannot wake the session either, so the watch flags it stalled: the summary and the panel's row.
+  scenario "a report whose wake a staged revert suppresses is sent again once, then flagged stalled (#218)"
   # The leaf's report is held back long enough to stage the revert on the middle while it is idle and
   # before the report lands, so the delivery is admitted with no wake.
   child_delay 15000
@@ -1151,47 +1175,34 @@ run_stall() {
   check "the middle started a leaf" "$([ -n "$leaf" ] && echo true || echo false)"
   for _ in $(seq 1 30); do [ "$(finished "$middle")" = true ] && break; sleep 1; done
   check "the middle ended its turn before the report" "$([ "$(finished "$middle")" = true ] && echo true || echo false)"
-  # The deterministic missed-wake lever: POSTing to session/<id>/revert/stage stages a revert, which
-  # holds the session's input — and skips the wake of the next synthetic — until the revert commits.
+  # Staging a revert holds the session's input, and skips the wake of the next synthetic, until it commits.
   message=$(api "session/$middle/message" | jq -r '.data[0].id')
   staged=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
     --data "{\"messageID\":\"$message\"}" "$SERVER/api/session/$middle/revert/stage")
   check "the revert is staged on the idle middle" "$([[ $staged == 20* ]] && echo true || echo false)"
-  # What the middle's location saw, in order: after the middle's last turn ended, its inbox gets the
-  # leaf's report and then the watch's re-wake synthetic, and no turn starts after either of them.
-  wake_missed() {
-    jq -sr --arg session "$middle" '
-      [.[] | select(.sessionID == $session)] as $events
-      | ([$events | to_entries[] | select(.value.type == "session.execution.succeeded") | .key] | last) as $end
-      | if $end == null then false
-        else $events[$end + 1:] | map(.type) as $after
-        | ($after | map(select(. == "session.inbox.enqueued")) | length) >= 2 and ($after | map(. == "session.execution.started") | any | not)
-        end' "$WORK/probe.log"
-  }
-  for _ in $(seq 1 120); do [ "$(wake_missed)" = true ] && break; sleep 1; done
-  check "the report and the re-wake synthetic were admitted, and no turn started after either" "$(wake_missed)"
-  # The scheduler's owner flags the middle stalled once its re-woken grace has passed too: the summary
-  # of the root's tree counts it.
-  tree_summary() {
-    curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier/summary?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" \
-      -H 'content-type: application/json' -d "{\"input\":{\"sessionID\":\"$root\"}}" | jq -c '.output'
-  }
-  for _ in $(seq 1 120); do [ "$(jq -r '.stalled // 0' <<<"$(tree_summary)")" = 1 ] && break; sleep 1; done
-  summary=$(tree_summary)
-  echo "  $summary"
-  check "the root's tree summary counts the stalled middle" "$(jq -r '.stalled == 1' <<<"$summary")"
-  # The TUI's footer counts it too, on the root's session screen.
-  tmux kill-session -t courier-stall-tui 2>/dev/null || true
-  tmux new-session -d -s courier-stall-tui -x 220 -y 40 \
-    "cd '$WORK/project' && LANG=C.UTF-8 OPENCODE_PASSWORD='$OPENCODE_PASSWORD' TERM=xterm-256color '$OPENCODE' --server '$SERVER' --session '$root' 2>'$WORK/stall-tui.err'; sleep 600"
-  shown=false
+  inbox=
   for _ in $(seq 1 40); do
-    if tmux capture-pane -pt courier-stall-tui 2>/dev/null | grep -qF "1 stalled"; then shown=true; break; fi
+    inbox=$(api "session/$middle/inbox" | jq -r '[.data[] | select(.type == "synthetic")] | first | .id // empty')
+    [ -n "$inbox" ] && break
     sleep 1
   done
-  tmux capture-pane -pt courier-stall-tui >"$WORK/stall-tui.txt" 2>/dev/null || true
-  tmux kill-session -t courier-stall-tui 2>/dev/null || true
-  check "the TUI footer counts the stalled middle" "$shown"
+  check "the leaf's report waits in the middle's inbox ($inbox)" "$([ -n "$inbox" ] && echo true || echo false)"
+  watched() { kv get "wake/$middle/$inbox" | jq -r "$1"; }
+  check "the courier watches it, waiting in an idle session" "$(watched '.running == false')"
+  # Missed after WAKE_MS (30 s) and found at a tick up to 15 s later; flagged a WAKE_MS and a tick after that.
+  for _ in $(seq 1 60); do [ "$(watched '.rewoken != null')" = true ] && break; sleep 1; done
+  check "the scheduler sent it again under the same inbox id" "$(watched '.rewoken != null')"
+  check "which OpenCode took for the message waiting, not a second one" \
+    "$(api "session/$middle/inbox" | jq -r --arg id "$inbox" '[.data[] | select(.type == "synthetic")] | length == 1 and .[0].id == $id')"
+  for _ in $(seq 1 60); do [ "$(watched '.stalled != null')" = true ] && break; sleep 1; done
+  check "still not taken, it is flagged stalled" "$(watched '.stalled != null')"
+  summary=$(api_post "rpc/courier/summary?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" "{\"input\":{\"sessionID\":\"$root\"}}" | jq -c '.output')
+  echo "  $summary"
+  check "the root's tree summary counts the stalled middle" "$(jq -r '.stalled == 1' <<<"$summary")"
+  row=$(api_post "rpc/courier/tree?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" "{\"input\":{\"sessionID\":\"$root\"}}" |
+    jq -c --arg id "$middle" '.output.rows[] | select(.sessionID == $id) | {state, stalled}')
+  echo "  $row"
+  check "and the panel's row reads it as stalled, since the report arrived" "$(jq -r '.state == "stalled" and (.stalled | type == "number")' <<<"$row")"
 }
 
 run_inbox() {

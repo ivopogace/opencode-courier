@@ -187,7 +187,7 @@ test("registerTreeRpc serves the summary as the courier RPC's summary method", a
 
   await registerTreeRpc(rpc as any, { courier: ports } as StopPorts)
 
-  expect(registered.map(({ definition }) => [definition.id, Object.keys(definition.methods)])).toEqual([["courier", ["summary", "tree", "stop"]]])
+  expect(registered.map(({ definition }) => [definition.id, Object.keys(definition.methods)])).toEqual([["courier", ["summary", "tree", "stop", "cleanup"]]])
   expect(await registered[0]!.handlers.summary({ sessionID: "ses_root" })).toEqual({ running: 1, waiting: 0, idle: 0, groups: [] })
 })
 

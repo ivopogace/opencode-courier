@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode/plugin/tui"
 import type { PanelInput, PanelPresentation } from "@opencode/plugin/tui/context"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { createEffect, createMemo, createResource, createRoot, createSignal, For, on, onCleanup, onMount, Show, untrack, type Accessor } from "solid-js"
-import { treeRpc, type Row, type Stopped, type Summary, type Tree, type Wait } from "./rpc.js"
+import { treeRpc, type Forgotten, type Row, type Stopped, type Summary, type Tree, type Wait } from "./rpc.js"
 
 type Context = Plugin.Context
 type Location = ReturnType<Context["data"]["location"]["default"]>
@@ -276,6 +276,45 @@ async function confirmStop(ctx: Context, courier: Courier, location: (sessionID:
   return true
 }
 
+/** The toast after a forget, as courier_cleanup reports it: forgotten, its worktree removed or already gone, or kept and why. */
+export function forgottenLine(title: string, result: Forgotten) {
+  const name = `"${oneLine(title)}"`
+  if (result.outcome === "kept") return `Kept ${name} and its worktree: ${result.reason}`
+  if (result.outcome === "removed") return `Forgot ${name} and removed its worktree`
+  return result.outcome === "gone" ? `Forgot ${name}; its worktree was already gone` : `Forgot ${name}`
+}
+
+/**
+ * Asks the person to confirm, then forgets `target` through courier_cleanup's path as its parent, without `force`, once `by`
+ * is found above it; toasts the outcome and calls `done` unless the worktree was kept. False when the person did not confirm.
+ */
+async function confirmForget(
+  ctx: Context,
+  courier: Courier,
+  location: (sessionID: string) => Location,
+  by: string,
+  target: { sessionID: string; title: string; isolated: boolean },
+  done: () => void,
+) {
+  const what = target.isolated
+    ? "Its worktree is removed unless it has uncommitted changes or commits found nowhere else."
+    : "It leaves this tree and courier_children."
+  const confirmed = await ctx.ui.dialog.confirm({
+    title: "Forget session",
+    message: `Forget "${oneLine(target.title)}" (${target.sessionID})? ${what}`,
+    label: { confirm: "Forget", cancel: "Keep" },
+  })
+  if (!confirmed) return false
+  try {
+    const result = await courier.cleanup({ sessionID: target.sessionID, by }, { location: location(by) })
+    ctx.ui.toast.show({ title: "courier", message: forgottenLine(target.title, result), variant: result.outcome === "kept" ? "warning" : "success" })
+    if (result.outcome !== "kept") done()
+  } catch (error) {
+    ctx.ui.toast.show({ title: "courier forget", message: reason(error), variant: "error" })
+  }
+  return true
+}
+
 /** The host's command that gives the keyboard back to the prompt; a newly shown panel takes it. */
 const FOCUS_PROMPT = "pane.focus.left"
 
@@ -294,7 +333,7 @@ const oneLine = (title: string) => title.replace(/[\r\n]+/g, " ")
 /** What a panel opened in a session shows: the tree it follows there, and whether to give the keyboard back to the prompt. */
 type View = { root: string; tree?: Tree; refocus: boolean; note: (fields: Partial<Following>) => void }
 
-/** The tree panel: the sessions under its root, one row each, the one on screen marked, with the keys to move, open and stop. */
+/** The tree panel: the sessions under its root, one row each, the one on screen marked, with the keys to move, open, stop and forget. */
 function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier: Courier; location: (sessionID: string) => Location; changed: Accessor<number> }) {
   const { ctx, input, view, courier, location } = props
   const theme = ctx.theme
@@ -364,6 +403,14 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
     const row = current()
     if (row) void confirmStop(ctx, courier, location, view.root, { sessionID: row.sessionID, title: row.title, under: reach(rows(), row.sessionID) - 1 })
   }
+  // Only a gone session: forgetting a live one would lose the report it owes, and could pull its worktree from under it.
+  const forgetSelected = () => {
+    const row = current()
+    if (!row) return
+    if (row.state !== "gone")
+      return ctx.ui.toast.show({ title: "courier", message: `x forgets only a gone session; "${oneLine(row.title)}" is ${row.state}.`, variant: "warning" })
+    void confirmForget(ctx, courier, location, view.root, { sessionID: row.sessionID, title: row.title, isolated: row.isolated }, () => void refetch())
+  }
   ctx.keymap.layer(() => ({
     priority: 10,
     enabled: () => input.focused,
@@ -374,6 +421,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
       { bind: "j", title: "Next session", group: "Courier", run: () => move(1) },
       { bind: "return", title: "Open session", group: "Courier", run: open },
       { bind: "s", title: "Stop session and those under it", group: "Courier", run: stopSelected },
+      { bind: "x", title: "Forget gone session", group: "Courier", run: forgetSelected },
       { bind: "r", title: "Refresh", group: "Courier", run: () => void refetch() },
       { bind: "f", title: "Toggle fullscreen", group: "Courier", run: () => input.toggleFullscreen() },
       { bind: "q", title: "Close courier tree", group: "Courier", run: () => input.close() },
@@ -441,7 +489,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
         </For>
       </scrollbox>
       <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
-        ↑↓ select · enter open · s stop · r refresh · f fullscreen · q close
+        ↑↓ select · enter open · s stop · x forget · r refresh · f fullscreen · q close
       </text>
     </box>
   )

@@ -3,7 +3,8 @@
 # entrypoints, its RPC answers over HTTP, and the TUI, in tmux, shows the prompt footer's entry and
 # follows a change, opens the tree panel with /courier tree, follows it into a child, and stops a child with /courier stop;
 # a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188);
-# a child showing a form waits on the person in the footer and the panel (#183).
+# a child showing a form waits on the person in the footer and the panel (#183); and x in the panel forgets a gone
+# isolated child, with its worktree (#187).
 # Then the same from the package `opencode plugin add` installs. Driven by e2e/mock-model.mjs's
 # COURIER-TUI, so no API key is needed.
 #
@@ -339,6 +340,40 @@ for _ in $(seq 1 30); do waits=$(rpc summary "{\"sessionID\":\"$searcher_parent\
 check "the summary no longer counts it waiting" "$([ "$waits" = 0 ] && echo true || echo false)"
 check "nor does the footer" "$(hides "waiting on you" 20 tui-form-dismissed)"
 
+# x in the tree panel (#187): an isolated child deleted over HTTP stays on the roster, a gone row, for courier_cleanup;
+# x and Enter forget it through courier_cleanup's path, which removes its clean worktree, and the row goes.
+echo "x forgets a gone isolated child from the tree panel, with its worktree"
+out=$(prompt "COURIER-TEST isolate")
+forget_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+forget_child=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out" | head -1)
+forget_dir=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.directory' <<<"$out" | head -1)
+check "the isolated child reported and ended its turn" "$([ "$(summary_until "$forget_parent" 90 "$one_idle")" = "$one_idle" ] && echo true || echo false)"
+check "its worktree exists" "$([ -d "$forget_dir" ] && echo true || echo false)"
+refused=$(rpc cleanup "{\"sessionID\":\"$forget_child\",\"by\":\"$forget_child\"}")
+echo "  $refused"
+check "the RPC refuses a cleanup from a session not above the target" "$(jq -r '.type == "refused"' <<<"$refused")"
+open_tui tui-forget-open "$forget_parent"
+check "the TUI on the child's parent counts it in the footer" "$(shows "courier 1 idle" 60 tui-forget-open)"
+check "the child is deleted over HTTP" \
+  "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$forget_child") == 20* ]] && echo true || echo false)"
+gone_row() { rpc tree "{\"sessionID\":\"$forget_parent\"}" | jq -r --arg id "$forget_child" '.output.rows[] | select(.sessionID == $id) | .state'; }
+check "the panel's tree reads it as gone" "$(for _ in $(seq 1 20); do [ "$(gone_row)" = gone ] && { echo true; exit; }; sleep 1; done; echo false)"
+check "the footer no longer counts it" "$(hides "courier 1 idle" 30 tui-forget)"
+tmux send-keys -t "$TMUX_SESSION" "/courier tree"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "the panel shows the gone row and the x key" \
+  "$([ "$(shows "x forget" 30 tui-forget-panel)" = true ] && grep -qF "Report back to your parent.  gone" "$WORK/tui-forget-panel.txt" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" x
+check "x asks to confirm, naming the child" "$(shows "Forget \"Report back to your parent.\"" 30 tui-forget-confirm)"
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "once confirmed, a toast says it was forgotten" "$(shows "Forgot \"Report back to your parent.\"" 30 tui-forgotten)"
+check "and the row is gone from the panel" "$(shows "No session started with courier_spawn under this one." 30 tui-forget-empty)"
+check "and from the roster" "$([ -z "$(gone_row)" ] && [ -z "$(kv get "roster-by-child/$forget_child")" ] && echo true || echo false)"
+check "and its worktree is removed" "$(for _ in $(seq 1 20); do [ ! -d "$forget_dir" ] && { echo true; exit; }; sleep 1; done; echo false)"
+tmux send-keys -t "$TMUX_SESSION" q
+check "q closes the panel" "$(hides "courier tree" 10 tui-forget-closed)"
+
 echo "opencode plugin add installs the package with its tui and rpc entrypoints"
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 stop_server
@@ -373,7 +408,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

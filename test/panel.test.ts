@@ -4,7 +4,7 @@ import { cancelScheduled, type LaterPorts } from "../src/scheduling/index.js"
 import { DEFAULT_LIMITS, type RosterEntry } from "../src/tree/domain.js"
 import { holdReport, joinGroup } from "../src/tree/group.js"
 import { lastTool, panel } from "../src/tree/panel.js"
-import type { CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/ports.js"
+import type { CleanupPorts, CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/ports.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
 import { childStore, groupStore } from "../src/tree/store.js"
@@ -258,11 +258,19 @@ describe("panel", () => {
   })
 })
 
-/** The tree's RPC registered over fake ports with courier_stop's: its handlers. */
+/** The tree's RPC registered over fake ports with courier_stop's and courier_cleanup's, whose worktrees are clean: its handlers. */
 async function registered(sessions: Record<string, Session>) {
   const { ports, calls } = fakePorts(sessions)
   const later = { storage: ports.storage, session: ports.session, now: () => 1_000, newID: () => "later_1", log: () => {} } as unknown as LaterPorts
-  const stopPorts = { courier: ports, cancelScheduled: (sessionID: string) => cancelScheduled(later, sessionID), cleanup: {} } as unknown as StopPorts
+  const cleanup: CleanupPorts = {
+    storage: ports.storage,
+    worktree: { remove: async (input: unknown) => void calls.push({ method: "remove", input }) } as unknown as CleanupPorts["worktree"],
+    projectID: "prj",
+    inspect: async () => ({ changes: [], commits: [] }),
+    now: () => 1_000,
+    nudge: () => {},
+  }
+  const stopPorts = { courier: ports, cancelScheduled: (sessionID: string) => cancelScheduled(later, sessionID), cleanup } as unknown as StopPorts
   let handlers: any
   await registerTreeRpc({ register: async (_definition: unknown, given: unknown) => ((handlers = given), {} as any) } as any, stopPorts)
   return { ports, calls, handlers }
@@ -304,13 +312,62 @@ describe("the tree's RPC", () => {
     })
     expect(await handlers.stop({ sessionID: "ses_unknown", by: "ses_root" }, { error })).toMatchObject({ type: "refused" })
   })
+
+  test("cleanup forgets a session as courier_cleanup called from its own parent, when `by` is above it", async () => {
+    const { ports, calls, handlers } = await registered({})
+    await childStore(ports.storage).record(entry("ses_mid", "ses_root"))
+    await childStore(ports.storage).record(entry("ses_leaf", "ses_mid", { isolated: true, directory: "/wt/leaf" }))
+    const error = (type: string, message: string, data: unknown) => ({ type, message, data })
+
+    expect(await handlers.cleanup({ sessionID: "ses_leaf", by: "ses_root" }, { error })).toEqual({ outcome: "removed" })
+    expect(calls.filter((call) => call.method === "remove").map((call) => call.input.directory)).toEqual(["/wt/leaf"])
+    expect(await childStore(ports.storage).entry("ses_mid", "ses_leaf")).toBeUndefined()
+    expect(await handlers.cleanup({ sessionID: "ses_mid", by: "ses_root" }, { error })).toEqual({ outcome: "forgotten" })
+    expect(await childStore(ports.storage).entry("ses_root", "ses_mid")).toBeUndefined()
+  })
+
+  test("cleanup refuses a `by` that is not above the target, and a session not on the roster, and forgets nothing", async () => {
+    const { ports, calls, handlers } = await registered({})
+    await childStore(ports.storage).record(entry("ses_mid", "ses_root"))
+    await childStore(ports.storage).record(entry("ses_leaf", "ses_mid", { isolated: true, directory: "/wt/leaf" }))
+    const error = (type: string, message: string, data: unknown) => ({ type, message, data })
+
+    for (const by of ["ses_other", "ses_leaf"])
+      expect(await handlers.cleanup({ sessionID: "ses_leaf", by }, { error })).toEqual({
+        type: "refused",
+        message: expect.stringContaining(`${by} is not above ses_leaf`),
+        data: {},
+      })
+    expect(await handlers.cleanup({ sessionID: "ses_unknown", by: "ses_root" }, { error })).toMatchObject({ type: "refused" })
+    expect(calls.filter((call) => call.method === "remove")).toEqual([])
+    expect(await childStore(ports.storage).entry("ses_mid", "ses_leaf")).toBeDefined()
+  })
+
+  test("cleanup refuses a session OpenCode still has, or cannot say it lost, and forgets nothing", async () => {
+    const { ports, calls, handlers } = await registered({ ses_leaf: { updated: 5 } })
+    await childStore(ports.storage).record(entry("ses_leaf", "ses_root", { isolated: true, directory: "/wt/leaf" }))
+    const error = (type: string, message: string, data: unknown) => ({ type, message, data })
+
+    expect(await handlers.cleanup({ sessionID: "ses_leaf", by: "ses_root" }, { error })).toEqual({
+      type: "refused",
+      message: "ses_leaf is still known to OpenCode: only a gone session is forgotten here.",
+      data: {},
+    })
+    ;(ports.session as any).get = async () => Promise.reject(new Error("connection reset"))
+    expect(await handlers.cleanup({ sessionID: "ses_leaf", by: "ses_root" }, { error })).toMatchObject({ type: "refused", message: expect.stringContaining("connection reset") })
+    expect(calls.filter((call) => call.method === "remove")).toEqual([])
+    expect(await childStore(ports.storage).entry("ses_root", "ses_leaf")).toBeDefined()
+  })
 })
 
-test("the tree and stop methods' schemas take a session, and stop a caller too", async () => {
-  const { tree, stop } = treeRpc.methods
+test("the tree, stop and cleanup methods' schemas take a session, stop a caller too, and a kept worktree its reason", async () => {
+  const { tree, stop, cleanup } = treeRpc.methods
   expect((await tree.input["~standard"].validate({ sessionID: "ses_root" })).issues).toBeUndefined()
   expect((await tree.output["~standard"].validate({ rows: [] })).issues).toBeUndefined()
   expect((await stop.input["~standard"].validate({ sessionID: "ses_a" })).issues).toBeDefined()
   expect((await stop.input["~standard"].validate({ sessionID: "ses_a", by: "ses_root" })).issues).toBeUndefined()
   expect((await stop.output["~standard"].validate({ stopped: [], cancelled: -1 })).issues).toBeDefined()
+  expect((await cleanup.output["~standard"].validate({ outcome: "kept" })).issues).toBeDefined()
+  expect((await cleanup.output["~standard"].validate({ outcome: "kept", reason: "1 uncommitted change (a)" })).issues).toBeUndefined()
+  expect((await cleanup.output["~standard"].validate({ outcome: "removed" })).issues).toBeUndefined()
 })

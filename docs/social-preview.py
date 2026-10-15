@@ -55,7 +55,7 @@ d.rounded_rectangle((X, BOTTOM - 190, 930, BOTTOM), radius=22, fill="#1a1d33", o
 d.text((X + 40, BOTTOM - 162), "Install", font=f("Bold", 38), fill="#e6e8f5")
 d.text((X + 40, BOTTOM - 90), "opencode plugin add opencode-courier", font=ImageFont.truetype(MONO_B, 32), fill="#b4c0ff")
 
-# Terminal panel, redrawn from the last frame of docs/demo-async-tui.gif. Its 6 px frame ends
+# Terminal panel, redrawn from the last frame of the former README demo GIF. Its 6 px frame ends
 # at the right margin.
 PX0, PY0, PX1, PY1 = 980, TOP + 6, W - MARGIN - 6, BOTTOM - 6
 d.rounded_rectangle((PX0 - 6, PY0 - 6, PX1 + 6, PY1 + 6), radius=26, fill="#25263a")

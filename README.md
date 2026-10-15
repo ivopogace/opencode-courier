@@ -91,7 +91,7 @@ behaviour:
 - **A child that ends its turn without a report:** the parent is told, and the row says so.
 - **`/courier stop`:** pick the session, confirm, and it is stopped.
 - **A form only you can answer:** a child's web search shows a form; the footer, the panel row and
-  the asks inbox point to it, and answering it there lets the child carry on.
+  the asks inbox point to it, and answering it there wakes the parent.
 
 ## Recursive orchestration
 

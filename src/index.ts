@@ -147,7 +147,7 @@ export const courier = () => Plugin.define({
         ])
         return [...requests, ...questions]
       },
-      forms: async (sessionID) => formsShown(shown, sessionID),
+      forms: (sessionID) => Promise.resolve(formsShown(shown, sessionID)),
     }
     const cleanupPorts: CleanupPorts = { ...ports, inspect: inspectWorktree }
     const answerPorts: AnswerPorts = { storage: ctx.storage, permissions, assert: (input) => ctx.permission.assert(input) }

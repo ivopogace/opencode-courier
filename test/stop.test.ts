@@ -58,6 +58,7 @@ async function fixture(options: { idle?: string[]; missing?: string[]; failing?:
     log: (message: string) => void logs.push(message),
     nudge: () => void nudges.push(1),
     pending: async () => [],
+    forms: async () => [],
   }
   const later = { storage, session, now: () => 5_000, newID: (() => { let n = 0; return () => `later_${++n}` })(), log: courier.log } as unknown as LaterPorts
   const removed: any[] = []

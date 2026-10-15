@@ -145,6 +145,8 @@ export interface CourierPorts {
   readonly now: () => number
   /** The permission requests and questions a session waits on, wherever they are pending. */
   readonly pending: (sessionID: string) => Promise<ReadonlyArray<Pending>>
+  /** The forms a session shows, which only the person can answer: web search's, a plugin's; not the question tool's. */
+  readonly forms: (sessionID: string) => Promise<ReadonlyArray<ShownForm>>
   readonly limits: Limits
   /** The `nativeChildren` option: a child started without isolate is created with OpenCode's own `parentID`. */
   readonly nativeChildren?: boolean
@@ -154,6 +156,12 @@ export interface CourierPorts {
   /** Has the scheduler deliver what is due now rather than at its next tick: a group a report has just completed. */
   readonly nudge: () => void
   readonly log: (message: string) => void
+}
+
+/** A form a session shows, as `CourierPorts.forms` lists it; `person/` keeps them. */
+export interface ShownForm {
+  readonly id: string
+  readonly title: string
 }
 
 /** One question a session waits on, as `Pending` shows it; `person/`'s `Prompt` has these fields. */

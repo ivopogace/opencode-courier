@@ -257,8 +257,8 @@ does not. Each spawned session's brief says when to split its task and when to d
 
 The package ships a part for OpenCode's terminal UI, which the TUI loads from the server's plugin
 list; the server half behaves the same whether or not a TUI is attached. In a session that started
-sessions, the prompt's footer shows what the tree under it is doing: how many run, wait on you or
-are idle, and for each [join group](docs/reference.md#join-groups) how many of its members have
+sessions, the prompt's footer shows what the tree under it is doing: how many run, wait on you (a
+permission request, a question or a form they show) or are idle, and for each [join group](docs/reference.md#join-groups) how many of its members have
 reported:
 
 ```
@@ -266,7 +266,8 @@ courier 1 waiting on you · 2 running · group pair 1/2
 ```
 
 `/courier tree` opens a panel beside the session with the tree under it, a row per session indented
-by depth, with what it does, its report and its group's standing; a session that started others gets
+by depth, with what it does, its report and its group's standing; a session waiting on you gets a line per
+request or form (`shows a form: Web Search`), a session that started others gets
 a bar of the parts reported, a leaf how long it ran, its last tool call and its cost. A tree that has
 started more than `maxTotal` sessions over time is listed live ones first, then newest, and the header
 says how many older ones are left out; the footer counts them all. `↑`/`↓` select,

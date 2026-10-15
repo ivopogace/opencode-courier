@@ -399,12 +399,13 @@ describe("the tree panel's lines", () => {
         waits: [
           { type: "permission", action: "shell", resources: ["echo courier-asks"] },
           { type: "question", question: "Which greeting?" },
+          { type: "form", title: "Web Search" },
         ],
       }),
     ]
     expect(detailLines(rows[0]!, rows, NOW)).toEqual(["[██████████] 1/1 reported"])
     expect(detailLines(rows[1]!, rows, NOW)).toEqual(["ran 2m 00s · no tool call yet · $0.01"])
-    expect(detailLines(rows[2]!, rows, NOW)).toEqual(["asks permission: shell echo courier-asks", "asks: Which greeting?"])
+    expect(detailLines(rows[2]!, rows, NOW)).toEqual(["asks permission: shell echo courier-asks", "asks: Which greeting?", "shows a form: Web Search"])
     // A session OpenCode no longer knows has no activity to show.
     expect(detailLines(row("ses_gone", { state: "gone", idle: undefined, cost: undefined }), rows, NOW)).toEqual([])
   })

@@ -815,9 +815,11 @@ started, every one of them (so a tree that has started more than `maxTotal` sess
 counted whole, with the ones [past retention](#roster) left out), each by what it does:
 
 - `waiting on you`: it waits on a permission request or a question, those `courier_status` lists as
-  `pending`, which go to the person at the top of its tree;
+  `pending`, which go to the person at the top of its tree, or its running turn shows a form (web
+  search's provider form, a plugin's), which only the person can answer; the [asks inbox](#the-asks-inbox)
+  lists all three;
 - `running`: its turn runs, or something reached it after its last turn ended, and it waits on no
-  request;
+  request and shows no form;
 - `idle`: neither, whether it has reported or waits for a message.
 
 A session OpenCode no longer knows is not counted. Then, for each join group of the open session's own
@@ -855,8 +857,8 @@ for a session spawned before report notes were kept), its join group's standing 
 - an **orchestrator**, any session with children among the rows, and the session whose tree the panel
   shows, in the header, gets a bar of the parts reported: its children whose report arrived out of the
   children it started;
-- a session **waiting on the person** gets one line per request: `asks permission: <action>
-  <resources>` or `asks: <its first question>`;
+- a session **waiting on the person** gets one line per request, then one per form it shows:
+  `asks permission: <action> <resources>`, `asks: <its first question>` or `shows a form: <its title>`;
 - a **leaf** gets its activity: how long it ran (from its creation to the end of its last turn, or to
   now while it runs), its last tool call and how long ago it was made, and what it has cost so far; a
   `gone` one gets none.
@@ -907,7 +909,8 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_â€
   turn, `stopped` (true when `courier_stop` stopped it since its last prompt; absent otherwise), `report` (`state`: `owed`, `reported` or `ended`, with the report's `status` once reported, and
   `progressed`), `group` (`name`, `standing`), `isolated`, `created`, `idle` (when its last turn ended, if
   it is not running), `cost` in US dollars, `tool` (its last tool call's `name` and `at`, when it ran) and
-  `waits` (`{type: "permission", action, resources}` or `{type: "question", question}`); times in epoch
+  `waits` (`{type: "permission", action, resources}`, `{type: "question", question}` or `{type: "form", title}`, the
+  requests first, then the forms); times in epoch
   milliseconds. `truncated` is how many older sessions the listing left out, when it had more than `maxTotal`.
 - `stop {sessionID, by}`: `courier_stop` for `sessionID`, called from `by`, which must be above it;
   answers `{stopped: [{sessionID, title, outcome}], cancelled: <count>}`, deepest first, or fails with

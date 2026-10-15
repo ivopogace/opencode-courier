@@ -351,6 +351,7 @@ describe("spawn", () => {
       now: () => 1,
       head: async () => undefined,
       pending: async () => [],
+      forms: async () => [],
       agent: { get: async () => ({ data: {} }) },
       worktree: {},
       session: {

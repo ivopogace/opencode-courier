@@ -11,6 +11,7 @@ import {
   addPersonTools,
   asksPermission,
   asksQuestion,
+  formsShown,
   joinRelay,
   noticeCutOff,
   pendingOf,
@@ -20,6 +21,7 @@ import {
   registerPersonRpc,
   relayQuestions,
   type AnswerPorts,
+  type FormsShown,
   type Permissions,
   type PersonState,
   type QuestionPorts,
@@ -61,6 +63,9 @@ const gate = sharedState<SpawnGate>("spawning", () => ({ reserved: new Set(), tu
 /** The type of each item enqueued for a spawned session, outside the hub like the gate. */
 const inbox = sharedState("inbox", () => new Map<string, string>())
 
+/** The forms shown now, which the person events keep and the footer and tree panel count; outside the hub like the inbox. */
+const shown = sharedState<FormsShown>("formsShown", () => new Map())
+
 /**
  * What each tick of the scheduler does, in order, through the first loaded member, of whichever copy:
  * due `courier_later` messages, then released join groups. Every hub-v2 member's `later` is its LaterPorts.
@@ -79,7 +84,7 @@ const permissions = domains as () => Iterable<Permissions>
 // several subscriptions and copies see the same events. The scheduler's claim set is the hub's own.
 const { watched } = hub
 const watchState: WatchState = { seen: watched.seen, inbox }
-const personState: PersonState = { ...watched, forms: hub.forms }
+const personState: PersonState = { ...watched, forms: hub.forms, shown }
 
 /**
  * What a session waits on outside the tree, for the silent-turn rule, cheapest first: a request of its
@@ -142,6 +147,7 @@ export const courier = () => Plugin.define({
         ])
         return [...requests, ...questions]
       },
+      forms: (sessionID) => Promise.resolve(formsShown(shown, sessionID)),
     }
     const cleanupPorts: CleanupPorts = { ...ports, inspect: inspectWorktree }
     const answerPorts: AnswerPorts = { storage: ctx.storage, permissions, assert: (input) => ctx.permission.assert(input) }

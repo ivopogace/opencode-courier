@@ -24,15 +24,19 @@ export interface PersonPorts {
   readonly log: (message: string) => void
 }
 
+/** The forms spawned sessions and others show, which only the person can answer, by form id; not the question tool's. */
+export type FormsShown = Map<string, { readonly sessionID: string; readonly title: string }>
+
 /**
- * What every plugin instance in the process shares of the person events: the handled event ids, shared
- * with the tree's, and the requests and forms the top sessions were told about or that were answered first.
+ * What every plugin instance in the process shares of the person events: the handled event ids (the tree's too),
+ * the requests and forms told about or answered first, and the forms shown now.
  */
 export interface PersonState {
   readonly seen: Set<string>
   readonly waiting: Waiting
   readonly answered: Set<string>
   readonly forms: FormsTold
+  readonly shown: FormsShown
 }
 
 /** The session at the top of a lineage: where its permission requests go, since that is where the person is. */

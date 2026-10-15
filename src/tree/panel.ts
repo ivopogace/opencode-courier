@@ -1,6 +1,6 @@
 import type { Status } from "../kernel/protocol.js"
 import { busy } from "./domain.js"
-import type { CourierPorts, Pending } from "./ports.js"
+import type { CourierPorts, Pending, ShownForm } from "./ports.js"
 import { lastStatus, stoppedSincePrompt } from "./report.js"
 import type { Row, Tree, Wait } from "./rpc.js"
 import { standingIn } from "./status.js"
@@ -25,6 +25,9 @@ export const waitOf = (pending: Pending): Wait =>
     ? { type: "permission", action: pending.action, resources: [...pending.resources] }
     : { type: "question", question: pending.questions[0]?.question ?? "" }
 
+/** A form a session shows, as the panel says what it waits on. */
+export const formWait = (form: ShownForm): Wait => ({ type: "form", title: form.title })
+
 /** A session's report since its last prompt, as the panel shows it; none for one spawned before this was kept. */
 function reportRow(report: Listed["report"], status: Status | undefined): Pick<Row, "report"> {
   if (!report) return {}
@@ -33,14 +36,14 @@ function reportRow(report: Listed["report"], status: Status | undefined): Pick<R
   return { report: { state: "reported", progressed: report.progressed, ...(status ? { status } : {}) } }
 }
 
-/** What a session does: waiting on a request to the person, running, idle, or gone when OpenCode no longer knows it. */
+/** What a session does: waiting on a request to the person or a form it shows them, running, idle, or gone when OpenCode no longer knows it. */
 function stateOf(info: unknown, waits: number, running: boolean): Row["state"] {
   if (!info) return "gone"
   if (waits) return "waiting"
   return running ? "running" : "idle"
 }
 /** One session of the panel: what it is doing, its report and group standing, its last tool call and its cost. */
-async function row(ports: CourierPorts, { entry, depth, info, pending, report }: Listed): Promise<Row> {
+async function row(ports: CourierPorts, { entry, depth, info, pending, forms, report }: Listed): Promise<Row> {
   const { sessionID } = entry
   const [messages, status, standing, stopped] = await Promise.all([
     ports.session.context({ sessionID }).catch((): Messages => []),
@@ -55,7 +58,7 @@ async function row(ports: CourierPorts, { entry, depth, info, pending, report }:
     parentID: entry.parentID,
     title: info?.title ?? entry.title,
     depth,
-    state: stateOf(info, pending.length, running),
+    state: stateOf(info, pending.length + forms.length, running),
     ...(info?.outcome ? { outcome: info.outcome } : {}),
     ...(stopped ? { stopped } : {}),
     ...reportRow(report, status),
@@ -65,7 +68,7 @@ async function row(ports: CourierPorts, { entry, depth, info, pending, report }:
     ...(info && !running && info.time.idle !== undefined ? { idle: info.time.idle } : {}),
     ...(info ? { cost: info.cost } : {}),
     ...(tool ? { tool } : {}),
-    waits: pending.map(waitOf),
+    waits: [...pending.map(waitOf), ...forms.map(formWait)],
   }
 }
 

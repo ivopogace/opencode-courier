@@ -4,7 +4,7 @@ import { formNotice, formSettledNotice, permissionNotice, permissionSettledNotic
 import { personEvents } from "../src/person/events.js"
 import type { FormCreated } from "../src/person/form.js"
 import { relayPending, reportAsked, reportReplied } from "../src/person/events.js"
-import { reportForm, reportFormSettled } from "../src/person/form.js"
+import { formsShown, reportForm, reportFormSettled } from "../src/person/form.js"
 import { forgetChild } from "../src/tree/forget.js"
 import { childStore } from "../src/tree/store.js"
 import { asked, child, fakePorts, fresh, replied, request, settled, shown, webForm } from "./fixtures/events.js"
@@ -361,6 +361,34 @@ describe("reportFormSettled", () => {
 
     expect(await reportFormSettled(ports, state, settled())).toEqual([])
     expect(sent).toEqual([])
+  })
+})
+
+describe("formsShown", () => {
+  test("lists the forms a session shows from their creation to their settling, not a question's or one settled before it was seen", async () => {
+    const { ports } = fakePorts()
+    await childStore(ports.storage).record(child())
+    const state = fresh()
+    const question = { ...webForm, id: "frm_q", title: "Questions", metadata: { kind: "question" } }
+
+    await reportForm(ports, state, shown("evt_f"))
+    await reportForm(ports, state, shown("evt_g", { ...webForm, id: "frm_2", title: "Choose a web search provider" }))
+    await reportForm(ports, state, shown("evt_q", question))
+    await reportForm(ports, state, shown("evt_o", { ...webForm, id: "frm_o", sessionID: "ses_other" }))
+    expect(formsShown(state.shown, "ses_child")).toEqual([
+      { id: "frm_1", title: "Web Search" },
+      { id: "frm_2", title: "Choose a web search provider" },
+    ])
+    expect(formsShown(state.shown, "ses_other")).toEqual([{ id: "frm_o", title: "Web Search" }])
+
+    await reportFormSettled(ports, state, settled("evt_s"))
+    await reportFormSettled(ports, state, { ...settled("evt_t", "form.cancelled", "frm_o"), data: { id: "frm_o", sessionID: "ses_other" } })
+    expect(formsShown(state.shown, "ses_child")).toEqual([{ id: "frm_2", title: "Choose a web search provider" }])
+    expect(formsShown(state.shown, "ses_other")).toEqual([])
+
+    await reportFormSettled(ports, state, settled("evt_u", "form.cancelled", "frm_3"))
+    await reportForm(ports, state, shown("evt_h", { ...webForm, id: "frm_3" }))
+    expect(formsShown(state.shown, "ses_child")).toHaveLength(1)
   })
 })
 

@@ -82,6 +82,30 @@ describe("the asks method", () => {
     for (const sessionID of ["ses_root", "ses_a", "ses_b"]) expect(await asks(ports, sessionID)).toEqual(expected)
   })
 
+  test("lists the top session's own requests first, a courier_answer prompt with the request it passes on", async () => {
+    const { ports } = await setUp()
+    const top = [
+      { id: "per_top", sessionID: "ses_root", action: "bash", resources: ["bun test"], metadata: { source: "courier", from: "ses_b", asks: "permission", requestID: "per_1" } },
+      { id: "per_own", sessionID: "ses_root", action: "edit", resources: ["src/a.ts"], save: ["src/*"], metadata: { source: "other" } },
+      { id: "per_alone", sessionID: "ses_alone", action: "edit", resources: ["b.ts"] },
+    ]
+    const permissions = ports.permissions
+    ;(ports as any).permissions = () => [
+      ...permissions(),
+      { list: async ({ sessionID }: { sessionID: string }) => top.filter((item) => item.sessionID === sessionID), reply: async () => undefined },
+    ]
+
+    for (const sessionID of ["ses_root", "ses_b"])
+      expect((await asks(ports, sessionID)).permissions).toEqual([
+        { sessionID: "ses_root", requestID: "per_top", action: "bash", resources: ["bun test"], passesOn: { sessionID: "ses_b", requestID: "per_1" } },
+        { sessionID: "ses_root", requestID: "per_own", action: "edit", resources: ["src/a.ts"], save: ["src/*"] },
+        { sessionID: "ses_b", requestID: "per_1", action: "bash", resources: ["bun test"], save: ["bun *"] },
+      ])
+    expect((await personRpc.methods.asks.output["~standard"].validate(await asks(ports, "ses_root"))).issues).toBeUndefined()
+    // A session outside any courier tree lists nothing, its own requests included: OpenCode shows those in it.
+    expect((await asks(ports, "ses_alone")).permissions).toEqual([])
+  })
+
   test("a session no courier tree knows has an empty inbox", async () => {
     const { ports } = await setUp()
     expect(await asks(ports, "ses_alone")).toEqual({ top: "ses_alone", sessions: [], permissions: [], questions: [] })

@@ -17,7 +17,7 @@ const Session = Schema.Struct({
   group: Schema.optionalKey(Schema.String),
 })
 
-/** A permission request a session of the tree waits on. */
+/** A permission request a session of the tree, the top among them, waits on. */
 const Permission = Schema.Struct({
   sessionID: Schema.String,
   requestID: Schema.String,
@@ -25,6 +25,8 @@ const Permission = Schema.Struct({
   resources: Schema.Array(Schema.String),
   /** What "always" would allow from now on; absent when it is not offered. */
   save: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** The request below that allowing this one passes on: the top's courier_answer prompt. */
+  passesOn: Schema.optionalKey(Schema.Struct({ sessionID: Schema.String, requestID: Schema.String })),
 })
 
 /** One question of OpenCode's question tool. */
@@ -49,6 +51,7 @@ const Asks = Schema.Struct({
   top: Schema.String,
   /** The sessions below the top, in the order a tree is drawn. */
   sessions: Schema.Array(Session),
+  /** The top session's own requests first, then those of the sessions below. */
   permissions: Schema.Array(Permission),
   questions: Schema.Array(Question),
 })

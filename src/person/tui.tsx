@@ -8,9 +8,12 @@ type FormField = FormInfo["fields"][number]
 type FormAnswer = Parameters<Context["data"]["session"]["form"]["reply"]>[0]["answer"]
 type FormValue = FormAnswer[string]
 
-/** Something a session of the tree waits on the person for; `key` is unique across kinds. */
+/**
+ * Something a session of the tree waits on the person for; `key` is unique across kinds. `prompted` marks a permission
+ * request the top session's courier_answer prompt asks about.
+ */
 export type Ask = { readonly key: string; readonly session: TreeSession } & (
-  | { readonly kind: "permission"; readonly request: AskedPermission }
+  | { readonly kind: "permission"; readonly request: AskedPermission; readonly prompted?: boolean }
   | { readonly kind: "question"; readonly question: AskedQuestion }
   | { readonly kind: "form"; readonly form: FormInfo }
 )
@@ -24,12 +27,25 @@ export const INBOX_COMMAND = "courier.asks"
 /** How long after the first of a burst of asks the inbox reads the tree again, to sound the new ones. */
 export const SETTLE_MS = 250
 
-/** The asks of a tree in the order the inbox lists them: by the tree's order, each session's permissions, questions, then forms. */
+/** The top session, at depth 0, as its own permission requests name it. */
+export const topSession = (asks: Asks): TreeSession => ({ sessionID: asks.top, title: "", parentID: "", depth: 0 })
+
+/**
+ * The asks of a tree in the order the inbox lists them: the top session's own permission requests, then by the tree's
+ * order, each session's permissions, questions, then forms.
+ */
 export function asksOf(asks: Asks, forms: ReadonlyMap<string, ReadonlyArray<FormInfo>>): Ask[] {
-  return asks.sessions.flatMap((session): Ask[] => [
+  const prompting = new Set(asks.permissions.flatMap((request) => (request.sessionID === asks.top && request.passesOn ? [request.passesOn.requestID] : [])))
+  return [topSession(asks), ...asks.sessions].flatMap((session): Ask[] => [
     ...asks.permissions
       .filter((request) => request.sessionID === session.sessionID)
-      .map((request) => ({ kind: "permission" as const, key: `permission ${request.requestID}`, session, request })),
+      .map((request) => ({
+        kind: "permission" as const,
+        key: `permission ${request.requestID}`,
+        session,
+        request,
+        ...(session.depth > 0 && prompting.has(request.requestID) ? { prompted: true } : {}),
+      })),
     ...asks.questions
       .filter((question) => question.sessionID === session.sessionID)
       .map((question) => ({ kind: "question" as const, key: `question ${question.requestID}`, session, question })),
@@ -53,8 +69,10 @@ const clip = (text: string, max = 80) => (text.length > max ? `${text.slice(0, m
 export function askTitle(ask: Ask) {
   switch (ask.kind) {
     case "permission": {
-      const { action, resources } = ask.request
-      return clip(resources.length ? `Permission: ${action} ${resources.join(", ")}` : `Permission: ${action}`)
+      const { action, resources, passesOn } = ask.request
+      const what = resources.length ? `${action} ${resources.join(", ")}` : action
+      if (ask.session.depth > 0) return clip(`Permission: ${what}`)
+      return clip(passesOn ? `Permission (top session): courier_answer once for "${what}"` : `Permission (top session): ${what}`)
     }
     case "question": {
       const [first, ...rest] = ask.question.questions
@@ -67,11 +85,13 @@ export function askTitle(ask: Ask) {
   }
 }
 
-/** The line under an ask: its depth and group, and that a question's call was cut off. */
+/** The line under an ask: its depth (the top's own say so) and group, that a question's call was cut off, or that the top's courier_answer prompt asks for it. */
 export function askFooter(ask: Ask) {
+  const top = ask.session.depth === 0
   return [
-    `depth ${ask.session.depth}`,
+    top ? "top session" : `depth ${ask.session.depth}`,
     ask.session.group ? `group ${ask.session.group}` : "",
+    ask.kind === "permission" && ask.prompted ? "the top's prompt asks" : "",
     ask.kind === "question" && ask.question.stopped ? "cut off, answered by message" : "",
   ]
     .filter(Boolean)
@@ -199,7 +219,7 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     const route = ctx.ui.router.current()
     return route.type === "session" ? route.sessionID : undefined
   }
-  // When the inbox first saw each ask, so it lists the oldest first; and those it answered, which the server may list a moment longer.
+  // When the inbox first saw each ask, so it lists the oldest first after the top's own; and those it answered, which the server may list a moment longer.
   const firstSeen = new Map<string, number>()
   const answered = new Set<string>()
   let seen = 0
@@ -215,7 +235,9 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     )
     const listed = asksOf(asks, forms).filter((ask) => !answered.has(ask.key))
     for (const ask of listed) if (!firstSeen.has(ask.key)) firstSeen.set(ask.key, seen++)
-    listed.sort((a, b) => firstSeen.get(a.key)! - firstSeen.get(b.key)!)
+    // The top's own requests first, as they hold up the sessions below.
+    const rank = (ask: Ask) => (ask.session.depth === 0 ? 0 : 1)
+    listed.sort((a, b) => rank(a) - rank(b) || firstSeen.get(a.key)! - firstSeen.get(b.key)!)
     return { asks, listed }
   }
 

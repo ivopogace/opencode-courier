@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 import { lineage, subtree } from "../tree/index.js"
-import { pendingOf, type Permissions } from "./permission.js"
+import { ownRequests, pendingOf, type Permissions } from "./permission.js"
 import { answerForPerson, pendingQuestions, type QuestionPorts } from "./question/index.js"
 import { personRpc, type Answered, type Asks } from "./rpc.js"
 
@@ -11,13 +11,14 @@ export interface PersonRpcPorts {
 }
 
 /**
- * The permission requests and questions waiting in the courier tree a session is in, from the roster: every session
- * of it, read from the top of its lineage down, so each session of the tree sees the same inbox.
+ * The permission requests and questions waiting in the courier tree a session is in, the top's own requests first, read from the
+ * roster from the top of its lineage down, so each session of the tree sees the same inbox.
  */
 export async function asks(ports: PersonRpcPorts, sessionID: string): Promise<Asks> {
   const { storage } = ports.questions
   const top = (await lineage(storage, sessionID)).at(-1)?.parentID ?? sessionID
   const { nodes } = await subtree(storage, top, { now: ports.questions.now() })
+  const own = nodes.length ? await ownRequests(ports.permissions(), top).catch(() => []) : []
   const waiting = await Promise.all(
     nodes.map(({ entry }) =>
       Promise.all([
@@ -35,21 +36,31 @@ export async function asks(ports: PersonRpcPorts, sessionID: string): Promise<As
       depth,
       ...(entry.group ? { group: entry.group } : {}),
     })),
-    permissions: nodes.flatMap(({ entry }, index) =>
-      waiting[index]![0].flatMap((pending) =>
-        pending.type === "permission"
-          ? [
-              {
-                sessionID: entry.sessionID,
-                requestID: pending.requestID,
-                action: pending.action,
-                resources: pending.resources,
-                ...(pending.save ? { save: pending.save } : {}),
-              },
-            ]
-          : [],
+    permissions: [
+      ...own.map(({ request, passesOn }) => ({
+        sessionID: top,
+        requestID: request.id,
+        action: request.action,
+        resources: [...request.resources],
+        ...(request.save?.length ? { save: [...request.save] } : {}),
+        ...(passesOn ? { passesOn } : {}),
+      })),
+      ...nodes.flatMap(({ entry }, index) =>
+        waiting[index]![0].flatMap((pending) =>
+          pending.type === "permission"
+            ? [
+                {
+                  sessionID: entry.sessionID,
+                  requestID: pending.requestID,
+                  action: pending.action,
+                  resources: pending.resources,
+                  ...(pending.save ? { save: pending.save } : {}),
+                },
+              ]
+            : [],
+        ),
       ),
-    ),
+    ],
     questions: nodes.flatMap(({ entry }, index) =>
       waiting[index]![1].map(({ requestID, questions, stopped }) => ({
         sessionID: entry.sessionID,

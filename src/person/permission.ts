@@ -22,6 +22,7 @@ export interface PermissionRequest {
   readonly resources: ReadonlyArray<string>
   readonly save?: ReadonlyArray<string>
   readonly message?: string
+  readonly metadata?: Readonly<Record<string, unknown>>
 }
 
 /**
@@ -200,6 +201,20 @@ export async function answer(ports: AnswerPorts, waiting: Waiting, callerID: str
   await passOn(ports, waiting, found, { sessionID, requestID, decision: refused === undefined ? reply : "reject", ...(message ? { message } : {}) })
   if (refused !== undefined) throw new Error(refusedText(sessionID, requestID, refused))
   return { sessionID, requestID, reply, answered: true }
+}
+
+/** The child's request a prompt of courier_answer's asks about, read from the metadata `askCaller` gives it; undefined for any other request. */
+export function passedOn(metadata: Readonly<Record<string, unknown>> | undefined) {
+  const { source, asks, from, requestID } = metadata ?? {}
+  if (source !== "courier" || asks !== "permission" || typeof from !== "string" || typeof requestID !== "string") return undefined
+  return { sessionID: from, requestID }
+}
+
+/** The requests a session waits on of its own, in whichever location holds them, each with the child's request it passes on when courier_answer asks it. */
+export async function ownRequests(permissions: Iterable<Permissions>, sessionID: string) {
+  const found = new Map<string, PermissionRequest>()
+  for (const { requests } of await listEverywhere(permissions, sessionID)) for (const request of requests) found.set(request.id, request)
+  return [...found.values()].map((request) => ({ request, passesOn: passedOn(request.metadata) }))
 }
 
 /** The requests a session waits on, in whichever location holds them, for courier_status. */

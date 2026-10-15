@@ -121,7 +121,9 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.29`); paths be
   and a `source` of type `tool` adds that tool part's input to the presentation (a shell command
   from `input.command`, nothing from `courier_answer`'s input); `metadata` is read only for a few
   keys (`url`, `query`, `provider`, `files`, `diff`), so the child's ids in it are not shown, and
-  the request's `message` cannot be set through `assert`.
+  the request's `message` cannot be set through `assert`. `permission.list` gives the pending request
+  with the `metadata` and `source` passed to `assert`, so the asks inbox reads from `metadata` which
+  child's request the top's prompt is for.
 - `worktree.create`, `worktree.remove` and `worktree.list` take the project, `projectID`
   (`location.project.id`), not a location; `agent.get` takes `location`.
 

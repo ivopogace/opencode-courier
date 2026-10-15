@@ -19,7 +19,7 @@ export const replied = (id = "evt_r", reply: PermissionReplied["data"]["reply"] 
   data: { sessionID: "ses_child", requestID: "per_1", reply },
 })
 
-export const fresh = () => ({ seen: new Set<string>(), waiting: new Set<string>(), answered: new Set<string>(), forms: { told: new Map<string, Promise<unknown>>(), settled: new Set<string>() }, inbox: new Map<string, string>() })
+export const fresh = () => ({ seen: new Set<string>(), waiting: new Set<string>(), answered: new Set<string>(), forms: { told: new Map<string, Promise<unknown>>(), settled: new Set<string>() }, shown: new Map<string, { sessionID: string; title: string }>(), inbox: new Map<string, string>() })
 
 export function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["data"][] = [], store = new Map<string, unknown>()) {
   const sent: any[] = []

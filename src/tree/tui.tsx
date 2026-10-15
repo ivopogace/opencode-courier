@@ -92,9 +92,10 @@ export function bar({ reported, started }: { reported: number; started: number }
   return `[${"█".repeat(filled)}${"░".repeat(width - filled)}] ${reported}/${started} reported`
 }
 
-/** What a paused session waits on, such as "asks permission: shell echo hi". */
+/** What a paused session waits on, such as "asks permission: shell echo hi" or "shows a form: Web Search". */
 export function waitLine(wait: Wait) {
-  return wait.type === "permission" ? `asks permission: ${[wait.action, ...wait.resources].join(" ")}` : `asks: ${wait.question}`
+  if (wait.type === "permission") return `asks permission: ${[wait.action, ...wait.resources].join(" ")}`
+  return wait.type === "form" ? `shows a form: ${wait.title}` : `asks: ${wait.question}`
 }
 
 /** What a row's session is doing, its report and its group standing: "idle · reported done · group pair held". */

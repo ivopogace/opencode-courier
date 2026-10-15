@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { DEFAULT_LIMITS, type RosterEntry } from "../src/tree/domain.js"
 import { holdReport, joinGroup, leaveGroup } from "../src/tree/group.js"
-import type { CourierPorts, Pending, StopPorts } from "../src/tree/ports.js"
+import type { CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/ports.js"
 import { RETENTION_MS } from "../src/tree/roster.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
@@ -11,7 +11,12 @@ import { summary } from "../src/tree/summary.js"
 type Times = { updated: number; idle?: number }
 
 /** Ports over an in-memory store, with each session's times and pending requests as given; one without times is gone. */
-function fakePorts(times: Record<string, Times>, pending: Record<string, Pending[]> = {}, maxTotal = DEFAULT_LIMITS.maxTotal) {
+function fakePorts(
+  times: Record<string, Times>,
+  pending: Record<string, Pending[]> = {},
+  maxTotal = DEFAULT_LIMITS.maxTotal,
+  forms: Record<string, ShownForm[]> = {},
+) {
   const store = new Map<string, unknown>()
   const ports = {
     now: () => 1_000,
@@ -31,6 +36,7 @@ function fakePorts(times: Record<string, Times>, pending: Record<string, Pending
       },
     },
     pending: async (sessionID: string) => pending[sessionID] ?? [],
+    forms: async (sessionID: string) => forms[sessionID] ?? [],
     limits: { ...DEFAULT_LIMITS, maxTotal },
   } as unknown as CourierPorts
   return { ports, store }
@@ -60,6 +66,29 @@ describe("summary", () => {
       await children.record(child)
 
     expect(await summary(ports, "ses_root")).toEqual({ running: 2, waiting: 1, idle: 1, groups: [] })
+  })
+
+  test("counts a running session showing a form as waiting, and an idle one by its times, its form's withdrawal missed", async () => {
+    const form = [{ id: "frm_1", title: "Web Search" }]
+    const { ports } = fakePorts(
+      { ses_form: { updated: 5 }, ses_run: { updated: 5 }, ses_stale: { updated: 5, idle: 5 } },
+      {},
+      DEFAULT_LIMITS.maxTotal,
+      { ses_form: form, ses_stale: form },
+    )
+    for (const child of ["ses_form", "ses_run", "ses_stale"]) await childStore(ports.storage).record(entry(child, "ses_root"))
+
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 1, idle: 1, groups: [] })
+  })
+
+  test("counts a session whose forms cannot be read by its requests and times", async () => {
+    const { ports } = fakePorts({ ses_a: { updated: 5 } })
+    ;(ports as any).forms = async () => {
+      throw new Error("no forms")
+    }
+    await childStore(ports.storage).record(entry("ses_a", "ses_root"))
+
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, groups: [] })
   })
 
   test("is empty for a session that started none, and leaves out one OpenCode no longer knows", async () => {

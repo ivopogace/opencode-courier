@@ -4,7 +4,7 @@ import { cancelScheduled, type LaterPorts } from "../src/scheduling/index.js"
 import { DEFAULT_LIMITS, type RosterEntry } from "../src/tree/domain.js"
 import { holdReport, joinGroup } from "../src/tree/group.js"
 import { lastTool, panel } from "../src/tree/panel.js"
-import type { CourierPorts, Pending, StopPorts } from "../src/tree/ports.js"
+import type { CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/ports.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
 import { childStore, groupStore } from "../src/tree/store.js"
@@ -12,7 +12,12 @@ import { childStore, groupStore } from "../src/tree/store.js"
 type Session = { updated: number; idle?: number; outcome?: string; cost?: number; title?: string; messages?: unknown[] }
 
 /** Ports over an in-memory store, with each session as given; one not given is gone. */
-function fakePorts(sessions: Record<string, Session>, pending: Record<string, Pending[]> = {}, maxTotal = DEFAULT_LIMITS.maxTotal) {
+function fakePorts(
+  sessions: Record<string, Session>,
+  pending: Record<string, Pending[]> = {},
+  maxTotal = DEFAULT_LIMITS.maxTotal,
+  forms: Record<string, ShownForm[]> = {},
+) {
   const store = new Map<string, unknown>()
   const calls: { method: string; input: any }[] = []
   const storage = {
@@ -50,6 +55,7 @@ function fakePorts(sessions: Record<string, Session>, pending: Record<string, Pe
       },
     },
     pending: async (sessionID: string) => pending[sessionID] ?? [],
+    forms: async (sessionID: string) => forms[sessionID] ?? [],
     limits: { ...DEFAULT_LIMITS, maxTotal },
   } as unknown as CourierPorts
   return { ports, store, calls }
@@ -180,6 +186,41 @@ describe("panel", () => {
     ])
     expect(rows[2]).not.toHaveProperty("cost")
     expect(rows[2]!.title).toBe("entry ses_gone")
+  })
+
+  test("says a running session showing a form waits, one line per form after its requests, and not an idle one's form, whose withdrawal was missed", async () => {
+    const { ports } = fakePorts(
+      { ses_form: { updated: 5 }, ses_both: { updated: 5 }, ses_stale: { updated: 5, idle: 5 } },
+      { ses_both: [{ type: "permission", requestID: "per_1", action: "websearch", resources: ["*"] }] },
+      DEFAULT_LIMITS.maxTotal,
+      {
+        ses_form: [{ id: "frm_1", title: "Web Search" }, { id: "frm_2", title: "Choose a web search provider" }],
+        ses_both: [{ id: "frm_3", title: "Web Search" }],
+        ses_stale: [{ id: "frm_4", title: "Web Search" }],
+      },
+    )
+    for (const sessionID of ["ses_form", "ses_both", "ses_stale"]) await childStore(ports.storage).record(entry(sessionID, "ses_root"))
+
+    const { rows } = await panel(ports, "ses_root")
+    expect(rows.map(({ sessionID, state, waits }) => ({ sessionID, state, waits }))).toEqual([
+      {
+        sessionID: "ses_form",
+        state: "waiting",
+        waits: [
+          { type: "form", title: "Web Search" },
+          { type: "form", title: "Choose a web search provider" },
+        ],
+      },
+      {
+        sessionID: "ses_both",
+        state: "waiting",
+        waits: [
+          { type: "permission", action: "websearch", resources: ["*"] },
+          { type: "form", title: "Web Search" },
+        ],
+      },
+      { sessionID: "ses_stale", state: "idle", waits: [] },
+    ])
   })
 
   test("marks a session courier_stop stopped since its last prompt, and not one prompted again", async () => {

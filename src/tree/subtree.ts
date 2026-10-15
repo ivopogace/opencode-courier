@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
-import { cut, isLive } from "./domain.js"
-import type { CourierPorts, Pending, RosterEntry, RosterStorage } from "./ports.js"
+import { busy, cut, isLive } from "./domain.js"
+import type { CourierPorts, Pending, RosterEntry, RosterStorage, ShownForm } from "./ports.js"
 import { lastStatus, reportOf } from "./report.js"
 import { isExpired, type Exists } from "./roster.js"
 import { described } from "./status.js"
@@ -53,6 +53,7 @@ type Info = Awaited<ReturnType<Plugin.Context["session"]["get"]>>
 export interface Looked extends Below {
   readonly info: Info | undefined
   readonly pending: ReadonlyArray<Pending>
+  readonly forms: ReadonlyArray<ShownForm>
 }
 
 /** A session as a listing looks it up: `Looked` plus its report state, and whether it is live (`isLive`). */
@@ -61,18 +62,20 @@ export interface Listed extends Looked {
   readonly live: boolean
 }
 
-export type ReadPorts = Pick<CourierPorts, "storage" | "session" | "pending" | "now" | "limits">
+export type ReadPorts = Pick<CourierPorts, "storage" | "session" | "pending" | "forms" | "now" | "limits">
 
 /** Every session under a session, without those past retention, each looked up, in the order a tree is drawn. */
 export async function lookUp(ports: ReadPorts, rootID: string): Promise<Looked[]> {
   const { nodes } = await subtree(ports.storage, rootID, { now: ports.now() })
   return Promise.all(
     nodes.map(async (node) => {
-      const [info, pending] = await Promise.all([
+      const [info, pending, forms] = await Promise.all([
         ports.session.get({ sessionID: node.entry.sessionID }).catch(() => undefined),
         ports.pending(node.entry.sessionID).catch((): ReadonlyArray<Pending> => []),
+        ports.forms(node.entry.sessionID).catch((): ReadonlyArray<ShownForm> => []),
       ])
-      return { ...node, info, pending }
+      // A form outlives its session's turn only when its withdrawal was missed, as while no instance followed the events.
+      return { ...node, info, pending, forms: info && busy(info.time) ? forms : [] }
     }),
   )
 }
@@ -86,7 +89,7 @@ export async function readTree(ports: ReadPorts, rootID: string, max = ports.lim
   const all = await Promise.all(
     (await lookUp(ports, rootID)).map(async (node): Promise<Listed> => {
       const report = await reportOf(children, node.entry.sessionID).catch(() => undefined)
-      return { ...node, report, live: isLive(node.info?.time, node.pending.length, report) }
+      return { ...node, report, live: isLive(node.info?.time, node.pending.length + node.forms.length, report) }
     }),
   )
   const listing = cut(

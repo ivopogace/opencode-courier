@@ -57,6 +57,7 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
     head: async () => "abc123",
     dirty: async () => false,
     pending: async () => [],
+    forms: async () => [],
     limits: DEFAULT_LIMITS,
     gate: { reserved: new Set(), turn: Promise.resolve() },
     roles: new Map(),

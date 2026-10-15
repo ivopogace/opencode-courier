@@ -12,6 +12,7 @@ export type {
   PendingPrompt,
   RosterEntry,
   RosterStorage,
+  ShownForm,
   SpawnGate,
   Waits,
   WatchPorts,

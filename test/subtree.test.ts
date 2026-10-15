@@ -75,6 +75,7 @@ function fakePorts(times: Record<string, Times>, pending: Record<string, Pending
       },
     } as never,
     pending: async (sessionID: string) => pending[sessionID] ?? [],
+    forms: async () => [],
     limits: { ...DEFAULT_LIMITS, maxTotal },
   }
   return { ports, store }

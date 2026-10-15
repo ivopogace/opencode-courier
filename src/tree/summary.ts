@@ -7,10 +7,10 @@ import { lookUp, type Looked } from "./subtree.js"
 
 type Activity = "running" | "waiting" | "idle"
 
-/** What a session is doing: waiting on a request it made, running, or idle; undefined when OpenCode no longer knows it. */
-function activity({ info, pending }: Looked): Activity | undefined {
+/** What a session is doing: waiting on a request it made or a form it shows, running, or idle; undefined when OpenCode no longer knows it. */
+function activity({ info, pending, forms }: Looked): Activity | undefined {
   if (!info) return undefined
-  if (pending.length) return "waiting"
+  if (pending.length || forms.length) return "waiting"
   return busy(info.time) ? "running" : "idle"
 }
 

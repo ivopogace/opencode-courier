@@ -14,7 +14,7 @@ const Group = Schema.Struct({ name: Schema.String, reported: Count, members: Cou
 const Summary = Schema.Struct({
   /** Running, and waiting on no request. */
   running: Count,
-  /** Waiting on a permission request or a question, which go to the person. */
+  /** Waiting on a permission request, a question or a form it shows, which go to the person. */
   waiting: Count,
   /** Not running: done, or waiting for a message. */
   idle: Count,
@@ -23,10 +23,11 @@ const Summary = Schema.Struct({
 
 export type Summary = typeof Summary.Type
 
-/** A request a session waits on until the person answers it: a permission request, or its first question. */
+/** A request a session waits on until the person answers it: a permission request, its first question, or a form it shows. */
 const Wait = Schema.Union([
   Schema.Struct({ type: Schema.Literal("permission"), action: Schema.String, resources: Schema.Array(Schema.String) }),
   Schema.Struct({ type: Schema.Literal("question"), question: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("form"), title: Schema.String }),
 ])
 
 /** One session of the tree panel: what courier_tree shows of it, and what it is doing, in epoch milliseconds. */
@@ -36,7 +37,7 @@ const Row = Schema.Struct({
   title: Schema.String,
   /** A child of the panel's session is at depth 1. */
   depth: Count,
-  /** `waiting` on a request to the person; `gone` when OpenCode no longer knows it. */
+  /** `waiting` on a request to the person or a form it shows them; `gone` when OpenCode no longer knows it. */
   state: Schema.Literals(["running", "waiting", "idle", "gone"]),
   /** How its last turn ended. */
   outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "interrupted"])),

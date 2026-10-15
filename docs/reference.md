@@ -845,9 +845,10 @@ courier tree  [█████░░░░░] 1/2 reported
 ```
 
 Each row's first line is the session's title, then what it does (`running`, `waiting on you`, `idle`, or
-`failed` and `interrupted` for an idle one whose last turn ended so, `gone` for one OpenCode no longer
+`failed` and `interrupted` for an idle one whose last turn ended so, `stopped` for one `courier_stop`
+stopped since its last prompt, `gone` for one OpenCode no longer
 knows), its report since its last prompt (`owes a report`, `reported <status>` once it sent one, held
-with its group or delivered, `ended without a report` when its turn failed or was interrupted; nothing
+with its group or delivered, `ended without a report` when its turn failed or was interrupted, but not for a stopped one; nothing
 for a session spawned before report notes were kept), its join group's standing (`group <name> held`,
 `out`, how it left, or `released`), and `isolated`. Under it:
 
@@ -903,7 +904,7 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_�
   `sessionID` is refused as `rpc.invalid_input`.
 - `tree {sessionID}`: the panel's rows. Each row: `sessionID`, `parentID`, `title`, `depth` (a child of
   the session asked is at 1), `state` (`running`, `waiting`, `idle` or `gone`), `outcome` of its last
-  turn, `report` (`state`: `owed`, `reported` or `ended`, with the report's `status` once reported, and
+  turn, `stopped` (true when `courier_stop` stopped it since its last prompt; absent otherwise), `report` (`state`: `owed`, `reported` or `ended`, with the report's `status` once reported, and
   `progressed`), `group` (`name`, `standing`), `isolated`, `created`, `idle` (when its last turn ended, if
   it is not running), `cost` in US dollars, `tool` (its last tool call's `name` and `at`, when it ran) and
   `waits` (`{type: "permission", action, resources}` or `{type: "question", question}`); times in epoch

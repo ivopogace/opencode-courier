@@ -351,6 +351,52 @@ describe("reportSilent", () => {
     expect([...store.keys()].filter((key) => key.startsWith("report/"))).toEqual([])
   })
 
+  test("forgets the roster entry of a deleted child that is not isolated and has no children of its own", async () => {
+    const { ports, store } = fakePorts()
+    await childStore(ports.storage).record(child())
+
+    await noteDeleted(ports, sessionEvent("session.deleted", "evt_x", 150) as SessionEvent)
+
+    expect(await childStore(ports.storage).entry("ses_parent", "ses_child")).toBeUndefined()
+    expect(await childStore(ports.storage).indexedParent("ses_child")).toBeUndefined()
+    expect([...store.keys()]).toEqual([])
+  })
+
+  test("keeps the roster entry of a deleted isolated child, for courier_cleanup", async () => {
+    const { ports } = fakePorts()
+    await childStore(ports.storage).record({ ...child(), isolated: true })
+
+    await noteDeleted(ports, sessionEvent("session.deleted", "evt_x", 150) as SessionEvent)
+
+    expect(await childStore(ports.storage).entry("ses_parent", "ses_child")).toMatchObject({ isolated: true })
+  })
+
+  test("keeps the entry of a deleted child whose own children are on the roster, until the last of them goes", async () => {
+    const { ports } = fakePorts()
+    const children = childStore(ports.storage)
+    await children.record(child())
+    await children.record({ ...child("ses_child"), sessionID: "ses_grandchild" })
+
+    // Parent first, as with nativeChildren when the events arrive that way: the lineage still runs through it.
+    await noteDeleted(ports, sessionEvent("session.deleted", "evt_x", 150) as SessionEvent)
+    expect(await children.entry("ses_parent", "ses_child")).toBeDefined()
+    await noteDeleted(ports, sessionEvent("session.deleted", "evt_y", 160, "ses_grandchild") as SessionEvent)
+    expect(await children.entry("ses_child", "ses_grandchild")).toBeUndefined()
+    expect(await children.entry("ses_parent", "ses_child")).toBeDefined()
+  })
+
+  test("forgets the whole chain of deleted children when the leaf is deleted first", async () => {
+    const { ports, store } = fakePorts()
+    const children = childStore(ports.storage)
+    await children.record(child())
+    await children.record({ ...child("ses_child"), sessionID: "ses_grandchild" })
+
+    await noteDeleted(ports, sessionEvent("session.deleted", "evt_y", 150, "ses_grandchild") as SessionEvent)
+    await noteDeleted(ports, sessionEvent("session.deleted", "evt_x", 160) as SessionEvent)
+
+    expect([...store.keys()]).toEqual([])
+  })
+
   test("takes back that the parent was told when the notice cannot be delivered", async () => {
     const { ports, store } = fakePorts()
     await childStore(ports.storage).record(child())
@@ -610,7 +656,7 @@ describe("join groups", () => {
     expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 200, by: "deleted" } })
     expect(nudges).toEqual([0])
 
-    expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_y", 300, "ses_parent") as SessionEvent)).toEqual(["ses_a", "ses_b"])
+    expect(await noteDeleted(ports, sessionEvent("session.deleted", "evt_y", 300, "ses_parent") as SessionEvent)).toEqual(["ses_a"])
     expect([...store.keys()].filter((key) => key.startsWith("group/"))).toEqual([])
   })
 

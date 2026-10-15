@@ -12,7 +12,7 @@ import hostNotifications from "./host-notifications.js"
 
 const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
 
-type Listener = (event: { type: string; data?: unknown; details: { type: string } }) => void
+type Listener = (event: { type: string; data?: unknown; details: { type: string; data?: unknown } }) => void
 
 /**
  * A fake TUI context whose RPC answers `answer` for each session's summary and `tree` for its tree, keeping what it is
@@ -32,6 +32,7 @@ function fakeContext(
   const [panel, setPanel] = createSignal<{ name: string; sessionID: string }>()
   const state = {
     claims: [] as SlotClaim[],
+    width: 160,
     released: 0,
     layers: [] as (() => { commands?: readonly any[] })[],
     toasts: [] as { message: string; variant?: string }[],
@@ -58,6 +59,7 @@ function fakeContext(
   }
   const color = RGBA.fromInts(120, 120, 120)
   const context = {
+    renderer: { get width() { return state.width } },
     location,
     data: {
       location: { default: () => ({ directory: "/default" }) },
@@ -141,7 +143,7 @@ function fakeContext(
     },
   } as unknown as Plugin.Context
   const emit = (type: string, data?: unknown) => {
-    for (const listener of listeners) listener({ type, details: { type } })
+    for (const listener of listeners) listener({ type, details: { type, data } })
     for (const listener of typed.get(type) ?? []) listener({ type, data, details: { type } })
   }
   const claim = (path: string) => state.claims.find((one) => one.append === path)
@@ -375,6 +377,8 @@ describe("the tree panel's lines", () => {
     )
     expect(statusLine(row("ses_a", { state: "waiting", isolated: true }))).toBe("waiting on you · owes a report · isolated")
     expect(statusLine(row("ses_a", { outcome: "failed", report: { state: "ended", progressed: false } }))).toBe("failed · ended without a report")
+    expect(statusLine(row("ses_a", { outcome: "interrupted", stopped: true, report: { state: "ended", progressed: false } }))).toBe("stopped")
+    expect(statusLine(row("ses_a", { stopped: true, report: { state: "owed", progressed: false } }))).toBe("stopped · owes a report")
     const { report: _, ...unreported } = row("ses_a", { state: "running" })
     expect(statusLine(unreported)).toBe("running")
   })
@@ -635,6 +639,19 @@ describe("the tree panel following navigation", () => {
     return fake
   }
   const trees = (fake: ReturnType<typeof fakeContext>) => fake.calls.filter((call) => Array.isArray(call) && call[0] === "tree").map((call) => (call as any)[1].sessionID)
+
+  test("a panel shown fullscreen only because the terminal is narrow reopens as a panel once followed", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.width = 80
+    fake.state.tree = async (sessionID) => ({ ses_parent: pair(1) })[sessionID as "ses_parent"] ?? { rows: [] }
+    await tui.setup(fake.context)
+    await fake.command("courier.command")!.run("tree")
+    const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_parent", PANEL, { presentation: "fullscreen" }).value)
+    await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
+
+    fake.state.route = { type: "session", sessionID: "ses_two" }
+    expect(fake.state.presentations.at(-1)).toBe("panel")
+  })
 
   test("reopens in a session of its tree with the same presentation, showing the root's tree with that session marked", async () => {
     const fake = await opened({ ses_parent: pair(1) }, { presentation: "fullscreen" })
@@ -938,6 +955,45 @@ describe("a native child's report (#177)", () => {
   })
 })
 
+describe("an ask sounds once (#176)", () => {
+  const setup = async (native: boolean) => {
+    const fake = fakeContext(async () => empty, { location: { directory: "/w" }, sessions: { ses_parent: { title: "Parent" }, ses_kid: { title: "Kid" } } })
+    const session = fake.context.data.session as any
+    const get = session.get
+    session.get = (id: string) => (native && id === "ses_kid" ? { ...get(id), parentID: "ses_parent" } : get(id))
+    const rpc = (fake.context.client as any).rpc
+    ;(fake.context.client as any).rpc = (d: any) => ({
+      ...rpc(d),
+      asks: async () => ({
+        top: "ses_parent",
+        sessions: [{ sessionID: "ses_kid", title: "Kid", parentID: "ses_parent", depth: 1 }],
+        permissions: [{ sessionID: "ses_kid", requestID: "per_1", action: "shell", resources: ["echo hi"] }],
+        questions: [],
+      }),
+    })
+    ;(fake.context.client as any).session = { form: { list: async () => [] } }
+    await tui.setup(fake.context)
+    await (hostNotifications as any).setup(fake.context)
+    fake.emit("permission.asked", { id: "per_1", sessionID: "ses_kid" })
+    await settle()
+    return fake
+  }
+
+  test("a child's permission request sounds once", async () => {
+    const fake = await setup(false)
+    expect(fake.state.notified.filter((n: any) => n.sound?.name === "permission")).toHaveLength(1)
+    expect(fake.state.notified.filter((n: any) => n.notification)).toHaveLength(1)
+  })
+
+  test("a native child's still gets one blurred notification, with the sound once", async () => {
+    const fake = await setup(true)
+    expect(fake.state.notified.filter((n: any) => n.sound?.name === "permission")).toHaveLength(1)
+    expect(fake.state.notified.filter((n: any) => n.notification)).toEqual([
+      { title: "Parent › Kid", message: "Permission: shell echo hi", notification: { when: "blurred" }, sound: false },
+    ])
+  })
+})
+
 describe("/courier stop with nothing to pick (#181)", () => {
   test("/courier stop with nothing to pick, or a tree it cannot read, says so instead of an empty picker", async () => {
     const fake = fakeContext(async () => empty)
@@ -952,4 +1008,20 @@ describe("/courier stop with nothing to pick (#181)", () => {
     expect(fake.state.selects).toEqual([])
     expect(fake.state.toasts.at(-1)).toMatchObject({ message: "closing", variant: "error" })
   })
+})
+
+test("a long title keeps the row's status in view, and a line break stays on the row", async () => {
+  const fake = fakeContext(async () => empty)
+  fake.state.tree = async () => ({ rows: [
+    row("ses_a", { title: "Refactor the session tree panel so that it renders well…", state: "waiting", waits: [{ type: "permission", action: "shell", resources: ["rm -rf build"] }] }),
+    row("ses_b", { title: "Line one\nline two" }),
+  ] })
+  await tui.setup(fake.context)
+  const render = fake.claim("session.panel")!.render as (input: unknown) => any
+  const app = await testRender(() => render({ ...panelInput().value, width: 60 }), { width: 60, height: 12 })
+  renderers.push(app)
+  await app.waitForFrame((frame) => frame.includes("Refactor"))
+  const frame = app.captureCharFrame()
+  expect(frame).toContain("waiting on you")
+  expect(frame).not.toMatch(/\n line two/)
 })

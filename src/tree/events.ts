@@ -1,7 +1,7 @@
 import { envelope } from "../kernel/protocol.js"
 import { claim, SEEN_MAX, setBounded } from "../platform/bounded.js"
 import type { EventModule, HostEvent } from "../platform/events.js"
-import { forgetDeleted } from "./forget.js"
+import { forgetChild, forgetDeleted } from "./forget.js"
 import { hasCompleteGroup, leave, outIn } from "./group.js"
 import type { ExecutionError, Waits, WatchPorts, WatchState } from "./ports.js"
 import { awaited, reportOf, stoppedSincePrompt } from "./report.js"
@@ -119,8 +119,8 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
 }
 
 /**
- * Drops the report state, and the groups, of a session OpenCode deleted, and the report state of the sessions it
- * started, whose reports can no longer be delivered; it leaves its own group. Returns the sessions forgotten.
+ * Forgets what a deleted session leaves (report state, groups) and, unless isolated or a parent on the roster, its
+ * entry. Returns the sessions forgotten.
  */
 export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const { sessionID } = event.data
@@ -130,6 +130,7 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const entry = parentID === undefined ? undefined : await children.entry(parentID, sessionID)
   const member = entry && (await outIn(ports, entry))
   await forgetDeleted(ports, sessionID, forgotten, member, event.created)
+  if (parentID !== undefined && entry && !entry.isolated && started.length === 0) await forgetChild(ports.storage, parentID, sessionID)
   return forgotten
 }
 

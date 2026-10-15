@@ -1,5 +1,4 @@
 import type { Plugin } from "@opencode/plugin/tui"
-import type { AttentionSoundName } from "@opencode/plugin/tui/context"
 import { personRpc, type AskedPermission, type AskedQuestion, type Asks, type TreeSession } from "./rpc.js"
 import { REJECTED } from "./text.js"
 
@@ -79,13 +78,73 @@ export function askFooter(ask: Ask) {
     .join(" · ")
 }
 
-/** The sound an ask arriving plays: a permission request's, or a question's for questions and forms. */
-export const soundOf = (ask: Ask): AttentionSoundName => (ask.kind === "permission" ? "permission" : "question")
-
-/** Whether a form field applies, given the answers so far (a hidden field's default among them): its `when` conditions hold. */
+/** Whether a form field applies, given the answers so far (a hidden field's default among them): its `when` conditions hold, as OpenCode reads them (a condition on an unanswered field is false; on a multiselect, `eq` means includes). */
 export function active(field: FormField, answers: FormAnswer) {
   const when = "when" in field ? (field.when ?? []) : []
-  return when.every((condition) => (condition.op === "eq" ? answers[condition.key] === condition.value : answers[condition.key] !== condition.value))
+  return when.every(({ key, op, value }) => {
+    const answer = answers[key]
+    if (answer === undefined) return false
+    const hit = Array.isArray(answer) ? answer.some((item) => item === value) : answer === value
+    return op === "eq" ? hit : !hit
+  })
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const isDate = (text: string) => /^\d{4}-\d{2}-\d{2}$/.test(text) && new Date(`${text}T00:00:00.000Z`).toISOString().slice(0, 10) === text
+
+/** What is wrong with a field's answer by the limits OpenCode's form service checks on reply, worded as its form view does; undefined when it fits. */
+export function misfit(field: FormField, value: FormValue): string | undefined {
+  if (field.type === "string") {
+    if (typeof value !== "string") return "Expected text"
+    if (field.required && !value) return "Answer required"
+    if (field.minLength !== undefined && value.length < field.minLength) return `Must be at least ${field.minLength} characters`
+    if (field.maxLength !== undefined && value.length > field.maxLength) return `Must be at most ${field.maxLength} characters`
+    if (field.pattern !== undefined) {
+      try {
+        if (!new RegExp(field.pattern).test(value)) return `Must match pattern: ${field.pattern}`
+      } catch {
+        return `Invalid pattern: ${field.pattern}`
+      }
+    }
+    if (field.format === "email" && !EMAIL.test(value)) return "Expected an email address"
+    if (field.format === "uri" && !URL.canParse(value)) return "Expected a URL"
+    if (field.format === "date" && !isDate(value)) return "Expected a date (YYYY-MM-DD)"
+    if (field.format === "date-time" && Number.isNaN(new Date(value).getTime())) return "Expected a date and time"
+    return undefined
+  }
+  if (field.type === "number" || field.type === "integer") {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "Expected a number"
+    if (field.type === "integer" && !Number.isInteger(value)) return "Expected an integer"
+    if (typeof field.minimum === "number" && value < field.minimum) return `Must be at least ${field.minimum}`
+    if (typeof field.maximum === "number" && value > field.maximum) return `Must be at most ${field.maximum}`
+    return undefined
+  }
+  if (field.type === "multiselect") {
+    if (!Array.isArray(value)) return "Expected selections"
+    if (field.required && !value.length) return "Select at least one option"
+    if (field.minItems !== undefined && value.length < field.minItems) return `Select at least ${field.minItems}`
+    if (field.maxItems !== undefined && value.length > field.maxItems) return `Select at most ${field.maxItems}`
+  }
+  return undefined
+}
+
+const numberOf = (limit: unknown) => (typeof limit === "number" ? limit : undefined)
+
+/** The limits of a typed field as a prompt's placeholder: "1-5", "at least 3 characters", "email"; undefined without any. */
+export function limitsOf(field: FormField): string | undefined {
+  const range = (low: number | undefined, high: number | undefined, unit = "") => {
+    if (low !== undefined && high !== undefined) return `${low}-${high}${unit}`
+    if (low !== undefined) return `at least ${low}${unit}`
+    if (high !== undefined) return `at most ${high}${unit}`
+    return undefined
+  }
+  const parts =
+    field.type === "number" || field.type === "integer"
+      ? [range(numberOf(field.minimum), numberOf(field.maximum))]
+      : field.type === "string"
+        ? [range(field.minLength, field.maxLength, " characters"), field.format, field.pattern ? `/${field.pattern}/` : undefined]
+        : []
+  return parts.filter(Boolean).join(", ") || undefined
 }
 
 /** A choice offered for a question or a form field: shown by its label, answered with its value. */
@@ -176,12 +235,13 @@ export function addAsksInbox(ctx: Context) {
   async function choose(
     title: string,
     choices: ReadonlyArray<Choice>,
-    { multiple = false, own = false, optional = false, asks = "" } = {},
+    { multiple = false, own = false, optional = false, asks = "", start = [] as ReadonlyArray<string> } = {},
   ) {
-    const picked: string[] = []
+    const picked = [...start]
     for (;;) {
       const value = await ctx.ui.dialog.select<string | symbol>({
         title,
+        ...(!multiple && start[0] !== undefined ? { current: start[0] } : {}),
         options: [...(asks ? [{ title: asks, value: NOTE, disabled: true }] : []), ...chooseOptions(choices, picked, { multiple, own, optional })],
       })
       if (value === undefined) return undefined
@@ -239,9 +299,14 @@ export function addAsksInbox(ctx: Context) {
   }
 
   /** Typed text for a field, asked again while empty and required; undefined when the person backs out. */
-  async function typed(title: string, field: { description?: string; default?: string }, optional: boolean) {
+  async function typed(title: string, field: { description?: string; default?: string; placeholder?: string }, optional: boolean) {
     for (;;) {
-      const text = await ctx.ui.dialog.prompt({ title, ...(field.description ? { description: field.description } : {}), ...(field.default ? { value: field.default } : {}) })
+      const text = await ctx.ui.dialog.prompt({
+        title,
+        ...(field.description ? { description: field.description } : {}),
+        ...(field.placeholder ? { placeholder: field.placeholder } : {}),
+        ...(field.default ? { value: field.default } : {}),
+      })
       if (text === undefined) return undefined
       if (text || optional) return text || SKIP
     }
@@ -252,7 +317,7 @@ export function addAsksInbox(ctx: Context) {
     const label = field.title ?? field.key
     const whole = field.type === "integer"
     for (;;) {
-      const text = await typed(title, { ...(field.description ? { description: field.description } : {}) }, optional)
+      const text = await typed(title, { ...(field.description ? { description: field.description } : {}), ...placeholder(field), ...(field.default !== undefined ? { default: String(field.default) } : {}) }, optional)
       if (text === undefined || text === SKIP) return text
       const value = Number(text)
       if (Number.isFinite(value) && (!whole || Number.isInteger(value))) return value
@@ -260,8 +325,23 @@ export function addAsksInbox(ctx: Context) {
     }
   }
 
-  /** The person's answer to one field, or undefined when they back out; `SKIP` leaves it unanswered. */
+  const placeholder = (field: FormField) => {
+    const limits = limitsOf(field)
+    return limits ? { placeholder: limits } : {}
+  }
+
+  /** The person's answer to one field, asked again with a warning until it fits the field's limits; undefined when they back out, `SKIP` for none. */
   async function answerField(form: { title?: string }, field: FormField): Promise<FormValue | typeof SKIP | undefined> {
+    for (;;) {
+      const value = await askField(form, field)
+      if (value === undefined || value === SKIP) return value
+      const problem = misfit(field, value)
+      if (!problem) return value
+      ctx.ui.toast.show({ title: "courier", message: `${field.title ?? field.key}: ${problem}`, variant: "warning" })
+    }
+  }
+
+  async function askField(form: { title?: string }, field: FormField): Promise<FormValue | typeof SKIP | undefined> {
     const label = field.title ?? field.key
     const title = form.title ? `${form.title} · ${label}` : label
     const asks = field.description ?? ""
@@ -273,16 +353,17 @@ export function addAsksInbox(ctx: Context) {
       case "boolean":
         return ctx.ui.dialog.select<boolean | symbol>({
           title,
+          ...(field.default !== undefined ? { current: field.default } : {}),
           options: [...(asks ? [{ title: asks, value: NOTE, disabled: true }] : []), { title: "Yes", value: true }, { title: "No", value: false }],
         }) as Promise<boolean | undefined>
       case "multiselect": {
-        const picked = await choose(title, field.options, { multiple: true, own: !!field.custom, asks })
+        const picked = await choose(title, field.options, { multiple: true, own: !!field.custom, asks, start: field.default ?? [] })
         if (picked?.length === 0 && optional) return SKIP
         return picked
       }
       case "string": {
-        if (!field.options?.length) return typed(title, field, optional)
-        const picked = await choose(title, field.options, { own: !!field.custom, optional, asks })
+        if (!field.options?.length) return typed(title, { ...field, ...placeholder(field) }, optional)
+        const picked = await choose(title, field.options, { own: !!field.custom, optional, asks, start: field.default === undefined ? [] : [field.default] })
         return picked && (picked[0] ?? SKIP)
       }
       case "number":
@@ -368,26 +449,45 @@ export function addAsksInbox(ctx: Context) {
   }
 
   // A new ask in the open session's tree sounds once: read after a burst of asks, the ones not seen before.
+  // A tree's first read only records the asks waiting there, except those in sessions the events named.
   const sounded = new Set<string>()
+  const readTops = new Set<string>()
+  let named = new Set<string>()
   let settling: ReturnType<typeof setTimeout> | undefined
   const sound = async () => {
     const sessionID = openSession()
-    if (!sessionID) return
+    if (!sessionID) {
+      named.clear()
+      return
+    }
     const { asks, listed } = await read(sessionID)
+    const eventSessions = named
+    named = new Set()
     const top = ctx.data.session.get(asks.top)?.title ?? asks.top
+    const first = !readTops.has(asks.top)
+    readTops.add(asks.top)
     for (const ask of listed) {
       if (sounded.has(ask.key)) continue
       sounded.add(ask.key)
+      if (first && !eventSessions.has(ask.session.sessionID)) continue
+      // OpenCode sounds every ask and notifies for a session that is not a native child; the courier adds
+      // the tree path as a notification for a native child, whose OpenCode one is off.
+      if (!ctx.data.session.get(ask.session.sessionID)?.parentID) continue
       void ctx.attention.notify({
         title: pathOf(asks, ask.session.sessionID, top, currentTitle),
         message: askTitle(ask),
         notification: { when: "blurred" },
-        sound: { name: soundOf(ask), when: "always" },
+        sound: false,
       })
     }
   }
+  void sound().catch(() => undefined)
   const unlisten = ctx.data.listen(({ details }) => {
-    if ((details.type !== "permission.asked" && details.type !== "form.created") || settling) return
+    if (details.type !== "permission.asked" && details.type !== "form.created") return
+    const data = (details as { data?: { sessionID?: string; form?: { sessionID?: string } } }).data
+    const eventSession = data?.sessionID ?? data?.form?.sessionID
+    if (eventSession) named.add(eventSession)
+    if (settling) return
     settling = setTimeout(() => {
       settling = undefined
       void sound().catch(() => undefined)

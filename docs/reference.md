@@ -123,7 +123,8 @@ between.
 
 1. **Deleting a session deletes its native children**, and theirs, as OpenCode deletes a subagent's
    session with its parent; their isolated children are left. The plugin forgets each deleted child
-   as it does any [deleted child](#worktree-cleanup). `courier_cleanup` and `courier_stop` never
+   as it does any [deleted child](#worktree-cleanup), roster entry included when it has no children of
+   its own on the roster and is not isolated. `courier_cleanup` and `courier_stop` never
    delete a session.
 2. **What providers see.** A native child's model requests carry its parent's id as the
    cache-routing id (`x-session-affinity`, `X-Session-Id`, `x-opencode-session` and the
@@ -719,7 +720,9 @@ track after a compaction or a server restart can call `courier_children` to find
 that can no longer be looked up is still listed, with the error instead of its state. The roster is
 also where a session's depth and tree are read from, for the [limits](#session-trees-and-their-limits).
 Whether a child [owes its parent a report](#a-child-that-ends-without-a-report), and its place in a
-[join group](#join-groups), are kept next to it, and dropped with its entry. Entries are dropped 14 days
+[join group](#join-groups), are kept next to it, and dropped with its entry. A child deleted in OpenCode
+is forgotten at once, unless it is isolated or has children of its own on the roster (see
+[Worktree cleanup](#worktree-cleanup)). Other entries are dropped 14 days
 after the child was started, when `courier_children` reads that parent's roster or the plugin is next
 loaded, except isolated children whose worktree is still there (see [Worktree cleanup](#worktree-cleanup));
 every other read of a tree (`courier_tree`, the [terminal part](#in-the-terminal)) leaves such entries
@@ -842,9 +845,10 @@ courier tree  [█████░░░░░] 1/2 reported
 ```
 
 Each row's first line is the session's title, then what it does (`running`, `waiting on you`, `idle`, or
-`failed` and `interrupted` for an idle one whose last turn ended so, `gone` for one OpenCode no longer
+`failed` and `interrupted` for an idle one whose last turn ended so, `stopped` for one `courier_stop`
+stopped since its last prompt, `gone` for one OpenCode no longer
 knows), its report since its last prompt (`owes a report`, `reported <status>` once it sent one, held
-with its group or delivered, `ended without a report` when its turn failed or was interrupted; nothing
+with its group or delivered, `ended without a report` when its turn failed or was interrupted, but not for a stopped one; nothing
 for a session spawned before report notes were kept), its join group's standing (`group <name> held`,
 `out`, how it left, or `released`), and `isolated`. Under it:
 
@@ -863,7 +867,8 @@ update or a rename, and redraws its times every second. Its keys, while it has t
 when it opens; `<leader>left` and `<leader>right` move it between the session and the panel): `↑`/`k` and
 `↓`/`j` move the selection, `enter` opens the selected session, `s` stops it, `r` asks again, `f` toggles
 fullscreen and `q` closes the panel. While open, the panel follows the person to another session (its own
-`enter`, a tab, "go to parent"), as it was shown and taking the keyboard only if it had it: to a session
+`enter`, a tab, "go to parent"), as it was asked for (a panel shown fullscreen only because the terminal is
+too narrow to split reopens as a panel) and taking the keyboard only if it had it: to a session
 of its tree it keeps that tree, and its stops, with the session on screen marked `(on screen)` in its
 row; to another it shows that session's tree. In a session that started none, and on the home screen
 (`/new`), it hides, and shows again in the next session with a tree, that one included once it starts
@@ -899,7 +904,7 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_�
   `sessionID` is refused as `rpc.invalid_input`.
 - `tree {sessionID}`: the panel's rows. Each row: `sessionID`, `parentID`, `title`, `depth` (a child of
   the session asked is at 1), `state` (`running`, `waiting`, `idle` or `gone`), `outcome` of its last
-  turn, `report` (`state`: `owed`, `reported` or `ended`, with the report's `status` once reported, and
+  turn, `stopped` (true when `courier_stop` stopped it since its last prompt; absent otherwise), `report` (`state`: `owed`, `reported` or `ended`, with the report's `status` once reported, and
   `progressed`), `group` (`name`, `standing`), `isolated`, `created`, `idle` (when its last turn ended, if
   it is not running), `cost` in US dollars, `tool` (its last tool call's `name` and `at`, when it ran) and
   `waits` (`{type: "permission", action, resources}` or `{type: "question", question}`); times in epoch
@@ -950,7 +955,10 @@ each answer and closes once nothing is left.
   hidden one is not asked: its `default` is sent when it has one, which a `when` on it reads, and nothing
   otherwise, as OpenCode's own form view submits it): a choice for one with options (and an answer of the person's own where the field allows it),
   a yes or no for a boolean, several choices for a multiselect, typed text or a number otherwise; an
-  optional field can be skipped. The answer goes through OpenCode's own form reply, and the session told
+  optional field can be skipped. Each field starts on its `default`, as in OpenCode's own form view. A field is asked again, with a warning saying what is wrong, until its
+  answer fits its limits (`minimum` and `maximum`, `minLength`, `maxLength`, `pattern` and `format`, a
+  required or `minItems`/`maxItems` multiselect), so OpenCode does not reject the reply and lose the
+  other answers; a typed field's prompt shows its limits as the placeholder. The answer goes through OpenCode's own form reply, and the session told
   about the form gets [its settled notice](#a-child-that-shows-a-form). A form answered or dismissed
   somewhere else meanwhile is not counted answered: a warning says it no longer waits. A form that opens a page (an
   `external` field) is left to its own session.
@@ -965,10 +973,12 @@ each answer and closes once nothing is left.
   in the TUI, and nothing is passed on.
 
 **Attention.** 250 ms after the first of a burst of permission requests and forms, the TUI reads the open
-session's tree and plays, for each ask it has not sounded before, OpenCode's `permission` sound for a
-permission request and its `question` sound for a question or a form, with a notification (the ask and
-where it comes from) when the terminal is not focused. OpenCode's own TUI sounds for every request and
-form it sees as well.
+session's tree and looks at each ask it has not seen before. The sound is OpenCode's own: its TUI plays
+`permission` for a request and `question` for a form, and notifies when the terminal is not focused, for
+every child but a native one. The courier adds no sound of its own, so an ask sounds once. For a native
+child, whose OpenCode notification is off, it adds one notification when the terminal is not focused,
+with the ask and where it comes from. The asks already waiting when the TUI starts, or when a tree is
+first read, are not announced, except those of the sessions the events name.
 
 **The RPC.** `courier-person`, registered by every instance next to `courier`; its contract is
 `personRpc` from `opencode-courier/rpc`:
@@ -996,9 +1006,15 @@ parent's directory and has no worktree: `courier_cleanup` only forgets it (outco
 dropping its roster entry and report state, and, for a member of a join group that has not reported,
 [dropping it from the group](#join-groups). `courier_cleanup` never deletes a session. Deleting one in
 OpenCode (the TUI, the app or `DELETE /api/session/<id>`) drops its report state and groups, and the
-report state of the sessions it started; its roster entry stays, listed with the error, until its 14
-days are up. With [`nativeChildren`](#native-child-sessions) on, it also deletes the session's native
-children, and theirs, which are forgotten the same way.
+report state of the sessions it started. Its roster entry is forgotten at once when the child is not
+isolated and has no children of its own on the roster. An isolated child's entry stays, so
+`courier_cleanup` can still remove its worktree; so does that of a session whose own children are still
+on the roster, as their lineage (the limits, the inbox's top, `courier_stop`'s "is above" check) runs
+through it. Both stay, listed with the error, until `courier_cleanup` or the 14 days are up. With
+[`nativeChildren`](#native-child-sessions) on, it also deletes the session's native children, and
+theirs, which are forgotten the same way: each deletion forgets its own entry first if it is a leaf, so
+the whole chain goes when the deletions arrive leaf first, and when the parent's arrives first its entry
+stays (its children were still on the roster) until it expires.
 
 ### Nested isolation
 

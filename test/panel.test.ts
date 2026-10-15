@@ -182,6 +182,23 @@ describe("panel", () => {
     expect(rows[2]!.title).toBe("entry ses_gone")
   })
 
+  test("marks a session courier_stop stopped since its last prompt, and not one prompted again", async () => {
+    const { ports } = fakePorts({ ses_stopped: { updated: 5, idle: 5, outcome: "interrupted" }, ses_again: { updated: 5, idle: 5 }, ses_plain: { updated: 5, idle: 5 } })
+    const children = childStore(ports.storage)
+    for (const sessionID of ["ses_stopped", "ses_again", "ses_plain"]) {
+      await children.record(entry(sessionID, "ses_root"))
+      await children.prompted(sessionID, 900)
+    }
+    await children.stopped("ses_stopped", 950)
+    await children.stopped("ses_again", 950)
+    await children.prompted("ses_again", 960)
+
+    const { rows } = await panel(ports, "ses_root")
+    const stopped = (id: string) => rows.find((row) => row.sessionID === id)!.stopped
+    expect([stopped("ses_stopped"), stopped("ses_again"), stopped("ses_plain")]).toEqual([true, undefined, undefined])
+    expect(rows.find((row) => row.sessionID === "ses_again")).not.toHaveProperty("stopped")
+  })
+
   test("is empty for a session that started none, and lists at most maxTotal sessions: the live ones first, then the newest, counting the rest", async () => {
     const { ports } = fakePorts(
       { ses_a: { updated: 5, idle: 5 }, ses_b: { updated: 5, idle: 5 }, ses_c: { updated: 5, idle: 5 }, ses_d: { updated: 9, idle: 5 } },

@@ -213,6 +213,8 @@ check "a confirm names the child" "$(shows "Stop \"CHILD-ASKS\"" 30 tui-stop-con
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "once confirmed, a toast says what was stopped" "$(shows "Stopped 1 session: 0 interrupted" 30 tui-stopped)"
 check "and the child is noted stopped, as courier_stop notes it" "$([ -n "$(kv get "report/$asking/stopped")" ] && echo true || echo false)"
+stopped_row=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -r --arg id "$asking" '.output.rows[] | select(.sessionID == $id) | .stopped')
+check "and the panel's tree reads the child as stopped" "$([ "$stopped_row" = true ] && echo true || echo false)"
 open_tui tui-home
 # The home screen's own footer, once drawn, without the entry.
 check "the entry is not on the home screen of a TUI with no session" \

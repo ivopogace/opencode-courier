@@ -397,6 +397,61 @@ describe("answering a permission request", () => {
   })
 })
 
+describe("the top session's own permission requests", () => {
+  // The top's courier_answer prompt for ses_b's request, and a request of the top's own.
+  const prompt = { sessionID: "ses_root", requestID: "per_top", action: "bash", resources: ["bun test"], passesOn: { sessionID: "ses_b", requestID: "per_1" } }
+  const own = { sessionID: "ses_root", requestID: "per_own", action: "edit", resources: ["src/a.ts"], save: ["src/*"] }
+  const withTop: Asks = { ...empty, permissions: [prompt, own, bash] }
+
+  test("are listed first, worded as the top's, the child's request as the one its prompt asks for", () => {
+    const listed = asksOf(withTop, new Map())
+    expect(listed.map((ask) => ask.key)).toEqual(["permission per_top", "permission per_own", "permission per_1"])
+    expect(listed.map(askTitle)).toEqual(['Permission (top session): courier_answer once for "bash bun test"', "Permission (top session): edit src/a.ts", "Permission: bash bun test"])
+    expect(listed.map(askFooter)).toEqual([
+      "top session · allowing it passes the request below on",
+      "top session",
+      "depth 2 · group pair · the top session's prompt asks for it",
+    ])
+    expect(pathOf(withTop, "ses_root", "Root")).toBe("Root")
+  })
+
+  test("are listed before older asks of the sessions below, and answered through OpenCode's reply in the top session", async () => {
+    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
+    fake.answers.push(hold)
+    const opening = inbox.open()
+    await settle()
+
+    fake.state.asks = withTop
+    fake.answers.push(pick("Permission (top session): courier"), pick("Allow once"))
+    fake.emit("permission.asked", "ses_root")
+    await settle()
+    const list = fake.dialogs.findLast((dialog) => dialog.options.title === "Waiting on you (3)")!
+    expect(list.options.options.map((option: any) => [option.title, option.description])).toEqual([
+      ['Permission (top session): courier_answer once for "bash bun test"', "Root"],
+      ["Permission (top session): edit src/a.ts", "Root"],
+      ["Permission: bash bun test", "Root › Fix the bug › Write tests"],
+    ])
+    fake.state.asks = { ...empty, permissions: [own] }
+    await opening
+    expect(fake.replies()).toEqual([{ method: "permission.reply", input: { sessionID: "ses_root", requestID: "per_top", decision: "once" } }])
+  })
+
+  test("settled in the top session leave the open list", async () => {
+    const fake = fakeContext(withTop)
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
+    fake.answers.push(hold)
+    const opening = inbox.open()
+    await settle()
+
+    fake.state.asks = { ...empty, permissions: [bash] }
+    fake.answers.push(() => undefined)
+    fake.emit("permission.replied", "ses_root")
+    await opening
+    expect(fake.dialogs.at(-1)!.options.options.map((option: any) => [option.title, option.footer])).toEqual([["Permission: bash bun test", "depth 2 · group pair"]])
+  })
+})
+
 describe("answering a question", () => {
   const toppings = {
     ...greeting,

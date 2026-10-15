@@ -1,7 +1,7 @@
 // The asks inbox, the person module's TUI part, against a fake TUI context whose dialogs a test answers.
 import { describe, expect, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin/tui"
-import { addAsksInbox, askFooter, askTitle, asksOf, INBOX_COMMAND, pathOf, SETTLE_MS, shown, type Ask } from "../src/person/tui.js"
+import { addAsksInbox, askFooter, askTitle, asksOf, INBOX_COMMAND, pathOf, SETTLE_MS, active, type Ask } from "../src/person/tui.js"
 import type { Answered, Asks } from "../src/person/rpc.js"
 import { REJECTED } from "../src/person/text.js"
 
@@ -31,7 +31,7 @@ type Dialog = { kind: "select" | "prompt" | "alert"; options: any }
  * `state.forms`, and each dialog is answered by the next of `answers`, which backs out once they run out.
  */
 function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
-  const state = { asks, forms, answered: { answered: true, by: "result" } as Answered }
+  const state = { asks, forms, formError: undefined as unknown, answered: { answered: true, by: "result" } as Answered }
   const dialogs: Dialog[] = []
   const answers: ((dialog: Dialog) => unknown)[] = []
   const calls: { method: string; input: unknown; options?: unknown }[] = []
@@ -58,7 +58,6 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
             : native.has(sessionID)
               ? { id: sessionID, parentID: "ses_root" }
               : undefined,
-        form: { reply: async (input: unknown) => void calls.push({ method: "form.reply", input }) },
       },
       listen: (handler: (event: { details: { type: string } }) => void) => {
         listeners.add(handler)
@@ -79,7 +78,15 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
           },
         }
       },
-      session: { form: { list: async ({ sessionID }: { sessionID: string }) => state.forms[sessionID] ?? [] } },
+      session: {
+        form: {
+          list: async ({ sessionID }: { sessionID: string }) => state.forms[sessionID] ?? [],
+          reply: async (input: unknown) => {
+            calls.push({ method: "form.reply", input })
+            if (state.formError) throw state.formError
+          },
+        },
+      },
       permission: {
         reply: async (input: unknown) => void calls.push({ method: "permission.reply", input }),
         assert: async (input: unknown) => void calls.push({ method: "permission.assert", input }),
@@ -137,19 +144,18 @@ describe("what the inbox lists", () => {
     expect(askFooter({ ...listed[0]!, question: { ...greeting, stopped: true } } as Ask)).toBe("depth 1 · cut off, answered by message")
   })
 
-  test("a form field is asked unless hidden or its conditions on earlier answers fail", () => {
+  test("a form field applies unless its conditions on earlier answers fail", () => {
     const field = { key: "b", type: "boolean" } as const
-    expect(shown(field, {})).toBe(true)
-    expect(shown({ ...field, hidden: true }, {})).toBe(false)
-    expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, { a: "yes" })).toBe(true)
-    expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, { a: "no" })).toBe(false)
-    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "yes" }] }, {})).toBe(false)
-    expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, {})).toBe(false)
-    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "yes" }] }, { a: "no" })).toBe(true)
-    expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "ts" }] }, { a: ["ts", "go"] })).toBe(true)
-    expect(shown({ ...field, when: [{ key: "a", op: "eq", value: "ts" }] }, { a: ["go"] })).toBe(false)
-    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "go" }] }, { a: ["ts", "go"] })).toBe(false)
-    expect(shown({ ...field, when: [{ key: "a", op: "neq", value: "go" }] }, { a: ["ts"] })).toBe(true)
+    expect(active(field, {})).toBe(true)
+    expect(active({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, { a: "yes" })).toBe(true)
+    expect(active({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, { a: "no" })).toBe(false)
+    expect(active({ ...field, when: [{ key: "a", op: "neq", value: "yes" }] }, {})).toBe(false)
+    expect(active({ ...field, when: [{ key: "a", op: "eq", value: "yes" }] }, {})).toBe(false)
+    expect(active({ ...field, when: [{ key: "a", op: "neq", value: "yes" }] }, { a: "no" })).toBe(true)
+    expect(active({ ...field, when: [{ key: "a", op: "eq", value: "ts" }] }, { a: ["ts", "go"] })).toBe(true)
+    expect(active({ ...field, when: [{ key: "a", op: "eq", value: "ts" }] }, { a: ["go"] })).toBe(false)
+    expect(active({ ...field, when: [{ key: "a", op: "neq", value: "go" }] }, { a: ["ts", "go"] })).toBe(false)
+    expect(active({ ...field, when: [{ key: "a", op: "neq", value: "go" }] }, { a: ["ts"] })).toBe(true)
   })
 })
 
@@ -324,6 +330,55 @@ describe("answering a form", () => {
       { method: "form.reply", input: { sessionID: "ses_b", formID: "frm_2", answer: { target: "prod", confirm: true, replicas: 2, regions: ["eu"] } } },
     ])
     expect(fake.toasts.map((toast) => toast.message)).toEqual(["Replicas takes a whole number"])
+  })
+
+  describe("a hidden field", () => {
+    const hidden = (fields: unknown[]) => ({ id: "frm_h", sessionID: "ses_b", title: "Hidden", fields })
+    const run = async (fields: unknown[], ...replies: ((dialog: any) => unknown)[]) => {
+      const fake = fakeContext(empty, { ses_b: [hidden(fields)] })
+      fake.answers.push(pick("Form"), ...replies)
+      await addAsksInbox(fake.context).open()
+      return fake
+    }
+    const name = { key: "name", type: "string", title: "Name" }
+
+    test("sends its default, required or not, without asking", async () => {
+      const required = await run([{ key: "token", type: "string", hidden: true, required: true, default: "abc" }, name], type("x"))
+      expect(required.replies()[0]!.input).toMatchObject({ answer: { token: "abc", name: "x" } })
+      expect(required.dialogs.filter((dialog) => dialog.kind === "prompt")).toHaveLength(1)
+
+      const optional = await run([{ key: "mode", type: "string", hidden: true, default: "fast" }, name], type("x"))
+      expect(optional.replies()[0]!.input).toMatchObject({ answer: { mode: "fast", name: "x" } })
+    })
+
+    test("sends nothing without a default", async () => {
+      const fake = await run([{ key: "token", type: "string", hidden: true }, name], type("x"))
+      expect((fake.replies()[0]!.input as any).answer).toEqual({ name: "x" })
+    })
+
+    test("is read by a `when` as its default, and not sent when its own `when` fails", async () => {
+      const fake = await run(
+        [
+          { key: "mode", type: "string", hidden: true, default: "fast" },
+          { key: "speed", type: "string", title: "Speed", when: [{ key: "mode", op: "eq", value: "fast" }] },
+          { key: "slow", type: "string", title: "Slow", when: [{ key: "mode", op: "eq", value: "slow" }] },
+          { key: "extra", type: "string", hidden: true, default: "e", when: [{ key: "mode", op: "eq", value: "slow" }] },
+        ],
+        type("quick"),
+      )
+      expect((fake.replies()[0]!.input as any).answer).toEqual({ mode: "fast", speed: "quick" })
+    })
+  })
+
+  test("says when the form no longer waits, and does not count it answered", async () => {
+    for (const _tag of ["FormNotFoundError", "FormAlreadySettledError"]) {
+      const fake = fakeContext(empty, { ses_b: [{ id: "frm_g", sessionID: "ses_b", title: "Gone", fields: [{ key: "name", type: "string", title: "Name" }] }] })
+      fake.state.formError = { _tag }
+      fake.answers.push(pick("Form"), type("x"))
+      await addAsksInbox(fake.context).open()
+      expect(fake.toasts).toEqual([expect.objectContaining({ message: "It no longer waits: answered or settled some other way.", variant: "warning" })])
+      expect(fake.dialogs.at(-1)!.options.title).toBe("Waiting on you (1)")
+    }
   })
 
   test("a form that opens a page is left to its own session", async () => {

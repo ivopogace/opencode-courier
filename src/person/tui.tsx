@@ -78,9 +78,8 @@ export function askFooter(ask: Ask) {
     .join(" · ")
 }
 
-/** Whether a form field is shown, given the answers so far: hidden ones never, conditional ones when their conditions hold, as OpenCode reads them (a condition on an unanswered field is false; on a multiselect, `eq` means includes). */
-export function shown(field: FormField, answers: FormAnswer) {
-  if ("hidden" in field && field.hidden) return false
+/** Whether a form field applies, given the answers so far (a hidden field's default among them): its `when` conditions hold, as OpenCode reads them (a condition on an unanswered field is false; on a multiselect, `eq` means includes). */
+export function active(field: FormField, answers: FormAnswer) {
   const when = "when" in field ? (field.when ?? []) : []
   return when.every(({ key, op, value }) => {
     const answer = answers[key]
@@ -377,12 +376,25 @@ export function addAsksInbox(ctx: Context) {
     const { form } = ask
     const answer: Record<string, FormValue> = {}
     for (const field of form.fields) {
-      if (!shown(field, answer)) continue
+      if (!active(field, answer)) continue
+      if ("hidden" in field && field.hidden) {
+        // Not asked, as OpenCode's form view submits it: its default, when it has one.
+        if ("default" in field && field.default !== undefined) answer[field.key] = field.default
+        continue
+      }
       const value = await answerField(form, field)
       if (value === undefined) return false
       if (value !== SKIP) answer[field.key] = value
     }
-    await ctx.data.session.form.reply({ sessionID: form.sessionID, formID: form.id, answer })
+    // The client, not the data layer's reply, which resolves when the form is gone.
+    try {
+      await ctx.client.session.form.reply({ sessionID: form.sessionID, formID: form.id, answer })
+    } catch (error) {
+      const tag = (error as { _tag?: unknown } | undefined)?._tag
+      if (tag !== "FormNotFoundError" && tag !== "FormAlreadySettledError") throw error
+      ctx.ui.toast.show({ title: "courier", message: "It no longer waits: answered or settled some other way.", variant: "warning" })
+      return false
+    }
     return true
   }
 

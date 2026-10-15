@@ -951,14 +951,16 @@ each answer and closes once nothing is left.
   `courier_answer`'s default, so the child's call fails and it carries on rather than ending its turn.
   The session told about the request then gets [one settled notice](#a-child-that-asks-for-permission)
   (`answered="once"`, …) and no second ask, as for a reply in the child's own session.
-- A form: each field it shows in turn (hidden ones and those whose `when` fails on the answers so far are
-  skipped): a choice for one with options (and an answer of the person's own where the field allows it),
+- A form: each field it shows in turn (those whose `when` fails on the answers so far are skipped, and a
+  hidden one is not asked: its `default` is sent when it has one, which a `when` on it reads, and nothing
+  otherwise, as OpenCode's own form view submits it): a choice for one with options (and an answer of the person's own where the field allows it),
   a yes or no for a boolean, several choices for a multiselect, typed text or a number otherwise; an
   optional field can be skipped. Each field starts on its `default`, as in OpenCode's own form view. A field is asked again, with a warning saying what is wrong, until its
   answer fits its limits (`minimum` and `maximum`, `minLength`, `maxLength`, `pattern` and `format`, a
   required or `minItems`/`maxItems` multiselect), so OpenCode does not reject the reply and lose the
   other answers; a typed field's prompt shows its limits as the placeholder. The answer goes through OpenCode's own form reply, and the session told
-  about the form gets [its settled notice](#a-child-that-shows-a-form). A form that opens a page (an
+  about the form gets [its settled notice](#a-child-that-shows-a-form). A form answered or dismissed
+  somewhere else meanwhile is not counted answered: a warning says it no longer waits. A form that opens a page (an
   `external` field) is left to its own session.
 - A question: each of its questions in turn, one choice, several (toggled, then `Done`) where it allows
   them, or `Type your own answer…`. The answers are passed on as `courier_answer` does: as the result of

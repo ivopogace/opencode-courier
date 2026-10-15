@@ -225,9 +225,10 @@ export function childStore(storage: Storage): ChildStore {
     async stopped(sessionID, at) {
       await storage.set(stoppedKey(sessionID), { at })
     },
-    // The wake expectation goes with the report state, and is read and written the same way.
+    // The wake expectation goes with the report state, and is read and written the same way. A stored
+    // value that is not a valid expectation is replaced, not left to block every later one.
     async expectWake(sessionID, at, text) {
-      if ((await storage.get(wakeKey(sessionID))) !== undefined) return
+      if (readWake(await storage.get(wakeKey(sessionID)))) return
       await storage.set(wakeKey(sessionID), { at, state: "due", text })
     },
     async wake(sessionID) {

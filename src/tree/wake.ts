@@ -47,13 +47,23 @@ async function checkWakes(ports: WatchPorts) {
     }
     const past = ports.now() - note.at
     if (note.state === "due" && past >= GRACE_MS) {
-      // Marked before the re-wake, so the same episode is never re-woken twice.
-      await children.noteWake(sessionID, { ...note, state: "rewoken", at: ports.now() }).catch(() => undefined)
-      await reWake(ports, sessionID, note.text).catch((error: unknown) =>
-        ports.log(`courier wake: could not re-woken ${sessionID}: ${String(error)}`),
+      // Marked before the re-wake, so the same episode is never re-woken twice; if the mark cannot be
+      // written, the re-wake waits for a later tick rather than risking a second one.
+      const marked = await children.noteWake(sessionID, { ...note, state: "rewoken", at: ports.now() }).then(
+        () => true,
+        (error: unknown) => {
+          ports.log(`courier wake: could not note the re-wake of ${sessionID}: ${String(error)}`)
+          return false
+        },
       )
+      if (marked)
+        await reWake(ports, sessionID, note.text).catch((error: unknown) =>
+          ports.log(`courier wake: could not re-woken ${sessionID}: ${String(error)}`),
+        )
     } else if (note.state === "rewoken" && past >= GRACE_MS) {
-      await children.noteWake(sessionID, { ...note, state: "stalled" }).catch(() => undefined)
+      await children.noteWake(sessionID, { ...note, state: "stalled" }).catch((error: unknown) =>
+        ports.log(`courier wake: could not note the stall of ${sessionID}: ${String(error)}`),
+      )
     }
   }
 }

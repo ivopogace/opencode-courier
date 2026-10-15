@@ -1,6 +1,6 @@
 // The missed-wake watch: a delivery to an idle session whose turn never starts is re-woken once by the
 // scheduler, then flagged stalled; a delivery to a running one is taken at its next step, and not tracked.
-import { beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { envelope } from "../src/kernel/protocol.js"
 import { deliverReleased, joinGroup } from "../src/tree/group.js"
 import type { GroupPorts } from "../src/tree/ports.js"
@@ -46,7 +46,9 @@ const started = (sessionID: string): SessionEvent & { type: string } => ({
   data: { sessionID },
 })
 
+// The running set is process-wide, so these tests leave it as they found it for the other suites.
 beforeEach(() => running.clear())
+afterEach(() => running.clear())
 
 describe("expectWake", () => {
   test("notes that a delivered message owes an idle session a turn, with the text it was delivered with", async () => {
@@ -76,6 +78,16 @@ describe("expectWake", () => {
     await expectWake(ports.storage, () => 2_000, "ses_child", "second")
 
     expect(store.get(wakeKey("ses_child"))).toEqual({ at: 1_000, state: "due", text: "first" })
+  })
+
+  test("replaces a stored value that is not a valid expectation, rather than being blocked by it", async () => {
+    const { ports, store } = fakeClock()
+    await childStore(ports.storage).record(child())
+    await ports.storage.set(wakeKey("ses_child"), { at: 1, state: "nonsense" })
+
+    await expectWake(ports.storage, ports.now, "ses_child", "the task")
+
+    expect(store.get(wakeKey("ses_child"))).toEqual({ at: 1_000, state: "due", text: "the task" })
   })
 })
 
@@ -124,6 +136,30 @@ describe("the missed-wake job", () => {
     expect(sent).toHaveLength(1)
   })
 
+  test("a re-wake the mark could not record waits for a later tick rather than risking a second", async () => {
+    const { ports, store, sent, setNow } = fakeClock()
+    await childStore(ports.storage).record(child())
+    await sendFrom(ports, "ses_child", "ses_parent")
+
+    // The mark's write fails: no re-wake goes out, and the episode stays due.
+    const set = ports.storage.set
+    ;(ports.storage as any).set = async (key: string, value: unknown) => {
+      if (key.endsWith("/wake")) throw new Error("disk full")
+      return set(key, value as never)
+    }
+    setNow(1_000 + GRACE_MS)
+    await tick(ports)
+    expect(sent).toEqual([])
+    expect(store.get(wakeKey("ses_parent"))).toMatchObject({ state: "due" })
+
+    // The write works again: the mark lands, and exactly one re-wake follows.
+    ;(ports.storage as any).set = set
+    setNow(1_000 + 2 * GRACE_MS)
+    await tick(ports)
+    expect(sent).toHaveLength(1)
+    expect(store.get(wakeKey("ses_parent"))).toMatchObject({ state: "rewoken" })
+  })
+
   test("a delivery to a running session is not tracked, so the job has nothing to act on", async () => {
     const { ports, store, sent } = fakeClock()
     await childStore(ports.storage).record(child())
@@ -159,6 +195,16 @@ describe("the missed-wake job", () => {
 
     expect(store.has(wakeKey("ses_parent"))).toBe(false)
     expect(sent).toEqual([])
+  })
+
+  test("a deleted session leaves the running set, so it is not still turning", async () => {
+    const { ports } = fakeClock()
+    await childStore(ports.storage).record(child())
+    running.add("ses_child")
+    const state: WatchState = { seen: new Set(), inbox: new Map(), running }
+    const event = { id: "evt_d", type: "session.deleted", created: 1, data: { sessionID: "ses_child" } } as SessionEvent & { type: string }
+    await treeEvents(state, () => Promise.resolve(false)).handle!(ports, event)
+    expect(running.has("ses_child")).toBe(false)
   })
 
   test("a released group's delivery to the parent is tracked like a report", async () => {

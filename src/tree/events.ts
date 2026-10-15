@@ -243,7 +243,10 @@ function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: 
   if (event.type === "session.execution.interrupted") return noteInterrupted(ports, event as unknown as SessionEvent)
   if (event.type === "session.inbox.enqueued") return noteEnqueued(ports, state.inbox, event as unknown as InboxEnqueued)
   if (event.type === "session.inbox.delivered") return notePrompt(ports, event as unknown as SessionEvent, state.inbox)
-  if (event.type === "session.deleted") return noteDeleted(ports, event as unknown as SessionEvent)
+  if (event.type === "session.deleted") {
+    turn(state, sessionID, false)
+    return noteDeleted(ports, event as unknown as SessionEvent)
+  }
   return undefined
 }
 

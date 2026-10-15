@@ -54,7 +54,7 @@ function splitRule(parentID: string, depth: number, limits: Limits) {
     `You are at depth ${depth} of a session tree that goes at most ${limits.maxDepth} deep. Split your task or do it yourself:`,
     "- Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one " +
       `session per part with courier_spawn, at most ${limits.maxChildren} of yours running at once and ${limits.maxTotal} in the whole tree.`,
-    "- Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session.",
+    "- Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task.",
     `- Say which in one line of your reply: ${SPLIT_LINE}.`,
     "- If you split, you orchestrate: end your turn while they work, check and integrate each part yourself when it " +
       `reports (never hand that checking to another session), then send ${parentID} one combined report.`,

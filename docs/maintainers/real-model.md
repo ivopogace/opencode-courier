@@ -157,7 +157,7 @@ checker (`e2e/real-model-recursive.mjs`) reads every session reached from the ro
 `courier_spawn` calls, waits until the tree has settled, and makes nine checks: the root spawned at
 least two children in its first turn; it ended that turn with no reports in it; no orchestrator polled
 (`courier_status`, `courier_children`, `courier_tree`, `sleep`, by the fan-out's rule); at least one
-child spawned at least two of its own in one turn, and no session ever started exactly one; no session
+child spawned at least two of its own in one turn, and no session started exactly one in all; no session
 went past `maxDepth`; every spawned session reported to its parent with a status; each sub-orchestrator
 reported upward once, after its own children had reported to it; the files hold the expected values;
 and the root's final reply holds them. Its notes say which sessions loaded the skill, used a join group,

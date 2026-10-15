@@ -342,9 +342,25 @@ describe("the tree's RPC", () => {
     expect(calls.filter((call) => call.method === "remove")).toEqual([])
     expect(await childStore(ports.storage).entry("ses_mid", "ses_leaf")).toBeDefined()
   })
+
+  test("cleanup refuses a session OpenCode still has, or cannot say it lost, and forgets nothing", async () => {
+    const { ports, calls, handlers } = await registered({ ses_leaf: { updated: 5 } })
+    await childStore(ports.storage).record(entry("ses_leaf", "ses_root", { isolated: true, directory: "/wt/leaf" }))
+    const error = (type: string, message: string, data: unknown) => ({ type, message, data })
+
+    expect(await handlers.cleanup({ sessionID: "ses_leaf", by: "ses_root" }, { error })).toEqual({
+      type: "refused",
+      message: "ses_leaf is still known to OpenCode: only a gone session is forgotten here.",
+      data: {},
+    })
+    ;(ports.session as any).get = async () => Promise.reject(new Error("connection reset"))
+    expect(await handlers.cleanup({ sessionID: "ses_leaf", by: "ses_root" }, { error })).toMatchObject({ type: "refused", message: expect.stringContaining("connection reset") })
+    expect(calls.filter((call) => call.method === "remove")).toEqual([])
+    expect(await childStore(ports.storage).entry("ses_root", "ses_leaf")).toBeDefined()
+  })
 })
 
-test("the tree and stop methods' schemas take a session, and stop a caller too", async () => {
+test("the tree, stop and cleanup methods' schemas take a session, stop a caller too, and a kept worktree its reason", async () => {
   const { tree, stop, cleanup } = treeRpc.methods
   expect((await tree.input["~standard"].validate({ sessionID: "ses_root" })).issues).toBeUndefined()
   expect((await tree.output["~standard"].validate({ rows: [] })).issues).toBeUndefined()

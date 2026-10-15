@@ -894,7 +894,8 @@ open session (the panel's) is found above it. A toast says what it did: `Forgot 
 removed its worktree` or `; its worktree was already gone`, or `Kept "<title>" and its worktree: <reason>`
 when there are changes or commits to lose, which only the parent's `courier_cleanup` with `force` removes;
 or why it was refused. On a live row `x` forgets nothing and says so: forgetting a session that runs or
-waits would lose the report it owes, and could remove its worktree from under it.
+waits would lose the report it owes, and could remove its worktree from under it. The server checks
+again: a session OpenCode still has, or one it cannot look up for another reason, is refused.
 
 **Attention.** A join group's reports released to a session call for attention, with a notification
 when the terminal is not focused and the `done` sound; a child's report to its parent (a message with a
@@ -927,7 +928,8 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_â€
   answers `{stopped: [{sessionID, title, outcome}], cancelled: <count>}`, deepest first, or fails with
   the declared error `refused` and `courier_stop`'s message.
 - `cleanup {sessionID, by}`: `courier_cleanup` for `sessionID`, called from its own parent once `by` is
-  found above it, without `force`; answers `{outcome}`, one of `forgotten`, `removed` or `gone` (its
+  found above it and OpenCode answers that it no longer has the session (one it still has, or a lookup
+  that fails otherwise, is refused), without `force`; answers `{outcome}`, one of `forgotten`, `removed` or `gone` (its
   worktree was already gone), or `{outcome: "kept", reason}`, or fails with the declared error `refused`.
 
 ### The asks inbox

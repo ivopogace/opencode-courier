@@ -285,8 +285,8 @@ export function forgottenLine(title: string, result: Forgotten) {
 }
 
 /**
- * Asks the person to confirm, then forgets `target` through courier_cleanup's path, without `force`, as `by`, a session
- * above it, would; says what happened in a toast and calls `done` after a forget. False when the person did not confirm.
+ * Asks the person to confirm, then forgets `target` through courier_cleanup's path as its parent, without `force`, once `by`
+ * is found above it; toasts the outcome and calls `done` unless the worktree was kept. False when the person did not confirm.
  */
 async function confirmForget(
   ctx: Context,

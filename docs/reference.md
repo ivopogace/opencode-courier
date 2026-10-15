@@ -971,11 +971,12 @@ each answer and closes once nothing is left.
   in the TUI, and nothing is passed on.
 
 **Attention.** 250 ms after the first of a burst of permission requests and forms, the TUI reads the open
-session's tree and plays, for each ask it has not sounded before, OpenCode's `permission` sound for a
-permission request and its `question` sound for a question or a form, with a notification (the ask and
-where it comes from) when the terminal is not focused. OpenCode's own TUI sounds for every request and
-form it sees as well. The asks already waiting when the TUI starts, or when a tree is first read, stay
-silent, except those of the sessions the events name.
+session's tree and looks at each ask it has not seen before. The sound is OpenCode's own: its TUI plays
+`permission` for a request and `question` for a form, and notifies when the terminal is not focused, for
+every child but a native one. The courier adds no sound of its own, so an ask sounds once. For a native
+child, whose OpenCode notification is off, it adds one notification when the terminal is not focused,
+with the ask and where it comes from. The asks already waiting when the TUI starts, or when a tree is
+first read, are not announced, except those of the sessions the events name.
 
 **The RPC.** `courier-person`, registered by every instance next to `courier`; its contract is
 `personRpc` from `opencode-courier/rpc`:

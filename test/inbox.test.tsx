@@ -1,7 +1,7 @@
 // The asks inbox, the person module's TUI part, against a fake TUI context whose dialogs a test answers.
 import { describe, expect, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin/tui"
-import { addAsksInbox, askFooter, askTitle, asksOf, INBOX_COMMAND, pathOf, SETTLE_MS, shown, soundOf, type Ask } from "../src/person/tui.js"
+import { addAsksInbox, askFooter, askTitle, asksOf, INBOX_COMMAND, pathOf, SETTLE_MS, shown, type Ask } from "../src/person/tui.js"
 import type { Answered, Asks } from "../src/person/rpc.js"
 import { REJECTED } from "../src/person/text.js"
 
@@ -37,6 +37,7 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
   const calls: { method: string; input: unknown; options?: unknown }[] = []
   const toasts: { message: string; variant?: string }[] = []
   const notified: any[] = []
+  const native = new Set<string>()
   const listeners = new Set<(event: { details: { type: string } }) => void>()
   const layers: (() => any)[] = []
   const sizes: unknown[] = []
@@ -51,7 +52,12 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
     data: {
       location: { default: () => ({ directory: "/default" }) },
       session: {
-        get: (sessionID: string) => (sessionID === "ses_root" ? { id: sessionID, title: "Root", location: { directory: "/project" } } : undefined),
+        get: (sessionID: string) =>
+          sessionID === "ses_root"
+            ? { id: sessionID, title: "Root", location: { directory: "/project" } }
+            : native.has(sessionID)
+              ? { id: sessionID, parentID: "ses_root" }
+              : undefined,
         form: { reply: async (input: unknown) => void calls.push({ method: "form.reply", input }) },
       },
       listen: (handler: (event: { details: { type: string } }) => void) => {
@@ -94,6 +100,7 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
   }
   return {
     context,
+    native,
     state,
     dialogs,
     answers,
@@ -128,7 +135,6 @@ describe("what the inbox lists", () => {
     expect(pathOf(empty, "ses_b", "Root")).toBe("Root › Fix the bug › Write tests")
     expect(listed.map(askFooter)).toEqual(["depth 1", "depth 1", "depth 2 · group pair"])
     expect(askFooter({ ...listed[0]!, question: { ...greeting, stopped: true } } as Ask)).toBe("depth 1 · cut off, answered by message")
-    expect(listed.map(soundOf)).toEqual(["question", "question", "permission"])
   })
 
   test("a form field is asked unless hidden or its conditions on earlier answers fail", () => {
@@ -331,8 +337,9 @@ describe("answering a form", () => {
 })
 
 describe("attention", () => {
-  test("a new ask in the open session's tree sounds once, a permission request's or a question's sound", async () => {
+  test("a native child's new ask gets one blurred notification of the courier's, without a sound (OpenCode's plays it)", async () => {
     const fake = fakeContext(empty)
+    fake.native.add("ses_a").add("ses_b")
     addAsksInbox(fake.context)
     await settle()
 
@@ -341,7 +348,7 @@ describe("attention", () => {
     fake.emit("permission.asked")
     await settle()
     expect(fake.notified).toEqual([
-      { title: "Root › Fix the bug › Write tests", message: "Permission: bash bun test", notification: { when: "blurred" }, sound: { name: "permission", when: "always" } },
+      { title: "Root › Fix the bug › Write tests", message: "Permission: bash bun test", notification: { when: "blurred" }, sound: false },
     ])
 
     fake.state.asks = { ...empty, permissions: [bash], questions: [greeting] }
@@ -350,7 +357,17 @@ describe("attention", () => {
     expect(fake.notified).toHaveLength(1)
     fake.emit("form.created")
     await settle()
-    expect(fake.notified.map((options) => options.sound.name)).toEqual(["permission", "question"])
+    expect(fake.notified.map((options) => options.message)).toEqual(["Permission: bash bun test", expect.stringContaining("Greeting")])
+  })
+
+  test("a child that is not native gets none of the courier's: OpenCode sounds and notifies it", async () => {
+    const fake = fakeContext(empty)
+    addAsksInbox(fake.context)
+    await settle()
+    fake.state.asks = { ...empty, permissions: [bash], questions: [greeting] }
+    fake.emit("permission.asked")
+    await settle()
+    expect(fake.notified).toEqual([])
   })
 
   test("nothing sounds on the home screen, and its cleanup stops listening", async () => {
@@ -368,7 +385,8 @@ describe("attention", () => {
   test("names where an ask comes from by the sessions' current titles, the RPC's as the fallback", async () => {
     const fake = fakeContext(empty)
     const get = fake.context.data.session.get
-    fake.context.data.session.get = (id: string) => (id === "ses_a" ? ({ id, title: "Renamed", location: { directory: "/workspace" } } as any) : get(id))
+    fake.native.add("ses_b")
+    fake.context.data.session.get = (id: string) => (id === "ses_a" ? ({ id, title: "Renamed", parentID: "ses_root", location: { directory: "/workspace" } } as any) : get(id))
     const inbox = addAsksInbox(fake.context)
     await settle()
     fake.state.asks = { ...empty, permissions: [bash] }
@@ -583,6 +601,7 @@ test("an unrelated request does not sound asks that were already waiting", async
 
 test("the first ask in a tree reached after start sounds, the ones already waiting there do not", async () => {
   const fake = fakeContext({ ...empty, permissions: [bash], questions: [greeting] })
+  fake.native.add("ses_a")
   fake.goHome()
   addAsksInbox(fake.context)
   await settle()

@@ -12,7 +12,7 @@ import hostNotifications from "./host-notifications.js"
 
 const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
 
-type Listener = (event: { type: string; data?: unknown; details: { type: string } }) => void
+type Listener = (event: { type: string; data?: unknown; details: { type: string; data?: unknown } }) => void
 
 /**
  * A fake TUI context whose RPC answers `answer` for each session's summary and `tree` for its tree, keeping what it is
@@ -143,7 +143,7 @@ function fakeContext(
     },
   } as unknown as Plugin.Context
   const emit = (type: string, data?: unknown) => {
-    for (const listener of listeners) listener({ type, details: { type } })
+    for (const listener of listeners) listener({ type, details: { type, data } })
     for (const listener of typed.get(type) ?? []) listener({ type, data, details: { type } })
   }
   const claim = (path: string) => state.claims.find((one) => one.append === path)
@@ -952,6 +952,45 @@ describe("a native child's report (#177)", () => {
     fake.emit("session.execution.succeeded", { sessionID: "ses_one" })
     expect(subagentDone(fake)).toHaveLength(1)
     expect(fake.state.notified.map((n: any) => n.sound.name)).toEqual(["subagent_done", "done"])
+  })
+})
+
+describe("an ask sounds once (#176)", () => {
+  const setup = async (native: boolean) => {
+    const fake = fakeContext(async () => empty, { location: { directory: "/w" }, sessions: { ses_parent: { title: "Parent" }, ses_kid: { title: "Kid" } } })
+    const session = fake.context.data.session as any
+    const get = session.get
+    session.get = (id: string) => (native && id === "ses_kid" ? { ...get(id), parentID: "ses_parent" } : get(id))
+    const rpc = (fake.context.client as any).rpc
+    ;(fake.context.client as any).rpc = (d: any) => ({
+      ...rpc(d),
+      asks: async () => ({
+        top: "ses_parent",
+        sessions: [{ sessionID: "ses_kid", title: "Kid", parentID: "ses_parent", depth: 1 }],
+        permissions: [{ sessionID: "ses_kid", requestID: "per_1", action: "shell", resources: ["echo hi"] }],
+        questions: [],
+      }),
+    })
+    ;(fake.context.client as any).session = { form: { list: async () => [] } }
+    await tui.setup(fake.context)
+    await (hostNotifications as any).setup(fake.context)
+    fake.emit("permission.asked", { id: "per_1", sessionID: "ses_kid" })
+    await settle()
+    return fake
+  }
+
+  test("a child's permission request sounds once", async () => {
+    const fake = await setup(false)
+    expect(fake.state.notified.filter((n: any) => n.sound?.name === "permission")).toHaveLength(1)
+    expect(fake.state.notified.filter((n: any) => n.notification)).toHaveLength(1)
+  })
+
+  test("a native child's still gets one blurred notification, with the sound once", async () => {
+    const fake = await setup(true)
+    expect(fake.state.notified.filter((n: any) => n.sound?.name === "permission")).toHaveLength(1)
+    expect(fake.state.notified.filter((n: any) => n.notification)).toEqual([
+      { title: "Parent › Kid", message: "Permission: shell echo hi", notification: { when: "blurred" }, sound: false },
+    ])
   })
 })
 

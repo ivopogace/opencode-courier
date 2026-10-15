@@ -280,7 +280,8 @@ or on the home screen, and shows again once you are back in one; only `q` closes
 on "waiting on you" opens the asks inbox: every permission request, question and form waiting
 anywhere in the tree, however many sessions it has, oldest first, with where it comes from, answered in
 a dialog with no model in between; the session that started the tree hears once that you settled it. The TUI plays OpenCode's
-sounds for a child's report, a group's release and a new ask ([more](docs/reference.md#in-the-terminal)).
+sounds for a child's report and a group's release, and OpenCode's own for a new ask, which the courier
+adds a notification to for a native child ([more](docs/reference.md#in-the-terminal)).
 
 While a permission prompt or form is shown in the session, OpenCode hides the footer, so open the
 inbox with `ctrl+x k` (or `/asks` once the prompt is back).

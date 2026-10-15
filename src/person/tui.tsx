@@ -1,5 +1,4 @@
 import type { Plugin } from "@opencode/plugin/tui"
-import type { AttentionSoundName } from "@opencode/plugin/tui/context"
 import { personRpc, type AskedPermission, type AskedQuestion, type Asks, type TreeSession } from "./rpc.js"
 import { REJECTED } from "./text.js"
 
@@ -78,9 +77,6 @@ export function askFooter(ask: Ask) {
     .filter(Boolean)
     .join(" · ")
 }
-
-/** The sound an ask arriving plays: a permission request's, or a question's for questions and forms. */
-export const soundOf = (ask: Ask): AttentionSoundName => (ask.kind === "permission" ? "permission" : "question")
 
 /** Whether a form field is shown, given the answers so far: hidden ones never, conditional ones when their conditions hold, as OpenCode reads them (a condition on an unanswered field is false; on a multiselect, `eq` means includes). */
 export function shown(field: FormField, answers: FormAnswer) {
@@ -462,11 +458,14 @@ export function addAsksInbox(ctx: Context) {
       if (sounded.has(ask.key)) continue
       sounded.add(ask.key)
       if (first && !eventSessions.has(ask.session.sessionID)) continue
+      // OpenCode sounds every ask and notifies for a session that is not a native child; the courier adds
+      // the tree path as a notification for a native child, whose OpenCode one is off.
+      if (!ctx.data.session.get(ask.session.sessionID)?.parentID) continue
       void ctx.attention.notify({
         title: pathOf(asks, ask.session.sessionID, top, currentTitle),
         message: askTitle(ask),
         notification: { when: "blurred" },
-        sound: { name: soundOf(ask), when: "always" },
+        sound: false,
       })
     }
   }

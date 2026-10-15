@@ -1,7 +1,7 @@
 import type { Status } from "../kernel/protocol.js"
 import { busy } from "./domain.js"
 import type { CourierPorts, Pending } from "./ports.js"
-import { lastStatus } from "./report.js"
+import { lastStatus, stoppedSincePrompt } from "./report.js"
 import type { Row, Tree, Wait } from "./rpc.js"
 import { standingIn } from "./status.js"
 import { childStore } from "./store.js"
@@ -42,10 +42,11 @@ function stateOf(info: unknown, waits: number, running: boolean): Row["state"] {
 /** One session of the panel: what it is doing, its report and group standing, its last tool call and its cost. */
 async function row(ports: CourierPorts, { entry, depth, info, pending, report }: Listed): Promise<Row> {
   const { sessionID } = entry
-  const [messages, status, standing] = await Promise.all([
+  const [messages, status, standing, stopped] = await Promise.all([
     ports.session.context({ sessionID }).catch((): Messages => []),
     lastStatus(childStore(ports.storage), sessionID).catch(() => undefined),
     entry.group ? standingIn(ports, entry, entry.group) : undefined,
+    stoppedSincePrompt(childStore(ports.storage), sessionID).catch(() => false),
   ])
   const running = info !== undefined && busy(info.time)
   const tool = lastTool(messages)
@@ -56,6 +57,7 @@ async function row(ports: CourierPorts, { entry, depth, info, pending, report }:
     depth,
     state: stateOf(info, pending.length, running),
     ...(info?.outcome ? { outcome: info.outcome } : {}),
+    ...(stopped ? { stopped } : {}),
     ...reportRow(report, status),
     ...(entry.group && standing ? { group: { name: entry.group, standing } } : {}),
     isolated: entry.isolated,

@@ -99,23 +99,24 @@ export function waitLine(wait: Wait) {
 
 /** What a row's session is doing, its report and its group standing: "idle · reported done · group pair held". */
 export function statusLine(row: Row) {
-  return [stateWord(row), reportWords(row.report), row.group ? `group ${row.group.name} ${row.group.standing}` : "", row.isolated ? "isolated" : ""]
+  return [stateWord(row), reportWords(row.report, row.stopped), row.group ? `group ${row.group.name} ${row.group.standing}` : "", row.isolated ? "isolated" : ""]
     .filter(Boolean)
     .join(" · ")
 }
 
-/** What a session does, an idle one whose last turn failed or was interrupted saying so. */
+/** What a session does, an idle one stopped, or whose last turn failed or was interrupted, saying so. */
 function stateWord(row: Row) {
   if (row.state === "waiting") return "waiting on you"
+  if (row.state === "idle" && row.stopped) return "stopped"
   if (row.state === "idle" && (row.outcome === "failed" || row.outcome === "interrupted")) return row.outcome
   return row.state
 }
 
 /** A session's report since its last prompt, in words; empty for one spawned before report notes were kept. */
-function reportWords(report: Row["report"]) {
+function reportWords(report: Row["report"], stopped?: boolean) {
   if (!report) return ""
   if (report.state === "owed") return "owes a report"
-  if (report.state === "ended") return "ended without a report"
+  if (report.state === "ended") return stopped ? "" : "ended without a report"
   return ["reported", report.status].filter(Boolean).join(" ")
 }
 

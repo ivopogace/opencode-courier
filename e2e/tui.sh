@@ -2,7 +2,8 @@
 # Live test of the TUI part: a real OpenCode V2 server loads the package's `tui` and `rpc`
 # entrypoints, its RPC answers over HTTP, and the TUI, in tmux, shows the prompt footer's entry and
 # follows a change, opens the tree panel with /courier tree, follows it into a child, and stops a child with /courier stop;
-# a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188).
+# a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188);
+# a child showing a form waits on the person in the footer and the panel (#183).
 # Then the same from the package `opencode plugin add` installs. Driven by e2e/mock-model.mjs's
 # COURIER-TUI, so no API key is needed.
 #
@@ -101,7 +102,7 @@ build_plugin
 
 cat >"$WORK/project/opencode.json" <<EOT
 {
-  "plugins": [{ "package": "$ROOT/dist", "options": { "maxTotal": 2 } }],
+  "plugins": [{ "package": "$ROOT/dist", "options": { "maxTotal": 2 } }, "$ROOT/e2e/search-plugin"],
   "providers": {
     "mock": {
       "package": "aisdk:@ai-sdk/openai-compatible",
@@ -305,6 +306,39 @@ check "the panel lists the asking child and says one older session is left out" 
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes the panel" "$(hides "courier tree" 10 tui-past-panel-closed)"
 
+# A form (#183): the child of COURIER-SEARCH searches the web before any provider was chosen, so OpenCode shows it
+# "Web Search", which only the person can answer; withdrawn by itself after a minute, so the checks are kept short.
+echo "a child showing a form waits on the person: the footer and the panel say so"
+out=$(prompt "COURIER-SEARCH")
+searcher_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+searcher=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out" | head -1)
+form=
+for _ in $(seq 1 45); do form=$(api "session/$searcher/form" | jq -r '.data[0].id // empty'); [ -n "$form" ] && break; sleep 1; done
+check "the child shows OpenCode's web search form" "$([ -n "$form" ] && echo true || echo false)"
+one_form='{"running":0,"waiting":1,"idle":0,"groups":[]}'
+result=$(summary_until "$searcher_parent" 15 "$one_form")
+echo "  $result"
+check "the summary counts the child waiting on the person" "$([ "$result" = "$one_form" ] && echo true || echo false)"
+rows=$(rpc tree "{\"sessionID\":\"$searcher_parent\"}" | jq -c '[.output.rows[] | {state, waits}]')
+echo "  $rows"
+check "the tree's row waits, on the form" "$(jq -r '. == [{state: "waiting", waits: [{type: "form", title: "Web Search"}]}]' <<<"$rows")"
+open_tui tui-form "$searcher_parent"
+check "the footer says one waits on the person" "$(shows "courier 1 waiting on you" 20 tui-form)"
+echo "  $(footer tui-form)"
+tmux send-keys -t "$TMUX_SESSION" "/courier tree"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "the panel's row says the child waits, and on what" \
+  "$([ "$(shows "shows a form: Web Search" 15 tui-form-panel)" = true ] && grep -qF "CHILD-SEARCHES  waiting on you" "$WORK/tui-form-panel.txt" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" q
+check "q closes the panel" "$(hides "courier tree" 10 tui-form-panel-closed)"
+dismissed=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$searcher/form/$form")
+check "the person dismisses the form ($form)" "$([ "$dismissed" = 204 ] && echo true || echo false)"
+waits=
+for _ in $(seq 1 30); do waits=$(rpc summary "{\"sessionID\":\"$searcher_parent\"}" | jq -r '.output.waiting'); [ "$waits" = 0 ] && break; sleep 1; done
+check "the summary no longer counts it waiting" "$([ "$waits" = 0 ] && echo true || echo false)"
+check "nor does the footer" "$(hides "waiting on you" 20 tui-form-dismissed)"
+
 echo "opencode plugin add installs the package with its tui and rpc entrypoints"
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 stop_server
@@ -339,7 +373,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

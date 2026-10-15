@@ -2,7 +2,7 @@ import { num, obj, str } from "../platform/json.js"
 import { isStatus, type Status } from "../kernel/protocol.js"
 import { scanAll, scanEntries, type Storage } from "../platform/storage.js"
 import { lineageIn, type Artifacts, type HeldReport, type Member, type RosterEntry } from "./domain.js"
-import type { ChildStore, GroupStore, Membership, ReportField, ReportNote, Settled, Stored } from "./ports.js"
+import type { ChildStore, GroupStore, Membership, ReportField, ReportNote, Settled, Stored, WakeNote } from "./ports.js"
 
 // The tree's storage: the only file that knows its keys and layouts. Older copies and a second server on the same data
 // directory read and write the same keys, so a key or a stored value never changes shape.
@@ -41,6 +41,7 @@ export const settledKey = (sessionID: string) => `${REPORT_PREFIX}${sessionID}/s
 export const progressKey = (sessionID: string) => `${REPORT_PREFIX}${sessionID}/progress`
 export const toldKey = (sessionID: string) => `${REPORT_PREFIX}${sessionID}/told`
 export const stoppedKey = (sessionID: string) => `${REPORT_PREFIX}${sessionID}/stopped`
+export const wakeKey = (sessionID: string) => `${REPORT_PREFIX}${sessionID}/wake`
 
 const REPORT_KEYS: Readonly<Record<ReportField, (sessionID: string) => string>> = {
   prompt: promptKey,
@@ -48,6 +49,7 @@ const REPORT_KEYS: Readonly<Record<ReportField, (sessionID: string) => string>> 
   progress: progressKey,
   told: toldKey,
   stopped: stoppedKey,
+  wake: wakeKey,
 }
 
 /**
@@ -78,6 +80,16 @@ const timeOf = (value: unknown) => {
 }
 
 const noteOf = (value: unknown): ReportNote => ({ at: timeOf(value), by: obj(value).by, status: obj(value).status })
+
+/** A wake expectation as stored, or undefined when it is not there or not one. */
+function readWake(value: unknown): WakeNote | undefined {
+  const given = obj(value)
+  const at = num(given.at)
+  const text = str(given.text)
+  const state = str(given.state)
+  if (at === undefined || text === undefined || (state !== "due" && state !== "rewoken" && state !== "stalled")) return undefined
+  return { at, state, text }
+}
 
 /** The `ChildStore` over the plugin's storage. */
 export function childStore(storage: Storage): ChildStore {
@@ -212,6 +224,21 @@ export function childStore(storage: Storage): ChildStore {
     },
     async stopped(sessionID, at) {
       await storage.set(stoppedKey(sessionID), { at })
+    },
+    // The wake expectation goes with the report state, and is read and written the same way. A stored
+    // value that is not a valid expectation is replaced, not left to block every later one.
+    async expectWake(sessionID, at, text) {
+      if (readWake(await storage.get(wakeKey(sessionID)))) return
+      await storage.set(wakeKey(sessionID), { at, state: "due", text })
+    },
+    async wake(sessionID) {
+      return readWake(await storage.get(wakeKey(sessionID)))
+    },
+    async noteWake(sessionID, note) {
+      await storage.set(wakeKey(sessionID), { at: note.at, state: note.state, text: note.text })
+    },
+    async forgetWake(sessionID) {
+      await storage.remove(wakeKey(sessionID))
     },
     async peek(sessionID, field) {
       const value = await storage.get(REPORT_KEYS[field](sessionID))

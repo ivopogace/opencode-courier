@@ -45,11 +45,11 @@ The import rules:
 Why it is shaped so:
 
 - **The platform does not import features.** Features register with it instead: `index.ts` hands the
-  scheduler its ordered tick jobs (`dueJob`, then `deliverReleased`) and the event follower its
-  ordered event modules (`treeEvents`, then `personEvents`), each with phases (`handle` in list
-  order, `after` in a `finally`, `followed`, `left` and `subscribed` around the subscription). There
-  is no application event bus: OpenCode's event stream already is one, and a second would lose the
-  order and the visibility.
+  scheduler its ordered tick jobs (`dueJob`, then `deliverReleased`, then the missed-wake watch) and
+  the event follower its ordered event modules (`treeEvents`, then `personEvents`), each with phases
+  (`handle` in list order, `after` in a `finally`, `followed`, `left` and `subscribed` around the
+  subscription). There is no application event bus: OpenCode's event stream already is one, and a
+  second would lose the order and the visibility.
 - **Registration lives in this copy's closures, never in the hub's state**, so the hub's shape does
   not change and an unloaded copy leaves nothing behind (below).
 - **The silent-turn rule is a query**, `Waits`, which `tree/` declares and `person/`, `scheduling/`
@@ -75,6 +75,7 @@ directory, so a key or a stored value never changes shape. `test/store.test.ts` 
 | `report/<sessionID>/progress` | `{ at }`: when it last messaged its parent without a status. |
 | `report/<sessionID>/told` | `{ at }`: when its parent was last told it ended a turn without a report. |
 | `report/<sessionID>/stopped` | `{ at }`: when `courier_stop` stopped it. |
+| `report/<sessionID>/wake` | `{ at, state, text }`: a delivered message owes the session a turn; `state` is `due`, `rewoken` (the scheduler re-woken it once) or `stalled` (still no turn), `text` the delivered message. Durable, and cleared by a turn starting, so a restart loses nothing. |
 | `group/<parentID>/<name>/<sessionID>` | A join group member: title, `joinedAt`, its held report (`at`, status, text, artifacts) or how it left (`left: { at, by }`, `by` being `failed`, `interrupted`, `deleted` or `dropped`). |
 | `later/<id>` | A pending `courier_later` message. |
 | `question/<requestID>` | A relayed question, kept until answered (the 100 newest). |
@@ -104,10 +105,11 @@ instance or copy sees it first. The hub runs the scheduler once per process and 
 events through two instances, one a standby, so that an instance unloading leaves no gap in which an
 event or a child's question is missed. A webhook receiver started by one instance is the one the
 others join, so two never contend for the port. The `courier_spawn` calls under way, the types
-of the items entering spawned sessions' inboxes, and the forms shown now are kept process-wide under
-fixed keys of their own, so spawns in every location and copy count each other against the limits,
-whichever instance sees an item's delivery knows what it was, and every instance's footer and tree
-panel see a form whichever instance followed its events.
+of the items entering spawned sessions' inboxes, the sessions with a turn under way (which the
+missed-wake watch reads), and the forms shown now are kept process-wide under fixed keys of their
+own, so spawns in every location and copy count each other against the limits, whichever instance
+sees an item's delivery knows what it was, and every instance's footer and tree panel see a form
+whichever instance followed its events.
 
 The hub carries a version, `HUB_VERSION`, which changes only when its shape or the meaning of a field
 does, not with every release (it is 2 since the join groups: the tick delivers released groups too,

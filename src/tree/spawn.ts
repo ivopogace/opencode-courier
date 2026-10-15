@@ -4,6 +4,7 @@ import { joinGroup, leaveGroup } from "./group.js"
 import { admit } from "./limits.js"
 import type { CourierPorts, RosterEntry } from "./ports.js"
 import { childStore, groupStore } from "./store.js"
+import { expectWake } from "./wake.js"
 import { childBrief, childBranch } from "./text.js"
 
 export interface SpawnInput {
@@ -157,8 +158,9 @@ async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, 
   // A baseline, until OpenCode's event for the prompt's delivery moves it on; written first, so it never overtakes that.
   const children = childStore(ports.storage)
   if (rostered) await children.prompted(entry.sessionID, ports.now()).catch(() => undefined)
+  const text = childBrief(entry.parentID, task, depth, ports.limits, entry.isolated ? childBranch(entry.sessionID) : undefined)
   try {
-    await ports.session.prompt({ sessionID: entry.sessionID, text: childBrief(entry.parentID, task, depth, ports.limits, entry.isolated ? childBranch(entry.sessionID) : undefined) })
+    await ports.session.prompt({ sessionID: entry.sessionID, text })
   } catch (error) {
     if (rostered) await children.settled(entry.sessionID, "failed", ports.now()).catch(() => undefined)
     if (grouped && entry.group)
@@ -168,6 +170,8 @@ async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, 
       )
     throw error
   }
+  // The prompt reached the child, which owes a turn; if its wake is missed, the scheduler re-wakes it.
+  if (rostered) await expectWake(ports.storage, ports.now, entry.sessionID, text).catch(() => undefined)
 }
 
 /**

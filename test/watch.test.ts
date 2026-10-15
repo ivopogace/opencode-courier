@@ -859,11 +859,13 @@ describe("what settles a child's report", () => {
       "report/ses_child/prompt",
       "report/ses_child/settled",
       "report/ses_child/told",
+      "report/ses_parent/wake",
     ])
 
     await forgetChild(ports.storage, "ses_parent", "ses_child")
 
-    expect([...store.keys()]).toEqual([])
+    // The child's report state goes with it; the parent's wake expectation, which the sends owed it, stays.
+    expect([...store.keys()]).toEqual(["report/ses_parent/wake"])
   })
 })
 

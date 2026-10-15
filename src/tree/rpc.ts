@@ -16,6 +16,8 @@ const Summary = Schema.Struct({
   running: Count,
   /** Waiting on a permission request, a question or a form it shows, which go to the person. */
   waiting: Count,
+  /** A message the courier re-woken, whose turn still did not start: the person must look. */
+  stalled: Count,
   /** Not running: done, or waiting for a message. */
   idle: Count,
   groups: Schema.Array(Group),
@@ -43,6 +45,8 @@ const Row = Schema.Struct({
   outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "interrupted"])),
   /** Set when courier_stop stopped it since its last prompt. */
   stopped: Schema.optionalKey(Schema.Boolean),
+  /** Set when a message the courier re-woken after a missed wake still did not start its turn. */
+  stalled: Schema.optionalKey(Schema.Boolean),
   /** Its report since its last prompt: still owed, arrived (held with its group or delivered), or its turn ended without one. */
   report: Schema.optionalKey(
     Schema.Struct({ state: Schema.Literals(["owed", "reported", "ended"]), status: Schema.optionalKey(Schema.String), progressed: Schema.Boolean }),

@@ -6,6 +6,7 @@ import type { Row, Tree, Wait } from "./rpc.js"
 import { standingIn } from "./status.js"
 import { childStore } from "./store.js"
 import { readTree, type Listed } from "./subtree.js"
+import { stalled } from "./wake.js"
 
 type Messages = Awaited<ReturnType<CourierPorts["session"]["context"]>>
 
@@ -45,11 +46,12 @@ function stateOf(info: unknown, waits: number, running: boolean): Row["state"] {
 /** One session of the panel: what it is doing, its report and group standing, its last tool call and its cost. */
 async function row(ports: CourierPorts, { entry, depth, info, pending, forms, report }: Listed): Promise<Row> {
   const { sessionID } = entry
-  const [messages, status, standing, stopped] = await Promise.all([
+  const [messages, status, standing, stopped, stalledRow] = await Promise.all([
     ports.session.context({ sessionID }).catch((): Messages => []),
     lastStatus(childStore(ports.storage), sessionID).catch(() => undefined),
     entry.group ? standingIn(ports, entry, entry.group) : undefined,
     stoppedSincePrompt(childStore(ports.storage), sessionID).catch(() => false),
+    stalled(ports.storage, sessionID).catch(() => false),
   ])
   const running = info !== undefined && busy(info.time)
   const tool = lastTool(messages)
@@ -61,6 +63,7 @@ async function row(ports: CourierPorts, { entry, depth, info, pending, forms, re
     state: stateOf(info, pending.length + forms.length, running),
     ...(info?.outcome ? { outcome: info.outcome } : {}),
     ...(stopped ? { stopped } : {}),
+    ...(stalledRow ? { stalled: true } : {}),
     ...reportRow(report, status),
     ...(entry.group && standing ? { group: { name: entry.group, standing } } : {}),
     isolated: entry.isolated,

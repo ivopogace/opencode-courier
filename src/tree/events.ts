@@ -102,6 +102,18 @@ export async function notePrompt(
 }
 
 /**
+ * Notes that a session's turn started, which clears its wake expectation: the turn takes the message waiting
+ * for it. Claims nothing, like `noteEnqueued`: the clear is the same twice, and storage is shared, so any
+ * server's watch clears it.
+ */
+export async function noteStarted(ports: WatchPorts, event: SessionEvent) {
+  await childStore(ports.storage)
+    .forgetWake(event.data.sessionID)
+    .catch((error: unknown) => ports.log(`courier watch: could not clear the wake of ${event.data.sessionID}: ${String(error)}`))
+  return true
+}
+
+/**
  * Notes that a spawned session's turn was stopped, which takes it out of its group without a report; one
  * stopped by a shutdown resumes on the next start.
  */
@@ -210,14 +222,31 @@ async function sealGroups(ports: WatchPorts, event: SessionEvent) {
   }
 }
 
+/** Notes a session's turn under way or ended, for the missed-wake watch: a `started` with no terminal since is running. */
+function turn(state: WatchState, sessionID: string | undefined, underWay: boolean) {
+  if (!sessionID) return
+  if (underWay) state.running.add(sessionID)
+  else state.running.delete(sessionID)
+}
+
 /** The events of spawned sessions' turns and inboxes, and their deletion: the tree's. */
 function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: HostEvent) {
+  const { sessionID } = (event.data ?? {}) as { sessionID?: string }
+  if (event.type === "session.execution.started") {
+    turn(state, sessionID, true)
+    return noteStarted(ports, event as unknown as SessionEvent)
+  }
+  if (event.type === "session.execution.succeeded" || event.type === "session.execution.failed" || event.type === "session.execution.interrupted")
+    turn(state, sessionID, false)
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent, outside)
   if (event.type === "session.execution.interrupted") return noteInterrupted(ports, event as unknown as SessionEvent)
   if (event.type === "session.inbox.enqueued") return noteEnqueued(ports, state.inbox, event as unknown as InboxEnqueued)
   if (event.type === "session.inbox.delivered") return notePrompt(ports, event as unknown as SessionEvent, state.inbox)
-  if (event.type === "session.deleted") return noteDeleted(ports, event as unknown as SessionEvent)
+  if (event.type === "session.deleted") {
+    turn(state, sessionID, false)
+    return noteDeleted(ports, event as unknown as SessionEvent)
+  }
   return undefined
 }
 

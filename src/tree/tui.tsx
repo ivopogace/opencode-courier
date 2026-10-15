@@ -57,6 +57,7 @@ export function summaryLine(summary: Summary, maxWidth = Infinity) {
   const groups = summary.groups.map((group) => `group ${group.name} ${group.reported}/${group.members}`)
   const parts = [
     summary.waiting ? `${summary.waiting} waiting on you` : "",
+    summary.stalled ? `${summary.stalled} stalled` : "",
     summary.running ? `${summary.running} running` : "",
     ...groups,
     summary.idle ? `${summary.idle} idle` : "",
@@ -105,8 +106,9 @@ export function statusLine(row: Row) {
     .join(" · ")
 }
 
-/** What a session does, an idle one stopped, or whose last turn failed or was interrupted, saying so. */
+/** What a session does, one the courier re-woken after a missed wake, an idle one stopped, or whose last turn failed or was interrupted, saying so. */
 function stateWord(row: Row) {
+  if (row.stalled) return "stalled"
   if (row.state === "waiting") return "waiting on you"
   if (row.state === "idle" && row.stopped) return "stopped"
   if (row.state === "idle" && (row.outcome === "failed" || row.outcome === "interrupted")) return row.outcome

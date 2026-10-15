@@ -14,7 +14,7 @@ polling.
 [![License: MIT](https://img.shields.io/npm/l/opencode-courier)](LICENSE)
 [![Supported OpenCode V2 version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fivopogace%2Fopencode-courier%2Fmain%2Fpackage.json&query=%24.peerDependencies%5B%27%40opencode%2Fplugin%27%5D&label=opencode&color=blue)](#supported-opencode-version)
 
-[![The edge cases on the live TUI: a join group holds one report while its other member waits on a permission](docs/demo-edge-cases.png)](docs/demo-edge-cases.mp4)
+https://github.com/user-attachments/assets/74a50b9c-462a-43f5-8737-bc7dd1917988
 
 The edge cases on the live terminal UI, narrated ([what it shows](#demos)).
 
@@ -79,9 +79,8 @@ idle); `queue: true` waits until the current turn ends.
 
 ## Demos
 
-[The video at the top](docs/demo-edge-cases.mp4) (1:46, narrated) is the TUI driven in `tmux` on the
-scripted stand-in model of the live test, with `e2e/tui.sh`'s setup, so each scene is real plugin
-behaviour:
+The video at the top (1:46, narrated) is the TUI driven in `tmux` on the scripted stand-in model of
+the live test, with `e2e/tui.sh`'s setup, so each scene is real plugin behaviour:
 
 - **A join group:** one member reports and its report is held with the group, while the other waits
   on a permission request, so the footer says one is waiting on you. You allow it from the asks inbox

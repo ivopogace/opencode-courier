@@ -5,7 +5,7 @@ import type { CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/po
 import { RETENTION_MS } from "../src/tree/roster.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
-import { childStore, groupStore } from "../src/tree/store.js"
+import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 import { summary } from "../src/tree/summary.js"
 
 type Times = { updated: number; idle?: number }
@@ -79,6 +79,19 @@ describe("summary", () => {
     for (const child of ["ses_form", "ses_run", "ses_stale"]) await childStore(ports.storage).record(entry(child, "ses_root"))
 
     expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 1, idle: 1, groups: [] })
+  })
+
+  test("counts a stalled session as stalled, not by its times, which a waiting message makes look busy; the root too", async () => {
+    const { ports } = fakePorts({ ses_stalled: { updated: 9, idle: 5 }, ses_run: { updated: 9, idle: 5 } })
+    for (const child of ["ses_stalled", "ses_run"]) await childStore(ports.storage).record(entry(child, "ses_root"))
+    const stalled = { at: 6, text: "report", running: false, idleAt: 6, rewoken: 7, stalled: 8 }
+    await wakeStore(ports.storage).put({ sessionID: "ses_stalled", inboxID: "msg_1", ...stalled })
+    // Woken again but not yet found stalled: it counts by its times.
+    await wakeStore(ports.storage).put({ sessionID: "ses_run", inboxID: "msg_2", ...stalled, stalled: undefined })
+
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, stalled: 1, groups: [] })
+    await wakeStore(ports.storage).put({ sessionID: "ses_root", inboxID: "msg_3", ...stalled })
+    expect((await summary(ports, "ses_root")).stalled).toBe(2)
   })
 
   test("counts a session whose forms cannot be read by its requests and times", async () => {

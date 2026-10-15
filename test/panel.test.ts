@@ -7,7 +7,7 @@ import { lastTool, panel } from "../src/tree/panel.js"
 import type { CleanupPorts, CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/ports.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
-import { childStore, groupStore } from "../src/tree/store.js"
+import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 
 type Session = { updated: number; idle?: number; outcome?: string; cost?: number; title?: string; messages?: unknown[] }
 
@@ -186,6 +186,21 @@ describe("panel", () => {
     ])
     expect(rows[2]).not.toHaveProperty("cost")
     expect(rows[2]!.title).toBe("entry ses_gone")
+  })
+
+  test("marks a stalled session stalled, since its oldest message woken again in vain was enqueued, and the root's own stall", async () => {
+    const { ports } = fakePorts({ ses_stalled: { updated: 9, idle: 5 }, ses_root: { updated: 9, idle: 5 } })
+    await childStore(ports.storage).record(entry("ses_stalled", "ses_root"))
+    const wakes = wakeStore(ports.storage)
+    const stalled = { text: "report", running: false, rewoken: 7, stalled: 8 }
+    await wakes.put({ sessionID: "ses_stalled", inboxID: "msg_2", at: 6, ...stalled })
+    await wakes.put({ sessionID: "ses_stalled", inboxID: "msg_1", at: 4, ...stalled })
+
+    const tree = await panel(ports, "ses_root")
+    expect(tree.rows.map(({ state, stalled }) => ({ state, stalled }))).toEqual([{ state: "stalled", stalled: 4 }])
+    expect(tree).not.toHaveProperty("stalled")
+    await wakes.put({ sessionID: "ses_root", inboxID: "msg_3", at: 3, ...stalled })
+    expect((await panel(ports, "ses_root")).stalled).toBe(3)
   })
 
   test("says a running session showing a form waits, one line per form after its requests, and not an idle one's form, whose withdrawal was missed", async () => {

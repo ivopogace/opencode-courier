@@ -2,7 +2,7 @@ import { num, obj, str } from "../platform/json.js"
 import { isStatus, type Status } from "../kernel/protocol.js"
 import { scanAll, scanEntries, type Storage } from "../platform/storage.js"
 import { lineageIn, type Artifacts, type HeldReport, type Member, type RosterEntry } from "./domain.js"
-import type { ChildStore, GroupStore, Membership, ReportField, ReportNote, Settled, Stored } from "./ports.js"
+import type { ChildStore, GroupStore, Membership, ReportField, ReportNote, Settled, Stored, Wake, WakeStore } from "./ports.js"
 
 // The tree's storage: the only file that knows its keys and layouts. Older copies and a second server on the same data
 // directory read and write the same keys, so a key or a stored value never changes shape.
@@ -61,6 +61,14 @@ export const memberKey = (parentID: string, group: string, sessionID: string) =>
 /** The key prefix of a parent's groups, and of one group's members. */
 export const groupsPrefix = (parentID: string) => `${GROUP_PREFIX}${parentID}/`
 export const groupPrefix = (parentID: string, group: string) => `${groupsPrefix(parentID)}${group}/`
+
+/**
+ * The courier messages waiting in a session's inbox, each under `wake/<sessionID>/<inboxID>` until it is delivered, for
+ * the scheduler to wake a session whose wake was missed. docs/maintainers/architecture.md, § Storage.
+ */
+const WAKE_PREFIX = "wake/"
+
+export const wakeKey = (sessionID: string, inboxID: string) => `${WAKE_PREFIX}${sessionID}/${inboxID}`
 
 function isReverse(value: unknown): value is ReverseEntry {
   const ancestors = (value as { ancestors?: unknown } | undefined)?.ancestors
@@ -287,6 +295,52 @@ export function groupStore(storage: Storage): GroupStore {
     },
     async remove(parentID, group, sessionID) {
       await storage.remove(memberKey(parentID, group, sessionID))
+    },
+  }
+}
+
+/** A watched message as stored under its key's session and inbox id; one that cannot be read is left out. */
+function readWake(sessionID: string, inboxID: string, value: unknown): Wake | undefined {
+  const given = obj(value)
+  const at = num(given.at)
+  const text = str(given.text)
+  if (at === undefined || text === undefined || typeof given.running !== "boolean") return undefined
+  const optional = (field: "idleAt" | "rewoken" | "stalled") => {
+    const time = num(given[field])
+    return time === undefined ? {} : { [field]: time }
+  }
+  const description = str(given.description)
+  return {
+    sessionID,
+    inboxID,
+    at,
+    text,
+    ...(description !== undefined ? { description } : {}),
+    running: given.running,
+    ...optional("idleAt"),
+    ...optional("rewoken"),
+    ...optional("stalled"),
+  }
+}
+
+/** The `WakeStore` over the plugin's storage. */
+export function wakeStore(storage: Storage): WakeStore {
+  const under = async (prefix: string) => {
+    const entries = await scanEntries<unknown>(storage, prefix)
+    return entries.flatMap(({ key, value }) => {
+      const parts = `${prefix.slice(WAKE_PREFIX.length)}${key}`.split("/")
+      const wake = parts.length === 2 ? readWake(parts[0]!, parts[1]!, value) : undefined
+      return wake ? [wake] : []
+    })
+  }
+  return {
+    async put({ sessionID, inboxID, ...wake }) {
+      await storage.set(wakeKey(sessionID, inboxID), { ...wake })
+    },
+    of: (sessionID) => under(`${WAKE_PREFIX}${sessionID}/`),
+    all: () => under(WAKE_PREFIX),
+    async remove(sessionID, inboxID) {
+      await storage.remove(wakeKey(sessionID, inboxID))
     },
   }
 }

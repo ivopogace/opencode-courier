@@ -228,6 +228,12 @@ describe("summaryLine", () => {
   test("is empty for a session that started none", () => {
     expect(summaryLine(empty)).toBe("")
   })
+
+  test("puts the stalled sessions right after those waiting on you, which stays first", () => {
+    expect(summaryLine({ ...empty, stalled: 1, waiting: 1, running: 2 })).toBe("courier 1 waiting on you · 1 stalled · 2 running")
+    expect(summaryLine({ ...empty, stalled: 1, waiting: 1, running: 2 }, 30)).toBe("courier 1 waiting on you")
+    expect(summaryLine({ ...empty, stalled: 2 }, 12)).toBe("2 stalled")
+  })
 })
 
 describe("the footer status entry", () => {
@@ -386,6 +392,7 @@ describe("the tree panel's lines", () => {
     expect(statusLine(row("ses_a", { stopped: true, report: { state: "owed", progressed: false } }))).toBe("stopped · owes a report")
     const { report: _, ...unreported } = row("ses_a", { state: "running" })
     expect(statusLine(unreported)).toBe("running")
+    expect(statusLine(row("ses_a", { state: "stalled", stalled: NOW - 65_000 }))).toBe("stalled · owes a report")
   })
 
   test("a leaf's activity: how long it ran, its last tool call and how long ago, its cost", () => {
@@ -411,6 +418,15 @@ describe("the tree panel's lines", () => {
     expect(detailLines(rows[0]!, rows, NOW)).toEqual(["[██████████] 1/1 reported"])
     expect(detailLines(rows[1]!, rows, NOW)).toEqual(["ran 2m 00s · no tool call yet · $0.01"])
     expect(detailLines(rows[2]!, rows, NOW)).toEqual(["asks permission: shell echo courier-asks", "asks: Which greeting?", "shows a form: Web Search"])
+    // A stalled session says since when a message waits, under its bar if it is an orchestrator.
+    expect(detailLines(row("ses_mid", { state: "stalled", stalled: NOW - 65_000 }), rows, NOW)).toEqual([
+      "[██████████] 1/1 reported",
+      "a message waits in its inbox since 1m 05s, woken again in vain",
+    ])
+    // What it waits on the person for comes first: that is what the person can act on.
+    expect(detailLines(row("ses_ask", { state: "waiting", stalled: NOW - 65_000, waits: [{ type: "form", title: "Web Search" }] }), rows, NOW)).toEqual([
+      "shows a form: Web Search",
+    ])
     // A session OpenCode no longer knows has no activity to show.
     expect(detailLines(row("ses_gone", { state: "gone", idle: undefined, cost: undefined }), rows, NOW)).toEqual([])
   })

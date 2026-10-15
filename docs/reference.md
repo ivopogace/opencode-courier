@@ -539,6 +539,36 @@ progress. A prompt the person types, a compaction someone asks for (OpenCode's c
 move of the session, which OpenCode delivers like a message, counts as one only when the plugin did
 not see it enter the inbox; the compactions OpenCode makes on its own as the context fills never do.
 
+## A missed wake
+
+A report, a notice or a scheduled message reaches its session through OpenCode's inbox, and OpenCode
+starts a turn for it when the session is idle. Once, in a real-model run, a turn never started: the
+report sat in the parent's inbox, the parent never reported upward, and every session above it waited
+with nothing told. What OpenCode does, and how the wake can be lost, is in
+[the maintainer notes](maintainers/plugin-api-notes.md#events).
+
+So the plugin watches every message it delivers (each OpenCode inbox item whose metadata has
+`source: "courier"`) from the moment OpenCode enqueues it until it is delivered or cancelled, noting
+whether its session runs a turn: a running turn takes a steered message at its next step, however long
+that step takes, and a message queued while it runs is taken when it ends. A message that has waited in
+an idle session for 30 seconds is a missed wake: the scheduler sends it once more under the same inbox
+id, which OpenCode takes for the message already waiting, not a second one, and wakes the session. If
+the wake was only slow and a turn has taken the message meanwhile, nothing is sent. A session that still
+has not taken it 30 seconds after that is stalled: the plugin logs it, the [footer](#in-the-terminal)
+counts it (`courier 1 stalled`, the open session itself included), and the tree panel shows its row as
+`stalled`, with since when its message waits, and a line at the top when the panel's own session is.
+Prompting the session, as the person can in its own view, delivers the waiting message with the prompt,
+which ends the stall. Nothing is sent a third time, and nothing at all to a session `courier_stop` stopped, whose
+watch it drops, as it cancels its scheduled messages.
+
+The scheduler checks every 15 seconds, so a wake is sent again 30 to 45 seconds after the session went
+idle with the message waiting, and flagged stalled up to 45 seconds after that. Only the server that
+holds the scheduler's [owner key](#two-servers-on-one-data-directory) sends it, once per message
+whichever copies and servers saw it enqueued. The footer and the panel ask again every 15 seconds on
+top of the events they follow, as a stall is found by the scheduler with no event of its own. The
+watch is kept in the plugin's storage, so a restart does not lose it, and goes with the message's
+delivery or its session's deletion.
+
 ## A child that asks for permission
 
 When a child's tool call needs an approval (a permission rule with `"effect": "ask"`, or no rule for
@@ -808,7 +838,8 @@ courier 1 waiting on you · 2 running · group pair 1/2 · 1 idle
 
 The parts come in that order, and on a narrow terminal the entry keeps as many whole parts as fit,
 replacing the groups it drops with a count (`courier 1 waiting on you · 2 running · +3 groups`);
-`/courier tree` has the full detail. `waiting on you` is always shown.
+`/courier tree` has the full detail. `waiting on you` is always shown, and `stalled` comes right
+after it.
 
 It counts the sessions under the open session, those it started with `courier_spawn` and those they
 started, every one of them (so a tree that has started more than `maxTotal` sessions over time is
@@ -818,8 +849,10 @@ counted whole, with the ones [past retention](#roster) left out), each by what i
   `pending`, which go to the person at the top of its tree, or its running turn shows a form (web
   search's provider form, a plugin's), which only the person can answer; the [asks inbox](#the-asks-inbox)
   lists all three;
+- `stalled`: a message the plugin delivered waits in its inbox, and sending it again did not start a
+  turn ([a missed wake](#a-missed-wake)); the open session itself is counted too when it is stalled;
 - `running`: its turn runs, or something reached it after its last turn ended, and it waits on no
-  request and shows no form;
+  request, shows no form and is not stalled;
 - `idle`: neither, whether it has reported or waits for a message.
 
 A session OpenCode no longer knows is not counted. Then, for each join group of the open session's own
@@ -828,7 +861,8 @@ that have not left (a group of a grandchild's is its parent's to wait on, and no
 zero is left out; the entry shows nothing on the home screen, where there is no session, for a session
 that started none, and when the RPC fails, as on a server without it. It asks again 250 ms after the
 first of the events that may change it (a session created or deleted, a turn started or ended, a
-permission request asked or answered, a form created or settled, a message delivered), once per burst.
+permission request asked or answered, a form created or settled, a message delivered), once per burst,
+and every 15 seconds besides, as a stall is found with no event of its own.
 A server that cannot register the RPC logs `courier rpc: not registered` and loads the rest as before.
 
 **The tree panel.** `/courier tree` (or *Courier session tree* in the command palette) opens a panel
@@ -846,7 +880,8 @@ courier tree  [█████░░░░░] 1/2 reported
 ↑↓ select · enter open · s stop · r refresh · f fullscreen · q close
 ```
 
-Each row's first line is the session's title, then what it does (`running`, `waiting on you`, `idle`, or
+Each row's first line is the session's title, then what it does (`running`, `waiting on you`, `idle`,
+`stalled` for one whose [wake was missed](#a-missed-wake) twice, or
 `failed` and `interrupted` for an idle one whose last turn ended so, `stopped` for one `courier_stop`
 stopped since its last prompt, `gone` for one OpenCode no longer
 knows), its report since its last prompt (`owes a report`, `reported <status>` once it sent one, held
@@ -859,13 +894,15 @@ for a session spawned before report notes were kept), its join group's standing 
   children it started;
 - a session **waiting on the person** gets one line per request, then one per form it shows:
   `asks permission: <action> <resources>`, `asks: <its first question>` or `shows a form: <its title>`;
+- a **stalled** session gets `a message waits in its inbox since <how long>, woken again in vain`,
+  under its bar if it has one; when the panel's own session is stalled, a line under the header says so;
 - a **leaf** gets its activity: how long it ran (from its creation to the end of its last turn, or to
   now while it runs), its last tool call and how long ago it was made, and what it has cost so far; a
   `gone` one gets none.
 
 There is no progress a session reports of itself: a bar counts only reports courier noted. The panel
 asks again a second after the first of a burst of the status entry's events and of a tool call, a usage
-update or a rename, and redraws its times every second. Its keys, while it has the keyboard (it takes it
+update or a rename, and every 15 seconds besides, and redraws its times every second. Its keys, while it has the keyboard (it takes it
 when it opens; `<leader>left` and `<leader>right` move it between the session and the panel): `↑`/`k` and
 `↓`/`j` move the selection, `enter` opens the selected session, `s` stops it, `x` forgets a `gone` one,
 `r` asks again, `f` toggles fullscreen and `q` closes the panel. While open, the panel follows the person to another session (its own
@@ -914,16 +951,19 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_�
 {"output":{"running":0,"waiting":1,"idle":1,"groups":[{"name":"pair","reported":1,"members":2}]}}
 ```
 
-- `summary {sessionID}`: the status entry's counts, of every session under it. An input without a
+- `summary {sessionID}`: the status entry's counts, of every session under it, with `stalled` when one
+  is, the session itself included ([a missed wake](#a-missed-wake)). An input without a
   `sessionID` is refused as `rpc.invalid_input`.
 - `tree {sessionID}`: the panel's rows. Each row: `sessionID`, `parentID`, `title`, `depth` (a child of
-  the session asked is at 1), `state` (`running`, `waiting`, `idle` or `gone`), `outcome` of its last
+  the session asked is at 1), `state` (`running`, `waiting`, `idle`, `stalled` or `gone`), `stalled` (since
+  when the oldest message that did not wake it waits, when it is stalled), `outcome` of its last
   turn, `stopped` (true when `courier_stop` stopped it since its last prompt; absent otherwise), `report` (`state`: `owed`, `reported` or `ended`, with the report's `status` once reported, and
   `progressed`), `group` (`name`, `standing`), `isolated`, `created`, `idle` (when its last turn ended, if
   it is not running), `cost` in US dollars, `tool` (its last tool call's `name` and `at`, when it ran) and
   `waits` (`{type: "permission", action, resources}`, `{type: "question", question}` or `{type: "form", title}`, the
   requests first, then the forms); times in epoch
-  milliseconds. `truncated` is how many older sessions the listing left out, when it had more than `maxTotal`.
+  milliseconds. `truncated` is how many older sessions the listing left out, when it had more than `maxTotal`,
+  and `stalled` since when a message waits in the session asked, when that session is stalled.
 - `stop {sessionID, by}`: `courier_stop` for `sessionID`, called from `by`, which must be above it;
   answers `{stopped: [{sessionID, title, outcome}], cancelled: <count>}`, deepest first, or fails with
   the declared error `refused` and `courier_stop`'s message.

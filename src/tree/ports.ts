@@ -88,6 +88,37 @@ export interface ChildStore {
   dropReported(keys: ReadonlyArray<string>): Promise<void>
 }
 
+/**
+ * A courier message waiting in a session's inbox, watched until it is delivered: `running` while the session runs a
+ * turn, which takes it at its next step; `idleAt` since the session was last seen idle with it waiting.
+ */
+export interface Wake {
+  readonly sessionID: string
+  readonly inboxID: string
+  /** When OpenCode enqueued it. */
+  readonly at: number
+  /** Its text and description, which waking the session again sends under the same inbox id. */
+  readonly text: string
+  readonly description?: string
+  readonly running: boolean
+  readonly idleAt?: number
+  /** When the scheduler woke the session again, the message still waiting. */
+  readonly rewoken?: number
+  /** When the session was found still not woken after that: it is stalled. */
+  readonly stalled?: number
+}
+
+export interface WakeStore {
+  /** Writes a watched message, replacing what was kept of it. */
+  put(wake: Wake): Promise<void>
+  /** The messages watched in a session's inbox. */
+  of(sessionID: string): Promise<Wake[]>
+  /** Every message watched. */
+  all(): Promise<Wake[]>
+  /** Stops watching a message: delivered, cancelled, or its session gone. */
+  remove(sessionID: string, inboxID: string): Promise<void>
+}
+
 /** A member of a join group with where it is kept. */
 export interface Membership extends Member {
   readonly parentID: string

@@ -18,6 +18,8 @@ const Summary = Schema.Struct({
   waiting: Count,
   /** Not running: done, or waiting for a message. */
   idle: Count,
+  /** Left a courier message waiting while idle, and did not take it once woken again; the session itself counts too. Absent at 0. */
+  stalled: Schema.optionalKey(Count),
   groups: Schema.Array(Group),
 })
 
@@ -37,8 +39,13 @@ const Row = Schema.Struct({
   title: Schema.String,
   /** A child of the panel's session is at depth 1. */
   depth: Count,
-  /** `waiting` on a request to the person or a form it shows them; `gone` when OpenCode no longer knows it. */
-  state: Schema.Literals(["running", "waiting", "idle", "gone"]),
+  /**
+   * `waiting` on a request to the person or a form it shows them; `stalled` when a courier message waits in its inbox and
+   * waking it again did not start a turn; `gone` when OpenCode no longer knows it.
+   */
+  state: Schema.Literals(["running", "waiting", "idle", "stalled", "gone"]),
+  /** Since when its oldest message that did not wake it has waited, when it is stalled. */
+  stalled: Schema.optionalKey(Schema.Number),
   /** How its last turn ended. */
   outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "interrupted"])),
   /** Set when courier_stop stopped it since its last prompt. */
@@ -65,6 +72,8 @@ const Tree = Schema.Struct({
   rows: Schema.Array(Row),
   /** How many older sessions the listing left out, when it had more than `maxTotal`: the live ones come first, then the newest. */
   truncated: Schema.optionalKey(Count),
+  /** Since when a courier message has waited in the panel's own session, when that session is stalled. */
+  stalled: Schema.optionalKey(Schema.Number),
 })
 
 export type Row = typeof Row.Type

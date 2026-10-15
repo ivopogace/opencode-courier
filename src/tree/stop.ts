@@ -5,6 +5,7 @@ import type { CleanupResult, StopPorts } from "./ports.js"
 import { childStore } from "./store.js"
 import { subtree, type Below } from "./subtree.js"
 import { stoppedNotice } from "./text.js"
+import { forgetWakes } from "./wake.js"
 
 export interface StopInput {
   readonly sessionID: string
@@ -97,6 +98,7 @@ async function silence(ports: StopPorts, sessionID: string, cancelled: string[])
   } catch (error) {
     log(`courier_stop: could not cancel the messages scheduled for ${sessionID}: ${String(error)}`)
   }
+  await forgetWakes(ports.courier, sessionID).catch((error: unknown) => log(`courier_stop: could not drop the wake watch of ${sessionID}: ${String(error)}`))
 }
 
 async function interrupt(ports: StopPorts, { entry, depth }: Below): Promise<Stopped> {

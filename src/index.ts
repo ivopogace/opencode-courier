@@ -30,6 +30,7 @@ import { addSkill } from "./skill.js"
 import {
   addTreeTools,
   deliverReleased,
+  wakeMissed,
   dirtyOf,
   headOf,
   inspectWorktree,
@@ -68,11 +69,12 @@ const shown = sharedState<FormsShown>("formsShown", () => new Map())
 
 /**
  * What each tick of the scheduler does, in order, through the first loaded member, of whichever copy:
- * due `courier_later` messages, then released join groups. Every hub-v2 member's `later` is its LaterPorts.
+ * due `courier_later` messages, released join groups, then missed wakes. Every hub-v2 member's `later` is its LaterPorts.
  */
 const jobs: TickJob[] = [
   dueJob,
   (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
+  (owner, claimed) => wakeMissed(owner.later as LaterPorts, claimed),
 ]
 
 const { join, track, nudge } = openInProcess(jobs)

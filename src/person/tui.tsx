@@ -449,6 +449,15 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     }
   }
 
+  /** Answers the ask chosen; one answered is not listed again, though the server may list it a moment longer. */
+  async function answerChosen(chosen: Ask) {
+    const done = await answer(chosen).catch((error: unknown) => {
+      fail("The answer was not passed on")(error)
+      return false
+    })
+    if (done) answered.add(chosen.key)
+  }
+
   let opened = false
   /**
    * Lists the asks of the open session's tree, answers the one chosen, and lists what is left, until none is or the person
@@ -464,15 +473,9 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     try {
       let found = await read(sessionID).catch(fail("The asks could not be read"))
       let first = true
-      // Whether this read replaces a list still on screen.
+      // Whether the last read replaces a list still on screen.
       let shown = false
-      while (found) {
-        if (!found.listed.length) {
-          if (first) ctx.ui.toast.show({ title: "courier", message: "Nothing in this courier tree waits on you.", variant: "info" })
-          // All settled elsewhere while it was shown: the list closes.
-          if (shown) ctx.ui.dialog.clear()
-          return
-        }
+      while (found?.listed.length) {
         first = false
         const next = await showList(sessionID, found)
         shown = "read" in next
@@ -481,14 +484,13 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
           continue
         }
         if (!next.chosen) return
-        const chosen = next.chosen
-        const done = await answer(chosen).catch((error: unknown) => {
-          fail("The answer was not passed on")(error)
-          return false
-        })
-        if (done) answered.add(chosen.key)
+        await answerChosen(next.chosen)
         found = await read(sessionID).catch(fail("The asks could not be read"))
       }
+      if (!found) return
+      if (first) ctx.ui.toast.show({ title: "courier", message: "Nothing in this courier tree waits on you.", variant: "info" })
+      // All settled elsewhere while it was shown: the list closes.
+      if (shown) ctx.ui.dialog.clear()
     } finally {
       opened = false
       clearTimeout(following)

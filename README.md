@@ -113,7 +113,7 @@ line to the server log naming both ([more](docs/reference.md#the-opencode-versio
 
 | opencode-courier | OpenCode V2 (`opencode` and `@opencode/plugin`) |
 |---|---|
-| 0.5.0, 0.6.0 | 2.0.29 |
+| 0.5.0, 0.6.0, 0.7.0 | 2.0.29 |
 | 0.4.0, 0.4.1 | 2.0.28 |
 | 0.2.3, 0.3.0 | 2.0.26 |
 | 0.2.2 | 2.0.24 |

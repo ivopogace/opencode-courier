@@ -14,10 +14,9 @@ polling.
 [![License: MIT](https://img.shields.io/npm/l/opencode-courier)](LICENSE)
 [![Supported OpenCode V2 version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fivopogace%2Fopencode-courier%2Fmain%2Fpackage.json&query=%24.peerDependencies%5B%27%40opencode%2Fplugin%27%5D&label=opencode&color=blue)](#supported-opencode-version)
 
-![A parent spawns two slow children, writes a README itself, and is woken by each report](docs/demo-async-tui.gif)
+[![The edge cases on the live TUI: a join group holds one report while its other member waits on a permission](docs/demo-edge-cases.png)](docs/demo-edge-cases.mp4)
 
-A parent writes a README while two slow children work, and each report wakes it ([the
-prompt](#demos)).
+The edge cases on the live terminal UI, narrated ([what it shows](#demos)).
 
 ## Quickstart
 
@@ -80,21 +79,19 @@ idle); `queue: true` waits until the current turn ends.
 
 ## Demos
 
-**The parent does not wait.** Prompt: *"Spawn two children: one runs `sleep 30` then lists the
-exports of math.js, the other runs `sleep 45` then lists the exports of text.js. Don't wait for
-them: meanwhile write a short README.md for this folder yourself, and add their reports to it when
-they arrive."* The recording at the top is this run: the parent writes its README and finishes its
-turn 16 seconds in, while both children still sleep; each report (the `Message from ses_…` line)
-then starts a new turn on its own, and the parent folds it into the README.
+[The video at the top](docs/demo-edge-cases.mp4) (1:46, narrated) is the TUI driven in `tmux` on the
+scripted stand-in model of the live test, with `e2e/tui.sh`'s setup, so each scene is real plugin
+behaviour:
 
-**A child's question reaches you.** Prompt: *"Spawn a child session to add a multiply function to
-math.js. It must ask me first whether to name it multiply, times or product."*
-
-![A child's question opens as a form in the parent's session, times is picked, and the child carries on](docs/demo-question-tui.gif)
-
-The child's question opens in the parent's session as OpenCode's own question form, `times` is
-picked, and the child adds `times` to math.js and reports. Both recordings are real runs with a free
-model on [OpenCode Zen](https://opencode.ai/zen) (Muse Spark 1.3).
+- **A join group:** one member reports and its report is held with the group, while the other waits
+  on a permission request, so the footer says one is waiting on you. You allow it from the asks inbox
+  (`ctrl+x k`), and both reports reach the parent in one message.
+- **A child whose turn fails:** OpenCode shows "Session failed", the parent is told, and the
+  `/courier tree` row reads `failed`.
+- **A child that ends its turn without a report:** the parent is told, and the row says so.
+- **`/courier stop`:** pick the session, confirm, and it is stopped.
+- **A form only you can answer:** a child's web search shows a form; the footer, the panel row and
+  the asks inbox point to it, and answering it there lets the child carry on.
 
 ## Recursive orchestration
 

@@ -2,7 +2,8 @@
 # Live test of the TUI part: a real OpenCode V2 server loads the package's `tui` and `rpc`
 # entrypoints, its RPC answers over HTTP, and the TUI, in tmux, shows the prompt footer's entry and
 # follows a change, opens the tree panel with /courier tree, follows it into a child, and stops a child with /courier stop;
-# a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188);
+# a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188), and the
+# inbox opened from a child lists the top session's courier_answer prompt first and allows it (#185);
 # a child showing a form waits on the person in the footer and the panel (#183); and x in the panel forgets a gone
 # isolated child, with its worktree (#187).
 # Then the same from the package `opencode plugin add` installs. Driven by e2e/mock-model.mjs's
@@ -44,6 +45,8 @@ check() {
   if [ "$2" = true ]; then echo "  PASS $1"; else echo "  FAIL $1"; failures=$((failures + 1)); fi
 }
 prompt() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json "$1" </dev/null); }
+# A turn of session $1 with text $2 through the API: `opencode run --auto` would answer the session's own prompt itself.
+api_prompt() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "{\"text\":\"$2\"}" "$SERVER/api/session/$1/prompt" >/dev/null; }
 prompt_in() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --session "$1" "$2" </dev/null); }
 location() { node -p 'encodeURIComponent(process.argv[1])' "$WORK/project"; }
 plugins() { api "plugin?directory=$(location)"; }
@@ -307,6 +310,38 @@ check "the panel lists the asking child and says one older session is left out" 
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes the panel" "$(hides "courier tree" 10 tui-past-panel-closed)"
 
+# The top session's own permission request (#185): courier_answer's once asks the person in the parent's session, and
+# the inbox, opened from the asking child, lists that prompt first and allows it, which passes the child's answer on.
+echo "the inbox opened from a child lists the top session's courier_answer prompt first, and allows it"
+child_request=$(api "session/$third/permission" | jq -r '.data[0].id // empty')
+api_prompt "$asker_parent" "COURIER-ANSWER once"
+top_request=
+for _ in $(seq 1 30); do
+  top_request=$(api "session/$asker_parent/permission" | jq -r --arg request "$child_request" '[.data[] | select(.metadata.requestID == $request) | .id] | first // empty')
+  [ -n "$top_request" ] && break
+  sleep 1
+done
+check "OpenCode asks the person in the parent's session" "$([ -n "$top_request" ] && echo true || echo false)"
+listed=$(person_rpc asks "{\"sessionID\":\"$third\"}" | jq -c '[.output.permissions[] | {sessionID, requestID, passesOn}]')
+echo "  $listed"
+check "the asks list the parent's prompt first, with the child's request it passes on" \
+  "$(jq -r --arg top "$asker_parent" --arg own "$top_request" --arg third "$third" --arg request "$child_request" \
+    '.[0] == {sessionID: $top, requestID: $own, passesOn: {sessionID: $third, requestID: $request}} and .[1].requestID == $request' <<<"$listed")"
+open_tui tui-top "$third"
+check "the child's view shows OpenCode's permission prompt" "$(shows "Allow once" 60 tui-top)"
+tmux send-keys -t "$TMUX_SESSION" C-x k
+check "its key opens the inbox, the parent's prompt first, worded as the top session's" \
+  "$([ "$(shows "Waiting on you (2)" 20 tui-top-inbox)" = true ] &&
+    grep -nF -e 'Permission (top session): courier_answer once for "shell echo courier-asks"' -e "Permission: shell echo courier-asks" "$WORK/tui-top-inbox.txt" | head -1 | grep -qF "(top session)" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "choosing it offers the answers" "$(shows "Reject with a reason" 20 tui-top-answers)"
+tmux send-keys -t "$TMUX_SESSION" Enter
+for _ in $(seq 1 30); do [ "$(api "session/$third/permission" | jq -r '.data | length')" = 0 ] && break; sleep 1; done
+check "allowed there, the parent's prompt is settled" \
+  "$(api "session/$asker_parent/permission" | jq -r --arg own "$top_request" '[.data[].id] | index($own) == null')"
+check "and courier_answer passed once on to the child" "$([ "$(api "session/$third/permission" | jq -r '.data | length')" = 0 ] && echo true || echo false)"
+check "the inbox closes once nothing is left" "$(hides "Waiting on you" 20 tui-top-closed)"
+
 # A form (#183): the child of COURIER-SEARCH searches the web before any provider was chosen, so OpenCode shows it
 # "Web Search", which only the person can answer; withdrawn by itself after a minute, so the checks are kept short.
 echo "a child showing a form waits on the person: the footer and the panel say so"
@@ -408,7 +443,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-installed tui-installed tui-top tui-top-inbox tui-top-answers tui-top-closed;; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

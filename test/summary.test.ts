@@ -5,7 +5,7 @@ import type { CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/po
 import { RETENTION_MS } from "../src/tree/roster.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
-import { childStore, groupStore } from "../src/tree/store.js"
+import { childStore, groupStore, wakeKey } from "../src/tree/store.js"
 import { summary } from "../src/tree/summary.js"
 
 type Times = { updated: number; idle?: number }
@@ -65,7 +65,18 @@ describe("summary", () => {
     for (const child of [entry("ses_run", "ses_root"), entry("ses_ask", "ses_root"), entry("ses_done", "ses_root"), entry("ses_leaf", "ses_run")])
       await children.record(child)
 
-    expect(await summary(ports, "ses_root")).toEqual({ running: 2, waiting: 1, idle: 1, groups: [] })
+    expect(await summary(ports, "ses_root")).toEqual({ running: 2, waiting: 1, idle: 1, stalled: 0, groups: [] })
+  })
+
+  test("counts the sessions whose re-woken turn still did not start, among the others", async () => {
+    const { ports } = fakePorts({ ses_a: { updated: 5, idle: 5 }, ses_b: { updated: 5 }, ses_c: { updated: 5, idle: 5 } })
+    await childStore(ports.storage).record(entry("ses_a", "ses_root"))
+    await childStore(ports.storage).record(entry("ses_b", "ses_root"))
+    await childStore(ports.storage).record(entry("ses_c", "ses_root"))
+    await ports.storage.set(wakeKey("ses_a"), { at: 900, state: "stalled", text: "m" })
+    await ports.storage.set(wakeKey("ses_c"), { at: 900, state: "rewoken", text: "m" })
+
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, stalled: 1, idle: 2, groups: [] })
   })
 
   test("counts a running session showing a form as waiting, and an idle one by its times, its form's withdrawal missed", async () => {
@@ -78,7 +89,7 @@ describe("summary", () => {
     )
     for (const child of ["ses_form", "ses_run", "ses_stale"]) await childStore(ports.storage).record(entry(child, "ses_root"))
 
-    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 1, idle: 1, groups: [] })
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 1, idle: 1, stalled: 0, groups: [] })
   })
 
   test("counts a session whose forms cannot be read by its requests and times", async () => {
@@ -88,15 +99,15 @@ describe("summary", () => {
     }
     await childStore(ports.storage).record(entry("ses_a", "ses_root"))
 
-    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, groups: [] })
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, stalled: 0, groups: [] })
   })
 
   test("is empty for a session that started none, and leaves out one OpenCode no longer knows", async () => {
     const { ports } = fakePorts({ ses_a: { updated: 5, idle: 5 } })
     await childStore(ports.storage).record(entry("ses_gone", "ses_root"))
 
-    expect(await summary(ports, "ses_none")).toEqual({ running: 0, waiting: 0, idle: 0, groups: [] })
-    expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 0, idle: 0, groups: [] })
+    expect(await summary(ports, "ses_none")).toEqual({ running: 0, waiting: 0, idle: 0, stalled: 0, groups: [] })
+    expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 0, idle: 0, stalled: 0, groups: [] })
   })
 
   test("counts a session whose requests cannot be read by its times alone", async () => {
@@ -106,7 +117,7 @@ describe("summary", () => {
     }
     await childStore(ports.storage).record(entry("ses_a", "ses_root"))
 
-    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, groups: [] })
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, stalled: 0, groups: [] })
   })
 
   test("lists the groups of the session's own children, with how many reported of those that have not left", async () => {
@@ -149,7 +160,7 @@ describe("summary", () => {
       message: "Done",
     })
 
-    expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 0, idle: 1, groups: [{ name: "trio", reported: 1, members: 1 }] })
+    expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 0, idle: 1, stalled: 0, groups: [{ name: "trio", reported: 1, members: 1 }] })
   })
 
   test("counts every session of a tree past maxTotal, the newest one waiting on the person among them", async () => {
@@ -160,7 +171,7 @@ describe("summary", () => {
     )
     for (const [index, child] of ["ses_a", "ses_b", "ses_c"].entries()) await childStore(ports.storage).record({ ...entry(child, "ses_root"), createdAt: 900 + index })
 
-    expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 1, idle: 2, groups: [] })
+    expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 1, idle: 2, stalled: 0, groups: [] })
   })
 
   test("leaves out an entry past retention, as courier_children does", async () => {
@@ -169,7 +180,7 @@ describe("summary", () => {
     await childStore(ports.storage).record({ ...entry("ses_old", "ses_root"), createdAt: 999 })
     await childStore(ports.storage).record({ ...entry("ses_new", "ses_root"), createdAt: 1_000 })
 
-    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, groups: [] })
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, stalled: 0, groups: [] })
     expect(await childStore(ports.storage).children("ses_root")).toHaveLength(2)
   })
 })
@@ -188,13 +199,13 @@ test("registerTreeRpc serves the summary as the courier RPC's summary method", a
   await registerTreeRpc(rpc as any, { courier: ports } as StopPorts)
 
   expect(registered.map(({ definition }) => [definition.id, Object.keys(definition.methods)])).toEqual([["courier", ["summary", "tree", "stop", "cleanup"]]])
-  expect(await registered[0]!.handlers.summary({ sessionID: "ses_root" })).toEqual({ running: 1, waiting: 0, idle: 0, groups: [] })
+  expect(await registered[0]!.handlers.summary({ sessionID: "ses_root" })).toEqual({ running: 1, waiting: 0, idle: 0, stalled: 0, groups: [] })
 })
 
 test("the summary method's schemas refuse an input without a session and an output with a negative count", async () => {
   const { input, output } = treeRpc.methods.summary
   expect((await input["~standard"].validate({ sessionID: "ses_root" })).issues).toBeUndefined()
   expect((await input["~standard"].validate({ wrong: 1 })).issues).toBeDefined()
-  expect((await output["~standard"].validate({ running: 1, waiting: 0, idle: 0, groups: [] })).issues).toBeUndefined()
-  expect((await output["~standard"].validate({ running: -1, waiting: 0, idle: 0, groups: [] })).issues).toBeDefined()
+  expect((await output["~standard"].validate({ running: 1, waiting: 0, idle: 0, stalled: 0, groups: [] })).issues).toBeUndefined()
+  expect((await output["~standard"].validate({ running: -1, waiting: 0, idle: 0, stalled: 0, groups: [] })).issues).toBeDefined()
 })

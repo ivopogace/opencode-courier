@@ -3,6 +3,7 @@ import { envelope } from "../kernel/protocol.js"
 import { complete, standingOf, type HeldReport, type LeftMember, type Member, type RosterEntry } from "./domain.js"
 import type { GroupPorts, GroupStore, Membership, WatchPorts } from "./ports.js"
 import { groupStore } from "./store.js"
+import { expectWake } from "./wake.js"
 import { groupNotice } from "./text.js"
 
 /** Makes a spawned session a member of its parent's group, opening the group if it was not. */
@@ -167,16 +168,21 @@ async function release(ports: GroupPorts, parentID: string, group: string) {
   const left = members.flatMap((member) => (member.left ? [{ sessionID: member.sessionID, title: member.title, by: member.left.by }] : []))
   if (reports.length) {
     try {
+      const text = envelope(reports.map((report) => report.sessionID).join(","), groupNotice(group, reports, left), {
+        group,
+        reports: String(reports.length),
+      })
       await ports.session.synthetic({
         sessionID: parentID,
-        text: envelope(reports.map((report) => report.sessionID).join(","), groupNotice(group, reports, left), {
-          group,
-          reports: String(reports.length),
-        }),
+        text,
         description: `Reports of group ${group}`,
         metadata: { source: "courier", from: reports.map((report) => report.sessionID).join(","), group, reports: reports.length },
         delivery: "steer",
       })
+      // The delivered reports owe the parent a turn; if its wake is missed, the scheduler re-wakes it.
+      await expectWake(ports.storage, ports.now, parentID, text).catch((error: unknown) =>
+        ports.log(`courier group ${group} of ${parentID}: could not note the wake: ${String(error)}`),
+      )
     } catch (error) {
       // A parent OpenCode no longer knows will never take it: dropped, like the children of a deleted session.
       if (!isNotFound(error)) {

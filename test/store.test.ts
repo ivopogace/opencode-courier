@@ -76,6 +76,7 @@ test("the stores write a child's roster entry, reverse key, report state and gro
     "remove report/ses_child/progress",
     "remove report/ses_child/told",
     "remove report/ses_child/stopped",
+    "remove report/ses_child/wake",
   ])
   // The held report outlives the child's entry: it still goes to the parent with its group.
   expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_child"])

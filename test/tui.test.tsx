@@ -10,7 +10,7 @@ import { activityLine, addTreeStatus, bar, detailLines, duration, forgottenLine,
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
 
-const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
+const empty: Summary = { running: 0, waiting: 0, stalled: 0, idle: 0, groups: [] }
 
 type Listener = (event: { type: string; data?: unknown; details: { type: string; data?: unknown } }) => void
 
@@ -194,7 +194,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50
 
 describe("summaryLine", () => {
   test("names what the sessions do and each group's standing, leaving out what is zero", () => {
-    expect(summaryLine({ running: 2, waiting: 1, idle: 0, groups: [{ name: "pair", reported: 1, members: 2 }] })).toBe(
+    expect(summaryLine({ running: 2, waiting: 1, idle: 0, stalled: 0, groups: [{ name: "pair", reported: 1, members: 2 }] })).toBe(
       "courier 1 waiting on you · 2 running · group pair 1/2",
     )
     expect(summaryLine({ ...empty, idle: 3 })).toBe("courier 3 idle")
@@ -205,6 +205,7 @@ describe("summaryLine", () => {
       running: 2,
       waiting: 1,
       idle: 3,
+      stalled: 0,
       groups: [
         { name: "tests", reported: 1, members: 3 },
         { name: "docs", reported: 0, members: 2 },
@@ -225,6 +226,11 @@ describe("summaryLine", () => {
     expect(summaryLine({ ...empty, waiting: 1, running: 2, idle: 9 }, 10)).toBe("1 waiting on you")
   })
 
+  test("names the sessions a re-woken turn still did not start, before the running ones", () => {
+    expect(summaryLine({ ...empty, stalled: 1 })).toBe("courier 1 stalled")
+    expect(summaryLine({ ...empty, waiting: 1, stalled: 2, running: 1 })).toBe("courier 1 waiting on you · 2 stalled · 1 running")
+  })
+
   test("is empty for a session that started none", () => {
     expect(summaryLine(empty)).toBe("")
   })
@@ -232,13 +238,22 @@ describe("summaryLine", () => {
 
 describe("the footer status entry", () => {
   test("shows the summary the server's RPC gives for the open session, asked at the TUI's location", async () => {
-    const fake = fakeContext(async () => ({ running: 2, waiting: 1, idle: 0, groups: [{ name: "pair", reported: 1, members: 2 }] }))
+    const fake = fakeContext(async () => ({ running: 2, waiting: 1, idle: 0, stalled: 0, groups: [{ name: "pair", reported: 1, members: 2 }] }))
     await tui.setup(fake.context)
     const app = await renderFooter(fake.claim("prompt.footer.status"), () => "ses_parent")
 
     await app.waitForFrame((frame) => frame.includes("group pair"))
     expect(app.captureCharFrame()).toContain("courier 1 waiting on you · 2 running · group pair 1/2")
     expect(fake.calls).toEqual([[{ sessionID: "ses_parent" }, { location: { directory: "/workspace" } }]])
+  })
+
+  test("shows the sessions a re-woken turn still did not start", async () => {
+    const fake = fakeContext(async () => ({ ...empty, stalled: 1, running: 1 }))
+    await tui.setup(fake.context)
+    const app = await renderFooter(fake.claim("prompt.footer.status"), () => "ses_parent")
+
+    await app.waitForFrame((frame) => frame.includes("1 stalled"))
+    expect(app.captureCharFrame()).toContain("courier 1 stalled · 1 running")
   })
 
   test("asks at the open session's own location when the TUI knows it", async () => {
@@ -384,6 +399,7 @@ describe("the tree panel's lines", () => {
     expect(statusLine(row("ses_a", { outcome: "failed", report: { state: "ended", progressed: false } }))).toBe("failed · ended without a report")
     expect(statusLine(row("ses_a", { outcome: "interrupted", stopped: true, report: { state: "ended", progressed: false } }))).toBe("stopped")
     expect(statusLine(row("ses_a", { stopped: true, report: { state: "owed", progressed: false } }))).toBe("stopped · owes a report")
+    expect(statusLine(row("ses_a", { stalled: true, report: { state: "owed", progressed: false } }))).toBe("stalled · owes a report")
     const { report: _, ...unreported } = row("ses_a", { state: "running" })
     expect(statusLine(unreported)).toBe("running")
   })
@@ -968,6 +984,7 @@ describe("the footer status entry's width", () => {
     running: 3,
     waiting: 1,
     idle: 2,
+    stalled: 0,
     groups: [
       { name: "tests", reported: 1, members: 3 },
       { name: "docs", reported: 0, members: 2 },

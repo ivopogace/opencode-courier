@@ -7,7 +7,7 @@ import { lastTool, panel } from "../src/tree/panel.js"
 import type { CleanupPorts, CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/ports.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
-import { childStore, groupStore } from "../src/tree/store.js"
+import { childStore, groupStore, wakeKey } from "../src/tree/store.js"
 
 type Session = { updated: number; idle?: number; outcome?: string; cost?: number; title?: string; messages?: unknown[] }
 
@@ -221,6 +221,18 @@ describe("panel", () => {
       },
       { sessionID: "ses_stale", state: "idle", waits: [] },
     ])
+  })
+
+  test("marks a session whose re-woken turn still did not start as stalled, and not one whose wake is only due", async () => {
+    const { ports } = fakePorts({ ses_stalled: { updated: 5, idle: 5 }, ses_due: { updated: 5, idle: 5 } })
+    await childStore(ports.storage).record(entry("ses_stalled", "ses_root"))
+    await childStore(ports.storage).record(entry("ses_due", "ses_root"))
+    await ports.storage.set(wakeKey("ses_stalled"), { at: 900, state: "stalled", text: "m" })
+    await ports.storage.set(wakeKey("ses_due"), { at: 900, state: "due", text: "m" })
+
+    const { rows } = await panel(ports, "ses_root")
+    expect(rows.find((row) => row.sessionID === "ses_stalled")).toMatchObject({ stalled: true })
+    expect(rows.find((row) => row.sessionID === "ses_due")).not.toHaveProperty("stalled")
   })
 
   test("marks a session courier_stop stopped since its last prompt, and not one prompted again", async () => {

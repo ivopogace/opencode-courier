@@ -22,3 +22,4 @@ export { allEntries, answeringTop, lineage, pruneExpired, RETENTION_MS } from ".
 export { subtree } from "./subtree.js"
 export { registerTreeRpc } from "./rpc-handlers.js"
 export { addTreeTools } from "./tools.js"
+export { expectWake, running, stalled, wakeJob, GRACE_MS } from "./wake.js"

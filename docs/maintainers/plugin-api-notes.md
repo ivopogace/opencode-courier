@@ -378,6 +378,11 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   `client.permission.reply`; forms go through `data.session.form.reply` and are listed with
   `client.session.form.list`, since the server API has no form domain. OpenCode's own notifications
   part sounds `permission` and `question` for every request and form the TUI sees.
+- **A dialog replaces the one open.** `createDialogApi` (`packages/tui/src/plugin/api.tsx`) shows every
+  dialog through the TUI's `dialog.replace`, which calls the open one's `onClose`: an open `select`
+  then resolves with `undefined`, as on `esc`, and `clear()` does the same. `select` takes a fixed
+  list and no starting query (`search` only filters), so the asks inbox shows a changed list by
+  opening a new `select`, whose search starts empty, and sets its size again (`replace` resets it).
 - **The panel belongs to one session.** `ui.panel.open` targets the route's session; the app closes the
   panel on any route to another (`packages/tui/src/app.tsx`), each session's frame is keyed by its id, and
   a newly mounted panel takes the keyboard (`component/session-frame.tsx`, `onTarget`). So the tree panel

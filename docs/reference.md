@@ -942,8 +942,16 @@ Each session is named by its current title, so a renamed one shows its new name;
 
 A question whose call was cut off says `cut off, answered by message`. Searching filters the list.
 
+**Following the tree.** While the list is shown it follows the tree, on the events the footer's entry
+follows: 250 ms after the first of a burst of them it reads the tree again and, when the asks changed, shows
+the new list in its place, with an ask that arrived added and one answered or dismissed elsewhere (in the
+child's own view, another TUI, the paired app, or by `courier_answer`) gone, and the count in the title
+with them. It closes once nothing is left. Shown again, the list starts with an empty search, as OpenCode's
+select is not given a query; a read that finds the same asks leaves it as it is, search and all.
+
 **Answering.** Choosing an ask opens its dialog; `esc` goes back to the list, which is read again after
-each answer and closes once nothing is left.
+each answer and closes once nothing is left. While an ask is being answered the list follows nothing;
+an ask settled elsewhere meanwhile is reported when its answer is sent.
 
 - A permission request: `Allow once`, `Always allow` (only when the request has something to save, which
   it names), `Reject`, or `Reject with a reason…`, which asks for the reason. It goes through OpenCode's

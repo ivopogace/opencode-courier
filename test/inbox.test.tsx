@@ -4,6 +4,7 @@ import type { Plugin } from "@opencode/plugin/tui"
 import { addAsksInbox, askFooter, askTitle, asksOf, INBOX_COMMAND, pathOf, SETTLE_MS, active, type Ask } from "../src/person/tui.js"
 import type { Answered, Asks } from "../src/person/rpc.js"
 import { REJECTED } from "../src/person/text.js"
+import { CHANGES as FOLLOWS } from "../src/tree/tui.js"
 
 const sessions: Asks["sessions"] = [
   { sessionID: "ses_a", title: "Fix the bug", parentID: "ses_root", depth: 1 },
@@ -42,10 +43,25 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
   const layers: (() => any)[] = []
   const sizes: unknown[] = []
   let route: { type: string; sessionID?: string } = { type: "session", sessionID: "ses_root" }
-  const dialog = (kind: Dialog["kind"]) => async (options: any) => {
+  // As the host's: a dialog shown, or cleared, closes the one before, whose promise resolves with nothing.
+  let close: (() => void) | undefined
+  let cleared = 0
+  const dialog = (kind: Dialog["kind"]) => (options: any) => {
+    close?.()
     const shown = { kind, options }
     dialogs.push(shown)
-    return answers.shift()?.(shown)
+    return new Promise((resolve) => {
+      let open = true
+      const settle = (value: unknown) => {
+        if (!open) return
+        open = false
+        if (close === closing) close = undefined
+        resolve(value)
+      }
+      const closing = () => settle(undefined)
+      close = closing
+      void Promise.resolve(answers.shift()?.(shown)).then(settle)
+    })
   }
   const context = {
     location: { directory: "/workspace" },
@@ -94,7 +110,16 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
     },
     ui: {
       router: { current: () => route },
-      dialog: { select: dialog("select"), prompt: dialog("prompt"), alert: dialog("alert"), set: (options: unknown) => void sizes.push(options) },
+      dialog: {
+        select: dialog("select"),
+        prompt: dialog("prompt"),
+        alert: dialog("alert"),
+        set: (options: unknown) => void sizes.push(options),
+        clear: () => {
+          cleared++
+          close?.()
+        },
+      },
       toast: { show: (toast: { message: string; variant?: string }) => void toasts.push(toast) },
     },
     attention: { notify: async (options: unknown) => (notified.push(options), { ok: true }) },
@@ -118,6 +143,7 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
     layers,
     sizes,
     emit,
+    cleared: () => cleared,
     goHome: () => void (route = { type: "home" }),
     goSession: (sessionID: string) => void (route = { type: "session", sessionID }),
     replies: () => calls.filter(({ method }) => method !== "asks"),
@@ -128,6 +154,8 @@ const empty: Asks = { top: "ses_root", sessions, permissions: [], questions: [] 
 /** The dialog's option whose title starts with `title`, chosen. */
 const pick = (title: string) => (dialog: Dialog) => dialog.options.options.find((option: any) => option.title.startsWith(title))?.value
 const type = (text: string) => () => text
+/** Leaves the dialog open until another replaces it. */
+const hold = () => new Promise(() => undefined)
 const settle = () => new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50))
 
 describe("what the inbox lists", () => {
@@ -162,7 +190,7 @@ describe("what the inbox lists", () => {
 describe("the inbox", () => {
   test("lists the open session's tree, read at its location, oldest first, with where each comes from", async () => {
     const fake = fakeContext({ ...empty, permissions: [bash] })
-    const inbox = addAsksInbox(fake.context)
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
     await inbox.open()
     fake.state.asks = { ...empty, permissions: [bash], questions: [greeting] }
     await inbox.open()
@@ -180,7 +208,7 @@ describe("the inbox", () => {
 
   test("says so when nothing waits, or no session is open, and asks nothing then", async () => {
     const fake = fakeContext(empty)
-    const inbox = addAsksInbox(fake.context)
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
     await inbox.open()
     fake.goHome()
     await inbox.open()
@@ -196,14 +224,14 @@ describe("the inbox", () => {
     const fake = fakeContext(empty)
     fake.state.asks = undefined as unknown as Asks
     ;(fake.context.client.rpc as any) = () => ({ asks: async () => Promise.reject({ type: "rpc.method_not_found", message: "Unknown RPC method courier-person.asks" }) })
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
 
     expect(fake.toasts).toEqual([expect.objectContaining({ message: "The asks could not be read: Unknown RPC method courier-person.asks", variant: "error" })])
   })
 
   test("is opened by its command: a key, /asks and the palette", async () => {
     const fake = fakeContext({ ...empty, permissions: [bash] })
-    addAsksInbox(fake.context)
+    addAsksInbox(fake.context, FOLLOWS)
     const layer = fake.layers[0]!()
     const [command] = layer.commands
 
@@ -215,11 +243,122 @@ describe("the inbox", () => {
   })
 })
 
+describe("the open list follows the tree", () => {
+  const titles = (dialog: Dialog) => dialog.options.options.map((option: any) => option.title)
+  const asksRead = (fake: ReturnType<typeof fakeContext>) => fake.calls.filter(({ method }) => method === "asks").length
+
+  test("an ask that arrives shows in it, one settled elsewhere leaves it, and it closes once none is left", async () => {
+    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
+    fake.answers.push(hold)
+    const opening = inbox.open()
+    await settle()
+    expect(fake.dialogs.map((dialog) => dialog.options.title)).toEqual(["Waiting on you (1)"])
+
+    fake.state.asks = { ...empty, permissions: [bash], questions: [greeting] }
+    fake.answers.push(hold)
+    fake.emit("session.execution.started", "ses_a")
+    await settle()
+    expect(fake.dialogs.at(-1)!.options.title).toBe("Waiting on you (2)")
+    expect(titles(fake.dialogs.at(-1)!)).toEqual(["Permission: bash bun test", "Question: Greeting: Which greeting?"])
+    expect(fake.sizes).toEqual([{ size: "large" }, { size: "large" }])
+
+    fake.state.asks = { ...empty, questions: [greeting] }
+    fake.answers.push(hold)
+    fake.emit("permission.replied", "ses_b")
+    await settle()
+    expect(fake.dialogs.at(-1)!.options.title).toBe("Waiting on you (1)")
+    expect(titles(fake.dialogs.at(-1)!)).toEqual(["Question: Greeting: Which greeting?"])
+
+    fake.state.asks = empty
+    fake.emit("session.execution.succeeded", "ses_a")
+    await opening
+    expect(fake.dialogs).toHaveLength(3)
+    expect(fake.cleared()).toBe(1)
+    expect(fake.toasts).toEqual([])
+  })
+
+  test("a form that arrives or is settled elsewhere does too", async () => {
+    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
+    fake.answers.push(hold)
+    const opening = inbox.open()
+    await settle()
+
+    fake.state.forms = { ses_a: [provider] }
+    fake.answers.push(hold)
+    fake.emit("form.created", "ses_a")
+    await settle()
+    expect(titles(fake.dialogs.at(-1)!)).toEqual(["Permission: bash bun test", "Form: Choose a web search provider"])
+
+    fake.state.forms = {}
+    fake.answers.push(() => undefined)
+    fake.emit("form.cancelled", "ses_a")
+    await opening
+    expect(titles(fake.dialogs.at(-1)!)).toEqual(["Permission: bash bun test"])
+  })
+
+  test("the list chosen from after it changed answers as before", async () => {
+    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
+    fake.answers.push(hold)
+    const opening = inbox.open()
+    await settle()
+
+    fake.state.asks = { ...empty, permissions: [bash], questions: [greeting] }
+    fake.answers.push(pick("Permission"), pick("Allow once"))
+    fake.emit("permission.asked", "ses_a")
+    await opening
+    expect(fake.replies()).toEqual([{ method: "permission.reply", input: { sessionID: "ses_b", requestID: "per_1", decision: "once" } }])
+    // Listed again after the answer, with the question left; then the person leaves.
+    expect(titles(fake.dialogs.at(-1)!)).toEqual(["Question: Greeting: Which greeting?"])
+  })
+
+  test("is not shown again when the asks are the same, nor read on an event the footer does not follow", async () => {
+    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
+    fake.answers.push(hold)
+    void inbox.open()
+    await settle()
+    const read = asksRead(fake)
+
+    fake.emit("session.status", "ses_a")
+    await settle()
+    expect(asksRead(fake)).toBe(read + 1)
+    fake.emit("session.text.delta", "ses_a")
+    await settle()
+    expect(asksRead(fake)).toBe(read + 1)
+    expect(fake.dialogs).toHaveLength(1)
+  })
+
+  test("follows nothing while an ask is being answered, or once the list is closed", async () => {
+    const fake = fakeContext({ ...empty, permissions: [bash] })
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
+    fake.answers.push(pick("Permission"), hold)
+    const opening = inbox.open()
+    await settle()
+    fake.state.asks = { ...empty, permissions: [bash], questions: [greeting] }
+    fake.emit("session.execution.started", "ses_a")
+    await settle()
+    expect(fake.dialogs.at(-1)!.options.title).toBe("Permission: bash bun test")
+
+    // Leaving the permission's dialog lists the tree again, read then; leaving the list closes it.
+    fake.dialogs.length = 0
+    fake.context.ui.dialog.clear()
+    await opening
+    expect(fake.dialogs.map((dialog) => dialog.options.title)).toEqual(["Waiting on you (2)"])
+    const read = asksRead(fake)
+    fake.emit("session.execution.succeeded", "ses_a")
+    await settle()
+    expect(asksRead(fake)).toBe(read)
+  })
+})
+
 describe("answering a permission request", () => {
   const answer = async (...steps: ((dialog: Dialog) => unknown)[]) => {
     const fake = fakeContext({ ...empty, permissions: [bash] })
     fake.answers.push(pick("Permission"), ...steps)
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
     return fake
   }
 
@@ -238,7 +377,7 @@ describe("answering a permission request", () => {
   test("offers always only when the request has something to save", async () => {
     const fake = fakeContext({ ...empty, permissions: [{ ...bash, save: undefined } as any] })
     fake.answers.push(pick("Permission"))
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
 
     expect(fake.dialogs[1]!.options.options.map((option: any) => option.title)).toEqual(["Allow once", "Reject", "Reject with a reason…"])
   })
@@ -268,7 +407,7 @@ describe("answering a question", () => {
   test("passes the person's choice on through the person's RPC, at the session's location", async () => {
     const fake = fakeContext({ ...empty, questions: [greeting] })
     fake.answers.push(pick("Question"), pick("Hi"))
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
 
     expect(fake.dialogs[1]!.options.title).toBe("Greeting: Which greeting?")
     expect(fake.replies()).toEqual([
@@ -279,12 +418,12 @@ describe("answering a question", () => {
   test("takes an answer of the person's own, and several choices where the question allows them", async () => {
     const own = fakeContext({ ...empty, questions: [greeting] })
     own.answers.push(pick("Question"), pick("Type your own"), type("Good morning"))
-    await addAsksInbox(own.context).open()
+    await addAsksInbox(own.context, FOLLOWS).open()
     expect((own.replies()[0]!.input as any).answers).toEqual([["Good morning"]])
 
     const several = fakeContext({ ...empty, questions: [toppings] })
     several.answers.push(pick("Question"), pick("[ ] Ham"), pick("[ ] Egg"), pick("[x] Ham"), pick("[ ] Ham"), pick("Done"))
-    await addAsksInbox(several.context).open()
+    await addAsksInbox(several.context, FOLLOWS).open()
     expect((several.replies()[0]!.input as any).answers).toEqual([["Egg", "Ham"]])
   })
 
@@ -292,13 +431,13 @@ describe("answering a question", () => {
     const gone = fakeContext({ ...empty, questions: [greeting] })
     gone.state.answered = { answered: false }
     gone.answers.push(pick("Question"), pick("Hi"))
-    await addAsksInbox(gone.context).open()
+    await addAsksInbox(gone.context, FOLLOWS).open()
     expect(gone.toasts.map((toast) => toast.variant)).toEqual(["warning"])
 
     const refused = fakeContext({ ...empty, questions: [greeting] })
     refused.state.answered = { answered: false, problem: "answers needs one entry per question, 1 in all, not 2." }
     refused.answers.push(pick("Question"), pick("Hi"))
-    await addAsksInbox(refused.context).open()
+    await addAsksInbox(refused.context, FOLLOWS).open()
     expect(refused.toasts).toEqual([
       expect.objectContaining({ message: "The answer was not passed on: answers needs one entry per question, 1 in all, not 2.", variant: "error" }),
     ])
@@ -324,7 +463,7 @@ describe("answering a form", () => {
     }
     const fake = fakeContext(empty, { ses_b: [form] })
     fake.answers.push(pick("Form"), pick("Production"), pick("Yes"), type("two"), type("2"), pick("[ ] Europe"), pick("Done"))
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
 
     expect(fake.replies()).toEqual([
       { method: "form.reply", input: { sessionID: "ses_b", formID: "frm_2", answer: { target: "prod", confirm: true, replicas: 2, regions: ["eu"] } } },
@@ -337,7 +476,7 @@ describe("answering a form", () => {
     const run = async (fields: unknown[], ...replies: ((dialog: any) => unknown)[]) => {
       const fake = fakeContext(empty, { ses_b: [hidden(fields)] })
       fake.answers.push(pick("Form"), ...replies)
-      await addAsksInbox(fake.context).open()
+      await addAsksInbox(fake.context, FOLLOWS).open()
       return fake
     }
     const name = { key: "name", type: "string", title: "Name" }
@@ -375,7 +514,7 @@ describe("answering a form", () => {
       const fake = fakeContext(empty, { ses_b: [{ id: "frm_g", sessionID: "ses_b", title: "Gone", fields: [{ key: "name", type: "string", title: "Name" }] }] })
       fake.state.formError = { _tag }
       fake.answers.push(pick("Form"), type("x"))
-      await addAsksInbox(fake.context).open()
+      await addAsksInbox(fake.context, FOLLOWS).open()
       expect(fake.toasts).toEqual([expect.objectContaining({ message: "It no longer waits: answered or settled some other way.", variant: "warning" })])
       expect(fake.dialogs.at(-1)!.options.title).toBe("Waiting on you (1)")
     }
@@ -384,7 +523,7 @@ describe("answering a form", () => {
   test("a form that opens a page is left to its own session", async () => {
     const fake = fakeContext(empty, { ses_a: [{ id: "frm_3", sessionID: "ses_a", title: "Sign in", fields: [{ key: "login", type: "external", url: "https://example.com" }] }] })
     fake.answers.push(pick("Form"), () => undefined)
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
 
     expect(fake.dialogs[1]).toEqual({ kind: "alert", options: { title: "Sign in · login", message: "This form opens https://example.com: answer it in its own session." } })
     expect(fake.replies()).toEqual([])
@@ -395,7 +534,7 @@ describe("attention", () => {
   test("a native child's new ask gets one blurred notification of the courier's, without a sound (OpenCode's plays it)", async () => {
     const fake = fakeContext(empty)
     fake.native.add("ses_a").add("ses_b")
-    addAsksInbox(fake.context)
+    addAsksInbox(fake.context, FOLLOWS)
     await settle()
 
     fake.state.asks = { ...empty, permissions: [bash] }
@@ -417,7 +556,7 @@ describe("attention", () => {
 
   test("a child that is not native gets none of the courier's: OpenCode sounds and notifies it", async () => {
     const fake = fakeContext(empty)
-    addAsksInbox(fake.context)
+    addAsksInbox(fake.context, FOLLOWS)
     await settle()
     fake.state.asks = { ...empty, permissions: [bash], questions: [greeting] }
     fake.emit("permission.asked")
@@ -428,7 +567,7 @@ describe("attention", () => {
   test("nothing sounds on the home screen, and its cleanup stops listening", async () => {
     const fake = fakeContext({ ...empty, permissions: [bash] })
     fake.goHome()
-    const inbox = addAsksInbox(fake.context)
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
     fake.emit("permission.asked")
     await settle()
     expect(fake.notified).toEqual([])
@@ -442,7 +581,7 @@ describe("attention", () => {
     const get = fake.context.data.session.get
     fake.native.add("ses_b")
     fake.context.data.session.get = (id: string) => (id === "ses_a" ? ({ id, title: "Renamed", parentID: "ses_root", location: { directory: "/workspace" } } as any) : get(id))
-    const inbox = addAsksInbox(fake.context)
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
     await settle()
     fake.state.asks = { ...empty, permissions: [bash] }
     await inbox.open()
@@ -463,7 +602,7 @@ describe("attention", () => {
     const rpc = ans.context.client.rpc as any
     ;(ans.context.client.rpc as any) = (d: any) => ({ ...rpc(d), answer: async () => Promise.reject({ type: "rpc.unavailable", message: "closing" }) })
     ans.answers.push(pick("Question"), pick("Hi"))
-    await addAsksInbox(ans.context).open()
+    await addAsksInbox(ans.context, FOLLOWS).open()
 
     expect(ans.toasts[0]!.message).toBe("The answer was not passed on: closing")
   })
@@ -474,7 +613,7 @@ describe("a choice field's dialog says what it asks", () => {
     const form = { id: "frm_s", sessionID: "ses_a", title: "Web Search", fields: [{ key: "choice", description: "Allow OpenCode to search the web?", ...field }] }
     const fake = fakeContext(empty, { ses_a: [form] })
     fake.answers.push(pick("Form"), answer)
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
     return fake.dialogs[1]!
   }
   const options = [{ value: "allow", label: "Allow" }, { value: "disable", label: "Disable" }]
@@ -500,7 +639,7 @@ test("the description row of a boolean's dialog shares no value with Yes or No",
   const form = { id: "frm_s", sessionID: "ses_a", title: "Web Search", fields: [{ key: "ok", type: "boolean", description: "Allow?" }] }
   const fake = fakeContext(empty, { ses_a: [form] })
   fake.answers.push(pick("Form"), pick("Yes"))
-  await addAsksInbox(fake.context).open()
+  await addAsksInbox(fake.context, FOLLOWS).open()
   const values = fake.dialogs[1]!.options.options.map((option: any) => option.value)
   expect(new Set(values).size).toBe(3)
   expect(fake.calls.find((call) => call.method === "form.reply")).toMatchObject({ method: "form.reply", input: { answer: { ok: true } } })
@@ -520,7 +659,7 @@ test("asks the fields OpenCode's form service treats as active", async () => {
   const fake = fakeContext(empty, { ses_b: [form] })
   // a: skipped; then TS and Go picked.
   fake.answers.push(pick("Form"), type(""), pick("[ ] TS"), pick("[ ] Go"), pick("Done"), type("cfg"))
-  await addAsksInbox(fake.context).open()
+  await addAsksInbox(fake.context, FOLLOWS).open()
   expect(fake.dialogs.map((d) => d.options.title)).toEqual(["Waiting on you (1)", "When · A", "When · Langs", "When · Langs", "When · Langs", "When · TS config"])
   expect(fake.replies()[0]!.input).toMatchObject({ answer: { langs: ["ts", "go"], tsconfig: "cfg" } })
 })
@@ -530,7 +669,7 @@ describe("a form field's limits", () => {
   const run = async (field: Record<string, unknown>, ...answers: ((dialog: Dialog) => unknown)[]) => {
     const fake = fakeContext(empty, { ses_b: [{ id: "frm_l", sessionID: "ses_b", title: "L", fields: [{ key: "f", title: "F", ...field }] }] })
     fake.answers.push(pick("Form"), ...answers)
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
     return fake
   }
 
@@ -545,7 +684,7 @@ describe("a form field's limits", () => {
     }
     const fake = fakeContext(empty, { ses_b: [form] })
     fake.answers.push(pick("Form"), type("0"), type("2"), pick("Done"), pick("[ ] A"), pick("Done"), type("X1"), type("abc"))
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
     expect(fake.replies()).toEqual([{ method: "form.reply", input: { sessionID: "ses_b", formID: "frm_c", answer: { n: 2, tags: ["a"], name: "abc" } } }])
     expect(fake.toasts.map((toast) => [toast.variant, toast.message])).toEqual([
       ["warning", "N: Must be at least 1"],
@@ -614,7 +753,7 @@ describe("a form field's default", () => {
     }
     const fake = fakeContext(empty, { ses_b: [form] })
     fake.answers.push(pick("Form"), (dialog) => dialog.options.value, (dialog) => dialog.options.current, pick("Done"))
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
     expect(fake.dialogs[1]!.options.value).toBe("3")
     expect(fake.dialogs[2]!.options.current).toBe(true)
     expect(fake.dialogs[3]!.options.options.map((option: any) => option.title)).toEqual(["[x] A", "[ ] B", "Done"])
@@ -629,7 +768,7 @@ describe("a form field's default", () => {
     }
     const fake = fakeContext(empty, { ses_b: [form] })
     fake.answers.push(pick("Form"), (dialog) => dialog.options.current, (dialog) => dialog.options.current)
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
     expect(fake.dialogs[1]!.options.current).toBe("dev")
     expect(fake.dialogs[2]!.options.current).toBe("qa")
     expect(fake.dialogs[2]!.options.options.map((option: any) => option.title)).toContain("[x] qa")
@@ -639,14 +778,14 @@ describe("a form field's default", () => {
   test("a field without a default starts empty", async () => {
     const fake = fakeContext(empty, { ses_b: [{ id: "frm_n", sessionID: "ses_b", title: "N", fields: [{ key: "n", type: "number", title: "N" }, { key: "ok", type: "boolean", title: "OK" }] }] })
     fake.answers.push(pick("Form"), () => undefined)
-    await addAsksInbox(fake.context).open()
+    await addAsksInbox(fake.context, FOLLOWS).open()
     expect(fake.dialogs[1]!.options).toEqual({ title: "N · N" })
   })
 })
 
 test("an unrelated request does not sound asks that were already waiting", async () => {
   const fake = fakeContext({ ...empty, permissions: [bash], questions: [greeting] })
-  addAsksInbox(fake.context)
+  addAsksInbox(fake.context, FOLLOWS)
   await settle()
   // A permission request in a session outside this tree; the tree's two asks were there before.
   fake.emit("permission.asked", "ses_elsewhere")
@@ -658,7 +797,7 @@ test("the first ask in a tree reached after start sounds, the ones already waiti
   const fake = fakeContext({ ...empty, permissions: [bash], questions: [greeting] })
   fake.native.add("ses_a")
   fake.goHome()
-  addAsksInbox(fake.context)
+  addAsksInbox(fake.context, FOLLOWS)
   await settle()
   fake.goSession("ses_root")
   // bash waits in ses_b; the event names the session of the new ask.

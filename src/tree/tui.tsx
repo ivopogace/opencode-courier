@@ -9,7 +9,7 @@ type Location = ReturnType<Context["data"]["location"]["default"]>
 type Courier = ReturnType<typeof courierOf>["courier"]
 
 /** The events after which a summary may read differently: a turn started or ended, a request or form, a session made or removed. */
-const CHANGES = new Set<string>([
+export const CHANGES = new Set<string>([
   "session.created",
   "session.deleted",
   "session.status",

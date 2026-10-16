@@ -32,8 +32,8 @@ first; its "Done when" is your acceptance bar.
 - Get CI green on the PR head. Then review the PR with the code review plugin: the
   `code-review:code-review` skill with the PR number, not the built-in `code-review` skill. It
   posts its findings on the PR as a `### Code review` comment, and posts nothing when no finding
-  reaches its confidence bar. Where it says `gh`, use the GitHub MCP tools instead (cloud sessions
-  have no working `gh`). Fix what it finds, re-run the checks and push. A behaviour change
+  reaches its confidence bar. Where it says `gh`, use the GitHub MCP tools instead (gh's GraphQL
+  is blocked in cloud sessions). Fix what it finds, re-run the checks and push. A behaviour change
   after that round gets another round; tell the plugin its earlier comment covers an older head,
   or it skips the PR as already reviewed.
 - Update README.md and docs/reference.md in the same PR.

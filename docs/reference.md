@@ -1004,8 +1004,10 @@ the state alone, which is what `"animations": false` shows:
   on the second frame;
 - **gone**: the mound and ground, muted, still.
 
-The muted pixels (paws, dirt, the post and the arm) never share a cell with the mound's, whose `background.raised.max`
-is close to `text.muted`: the post stops a pixel above the ground, and the paws and dirt keep off it. The poses are
+The muted pixels (paws, dirt, the post and the arm) never share a cell with the mound's, in either size, as
+`background.raised.max` is close to `text.muted`: in the 16×16 the post stops a pixel above the ground, and the paws
+and dirt keep off it; in the 8×4 no muted pixel touches the mound either, so the ground stops short of the post when
+waiting and is not drawn beside the arm when reporting. The poses are
 drawn in `src/tree/mascot.ts` (`ART`, one drawing per frame over `digby`'s head, mound and ground) and the
 panel picks one by `art(state, frame)`. He takes the panel's timer only while he shows and is not gone, at his own pace.
 

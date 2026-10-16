@@ -1569,6 +1569,25 @@ describe("Digby, the tree panel's mascot (#226)", () => {
     expect(glyph("idle")[2]).toBe("..gggg..")
   })
 
+  test("no muted pixel shares a cell with the mound, and in the 8×4 none touches it either (#248)", () => {
+    const shared = (lines: ReadonlyArray<ReadonlyArray<{ fg?: string; bg?: string }>>) =>
+      lines.flatMap((line, at) => line.flatMap((one, column) => (new Set([one.fg, one.bg]).size === 2 && [one.fg, one.bg].every((t) => t === "m" || t === "g") ? [[at, column]] : [])))
+    const touching = (pixels: ReadonlyArray<string>) =>
+      pixels.flatMap((line, row) =>
+        [...line].flatMap((pixel, column) =>
+          pixel === "m" && [[0, 1], [0, -1], [1, 0], [-1, 0]].some(([down, right]) => pixels[row + down!]?.[column + right!] === "g") ? [[row, column]] : [],
+        ),
+      )
+    // Frames 0 to 43 cover every frame of every state with the blink (11) and the breathing (4).
+    const frames = Array.from({ length: 44 }, (_, frame) => frame)
+    for (const state of Object.keys(GLYPH) as MascotState[])
+      for (const frame of [undefined, ...frames]) {
+        expect({ state, frame, shared: shared(cells(glyph(state, frame))) }).toEqual({ state, frame, shared: [] })
+        expect({ state, frame, touching: touching(glyph(state, frame)) }).toEqual({ state, frame, touching: [] })
+        expect({ state, frame, shared: shared(art(state, frame)) }).toEqual({ state, frame, shared: [] })
+      }
+  })
+
   test("his frames, as the panel draws them", () => {
     const draw = (pixels: ReadonlyArray<string>) => cells(pixels).map((line) => line.map((one) => one.char).join(""))
     const glyphs = Object.fromEntries(Object.entries(GLYPH).map(([state, frames]) => [state, frames.map((frame) => ({ pixels: frame, drawn: draw(frame) }))]))

@@ -16,7 +16,10 @@ export const MASCOT_EVERY = 5
 /** He blinks on every this-many-th of his frames where his eyes are open. */
 export const BLINK_EVERY = 11
 
-/** The 8×4 glyph's frames by state, pixel rows top to bottom; a state with several cycles through them, one per mascot frame. */
+/**
+ * The 8×4 glyph's frames by state, pixel rows top to bottom; a state with several cycles through them, one per mascot frame.
+ * No muted pixel shares a cell with the mound or touches it, as `text.muted` is close to `background.raised.max`.
+ */
 export const GLYPH: Readonly<Record<MascotState, ReadonlyArray<ReadonlyArray<string>>>> = {
   idle: [["........", "........", "..gggg..", "gggggggg"]],
   spawn: [
@@ -28,8 +31,8 @@ export const GLYPH: Readonly<Record<MascotState, ReadonlyArray<ReadonlyArray<str
     [".g....g.", "........", ".gbbbbg.", "gggggggg"],
   ],
   waiting: [
-    [".bbbbbbw", ".bkbbkbw", ".bbaabbm", "gggggggg"],
-    [".bbbbbbb", ".bkbbkbb", ".bbaabbm", "gggggggg"],
+    [".bbbbbbw", ".bkbbkbw", ".bbaabbm", "ggggggg."],
+    [".bbbbbbb", ".bkbbkbb", ".bbaabbm", "ggggggg."],
   ],
   stalled: [
     ["..e.....", ".bbbbbb.", ".bkbbkb.", "gbbaabbg"],
@@ -37,8 +40,8 @@ export const GLYPH: Readonly<Record<MascotState, ReadonlyArray<ReadonlyArray<str
     ["..e.e.e.", ".bbbbbb.", ".bkbbkb.", "gbbaabbg"],
   ],
   report: [
-    ["......aa", "bbbbbbaa", "bkbbkbm.", "bbaabbmg"],
-    ["s.....aa", "bbbbbbaa", "bkbbkbm.", "bbaabbmg"],
+    ["......aa", "bbbbbbaa", "bkbbkbm.", "bbaabbm."],
+    ["s.....aa", "bbbbbbaa", "bkbbkbm.", "bbaabbm."],
   ],
   gone: [["........", ".mmmmmm.", ".mkmmkm.", "mmmmmmmm"]],
 }

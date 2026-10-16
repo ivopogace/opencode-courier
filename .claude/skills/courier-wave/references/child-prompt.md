@@ -20,9 +20,10 @@ first; its "Done when" is your acceptance bar.
   both sides; never rebase or force-push.
 
 ## How to work
-- Follow CLAUDE.md: read README.md, docs/reference.md and docs/maintainers/plugin-api-notes.md first, read the pinned
-  plugin API's types instead of guessing, and run typecheck, unit tests, build and the live e2e
-  test before every push. Add an e2e scenario for the new behaviour.
+- Follow CLAUDE.md: read README.md, docs/reference.md and docs/maintainers/plugin-api-notes.md first, and read the pinned
+  plugin API's types instead of guessing. Before every push run `bun run typecheck` and the test
+  files you touch or add, nothing more: CI runs the whole unit suite, the build and the live e2e
+  test, so don't run those locally. Still add the e2e checks the issue's "Done when" asks for.
 - Work on branch <issue-N-slug> in small, well-described commits. Open a PR to main whose body
   says what changed, the decisions you made, how it was tested, and `Closes #<N>`. Never push to
   main and never merge.

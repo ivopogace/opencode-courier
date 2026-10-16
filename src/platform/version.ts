@@ -7,7 +7,7 @@ export interface BuiltVersions {
   readonly opencode: string
 }
 
-const README_TABLE = "https://github.com/ivopogace/opencode-courier#supported-opencode-version"
+const VERSION_TABLE = "https://github.com/ivopogace/opencode-courier/blob/main/docs/reference.md#the-opencode-version"
 
 /**
  * Reads from the package's own package.json, next to `dist/` as to `src/`: `version` and the exact
@@ -36,6 +36,6 @@ export function versionNotice(built: BuiltVersions, app: Partial<Pick<App, "vers
   const channel = typeof app?.channel === "string" ? ` (channel ${app.channel})` : ""
   return (
     `opencode-courier ${built.plugin} was built and tested against OpenCode ${built.opencode}; ${running}${channel}. ` +
-    `Its tools may fail: see the Supported OpenCode version table in the README, ${README_TABLE}`
+    `Its tools may fail: see every release and the OpenCode it is pinned to, ${VERSION_TABLE}`
   )
 }

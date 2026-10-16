@@ -38,7 +38,7 @@ When the running OpenCode reports a version other than the pinned one, the plugi
 to the server log (`opencode serve --print-logs` shows it) when it loads:
 
 ```
-opencode-courier 0.2.0 was built and tested against OpenCode 2.0.22; this server is 2.0.30 (channel beta). Its tools may fail: see the Supported OpenCode version table in the README, https://github.com/ivopogace/opencode-courier#supported-opencode-version
+opencode-courier 0.2.0 was built and tested against OpenCode 2.0.22; this server is 2.0.30 (channel beta). Its tools may fail: see every release and the OpenCode it is pinned to, https://github.com/ivopogace/opencode-courier/blob/main/docs/reference.md#the-opencode-version
 ```
 
 That is all it does: the plugin loads and registers its tools as usual, since the other version may

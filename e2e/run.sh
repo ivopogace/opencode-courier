@@ -177,7 +177,7 @@ reported() {
 }
 # Whether session $1 took the notice of request $2 answered elsewhere in the same turn as its child's report, with no reply of its own between.
 settled_with_report() {
-  api "session/$1/message" | jq -r --arg request "$2" '.data as $m |
+  api "session/$1/message" | jq -r --arg request "$2" '.data | sort_by(.id) as $m |
     ([range(0; $m | length) | select($m[.].type == "synthetic" and ($m[.].text | contains(" answered=\"") and contains("request=\"" + $request + "\"")))] | first) as $s |
     ([range(0; $m | length) | select($m[.].type == "synthetic" and ($m[.].text | contains("CHILD DONE")))] | first) as $r |
     $s != null and $r != null and $r > $s and ([$m[$s:$r][] | select(.type == "assistant")] | length == 0)'

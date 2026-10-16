@@ -69,10 +69,10 @@ summary_until() {
   done
   echo "$last"
 }
-# Opens the TUI in a fresh tmux session, 220 columns wide, its stderr to $WORK/$1.err: on session $2, or the home screen.
+# Opens the TUI in a fresh tmux session, $COLS (220) columns wide, its stderr to $WORK/$1.err: on session $2, or the home screen.
 open_tui() {
   tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
-  tmux new-session -d -s "$TMUX_SESSION" -x 220 -y 40 \
+  tmux new-session -d -s "$TMUX_SESSION" -x "${COLS:-220}" -y 40 \
     "cd '$WORK/project' && LANG=C.UTF-8 OPENCODE_PASSWORD='$OPENCODE_PASSWORD' TERM=xterm-256color '$OPENCODE' --server '$SERVER' ${2:+--session '$2'} 2>'$WORK/$1.err'; sleep 600"
 }
 # Whether the TUI's screen shows the line $1 within $2 s; the screen is kept in $WORK/$3.txt.
@@ -204,6 +204,21 @@ tmux send-keys -t "$TMUX_SESSION" 1
 check "back on the parent, the panel shows again" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-back)"
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes it there" "$(hides "courier tree" 10 tui-panel-followed-closed)"
+# A panel opened on a terminal too narrow to split is shown fullscreen by OpenCode, which splits only from 108 columns (#229);
+# followed into a child after the terminal was widened, it is a split again, not the fullscreen it was shown as (#180).
+echo "a panel opened at 100 columns splits once the terminal is widened and the panel followed"
+COLS=100 open_tui tui-narrow "$parent"
+check "the TUI is open at 100 columns" "$(shows "courier 2 idle" 60 tui-narrow-footer)"
+tmux send-keys -t "$TMUX_SESSION" "/courier tree"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "the panel opens" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-narrow-panel)"
+tmux resize-window -t "$TMUX_SESSION" -x 160 -y 40
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "followed into a child at 160 columns" "$(shows "(on screen)" 30 tui-widened)"
+check "the panel sits beside the session, not over it" \
+  "$(awk '/courier tree/ { if (index($0, "courier tree") > 40) found = 1 } END { print found ? "true" : "false" }' "$WORK/tui-widened.txt")"
 # /courier stop stops as the open session, so back to the parent.
 open_tui tui "$parent"
 check "the TUI is back on the parent" "$(shows "courier 2 idle" 60 tui-parent-again)"
@@ -443,7 +458,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

@@ -272,7 +272,7 @@ courier 1 waiting on you · 2 running · group pair 1/2
 `/courier tree` opens a panel beside the session with the tree under it, a row per session indented
 by depth, with what it does, its report and its group's standing; a session waiting on you gets a line per
 request or form (`shows a form: Web Search`), a stalled one since when its message waits, a session that started others gets
-a bar of the parts reported, a leaf how long it ran, its last tool call and its cost. A tree that has
+a bar of the parts reported, a leaf how long it ran, its last tool call, how full its context is (`ctx 31%`, in the warning colour past 80%) and its cost. A tree that has
 started more than `maxTotal` sessions over time is listed live ones first, then newest, and the header
 says how many older ones are left out; the footer counts them all. `↑`/`↓` select,
 `enter` opens the session, `s` stops it and everything under it after you confirm, as `courier_stop`

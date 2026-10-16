@@ -1,6 +1,6 @@
 import type { Status } from "../kernel/protocol.js"
 import { busy } from "./domain.js"
-import type { CourierPorts, Pending, ShownForm } from "./ports.js"
+import type { CourierPorts, ModelWindow, Pending, ShownForm } from "./ports.js"
 import { lastStatus, stoppedSincePrompt } from "./report.js"
 import type { Row, Tree, Wait } from "./rpc.js"
 import { standingIn } from "./status.js"
@@ -18,6 +18,21 @@ export function lastTool(messages: Messages) {
     if (tool?.type === "tool") return { name: tool.name, at: tool.time.ran ?? tool.time.created }
   }
   return undefined
+}
+
+/**
+ * How full a session's context is, as OpenCode's own session view reads it (packages/tui/src/util/session.ts at v2.0.31):
+ * the tokens of the last assistant message that has usage since the last completed compaction, over its model's window.
+ * The message's own model is the one that counts; none without usage or a known window.
+ */
+export function contextOf(messages: Messages, windows: ReadonlyArray<ModelWindow>) {
+  const compacted = messages.findLastIndex((message) => message.type === "compaction" && message.status === "completed")
+  const last = messages.findLast((message, index) => index > compacted && message.type === "assistant" && message.tokens !== undefined)
+  if (last?.type !== "assistant" || !last.tokens) return undefined
+  const { input, output, reasoning, cache } = last.tokens
+  const used = input + output + reasoning + cache.read + cache.write
+  const window = windows.find((model) => model.providerID === last.model.providerID && model.id === last.model.id)?.context
+  return used > 0 && window ? used / window : undefined
 }
 
 /** A request as the panel says what a paused session waits on: a permission request, or its first question. */
@@ -47,8 +62,8 @@ function stateOf(info: unknown, waits: number, stalled: boolean, running: boolea
   if (stalled) return "stalled"
   return running ? "running" : "idle"
 }
-/** One session of the panel: what it is doing, its report and group standing, its last tool call and its cost. */
-async function row(ports: CourierPorts, { entry, depth, info, pending, forms, report }: Listed, stalled: number | undefined): Promise<Row> {
+/** One session of the panel: what it is doing, its report and group standing, its last tool call, context use and cost. */
+async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth, info, pending, forms, report }: Listed, stalled: number | undefined): Promise<Row> {
   const { sessionID } = entry
   const [messages, status, standing, stopped] = await Promise.all([
     ports.session.context({ sessionID }).catch((): Messages => []),
@@ -58,6 +73,7 @@ async function row(ports: CourierPorts, { entry, depth, info, pending, forms, re
   ])
   const running = info !== undefined && busy(info.time)
   const tool = lastTool(messages)
+  const context = contextOf(messages, windows)
   return {
     sessionID,
     parentID: entry.parentID,
@@ -73,6 +89,7 @@ async function row(ports: CourierPorts, { entry, depth, info, pending, forms, re
     created: info?.time.created ?? entry.createdAt,
     ...(info && !running && info.time.idle !== undefined ? { idle: info.time.idle } : {}),
     ...(info ? { cost: info.cost } : {}),
+    ...(context !== undefined ? { context } : {}),
     ...(tool ? { tool } : {}),
     waits: [...pending.map(waitOf), ...forms.map(formWait)],
   }
@@ -85,7 +102,8 @@ async function row(ports: CourierPorts, { entry, depth, info, pending, forms, re
 export async function panel(ports: CourierPorts, rootID: string): Promise<Tree> {
   const { kept, leftOut } = await readTree(ports, rootID)
   const stalled = await stalledAmong(ports, [rootID, ...kept.map((node) => node.entry.sessionID)])
-  const rows = await Promise.all(kept.map((node) => row(ports, node, stalled.get(node.entry.sessionID))))
+  const windows = await ports.windows().catch((): ModelWindow[] => [])
+  const rows = await Promise.all(kept.map((node) => row(ports, windows, node, stalled.get(node.entry.sessionID))))
   const own = stalled.get(rootID)
   return { rows, ...(leftOut ? { truncated: leftOut } : {}), ...(own !== undefined ? { stalled: own } : {}) }
 }

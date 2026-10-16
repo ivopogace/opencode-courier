@@ -59,6 +59,7 @@ function fakeContext(
     cleanup: async (_input: { sessionID: string; by: string }): Promise<Forgotten> => ({ outcome: "forgotten" }),
   }
   const color = RGBA.fromInts(120, 120, 120)
+  const warning = RGBA.fromInts(245, 167, 66)
   const context = {
     renderer: { get width() { return state.width } },
     location,
@@ -81,7 +82,7 @@ function fakeContext(
       },
     },
     theme: {
-      text: { base: color, muted: color, feedback: { warning: { base: color }, error: { base: color } } },
+      text: { base: color, muted: color, feedback: { warning: { base: warning }, error: { base: color } } },
       background: { raised: { high: color } },
     },
     client: {
@@ -402,6 +403,13 @@ describe("the tree panel's lines", () => {
     expect(activityLine(running, NOW)).toBe("ran 2m 05s · no tool call yet")
   })
 
+  test("a leaf's context use sits between its last tool call and its cost, rounded to a whole percent, and is left out when unknown", () => {
+    const tool = { name: "shell", at: NOW - 30_000 }
+    expect(activityLine(row("ses_a", { tool, context: 0.31 }), NOW)).toBe("ran 2m 00s · last shell 30s ago · ctx 31% · $0.01")
+    expect(activityLine(row("ses_a", { tool, context: 0.846 }), NOW)).toBe("ran 2m 00s · last shell 30s ago · ctx 85% · $0.01")
+    expect(activityLine(row("ses_a", { tool }), NOW)).not.toContain("ctx")
+  })
+
   test("an orchestrator gets its bar, a paused session what it waits on, a leaf its activity", () => {
     const rows = [
       row("ses_mid", { tool: { name: "courier_spawn", at: NOW - 1_000 } }),
@@ -523,6 +531,21 @@ describe("the tree panel", () => {
     await app.waitForFrame((frame) => frame.includes("2/2 reported"))
     expect(fake.calls).toHaveLength(asked + 1)
     expect(app.captureCharFrame()).toContain("CHILD-ASKS  idle · reported done · group pair held")
+  })
+
+  test("shows a session's context use muted, and in the warning colour past 80%", async () => {
+    const fake = fakeContext(async () => empty)
+    const leaf = (sessionID: string, context: number) => row(sessionID, { state: "running", tool: { name: "shell", at: NOW }, report: { state: "owed", progressed: false }, context })
+    fake.state.tree = async () => ({ rows: [leaf("ses_low", 0.31), leaf("ses_edge", 0.8), leaf("ses_high", 0.84)] })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+    await app.waitForFrame((frame) => frame.includes("ctx 84%"))
+    const spans = app.captureSpans().lines.flatMap((line) => line.spans)
+    const colourOf = (text: string) => spans.find((span) => span.text.includes(text))?.fg.toInts()
+    const muted = colourOf("ctx 31%")
+    expect(muted).toEqual(RGBA.fromInts(120, 120, 120).toInts())
+    expect(colourOf("ctx 80%")).toEqual(muted)
+    expect(colourOf("ctx 84%")).toEqual(RGBA.fromInts(245, 167, 66).toInts())
   })
 
   test("indents a session by its depth, and shows nothing for another panel", async () => {

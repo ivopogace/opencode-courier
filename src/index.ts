@@ -140,6 +140,7 @@ export const courier = () => Plugin.define({
       directory: ctx.location.directory,
       projectID: ctx.location.project.id,
       now: Date.now,
+      windows: async () => (await ctx.model.list()).data.map((model) => ({ providerID: model.providerID, id: model.id, context: model.limit.context })),
       head: headOf,
       dirty: dirtyOf,
       pending: async (sessionID) => {

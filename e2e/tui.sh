@@ -111,7 +111,7 @@ cat >"$WORK/project/opencode.json" <<EOT
     "mock": {
       "package": "aisdk:@ai-sdk/openai-compatible",
       "settings": { "baseURL": "http://127.0.0.1:$MOCK_PORT/v1", "apiKey": "mock" },
-      "models": { "chat": {}, "other": {} }
+      "models": { "chat": { "limit": { "context": 1000, "output": 100 } }, "other": {} }
     }
   },
   "model": "mock/chat",
@@ -164,6 +164,10 @@ rows=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[] | {depth,
 echo "  $rows"
 check "the RPC's tree: one child reported and held, the other waits on the person and owes its report" \
   "$(jq -r '. == [{depth: 1, state: "idle", report: "reported", group: "held"}, {depth: 1, state: "waiting", report: "owed", group: "out"}]' <<<"$rows")"
+contexts=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[].context]')
+echo "  $contexts"
+check "the RPC's tree carries a mock-model child's context use: a fraction of the model's window" \
+  "$(jq -r 'map(select(. != null)) | length > 0 and all(. > 0 and . <= 1)' <<<"$contexts")"
 tmux send-keys -t "$TMUX_SESSION" "/courier tree"
 sleep 1
 tmux send-keys -t "$TMUX_SESSION" Enter

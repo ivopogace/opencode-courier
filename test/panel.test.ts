@@ -3,13 +3,14 @@ import { describe, expect, test } from "bun:test"
 import { cancelScheduled, type LaterPorts } from "../src/scheduling/index.js"
 import { DEFAULT_LIMITS, type RosterEntry } from "../src/tree/domain.js"
 import { holdReport, joinGroup } from "../src/tree/group.js"
-import { lastTool, panel } from "../src/tree/panel.js"
+import { contextOf, lastTool, panel } from "../src/tree/panel.js"
 import type { CleanupPorts, CourierPorts, Pending, ShownForm, StopPorts } from "../src/tree/ports.js"
 import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
 import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 
 type Session = { updated: number; idle?: number; outcome?: string; cost?: number; title?: string; messages?: unknown[] }
+type Window = { providerID: string; id: string; context: number }
 
 /** Ports over an in-memory store, with each session as given; one not given is gone. */
 function fakePorts(
@@ -17,6 +18,7 @@ function fakePorts(
   pending: Record<string, Pending[]> = {},
   maxTotal = DEFAULT_LIMITS.maxTotal,
   forms: Record<string, ShownForm[]> = {},
+  windows: Window[] = [],
 ) {
   const store = new Map<string, unknown>()
   const calls: { method: string; input: any }[] = []
@@ -56,6 +58,7 @@ function fakePorts(
     },
     pending: async (sessionID: string) => pending[sessionID] ?? [],
     forms: async (sessionID: string) => forms[sessionID] ?? [],
+    windows: async () => windows,
     limits: { ...DEFAULT_LIMITS, maxTotal },
   } as unknown as CourierPorts
   return { ports, store, calls }
@@ -95,7 +98,53 @@ describe("lastTool", () => {
   })
 })
 
+const reply = (tokens: Record<string, any> | undefined, model = { providerID: "mock", id: "small" }) => ({
+  type: "assistant",
+  id: "msg",
+  model,
+  time: { created: 1 },
+  content: [],
+  ...(tokens ? { tokens } : {}),
+})
+const usage = (input: number, output = 0, read = 0, write = 0) => ({ input, output, reasoning: 0, cache: { read, write } })
+const SMALL = { providerID: "mock", id: "small", context: 1_000 }
+
+describe("contextOf", () => {
+  test("is the last message with usage over its model's window, as OpenCode's session view reads it", () => {
+    const messages = [reply(usage(900)), reply(usage(100, 50, 200, 50))]
+    expect(contextOf(messages as any, [SMALL])).toBe(0.4)
+    expect(contextOf([...messages, reply(undefined)] as any, [SMALL])).toBe(0.4)
+  })
+
+  test("counts from the last completed compaction on", () => {
+    const compaction = (status: string) => ({ type: "compaction", id: "c", status })
+    expect(contextOf([reply(usage(900)), compaction("completed")] as any, [SMALL])).toBeUndefined()
+    expect(contextOf([reply(usage(900)), compaction("completed"), reply(usage(100))] as any, [SMALL])).toBe(0.1)
+    expect(contextOf([reply(usage(900)), compaction("running")] as any, [SMALL])).toBe(0.9)
+  })
+
+  test("is none without usage, with all-zero usage, or without a known window for the message's model", () => {
+    expect(contextOf([] as any, [SMALL])).toBeUndefined()
+    expect(contextOf([reply(usage(0))] as any, [SMALL])).toBeUndefined()
+    expect(contextOf([reply(usage(100))] as any, [])).toBeUndefined()
+    expect(contextOf([reply(usage(100))] as any, [{ ...SMALL, context: 0 }])).toBeUndefined()
+    expect(contextOf([reply(usage(100), { providerID: "mock", id: "other" })] as any, [SMALL])).toBeUndefined()
+  })
+})
+
 describe("panel", () => {
+  test("carries a row's context use, and leaves it out when the model's window is unknown", async () => {
+    const sessions = { ses_a: { updated: 5, idle: 5, messages: [reply(usage(250))] } }
+    const known = fakePorts(sessions, {}, undefined, {}, [SMALL])
+    await childStore(known.ports.storage).record(entry("ses_a", "ses_root"))
+    expect((await panel(known.ports, "ses_root")).rows[0]?.context).toBe(0.25)
+    const unknown = fakePorts(sessions)
+    await childStore(unknown.ports.storage).record(entry("ses_a", "ses_root"))
+    const rows = (await panel(unknown.ports, "ses_root")).rows
+    expect(rows).toHaveLength(1)
+    expect("context" in rows[0]!).toBe(false)
+  })
+
   test("reads each session under the root, in the order a tree is drawn, with what it does, its report and its last tool call", async () => {
     const { ports } = fakePorts(
       {

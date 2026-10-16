@@ -89,7 +89,7 @@ const SIZE = 16
  * 4–11, then the mound (its top row `top` wide, 6 or 8 as he breathes) and the ground drawn over it, but for the hole.
  */
 export function digby(rise: number, { top = 6, eyes = true }: { top?: number; eyes?: boolean } = {}): ReadonlyArray<string> {
-  const grid = Array.from({ length: SIZE }, () => Array<string>(SIZE).fill("."))
+  const grid = Array.from({ length: SIZE }, () => new Array<string>(SIZE).fill("."))
   const span = (row: number, width: number, pixel: string, skip = (_column: number) => false) => {
     if (row < 0 || row >= SIZE) return
     for (let column = (SIZE - width) / 2; column < (SIZE + width) / 2; column++) if (!skip(column)) grid[row]![column] = pixel

@@ -145,9 +145,11 @@ under the Supported OpenCode version table, and update the affected traps in
 [plugin-api-notes.md](plugin-api-notes.md). Then release a patch, so that the published package and
 its README name the new version and a host on it no longer logs the version line.
 
-The README's Supported OpenCode version table is generated from the release tags by
+The Supported OpenCode version tables are generated from the release tags by
 `bun script/compat-table.ts`: each `vX.Y.Z` tag's `package.json` names its pin, consecutive releases
-on one pin share a row, and prereleases are left out. Start a release runs it, so the new version
+on one pin share a row, and prereleases are left out. The README holds the newest three rows (the
+`rows=3` in its start marker) and links to the full table in
+[reference.md](../reference.md#the-opencode-version). Start a release runs it, so the new version
 joins its pin's row, or opens a row when the pin moved; neither a pin bump nor anyone else edits
-the table. CI's unit job checks it with `bun script/compat-table.ts --check`, which needs the tags
+the tables. CI's unit job checks both with `bun script/compat-table.ts --check`, which needs the tags
 (`git fetch --tags`).

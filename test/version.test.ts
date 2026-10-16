@@ -25,13 +25,13 @@ test("no notice on the pinned OpenCode, whatever its channel", () => {
   expect(versionNotice(built, { version: "2.0.22", channel: "beta" })).toBeUndefined()
 })
 
-test("one line on another OpenCode, naming the plugin, the pin, the running version and channel, and the README table", () => {
+test("one line on another OpenCode, naming the plugin, the pin, the running version and channel, and the full version table", () => {
   const notice = versionNotice({ plugin: "0.2.0", opencode: "2.0.22" }, { version: "2.0.30", channel: "beta" })
 
   expect(notice).toBe(
     "opencode-courier 0.2.0 was built and tested against OpenCode 2.0.22; this server is 2.0.30 (channel beta). " +
-      "Its tools may fail: see the Supported OpenCode version table in the README, " +
-      "https://github.com/ivopogace/opencode-courier#supported-opencode-version",
+      "Its tools may fail: see every release and the OpenCode it is pinned to, " +
+      "https://github.com/ivopogace/opencode-courier/blob/main/docs/reference.md#the-opencode-version",
   )
   expect(notice).not.toContain("\n")
   // An older server too: the check is for equality, not order.
@@ -43,8 +43,8 @@ test("an OpenCode whose plugin context reports no version still gets the line, n
 
   expect(versionNotice(built, undefined)).toBe(
     "opencode-courier 0.2.0 was built and tested against OpenCode 2.0.22; this server reports no version. " +
-      "Its tools may fail: see the Supported OpenCode version table in the README, " +
-      "https://github.com/ivopogace/opencode-courier#supported-opencode-version",
+      "Its tools may fail: see every release and the OpenCode it is pinned to, " +
+      "https://github.com/ivopogace/opencode-courier/blob/main/docs/reference.md#the-opencode-version",
   )
   expect(versionNotice(built, {})).toContain("this server reports no version.")
   expect(versionNotice(built, { version: 2 as unknown as string, channel: "latest" })).toContain("this server reports no version (channel latest).")

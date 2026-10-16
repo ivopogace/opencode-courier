@@ -68,9 +68,8 @@ export function animationsOn(options: Readonly<Record<string, unknown>> | undefi
 export type Tween = { readonly value: () => number; readonly done: () => boolean }
 
 /**
- * The panel's one timer, a frame every `FRAME_MS` while a tween moves or a predicate given to `animates` holds, every
- * `every` frames while only slower ones do, and none otherwise, with animations off, or once the panel is gone. `frame`
- * counts them in `FRAME_MS`; it stands still with no timer.
+ * The panel's one timer: a frame every `FRAME_MS` while a tween moves or an `animates` predicate holds, every `every` while
+ * only slower ones do, none otherwise, with animations off or once the panel is gone. `frame` counts in `FRAME_MS`.
  */
 export type Motion = {
   readonly enabled: boolean
@@ -218,8 +217,11 @@ export function countsLine(rows: ReadonlyArray<Row>) {
     .join(" · ")
 }
 
-/** Below this many rows the panel shows no header glyph, so the header keeps to one line; the 16×16 needs `ART_ROWS`. */
+/** The panel's size below which it shows no header glyph, so the header keeps to one line and its bar is not cut. */
 export const GLYPH_ROWS = 12
+export const GLYPH_COLUMNS = 54
+
+/** The empty panel's height from which it shows the 16×16. */
 export const ART_ROWS = 14
 
 /** `tint` over `rest` by `amount`, from 0 (all `rest`) to 1 (all `tint`). */
@@ -674,10 +676,11 @@ function TreePanel(props: {
   const filled = createBarFill(motion, root)
   const frame = () => (motion.enabled ? motion.frame() : undefined)
   const spawned = createSpawns(motion, () => latest()?.tree?.rows)
-  // The panel's height, which is unknown until it is laid out: no glyph until then.
-  const [height, setHeight] = createSignal(0)
+  // The panel's size, which is unknown until it is laid out: no glyph until then.
+  const [size, setSize] = createSignal({ width: 0, height: 0 })
+  const height = () => size().height
   const empty = () => Boolean(latest()?.tree && !rows().length)
-  const glyphShown = () => height() >= GLYPH_ROWS
+  const glyphShown = () => height() >= GLYPH_ROWS && size().width >= GLYPH_COLUMNS
   const artShown = () => empty() && height() >= ART_ROWS
   const mascot = createMemo(() => mascotState(rows(), { reported: flashes.reported(), spawned: spawned() }))
   // Digby's frames keep the timer at his own cadence while he shows, and he is still once gone.
@@ -725,7 +728,7 @@ function TreePanel(props: {
       paddingLeft={1}
       paddingRight={1}
       onSizeChange={function () {
-        setHeight(this.height)
+        setSize({ width: this.width, height: this.height })
       }}
     >
       <box flexDirection="row" flexShrink={0} gap={2}>

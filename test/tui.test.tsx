@@ -6,7 +6,7 @@ import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { batch, createRoot, createSignal } from "solid-js"
 import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, addTreeStatus, animationsOn, bar, BAR_MS, blend, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, ART_ROWS } from "../src/tree/tui.js"
+import { activityLine, addTreeStatus, animationsOn, bar, BAR_MS, blend, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS } from "../src/tree/tui.js"
 import { cells, digby, glyph, GLYPH, idleArt, MASCOT_EVERY, type MascotState } from "../src/tree/mascot.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
@@ -500,11 +500,11 @@ function panelInput(sessionID = "ses_parent", name = PANEL, { presentation = "pa
   }
 }
 
-/** Renders the claimed panel slot, 100 columns by 24 rows unless `height` says otherwise. */
-async function renderPanel(claim: SlotClaim | undefined, value: ReturnType<typeof panelInput>["value"], height = 24) {
+/** Renders the claimed panel slot, 100 columns by 24 rows unless `height` and `width` say otherwise. */
+async function renderPanel(claim: SlotClaim | undefined, value: ReturnType<typeof panelInput>["value"], height = 24, width = 100) {
   expect(claim?.append).toBe("session.panel")
   const render = claim!.render as (input: unknown) => any
-  const app = await testRender(() => render(value), { width: 100, height })
+  const app = await testRender(() => render(value), { width, height })
   renderers.push(app)
   return app
 }
@@ -1210,7 +1210,7 @@ describe("the tree panel's motion (#224)", () => {
   })
 
   /** Opens the panel, unfocused so no selection colours a row, on the trees `trees()` gives, with fake timers and `options`. */
-  async function motion(trees: () => Tree, options: Record<string, unknown> = {}, height = 24) {
+  async function motion(trees: () => Tree, options: Record<string, unknown> = {}, height = 24, width = 100) {
     jest.useFakeTimers()
     timers = frameTimers()
     const fake = fakeContext(async () => empty)
@@ -1219,7 +1219,7 @@ describe("the tree panel's motion (#224)", () => {
     await tui.setup(fake.context)
     const [name, setName] = createSignal(PANEL)
     const value = Object.defineProperty(panelInput("ses_parent", PANEL, { focused: false }).value, "name", { get: name })
-    const app = await renderPanel(fake.claim("session.panel"), value, height)
+    const app = await renderPanel(fake.claim("session.panel"), value, height, width)
     const frame = async () => {
       for (let i = 0; i < 20; i++) await Promise.resolve()
       await app.renderOnce()
@@ -1409,10 +1409,16 @@ describe("the tree panel's motion (#224)", () => {
     expect(GLYPH.spawn.map((_, frame) => drawn("spawn", frame))).not.toContainEqual((await panel.glyph())!)
   })
 
-  test("a panel too short for the glyph's two rows shows none, and runs no timer for it (#226)", async () => {
+  test("a panel too short for the glyph's two rows, or too narrow for it beside the bar, shows none and runs no timer for it (#226)", async () => {
     const panel = await motion(() => ({ rows: [row("ses_a")] }), {}, GLYPH_ROWS - 1)
     expect(await panel.glyph()).toBeUndefined()
     expect((await panel.frame()).split("\n")[0]).toStartWith(" courier tree  [")
+    expect(timers!.count() + timers!.slow()).toBe(0)
+    timers!.restore()
+    jest.useRealTimers()
+    const narrow = await motion(() => ({ rows: [row("ses_a")] }), {}, 24, GLYPH_COLUMNS - 1)
+    expect(await narrow.glyph()).toBeUndefined()
+    expect((await narrow.frame()).split("\n")[0]).toContain("courier tree  [░░░░░░░░░░] 0/1 reported")
     expect(timers!.count() + timers!.slow()).toBe(0)
   })
 

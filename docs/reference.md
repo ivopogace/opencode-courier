@@ -983,8 +983,8 @@ header's second line counts the live sessions as the footer does (`1 waiting on 
   the success colour; for 1.5 s after a **spawn**, a session in the tree that the read before did not have: small
   mounds rise either side, a child's head peeking out of each. Then back to the tree's state.
 
-He blinks every eleventh frame where his eyes are open. A panel under 12 rows tall has no glyph, and its header keeps
-to one line; an empty one (`No session started with courier_spawn under this one.`) at least 14 rows tall shows a
+He blinks every eleventh frame where his eyes are open. A panel under 12 rows tall, or under 54 columns wide (a narrow
+split, where the glyph would cut the header's bar), has no glyph, and its header keeps to one line; an empty one (`No session started with courier_spawn under this one.`) at least 14 rows tall shows a
 larger idle Digby, 16 columns by 8 rows, a `z` drifting up beside his mound. He takes the panel's timer only while he
 shows and is not gone, at his own pace.
 

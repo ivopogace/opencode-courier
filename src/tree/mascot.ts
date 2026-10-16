@@ -1,7 +1,6 @@
 /**
- * Digby, the tree panel's mole, in half-block pixels: one terminal cell is a column of two pixels. Each pixel is a token
- * the panel colours from its theme, `.` none: `b` body, `k` the background (eyes), `g` mound, `m` muted (paws, dirt, arm),
- * `a` the accent (snout, letter), `w`, `e` and `s` the warning, error and success colours (sign, dots, spark).
+ * A pixel of Digby, the tree panel's mole, as the theme colour it takes: `b` body, `k` background (eyes), `g` mound,
+ * `m` muted (paws, dirt, arm), `a` accent (snout, letter), `w`, `e` and `s` warning, error and success (sign, dots, spark).
  */
 export type Token = "b" | "k" | "g" | "m" | "a" | "w" | "e" | "s"
 

@@ -94,7 +94,7 @@ jobs:
           fi
           echo "version=${version}" >>"${GITHUB_OUTPUT}"
       # The new version joins the row of its pin, or opens a row when the pin moved since the last release.
-      - name: Add the release to the Supported OpenCode version table
+      - name: Add the release to the Supported OpenCode version tables
         run: |
           bun script/compat-table.ts
           git --no-pager diff
@@ -117,7 +117,7 @@ jobs:
           remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push "${remote}" "release-${VERSION}"
           {
-            echo "Bumps \`package.json\` to ${VERSION} and, unless it is a prerelease, adds it to the README's Supported OpenCode version table. Started by @${GITHUB_ACTOR} with the Start a release workflow (run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
+            echo "Bumps \`package.json\` to ${VERSION} and, unless it is a prerelease, adds it to the Supported OpenCode version tables in README.md and docs/reference.md. Started by @${GITHUB_ACTOR} with the Start a release workflow (run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
             echo
             echo "GitHub holds the checks of a pull request that GitHub Actions opened: select **Approve workflows to run** in the merge box to start them."
             echo

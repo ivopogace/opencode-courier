@@ -176,7 +176,7 @@ bun install
 bun run typecheck
 bun test
 bun run build      # dist/: tsc for the server half and rpc, script/build-tui.ts for tui
-bun script/compat-table.ts --check   # README's version table against the release tags (git fetch --tags)
+bun script/compat-table.ts --check   # the version tables against the release tags (git fetch --tags)
 # live test: install the CLI once, at the version of the pinned plugin API
 npm install --prefix <scratch>/oc @opencode/cli@2.0.31
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # every scenario in one run, no API key; E2E_SHARD=k/n for a part
@@ -192,9 +192,9 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   devDependency move with it, to the `effect` the new `@opencode/plugin` depends on), and the live
   test installs `@opencode/cli` at that same version. Read the API's types in `node_modules` rather than
   guessing; the OpenCode V2 source is on the `v2` branch of https://github.com/anomalyco/opencode,
-  with each release tagged (`v2.0.31`). README.md's Supported OpenCode version table is generated
-  from the release tags by `script/compat-table.ts`, which Start a release runs and CI checks: never
-  edit it by hand. A pin bump, asked for by the issue `latest.yml` opens for a new OpenCode release,
+  with each release tagged (`v2.0.31`). The Supported OpenCode version tables, README.md's
+  newest three rows and `docs/reference.md`'s all, are generated from the release tags by
+  `script/compat-table.ts`, which Start a release runs and CI checks: never edit them by hand. A pin bump, asked for by the issue `latest.yml` opens for a new OpenCode release,
   moves the version README names (Quickstart, OpenCode V2 native, the
   install command, the terminal part's line under the table; a unit test checks the first three),
   is followed by a patch release, and

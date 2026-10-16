@@ -286,7 +286,9 @@ A row whose report arrives flashes in your theme's success colour and fades back
 grows to its new length; nothing in the footer moves. Next to the header's title digs Digby, the courier's mole, drawn
 in your theme's colours, whose state follows the tree's: a breathing mound while all is idle, a trembling one while
 children run, up with a blinking sign while one waits on you, slumped while one is stalled, popping up with a letter
-for a report and raising mounds for a spawn; a larger Digby sleeps in an empty panel ([more](docs/reference.md#in-the-terminal)).
+for a report and raising mounds for a spawn. Where the panel has room the tree does not use, on an empty panel or 10
+rows free below the last row, a larger Digby, 16 by 8, shows the same state there instead, paws, sign, letter and all
+([more](docs/reference.md#in-the-terminal)).
 To keep the panel still (`•` for a running row, no flash, the bar at once, Digby in each state's first frame), give the TUI part `"animations": false` in OpenCode's terminal config, `~/.config/opencode/cli.json`:
 the TUI passes options to its plugins only from there, not from the server's `opencode.json`, and has no animations
 setting a plugin can read ([more](docs/reference.md#in-the-terminal)).

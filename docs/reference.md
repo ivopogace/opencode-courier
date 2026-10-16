@@ -956,7 +956,7 @@ one of them has a next frame and stops when the panel is hidden or closed:
 
 The `waiting on you` mark stays still, and nothing in the prompt's footer moves. With `"animations": false` in the
 TUI part's options none of them do: a running row shows `•`, a report does not flash, the bar takes its length at
-once, Digby shows each state's first frame and no report or spawn pose, and no timer runs for them. The TUI passes a plugin options only from its own config's `plugins`
+once, Digby (the header's glyph or the larger one) shows each state's first frame and no report or spawn pose, and no timer runs for them. The TUI passes a plugin options only from its own config's `plugins`
 (`~/.config/opencode/cli.json`); a plugin it loads from the server's list, as the courier's TUI part, gets none
 of the server's `opencode.json` options. The TUI's own `animations` setting is not on the plugin API, so it does
 not stop the panel's:
@@ -984,9 +984,30 @@ header's second line counts the live sessions as the footer does (`1 waiting on 
   mounds rise either side, a child's head peeking out of each. Then back to the tree's state.
 
 He blinks every eleventh frame where his eyes are open. A panel under 12 rows tall, or under 54 columns wide (a narrow
-split, where the glyph would cut the header's bar), has no glyph, and its header keeps to one line; an empty one (`No session started with courier_spawn under this one.`) at least 14 rows tall shows a
-larger idle Digby, 16 columns by 8 rows, a `z` drifting up beside his mound. He takes the panel's timer only while he
-shows and is not gone, at his own pace.
+split, where the glyph would cut the header's bar), has no glyph, and its header keeps to one line.
+
+**The larger Digby**, 16 columns by 8 rows, shows only in room the tree does not use, in the tree's state: on an empty
+panel (`No session started with courier_spawn under this one.`) at least 14 rows tall, and below the last row when
+at least 10 rows of the list are free after all the rows and their detail lines. While he shows there, the header
+drops its glyph, so only one Digby is on screen; its second line still counts the sessions. In a smaller panel, the
+header's glyph is all there is. Each state has two or three frames at most, the first one reading as the state alone,
+which is what `"animations": false` shows:
+
+- **idle**: asleep in the hole, the mound breathing, a `z` drifting up beside it;
+- **running**: his snout pokes up and bobs in the hole, the mound trembles a column side to side, dirt flies either side;
+- **waiting on you**: up, eyes wide, paws on the mound, a sign on a post in the warning colour, which blinks off on
+  the second frame;
+- **stalled**: half out (0.7), slumped to the right, eyes shut, three dots in the error colour that count up 1, 2, 3;
+- **report**: up, an arm reaching from the mound holds up the letter in the accent, a spark in the success colour
+  beside him; he bounces settled, overshoot, back (`rise` 1, 1.25, 1.1);
+- **spawn**: low in the hole, a side mound either side with a child's head peeking out, dirt flying; the heads sink
+  on the second frame;
+- **gone**: the mound and ground, muted, still.
+
+The muted pixels (paws, dirt, the post and the arm) never share a cell with the mound's, whose `background.raised.max`
+is close to `text.muted`: the post stops a pixel above the ground, and the paws and dirt keep off it. The poses are
+drawn in `src/tree/mascot.ts` (`ART`, one drawing per frame over `digby`'s head, mound and ground) and the
+panel picks one by `art(state, frame)`. He takes the panel's timer only while he shows and is not gone, at his own pace.
 
 The accent is the owner's decision: OpenCode's theme has no semantic accent text token, and `text.action.primary.base` is the
 body's colour in every built-in theme, so `a` is `text.action.primary.selected`, borrowed by explicit choice; the header's title

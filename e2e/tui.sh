@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Live test of the TUI part: a real OpenCode V2 server loads the package's `tui` and `rpc`
 # entrypoints, its RPC answers over HTTP, and the TUI, in tmux, shows the prompt footer's entry and
-# follows a change, opens the tree panel with /courier tree, follows it into a child, and stops a child with /courier stop;
+# follows a change, opens the tree panel with /courier tree, the 16×16 Digby below its rows (#245), follows it into a child, and stops a child with /courier stop;
 # a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188), and the
 # inbox opened from a child lists the top session's courier_answer prompt first and allows it (#185);
 # a child showing a form waits on the person in the footer and the panel (#183); and x in the panel forgets a gone
@@ -175,6 +175,10 @@ check "the panel opens with the bar: 1 of 2 parts reported" "$(shows "courier tr
 check "it has the reported child's row" "$(grep -qF "✓ Report back to your parent.  idle · reported done · group pair held" "$WORK/tui-panel.txt" && echo true || echo false)"
 check "and the asking child's, which says what it waits on" \
   "$(grep -qF "● CHILD-ASKS  waiting on you · owes a report · group pair out" "$WORK/tui-panel.txt" && grep -qF "asks permission: shell echo courier-asks" "$WORK/tui-panel.txt" && echo true || echo false)"
+# Two rows leave the panel in a 40-row window far more than 10 free: the 16×16 Digby shows below them, his ground a full 16 cells,
+# and the header drops its glyph, so its title has no half-block before it (#245).
+check "the 16×16 Digby shows below the rows, the header without its glyph" \
+  "$([ "$(shows "████████████████" 15 tui-panel-digby)" = true ] && ! grep -qE '[▀▄█] +courier tree' "$WORK/tui-panel-digby.txt" && echo true || echo false)"
 request=$(api "session/$asking/permission" | jq -r '.data[0].id // empty')
 code=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
   --data '{"decision":"once"}' "$SERVER/api/session/$asking/permission/$request/reply")

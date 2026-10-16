@@ -20,11 +20,7 @@ export function lastTool(messages: Messages) {
   return undefined
 }
 
-/**
- * How full a session's context is, as OpenCode's own session view reads it (packages/tui/src/util/session.ts at v2.0.31):
- * the tokens of the last assistant message that has usage since the last completed compaction, over its model's window.
- * The message's own model is the one that counts; none without usage or a known window.
- */
+/** How full a session's context is, as OpenCode's session view reads it (packages/tui/src/util/session.ts, v2.0.31): the last usage since the last compaction over its model's window. */
 export function contextOf(messages: Messages, windows: ReadonlyArray<ModelWindow>) {
   const compacted = messages.findLastIndex((message) => message.type === "compaction" && message.status === "completed")
   const last = messages.findLast((message, index) => index > compacted && message.type === "assistant" && message.tokens !== undefined)

@@ -27,7 +27,7 @@ export const CHANGES = new Set<string>([
   "form.cancelled",
 ])
 
-/** The panel also follows each session's tool calls, cost and title, which its rows show. */
+/** The panel also follows each session's tool calls, cost, context use and title, which its rows show. */
 const PANEL_CHANGES = new Set<string>([
   ...CHANGES,
   "session.tool.called",
@@ -500,12 +500,12 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
                     <text fg={theme.text.muted} wrapMode="none">
                       {indent}
                       {"    "}
-                      <Show when={row.context !== undefined && Math.round(row.context * 100) > CONTEXT_WARN * 100 && line === activityLine(row, now())} fallback={line}>
-                        <For each={activityParts(row, now())}>
+                      <Show when={row.context !== undefined && Math.round(row.context * 100) > CONTEXT_WARN * 100} fallback={line}>
+                        <For each={line.split(" · ")}>
                           {(part, at) => (
                             <>
                               {at() ? " · " : ""}
-                              {part.startsWith("ctx ") ? <span style={{ fg: theme.text.feedback.warning.base }}>{part}</span> : part}
+                              {part === `ctx ${Math.round(row.context! * 100)}%` ? <span style={{ fg: theme.text.feedback.warning.base }}>{part}</span> : part}
                             </>
                           )}
                         </For>

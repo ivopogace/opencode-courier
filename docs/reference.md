@@ -902,9 +902,9 @@ deeper per level; past that the header says how many older sessions are left out
 
 ```
 courier tree  [█████░░░░░] 1/2 reported
-▸ Report back to your parent.  idle · reported done · group pair held
+▸ ✓ Report back to your parent.  idle · reported done · group pair held
     ran 12s · last courier_send 3s ago · $0.00
-  CHILD-ASKS  waiting on you · owes a report · group pair out
+  ● CHILD-ASKS  waiting on you · owes a report · group pair out
     asks permission: shell echo courier-asks
 ↑↓ select · enter open · s stop · r refresh · f fullscreen · q close
 ```
@@ -916,7 +916,13 @@ stopped since its last prompt, `gone` for one OpenCode no longer
 knows), its report since its last prompt (`owes a report`, `reported <status>` once it sent one, held
 with its group or delivered, `ended without a report` when its turn failed or was interrupted, but not for a stopped one; nothing
 for a session spawned before report notes were kept), its join group's standing (`group <name> held`,
-`out`, how it left, or `released`), and `isolated`. Under it:
+`out`, how it left, or `released`), and `isolated`. A one-cell mark before the title shows the state at a
+glance, in the person's OpenCode theme (never a fixed colour): `✓` for a session that reported (the mark
+and the `reported …` words in the theme's success colour), `•` for a running one (info), `●` for one
+waiting on you (warning), `!` for a stalled one and `✗` for one whose last turn failed or was interrupted
+(error); an idle one that owes a report, and a gone one, have none (a gone row's title is muted). The
+header's title and bar take the theme's accent (primary action) colour. The mark has a cell of its own, so a long
+title is cut before the status is. Under it:
 
 - an **orchestrator**, any session with children among the rows, and the session whose tree the panel
   shows, in the header, gets a bar of the parts reported: its children whose report arrived out of the

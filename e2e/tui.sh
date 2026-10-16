@@ -175,7 +175,7 @@ check "the panel opens with the bar: 1 of 2 parts reported" "$(shows "courier tr
 check "it has the reported child's row" "$(grep -qF "✓ Report back to your parent.  idle · reported done · group pair held" "$WORK/tui-panel.txt" && echo true || echo false)"
 check "and the asking child's, which says what it waits on" \
   "$(grep -qF "● CHILD-ASKS  waiting on you · owes a report · group pair out" "$WORK/tui-panel.txt" && grep -qF "asks permission: shell echo courier-asks" "$WORK/tui-panel.txt" && echo true || echo false)"
-# Two rows leave the 40-row panel far more than 10 free: the 16×16 Digby shows below them, his ground a full 16 cells,
+# Two rows leave the panel in a 40-row window far more than 10 free: the 16×16 Digby shows below them, his ground a full 16 cells,
 # and the header drops its glyph, so its title has no half-block before it (#245).
 check "the 16×16 Digby shows below the rows, the header without its glyph" \
   "$([ "$(shows "████████████████" 15 tui-panel-digby)" = true ] && ! grep -qE '[▀▄█] +courier tree' "$WORK/tui-panel-digby.txt" && echo true || echo false)"

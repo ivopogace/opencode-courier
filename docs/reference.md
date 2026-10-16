@@ -989,9 +989,9 @@ split, where the glyph would cut the header's bar), has no glyph, and its header
 **The larger Digby**, 16 columns by 8 rows, shows only in room the tree does not use, in the tree's state: on an empty
 panel (`No session started with courier_spawn under this one.`) at least 14 rows tall, and below the last row when
 at least 10 rows of the list are free after all the rows and their detail lines. While he shows there, the header
-drops its glyph, so only one Digby is on screen; its second line still counts the sessions. In a smaller panel, the
-header's glyph is all there is. Each state has two or three frames at most, the first one reading as the state alone,
-which is what `"animations": false` shows:
+drops its glyph, so only one Digby is on screen; its second line still counts the sessions. Without that room, the
+header's glyph is all there is, where it fits. Each state but idle has two or three frames, the first one reading as
+the state alone, which is what `"animations": false` shows:
 
 - **idle**: asleep in the hole, the mound breathing, a `z` drifting up beside it;
 - **running**: his snout pokes up and bobs in the hole, the mound trembles a column side to side, dirt flies either side;

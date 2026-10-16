@@ -1,6 +1,6 @@
 /**
  * A pixel of Digby, the tree panel's mole, as the theme colour it takes: `b` body, `k` background (eyes), `g` mound,
- * `m` muted (paws, dirt, arm), `a` accent (snout, letter), `w`, `e` and `s` warning, error and success (sign, dots, spark).
+ * `m` muted (paws, dirt, post, arm), `a` accent (snout, letter), `w`, `e` and `s` warning, error and success (sign, dots, spark).
  */
 export type Token = "b" | "k" | "g" | "m" | "a" | "w" | "e" | "s"
 
@@ -90,9 +90,8 @@ export type Eyes = "open" | "wide" | "shut" | "none"
 const SLUMP = [2, 2, 2, 1, 1, 0, 0]
 
 /**
- * The 16×16 Digby, his head raised by `rise` (0 in the hole, 1 fully up; below 0 out of sight): a 7-row head in columns
- * 4–11 over a body in the hole, which alone shows on the mound's top row, then the mound (its top row `top` wide, 6 or 8 as he breathes, `shift` columns over as it
- * trembles) and the ground, both `mound`, drawn over it but for the hole.
+ * The 16×16 Digby, his head raised by `rise` (0 in the hole, 1 fully up; below 0 out of sight) over a body in the hole,
+ * then the mound (its top row `top` wide, `shift` columns over) and the ground, both `mound`, drawn over it but for the hole.
  */
 export function digby(
   rise: number,
@@ -167,11 +166,7 @@ const report = (rise: number, spark: ReadonlyArray<string>) => (open: boolean) =
     ...spark.map((row, at) => [1 + at, 0, row] as const),
   ])
 
-/**
- * The 16×16's frames by state but idle, each drawn with his eyes open or, as he blinks, not; the first alone reads as the
- * state. Running bobs his snout, trembles the mound and throws dirt; spawn raises side mounds with a child in each;
- * waiting blinks its sign; stalled counts its dots up from three; report bounces from settled to overshoot and back.
- */
+/** The 16×16's frames by state but idle, each its pixels with the eyes open or, for a blink, not; the first reads alone. */
 export const ART: Readonly<Record<Exclude<MascotState, "idle">, ReadonlyArray<(open: boolean) => ReadonlyArray<string>>>> = {
   spawn: [
     () => spawn(true, [[3, 1, "m"], [5, 3, "m"], [2, 14, "m"], [5, 12, "m"]]),

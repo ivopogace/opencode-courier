@@ -976,7 +976,7 @@ header's second line counts the live sessions as the footer does (`1 waiting on 
 
 - **idle**, nothing running (or no session yet): just the mound, which breathes, its top widening and narrowing;
 - **running**: the mound trembles and throws dirt, a snout bobbing in the hole; he stays underground;
-- **waiting on you**: up, paws on the mound, eyes wide, holding a sign in the warning colour that blinks;
+- **waiting on you**: up, paws held just above the mound, eyes wide, holding a sign in the warning colour that blinks;
 - **stalled**: half out, slumped, eyes shut, an ellipsis in the error colour counting up beside his head;
 - **gone**, every session gone: the same mound, muted, still;
 - for 1.5 s after a **report** arrives (as a row flashes): he pops up with the letter in the accent and a spark in
@@ -995,7 +995,7 @@ the state alone, which is what `"animations": false` shows:
 
 - **idle**: asleep in the hole, the mound breathing, a `z` drifting up beside it;
 - **running**: his snout pokes up and bobs in the hole, the mound trembles a column side to side, dirt flies either side;
-- **waiting on you**: up, eyes wide, paws on the mound, a sign on a post in the warning colour, which blinks off on
+- **waiting on you**: up, eyes wide, paws held a pixel above the mound, a sign on a post in the warning colour, which blinks off on
   the second frame;
 - **stalled**: half out (0.7), slumped to the right, eyes shut, three dots in the error colour that count up 1, 2, 3;
 - **report**: up, an arm reaching up beside the mound holds up the letter in the accent, a spark in the success colour

@@ -331,8 +331,8 @@ async function confirmForget(
 /** The host's command that gives the keyboard back to the prompt; a newly shown panel takes it. */
 const FOCUS_PROMPT = "pane.focus.left"
 
-/** OpenCode splits a panel from the side only on a terminal wider than this. */
-const SPLIT_WIDTH = 80
+/** OpenCode splits a panel from the side only at this width or more (64 + 44, since 2.0.30); it measures the terminal less any vertical session tabs. */
+const SPLIT_WIDTH = 108
 
 /**
  * The panel following the person: the session whose tree it shows, the one it is open in (or goes `to` while it looks,
@@ -368,7 +368,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
   // OpenCode shows fullscreen whatever was asked while it cannot split, so only a wider terminal's value says what was asked.
   createEffect(() => {
     const { presentation, focused } = input
-    view.note(ctx.renderer.width > SPLIT_WIDTH ? { presentation, focused } : { focused })
+    view.note(ctx.renderer.width >= SPLIT_WIDTH ? { presentation, focused } : { focused })
   })
   onMount(() => {
     if (!view.refocus) return

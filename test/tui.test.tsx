@@ -727,9 +727,21 @@ describe("the tree panel following navigation", () => {
   }
   const trees = (fake: ReturnType<typeof fakeContext>) => fake.calls.filter((call) => Array.isArray(call) && call[0] === "tree").map((call) => (call as any)[1].sessionID)
 
-  test("a panel shown fullscreen only because the terminal is narrow reopens as a panel once followed", async () => {
+  for (const width of [80, 100, 107]) {
+    test(`a panel shown fullscreen only because the terminal is narrow reopens as a panel once followed, at ${width} columns`, async () => {
+      await narrowThenFollowed(width, "panel")
+    })
+  }
+
+  for (const width of [108, 160]) {
+    test(`a panel shown fullscreen at ${width} columns was asked for, and reopens fullscreen once followed`, async () => {
+      await narrowThenFollowed(width, "fullscreen")
+    })
+  }
+
+  async function narrowThenFollowed(width: number, reopened: "panel" | "fullscreen") {
     const fake = fakeContext(async () => empty)
-    fake.state.width = 80
+    fake.state.width = width
     fake.state.tree = async (sessionID) => ({ ses_parent: pair(1) })[sessionID as "ses_parent"] ?? { rows: [] }
     await tui.setup(fake.context)
     await fake.command("courier.command")!.run("tree")
@@ -737,8 +749,8 @@ describe("the tree panel following navigation", () => {
     await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
 
     fake.state.route = { type: "session", sessionID: "ses_two" }
-    expect(fake.state.presentations.at(-1)).toBe("panel")
-  })
+    expect(fake.state.presentations.at(-1)).toBe(reopened)
+  }
 
   test("reopens in a session of its tree with the same presentation, showing the root's tree with that session marked", async () => {
     const fake = await opened({ ses_parent: pair(1) }, { presentation: "fullscreen" })

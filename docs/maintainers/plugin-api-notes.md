@@ -1,9 +1,9 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around, or relies on, at the
-pinned version: `@opencode/plugin@2.0.29` and OpenCode 2.0.29. A pin bump re-checks each trap and
+pinned version: `@opencode/plugin@2.0.30` and OpenCode 2.0.30. A pin bump re-checks each trap and
 updates the ones it changes. OpenCode's source is on the `v2` branch of
-https://github.com/anomalyco/opencode, each release tagged (`v2.0.29`); paths below are in it. The
+https://github.com/anomalyco/opencode, each release tagged (`v2.0.30`); paths below are in it. The
 [reference](../reference.md) says what the plugin does.
 
 ## Tools
@@ -287,7 +287,7 @@ claim sets, the event bus and pending permission requests. So:
 `e2e/two-servers.sh` measures it (not in CI; a few minutes, no API key; `KEEP=1` keeps the logs):
 
 ```bash
-npm install --prefix <scratch>/oc @opencode/cli@2.0.29
+npm install --prefix <scratch>/oc @opencode/cli@2.0.30
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh
 ```
 
@@ -392,7 +392,7 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   npm's `ERESOLVE`, against the newer `@opentui/solid` npm picked for `@opencode/plugin`'s `>=`
   range; with no such peer npm installs no `@opentui` and the host provides them. The TUI's packages
   are devDependencies at the versions OpenCode's root `package.json` catalog pins (`@opentui/*`
-  `0.5.17`, `solid-js` `1.9.15` at `v2.0.29`), and `@opencode/theme` at the pin, for the typecheck and
+  `0.5.17`, `solid-js` `1.9.15` at `v2.0.30`), and `@opencode/theme` at the pin, for the typecheck and
   the tests.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles `src/tui.tsx` with `Bun.build`,
@@ -424,6 +424,13 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   a newly mounted panel takes the keyboard (`component/session-frame.tsx`, `onTarget`). So the tree panel
   reopens itself after a route change with `presentation`, and gives the keyboard back with
   `keymap.dispatch("pane.focus.left")`, the host's own command, when it did not have it.
+- **A panel splits from 108 columns, measured less the vertical tabs.** `canSplit` in
+  `packages/tui/src/context/panel.tsx` is `width() >= SESSION_PANEL_SPLIT_MIN_WIDTH` (64 + 44 = 108,
+  `packages/tui/src/ui/layout.ts`); up to 2.0.29 it was `width() > 80`. Narrower, OpenCode shows the
+  panel fullscreen whatever was asked. `width` is the terminal's width minus the vertical session tabs when
+  they show (`app.tsx`, `panels.setWidth(...)`). The plugin cannot read the tabs' width (`PanelInput.width` is
+  the panel's own, `renderer.width` the terminal's), so the tree panel notes what was asked only at a
+  `renderer.width` of 108 or more; with vertical tabs showing it still takes a narrower split for one.
 - **Keys.** `<leader>` bindings OpenCode takes: `a b c e g i l m n q r s t u w x y`, the digits and
   the arrows (`packages/tui/src/config/v1/keybind.ts`); the inbox takes `<leader>k`.
 - **Testing.** Unit tests render against a fake TUI context with OpenTUI's `testRender`, which needs

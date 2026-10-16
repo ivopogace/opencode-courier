@@ -62,6 +62,8 @@ const Row = Schema.Struct({
   idle: Schema.optionalKey(Schema.Number),
   /** What it has cost so far, in US dollars. */
   cost: Schema.optionalKey(Schema.Number),
+  /** How full its context is, as a fraction of the model's window; left out when the model or its limit cannot be read. */
+  context: Schema.optionalKey(Schema.Number),
   /** Its last tool call, and when it was made. */
   tool: Schema.optionalKey(Schema.Struct({ name: Schema.String, at: Schema.Number })),
   waits: Schema.Array(Wait),

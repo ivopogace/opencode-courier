@@ -27,7 +27,7 @@ export const CHANGES = new Set<string>([
   "form.cancelled",
 ])
 
-/** The panel also follows each session's tool calls, cost and title, which its rows show. */
+/** The panel also follows each session's tool calls, cost, context use and title, which its rows show. */
 const PANEL_CHANGES = new Set<string>([
   ...CHANGES,
   "session.tool.called",
@@ -151,16 +151,20 @@ function reportWords(report: Row["report"], stopped?: boolean) {
 /** `count` and the noun, plural unless it is one: "1 session", "2 sessions". */
 const counted = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
 
-/** A leaf's activity: how long it has run, its last tool call and how long ago, and its cost. */
-export function activityLine(row: Row, now: number) {
+/** Past this fraction of its window, a session's context use is shown in the warning colour. */
+export const CONTEXT_WARN = 0.8
+
+/** A leaf's activity: how long it has run, its last tool call and how long ago, its context use and its cost. */
+export function activityParts(row: Row, now: number) {
   return [
     `ran ${duration((row.idle ?? now) - row.created)}`,
     row.tool ? `last ${row.tool.name} ${duration(now - row.tool.at)} ago` : "no tool call yet",
+    row.context !== undefined ? `ctx ${Math.round(row.context * 100)}%` : "",
     row.cost !== undefined ? `$${row.cost.toFixed(2)}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ")
+  ].filter(Boolean)
 }
+
+export const activityLine = (row: Row, now: number) => activityParts(row, now).join(" · ")
 
 /** What a stalled session's row, or the panel of one, says of it: "a message waits in its inbox since 2m 05s, woken again in vain". */
 export function stalledLine(since: number, now: number) {
@@ -546,7 +550,16 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
                     <text fg={theme.text.muted} wrapMode="none">
                       {indent}
                       {"    "}
-                      {line}
+                      <Show when={row.context !== undefined && Math.round(row.context * 100) > CONTEXT_WARN * 100} fallback={line}>
+                        <For each={line.split(" · ")}>
+                          {(part, at) => (
+                            <>
+                              {at() ? " · " : ""}
+                              {part === `ctx ${Math.round(row.context! * 100)}%` ? <span style={{ fg: theme.text.feedback.warning.base }}>{part}</span> : part}
+                            </>
+                          )}
+                        </For>
+                      </Show>
                     </text>
                   )}
                 </For>

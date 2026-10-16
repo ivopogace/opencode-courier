@@ -932,8 +932,11 @@ title is cut before the status is. Under it:
 - a **stalled** session gets `a message waits in its inbox since <how long>, woken again in vain`,
   under its bar if it has one; when the panel's own session is stalled, a line under the header says so;
 - a **leaf** gets its activity: how long it ran (from its creation to the end of its last turn, or to
-  now while it runs), its last tool call and how long ago it was made, and what it has cost so far; a
-  `gone` one gets none.
+  now while it runs), its last tool call and how long ago it was made, how full its context is (`ctx 31%`, between the last
+  tool call and the cost, in the theme's warning colour past 80%; read as OpenCode's own session view reads it: the tokens
+  of the last assistant message with usage since the last completed compaction, input, output, reasoning and cache,
+  over its model's context window, rounded to a whole percent; left out when the model's window is unknown), and what it
+  has cost so far; a `gone` one gets none.
 
 There is no progress a session reports of itself: a bar counts only reports courier noted. The panel
 asks again a second after the first of a burst of the status entry's events and of a tool call, a usage
@@ -994,7 +997,7 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_â€
   when the oldest message that did not wake it waits, when it is stalled), `outcome` of its last
   turn, `stopped` (true when `courier_stop` stopped it since its last prompt; absent otherwise), `report` (`state`: `owed`, `reported` or `ended`, with the report's `status` once reported, and
   `progressed`), `group` (`name`, `standing`), `isolated`, `created`, `idle` (when its last turn ended, if
-  it is not running), `cost` in US dollars, `tool` (its last tool call's `name` and `at`, when it ran) and
+  it is not running), `cost` in US dollars, `context` (a fraction of the model's context window; absent when the model or its window is unknown), `tool` (its last tool call's `name` and `at`, when it ran) and
   `waits` (`{type: "permission", action, resources}`, `{type: "question", question}` or `{type: "form", title}`, the
   requests first, then the forms); times in epoch
   milliseconds. `truncated` is how many older sessions the listing left out, when it had more than `maxTotal`,

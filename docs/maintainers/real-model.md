@@ -10,7 +10,7 @@ string: `src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or a tool des
 
 ```bash
 bun install
-npm install --prefix <scratch>/oc @opencode/cli@2.0.30
+npm install --prefix <scratch>/oc @opencode/cli@2.0.31
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
 ```
 

@@ -1,4 +1,4 @@
-// Copied verbatim from OpenCode v2.0.30, packages/tui/src/feature-plugins/system/notifications.ts (the host's own sounds).
+// Copied verbatim from OpenCode v2.0.31, packages/tui/src/feature-plugins/system/notifications.ts (the host's own sounds).
 import { Plugin } from "@opencode/plugin/tui"
 import type { AttentionSoundName } from "@opencode/plugin/tui/context"
 

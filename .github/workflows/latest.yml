@@ -29,6 +29,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     continue-on-error: true
+    outputs:
+      version: ${{ steps.install.outputs.version }}
+      pinned: ${{ steps.install.outputs.pinned }}
+      outcome: ${{ steps.outcome.outputs.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,6 +54,7 @@ jobs:
           version=$(node -p "require('$(npm root -g)/@opencode/cli/package.json').version")
           pinned=$(node -p "require('./package.json').peerDependencies['@opencode/plugin']")
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
           {
             echo "## Live test against OpenCode V2 latest"
             echo
@@ -76,12 +81,14 @@ jobs:
           E2E_WORK: ${{ runner.temp }}/e2e-tui
           KEEP: "1"
       - name: Report the outcome
+        id: outcome
         if: always()
         env:
           # Empty when the install step itself failed.
           VERSION: ${{ steps.install.outputs.version || 'unknown' }}
           OUTCOME: ${{ job.status }}
         run: |
+          echo "outcome=$OUTCOME" >> "$GITHUB_OUTPUT"
           echo "Outcome on @opencode/cli@$VERSION: $OUTCOME" >> "$GITHUB_STEP_SUMMARY"
           if [ "$OUTCOME" != success ]; then
             echo "::warning title=OpenCode latest::The live suite did not pass on @opencode/cli@$VERSION; the pinned leg decides"
@@ -100,3 +107,51 @@ jobs:
             ${{ runner.temp }}/e2e-tui/*.err
             ${{ runner.temp }}/e2e-tui/*.txt
           if-no-files-found: ignore
+
+  new-release:
+    # An OpenCode release newer than the pin opens one issue, "OpenCode X.Y.Z is out", saying whether
+    # the live suites passed on it: the pin bump it asks for is docs/maintainers/releasing.md's. Opened
+    # once per version, by the first run that sees it to the end (not one a newer push cancelled).
+    name: Open an issue for a new OpenCode release
+    needs: e2e-latest
+    if: ${{ !cancelled() && needs.e2e-latest.outputs.version != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.e2e-latest.outputs.version }}
+          PINNED: ${{ needs.e2e-latest.outputs.pinned }}
+          OUTCOME: ${{ needs.e2e-latest.outputs.outcome || 'unknown' }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          newest="$(printf '%s\n%s\n' "$PINNED" "$VERSION" | sort -V | tail -1)"
+          if [ "$VERSION" = "$PINNED" ] || [ "$newest" != "$VERSION" ]; then
+            echo "@opencode/cli@latest is $VERSION, not newer than the pin $PINNED: nothing to open"
+            exit 0
+          fi
+          title="OpenCode $VERSION is out: move the pin from $PINNED"
+          # From the list rather than the search API, whose index can lag behind an issue just opened.
+          existing="$(gh issue list --state all --limit 1000 --json title \
+            --jq "[.[] | select(.title | startswith(\"OpenCode $VERSION is out\"))] | length")"
+          if [ "$existing" != 0 ]; then
+            echo "an issue for OpenCode $VERSION exists already"
+            exit 0
+          fi
+          if [ "$OUTCOME" = success ]; then
+            verdict="passed, so the bump is likely only the pin and the versions the docs name"
+          else
+            verdict="did not pass (outcome: $OUTCOME): find what changed before moving the pin"
+          fi
+          {
+            echo "\`@opencode/cli@latest\` is $VERSION; the plugin is pinned to \`@opencode/plugin@$PINNED\`. Until a release moves the pin, the plugin on $VERSION writes its \"built and tested against\" line to the server log."
+            echo
+            echo "The live suites on $VERSION, with the plugin built on the pin, $verdict: $RUN."
+            echo
+            echo "Move the pin as [releasing.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/docs/maintainers/releasing.md#the-plugin-api-pin) says, then release a patch."
+          } >"$RUNNER_TEMP/issue.md"
+          gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue.md"

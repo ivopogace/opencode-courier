@@ -18,7 +18,7 @@ Nothing in OpenCode checks the version: `opencode plugin add` installs the plugi
 and the loader warns about nothing. The plugin loads on hosts from 2.0.4 on, and fails to load on
 2.0.0 to 2.0.3, which lack a domain the plugin API gained in 2.0.4. On a newer host, tools may still
 break. The terminal part relies on the host to provide its UI modules and is tested on OpenCode
-2.0.29 only; the server part works as before on older V2 hosts from 2.0.4 on.
+2.0.30 only; the server part works as before on older V2 hosts from 2.0.4 on.
 
 When the running OpenCode reports a version other than the pinned one, the plugin writes one line
 to the server log (`opencode serve --print-logs` shows it) when it loads:
@@ -912,7 +912,7 @@ when it opens; `<leader>left` and `<leader>right` move it between the session an
 `↓`/`j` move the selection, `enter` opens the selected session, `s` stops it, `x` forgets a `gone` one,
 `r` asks again, `f` toggles fullscreen and `q` closes the panel. While open, the panel follows the person to another session (its own
 `enter`, a tab, "go to parent"), as it was asked for (a panel shown fullscreen only because the terminal is
-too narrow to split reopens as a panel) and taking the keyboard only if it had it: to a session
+too narrow to split, under 108 columns less any vertical session tabs, reopens as a panel) and taking the keyboard only if it had it: to a session
 of its tree it keeps that tree, and its stops, with the session on screen marked `(on screen)` in its
 row; to another it shows that session's tree. In a session that started none, and on the home screen
 (`/new`), it hides, and shows again in the next session with a tree, that one included once it starts

@@ -1516,11 +1516,11 @@ describe("the tree panel's motion (#224)", () => {
     }))
     reported = true
     await panel.refresh()
-    expect(ART.report.map((_, frame) => drawnArt("report", frame))).toContainEqual(artIn(await panel.frame()))
+    expect(ART.report.map((_, frame) => drawnArt("report", frame))).toContainEqual(artIn(await panel.frame())!)
     await panel.advance(FLASH_MS + FRAME_MS)
     spawned = true
     await panel.refresh()
-    expect(ART.spawn.map((_, frame) => drawnArt("spawn", frame))).toContainEqual(artIn(await panel.frame()))
+    expect(ART.spawn.map((_, frame) => drawnArt("spawn", frame))).toContainEqual(artIn(await panel.frame())!)
   })
 
   test("with \"animations\": false the 16×16 shows each state's first frame, still, and no timer runs for it (#245)", async () => {

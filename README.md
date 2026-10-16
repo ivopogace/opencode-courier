@@ -45,7 +45,7 @@ Courier is built on OpenCode V2's plugin API (`@opencode/plugin`), not the V1 on
 (`@opencode-ai/plugin`), and needs OpenCode V2. Each release is pinned to one V2 version and tested
 against it end to end; the current one is tested on **OpenCode 2.0.31**. CI also runs the live
 suite on the newest OpenCode release, on `main` and nightly, so a host release that breaks the
-plugin shows up there first. Older releases and their versions: [Supported OpenCode version](#supported-opencode-version).
+plugin shows up there first. Older releases and their versions: [every release](docs/reference.md#the-opencode-version).
 
 ## Courier or the built-in subagent tool?
 

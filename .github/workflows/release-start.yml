@@ -33,7 +33,7 @@ jobs:
       DRY_RUN: ${{ inputs.dry_run == true }}
     steps:
       # No token on disk while `npm version` and the checks run; the push step passes it itself.
-      # The release tags too, which the Supported OpenCode version table is generated from.
+      # The release tags too, which the Supported OpenCode version tables are generated from.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

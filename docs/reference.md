@@ -8,8 +8,8 @@ and what the webhook receiver does with a delivery. The [README](../README.md) h
 ## The OpenCode version
 
 Each release of the plugin is built and tested against one OpenCode V2 version, the exact
-`@opencode/plugin` version pinned in its `package.json` (the README's [Supported OpenCode
-version](../README.md#supported-opencode-version) table). The end-to-end suite runs on that version
+`@opencode/plugin` version pinned in its `package.json` (the table below; the README's [Supported
+OpenCode version](../README.md#supported-opencode-version) shows the newest three rows). The end-to-end suite runs on that version
 with every change to the code, and once more on the newest `@opencode/cli` release on every push to
 `main` and nightly, where a failure is a warning rather than a red build, so a host release that
 breaks the plugin shows up in CI first. Every release and the version it is pinned to:

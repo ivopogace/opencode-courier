@@ -85,7 +85,7 @@ function fakeContext(
       },
     },
     theme: {
-      text: { base: color, muted: color, action: { primary: { base: color } }, feedback: THEME },
+      text: { base: color, muted: color, action: { primary: { base: color, selected: color } }, feedback: THEME },
       background: { base: RGBA.fromInts(0, 0, 0), raised: { high: color, max: color }, feedback: { success: { base: FLASH } } },
     },
     client: {
@@ -1566,18 +1566,21 @@ describe("the tree panel's motion, its pieces", () => {
 
 describe("Digby's colours", () => {
   const hex = RGBA.fromHex
+  // The resolved `opencode` theme (see the PR): dark's accent is #fab283, light's is the v1 theme's #ec5b2b.
   const themes = {
-    dark: { base: "#0a0a0a", text: "#eeeeee", max: "#4c4c4c" },
-    light: { base: "#ffffff", text: "#1a1a1a", max: "#bebcb9" },
+    dark: { base: "#0a0a0a", text: "#eeeeee", max: "#4c4c4c", selected: "#fab283" },
+    light: { base: "#ffffff", text: "#1a1a1a", max: "#bebcb9", selected: "#ec5b2b" },
   }
   for (const [mode, one] of Object.entries(themes)) {
+    const colours = digbyColours({
+      text: { base: hex(one.text), muted: hex("#808080"), action: { primary: { base: hex(one.text), selected: hex(one.selected) } }, feedback: THEME },
+      background: { base: hex(one.base), raised: { high: hex(one.base), max: hex(one.max) } },
+    } as never)
     test(`the mound differs from the background in the default ${mode} theme`, () => {
-      const muted = hex("#808080")
-      const colours = digbyColours({
-        text: { base: hex(one.text), muted, action: { primary: { base: hex(one.text) } }, feedback: THEME },
-        background: { base: hex(one.base), raised: { high: hex(one.base), max: hex(one.max) } },
-      } as never)
       expect(colours.g.equals(colours.k)).toBe(false)
+    })
+    test(`the snout and letter differ from the body in the default ${mode} theme`, () => {
+      expect(colours.a.equals(colours.b)).toBe(false)
     })
   }
 })

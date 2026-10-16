@@ -573,7 +573,7 @@ export const digbyColours = (theme: Context["theme"]): Record<Token, RGBA> => ({
   k: theme.background.base,
   g: theme.background.raised.max,
   m: theme.text.muted,
-  a: theme.text.action.primary.base,
+  a: theme.text.action.primary.selected,
   w: theme.text.feedback.warning.base,
   e: theme.text.feedback.error.base,
   s: theme.text.feedback.success.base,
@@ -736,11 +736,11 @@ function TreePanel(props: {
     >
       <box flexDirection="row" flexShrink={0} gap={2}>
         <Show when={glyphShown()}>{drawn(() => header()[0]!)}</Show>
-        <text fg={theme.text.action.primary.base} wrapMode="none">
+        <text fg={tokens.a} wrapMode="none">
           courier tree
         </text>
         <Show when={root().started}>
-          <text fg={theme.text.action.primary.base} wrapMode="none">
+          <text fg={tokens.a} wrapMode="none">
             {bar(root(), 10, filled())}
           </text>
         </Show>

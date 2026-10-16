@@ -970,7 +970,7 @@ not stop the panel's:
 
 **Digby.** The courier's mole digs beside the header's title, 8 columns by 2 rows in half-block pixels (`▀ ▄ █`,
 two pixels a cell), coloured only from the theme: his body in its base text colour, his eyes in its background,
-the mound in its raised background, paws, dirt and arm muted, snout and letter in the accent, and the sign, dots and
+the mound in its highest raised background (`background.raised.max`), paws, dirt and arm muted, snout and letter in the accent, and the sign, dots and
 spark in its warning, error and success colours. His state follows the tree's, by the footer's priority, and the
 header's second line counts the live sessions as the footer does (`1 waiting on you · 2 running`):
 

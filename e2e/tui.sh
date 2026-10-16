@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Live test of the TUI part: a real OpenCode V2 server loads the package's `tui` and `rpc`
 # entrypoints, its RPC answers over HTTP, and the TUI, in tmux, shows the prompt footer's entry and
-# follows a change, opens the tree panel with /courier tree, the 16×16 Digby below its rows (#245), follows it into a child, and stops a child with /courier stop;
+# follows a change, opens the tree panel with /courier tree, the 16×16 Digby below its rows (#245), follows it into a child, opens a child with a click (#250), and stops a child with /courier stop;
 # a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188), and the
 # inbox opened from a child lists the top session's courier_answer prompt first and allows it (#185);
 # a child showing a form waits on the person in the footer and the panel (#183); and x in the panel forgets a gone
@@ -203,6 +203,15 @@ check "the panel opens again" "$(shows "courier tree  [████████�
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "enter on a child row keeps the panel in the child's view, the child marked" "$(shows "(on screen)" 30 tui-panel-followed)"
 check "with the parent's tree" "$(grep -qF "courier tree  [██████████] 2/2 reported" "$WORK/tui-panel-followed.txt" && echo true || echo false)"
+# A click on the other child's row opens it (#250): the left button down and up on its title, written to the TUI as the
+# SGR mouse report a terminal sends, at the cell tmux shows the title in (1-based, counted in characters, not bytes).
+click_line=$(grep -nF "CHILD-ASKS  idle" "$WORK/tui-panel-followed.txt" | tail -1 | cut -d: -f1 || true)
+# wc -m counts the line's end too, which makes the characters before the title its 1-based column.
+click_column=$(grep -F "CHILD-ASKS  idle" "$WORK/tui-panel-followed.txt" | tail -1 | sed 's/CHILD-ASKS  idle.*//' | LC_ALL=C.UTF-8 wc -m || true)
+check "the other child's row is on screen to click" "$([ -n "$click_line" ] && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" -l "$(printf '\033[<0;%d;%dM' $((click_column)) "$click_line")"
+tmux send-keys -t "$TMUX_SESSION" -l "$(printf '\033[<0;%d;%dm' $((click_column)) "$click_line")"
+check "a click on its row opens that child, the panel following it there" "$(shows "CHILD-ASKS (on screen)" 30 tui-panel-clicked)"
 # A new session's home screen hides it; back on the parent's tab, the first, it shows again.
 tmux send-keys -t "$TMUX_SESSION" C-x n
 check "the home screen of /new hides the panel" "$(hides "courier tree" 10 tui-panel-home)"

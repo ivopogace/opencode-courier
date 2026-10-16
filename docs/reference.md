@@ -949,7 +949,7 @@ one of them has a next frame and stops when the panel is hidden or closed:
 - a **running** row's mark is a spinner, `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, a frame a tick, in the info colour;
 - a row whose **report arrives**, one read as owing or ended and the next as `reported` (not a row already reported
   when the panel opens or first lists it), flashes once: its background takes the theme's success background and fades
-  back to its own (the selection's, else the theme's base) over 1.5 s, easing out;
+  back to its own (the selection's, else the highlight's under the pointer, else the theme's base) over 1.5 s, easing out;
 - the header's **bar** eases to its new length over about half a second, easing out; its count changes at once;
 - **Digby**, below, takes a frame of his own every fifth tick, about every 450 ms; while only he moves, the timer
   ticks at that pace and no faster.
@@ -1020,8 +1020,19 @@ Both come from one mapping, `digbyColours` in `src/tree/tui.tsx`.
 Its keys, while it has the keyboard (it takes it
 when it opens; `<leader>left` and `<leader>right` move it between the session and the panel): `↑`/`k` and
 `↓`/`j` move the selection, `enter` opens the selected session, `s` stops it, `x` forgets a `gone` one,
-`r` asks again, `f` toggles fullscreen and `q` closes the panel. While open, the panel follows the person to another session (its own
-`enter`, a tab, "go to parent"), as it was asked for (a panel shown fullscreen only because the terminal is
+`r` asks again, `f` toggles fullscreen and `q` closes the panel.
+
+The mouse, with or without the keyboard: `enter` or a click opens the session. A click is the left button down and up on
+the same row, its title or any of its lines; it selects the row and opens its session as `enter` does. A drag released on
+a row, even the one it started on, and any other button open nothing. A row under the pointer is highlighted: its whole
+background, title and lines, takes the theme's `background.raised.base`, one step below the selection's
+`background.raised.high`, so it never reads as the selection; a selected row keeps the selection's colour while the
+panel has the keyboard. The highlight never moves the selection, `▸`, so `s` and `x` still act on the selected row and not
+on the one under the pointer. It is no animation, so it stays with `"animations": false`, and a report's flash on a
+highlighted row fades back to the highlight. The pointer's shape does not change.
+
+While open, the panel follows the person to another session (its own
+`enter` or click, a tab, "go to parent"), as it was asked for (a panel shown fullscreen only because the terminal is
 too narrow to split, under 108 columns less any vertical session tabs, reopens as a panel) and taking the keyboard only if it had it: to a session
 of its tree it keeps that tree, and its stops, with the session on screen marked `(on screen)` in its
 row; to another it shows that session's tree. In a session that started none, and on the home screen

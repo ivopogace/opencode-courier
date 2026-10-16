@@ -3,16 +3,20 @@ import { afterEach, describe, expect, jest, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin/tui"
 import type { SlotClaim } from "@opencode/plugin/tui/context"
 import { RGBA } from "@opentui/core"
+import { MouseButtons, type MouseButton } from "@opentui/core/testing"
 import { testRender } from "@opentui/solid"
 import { batch, createRoot, createSignal } from "solid-js"
 import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, addTreeStatus, animationsOn, bar, BAR_MS, blend, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, BELOW_ROWS, digbyColours } from "../src/tree/tui.js"
+import { activityLine, addTreeStatus, animationsOn, bar, BAR_MS, blend, restBackground, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, BELOW_ROWS, digbyColours } from "../src/tree/tui.js"
 import { ART, art, cells, digby, glyph, GLYPH, MASCOT_EVERY, type MascotState } from "../src/tree/mascot.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
 
 /** The fake theme's success background, a row's flash. */
 const FLASH = RGBA.fromInts(0, 200, 0)
+
+/** The fake theme's `background.raised.base`, a hovered row's. */
+const HOVER = RGBA.fromInts(40, 40, 40)
 
 const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
 
@@ -86,7 +90,7 @@ function fakeContext(
     },
     theme: {
       text: { base: color, muted: color, action: { primary: { base: color, selected: color } }, feedback: THEME },
-      background: { base: RGBA.fromInts(0, 0, 0), raised: { high: color, max: color }, feedback: { success: { base: FLASH } } },
+      background: { base: RGBA.fromInts(0, 0, 0), raised: { base: HOVER, high: color, max: color }, feedback: { success: { base: FLASH } } },
     },
     client: {
       rpc: () => ({
@@ -762,6 +766,133 @@ describe("the tree panel", () => {
   })
 })
 
+/** Where `text` first shows in the app's frame: its column and line. */
+function cellOf(app: Awaited<ReturnType<typeof testRender>>, text: string) {
+  const lines = app.captureCharFrame().split("\n")
+  const y = lines.findIndex((line) => line.includes(text))
+  if (y < 0) throw new Error(`no line with ${text}`)
+  return { x: lines[y]!.indexOf(text), y }
+}
+
+/** The background of the cell where `text` starts, as integers. */
+function backgroundOf(app: Awaited<ReturnType<typeof testRender>>, text: string) {
+  for (const line of app.captureSpans().lines) {
+    const span = line.spans.find((one) => one.text.includes(text))
+    if (span) return span.bg.toInts()
+  }
+  throw new Error(`no span with ${text}`)
+}
+
+describe("the tree panel's mouse (#250)", () => {
+  /** Opens the panel on `pair(1)`, focused unless `focused` is false, and waits for its rows. */
+  async function opened(focused = true) {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async () => pair(1)
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_parent", PANEL, { focused }).value)
+    await app.waitForFrame((frame) => frame.includes("asks permission"))
+    // The header's second line shows once the panel's size is known, which moves the rows down a line.
+    await app.waitForFrame((frame) => frame.split("\n")[1]!.includes("1 waiting on you · 1 idle"))
+    /** Moves the pointer to where `text` starts, `down` lines below it, and draws what follows. */
+    const moveTo = async (text: string, down = 0) => {
+      const at = cellOf(app, text)
+      await app.mockMouse.moveTo(at.x, at.y + down)
+      await app.renderOnce()
+    }
+    const click = async (text: string, button: MouseButton = MouseButtons.LEFT) => {
+      const at = cellOf(app, text)
+      await app.mockMouse.click(at.x, at.y, button)
+      await app.renderOnce()
+    }
+    return { fake, app, moveTo, click }
+  }
+
+  test("a row under the pointer takes raised.base, over its title and detail lines, and gives it back once the pointer leaves", async () => {
+    const { app, moveTo } = await opened()
+    const rest = backgroundOf(app, "CHILD-ASKS")
+    expect(backgroundOf(app, "asks permission")).toEqual(rest)
+    await moveTo("CHILD-ASKS")
+    expect(backgroundOf(app, "CHILD-ASKS")).toEqual(HOVER.toInts())
+    expect(backgroundOf(app, "asks permission")).toEqual(HOVER.toInts())
+    // The detail line is the same row: the hover stays on it.
+    await moveTo("asks permission")
+    expect(backgroundOf(app, "CHILD-ASKS")).toEqual(HOVER.toInts())
+    await moveTo("courier tree")
+    expect(backgroundOf(app, "CHILD-ASKS")).toEqual(rest)
+    expect(backgroundOf(app, "asks permission")).toEqual(rest)
+  })
+
+  test("the selected row keeps the selection's colour under the pointer, and the hover moves neither ▸ nor what s and x act on", async () => {
+    const { fake, app, moveTo } = await opened()
+    const selection = backgroundOf(app, "Report back")
+    expect(selection).toEqual(RGBA.fromInts(120, 120, 120).toInts())
+    await moveTo("Report back")
+    expect(backgroundOf(app, "Report back")).toEqual(selection)
+    await moveTo("CHILD-ASKS")
+    expect(app.captureCharFrame()).toContain("▸ ✓ Report back to your parent.")
+    expect(app.captureCharFrame()).not.toContain("▸ ● CHILD-ASKS")
+    fake.state.confirm = false
+    fake.command("s")!.run()
+    fake.command("x")!.run()
+    await settle()
+    expect(fake.state.confirms.at(-1)?.message).toStartWith('Stop "Report back to your parent." (ses_one)')
+    expect(fake.state.toasts.at(-1)?.message).toBe('x forgets only a gone session; "Report back to your parent." is idle.')
+    expect(fake.state.navigated).toEqual([])
+  })
+
+  test("the hover survives a read of the tree, which draws its rows anew, and leaves with its row", async () => {
+    const { fake, app, moveTo } = await opened()
+    let tree = pair(1)
+    fake.state.tree = async () => tree
+    await moveTo("CHILD-ASKS")
+    fake.command("r")!.run()
+    await settle()
+    await app.renderOnce()
+    expect(backgroundOf(app, "CHILD-ASKS")).toEqual(HOVER.toInts())
+    // Its row gone, the hover goes with it: no row that takes its place shows it.
+    tree = { rows: [tree.rows[0]!, row("ses_three", { title: "THIRD" })] }
+    fake.command("r")!.run()
+    await app.waitForFrame((frame) => frame.includes("THIRD") && !frame.includes("CHILD-ASKS"))
+    tree = { rows: [tree.rows[0]!, row("ses_four", { title: "FOURTH" })] }
+    fake.command("r")!.run()
+    await app.waitForFrame((frame) => frame.includes("FOURTH"))
+    await app.renderOnce()
+    expect(backgroundOf(app, "FOURTH")).toEqual(HOVER.toInts())
+  })
+
+  test("a click on a row's title or detail line selects it and opens its session, as enter does", async () => {
+    const { fake, app, click } = await opened()
+    await click("CHILD-ASKS")
+    expect(fake.state.navigated).toEqual([{ type: "session", sessionID: "ses_two" }])
+    expect(app.captureCharFrame()).toContain("▸ ● CHILD-ASKS")
+    await click("ran 2m 00s")
+    expect(fake.state.navigated.at(-1)).toEqual({ type: "session", sessionID: "ses_one" })
+    expect(app.captureCharFrame()).toContain("▸ ✓ Report back to your parent.")
+  })
+
+  test("a right-click, or a drag released on a row, even the one it started on, opens nothing", async () => {
+    const { fake, app, click } = await opened()
+    await click("CHILD-ASKS", MouseButtons.RIGHT)
+    const from = cellOf(app, "Report back")
+    const to = cellOf(app, "CHILD-ASKS")
+    await app.mockMouse.drag(from.x, from.y, to.x, to.y)
+    await app.renderOnce()
+    await app.mockMouse.drag(to.x, to.y, to.x + 6, to.y)
+    await app.renderOnce()
+    const header = cellOf(app, "courier tree")
+    await app.mockMouse.drag(header.x, header.y, to.x, to.y)
+    await app.renderOnce()
+    expect(fake.state.navigated).toEqual([])
+    expect(app.captureCharFrame()).toContain("▸ ✓ Report back to your parent.")
+  })
+
+  test("a click opens a row while the panel does not have the keyboard", async () => {
+    const { fake, click } = await opened(false)
+    await click("CHILD-ASKS")
+    expect(fake.state.navigated).toEqual([{ type: "session", sessionID: "ses_two" }])
+  })
+})
+
 describe("the tree panel following navigation", () => {
   /** A context whose panel was opened with /courier tree in ses_parent, over `trees`, and drawn as `fields` say. */
   async function opened(trees: Record<string, Tree>, fields: Parameters<typeof panelInput>[2] = {}) {
@@ -1301,6 +1432,22 @@ describe("the tree panel's motion (#224)", () => {
     expect(timers!.count()).toBe(0)
   })
 
+  test("a hovered row's flash fades back to the hover's colour (#250)", async () => {
+    let state: "owed" | "reported" = "owed"
+    const panel = await motion(() => ({ rows: [row("ses_one", { report: state === "reported" ? { state, status: "done", progressed: false } : { state, progressed: false } }), row("ses_two")] }))
+    const at = cellOf(panel.app, "ses_one")
+    await panel.app.mockMouse.moveTo(at.x, at.y)
+    await panel.frame()
+    expect(panel.background("ses_one")).toEqual(HOVER.toInts())
+    state = "reported"
+    await panel.refresh()
+    expect(panel.background("ses_one")).toEqual(FLASH.toInts())
+    await panel.advance(FLASH_MS / 2)
+    expect(panel.background("ses_one")).not.toEqual(HOVER.toInts())
+    await panel.advance(FLASH_MS / 2 + FRAME_MS)
+    expect(panel.background("ses_one")).toEqual(HOVER.toInts())
+  })
+
   test("the header's bar grows to its new length over BAR_MS, its count at once", async () => {
     let reported = 1
     const panel = await motion(() => pair(reported))
@@ -1691,6 +1838,24 @@ describe("Digby's colours", () => {
     })
     test(`the snout and letter differ from the body in the default ${mode} theme`, () => {
       expect(colours.a.equals(colours.b)).toBe(false)
+    })
+  }
+})
+
+describe("a hovered row's colour (#250)", () => {
+  const hex = RGBA.fromHex
+  // The default `opencode` theme at v2.0.31 (packages/tui/src/theme/assets/v2/opencode.json), resolved with @opencode/theme.
+  const themes = {
+    dark: { base: "#0a0a0a", raised: "#141414", high: "#1e1e1e" },
+    light: { base: "#ffffff", raised: "#fafafa", high: "#f5f5f5" },
+  }
+  for (const [mode, one] of Object.entries(themes)) {
+    const theme = { background: { base: hex(one.base), raised: { base: hex(one.raised), high: hex(one.high), max: hex(one.high) } } } as never
+    test(`a hovered row differs from the panel and from the selection in the default ${mode} theme`, () => {
+      const hovered = restBackground(theme, { selected: false, hovered: true })!
+      expect(hovered.equals(hex(one.base))).toBe(false)
+      expect(hovered.equals(restBackground(theme, { selected: true, hovered: true })!)).toBe(false)
+      expect(restBackground(theme, { selected: false, hovered: false })).toBeUndefined()
     })
   }
 })

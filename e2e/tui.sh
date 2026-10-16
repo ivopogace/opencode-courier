@@ -111,7 +111,7 @@ cat >"$WORK/project/opencode.json" <<EOT
     "mock": {
       "package": "aisdk:@ai-sdk/openai-compatible",
       "settings": { "baseURL": "http://127.0.0.1:$MOCK_PORT/v1", "apiKey": "mock" },
-      "models": { "chat": { "limit": { "context": 1000, "output": 100 } }, "other": {} }
+      "models": { "chat": { "limit": { "context": 200000, "output": 4096 } }, "other": {} }
     }
   },
   "model": "mock/chat",

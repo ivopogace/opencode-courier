@@ -126,7 +126,7 @@ export function rowMark<Color>(row: Row, theme: Feedback<Color>): { mark: string
   if (row.state === "stalled") return { mark: "!", color: error.base }
   if (row.state === "waiting") return { mark: "●", color: warning.base }
   if (row.state === "running") return { mark: "•", color: info.base }
-  if (row.outcome === "failed" || row.outcome === "interrupted") return { mark: "✗", color: error.base }
+  if (!row.stopped && (row.outcome === "failed" || row.outcome === "interrupted")) return { mark: "✗", color: error.base }
   if (row.report?.state === "reported") return { mark: "✓", color: success.base }
   return { mark: " ", color: undefined }
 }

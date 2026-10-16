@@ -373,6 +373,7 @@ describe("the tree panel's lines", () => {
     expect(mark({ state: "stalled" })).toEqual({ mark: "!", color: "#ff0000" })
     expect(mark({ outcome: "failed", report: { state: "ended", progressed: false } })).toEqual({ mark: "✗", color: "#ff0000" })
     expect(mark({ outcome: "interrupted" })).toEqual({ mark: "✗", color: "#ff0000" })
+    expect(mark({ outcome: "interrupted", stopped: true })).toEqual({ mark: " ", color: undefined })
     expect(mark({})).toEqual({ mark: " ", color: undefined })
     expect(mark({ state: "gone" })).toEqual({ mark: " ", color: undefined })
   })

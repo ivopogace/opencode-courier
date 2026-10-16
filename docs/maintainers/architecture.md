@@ -39,8 +39,9 @@ The import rules:
   so a wording change shows as one diff.
 - `tree/store.ts` is the only file that knows the tree's storage keys; no file outside `tree/` imports
   it, and no other file names its key prefixes.
-- A module's `tui.tsx` imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, its `rpc.ts`
-  and its `text.ts`; a module's `rpc.ts` only `@opencode/plugin/rpc` and `effect`.
+- A module's `tui.tsx` imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, its `rpc.ts`,
+  its `text.ts` and its `mascot.ts` (`tree/`'s, Digby's drawings, which imports nothing); a module's
+  `rpc.ts` only `@opencode/plugin/rpc` and `effect`.
 
 Why it is shaped so:
 

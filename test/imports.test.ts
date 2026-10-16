@@ -158,7 +158,7 @@ test("no file of src/ is outside a folder but index.ts, skill.ts and the rpc.ts 
 const isTuiPackage = (name: string) =>
   name === "@opencode/plugin/tui" || name.startsWith("@opencode/plugin/tui/") || name === "solid-js" || name.startsWith("solid-js/") || name.startsWith("@opentui/")
 
-test("a module's tui.tsx imports only the TUI's packages and its own module's rpc.ts and text.ts", () => {
+test("a module's tui.tsx imports only the TUI's packages and its own module's rpc.ts, text.ts and mascot.ts", () => {
   const parts = sources().filter(({ file }) => /^[^/\\]+[/\\]tui\.tsx$/.test(file)).map(({ module }) => module)
   expect(parts).toEqual(expect.arrayContaining(["tree/tui", "person/tui"]))
   const graph = imports()
@@ -166,11 +166,16 @@ test("a module's tui.tsx imports only the TUI's packages and its own module's rp
   const reaching = parts.flatMap((module) => {
     const own = module.slice(0, -"tui".length)
     return [
-      ...(graph.get(module) ?? []).filter((name) => name !== `${own}rpc` && name !== `${own}text`),
+      ...(graph.get(module) ?? []).filter((name) => ![`${own}rpc`, `${own}text`, `${own}mascot`].includes(name)),
       ...(used.get(module) ?? []).filter((name) => !isTuiPackage(name)),
     ].map((name) => `${module} -> ${name}`)
   })
   expect(reaching).toEqual([])
+})
+
+test("tree/mascot.ts, Digby's drawings, imports nothing, so the TUI bundle takes nothing else with it", () => {
+  expect(imports().get("tree/mascot")).toEqual([])
+  expect(packages().get("tree/mascot")).toEqual([])
 })
 
 test("a module's rpc.ts imports only @opencode/plugin/rpc and effect, so the TUI bundle takes nothing else of the module", () => {

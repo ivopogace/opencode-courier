@@ -901,7 +901,8 @@ ones first, then the newest, each with the sessions above it, in the order a tre
 deeper per level; past that the header says how many older sessions are left out (`12 older left out`):
 
 ```
-courier tree  [█████░░░░░] 1/2 reported
+ █▀██▀██  courier tree  [█████░░░░░] 1/2 reported
+▄▀▀▀▀▀▀▀  1 waiting on you · 1 idle
 ▸ ✓ Report back to your parent.  idle · reported done · group pair held
     ran 12s · last courier_send 3s ago · $0.00
   ● CHILD-ASKS  waiting on you · owes a report · group pair out
@@ -942,18 +943,20 @@ There is no progress a session reports of itself: a bar counts only reports cour
 asks again a second after the first of a burst of the status entry's events and of a tool call, a usage
 update or a rename, and every 15 seconds besides, and redraws its times every second.
 
-**What moves.** Three things, on one timer for the whole panel, a frame every 90 ms, which runs only while
+**What moves.** Four things, on one timer for the whole panel, a frame every 90 ms, which runs only while
 one of them has a next frame and stops when the panel is hidden or closed:
 
 - a **running** row's mark is a spinner, `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, a frame a tick, in the info colour;
 - a row whose **report arrives**, one read as owing or ended and the next as `reported` (not a row already reported
   when the panel opens or first lists it), flashes once: its background takes the theme's success background and fades
   back to its own (the selection's, else the theme's base) over 1.5 s, easing out;
-- the header's **bar** eases to its new length over about half a second, easing out; its count changes at once.
+- the header's **bar** eases to its new length over about half a second, easing out; its count changes at once;
+- **Digby**, below, takes a frame of his own every fifth tick, about every 450 ms; while only he moves, the timer
+  ticks at that pace and no faster.
 
 The `waiting on you` mark stays still, and nothing in the prompt's footer moves. With `"animations": false` in the
 TUI part's options none of them do: a running row shows `•`, a report does not flash, the bar takes its length at
-once, and no timer runs for them. The TUI passes a plugin options only from its own config's `plugins`
+once, Digby shows each state's first frame and no report or spawn pose, and no timer runs for them. The TUI passes a plugin options only from its own config's `plugins`
 (`~/.config/opencode/cli.json`); a plugin it loads from the server's list, as the courier's TUI part, gets none
 of the server's `opencode.json` options. The TUI's own `animations` setting is not on the plugin API, so it does
 not stop the panel's:
@@ -964,6 +967,26 @@ not stop the panel's:
   "plugins": [{ "package": "opencode-courier", "options": { "animations": false } }]
 }
 ```
+
+**Digby.** The courier's mole digs beside the header's title, 8 columns by 2 rows in half-block pixels (`▀ ▄ █`,
+two pixels a cell), coloured only from the theme: his body in its base text colour, his eyes in its background,
+the mound in its raised background, paws, dirt and arm muted, snout and letter in the accent, and the sign, dots and
+spark in its warning, error and success colours. His state follows the tree's, by the footer's priority, and the
+header's second line counts the live sessions as the footer does (`1 waiting on you · 2 running`):
+
+- **idle**, nothing running (or no session yet): just the mound, which breathes, its top widening and narrowing;
+- **running**: the mound trembles and throws dirt, a snout bobbing in the hole; he stays underground;
+- **waiting on you**: up, paws on the mound, eyes wide, holding a sign in the warning colour that blinks;
+- **stalled**: half out, slumped, eyes shut, an ellipsis in the error colour counting up beside his head;
+- **gone**, every session gone: the same mound, muted, still;
+- for 1.5 s after a **report** arrives (as a row flashes): he pops up with the letter in the accent and a spark in
+  the success colour; for 1.5 s after a **spawn**, a session in the tree that the read before did not have: small
+  mounds rise either side, a child's head peeking out of each. Then back to the tree's state.
+
+He blinks every eleventh frame where his eyes are open. A panel under 12 rows tall, or under 54 columns wide (a narrow
+split, where the glyph would cut the header's bar), has no glyph, and its header keeps to one line; an empty one (`No session started with courier_spawn under this one.`) at least 14 rows tall shows a
+larger idle Digby, 16 columns by 8 rows, a `z` drifting up beside his mound. He takes the panel's timer only while he
+shows and is not gone, at his own pace.
 
 Its keys, while it has the keyboard (it takes it
 when it opens; `<leader>left` and `<leader>right` move it between the session and the panel): `↑`/`k` and

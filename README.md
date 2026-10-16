@@ -283,8 +283,11 @@ follows you between sessions: into one of its tree it keeps that tree, the sessi
 `(on screen)`; elsewhere it shows that session's tree, or hides while you are in a session without one,
 or on the home screen, and shows again once you are back in one; only `q` closes it for good.
 A row whose report arrives flashes in your theme's success colour and fades back over 1.5 s, and the header's bar
-grows to its new length; nothing in the footer moves. To keep the panel still (`•` for a running row, no flash, the
-bar at once), give the TUI part `"animations": false` in OpenCode's terminal config, `~/.config/opencode/cli.json`:
+grows to its new length; nothing in the footer moves. Next to the header's title digs Digby, the courier's mole, drawn
+in your theme's colours, whose state follows the tree's: a breathing mound while all is idle, a trembling one while
+children run, up with a blinking sign while one waits on you, slumped while one is stalled, popping up with a letter
+for a report and raising mounds for a spawn; a larger Digby sleeps in an empty panel ([more](docs/reference.md#in-the-terminal)).
+To keep the panel still (`•` for a running row, no flash, the bar at once, Digby in each state's first frame), give the TUI part `"animations": false` in OpenCode's terminal config, `~/.config/opencode/cli.json`:
 the TUI passes options to its plugins only from there, not from the server's `opencode.json`, and has no animations
 setting a plugin can read ([more](docs/reference.md#in-the-terminal)).
 

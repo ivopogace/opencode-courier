@@ -1,7 +1,8 @@
 import type { Plugin } from "@opencode/plugin/tui"
 import type { PanelInput, PanelPresentation } from "@opencode/plugin/tui/context"
 import { RGBA, Timeline, type EasingFunctions, type ScrollBoxRenderable } from "@opentui/core"
-import { batch, createEffect, createMemo, createResource, createRoot, createSignal, For, on, onCleanup, onMount, Show, untrack, type Accessor } from "solid-js"
+import { batch, createEffect, createMemo, createResource, createRoot, createSignal, For, Index, on, onCleanup, onMount, Show, untrack, type Accessor } from "solid-js"
+import { cells, glyph, idleArt, MASCOT_EVERY, type Cell, type MascotState, type Token } from "./mascot.js"
 import { treeRpc, type Forgotten, type Row, type Stopped, type Summary, type Tree, type Wait } from "./rpc.js"
 
 type Context = Plugin.Context
@@ -67,35 +68,42 @@ export function animationsOn(options: Readonly<Record<string, unknown>> | undefi
 export type Tween = { readonly value: () => number; readonly done: () => boolean }
 
 /**
- * The panel's one timer, a frame every `FRAME_MS` while a tween moves or a predicate given to `animates` holds, and none
- * otherwise, with animations off, or once the panel is gone. `frame` counts them; it stands still with no timer.
+ * The panel's one timer: a frame every `FRAME_MS` while a tween moves or an `animates` predicate holds, every `every` while
+ * only slower ones do, none otherwise, with animations off or once the panel is gone. `frame` counts in `FRAME_MS`.
  */
 export type Motion = {
   readonly enabled: boolean
   readonly frame: Accessor<number>
-  readonly animates: (when: Accessor<boolean>) => void
+  readonly animates: (when: Accessor<boolean>, every?: number) => void
   readonly tween: (from: number, to: number, duration: number, ease: EasingFunctions) => Tween
 }
 
 /** The panel's `Motion`, owned by the computation it is made in. */
 export function createMotion(enabled: boolean): Motion {
   const [frame, setFrame] = createSignal(0)
-  const [keepers, setKeepers] = createSignal<ReadonlyArray<Accessor<boolean>>>([])
+  const [keepers, setKeepers] = createSignal<ReadonlyArray<{ when: Accessor<boolean>; every: number }>>([])
   type Moving = Tween & { step: (ms: number) => void }
   const [moving, setMoving] = createSignal<ReadonlyArray<Moving>>([])
-  const animating = createMemo(() => enabled && (moving().length > 0 || keepers().some((when) => when())))
+  // How many frames each tick of the timer moves, or undefined for no timer.
+  const cadence = createMemo(() => {
+    if (!enabled) return undefined
+    if (moving().length) return 1
+    const wanted = keepers().filter((one) => one.when())
+    return wanted.length ? Math.min(...wanted.map((one) => one.every)) : undefined
+  })
   createEffect(() => {
-    if (!animating()) return
+    const every = cadence()
+    if (every === undefined) return
     const timer = setInterval(
       () =>
         batch(() => {
           const now = untrack(moving)
-          for (const one of now) one.step(FRAME_MS)
-          setFrame((count) => count + 1)
+          for (const one of now) one.step(FRAME_MS * every)
+          setFrame((count) => count + every)
           const left = now.filter((one) => !one.done())
           if (left.length !== now.length) setMoving(left)
         }),
-      FRAME_MS,
+      FRAME_MS * every,
     )
     onCleanup(() => clearInterval(timer))
   })
@@ -123,7 +131,7 @@ export function createMotion(enabled: boolean): Motion {
     setMoving((all) => [...all, one])
     return one
   }
-  return { enabled, frame, animates: (when) => setKeepers((all) => [...all, when]), tween }
+  return { enabled, frame, animates: (when, every = 1) => setKeepers((all) => [...all, { when, every }]), tween }
 }
 
 /**
@@ -168,6 +176,53 @@ export function createBarFill(motion: Motion, counts: Accessor<{ reported: numbe
   })
   return () => easing()?.value() ?? target()
 }
+
+/** True for `FLASH_MS` after a read of the tree finds a session the one before it did not have; not on the first read. */
+export function createSpawns(motion: Motion, rows: Accessor<ReadonlyArray<Row> | undefined>) {
+  const [hold, setHold] = createSignal<Tween>()
+  let seen: ReadonlySet<string> | undefined
+  createEffect(() => {
+    const read = rows()
+    if (!read) return
+    const before = seen
+    seen = new Set(read.map((row) => row.sessionID))
+    if (before && motion.enabled && read.some((row) => !before.has(row.sessionID))) setHold(motion.tween(1, 0, FLASH_MS, "linear"))
+  })
+  return () => {
+    const one = hold()
+    return one !== undefined && !one.done()
+  }
+}
+
+/** Digby's state for the tree's rows, by `summaryLine`'s priority, unless a report or a spawn just arrived. */
+export function mascotState(rows: ReadonlyArray<Row>, { reported = false, spawned = false } = {}): MascotState {
+  if (reported) return "report"
+  if (spawned) return "spawn"
+  if (rows.some((row) => row.state === "waiting")) return "waiting"
+  if (rows.some((row) => row.state === "stalled")) return "stalled"
+  if (rows.some((row) => row.state === "running")) return "running"
+  return rows.length && rows.every((row) => row.state === "gone") ? "gone" : "idle"
+}
+
+/** What the tree's sessions do, as the header's second line says it: "1 waiting on you · 2 running"; empty with none live. */
+export function countsLine(rows: ReadonlyArray<Row>) {
+  const count = (state: Row["state"]) => rows.filter((row) => row.state === state).length
+  return [
+    count("waiting") ? `${count("waiting")} waiting on you` : "",
+    count("stalled") ? `${count("stalled")} stalled` : "",
+    count("running") ? `${count("running")} running` : "",
+    count("idle") ? `${count("idle")} idle` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+}
+
+/** The panel's size below which it shows no header glyph, so the header keeps to one line and its bar is not cut. */
+export const GLYPH_ROWS = 12
+export const GLYPH_COLUMNS = 54
+
+/** The empty panel's height from which it shows the 16×16. */
+export const ART_ROWS = 14
 
 /** `tint` over `rest` by `amount`, from 0 (all `rest`) to 1 (all `tint`). */
 export function blend(tint: RGBA, rest: RGBA, amount: number) {
@@ -620,6 +675,34 @@ function TreePanel(props: {
   const flashes = createFlashes(motion, rows)
   const filled = createBarFill(motion, root)
   const frame = () => (motion.enabled ? motion.frame() : undefined)
+  const spawned = createSpawns(motion, () => latest()?.tree?.rows)
+  // The panel's size, which is unknown until it is laid out: no glyph until then.
+  const [size, setSize] = createSignal({ width: 0, height: 0 })
+  const height = () => size().height
+  const empty = () => Boolean(latest()?.tree && !rows().length)
+  const glyphShown = () => height() >= GLYPH_ROWS && size().width >= GLYPH_COLUMNS
+  const artShown = () => empty() && height() >= ART_ROWS
+  const mascot = createMemo(() => mascotState(rows(), { reported: flashes.reported(), spawned: spawned() }))
+  // Digby's frames keep the timer at his own cadence while he shows, and he is still once gone.
+  motion.animates(() => (glyphShown() || artShown()) && mascot() !== "gone", MASCOT_EVERY)
+  const mascotFrame = () => (motion.enabled ? Math.floor(motion.frame() / MASCOT_EVERY) : undefined)
+  const header = createMemo(() => cells(glyph(mascot(), mascotFrame())))
+  const art = createMemo(() => idleArt(mascotFrame()))
+  const tokens: Record<Token, RGBA> = {
+    b: theme.text.base,
+    k: theme.background.base,
+    g: theme.background.raised.high,
+    m: theme.text.muted,
+    a: theme.text.action.primary.base,
+    w: theme.text.feedback.warning.base,
+    e: theme.text.feedback.error.base,
+    s: theme.text.feedback.success.base,
+  }
+  const drawn = (line: Accessor<ReadonlyArray<Cell>>) => (
+    <text wrapMode="none" flexShrink={0}>
+      <Index each={line()}>{(one) => <span style={{ fg: one().fg && tokens[one().fg!], bg: one().bg && tokens[one().bg!] }}>{one().char}</span>}</Index>
+    </text>
+  )
   // A flash fades from the theme's success background to the row's own: the selection's, else the panel's.
   const rowBackground = (row: Row, chosen: boolean) => {
     const rest = chosen && input.focused ? theme.background.raised.high : undefined
@@ -639,8 +722,17 @@ function TreePanel(props: {
     return theme.text.muted
   }
   return (
-    <box flexDirection="column" flexGrow={1} paddingLeft={1} paddingRight={1}>
+    <box
+      flexDirection="column"
+      flexGrow={1}
+      paddingLeft={1}
+      paddingRight={1}
+      onSizeChange={function () {
+        setSize({ width: this.width, height: this.height })
+      }}
+    >
       <box flexDirection="row" flexShrink={0} gap={2}>
+        <Show when={glyphShown()}>{drawn(() => header()[0]!)}</Show>
         <text fg={theme.text.action.primary.base} wrapMode="none">
           courier tree
         </text>
@@ -655,6 +747,14 @@ function TreePanel(props: {
           </text>
         </Show>
       </box>
+      <Show when={glyphShown()}>
+        <box flexDirection="row" flexShrink={0} gap={2}>
+          {drawn(() => header()[1]!)}
+          <text fg={theme.text.muted} wrapMode="none">
+            {countsLine(rows())}
+          </text>
+        </box>
+      </Show>
       <Show when={latest()?.error}>
         <text fg={theme.text.feedback.error.base}>courier RPC failed: {latest()?.error}</text>
       </Show>
@@ -663,6 +763,11 @@ function TreePanel(props: {
       </Show>
       <Show when={latest()?.tree && !rows().length}>
         <text fg={theme.text.muted}>No session started with courier_spawn under this one.</text>
+        <Show when={artShown()}>
+          <box flexDirection="column" flexShrink={0} paddingTop={1}>
+            <Index each={art()}>{(line) => drawn(line)}</Index>
+          </box>
+        </Show>
       </Show>
       <scrollbox ref={(value: ScrollBoxRenderable) => (scroll = value)} flexGrow={1}>
         <For each={rows()}>

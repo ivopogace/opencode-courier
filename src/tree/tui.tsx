@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin/tui"
 import type { PanelInput, PanelPresentation } from "@opencode/plugin/tui/context"
-import { RGBA, Timeline, type EasingFunctions, type ScrollBoxRenderable } from "@opentui/core"
+import { MouseButton, RGBA, Timeline, type EasingFunctions, type ScrollBoxRenderable } from "@opentui/core"
 import { batch, createEffect, createMemo, createResource, createRoot, createSignal, For, Index, on, onCleanup, onMount, Show, untrack, type Accessor } from "solid-js"
 import { art as artOf, cells, glyph, MASCOT_EVERY, type Cell, type MascotState, type Token } from "./mascot.js"
 import { treeRpc, type Forgotten, type Row, type Stopped, type Summary, type Tree, type Wait } from "./rpc.js"
@@ -582,7 +582,16 @@ export const digbyColours = (theme: Context["theme"]): Record<Token, RGBA> => ({
   s: theme.text.feedback.success.base,
 })
 
-/** The tree panel: the sessions under its root, one row each, the one on screen marked, with the keys to move, open, stop and forget. */
+/**
+ * A row's background at rest: the selection's while the panel has the keyboard, else one step quieter under the pointer,
+ * else none, the panel's.
+ */
+export function restBackground(theme: Context["theme"], { selected, hovered }: { selected: boolean; hovered: boolean }) {
+  if (selected) return theme.background.raised.high
+  return hovered ? theme.background.raised.base : undefined
+}
+
+/** The tree panel: the sessions under its root, one row each, the one on screen marked, with the keys to move, open, stop and forget, and a click to open. */
 function TreePanel(props: {
   ctx: Context
   input: PanelInput
@@ -652,9 +661,22 @@ function TreePanel(props: {
     const next = rows()[Math.max(0, Math.min(rows().length - 1, selected() + by))]
     if (next) setSelectedID(next.sessionID)
   }
+  const openRow = (row: Row) => ctx.ui.router.navigate({ type: "session", sessionID: row.sessionID })
   const open = () => {
     const row = current()
-    if (row) ctx.ui.router.navigate({ type: "session", sessionID: row.sessionID })
+    if (row) openRow(row)
+  }
+  // The row under the pointer, by session, as each read of the tree draws the rows anew; it never moves the selection.
+  const [hovered, setHovered] = createSignal<string>()
+  createEffect(() => {
+    const id = hovered()
+    if (id !== undefined && !rows().some((row) => row.sessionID === id)) setHovered(undefined)
+  })
+  // The row the left button went down on, until it comes up or the pointer drags: only a click opens.
+  let pressed: string | undefined
+  const click = (row: Row) => {
+    setSelectedID(row.sessionID)
+    openRow(row)
   }
   const stopSelected = () => {
     const row = current()
@@ -715,9 +737,9 @@ function TreePanel(props: {
       <Index each={line()}>{(one) => <span style={{ fg: one().fg && tokens[one().fg!], bg: one().bg && tokens[one().bg!] }}>{one().char}</span>}</Index>
     </text>
   )
-  // A flash fades from the theme's success background to the row's own: the selection's, else the panel's.
+  // A flash fades from the theme's success background to the row's own: the selection's, the hover's, else the panel's.
   const rowBackground = (row: Row, chosen: boolean) => {
-    const rest = chosen && input.focused ? theme.background.raised.high : undefined
+    const rest = restBackground(theme, { selected: chosen && input.focused, hovered: hovered() === row.sessionID })
     const strength = flashes.strength(row.sessionID)
     return strength > 0 ? blend(theme.background.feedback.success.base, rest ?? theme.background.base, strength) : rest
   }
@@ -742,6 +764,7 @@ function TreePanel(props: {
       onSizeChange={function () {
         setSize({ width: this.width, height: this.height })
       }}
+      onMouseDrag={() => (pressed = undefined)}
     >
       <box flexDirection="row" flexShrink={0} gap={2}>
         <Show when={headerGlyph()}>{drawn(() => header()[0]!)}</Show>
@@ -793,7 +816,22 @@ function TreePanel(props: {
             const chosen = () => index() === selected()
             const indent = "  ".repeat(row.depth - 1)
             return (
-              <box id={`courier-row-${index()}`} flexDirection="column" flexShrink={0} backgroundColor={rowBackground(row, chosen())}>
+              <box
+                id={`courier-row-${index()}`}
+                flexDirection="column"
+                flexShrink={0}
+                backgroundColor={rowBackground(row, chosen())}
+                onMouseOver={() => setHovered(row.sessionID)}
+                onMouseOut={() => setHovered((id) => (id === row.sessionID ? undefined : id))}
+                onMouseDown={(event) => (pressed = event.button === MouseButton.LEFT ? row.sessionID : undefined)}
+                onMouseUp={(event) => {
+                  if (event.button !== MouseButton.LEFT) return
+                  event.stopPropagation()
+                  const down = pressed
+                  pressed = undefined
+                  if (down === row.sessionID) click(row)
+                }}
+              >
                 <box flexDirection="row" flexShrink={0}>
                   <text fg={rowColor(row)} wrapMode="none" flexShrink={0}>
                     {indent}

@@ -276,7 +276,7 @@ request or form (`shows a form: Web Search`), a stalled one since when its messa
 a bar of the parts reported, a leaf how long it ran, its last tool call, how full its context is (`ctx 31%`, in the warning colour past 80%) and its cost. A tree that has
 started more than `maxTotal` sessions over time is listed live ones first, then newest, and the header
 says how many older ones are left out; the footer counts them all. `↑`/`↓` select,
-`enter` opens the session, `s` stops it and everything under it after you confirm, as `courier_stop`
+`enter` or a click opens the session, a row under the pointer is highlighted, `s` stops it and everything under it after you confirm, as `courier_stop`
 would, `x` forgets a `gone` session after you confirm, removing its worktree by `courier_cleanup`'s
 rules, and `q` closes the panel; `/courier stop <session>` stops from the prompt. While open, the panel
 follows you between sessions: into one of its tree it keeps that tree, the session on screen marked

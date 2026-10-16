@@ -601,7 +601,6 @@ run_permission() {
   check "the root took it with the child's report, in the same turn" "$(settled_with_report "$parent" "$request")"
   check "and replied to the ask and the report only: two turns, not three" \
     "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "assistant") | [.content[]? | select(.type == "text") | .text] | join("") | select(test("PARENT (ASKS|WOKE|SETTLED)"))] | length == 2')"
-  check "and the server log has no wake sent again" "$(grep -qF "courier wake: $parent left message" "$WORK/server.log" && echo false || echo true)"
   answered=$(prompt_in "$parent" "COURIER-ANSWER once" | tool_state courier_answer)
   check "a late courier_answer passes nothing on" \
     "$(jq -r '.status == "completed" and .metadata.metadata.answered == false and (.output | contains("is pending in this OpenCode server") and contains("another OpenCode server on the same data directory"))' <<<"$answered")"

@@ -12,7 +12,7 @@ export interface Enqueued {
     readonly inboxID: string
     readonly item: {
       readonly type: string
-      readonly payload?: { readonly text?: unknown; readonly description?: unknown; readonly metadata?: { readonly source?: unknown } }
+      readonly payload?: { readonly text?: unknown; readonly description?: unknown; readonly metadata?: { readonly source?: unknown; readonly resume?: unknown } }
     }
   }
 }
@@ -41,6 +41,8 @@ export async function watchWake(ports: WatchPorts, event: Enqueued) {
   const { sessionID, inboxID, item } = event.data
   const payload = item.payload
   if (item.type !== "synthetic" || payload?.metadata?.source !== "courier" || typeof payload.text !== "string") return false
+  // Sent without a wake: it waits for the next turn, which nothing owes it.
+  if (payload.metadata.resume === false) return false
   const at = event.created ?? ports.now()
   // Read after the enqueue: a turn it started has stored messages since, and an unknown session is taken to run.
   const idle = await ports.session.context({ sessionID }).then(endsIdle, () => false)

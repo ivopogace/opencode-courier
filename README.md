@@ -220,7 +220,9 @@ Each tool's parameters: [the reference](docs/reference.md#the-tools).
   and under its rules, before anything is passed on: its model cannot approve, only propose. For a
   question, it asks you and passes your answer back, or links its own question to the child's so your
   pick goes straight to it. Whichever answer comes first counts, and the other is withdrawn.
-  [More](docs/reference.md#a-child-that-asks-for-permission).
+  A request starts a turn in the top session if it is idle; if you answer it somewhere else, the
+  note that it is settled waits for that session's next turn, usually the child's report, instead of
+  starting one of its own. [More](docs/reference.md#a-child-that-asks-for-permission).
 - **Some forms only you can answer**, such as OpenCode's web search asking for a provider: the top
   session is told, and you answer in the child's session. [More](docs/reference.md#a-child-that-shows-a-form).
 - **You can see and stop a whole subtree** with `courier_tree` and `courier_stop`, or in the

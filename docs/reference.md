@@ -553,7 +553,9 @@ with nothing told. What OpenCode does, and how the wake can be lost, is in
 [the maintainer notes](maintainers/plugin-api-notes.md#events).
 
 So the plugin watches every message it delivers (each OpenCode inbox item whose metadata has
-`source: "courier"`) from the moment OpenCode enqueues it until it is delivered or cancelled, noting
+`source: "courier"`, except the ones sent with `resume: false`, which are owed no turn and wait for the
+session's next, such as the note that a [permission request was answered
+elsewhere](#a-child-that-asks-for-permission)) from the moment OpenCode enqueues it until it is delivered or cancelled, noting
 whether its session runs a turn: a running turn takes a steered message at its next step, however long
 that step takes, and a message queued while it runs is taken when it ends. A message that has waited in
 an idle session for 30 seconds is a missed wake: the scheduler sends it once more under the same inbox
@@ -579,7 +581,8 @@ delivery or its session's deletion.
 When a child's tool call needs an approval (a permission rule with `"effect": "ask"`, or no rule for
 it), OpenCode holds the call until someone answers in the child's session, which the person working
 in the parent's session does not see. For a spawned session the plugin sends the parent a message
-from that child, marked `asks="permission"` and `request="<id>"`, waking the parent if it is idle. The
+from that child, marked `asks="permission"` and `request="<id>"`, steered into its running turn or
+starting one if it is idle. The
 message says what the child asks for (the action, such as `shell` or `edit`, and its resources, such
 as the command or the paths), and tells the parent that it cannot decide this, you do, in OpenCode's
 own permission prompt, which opens in the parent's session once the parent proposes an answer with
@@ -636,7 +639,11 @@ answer (an `always` that covers it, or a rejection, which rejects the session's 
 as well). For a request the parent was told about, the plugin then sends it a short message marked
 `answered="<reply>"` saying the request is settled, so it does not pass on a stale question; after a
 rejection, the message adds that the child may have stopped, and that `courier_send` gets it going
-again. A `courier_answer` that comes later anyway passes nothing on and says so, as does one whose
+again. That message is sent without waking the parent (`resume: false`): it waits in the parent's inbox
+and is read with the parent's next turn, which the child's report starts, since a child whose request
+was answered carries on. So a request answered elsewhere starts one turn in the top session, for the
+request, not a second one for the answer. The [missed-wake watch](#a-missed-wake) does not count it
+as owed a turn. A `courier_answer` that comes later anyway passes nothing on and says so, as does one whose
 request was answered that way while you were being asked in the parent's session; the prompt there
 stays open until you answer it, and allowing it then passes nothing on. The TUI's [asks
 inbox](#the-asks-inbox) answers as you, through OpenCode's reply, and never through

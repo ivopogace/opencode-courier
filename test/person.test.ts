@@ -125,10 +125,22 @@ describe("reportReplied", () => {
       sessionID: "ses_parent",
       text: envelope("ses_child", settledNotice("Fix the bug", "per_1", "once"), { answered: "once", request: "per_1" }),
       description: "Session ses_child no longer asks for permission",
-      metadata: { source: "courier", from: "ses_child", answered: "once", requestID: "per_1" },
+      metadata: { source: "courier", from: "ses_child", answered: "once", requestID: "per_1", resume: false },
       delivery: "steer",
+      resume: false,
     })
     expect(state.waiting.size).toBe(0)
+  })
+
+  test("sends the settled notice without a wake, and the asked one with it", async () => {
+    const { ports, sent } = fakePorts()
+    await childStore(ports.storage).record(child())
+    const state = fresh()
+    await reportAsked(ports, state, asked())
+    await reportReplied(ports, state, replied())
+
+    expect(sent[0].resume).toBeUndefined()
+    expect(sent[1].resume).toBe(false)
   })
 
   test("says nothing about a request the parent was not told about or has answered itself", async () => {

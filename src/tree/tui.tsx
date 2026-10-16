@@ -101,9 +101,34 @@ export function waitLine(wait: Wait) {
 
 /** What a row's session is doing, its report and its group standing: "idle · reported done · group pair held". */
 export function statusLine(row: Row) {
-  return [stateWord(row), reportWords(row.report, row.stopped), row.group ? `group ${row.group.name} ${row.group.standing}` : "", row.isolated ? "isolated" : ""]
-    .filter(Boolean)
+  return statusParts(row)
+    .map((part) => part.text)
     .join(" · ")
+}
+
+/** The parts of `statusLine`, each with the row part the panel colours it as. */
+export function statusParts(row: Row) {
+  const parts: Array<{ text: string; kind: "state" | "report" | "plain" }> = [
+    { text: stateWord(row), kind: "state" },
+    { text: reportWords(row.report, row.stopped), kind: "report" },
+    { text: row.group ? `group ${row.group.name} ${row.group.standing}` : "", kind: "plain" },
+    { text: row.isolated ? "isolated" : "", kind: "plain" },
+  ]
+  return parts.filter((part) => part.text)
+}
+
+type Feedback<Color> = { text: { feedback: Record<"error" | "warning" | "success" | "info", { base: Color }> } }
+
+/** The one cell a row's state shows and its theme colour, the blank cell of one with no mark: this is the only place that chooses them. */
+export function rowMark<Color>(row: Row, theme: Feedback<Color>): { mark: string; color: Color | undefined } {
+  const { error, warning, success, info } = theme.text.feedback
+  if (row.state === "gone") return { mark: " ", color: undefined }
+  if (row.state === "stalled") return { mark: "!", color: error.base }
+  if (row.state === "waiting") return { mark: "●", color: warning.base }
+  if (row.state === "running") return { mark: "•", color: info.base }
+  if (!row.stopped && (row.outcome === "failed" || row.outcome === "interrupted")) return { mark: "✗", color: error.base }
+  if (row.report?.state === "reported") return { mark: "✓", color: success.base }
+  return { mark: " ", color: undefined }
 }
 
 /** What a session does, an idle one stopped, or whose last turn failed or was interrupted, saying so. */
@@ -450,14 +475,21 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
     if (row.state === "waiting") return theme.text.feedback.warning.base
     return row.state === "gone" ? theme.text.muted : theme.text.base
   }
+  // The state word of a running row and the report words of a reported one take their mark's colour.
+  const partColor = (row: Row, kind: "state" | "report" | "plain") => {
+    const marked = rowMark(row, theme)
+    if (kind === "state" && row.state === "running") return marked.color
+    if (kind === "report" && row.report?.state === "reported") return theme.text.feedback.success.base
+    return theme.text.muted
+  }
   return (
     <box flexDirection="column" flexGrow={1} paddingLeft={1} paddingRight={1}>
       <box flexDirection="row" flexShrink={0} gap={2}>
-        <text fg={theme.text.base} wrapMode="none">
+        <text fg={theme.text.action.primary.base} wrapMode="none">
           courier tree
         </text>
         <Show when={root().started}>
-          <text fg={theme.text.muted} wrapMode="none">
+          <text fg={theme.text.action.primary.base} wrapMode="none">
             {bar(root())}
           </text>
         </Show>
@@ -484,16 +516,34 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
             return (
               <box id={`courier-row-${index()}`} flexDirection="column" flexShrink={0} backgroundColor={chosen() && input.focused ? theme.background.raised.high : undefined}>
                 <box flexDirection="row" flexShrink={0}>
-                  <text fg={rowColor(row)} wrapMode="none" flexShrink={1} minWidth={0}>
+                  <text fg={rowColor(row)} wrapMode="none" flexShrink={0}>
                     {indent}
                     {chosen() ? "▸ " : "  "}
+                  </text>
+                  <text fg={rowMark(row, theme).color} wrapMode="none" flexShrink={0}>
+                    {rowMark(row, theme).mark}{" "}
+                  </text>
+                  <text fg={rowColor(row)} wrapMode="none" flexShrink={1} minWidth={0}>
                     {oneLine(row.title)}
                     {row.sessionID === input.sessionID ? " (on screen)" : ""}
                   </text>
                   <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
                     {"  "}
-                    {statusLine(row)}
                   </text>
+                  <For each={statusParts(row)}>
+                    {(part, at) => (
+                      <>
+                        <Show when={at()}>
+                          <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
+                            {" · "}
+                          </text>
+                        </Show>
+                        <text fg={partColor(row, part.kind)} wrapMode="none" flexShrink={0}>
+                          {part.text}
+                        </text>
+                      </>
+                    )}
+                  </For>
                 </box>
                 <For each={detailLines(row, rows(), now())}>
                   {(line) => (

@@ -172,9 +172,9 @@ tmux send-keys -t "$TMUX_SESSION" "/courier tree"
 sleep 1
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "the panel opens with the bar: 1 of 2 parts reported" "$(shows "courier tree  [█████░░░░░] 1/2 reported" 30 tui-panel)"
-check "it has the reported child's row" "$(grep -qF "Report back to your parent.  idle · reported done · group pair held" "$WORK/tui-panel.txt" && echo true || echo false)"
+check "it has the reported child's row" "$(grep -qF "✓ Report back to your parent.  idle · reported done · group pair held" "$WORK/tui-panel.txt" && echo true || echo false)"
 check "and the asking child's, which says what it waits on" \
-  "$(grep -qF "CHILD-ASKS  waiting on you · owes a report · group pair out" "$WORK/tui-panel.txt" && grep -qF "asks permission: shell echo courier-asks" "$WORK/tui-panel.txt" && echo true || echo false)"
+  "$(grep -qF "● CHILD-ASKS  waiting on you · owes a report · group pair out" "$WORK/tui-panel.txt" && grep -qF "asks permission: shell echo courier-asks" "$WORK/tui-panel.txt" && echo true || echo false)"
 request=$(api "session/$asking/permission" | jq -r '.data[0].id // empty')
 code=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
   --data '{"decision":"once"}' "$SERVER/api/session/$asking/permission/$request/reply")
@@ -220,8 +220,8 @@ check "the panel opens" "$(shows "courier tree  [██████████]
 tmux resize-window -t "$TMUX_SESSION" -x 160 -y 40
 sleep 1
 tmux send-keys -t "$TMUX_SESSION" Enter
-# The split pane is narrow, so the mark shows as "(on".
-check "followed into a child at 160 columns" "$(shows "Report back to your parent. (on" 30 tui-widened)"
+# The split pane is narrow, so the title is cut before its "(on screen)"; the mark takes two cells of it.
+check "followed into a child at 160 columns" "$(shows "✓ Report back to your parent." 30 tui-widened)"
 check "the panel sits beside the session, not over it" \
   "$(awk '/courier tree/ { if (index($0, "courier tree") > 40) found = 1 } END { print found ? "true" : "false" }' "$WORK/tui-widened.txt")"
 # /courier stop stops as the open session, so back to the parent.

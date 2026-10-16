@@ -6,7 +6,7 @@ import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { batch, createSignal } from "solid-js"
 import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, addTreeStatus, bar, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
+import { activityLine, addTreeStatus, bar, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
 
@@ -81,7 +81,7 @@ function fakeContext(
       },
     },
     theme: {
-      text: { base: color, muted: color, feedback: { warning: { base: color }, error: { base: color } } },
+      text: { base: color, muted: color, action: { primary: { base: color } }, feedback: THEME },
       background: { raised: { high: color } },
     },
     client: {
@@ -356,7 +356,29 @@ const row = (sessionID: string, fields: Partial<Row> = {}): Row => ({
   ...fields,
 })
 
+/** A theme colour per feedback token, distinct, as the fake context's and the marks' tests'. */
+const THEME = {
+  warning: { base: "#ffaa00" },
+  error: { base: "#ff0000" },
+  success: { base: "#00ff00" },
+  info: { base: "#00aaff" },
+}
+
 describe("the tree panel's lines", () => {
+  test("each row state has its mark and the theme's colour for it", () => {
+    const mark = (fields: Partial<Row>) => rowMark(row("ses_a", fields), { text: { feedback: THEME } })
+    expect(mark({ report: { state: "reported", progressed: false } })).toEqual({ mark: "✓", color: "#00ff00" })
+    expect(mark({ state: "running" })).toEqual({ mark: "•", color: "#00aaff" })
+    expect(mark({ state: "waiting" })).toEqual({ mark: "●", color: "#ffaa00" })
+    expect(mark({ state: "stalled" })).toEqual({ mark: "!", color: "#ff0000" })
+    expect(mark({ outcome: "failed", report: { state: "ended", progressed: false } })).toEqual({ mark: "✗", color: "#ff0000" })
+    expect(mark({ outcome: "interrupted" })).toEqual({ mark: "✗", color: "#ff0000" })
+    expect(mark({ outcome: "interrupted", stopped: true })).toEqual({ mark: " ", color: undefined })
+    expect(mark({})).toEqual({ mark: " ", color: undefined })
+    expect(mark({ state: "gone" })).toEqual({ mark: " ", color: undefined })
+  })
+
+
   test("a duration reads in its two coarsest units", () => {
     expect(duration(45_900)).toBe("45s")
     expect(duration(185_000)).toBe("3m 05s")
@@ -506,9 +528,9 @@ describe("the tree panel", () => {
     await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
     const frame = app.captureCharFrame()
     expect(frame).toContain("courier tree  [█████░░░░░] 1/2 reported")
-    expect(frame).toContain("▸ Report back to your parent.  idle · reported done · group pair held")
+    expect(frame).toContain("▸ ✓ Report back to your parent.  idle · reported done · group pair held")
     expect(frame).toContain("ran 2m 00s · last courier_send")
-    expect(frame).toContain("  CHILD-ASKS  waiting on you · owes a report · group pair out")
+    expect(frame).toContain("  ● CHILD-ASKS  waiting on you · owes a report · group pair out")
     expect(frame).toContain("asks permission: shell echo courier-asks")
     expect(fake.calls).toContainEqual(["tree", { sessionID: "ses_parent" }, { location: { directory: "/workspace" } }])
 
@@ -522,7 +544,7 @@ describe("the tree panel", () => {
     await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS - SETTLE_MS))
     await app.waitForFrame((frame) => frame.includes("2/2 reported"))
     expect(fake.calls).toHaveLength(asked + 1)
-    expect(app.captureCharFrame()).toContain("CHILD-ASKS  idle · reported done · group pair held")
+    expect(app.captureCharFrame()).toContain("✓ CHILD-ASKS  idle · reported done · group pair held")
   })
 
   test("indents a session by its depth, and shows nothing for another panel", async () => {
@@ -535,8 +557,8 @@ describe("the tree panel", () => {
     const frame = app.captureCharFrame()
     expect(frame).toContain("[░░░░░░░░░░] 0/1 reported")
     expect(frame).toContain("2 older left out")
-    expect(frame).toMatch(/\n ▸ ses_mid {2}idle/)
-    expect(frame).toMatch(/\n {5}ses_leaf {2}idle/)
+    expect(frame).toMatch(/\n ▸ {3}ses_mid {2}idle/)
+    expect(frame).toMatch(/\n {7}ses_leaf {2}idle/)
 
     const other = await renderPanel(fake.claim("session.panel"), panelInput("ses_parent", "someone-else").value)
     await other.renderOnce()
@@ -565,7 +587,7 @@ describe("the tree panel", () => {
     await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
 
     fake.command("down")!.run()
-    await app.waitForFrame((frame) => frame.includes("▸ CHILD-ASKS"))
+    await app.waitForFrame((frame) => frame.includes("▸ ● CHILD-ASKS"))
     fake.command("j")!.run()
     fake.command("return")!.run()
     expect(fake.state.navigated).toEqual([{ type: "session", sessionID: "ses_two" }])
@@ -588,11 +610,11 @@ describe("the tree panel", () => {
     const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
     await app.waitForFrame((frame) => frame.includes("Charlie"))
     fake.command("down")!.run()
-    await app.waitForFrame((frame) => frame.includes("▸ Bravo"))
+    await app.waitForFrame((frame) => frame.includes("▸   Bravo"))
     rows = [rows[0]!, row("ses_a1", { title: "Alpha's child", parentID: "ses_a", depth: 2 }), rows[1]!, rows[2]!]
     fake.command("r")!.run()
     await app.waitForFrame((frame) => frame.includes("Alpha's child"))
-    expect(app.captureCharFrame()).toContain("▸ Bravo")
+    expect(app.captureCharFrame()).toContain("▸   Bravo")
     fake.state.confirm = false
     fake.command("s")!.run()
     await settle()
@@ -607,16 +629,16 @@ describe("the tree panel", () => {
     const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
     await app.waitForFrame((frame) => frame.includes("Delta"))
     fake.command("down")!.run()
-    await app.waitForFrame((frame) => frame.includes("▸ Bravo"))
+    await app.waitForFrame((frame) => frame.includes("▸   Bravo"))
     rows = [rows[0]!, rows[2]!, rows[3]!]
     fake.command("r")!.run()
     await app.waitForFrame((frame) => !frame.includes("Bravo"))
-    expect(app.captureCharFrame()).toContain("▸ Charlie")
+    expect(app.captureCharFrame()).toContain("▸   Charlie")
     // The selection now belongs to Charlie, so a row added above it does not move it.
     rows = [row("ses_z", { title: "Zulu" }), ...rows]
     fake.command("r")!.run()
     await app.waitForFrame((frame) => frame.includes("Zulu"))
-    expect(app.captureCharFrame()).toContain("▸ Charlie")
+    expect(app.captureCharFrame()).toContain("▸   Charlie")
   })
 
   test("s stops the selected session through the RPC, as the panel's session, once the person confirms", async () => {
@@ -706,7 +728,7 @@ describe("the tree panel", () => {
     expect(fake.state.toasts.at(-1)).toMatchObject({ message: 'x forgets only a gone session; "Live" is idle.', variant: "warning" })
 
     fake.command("down")!.run()
-    await app.waitForFrame((frame) => frame.includes("▸ Gone"))
+    await app.waitForFrame((frame) => frame.includes("▸   Gone"))
     fake.command("x")!.run()
     await settle()
     expect(fake.state.confirms.at(-1)?.message).toBe('Forget "Gone" (ses_gone)? It leaves this tree and courier_children.')
@@ -764,7 +786,7 @@ describe("the tree panel following navigation", () => {
     const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_two").value)
     // The tree last read shows at once, then the root's is asked again, not the child's.
     await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("▸ CHILD-ASKS (on screen)  waiting on you")
+    expect(app.captureCharFrame()).toContain("▸ ● CHILD-ASKS (on screen)  waiting on you")
     await settle()
     expect(trees(fake).slice(asked)).toEqual(["ses_parent"])
     expect(app.captureCharFrame()).toContain("courier tree  [█████░░░░░] 1/2 reported")

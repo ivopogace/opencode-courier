@@ -963,7 +963,9 @@ not stop the panel's:
 {
   "plugins": [{ "package": "opencode-courier", "options": { "animations": false } }]
 }
-``` Its keys, while it has the keyboard (it takes it
+```
+
+Its keys, while it has the keyboard (it takes it
 when it opens; `<leader>left` and `<leader>right` move it between the session and the panel): `↑`/`k` and
 `↓`/`j` move the selection, `enter` opens the selected session, `s` stops it, `x` forgets a `gone` one,
 `r` asks again, `f` toggles fullscreen and `q` closes the panel. While open, the panel follows the person to another session (its own

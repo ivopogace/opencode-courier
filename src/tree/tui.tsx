@@ -156,13 +156,16 @@ export function createFlashes(motion: Motion, rows: Accessor<ReadonlyArray<Row>>
 export function createBarFill(motion: Motion, counts: Accessor<{ reported: number; started: number }>) {
   const target = createMemo(() => filledCells(counts()))
   const [easing, setEasing] = createSignal<Tween>()
-  let shown = false
-  createEffect(
-    on(target, (to, from) => {
-      setEasing(shown && from !== undefined ? motion.tween(untrack(() => easing()?.value()) ?? from, to, BAR_MS, "outQuad") : undefined)
-      shown = untrack(counts).started > 0
-    }),
-  )
+  let last: { cells: number; shown: boolean } | undefined
+  createEffect(() => {
+    const cells = target()
+    const shown = counts().started > 0
+    if (last && cells !== last.cells) {
+      const from = untrack(() => easing()?.value()) ?? last.cells
+      setEasing(last.shown ? motion.tween(from, cells, BAR_MS, "outQuad") : undefined)
+    }
+    last = { cells, shown }
+  })
   return () => easing()?.value() ?? target()
 }
 

@@ -1304,6 +1304,21 @@ describe("the tree panel's motion (#224)", () => {
     expect(timers!.count()).toBe(0)
   })
 
+  test("the first report of a tree shown at 0 reported eases the bar too", async () => {
+    let reported = 0
+    const report = (done: boolean): Row["report"] => (done ? { state: "reported", status: "done", progressed: false } : { state: "owed", progressed: false })
+    const panel = await motion(() => ({ rows: [row("ses_one", { report: report(reported > 0) }), row("ses_two", { report: report(reported > 1) })] }))
+    expect(await panel.frame()).toContain("[░░░░░░░░░░] 0/2 reported")
+    reported = 1
+    expect(await panel.refresh()).toContain("[░░░░░░░░░░] 1/2 reported")
+    const step = await panel.advance(FRAME_MS)
+    expect(step).not.toContain("[░░░░░░░░░░]")
+    expect(step).not.toContain("[█████░░░░░]")
+    expect(await panel.advance(BAR_MS)).toContain("[█████░░░░░] 1/2 reported")
+    await panel.advance(FLASH_MS)
+    expect(timers!.count()).toBe(0)
+  })
+
   test("with \"animations\": false nothing moves: the running mark stays •, a report does not flash, the bar jumps", async () => {
     let reported = 1
     let state: Row["state"] = "running"

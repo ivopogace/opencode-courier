@@ -6,8 +6,8 @@ import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { batch, createRoot, createSignal } from "solid-js"
 import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, addTreeStatus, animationsOn, bar, BAR_MS, blend, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, digbyColours } from "../src/tree/tui.js"
-import { cells, digby, glyph, GLYPH, idleArt, MASCOT_EVERY, type MascotState } from "../src/tree/mascot.js"
+import { activityLine, addTreeStatus, animationsOn, bar, BAR_MS, blend, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, BELOW_ROWS, digbyColours } from "../src/tree/tui.js"
+import { ART, art, cells, digby, glyph, GLYPH, MASCOT_EVERY, type MascotState } from "../src/tree/mascot.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
 
@@ -1364,7 +1364,7 @@ describe("the tree panel's motion (#224)", () => {
 
   test("Digby's header glyph cycles each state's frames for its tree state, at his own cadence while only he moves (#226)", async () => {
     let state: Row["state"] = "idle"
-    const panel = await motion(() => ({ rows: [row("ses_a", { state }), row("ses_b", { state: state === "gone" ? "gone" : "idle" })] }))
+    const panel = await motion(() => ({ rows: [row("ses_a", { state }), row("ses_b", { state: state === "gone" ? "gone" : "idle" })] }), {}, GLYPH_ROWS)
     expect(await panel.glyph()).toEqual(drawn("idle", 0))
     expect(await seen(panel, 4)).toContainEqual(drawn("idle", 2))
     expect(timers!.count()).toBe(0)
@@ -1390,7 +1390,7 @@ describe("the tree panel's motion (#224)", () => {
         row("ses_one", { report: reported ? { state: "reported", status: "done", progressed: false } : { state: "owed", progressed: false } }),
         ...(spawned ? [row("ses_new")] : []),
       ],
-    }))
+    }), {}, GLYPH_ROWS)
     expect(await panel.glyph()).toEqual(drawn("idle", 0))
     reported = true
     await panel.refresh()
@@ -1416,7 +1416,7 @@ describe("the tree panel's motion (#224)", () => {
     expect(timers!.count() + timers!.slow()).toBe(0)
     timers!.restore()
     jest.useRealTimers()
-    const narrow = await motion(() => ({ rows: [row("ses_a")] }), {}, 24, GLYPH_COLUMNS - 1)
+    const narrow = await motion(() => ({ rows: [row("ses_a")] }), {}, GLYPH_ROWS, GLYPH_COLUMNS - 1)
     expect(await narrow.glyph()).toBeUndefined()
     expect((await narrow.frame()).split("\n")[0]).toContain("courier tree  [░░░░░░░░░░] 0/1 reported")
     expect(timers!.count() + timers!.slow()).toBe(0)
@@ -1428,6 +1428,7 @@ describe("the tree panel's motion (#224)", () => {
     const panel = await motion(
       () => ({ rows: [row("ses_a", { state, report: reported ? { state: "reported", status: "done", progressed: false } : { state: "owed", progressed: false } })] }),
       { animations: false },
+      GLYPH_ROWS,
     )
     for (const next of ["waiting", "running", "stalled", "idle"] as const) {
       state = next
@@ -1442,19 +1443,96 @@ describe("the tree panel's motion (#224)", () => {
     expect(timers!.count() + timers!.slow()).toBe(0)
   })
 
-  test("the empty panel shows the 16×16 idle Digby where there is room, breathing (#226)", async () => {
-    const art = (frame?: number) => idleArt(frame).map((line) => line.map((one) => one.char).join(""))
+  /** The 16×16's lines as the panel draws them, for `state` at mascot frame `frame`. */
+  const drawnArt = (state: MascotState, frame?: number) => art(state, frame).map((line) => line.map((one) => one.char).join(""))
+
+  /** The 16×16 the panel shows, its eight lines ending on the ground's full one, or undefined with none. */
+  const artIn = (frame: string) => {
+    const lines = frame.split("\n").map((line) => line.slice(1, 17))
+    const ground = lines.lastIndexOf("█".repeat(16))
+    return ground < 7 ? undefined : lines.slice(ground - 7, ground + 1)
+  }
+
+  /** The frame counts of each state's 16×16, idle's breathing and drifting `z` taking four. */
+  const artFrames = (state: MascotState) => (state === "idle" ? 4 : ART[state].length)
+
+  test("the empty panel shows the 16×16 idle Digby where there is room, breathing, and no header glyph (#226, #245)", async () => {
     const panel = await motion(() => ({ rows: [] }))
     const frame = await panel.frame()
     expect(frame).toContain("No session started with courier_spawn under this one.")
-    for (const line of art(0)) expect(frame).toContain(line)
+    expect(artIn(frame)).toEqual(drawnArt("idle", 0))
+    expect(await panel.glyph()).toBeUndefined()
     expect(timers!.slow()).toBe(1)
-    const later = await panel.advance(FRAME_MS * MASCOT_EVERY * 2)
-    for (const line of art(2)) expect(later).toContain(line)
+    expect(artIn(await panel.advance(FRAME_MS * MASCOT_EVERY * 2))).toEqual(drawnArt("idle", 2))
     timers!.restore()
     jest.useRealTimers()
     const short = await motion(() => ({ rows: [] }), {}, ART_ROWS - 1)
-    expect(await short.frame()).not.toContain(art(0).at(-1)!)
+    expect(artIn(await short.frame())).toBeUndefined()
+    expect(await short.glyph()).toBeDefined()
+  })
+
+  test("with BELOW_ROWS free under the last row the 16×16 shows there in the tree's state, each frame, and the header drops its glyph (#245)", async () => {
+    let state: Row["state"] = "waiting"
+    const panel = await motion(() => ({ rows: [row("ses_a", { state }), row("ses_b", { state: state === "gone" ? "gone" : "idle" })] }))
+    for (const next of ["waiting", "stalled", "running", "idle", "gone"] as const) {
+      state = next
+      await panel.refresh()
+      const shown: Array<string[] | undefined> = []
+      for (let step = 0; step < 4; step++) {
+        const frame = await panel.frame()
+        shown.push(artIn(frame))
+        expect(await panel.glyph()).toBeUndefined()
+        expect(frame).toContain("courier tree")
+        await panel.advance(FRAME_MS * MASCOT_EVERY)
+      }
+      for (let frame = 0; frame < Math.min(artFrames(next), 4); frame++) expect(shown).toContainEqual(drawnArt(next, frame))
+    }
+    expect(timers!.count() + timers!.slow()).toBe(0)
+  })
+
+  test("the 16×16 shows below the rows from BELOW_ROWS free rows, the header's glyph below that (#245)", async () => {
+    // Two header lines, the footer, and one row with its detail line leave the list `height - 5` rows free.
+    const free = (height: number) => height - 5
+    const at = async (height: number) => {
+      timers?.restore()
+      jest.useRealTimers()
+      const panel = await motion(() => ({ rows: [row("ses_a", { state: "waiting" })] }), {}, height)
+      return { art: artIn(await panel.frame()), glyph: await panel.glyph() }
+    }
+    const room = BELOW_ROWS + 5
+    expect(free(room)).toBe(BELOW_ROWS)
+    expect(await at(room)).toEqual({ art: drawnArt("waiting", 0), glyph: undefined })
+    expect(await at(room - 1)).toEqual({ art: undefined, glyph: drawn("waiting", 0) })
+  })
+
+  test("a report or a spawn shows its 16×16 below the rows while it holds (#245)", async () => {
+    let reported = false
+    let spawned = false
+    const panel = await motion(() => ({
+      rows: [
+        row("ses_one", { report: reported ? { state: "reported", status: "done", progressed: false } : { state: "owed", progressed: false } }),
+        ...(spawned ? [row("ses_new")] : []),
+      ],
+    }))
+    reported = true
+    await panel.refresh()
+    expect(ART.report.map((_, frame) => drawnArt("report", frame))).toContainEqual(artIn(await panel.frame()))
+    await panel.advance(FLASH_MS + FRAME_MS)
+    spawned = true
+    await panel.refresh()
+    expect(ART.spawn.map((_, frame) => drawnArt("spawn", frame))).toContainEqual(artIn(await panel.frame()))
+  })
+
+  test("with \"animations\": false the 16×16 shows each state's first frame, still, and no timer runs for it (#245)", async () => {
+    let state: Row["state"] = "waiting"
+    const panel = await motion(() => ({ rows: [row("ses_a", { state })] }), { animations: false })
+    for (const next of ["waiting", "running", "stalled", "idle", "gone"] as const) {
+      state = next
+      await panel.refresh()
+      expect(artIn(await panel.frame())).toEqual(drawnArt(next))
+      expect(artIn(await panel.advance(FRAME_MS * MASCOT_EVERY * 3))).toEqual(drawnArt(next))
+    }
+    expect(timers!.count() + timers!.slow()).toBe(0)
   })
 })
 
@@ -1495,7 +1573,15 @@ describe("Digby, the tree panel's mascot (#226)", () => {
     const draw = (pixels: ReadonlyArray<string>) => cells(pixels).map((line) => line.map((one) => one.char).join(""))
     const glyphs = Object.fromEntries(Object.entries(GLYPH).map(([state, frames]) => [state, frames.map((frame) => ({ pixels: frame, drawn: draw(frame) }))]))
     const rises = Object.fromEntries([-0.3, 0.12, 0.7, 1, 1.25].map((rise) => [rise, draw(digby(rise))]))
-    expect({ glyphs, rises, idle: [0, 1, 2, 3].map((frame) => idleArt(frame).map((line) => line.map((one) => one.char).join(""))) }).toMatchSnapshot()
+    const drawnArt = (state: MascotState, frame: number) => art(state, frame).map((line) => line.map((one) => one.char).join(""))
+    const arts = Object.fromEntries(
+      (["idle", ...Object.keys(ART)] as MascotState[]).map((state) => [
+        state,
+        Array.from({ length: state === "idle" ? 4 : ART[state as Exclude<MascotState, "idle">].length }, (_, frame) => drawnArt(state, frame)),
+      ]),
+    )
+    const pixels = Object.fromEntries(Object.entries(ART).map(([state, frames]) => [state, frames.map((frame) => frame(true))]))
+    expect({ glyphs, rises, arts, pixels }).toMatchSnapshot()
   })
 })
 

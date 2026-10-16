@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode/plugin/tui"
 import type { PanelInput, PanelPresentation } from "@opencode/plugin/tui/context"
 import { RGBA, Timeline, type EasingFunctions, type ScrollBoxRenderable } from "@opentui/core"
 import { batch, createEffect, createMemo, createResource, createRoot, createSignal, For, Index, on, onCleanup, onMount, Show, untrack, type Accessor } from "solid-js"
-import { cells, glyph, idleArt, MASCOT_EVERY, type Cell, type MascotState, type Token } from "./mascot.js"
+import { art as artOf, cells, glyph, MASCOT_EVERY, type Cell, type MascotState, type Token } from "./mascot.js"
 import { treeRpc, type Forgotten, type Row, type Stopped, type Summary, type Tree, type Wait } from "./rpc.js"
 
 type Context = Plugin.Context
@@ -223,6 +223,9 @@ export const GLYPH_COLUMNS = 54
 
 /** The empty panel's height from which it shows the 16×16. */
 export const ART_ROWS = 14
+
+/** The rows left free below the tree's last row from which the 16×16 shows there. */
+export const BELOW_ROWS = 10
 
 /** `tint` over `rest` by `amount`, from 0 (all `rest`) to 1 (all `tint`). */
 export function blend(tint: RGBA, rest: RGBA, amount: number) {
@@ -694,12 +697,18 @@ function TreePanel(props: {
   const empty = () => Boolean(latest()?.tree && !rows().length)
   const glyphShown = () => height() >= GLYPH_ROWS && size().width >= GLYPH_COLUMNS
   const artShown = () => empty() && height() >= ART_ROWS
+  // The tree's lines against the list's own height, which the 16×16 below them, inside the list, does not change.
+  const [listHeight, setListHeight] = createSignal(0)
+  const treeLines = () => rows().reduce((lines, row) => lines + 1 + detailLines(row, rows(), now()).length, 0)
+  const belowShown = () => rows().length > 0 && listHeight() - treeLines() >= BELOW_ROWS
+  // One Digby at a time: the header drops its glyph while the 16×16 shows.
+  const headerGlyph = () => glyphShown() && !artShown() && !belowShown()
   const mascot = createMemo(() => mascotState(rows(), { reported: flashes.reported(), spawned: spawned() }))
   // Digby's frames keep the timer at his own cadence while he shows, and he is still once gone.
-  motion.animates(() => (glyphShown() || artShown()) && mascot() !== "gone", MASCOT_EVERY)
+  motion.animates(() => (glyphShown() || artShown() || belowShown()) && mascot() !== "gone", MASCOT_EVERY)
   const mascotFrame = () => (motion.enabled ? Math.floor(motion.frame() / MASCOT_EVERY) : undefined)
   const header = createMemo(() => cells(glyph(mascot(), mascotFrame())))
-  const art = createMemo(() => idleArt(mascotFrame()))
+  const art = createMemo(() => artOf(mascot(), mascotFrame()))
   const tokens = digbyColours(theme)
   const drawn = (line: Accessor<ReadonlyArray<Cell>>) => (
     <text wrapMode="none" flexShrink={0}>
@@ -735,7 +744,7 @@ function TreePanel(props: {
       }}
     >
       <box flexDirection="row" flexShrink={0} gap={2}>
-        <Show when={glyphShown()}>{drawn(() => header()[0]!)}</Show>
+        <Show when={headerGlyph()}>{drawn(() => header()[0]!)}</Show>
         <text fg={tokens.a} wrapMode="none">
           courier tree
         </text>
@@ -752,7 +761,7 @@ function TreePanel(props: {
       </box>
       <Show when={glyphShown()}>
         <box flexDirection="row" flexShrink={0} gap={2}>
-          {drawn(() => header()[1]!)}
+          <Show when={headerGlyph()}>{drawn(() => header()[1]!)}</Show>
           <text fg={theme.text.muted} wrapMode="none">
             {countsLine(rows())}
           </text>
@@ -772,7 +781,13 @@ function TreePanel(props: {
           </box>
         </Show>
       </Show>
-      <scrollbox ref={(value: ScrollBoxRenderable) => (scroll = value)} flexGrow={1}>
+      <scrollbox
+        ref={(value: ScrollBoxRenderable) => (scroll = value)}
+        flexGrow={1}
+        onSizeChange={function () {
+          setListHeight(this.height)
+        }}
+      >
         <For each={rows()}>
           {(row, index) => {
             const chosen = () => index() === selected()
@@ -831,6 +846,11 @@ function TreePanel(props: {
             )
           }}
         </For>
+        <Show when={belowShown()}>
+          <box flexDirection="column" flexShrink={0} paddingTop={1}>
+            <Index each={art()}>{(line) => drawn(line)}</Index>
+          </box>
+        </Show>
       </scrollbox>
       <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
         ↑↓ select · enter open · s stop · x forget · r refresh · f fullscreen · q close

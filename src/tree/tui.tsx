@@ -107,8 +107,14 @@ export function createMotion(enabled: boolean): Motion {
     timeline.play()
     let elapsed = 0
     const one: Moving = {
-      value: () => (frame(), target.value),
-      done: () => (frame(), elapsed >= duration),
+      value: () => {
+        frame()
+        return target.value
+      },
+      done: () => {
+        frame()
+        return elapsed >= duration
+      },
       step: (ms) => {
         elapsed += ms
         timeline.update(ms)

@@ -922,7 +922,7 @@ glance, in the person's OpenCode theme (never a fixed colour): `✓` for a sessi
 and the `reported …` words in the theme's success colour), `•` for a running one (info; a spinner while the panel animates, see what moves below), `●` for one
 waiting on you (warning), `!` for a stalled one and `✗` for one whose last turn failed or was interrupted
 (error); an idle one that owes a report, and a gone one, have none (a gone row's title is muted). The
-header's title and bar take the theme's accent (primary action) colour. The mark has a cell of its own, so a long
+header's title and bar take the theme's accent colour, Digby's `a` (see **Digby** below). The mark has a cell of its own, so a long
 title is cut before the status is. Under it:
 
 - an **orchestrator**, any session with children among the rows, and the session whose tree the panel
@@ -970,7 +970,7 @@ not stop the panel's:
 
 **Digby.** The courier's mole digs beside the header's title, 8 columns by 2 rows in half-block pixels (`▀ ▄ █`,
 two pixels a cell), coloured only from the theme: his body in its base text colour, his eyes in its background,
-the mound in its raised background, paws, dirt and arm muted, snout and letter in the accent, and the sign, dots and
+the mound in its highest raised background (`background.raised.max`), paws, dirt and arm muted, snout and letter in the accent (`text.action.primary.selected`), and the sign, dots and
 spark in its warning, error and success colours. His state follows the tree's, by the footer's priority, and the
 header's second line counts the live sessions as the footer does (`1 waiting on you · 2 running`):
 
@@ -987,6 +987,11 @@ He blinks every eleventh frame where his eyes are open. A panel under 12 rows ta
 split, where the glyph would cut the header's bar), has no glyph, and its header keeps to one line; an empty one (`No session started with courier_spawn under this one.`) at least 14 rows tall shows a
 larger idle Digby, 16 columns by 8 rows, a `z` drifting up beside his mound. He takes the panel's timer only while he
 shows and is not gone, at his own pace.
+
+The accent is the owner's decision: OpenCode's theme has no semantic accent text token, and `text.action.primary.base` is the
+body's colour in every built-in theme, so `a` is `text.action.primary.selected`, borrowed by explicit choice; the header's title
+and bar take the same one. The mound is `background.raised.max`, which stands out from `background.base` in every built-in theme.
+Both come from one mapping, `digbyColours` in `src/tree/tui.tsx`.
 
 Its keys, while it has the keyboard (it takes it
 when it opens; `<leader>left` and `<leader>right` move it between the session and the panel): `↑`/`k` and

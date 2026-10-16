@@ -6,7 +6,7 @@ import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
 import { batch, createRoot, createSignal } from "solid-js"
 import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, addTreeStatus, animationsOn, bar, BAR_MS, blend, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS } from "../src/tree/tui.js"
+import { activityLine, addTreeStatus, animationsOn, bar, BAR_MS, blend, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, digbyColours } from "../src/tree/tui.js"
 import { cells, digby, glyph, GLYPH, idleArt, MASCOT_EVERY, type MascotState } from "../src/tree/mascot.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
@@ -85,8 +85,8 @@ function fakeContext(
       },
     },
     theme: {
-      text: { base: color, muted: color, action: { primary: { base: color } }, feedback: THEME },
-      background: { base: RGBA.fromInts(0, 0, 0), raised: { high: color }, feedback: { success: { base: FLASH } } },
+      text: { base: color, muted: color, action: { primary: { base: color, selected: color } }, feedback: THEME },
+      background: { base: RGBA.fromInts(0, 0, 0), raised: { high: color, max: color }, feedback: { success: { base: FLASH } } },
     },
     client: {
       rpc: () => ({
@@ -1562,4 +1562,25 @@ describe("the tree panel's motion, its pieces", () => {
     expect(blend(tint, rest, 0).toInts()).toEqual([100, 0, 0, 255])
     expect(blend(tint, rest, 0.5).toInts()).toEqual([50, 100, 0, 255])
   })
+})
+
+describe("Digby's colours", () => {
+  const hex = RGBA.fromHex
+  // The resolved `opencode` theme (see the PR): dark's accent is #fab283, light's is the v1 theme's #ec5b2b.
+  const themes = {
+    dark: { base: "#0a0a0a", text: "#eeeeee", max: "#4c4c4c", selected: "#fab283" },
+    light: { base: "#ffffff", text: "#1a1a1a", max: "#bebcb9", selected: "#ec5b2b" },
+  }
+  for (const [mode, one] of Object.entries(themes)) {
+    const colours = digbyColours({
+      text: { base: hex(one.text), muted: hex("#808080"), action: { primary: { base: hex(one.text), selected: hex(one.selected) } }, feedback: THEME },
+      background: { base: hex(one.base), raised: { high: hex(one.base), max: hex(one.max) } },
+    } as never)
+    test(`the mound differs from the background in the default ${mode} theme`, () => {
+      expect(colours.g.equals(colours.k)).toBe(false)
+    })
+    test(`the snout and letter differ from the body in the default ${mode} theme`, () => {
+      expect(colours.a.equals(colours.b)).toBe(false)
+    })
+  }
 })

@@ -567,6 +567,18 @@ const oneLine = (title: string) => title.replace(/[\r\n]+/g, " ")
 /** What a panel opened in a session shows: the tree it follows there, and whether to give the keyboard back to the prompt. */
 type View = { root: string; tree?: Tree; refocus: boolean; note: (fields: Partial<Following>) => void }
 
+/** The one place Digby's pixel tokens take a theme colour. */
+export const digbyColours = (theme: Context["theme"]): Record<Token, RGBA> => ({
+  b: theme.text.base,
+  k: theme.background.base,
+  g: theme.background.raised.max,
+  m: theme.text.muted,
+  a: theme.text.action.primary.selected,
+  w: theme.text.feedback.warning.base,
+  e: theme.text.feedback.error.base,
+  s: theme.text.feedback.success.base,
+})
+
 /** The tree panel: the sessions under its root, one row each, the one on screen marked, with the keys to move, open, stop and forget. */
 function TreePanel(props: {
   ctx: Context
@@ -688,16 +700,7 @@ function TreePanel(props: {
   const mascotFrame = () => (motion.enabled ? Math.floor(motion.frame() / MASCOT_EVERY) : undefined)
   const header = createMemo(() => cells(glyph(mascot(), mascotFrame())))
   const art = createMemo(() => idleArt(mascotFrame()))
-  const tokens: Record<Token, RGBA> = {
-    b: theme.text.base,
-    k: theme.background.base,
-    g: theme.background.raised.high,
-    m: theme.text.muted,
-    a: theme.text.action.primary.base,
-    w: theme.text.feedback.warning.base,
-    e: theme.text.feedback.error.base,
-    s: theme.text.feedback.success.base,
-  }
+  const tokens = digbyColours(theme)
   const drawn = (line: Accessor<ReadonlyArray<Cell>>) => (
     <text wrapMode="none" flexShrink={0}>
       <Index each={line()}>{(one) => <span style={{ fg: one().fg && tokens[one().fg!], bg: one().bg && tokens[one().bg!] }}>{one().char}</span>}</Index>
@@ -733,11 +736,11 @@ function TreePanel(props: {
     >
       <box flexDirection="row" flexShrink={0} gap={2}>
         <Show when={glyphShown()}>{drawn(() => header()[0]!)}</Show>
-        <text fg={theme.text.action.primary.base} wrapMode="none">
+        <text fg={tokens.a} wrapMode="none">
           courier tree
         </text>
         <Show when={root().started}>
-          <text fg={theme.text.action.primary.base} wrapMode="none">
+          <text fg={tokens.a} wrapMode="none">
             {bar(root(), 10, filled())}
           </text>
         </Show>

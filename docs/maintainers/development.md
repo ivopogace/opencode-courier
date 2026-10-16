@@ -90,7 +90,9 @@ request cancels its running CI:
 `.github/workflows/latest.yml` runs the live test once more on the newest `@opencode/cli` release,
 with the build still on the pinned plugin API: on every push to `main` and nightly, never on a pull
 request. Allowed to fail: a red run is a warning, so a host release that breaks the plugin shows up
-here before it reaches a user. Run it by hand with `gh workflow run latest.yml`.
+here before it reaches a user. When that release is newer than the pin, it opens one issue for it,
+"OpenCode X.Y.Z is out", saying whether the suites passed ([the pin](releasing.md#the-plugin-api-pin)).
+Run it by hand with `gh workflow run latest.yml`.
 
 The release workflows (`release-start.yml`, `release-tag.yml`, `release.yml`) run CI again on the
 tag: [releasing.md](releasing.md).

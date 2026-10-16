@@ -131,12 +131,23 @@ than `latest`; that only matters to someone installing `opencode-courier@next`, 
 CI also checks the package as published: `publint` for `package.json` and `exports`, and
 `@arethetypeswrong/cli` for the type declarations.
 
+## The plugin API pin
+
 The plugin API is pinned to an exact version in `package.json`, as devDependency and as peer
 dependency (a unit test keeps the two equal), and CI installs the OpenCode CLI at that version; so
-is `effect`, equal to the one that plugin API version depends on (the same test checks it). Bump
-the plugin API, the CLI and `effect` deliberately, re-run both test suites, add the new plugin
-version and OpenCode version as a row to the README's Supported OpenCode version table, move the
-version the README names in its Quickstart, its OpenCode V2 native section, its install command
-and the line under the table, and update the affected traps in
-[plugin-api-notes.md](plugin-api-notes.md). A release that keeps the pin adds its version to the
-table's current row.
+is `effect`, equal to the one that plugin API version depends on (the same test checks it).
+
+A new OpenCode release shows up on its own: `latest.yml` runs the live suites on it nightly and
+opens one issue, "OpenCode X.Y.Z is out", saying whether they passed. The pin bump closes it: move
+the plugin API, the CLI and `effect` deliberately, re-run both test suites, move the version the
+README names in its Quickstart, its OpenCode V2 native section, its install command and the line
+under the Supported OpenCode version table, and update the affected traps in
+[plugin-api-notes.md](plugin-api-notes.md). Then release a patch, so that the published package and
+its README name the new version and a host on it no longer logs the version line.
+
+The README's Supported OpenCode version table is generated from the release tags by
+`bun script/compat-table.ts`: each `vX.Y.Z` tag's `package.json` names its pin, consecutive releases
+on one pin share a row, and prereleases are left out. Start a release runs it, so the new version
+joins its pin's row, or opens a row when the pin moved; neither a pin bump nor anyone else edits
+the table. CI's unit job checks it with `bun script/compat-table.ts --check`, which needs the tags
+(`git fetch --tags`).

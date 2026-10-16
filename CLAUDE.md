@@ -164,8 +164,9 @@ describes it and holds a results table per scenario, which a re-run updates.
 own: `run.sh` in four shards and `tui.sh` in parallel, all skipped on a pull request that changes only documentation. The
 required `Live test against OpenCode V2` job is the gate over them and passes with all of them skipped. Its `sonar`
 job scans `src/` on SonarCloud with the unit coverage and fails when the quality gate does: no new bug,
-vulnerability or unreviewed hotspot, and at least 80% coverage on new code. `latest.yml`: the live suite on
-the `latest` OpenCode release, on pushes to `main` and nightly only, allowed to fail. `release-start.yml`,
+vulnerability or unreviewed hotspot, and at least 80% coverage on new code. Its unit job also runs
+`bun script/compat-table.ts --check`. `latest.yml`: the live suite on the `latest` OpenCode release,
+on pushes to `main` and nightly only, allowed to fail, and one issue for a release newer than the pin. `release-start.yml`,
 `release-tag.yml` and `release.yml`: the release flow, `docs/maintainers/releasing.md`.
 
 ## Commands
@@ -175,6 +176,7 @@ bun install
 bun run typecheck
 bun test
 bun run build      # dist/: tsc for the server half and rpc, script/build-tui.ts for tui
+bun script/compat-table.ts --check   # README's version table against the release tags (git fetch --tags)
 # live test: install the CLI once, at the version of the pinned plugin API
 npm install --prefix <scratch>/oc @opencode/cli@2.0.31
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # every scenario in one run, no API key; E2E_SHARD=k/n for a part
@@ -190,9 +192,12 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   devDependency move with it, to the `effect` the new `@opencode/plugin` depends on), and the live
   test installs `@opencode/cli` at that same version. Read the API's types in `node_modules` rather than
   guessing; the OpenCode V2 source is on the `v2` branch of https://github.com/anomalyco/opencode,
-  with each release tagged (`v2.0.31`). A release that keeps the pin adds itself to the current row of
-  README.md's Supported OpenCode version table. A pin bump adds a row to that table, moves the version README names elsewhere (Quickstart, OpenCode V2 native, the
-  install command, the terminal part's line under the table; a unit test checks the first three), and
+  with each release tagged (`v2.0.31`). README.md's Supported OpenCode version table is generated
+  from the release tags by `script/compat-table.ts`, which Start a release runs and CI checks: never
+  edit it by hand. A pin bump, asked for by the issue `latest.yml` opens for a new OpenCode release,
+  moves the version README names (Quickstart, OpenCode V2 native, the
+  install command, the terminal part's line under the table; a unit test checks the first three),
+  is followed by a patch release, and
   updates the affected traps in `docs/maintainers/plugin-api-notes.md` and the version they are
   current at; that file has no per-version sections. It also reads OpenCode's root `package.json`
   catalog at the new tag for `@opentui/*` and `solid-js`, and moves the devDependencies `@opentui/core`, `@opentui/solid`, `solid-js` and

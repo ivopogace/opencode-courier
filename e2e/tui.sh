@@ -216,7 +216,8 @@ check "the panel opens" "$(shows "courier tree  [██████████]
 tmux resize-window -t "$TMUX_SESSION" -x 160 -y 40
 sleep 1
 tmux send-keys -t "$TMUX_SESSION" Enter
-check "followed into a child at 160 columns" "$(shows "(on screen)" 30 tui-widened)"
+# The split pane is narrow, so the mark shows as "(on".
+check "followed into a child at 160 columns" "$(shows "Report back to your parent. (on" 30 tui-widened)"
 check "the panel sits beside the session, not over it" \
   "$(awk '/courier tree/ { if (index($0, "courier tree") > 40) found = 1 } END { print found ? "true" : "false" }' "$WORK/tui-widened.txt")"
 # /courier stop stops as the open session, so back to the parent.

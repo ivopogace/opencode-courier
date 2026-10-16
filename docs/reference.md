@@ -547,7 +547,8 @@ not see it enter the inbox; the compactions OpenCode makes on its own as the con
 ## A missed wake
 
 A report, a notice or a scheduled message reaches its session through OpenCode's inbox, and OpenCode
-starts a turn for it when the session is idle. Once, in a real-model run, a turn never started: the
+starts a turn for it when the session is idle, except one sent with `resume: false`, which waits for the
+session's next turn. Once, in a real-model run, a turn never started: the
 report sat in the parent's inbox, the parent never reported upward, and every session above it waited
 with nothing told. What OpenCode does, and how the wake can be lost, is in
 [the maintainer notes](maintainers/plugin-api-notes.md#events).
@@ -640,9 +641,9 @@ as well). For a request the parent was told about, the plugin then sends it a sh
 `answered="<reply>"` saying the request is settled, so it does not pass on a stale question; after a
 rejection, the message adds that the child may have stopped, and that `courier_send` gets it going
 again. That message is sent without waking the parent (`resume: false`): it waits in the parent's inbox
-and is read with the parent's next turn, which the child's report starts, since a child whose request
-was answered carries on. So a request answered elsewhere starts one turn in the top session, for the
-request, not a second one for the answer. The [missed-wake watch](#a-missed-wake) does not count it
+and is read with the parent's next turn: the child's report, or, after a rejection without a reason that
+ends the child's turn, the notice that it ended without one. So a request answered elsewhere starts one
+turn in the top session, for the request, not a second one for the answer. The [missed-wake watch](#a-missed-wake) does not count it
 as owed a turn. A `courier_answer` that comes later anyway passes nothing on and says so, as does one whose
 request was answered that way while you were being asked in the parent's session; the prompt there
 stays open until you answer it, and allowing it then passes nothing on. The TUI's [asks

@@ -34,8 +34,8 @@ type Messages = Awaited<ReturnType<WatchPorts["session"]["context"]>>
 const endsIdle = (messages: Messages) => messages.at(-1)?.type === "idle"
 
 /**
- * Watches a courier message enqueued for a session until it is delivered, noting whether the session runs: a running
- * turn takes it at its next step, an idle session is woken for it. Returns whether it is watched.
+ * Watches a courier message enqueued for a session until it is delivered, noting whether the session runs.
+ * Returns whether it is watched, which one sent with `resume: false` is not.
  */
 export async function watchWake(ports: WatchPorts, event: Enqueued) {
   const { sessionID, inboxID, item } = event.data

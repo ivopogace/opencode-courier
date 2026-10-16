@@ -69,7 +69,7 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   subtree walk, the report notes, each session's times, last tool call, cost and pending requests), whose
   `stop` is `stop.ts`'s and whose `cleanup` is `cleanup.ts`'s, run as the target's parent once `by` is above it; `tui.tsx` the TUI part, the prompt footer's status entry (`addTreeStatus`), the
   tree panel and the `/courier` command (`addTreePanel`) and the report sounds (`addTreeAttention`), which imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, `rpc.ts` and `text.ts`;
-  `wake.ts` the missed wake: it watches each courier message from its enqueue to its delivery (`watchWake`,
+  `wake.ts` the missed wake: it watches each courier message sent with a wake from its enqueue to its delivery (`watchWake`,
   `wakeStarted`, `wakeEnded`, from `events.ts`), sends it again under its inbox id from the scheduler's
   tick (`wakeMissed`) and says which sessions are stalled (`stalledAmong`, for `summary.ts` and `panel.ts`);
   `events.ts` `treeEvents`, which tells a parent that a child's turn failed or ended without a report,

@@ -72,7 +72,7 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.29`); paths be
   with a write-ahead claim in the session store and drains: the runner promotes the pending steer —
   `session.inbox.delivered`, the row deleted — and runs the turn to its one terminal event. A healthy wake is
   `enqueued → started → delivered → … → succeeded`; a courier-delivered message is owed a turn when `enqueued` has
-  no `started` behind it, and only a new synthetic, prompt or resume for that session rings the doorbell again.
+  no `started` behind it (unless it was sent with `resume: false`), and only a new synthetic, prompt or resume for that session rings the doorbell again.
 - A lost wake is silent in the events: `enqueued` with no `started` (and no `delivered`, which only a drain publishes).
   The host's own paths to it: `synthetic` skips the wake while the session has a staged revert (`session.revert`),
   holding the input until the revert commits on the next prompt or compaction; and an interrupt landing between the

@@ -117,7 +117,7 @@ jobs:
           remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push "${remote}" "release-${VERSION}"
           {
-            echo "Bumps \`package.json\` to ${VERSION} and adds it to the README's Supported OpenCode version table. Started by @${GITHUB_ACTOR} with the Start a release workflow (run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
+            echo "Bumps \`package.json\` to ${VERSION} and, unless it is a prerelease, adds it to the README's Supported OpenCode version table. Started by @${GITHUB_ACTOR} with the Start a release workflow (run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
             echo
             echo "GitHub holds the checks of a pull request that GitHub Actions opened: select **Approve workflows to run** in the merge box to start them."
             echo

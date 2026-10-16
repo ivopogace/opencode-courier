@@ -111,10 +111,10 @@ jobs:
   new-release:
     # An OpenCode release newer than the pin opens one issue, "OpenCode X.Y.Z is out", saying whether
     # the live suites passed on it: the pin bump it asks for is docs/maintainers/releasing.md's. Opened
-    # once per version, by the first run that sees it; a closed one is not reopened.
+    # once per version, by the first run that sees it to the end (not one a newer push cancelled).
     name: Open an issue for a new OpenCode release
     needs: e2e-latest
-    if: always() && needs.e2e-latest.outputs.version != ''
+    if: ${{ !cancelled() && needs.e2e-latest.outputs.version != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

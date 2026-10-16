@@ -1163,7 +1163,7 @@ run_nest() {
   check "the child committed on courier/<its session>" "$([ -n "$mid_commit" ] && echo true || echo false)"
   check "the grandchild's recorded base is the child's commit" "$([ -n "$mid_commit" ] && [ "$(jq -r '.base' <<<"$leaf_entry")" = "$mid_commit" ] && echo true || echo false)"
   check "its worktree contains the child's file" "$([ -f "$leaf_dir/leaf-saw-mid.txt" ] && echo true || echo false)"
-  check "and the child's commit is in its history" "$(git -C "$leaf_dir" log --format=%s | grep -qx 'mid work' && echo true || echo false)"
+  check "and the child's commit is in its history" "$(git -C "$leaf_dir" log --format=%s | grep -x 'mid work' >/dev/null && echo true || echo false)"
   check "the grandchild committed on courier/<its session>" "$(git -C "$WORK/project" log -1 --format=%s "courier/$nest_leaf" 2>/dev/null | grep -qx 'leaf work' && echo true || echo false)"
   check "the child merged it into its own worktree" "$([ -f "$mid_dir/leaf.txt" ] && echo true || echo false)"
 }

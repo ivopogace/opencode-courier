@@ -407,6 +407,11 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   input (`rpc.invalid_input`), encodes a declared error, turns a defect into `rpc.internal`, races
   the location's closing (`rpc.unavailable`) and encodes the output (`rpc.invalid_output`). Over
   HTTP: `POST /api/rpc/:rpcID/:method?directory=…` with `{ "input": … }`, answering `{ "output": … }`.
+- **A TUI part's options.** `ctx.options` is the `options` of the TUI's own config entry (`cli.json`'s
+  `plugins`, the `{ "package", "options" }` form); a plugin the TUI loads from the server's list enters as a bare
+  target (`packages/tui/src/plugin/context.tsx`), so the server's `opencode.json` options never reach it. The TUI's
+  `animations` setting (`cli.json`, toggled by `app.toggle.animations`) is read only by its built-in parts; the
+  plugin API has no settings, so the tree panel takes `"animations": false` from its options.
 - **The TUI context.** `ctx.client` is the TUI's own client; `ctx.location` may be `undefined`, in
   which case a call goes to the server's default location, so the courier falls back to
   `ctx.data.location.default()`. The prompt footer's slot is on the home screen too, with no

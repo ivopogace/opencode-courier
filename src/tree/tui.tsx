@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode/plugin/tui"
 import type { PanelInput, PanelPresentation } from "@opencode/plugin/tui/context"
-import type { ScrollBoxRenderable } from "@opentui/core"
-import { createEffect, createMemo, createResource, createRoot, createSignal, For, on, onCleanup, onMount, Show, untrack, type Accessor } from "solid-js"
+import { RGBA, Timeline, type EasingFunctions, type ScrollBoxRenderable } from "@opentui/core"
+import { batch, createEffect, createMemo, createResource, createRoot, createSignal, For, on, onCleanup, onMount, Show, untrack, type Accessor } from "solid-js"
 import { treeRpc, type Forgotten, type Row, type Stopped, type Summary, type Tree, type Wait } from "./rpc.js"
 
 type Context = Plugin.Context
@@ -49,6 +49,132 @@ export const PANEL = "courier-tree"
 /** How often the panel redraws its running times and how long ago each last tool call was. */
 export const TICK_MS = 1000
 
+/** The panel's animation frame: the spinner's step, and how often a flash or the bar's easing moves. */
+export const FRAME_MS = 90
+
+/** How long a row's background takes to fade back from its flash after its report arrives: the report's hold. */
+export const FLASH_MS = 1500
+
+/** How long the header's bar takes to grow, or shrink, to its new length. */
+export const BAR_MS = 450
+
+/** Whether the panel animates: unless the TUI part's options say `"animations": false`, as the plugin API has no TUI setting for it. */
+export function animationsOn(options: Readonly<Record<string, unknown>> | undefined) {
+  return options?.animations !== false
+}
+
+/** A value eased over the panel's frames by OpenTUI's `Timeline`; reading it in a computation follows the frames. */
+export type Tween = { readonly value: () => number; readonly done: () => boolean }
+
+/**
+ * The panel's one timer, a frame every `FRAME_MS` while a tween moves or a predicate given to `animates` holds, and none
+ * otherwise, with animations off, or once the panel is gone. `frame` counts them; it stands still with no timer.
+ */
+export type Motion = {
+  readonly enabled: boolean
+  readonly frame: Accessor<number>
+  readonly animates: (when: Accessor<boolean>) => void
+  readonly tween: (from: number, to: number, duration: number, ease: EasingFunctions) => Tween
+}
+
+/** The panel's `Motion`, owned by the computation it is made in. */
+export function createMotion(enabled: boolean): Motion {
+  const [frame, setFrame] = createSignal(0)
+  const [keepers, setKeepers] = createSignal<ReadonlyArray<Accessor<boolean>>>([])
+  type Moving = Tween & { step: (ms: number) => void }
+  const [moving, setMoving] = createSignal<ReadonlyArray<Moving>>([])
+  const animating = createMemo(() => enabled && (moving().length > 0 || keepers().some((when) => when())))
+  createEffect(() => {
+    if (!animating()) return
+    const timer = setInterval(
+      () =>
+        batch(() => {
+          const now = untrack(moving)
+          for (const one of now) one.step(FRAME_MS)
+          setFrame((count) => count + 1)
+          const left = now.filter((one) => !one.done())
+          if (left.length !== now.length) setMoving(left)
+        }),
+      FRAME_MS,
+    )
+    onCleanup(() => clearInterval(timer))
+  })
+  const tween = (from: number, to: number, duration: number, ease: EasingFunctions): Tween => {
+    if (!enabled || from === to) return { value: () => to, done: () => true }
+    const target = { value: from }
+    const timeline = new Timeline({ duration, autoplay: false })
+    timeline.add(target, { duration, ease, value: to })
+    timeline.play()
+    let elapsed = 0
+    const one: Moving = {
+      value: () => {
+        frame()
+        return target.value
+      },
+      done: () => {
+        frame()
+        return elapsed >= duration
+      },
+      step: (ms) => {
+        elapsed += ms
+        timeline.update(ms)
+      },
+    }
+    setMoving((all) => [...all, one])
+    return one
+  }
+  return { enabled, frame, animates: (when) => setKeepers((all) => [...all, when]), tween }
+}
+
+/**
+ * Each row's flash, by session, from a read of the rows to the next that finds its report turned to `reported`; not on
+ * the first read. `strength` is a row's, 1 when its report arrives down to 0; `reported` holds for `FLASH_MS` after one.
+ */
+export function createFlashes(motion: Motion, rows: Accessor<ReadonlyArray<Row>>) {
+  const [flashes, setFlashes] = createSignal<ReadonlyMap<string, Tween>>(new Map())
+  let seen: ReadonlyMap<string, string | undefined> | undefined
+  createEffect(() => {
+    const read = rows()
+    const before = seen
+    seen = new Map(read.map((row) => [row.sessionID, row.report?.state]))
+    if (!before || !motion.enabled) return
+    const arrived = read.filter((row) => row.report?.state === "reported" && before.has(row.sessionID) && before.get(row.sessionID) !== "reported")
+    if (!arrived.length) return
+    const next = new Map([...untrack(flashes)].filter(([, one]) => !untrack(one.done)))
+    for (const row of arrived) next.set(row.sessionID, motion.tween(1, 0, FLASH_MS, "outQuad"))
+    setFlashes(next)
+  })
+  const strength = (sessionID: string) => {
+    const one = flashes().get(sessionID)
+    return one && !one.done() ? one.value() : 0
+  }
+  const reported = () => [...flashes().values()].some((one) => !one.done())
+  return { strength, reported }
+}
+
+/** The header bar's filled cells, eased over `BAR_MS` to its new length once it is shown, at once when it first is. */
+export function createBarFill(motion: Motion, counts: Accessor<{ reported: number; started: number }>) {
+  const target = createMemo(() => filledCells(counts()))
+  const [easing, setEasing] = createSignal<Tween>()
+  let last: { cells: number; shown: boolean } | undefined
+  createEffect(() => {
+    const cells = target()
+    const shown = counts().started > 0
+    if (last && cells !== last.cells) {
+      const from = untrack(() => easing()?.value()) ?? last.cells
+      setEasing(last.shown ? motion.tween(from, cells, BAR_MS, "outQuad") : undefined)
+    }
+    last = { cells, shown }
+  })
+  return () => easing()?.value() ?? target()
+}
+
+/** `tint` over `rest` by `amount`, from 0 (all `rest`) to 1 (all `tint`). */
+export function blend(tint: RGBA, rest: RGBA, amount: number) {
+  const mix = (a: number, b: number) => b + (a - b) * amount
+  return RGBA.fromValues(mix(tint.r, rest.r), mix(tint.g, rest.g), mix(tint.b, rest.b), mix(tint.a, rest.a))
+}
+
 /**
  * The status entry's text, such as "courier 1 waiting on you · 2 running · group pair 1/2"; empty when there is nothing to show.
  * Within `maxWidth` it keeps whole parts, most important first, and counts the groups it drops: "· +2 groups".
@@ -87,10 +213,15 @@ export function parts(rows: ReadonlyArray<Row>, parentID: string) {
   return { reported: children.filter((row) => row.report?.state === "reported").length, started: children.length }
 }
 
-/** A bar of parts reported, `width` cells wide: "[████░░░░░░] 2/5 reported". */
-export function bar({ reported, started }: { reported: number; started: number }, width = 10) {
-  const filled = started ? Math.round((reported / started) * width) : 0
-  return `[${"█".repeat(filled)}${"░".repeat(width - filled)}] ${reported}/${started} reported`
+/** How many of a bar's `width` cells are filled for the parts reported. */
+export function filledCells({ reported, started }: { reported: number; started: number }, width = 10) {
+  return started ? Math.round((reported / started) * width) : 0
+}
+
+/** A bar of parts reported, `width` cells wide: "[████░░░░░░] 2/5 reported"; `filled` cells of it while it eases to its length. */
+export function bar(counts: { reported: number; started: number }, width = 10, filled = filledCells(counts, width)) {
+  const cells = Math.max(0, Math.min(width, Math.round(filled)))
+  return `[${"█".repeat(cells)}${"░".repeat(width - cells)}] ${counts.reported}/${counts.started} reported`
 }
 
 /** What a paused session waits on, such as "asks permission: shell echo hi" or "shows a form: Web Search". */
@@ -119,13 +250,19 @@ export function statusParts(row: Row) {
 
 type Feedback<Color> = { text: { feedback: Record<"error" | "warning" | "success" | "info", { base: Color }> } }
 
-/** The one cell a row's state shows and its theme colour, the blank cell of one with no mark: this is the only place that chooses them. */
-export function rowMark<Color>(row: Row, theme: Feedback<Color>): { mark: string; color: Color | undefined } {
+/** The running mark's frames, one every `FRAME_MS`. */
+export const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+/**
+ * The one cell a row's state shows and its theme colour, the blank cell of one with no mark: this is the only place that
+ * chooses them. A running row spins through `SPINNER` at the panel's `frame`, and shows `•` with none (animations off).
+ */
+export function rowMark<Color>(row: Row, theme: Feedback<Color>, frame?: number): { mark: string; color: Color | undefined } {
   const { error, warning, success, info } = theme.text.feedback
   if (row.state === "gone") return { mark: " ", color: undefined }
   if (row.state === "stalled") return { mark: "!", color: error.base }
   if (row.state === "waiting") return { mark: "●", color: warning.base }
-  if (row.state === "running") return { mark: "•", color: info.base }
+  if (row.state === "running") return { mark: frame === undefined ? "•" : SPINNER[frame % SPINNER.length]!, color: info.base }
   if (!row.stopped && (row.outcome === "failed" || row.outcome === "interrupted")) return { mark: "✗", color: error.base }
   if (row.report?.state === "reported") return { mark: "✓", color: success.base }
   return { mark: " ", color: undefined }
@@ -376,7 +513,15 @@ const oneLine = (title: string) => title.replace(/[\r\n]+/g, " ")
 type View = { root: string; tree?: Tree; refocus: boolean; note: (fields: Partial<Following>) => void }
 
 /** The tree panel: the sessions under its root, one row each, the one on screen marked, with the keys to move, open, stop and forget. */
-function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier: Courier; location: (sessionID: string) => Location; changed: Accessor<number> }) {
+function TreePanel(props: {
+  ctx: Context
+  input: PanelInput
+  view: View
+  courier: Courier
+  location: (sessionID: string) => Location
+  changed: Accessor<number>
+  animations: boolean
+}) {
   const { ctx, input, view, courier, location } = props
   const theme = ctx.theme
   const [read, { refetch }] = createResource(
@@ -470,6 +615,17 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
     ],
   }))
   const root = () => parts(rows(), view.root)
+  const motion = createMotion(props.animations)
+  motion.animates(() => rows().some((row) => row.state === "running"))
+  const flashes = createFlashes(motion, rows)
+  const filled = createBarFill(motion, root)
+  const frame = () => (motion.enabled ? motion.frame() : undefined)
+  // A flash fades from the theme's success background to the row's own: the selection's, else the panel's.
+  const rowBackground = (row: Row, chosen: boolean) => {
+    const rest = chosen && input.focused ? theme.background.raised.high : undefined
+    const strength = flashes.strength(row.sessionID)
+    return strength > 0 ? blend(theme.background.feedback.success.base, rest ?? theme.background.base, strength) : rest
+  }
   const rowColor = (row: Row) => {
     if (row.state === "stalled") return theme.text.feedback.error.base
     if (row.state === "waiting") return theme.text.feedback.warning.base
@@ -490,7 +646,7 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
         </text>
         <Show when={root().started}>
           <text fg={theme.text.action.primary.base} wrapMode="none">
-            {bar(root())}
+            {bar(root(), 10, filled())}
           </text>
         </Show>
         <Show when={latest()?.tree?.truncated}>
@@ -514,14 +670,14 @@ function TreePanel(props: { ctx: Context; input: PanelInput; view: View; courier
             const chosen = () => index() === selected()
             const indent = "  ".repeat(row.depth - 1)
             return (
-              <box id={`courier-row-${index()}`} flexDirection="column" flexShrink={0} backgroundColor={chosen() && input.focused ? theme.background.raised.high : undefined}>
+              <box id={`courier-row-${index()}`} flexDirection="column" flexShrink={0} backgroundColor={rowBackground(row, chosen())}>
                 <box flexDirection="row" flexShrink={0}>
                   <text fg={rowColor(row)} wrapMode="none" flexShrink={0}>
                     {indent}
                     {chosen() ? "▸ " : "  "}
                   </text>
                   <text fg={rowMark(row, theme).color} wrapMode="none" flexShrink={0}>
-                    {rowMark(row, theme).mark}{" "}
+                    {rowMark(row, theme, frame()).mark}{" "}
                   </text>
                   <text fg={rowColor(row)} wrapMode="none" flexShrink={1} minWidth={0}>
                     {oneLine(row.title)}
@@ -584,6 +740,7 @@ export const USAGE = "/courier tree opens the session tree; /courier stop [sessi
  */
 export function addTreePanel(ctx: Context) {
   const { courier, location } = courierOf(ctx)
+  const animations = animationsOn(ctx.options)
   const [changed, stopListening] = changes(ctx, PANEL_CHANGES, PANEL_SETTLE_MS)
   let following: Following | undefined
   let attempt = 0
@@ -604,7 +761,7 @@ export function addTreePanel(ctx: Context) {
     append: "session.panel",
     render: (input) => (
       <Show when={input.name === PANEL}>
-        <TreePanel ctx={ctx} input={input} view={viewOf(input.sessionID)} courier={courier} location={location} changed={changed} />
+        <TreePanel ctx={ctx} input={input} view={viewOf(input.sessionID)} courier={courier} location={location} changed={changed} animations={animations} />
       </Show>
     ),
   })

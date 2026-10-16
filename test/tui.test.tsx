@@ -1,14 +1,17 @@
 // The TUI part against a fake TUI context, rendered headless by OpenTUI's test renderer.
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, jest, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin/tui"
 import type { SlotClaim } from "@opencode/plugin/tui/context"
 import { RGBA } from "@opentui/core"
 import { testRender } from "@opentui/solid"
-import { batch, createSignal } from "solid-js"
+import { batch, createRoot, createSignal } from "solid-js"
 import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, addTreeStatus, bar, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
+import { activityLine, addTreeStatus, animationsOn, bar, BAR_MS, blend, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE } from "../src/tree/tui.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
+
+/** The fake theme's success background, a row's flash. */
+const FLASH = RGBA.fromInts(0, 200, 0)
 
 const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
 
@@ -82,7 +85,7 @@ function fakeContext(
     },
     theme: {
       text: { base: color, muted: color, action: { primary: { base: color } }, feedback: THEME },
-      background: { raised: { high: color } },
+      background: { base: RGBA.fromInts(0, 0, 0), raised: { high: color }, feedback: { success: { base: FLASH } } },
     },
     client: {
       rpc: () => ({
@@ -1167,4 +1170,234 @@ test("a long title keeps the row's status in view, and a line break stays on the
   const frame = app.captureCharFrame()
   expect(frame).toContain("waiting on you")
   expect(frame).not.toMatch(/\n line two/)
+})
+
+/** Counts the panel's frame timers, the intervals of `FRAME_MS` set and not cleared, while fake timers run. */
+function frameTimers() {
+  const live = new Set<unknown>()
+  const set = globalThis.setInterval
+  const clear = globalThis.clearInterval
+  globalThis.setInterval = ((handler: () => void, ms?: number) => {
+    const id = set(handler, ms)
+    if (ms === FRAME_MS) live.add(id)
+    return id
+  }) as typeof setInterval
+  globalThis.clearInterval = ((id: Parameters<typeof clearInterval>[0]) => {
+    live.delete(id)
+    clear(id)
+  }) as typeof clearInterval
+  return {
+    count: () => live.size,
+    restore: () => {
+      globalThis.setInterval = set
+      globalThis.clearInterval = clear
+    },
+  }
+}
+
+describe("the tree panel's motion (#224)", () => {
+  let timers: ReturnType<typeof frameTimers> | undefined
+  afterEach(() => {
+    timers?.restore()
+    timers = undefined
+    jest.useRealTimers()
+  })
+
+  /** Opens the panel, unfocused so no selection colours a row, on the trees `trees()` gives, with fake timers and `options`. */
+  async function motion(trees: () => Tree, options: Record<string, unknown> = {}) {
+    jest.useFakeTimers()
+    timers = frameTimers()
+    const fake = fakeContext(async () => empty)
+    Object.assign(fake.context, { options })
+    fake.state.tree = async () => trees()
+    await tui.setup(fake.context)
+    const [name, setName] = createSignal(PANEL)
+    const value = Object.defineProperty(panelInput("ses_parent", PANEL, { focused: false }).value, "name", { get: name })
+    const app = await renderPanel(fake.claim("session.panel"), value)
+    const frame = async () => {
+      for (let i = 0; i < 20; i++) await Promise.resolve()
+      await app.renderOnce()
+      return app.captureCharFrame()
+    }
+    /** Moves the fake clock by `ms` and draws what follows. */
+    const advance = async (ms: number) => {
+      jest.advanceTimersByTime(ms)
+      return frame()
+    }
+    const refresh = async () => {
+      fake.command("r").run()
+      return frame()
+    }
+    /** The background of the cell where `text` starts, as integers. */
+    const background = (text: string) => {
+      for (const line of app.captureSpans().lines) {
+        const span = line.spans.find((one) => one.text.includes(text))
+        if (span) return span.bg.toInts()
+      }
+      throw new Error(`no span with ${text}`)
+    }
+    await frame()
+    return { app, frame, advance, refresh, background, hide: () => setName("someone-else") }
+  }
+
+  const running = (): Tree => ({ rows: [row("ses_run", { state: "running" })] })
+
+  test("a running row's mark spins a frame every FRAME_MS, on the panel's one timer, which stops once the panel is hidden", async () => {
+    const panel = await motion(running)
+    expect(await panel.frame()).toContain("⠋ ses_run  running")
+    expect(timers!.count()).toBe(1)
+    expect(await panel.advance(FRAME_MS)).toContain("⠙ ses_run  running")
+    expect(await panel.advance(FRAME_MS * 9)).toContain("⠋ ses_run  running")
+    panel.hide()
+    await panel.frame()
+    expect(timers!.count()).toBe(0)
+  })
+
+  test("no timer runs with nothing to animate, and none once a running row goes idle", async () => {
+    let state: Row["state"] = "idle"
+    const panel = await motion(() => ({ rows: [row("ses_a", { state })] }))
+    expect(timers!.count()).toBe(0)
+    state = "running"
+    await panel.refresh()
+    expect(timers!.count()).toBe(1)
+    state = "idle"
+    expect(await panel.refresh()).toContain("   ses_a  idle")
+    expect(timers!.count()).toBe(0)
+  })
+
+  test("a report flashes its row once, in the theme's success background, which fades back over FLASH_MS", async () => {
+    let state: "owed" | "reported" = "owed"
+    const panel = await motion(() => ({ rows: [row("ses_one", { report: state === "reported" ? { state, status: "done", progressed: false } : { state, progressed: false } }), row("ses_two")] }))
+    const rest = panel.background("ses_two")
+    expect(panel.background("ses_one")).toEqual(rest)
+    state = "reported"
+    expect(await panel.refresh()).toContain("✓ ses_one  idle · reported done")
+    expect(panel.background("ses_one")).toEqual(FLASH.toInts())
+    expect(panel.background("ses_two")).toEqual(rest)
+    expect(timers!.count()).toBe(1)
+    await panel.advance(FLASH_MS / 2)
+    const halfway = panel.background("ses_one")
+    expect(halfway[1]).toBeGreaterThan(0)
+    expect(halfway[1]).toBeLessThan(200)
+    await panel.advance(FLASH_MS / 2 + FRAME_MS)
+    expect(panel.background("ses_one")).toEqual(rest)
+    expect(timers!.count()).toBe(0)
+    // Read again still reported, it does not flash again.
+    await panel.refresh()
+    expect(panel.background("ses_one")).toEqual(rest)
+    expect(timers!.count()).toBe(0)
+  })
+
+  test("the header's bar grows to its new length over BAR_MS, its count at once", async () => {
+    let reported = 1
+    const panel = await motion(() => pair(reported))
+    expect(await panel.frame()).toContain("[█████░░░░░] 1/2 reported")
+    reported = 2
+    expect(await panel.refresh()).toContain("[█████░░░░░] 2/2 reported")
+    const step = await panel.advance(FRAME_MS)
+    expect(step).toContain("2/2 reported")
+    expect(step).not.toContain("[█████░░░░░]")
+    expect(step).not.toContain("[██████████]")
+    expect(await panel.advance(BAR_MS)).toContain("[██████████] 2/2 reported")
+    // The flash of the row that reported holds a while longer.
+    await panel.advance(FLASH_MS)
+    expect(timers!.count()).toBe(0)
+  })
+
+  test("the first report of a tree shown at 0 reported eases the bar too", async () => {
+    let reported = 0
+    const report = (done: boolean): Row["report"] => (done ? { state: "reported", status: "done", progressed: false } : { state: "owed", progressed: false })
+    const panel = await motion(() => ({ rows: [row("ses_one", { report: report(reported > 0) }), row("ses_two", { report: report(reported > 1) })] }))
+    expect(await panel.frame()).toContain("[░░░░░░░░░░] 0/2 reported")
+    reported = 1
+    expect(await panel.refresh()).toContain("[░░░░░░░░░░] 1/2 reported")
+    const step = await panel.advance(FRAME_MS)
+    expect(step).not.toContain("[░░░░░░░░░░]")
+    expect(step).not.toContain("[█████░░░░░]")
+    expect(await panel.advance(BAR_MS)).toContain("[█████░░░░░] 1/2 reported")
+    await panel.advance(FLASH_MS)
+    expect(timers!.count()).toBe(0)
+  })
+
+  test("with \"animations\": false nothing moves: the running mark stays •, a report does not flash, the bar jumps", async () => {
+    let reported = 1
+    let state: Row["state"] = "running"
+    const tree = (): Tree => ({ rows: [...pair(reported).rows, row("ses_run", { state })] })
+    const panel = await motion(tree, { animations: false })
+    expect(await panel.frame()).toContain("[███░░░░░░░] 1/3 reported")
+    expect(await panel.advance(FRAME_MS * 3)).toContain("• ses_run  running")
+    const rest = panel.background("ses_run")
+    reported = 2
+    expect(await panel.refresh()).toContain("[███████░░░] 2/3 reported")
+    expect(panel.background("CHILD-ASKS")).toEqual(rest)
+    expect(timers!.count()).toBe(0)
+    state = "idle"
+    await panel.refresh()
+    expect(timers!.count()).toBe(0)
+  })
+})
+
+describe("the tree panel's motion, its pieces", () => {
+  test("animations are on unless the options say false", () => {
+    expect(animationsOn(undefined)).toBe(true)
+    expect(animationsOn({})).toBe(true)
+    expect(animationsOn({ animations: true })).toBe(true)
+    expect(animationsOn({ animations: false })).toBe(false)
+  })
+
+  test("a running row's mark is the spinner's frame, • with none", () => {
+    const running = row("ses_a", { state: "running" })
+    expect(rowMark(running, { text: { feedback: THEME } }, 0).mark).toBe(SPINNER[0]!)
+    expect(rowMark(running, { text: { feedback: THEME } }, SPINNER.length + 3).mark).toBe(SPINNER[3]!)
+    expect(rowMark(running, { text: { feedback: THEME } }).mark).toBe("•")
+    expect(rowMark(row("ses_a", { state: "waiting" }), { text: { feedback: THEME } }, 4).mark).toBe("●")
+  })
+
+  test("a bar eases by its filled cells, clamped to its width", () => {
+    expect(filledCells({ reported: 1, started: 2 })).toBe(5)
+    expect(bar({ reported: 2, started: 2 }, 10, 6.6)).toBe("[███████░░░] 2/2 reported")
+    expect(bar({ reported: 2, started: 2 }, 10, 12)).toBe("[██████████] 2/2 reported")
+    expect(bar({ reported: 0, started: 2 }, 10, -1)).toBe("[░░░░░░░░░░] 0/2 reported")
+  })
+
+  test("a report holds for FLASH_MS, and a predicate given to animates keeps the frames coming", async () => {
+    jest.useFakeTimers()
+    const timers = frameTimers()
+    try {
+      const [rows, setRows] = createSignal<ReadonlyArray<Row>>([row("ses_a")])
+      const [breathing, setBreathing] = createSignal(true)
+      const { motion, flashes, dispose } = createRoot((dispose) => {
+        const motion = createMotion(true)
+        motion.animates(breathing)
+        return { motion, flashes: createFlashes(motion, rows), dispose }
+      })
+      expect(timers.count()).toBe(1)
+      jest.advanceTimersByTime(FRAME_MS * 5)
+      expect(motion.frame()).toBe(5)
+      expect(flashes.reported()).toBe(false)
+      setRows([row("ses_a", { report: { state: "reported", progressed: false } })])
+      expect(flashes.reported()).toBe(true)
+      expect(flashes.strength("ses_a")).toBe(1)
+      setBreathing(false)
+      // The hold ends on the first frame at or past FLASH_MS.
+      jest.advanceTimersByTime((Math.ceil(FLASH_MS / FRAME_MS) - 1) * FRAME_MS)
+      expect(flashes.reported()).toBe(true)
+      jest.advanceTimersByTime(FRAME_MS)
+      expect(flashes.reported()).toBe(false)
+      expect(flashes.strength("ses_a")).toBe(0)
+      expect(timers.count()).toBe(0)
+      dispose()
+    } finally {
+      timers.restore()
+      jest.useRealTimers()
+    }
+  })
+
+  test("a blend goes from the rest colour to the tint", () => {
+    const tint = RGBA.fromInts(0, 200, 0)
+    const rest = RGBA.fromInts(100, 0, 0)
+    expect(blend(tint, rest, 1).toInts()).toEqual([0, 200, 0, 255])
+    expect(blend(tint, rest, 0).toInts()).toEqual([100, 0, 0, 255])
+    expect(blend(tint, rest, 0.5).toInts()).toEqual([50, 100, 0, 255])
+  })
 })

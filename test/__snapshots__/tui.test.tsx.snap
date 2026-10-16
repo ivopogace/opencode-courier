@@ -221,25 +221,25 @@ exports[`Digby, the tree panel's mascot (#226) his frames, as the panel draws th
       {
         "drawn": [
           "▄▄▄▄▄▄██",
-          "█▀▀▀▀██▄",
+          "█▀▀▀▀██ ",
         ],
         "pixels": [
           "......aa",
           "bbbbbbaa",
           "bkbbkbm.",
-          "bbaabbmg",
+          "bbaabbm.",
         ],
       },
       {
         "drawn": [
           "▀▄▄▄▄▄██",
-          "█▀▀▀▀██▄",
+          "█▀▀▀▀██ ",
         ],
         "pixels": [
           "s.....aa",
           "bbbbbbaa",
           "bkbbkbm.",
-          "bbaabbmg",
+          "bbaabbm.",
         ],
       },
     ],
@@ -343,7 +343,7 @@ exports[`Digby, the tree panel's mascot (#226) his frames, as the panel draws th
           ".bbbbbbw",
           ".bkbbkbw",
           ".bbaabbm",
-          "gggggggg",
+          "ggggggg.",
         ],
       },
       {
@@ -355,7 +355,7 @@ exports[`Digby, the tree panel's mascot (#226) his frames, as the panel draws th
           ".bbbbbbb",
           ".bkbbkbb",
           ".bbaabbm",
-          "gggggggg",
+          "ggggggg.",
         ],
       },
     ],

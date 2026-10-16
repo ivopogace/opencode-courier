@@ -270,7 +270,7 @@ courier 1 waiting on you · 2 running · group pair 1/2
 ```
 
 `/courier tree` opens a panel beside the session with the tree under it, a row per session indented
-by depth, with a mark and colour from your theme for its state (`✓` reported, `•` running, `●` waiting on you, `!` stalled,
+by depth, with a mark and colour from your theme for its state (`✓` reported, a spinner `⠋` while it runs, `●` waiting on you, `!` stalled,
 `✗` failed or interrupted), what it does, its report and its group's standing; a session waiting on you gets a line per
 request or form (`shows a form: Web Search`), a stalled one since when its message waits, a session that started others gets
 a bar of the parts reported, a leaf how long it ran, its last tool call and its cost. A tree that has
@@ -282,6 +282,17 @@ rules, and `q` closes the panel; `/courier stop <session>` stops from the prompt
 follows you between sessions: into one of its tree it keeps that tree, the session on screen marked
 `(on screen)`; elsewhere it shows that session's tree, or hides while you are in a session without one,
 or on the home screen, and shows again once you are back in one; only `q` closes it for good.
+A row whose report arrives flashes in your theme's success colour and fades back over 1.5 s, and the header's bar
+grows to its new length; nothing in the footer moves. To keep the panel still (`•` for a running row, no flash, the
+bar at once), give the TUI part `"animations": false` in OpenCode's terminal config, `~/.config/opencode/cli.json`:
+the TUI passes options to its plugins only from there, not from the server's `opencode.json`, and has no animations
+setting a plugin can read ([more](docs/reference.md#in-the-terminal)).
+
+```jsonc
+{
+  "plugins": [{ "package": "opencode-courier", "options": { "animations": false } }]
+}
+```
 
 `ctrl+x k` (the leader key, then `k`), `/asks` (or `/ask`), the palette's "Courier: what waits on you" or a click
 on "waiting on you" opens the asks inbox: every permission request, question and form waiting

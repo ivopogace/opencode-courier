@@ -918,7 +918,7 @@ with its group or delivered, `ended without a report` when its turn failed or wa
 for a session spawned before report notes were kept), its join group's standing (`group <name> held`,
 `out`, how it left, or `released`), and `isolated`. A one-cell mark before the title shows the state at a
 glance, in the person's OpenCode theme (never a fixed colour): `✓` for a session that reported (the mark
-and the `reported …` words in the theme's success colour), `•` for a running one (info), `●` for one
+and the `reported …` words in the theme's success colour), `•` for a running one (info; a spinner while the panel animates, see what moves below), `●` for one
 waiting on you (warning), `!` for a stalled one and `✗` for one whose last turn failed or was interrupted
 (error); an idle one that owes a report, and a gone one, have none (a gone row's title is muted). The
 header's title and bar take the theme's accent (primary action) colour. The mark has a cell of its own, so a long
@@ -937,7 +937,30 @@ title is cut before the status is. Under it:
 
 There is no progress a session reports of itself: a bar counts only reports courier noted. The panel
 asks again a second after the first of a burst of the status entry's events and of a tool call, a usage
-update or a rename, and every 15 seconds besides, and redraws its times every second. Its keys, while it has the keyboard (it takes it
+update or a rename, and every 15 seconds besides, and redraws its times every second.
+
+**What moves.** Three things, on one timer for the whole panel, a frame every 90 ms, which runs only while
+one of them has a next frame and stops when the panel is hidden or closed:
+
+- a **running** row's mark is a spinner, `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, a frame a tick, in the info colour;
+- a row whose **report arrives**, one read as owing or ended and the next as `reported` (not a row already reported
+  when the panel opens or first lists it), flashes once: its background takes the theme's success background and fades
+  back to its own (the selection's, else the theme's base) over 1.5 s, easing out;
+- the header's **bar** eases to its new length over about half a second, easing out; its count changes at once.
+
+The `waiting on you` mark stays still, and nothing in the prompt's footer moves. With `"animations": false` in the
+TUI part's options none of them do: a running row shows `•`, a report does not flash, the bar takes its length at
+once, and no timer runs for them. The TUI passes a plugin options only from its own config's `plugins`
+(`~/.config/opencode/cli.json`); a plugin it loads from the server's list, as the courier's TUI part, gets none
+of the server's `opencode.json` options. The TUI's own `animations` setting is not on the plugin API, so it does
+not stop the panel's:
+
+```jsonc
+// ~/.config/opencode/cli.json
+{
+  "plugins": [{ "package": "opencode-courier", "options": { "animations": false } }]
+}
+``` Its keys, while it has the keyboard (it takes it
 when it opens; `<leader>left` and `<leader>right` move it between the session and the panel): `↑`/`k` and
 `↓`/`j` move the selection, `enter` opens the selected session, `s` stops it, `x` forgets a `gone` one,
 `r` asks again, `f` toggles fullscreen and `q` closes the panel. While open, the panel follows the person to another session (its own

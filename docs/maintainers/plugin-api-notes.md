@@ -72,7 +72,7 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.30`); paths be
   with a write-ahead claim in the session store and drains: the runner promotes the pending steer —
   `session.inbox.delivered`, the row deleted — and runs the turn to its one terminal event. A healthy wake is
   `enqueued → started → delivered → … → succeeded`; a courier-delivered message is owed a turn when `enqueued` has
-  no `started` behind it, and only a new synthetic, prompt or resume for that session rings the doorbell again.
+  no `started` behind it (unless it was sent with `resume: false`), and only a new synthetic, prompt or resume for that session rings the doorbell again.
 - A lost wake is silent in the events: `enqueued` with no `started` (and no `delivered`, which only a drain publishes).
   The host's own paths to it: `synthetic` skips the wake while the session has a staged revert (`session.revert`),
   holding the input until the revert commits on the next prompt or compaction; and an interrupt landing between the
@@ -87,9 +87,18 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.30`); paths be
   plugin API cannot list the inbox (`GET /api/session/:id/inbox` can); a delivered item becomes the stored
   message with the same id. `session.synthetic` with the `id` of an item still waiting, or already delivered,
   returns that item (`reconcile` in `packages/core/src/session/inbox.ts` matches on session and type only,
-  publishing nothing) and still wakes the session, so a wake sent again adds no second message. `resume: false`
-  admits an item without the wake, which the live test uses to stage a missed one. `session.status` and
+  publishing nothing) and still wakes the session, so a wake sent again adds no second message. `session.status` and
   `session.idle` are in the schema but published by nothing in core.
+- **`resume: false` is the only way to send a message that does not start a turn.** `Session.synthetic` admits the
+  item and rings the run coordinator unless `resume === false` (`packages/core/src/session/session.ts`; the
+  `session.synthetic` endpoint documents it: "schedule execution unless resume is false", and the plugin's
+  `session.synthetic` passes the payload through), whatever the `delivery`: `queue` still wakes an idle session
+  (seen in the source at `v2.0.29` and `v2.0.30`). With `resume: false` the item waits in the inbox and is promoted
+  by the session's next turn, whoever starts it; the live test also uses it to stage a missed wake. The
+  `session.inbox.enqueued` event carries the item (`delivery`, `payload`) but not `resume`, so the missed-wake watch
+  cannot tell such an item from a lost wake: the plugin marks the ones it sends so in their metadata (`resume: false`,
+  next to `source: "courier"`) and `watchWake` skips them. The courier sends the settled notice of a permission
+  request this way (#227).
 - Every event carries `created`, the epoch milliseconds OpenCode published it at, which the report
   state compares with the server's clock at `courier_send`.
 - `session.context()` returns the session's stored messages (`SessionMessage.Info[]`), not the

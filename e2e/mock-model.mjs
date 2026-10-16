@@ -233,7 +233,8 @@ function decide(body) {
   // Told that its child shows a form only the person can answer, it ends its turn, as if it had told them.
   const form = recent.match(/<courier from="ses_\w+" asks="form" form="([^"]+)"/)
   if (form) return { text: `PARENT TOLD FORM ${form[1]}` }
-  if (/<courier from="ses_\w+" (answered|settled)=/.test(recent)) return { text: "PARENT SETTLED" }
+  // A permission request's settled notice is sent without a wake and may wait for a report's turn: that turn is the report's.
+  if (/<courier from="ses_\w+" (answered|settled)=/.test(recent) && !/<courier from="ses_\w+" status="/.test(recent)) return { text: "PARENT SETTLED" }
   if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
   // A group's reports, in one message, or a member's blocked report, which is not held.
   // A middle session reports its group's message on; a root parent ends its turn on it.

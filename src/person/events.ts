@@ -37,8 +37,8 @@ export async function reportAsked(ports: PersonPorts, state: PersonState, event:
 }
 
 /**
- * Tells the session told about a request that it was answered some other way, so it does not pass on
- * a stale question; requests answered through courier_answer no longer wait and are skipped.
+ * Tells the session told about a request that it was answered some other way, so it does not pass on a stale
+ * question; requests answered through courier_answer are skipped. Sent with `resume: false`, so it starts no turn.
  */
 export async function reportReplied(ports: PersonPorts, state: PersonState, event: PermissionReplied) {
   if (!claim(state.seen, event.id)) return []
@@ -53,8 +53,9 @@ export async function reportReplied(ports: PersonPorts, state: PersonState, even
     sessionID: topOf(chain),
     text: envelope(sessionID, permissionSettledNotice(chain[0]!.title, requestID, reply), { answered: reply, request: requestID }),
     description: `Session ${sessionID} no longer asks for permission`,
-    metadata: { source: "courier", from: sessionID, answered: reply, requestID },
+    metadata: { source: "courier", from: sessionID, answered: reply, requestID, resume: false },
     delivery: "steer",
+    resume: false,
   })
   return [topOf(chain)]
 }

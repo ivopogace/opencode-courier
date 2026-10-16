@@ -175,6 +175,13 @@ reported() {
   settled=$(kv get "report/$1/settled" | jq -r 'select(.by == "report") | .at // empty')
   [ -n "$prompted" ] && [ -n "$settled" ] && [ "$settled" -ge "$prompted" ] && echo true || echo false
 }
+# Whether session $1 took the notice of request $2 answered elsewhere in the same turn as its child's report, with no reply of its own between.
+settled_with_report() {
+  api "session/$1/message" | jq -r --arg request "$2" '.data | sort_by(.id) as $m |
+    ([range(0; $m | length) | select($m[.].type == "synthetic" and ($m[.].text | contains(" answered=\"") and contains("request=\"" + $request + "\"")))] | first) as $s |
+    ([range(0; $m | length) | select($m[.].type == "synthetic" and ($m[.].text | contains("CHILD DONE")))] | first) as $r |
+    $s != null and $r != null and $r > $s and ([$m[$s:$r][] | select(.type == "assistant")] | length == 0)'
+}
 # The state of the last courier_answer call of session $1, from its transcript.
 answer_state() {
   api "session/$1/message" | jq -c '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_answer") | .state] | last // empty'
@@ -583,18 +590,20 @@ run_permission() {
     check "the parent got no stale notice" "$(notices_with "$parent" answered | jq -r 'length == 0')"
   done
 
-  scenario "a request answered in the child's own session leaves no stale question with the parent"
+  scenario "a request answered in the child's own session leaves no stale question with the parent, and starts no turn of its own (#227)"
   ask_permission ""
   code=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
     --data '{"decision":"once"}' "$SERVER/api/session/$child/permission/$request/reply")
   check "answered in the child's session" "$([ "$code" = 204 ] && echo true || echo false)"
-  check "the parent was told it is settled" "$([ -n "$(reply_time "$parent" "PARENT SETTLED")" ] && echo true || echo false)"
-  check "the notice names the request and the answer" \
+  check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  check "the parent was told it is settled, once, naming the request and the answer" \
     "$(notices_with "$parent" answered | jq -r --arg request "$request" 'length == 1 and (.[0] | contains("request=\"" + $request + "\"") and contains("answered=\"once\""))')"
+  check "the root took it with the child's report, in the same turn" "$(settled_with_report "$parent" "$request")"
+  check "and replied to the ask and the report only: two turns, not three" \
+    "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "assistant") | [.content[]? | select(.type == "text") | .text] | join("") | select(test("PARENT (ASKS|WOKE|SETTLED)"))] | length == 2')"
   answered=$(prompt_in "$parent" "COURIER-ANSWER once" | tool_state courier_answer)
   check "a late courier_answer passes nothing on" \
     "$(jq -r '.status == "completed" and .metadata.metadata.answered == false and (.output | contains("is pending in this OpenCode server") and contains("another OpenCode server on the same data directory"))' <<<"$answered")"
-  check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
 }
 
 run_depth() {
@@ -682,7 +691,7 @@ run_answer() {
   check "the person answers it in the child's session, and the child carries on" \
     "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"once"}')" = 204 ] && [ "$(has_text "$parent" "CHILD DONE shell" 45)" = true ] && echo true || echo false)"
   check "which the parent was told once, and its model got no courier_answer result meanwhile" \
-    "$(has_text "$parent" "PARENT SETTLED" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"once\""))')" = true ] &&
+    "$(reply_time "$parent" "PARENT WOKE" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"once\""))')" = true ] &&
       [ "$(has_text "$parent" "TOOL DONE courier_answer" 1)" != true ] && echo true || echo false)"
 }
 
@@ -1214,9 +1223,10 @@ run_inbox() {
         .resources == ["echo courier-asks"]))' <<<"$listed" 2>/dev/null || echo false)"
   check "the child's own session lists the same" "$([ "$(inbox asks "{\"sessionID\":\"$child\"}" | jq -c '.output')" = "$listed" ] && echo true || echo false)"
   check "the inbox answers through OpenCode's reply" "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"once"}')" = 204 ] && echo true || echo false)"
-  check "the parent was told it is settled, once" \
-    "$(reply_time "$parent" "PARENT SETTLED" >/dev/null; sleep 2; notices_with "$parent" answered | jq -r --arg request "$request" 'length == 1 and (.[0] | contains("request=\"" + $request + "\"") and contains("answered=\"once\""))')"
   check "the child carried on and reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  check "the parent was told it is settled, once" \
+    "$(notices_with "$parent" answered | jq -r --arg request "$request" 'length == 1 and (.[0] | contains("request=\"" + $request + "\"") and contains("answered=\"once\""))')"
+  check "and took it with the child's report, in one turn" "$(settled_with_report "$parent" "$request")"
   check "and nothing is left in the inbox" "$(inbox asks "{\"sessionID\":\"$parent\"}" | jq -r '.output.permissions == [] and .output.questions == []')"
 
   scenario "the asks inbox answers a child's question through the person's RPC, while the parent asks the person"
@@ -1297,7 +1307,7 @@ run_native() {
     "$([ -n "$request" ] && [ "$(person "session/$child/permission/$request/reply" '{"decision":"once"}')" = 204 ] && echo true || echo false)"
   check "the command ran, and the child reported back" "$(has_text "$parent" "CHILD DONE shell" 45)"
   check "the parent was told once that it is settled, and asked nothing" \
-    "$(has_text "$parent" "PARENT SETTLED" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"once\""))')" = true ] &&
+    "$(has_text "$parent" "CHILD DONE shell" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"once\""))')" = true ] &&
       [ "$(notices_with "$parent" asks | jq length)" = 1 ] && [ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
 
   # The owner's decision on #146: a native child's question is answered once, in OpenCode's own form,

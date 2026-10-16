@@ -88,6 +88,16 @@ describe("watching a courier message until it is delivered", () => {
     expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: true })
   })
 
+  test("one sent without a wake, which waits for the next turn, is not watched, so it is not sent again or flagged stalled", async () => {
+    const { ports, store, sent, at } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued("ses_parent", "msg_settled", 100_000, { source: "courier", from: "ses_child", resume: false }))
+    expect(store.size).toBe(0)
+    at(100_000 + WAKE_MS * 3)
+    await wakeMissed(ports, new Set())
+    expect(sent).toEqual([])
+    expect(await stalledAmong(ports, ["ses_parent"])).toEqual(new Map())
+  })
+
   test("its delivery or cancellation ends the watch", async () => {
     const { ports, store } = fakePorts({ ses_parent: [idle()] })
     await handle(ports, enqueued())

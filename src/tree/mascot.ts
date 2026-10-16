@@ -18,7 +18,7 @@ export const BLINK_EVERY = 11
 
 /**
  * The 8×4 glyph's frames by state, pixel rows top to bottom; a state with several cycles through them, one per mascot frame.
- * No muted pixel shares a cell with the mound or touches it, as `text.muted` is close to `background.raised.max`.
+ * No muted pixel touches the mound, here or in the 16×16, as `text.muted` is close to `background.raised.max`.
  */
 export const GLYPH: Readonly<Record<MascotState, ReadonlyArray<ReadonlyArray<string>>>> = {
   idle: [["........", "........", "..gggg..", "gggggggg"]],
@@ -155,17 +155,18 @@ const spawn = (up: boolean, dirt: Spot[]) => paint(digby(0.1), [...peek(0, up), 
 /** The sign on its post, which stops a pixel above the ground so the muted post does not sit on it. */
 const sign = (shown: boolean): Spot[] => [...(shown ? [[2, 13, "www"] as const, [3, 13, "wkw"] as const, [4, 13, "www"] as const] : []), ...post(5, 14, 7, "m")]
 
-const waiting = (shown: boolean) => (open: boolean) => paint(digby(1, { eyes: open ? "wide" : "none" }), [[9, 4, "mm"], [9, 10, "mm"], ...sign(shown)])
+/** His paws, held a pixel above the mound's rim so the muted pixels do not touch it. */
+const waiting = (shown: boolean) => (open: boolean) => paint(digby(1, { eyes: open ? "wide" : "none" }), [[8, 4, "mm"], [8, 10, "mm"], ...sign(shown)])
 
 const stalled = (dots: string) => () => paint(digby(0.7, { eyes: "shut", slump: true }), [[5, 0, dots]])
 
-/** The letter held up on his arm, which reaches up from the mound, and the spark beside him. */
+/** The letter held up on his arm, which stops a pixel above the mound so it does not touch it, and the spark beside him. */
 const report = (rise: number, spark: ReadonlyArray<string>) => (open: boolean) =>
   paint(digby(rise, { eyes: open ? "open" : "none" }), [
     [0, 12, "aaaa"],
     [1, 12, "akka"],
     [2, 12, "aaaa"],
-    ...post(3, 13, 9, "m"),
+    ...post(3, 13, 8, "m"),
     ...spark.map((row, at) => [1 + at, 0, row] as const),
   ])
 

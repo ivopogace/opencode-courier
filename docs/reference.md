@@ -998,16 +998,17 @@ the state alone, which is what `"animations": false` shows:
 - **waiting on you**: up, eyes wide, paws on the mound, a sign on a post in the warning colour, which blinks off on
   the second frame;
 - **stalled**: half out (0.7), slumped to the right, eyes shut, three dots in the error colour that count up 1, 2, 3;
-- **report**: up, an arm reaching from the mound holds up the letter in the accent, a spark in the success colour
+- **report**: up, an arm reaching up beside the mound holds up the letter in the accent, a spark in the success colour
   beside him; he bounces settled, overshoot, back (`rise` 1, 1.25, 1.1);
 - **spawn**: low in the hole, a side mound either side with a child's head peeking out, dirt flying; the heads sink
   on the second frame;
 - **gone**: the mound and ground, muted, still.
 
-The muted pixels (paws, dirt, the post and the arm) never share a cell with the mound's, in either size, as
-`background.raised.max` is close to `text.muted`: in the 16×16 the post stops a pixel above the ground, and the paws
-and dirt keep off it; in the 8×4 no muted pixel touches the mound either, so the ground stops short of the post when
-waiting and is not drawn beside the arm when reporting. The poses are
+The muted pixels (paws, dirt, the post and the arm) never touch the mound's, left, right, above or below, in any
+frame of either size, as `background.raised.max` is close to `text.muted` and pixels in neighbouring cells draw edge to
+edge like two in one: in the 16×16 the post and the arm stop a pixel above the ground and the paws a pixel above the
+mound, and the dirt keeps off it; in the 8×4 the ground stops short of the post when waiting and is not drawn beside
+the arm when reporting. The poses are
 drawn in `src/tree/mascot.ts` (`ART`, one drawing per frame over `digby`'s head, mound and ground) and the
 panel picks one by `art(state, frame)`. He takes the panel's timer only while he shows and is not gone, at his own pace.
 

@@ -74,13 +74,14 @@ once per batch in the reply that presents the PRs.
 
 **The bar**, checked on the PR's current head sha, never from a child's summary:
 
-- every check run on that sha concluded `success` (both CI jobs: unit and live e2e);
+- every check run on that sha concluded `success`, or `skipped` for the live-suite jobs a
+  documentation-only PR skips; the required `Live test against OpenCode V2` gate passed;
 - the PR body has `Closes #<N>`, and the child reports a round of the code review plugin
   (`code-review:code-review`, which `.claude/settings.json` enables for every child) with its
   findings resolved; read its `### Code review` comment on the PR yourself (none means no finding
   reached its confidence bar); a behaviour change after that round gets another round;
 - you read the diff yourself: scope matches the issue, tools follow CLAUDE.md's rules, new
-  behaviour has unit tests and an e2e scenario, README is updated.
+  behaviour has unit tests and an e2e scenario, README.md and `docs/reference.md` are updated.
 
 **The loop**, one PR at a time, dependencies first, then readiness:
 

@@ -32,7 +32,7 @@ Nothing in OpenCode checks the version: `opencode plugin add` installs the plugi
 and the loader warns about nothing. The plugin loads on hosts from 2.0.4 on, and fails to load on
 2.0.0 to 2.0.3, which lack a domain the plugin API gained in 2.0.4. On a newer host, tools may still
 break. The terminal part relies on the host to provide its UI modules and is tested on OpenCode
-2.0.31 only; the server part works as before on older V2 hosts from 2.0.4 on.
+2.0.32 only; the server part works as before on older V2 hosts from 2.0.4 on.
 
 When the running OpenCode reports a version other than the pinned one, the plugin writes one line
 to the server log (`opencode serve --print-logs` shows it) when it loads:

@@ -21,7 +21,7 @@ The edge cases on the live terminal UI, narrated ([what it shows](#demos)).
 ## Quickstart
 
 ```bash
-npm install -g @opencode/cli@2.0.31   # OpenCode V2, at the version courier is tested on
+npm install -g @opencode/cli@2.0.32   # OpenCode V2, at the version courier is tested on
 opencode plugin add opencode-courier  # by name, so OpenCode offers new releases
 opencode                              # in any folder
 ```
@@ -43,7 +43,7 @@ sometimes stall on a request; if nothing moves for a few minutes, send the promp
 
 Courier is built on OpenCode V2's plugin API (`@opencode/plugin`), not the V1 one
 (`@opencode-ai/plugin`), and needs OpenCode V2. Each release is pinned to one V2 version and tested
-against it end to end; the current one is tested on **OpenCode 2.0.31**. CI also runs the live
+against it end to end; the current one is tested on **OpenCode 2.0.32**. CI also runs the live
 suite on the newest OpenCode release, on `main` and nightly, so a host release that breaks the
 plugin shows up there first. Older releases and their versions: [every release](docs/reference.md#the-opencode-version).
 
@@ -122,12 +122,12 @@ line to the server log naming both ([more](docs/reference.md#the-opencode-versio
 Older releases and their versions: [every release](docs/reference.md#the-opencode-version).
 
 The [terminal part](#in-the-terminal) relies on the host to provide its UI modules and is tested on
-OpenCode 2.0.31 only; the server part works as before on older V2 hosts from 2.0.4 on.
+OpenCode 2.0.32 only; the server part works as before on older V2 hosts from 2.0.4 on.
 
 Check yours with `opencode --version`, and install the matching CLI with:
 
 ```bash
-npm install -g @opencode/cli@2.0.31
+npm install -g @opencode/cli@2.0.32
 ```
 
 ### The plugin

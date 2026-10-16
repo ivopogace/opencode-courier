@@ -1,9 +1,9 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around, or relies on, at the
-pinned version: `@opencode/plugin@2.0.31` and OpenCode 2.0.31. A pin bump re-checks each trap and
+pinned version: `@opencode/plugin@2.0.32` and OpenCode 2.0.32. A pin bump re-checks each trap and
 updates the ones it changes. OpenCode's source is on the `v2` branch of
-https://github.com/anomalyco/opencode, each release tagged (`v2.0.31`); paths below are in it. The
+https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths below are in it. The
 [reference](../reference.md) says what the plugin does.
 
 ## Tools
@@ -93,7 +93,7 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.31`); paths be
   item and rings the run coordinator unless `resume === false` (`packages/core/src/session/session.ts`; the
   `session.synthetic` endpoint documents it: "schedule execution unless resume is false", and the plugin's
   `session.synthetic` passes the payload through), whatever the `delivery`: `queue` still wakes an idle session
-  (seen in the source at `v2.0.29` to `v2.0.31`). With `resume: false` the item waits in the inbox and is promoted
+  (seen in the source at `v2.0.29` to `v2.0.32`). With `resume: false` the item waits in the inbox and is promoted
   by the session's next turn, whoever starts it; the live test also uses it to stage a missed wake. The
   `session.inbox.enqueued` event carries the item (`delivery`, `payload`) but not `resume`, so the missed-wake watch
   cannot tell such an item from a lost wake: the plugin marks the ones it sends so in their metadata (`resume: false`,
@@ -287,7 +287,7 @@ claim sets, the event bus and pending permission requests. So:
 `e2e/two-servers.sh` measures it (not in CI; a few minutes, no API key; `KEEP=1` keeps the logs):
 
 ```bash
-npm install --prefix <scratch>/oc @opencode/cli@2.0.31
+npm install --prefix <scratch>/oc @opencode/cli@2.0.32
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh
 ```
 
@@ -392,7 +392,7 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   npm's `ERESOLVE`, against the newer `@opentui/solid` npm picked for `@opencode/plugin`'s `>=`
   range; with no such peer npm installs no `@opentui` and the host provides them. The TUI's packages
   are devDependencies at the versions OpenCode's root `package.json` catalog pins (`@opentui/*`
-  `0.5.17`, `solid-js` `1.9.15` at `v2.0.31`), and `@opencode/theme` at the pin, for the typecheck and
+  `0.5.17`, `solid-js` `1.9.15` at `v2.0.32`), and `@opencode/theme` at the pin, for the typecheck and
   the tests.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles `src/tui.tsx` with `Bun.build`,

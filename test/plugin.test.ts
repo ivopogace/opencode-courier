@@ -193,13 +193,13 @@ test("on the pinned OpenCode, loading logs nothing about the version", async () 
 test("on another OpenCode, loading logs one line naming both versions, and tool calls add nothing", async () => {
   const logged = spyOn(console, "error").mockImplementation(() => {})
   try {
-    const { tools } = await setUp({}, undefined, [], { name: "opencode", version: "2.0.32", channel: "beta" })
+    const { tools } = await setUp({}, undefined, [], { name: "opencode", version: "2.0.33", channel: "beta" })
     await tools.get("courier_status").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })
     const result = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
 
     const { plugin, opencode } = builtVersions()
     expect(logged.mock.calls.map(([line]) => line)).toEqual([
-      `opencode-courier ${plugin} was built and tested against OpenCode ${opencode}; this server is 2.0.32 (channel beta). ` +
+      `opencode-courier ${plugin} was built and tested against OpenCode ${opencode}; this server is 2.0.33 (channel beta). ` +
         "Its tools may fail: see every release and the OpenCode it is pinned to, " +
         "https://github.com/ivopogace/opencode-courier/blob/main/docs/reference.md#the-opencode-version",
     ])

@@ -841,7 +841,8 @@ describe("the tree panel's mouse (#250)", () => {
   })
 
   test("the hover survives a read of the tree, which draws its rows anew, and leaves with its row", async () => {
-    const { fake, app, moveTo } = await opened()
+    // Unfocused, so the selection, which the returning row takes, has no colour to hide a hover.
+    const { fake, app, moveTo } = await opened(false)
     let tree = pair(1)
     fake.state.tree = async () => tree
     await moveTo("CHILD-ASKS")
@@ -849,15 +850,17 @@ describe("the tree panel's mouse (#250)", () => {
     await settle()
     await app.renderOnce()
     expect(backgroundOf(app, "CHILD-ASKS")).toEqual(HOVER.toInts())
-    // Its row gone, the hover goes with it: no row that takes its place shows it.
-    tree = { rows: [tree.rows[0]!, row("ses_three", { title: "THIRD" })] }
+    // Its row gone, nothing is under the pointer, and the hover goes: the row back, away from the pointer, is not hovered.
+    const [first, second] = tree.rows
+    tree = { rows: [first!] }
     fake.command("r")!.run()
-    await app.waitForFrame((frame) => frame.includes("THIRD") && !frame.includes("CHILD-ASKS"))
-    tree = { rows: [tree.rows[0]!, row("ses_four", { title: "FOURTH" })] }
+    await app.waitForFrame((frame) => !frame.includes("CHILD-ASKS"))
+    tree = { rows: [second!] }
     fake.command("r")!.run()
-    await app.waitForFrame((frame) => frame.includes("FOURTH"))
+    await app.waitForFrame((frame) => frame.includes("CHILD-ASKS") && !frame.includes("Report back"))
     await app.renderOnce()
-    expect(backgroundOf(app, "FOURTH")).toEqual(HOVER.toInts())
+    expect(app.captureCharFrame()).toContain("▸ ● CHILD-ASKS")
+    expect(backgroundOf(app, "CHILD-ASKS")).not.toEqual(HOVER.toInts())
   })
 
   test("a click on a row's title or detail line selects it and opens its session, as enter does", async () => {

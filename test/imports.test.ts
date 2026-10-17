@@ -107,7 +107,7 @@ test("person/ outside person/question/ uses the relay through person/question/in
 })
 
 /** The modules of src/: each a folder of its own, used from outside through its index.ts. */
-const MODULES = ["tree", "person", "scheduling", "webhook"]
+const MODULES = ["tree", "person", "scheduling", "webhook", "memory"]
 
 /** The module a file of src/ is in, or undefined for `src/index.ts`, `skill.ts`, `kernel/` and `platform/`. */
 const moduleOf = (file: string) => MODULES.find((folder) => file.startsWith(`${folder}/`))
@@ -125,7 +125,7 @@ test("a module is imported from outside only through its index.ts, but by the tu
   expect(reaching).toEqual([])
 })
 
-test("the only dependency between modules is person/ on tree/", () => {
+test("the only dependencies between modules are person/'s and memory/'s on tree/", () => {
   const edges = new Set(
     [...imports()].flatMap(([module, imported]) =>
       imported.flatMap((name) => {
@@ -134,7 +134,7 @@ test("the only dependency between modules is person/ on tree/", () => {
       }),
     ),
   )
-  expect([...edges]).toEqual(["person -> tree"])
+  expect([...edges].toSorted()).toEqual(["memory -> tree", "person -> tree"])
 })
 
 test("every module imports only itself, platform/, kernel/ and the modules it may depend on", () => {
@@ -220,7 +220,7 @@ test("skill.ts imports only kernel/", () => {
 
 test("a text.ts imports only kernel/, platform/json.ts and its own module's ports.ts and domain.ts", () => {
   const texts = [...imports()].filter(([module]) => module.endsWith("/text"))
-  expect(texts.map(([module]) => module).sort()).toEqual(["person/text", "scheduling/text", "tree/text", "webhook/text"])
+  expect(texts.map(([module]) => module).sort()).toEqual(["memory/text", "person/text", "scheduling/text", "tree/text", "webhook/text"])
   const reaching = texts.flatMap(([module, imported]) => {
     const own = module.slice(0, -"text".length)
     const allowed = (name: string) => name.startsWith("kernel/") || name === "platform/json" || name === `${own}ports` || name === `${own}domain`
@@ -265,4 +265,14 @@ test("only tree/store.ts names the tree's storage prefixes, so no other file bui
     .filter(({ file }) => prefix.test(readFileSync(join(SRC, file), "utf8")))
     .map(({ file }) => file.split("\\").join("/"))
   expect(naming).toEqual(["tree/store.ts"])
+})
+
+test("memory/store.ts is imported from no file outside memory/, and only it names the memory's storage prefix", () => {
+  const importing = [...imports()].filter(([, imported]) => imported.includes("memory/store")).map(([module]) => module)
+  expect(importing).toContain("memory/record")
+  expect(importing.filter((module) => !module.startsWith("memory/") || module === "memory/index")).toEqual([])
+  const naming = sources()
+    .filter(({ file }) => /"memory\//.test(readFileSync(join(SRC, file), "utf8")))
+    .map(({ file }) => file.split("\\").join("/"))
+  expect(naming).toEqual(["memory/store.ts"])
 })

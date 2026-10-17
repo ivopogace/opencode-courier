@@ -89,7 +89,8 @@ Each tool's parameters, `?` marking an optional one; the sections below say how 
 | `courier_cancel` | `id` | Drops a message scheduled with `courier_later`, e.g. because the child it was waiting for reported first. |
 | `courier_subscribe` | `topic`, `sessionID?` | Subscribes a session (this one by default) to [webhook](#webhooks) deliveries for a topic: `owner/repo`, `owner/repo#12` (one pull request or issue) or a name for `/hook/<name>`. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. |
 | `courier_unsubscribe` | `sessionID?`, `topic?` | Drops one topic, or all of a session's when `topic` is omitted, e.g. once its pull request is merged. |
-| `courier_recall` | `sessionID?` | One look at the [records](#memory) of the session trees of this project: one line per tree, newest first, or with `sessionID` the record of the tree under that top session in full. Notes the call on the caller's own tree's record. Hidden from a leaf. |
+| `courier_recall` | `sessionID?` | One look at the [records](#memory) of the session trees of this project: one line per tree, newest first, its lesson after the facts, or with `sessionID` the record of the tree under that top session in full. Notes the call on the caller's own tree's record. Hidden from a leaf. |
+| `courier_note` | `text` | Writes `text`, one line of at most 300 characters (longer is clipped, and the result says so), as the [lesson](#memory) of the caller's own session tree, on its record, dated; a sub-orchestrator's is marked with its depth, and a second call replaces the first. Refused from a leaf, from a tree with no record, with an empty text and with the memory option off. Hidden from a leaf. |
 
 ## The child's model
 
@@ -269,8 +270,8 @@ session is told how to [report](#a-childs-report): once, with a status and its a
 **A `context` hook names the role on every model request.** For a spawned session the plugin adds
 one system part, `opencode-courier role: …`, naming its role and depth: `sub-orchestrator` below
 `maxDepth`, with the limits, and `leaf` at it, which is told it cannot start sessions. A leaf's
-request also goes without `courier_spawn` and [`courier_recall`](#memory) in its tool list, so its
-model does not try them, and carries neither description. The hook
+request also goes without `courier_spawn`, [`courier_recall` and `courier_note`](#memory) in its tool
+list, so its model does not try them, and carries none of their descriptions. The hook
 is guidance and `courier_spawn` the guarantee: another plugin's hook can put the tool back, and the
 call is still refused.
 
@@ -335,8 +336,10 @@ session's findings are a report to act on, while running the checks stays the or
 running checks through the project's scripts (`bun run <script>`, `npm run <script>`) rather than
 `./node_modules/.bin/<tool>`, so that one permission rule covers them, since the orchestrating
 session's own permission prompts are relayed nowhere and each one stalls the whole tree; integrate by
-merging each reported branch, then `courier_cleanup`; report upward with one status for the whole, or
-reply to the person at the top. Then what to do when a part goes wrong: a [failed
+merging each reported branch, then `courier_cleanup`; report upward with one status for the whole, or,
+at the top, one `courier_note` with the tree's [lesson](#the-lesson) when there is something the next
+tree in the project should know, none when there is not (a rule that holds every time goes to AGENTS.md
+or the skill through the person), then reply to the person. Then what to do when a part goes wrong: a [failed
 turn](#a-child-that-fails) or a [silent end](#a-child-that-ends-without-a-report), a `courier_spawn`
 refused by a limit (do the part, or wait for a report; never retry in a loop), losing track (one
 `courier_tree`), and a subtree to abandon (`courier_stop`). The real-model smoke test's [recursive
@@ -800,7 +803,8 @@ failed part-way leaves it. If the roster cannot be written, the child still gets
 What an orchestrator learns about splitting work in a project, which parts went well, what each cost,
 where a spawn was refused, would otherwise die with its transcript: the [roster](#roster) forgets its
 children in 14 days and keeps nothing of a tree as a whole. So the plugin keeps **one record per session
-tree**, written from facts it already has. No model writes anything into it.
+tree**, written from facts it already has. The one thing a model writes into it is the tree's
+[lesson](#the-lesson), one line, from the session that verified the tree.
 
 **One record per tree, per project.** A tree is the session nobody spawned, its top, with every session
 started under it. Its record is kept under the storage key `memory/<projectID>/<topSessionID>`, where
@@ -825,6 +829,7 @@ duration in milliseconds:
 | `split` | The top's split line, the first line of its replies that states one (`split: no, because …` or `split: <n> parts: …`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), or `not stated`. |
 | `finished` | Whether, at the last refresh, no session in the tree ran (by the same rule as the limits' `busy`) and every part had settled: none was `out` or `stalled`. A tree whose top is still integrating reads as finished until that turn ends, and one with no parts as soon as its top is idle. |
 | `recalled` | Absent until `courier_recall` was called from the tree; then `{ "calls": <n> }`, counting every call made from the top and its parts, with `"at"`, when the top itself first called it, once it has. |
+| `lesson` | Absent until `courier_note` wrote one; then `{ "text": …, "at": … }`, the line and when it was written, with `"depth"`, the writer's depth in the tree, when a sub-orchestrator wrote it rather than the top (1 for a session the top started). A second note replaces the whole object ([the lesson](#the-lesson)). |
 | `parts` | One object per session started in the tree, in the order the tree is drawn (each followed by what it started, siblings oldest first), those recorded earliest first. |
 
 Each part:
@@ -849,7 +854,10 @@ A record can be written by hand, for a test or to seed what the plugin would hav
 `e2e/kv.ts` against a running test server (the fourth argument names a key the plugin has stored, so the
 tool finds the plugin's prefix): `bun e2e/kv.ts set 'memory/<projectID>/<topSessionID>' '<json>' '<a key the plugin stored>'`.
 Missing fields take their defaults (`not stated`, `false`, empty, `out`), a part without a `sessionID`
-is left out, and a value without `parts` is not a record. One as the plugin writes it:
+is left out, and a value without `parts` is not a record. A `lesson` may be written as a bare string,
+which is read as one dated `movedAt`; an object without a `text`, or an empty one, is no lesson, a
+`depth` that is not a positive integer is dropped, and a text over 300 characters is clipped. One as the
+plugin writes it:
 
 ```json
 {
@@ -859,6 +867,7 @@ is left out, and a value without `parts` is not a record. One as the plugin writ
   "split": "split: 3 parts: core, e2e, docs",
   "finished": true,
   "recalled": { "at": 1760000001000, "calls": 1 },
+  "lesson": { "text": "The docs part was ten lines; next time do it yourself.", "at": 1760000890000 },
   "parts": [
     { "sessionID": "ses_core", "title": "Core", "depth": 1, "isolated": true, "group": "wave", "status": "done", "duration": 540000, "cost": 0.42, "context": 0.31 },
     { "sessionID": "ses_e2e", "title": "E2E scenario", "depth": 1, "isolated": true, "group": "wave", "status": "partial", "duration": 600000, "cost": 0.81, "refused": 1 },
@@ -871,14 +880,16 @@ is left out, and a value without `parts` is not a record. One as the plugin writ
 lists every record of the calling session's project, newest first, one line each:
 
 ```
-- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 2 done, 1 partial, 2 levels deep, 2 isolated, 1 spawn refused · 42 min · $1.28 · finished
+- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 2 done, 1 partial, 2 levels deep, 2 isolated, 1 spawn refused · 42 min · $1.28 · finished · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
 ```
 
 the top session, the day it started, its title (clipped to 60 characters), its split line (to 160),
 its parts counted by status, how deep the tree went, how many parts were isolated and how many spawns
 were refused, how long the tree ran (`movedAt` less `startedAt`), the parts' costs summed when any is
-known, `finished` or `not finished`, and `recalled` when the top called the tool (`recalled by a part`
-when only a part did). The caller's own tree is listed too, marked `(this tree)`. With `sessionID`, the
+known, `finished` or `not finished`, `recalled` when the top called the tool (`recalled by a part`
+when only a part did), and last its [lesson](#the-lesson), when there is one, with the day it was
+written and `from depth <n>` when a sub-orchestrator wrote it, so a lesson stands next to the facts
+that bear it out or contradict it. The caller's own tree is listed too, marked `(this tree)`. With `sessionID`, the
 top of a listed tree, it gives that record in full, as JSON; a top with no record in this project is
 said to be missing. Its result's metadata carries the records.
 
@@ -891,13 +902,41 @@ call before the split decision, the [root's pointer](#session-trees-and-their-li
 real-model checker (`e2e/real-model-recursive.mjs`) allows a root exactly one call before its first
 spawn, counting any other as polling. A leaf's requests go without the tool, as without `courier_spawn`.
 
+### The lesson
+
+A record says what happened; it cannot say what the orchestrator concluded: that the docs part was ten
+lines and not worth a session, that two parts collided in one file, that the person chose to squash-merge.
+**`courier_note { text }`** writes that, as the one `lesson` of the caller's own session tree, on the
+record under its top: one line, at most 300 characters (whitespace and line breaks collapse to spaces;
+what is longer is clipped at 300, and the result says from what length), dated when it was written. The
+result says what was noted and what it replaced: a second note replaces the first, whole, so a tree ends
+with one line, and the orchestrator writes it last, once it has verified and integrated the work, in the
+skill's [step 8](#the-courier-orchestrate-skill). `courier_recall` lists it after the tree's facts, so
+the next orchestrator reads it next to the record that bears it out or contradicts it.
+
+Who may write it: the top session, or a sub-orchestrator below it, whose note goes on the same record
+marked with its `depth`. A leaf cannot: the tool is refused there (naming the depth and `maxDepth`) and
+hidden from a leaf's requests as `courier_spawn` and `courier_recall` are, so it costs a leaf's requests
+nothing. A child never writes memory, and the [brief](#session-trees-and-their-limits) does not mention
+the tool. It is also refused with an empty text, from a session whose tree has no record yet (a record is
+written by a `courier_recall` call and as each turn in the tree ends, so a root notes after its first
+recall or once a session it started has reported) and when the [option](#memory) is off; each refusal
+is the tool's failure, as `courier_spawn`'s are, and writes nothing.
+
+What a lesson is not: a rule. One that holds every time, "always give the docs to one session", belongs
+in AGENTS.md or the skill, which only the person puts there; the tool's description and the skill say
+so and ask the orchestrator to tell the person instead of noting it. Nor code or secrets: the record is
+read by every later session in the project. The lesson is bounded by trees, one line per tree, kept and
+dropped with its record, so the index cannot bloat and nothing in it is stale for longer than the record
+it is attached to.
+
 **Retention.** Each project keeps its newest 30 records, by `movedAt`, and none that last moved more
 than 90 days ago; the rest are dropped when the plugin loads, next to the roster's sweep. Nothing else
 removes a record.
 
 **The option.** `"memory": false` in the plugin's `options`, read per instance like the limits, turns it
-off: no record is written for a tree whose top runs in that location, and `courier_recall` says the option
-is off and writes and lists nothing. Any other value than `true` or `false` is logged and taken as `true`.
+off: no record is written for a tree whose top runs in that location, `courier_recall` says the option
+is off and writes and lists nothing, and `courier_note` is refused. Any other value than `true` or `false` is logged and taken as `true`.
 Each OpenCode server reads its own configuration, so with [two servers](#two-servers-on-one-data-directory)
 on one data directory each writes records by its own option.
 

@@ -72,8 +72,10 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   const windows = [...state.windows.values()]
   const read = await Promise.all(nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at)))
   const parts = mergeParts(previous?.parts ?? [], read.map(({ record }) => record))
-  // Read again just before the write: a courier_recall call during the reads above has noted itself meanwhile.
-  const recalled = (await store.get(info.projectID, top).catch(() => previous))?.recalled ?? previous?.recalled
+  // Read again just before the write: a courier_recall or courier_note call during the reads above has written meanwhile.
+  const latest = await store.get(info.projectID, top).catch(() => previous)
+  const recalled = latest?.recalled ?? previous?.recalled
+  const lesson = latest?.lesson ?? previous?.lesson
   const record: TreeRecord = {
     startedAt: finite(millis(info.time.created)) ?? previous?.startedAt ?? at,
     movedAt: at,
@@ -81,6 +83,7 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
     split: splitLineOf(replies) ?? previous?.split ?? NOT_STATED,
     finished: !busy(info.time) && !read.some(({ running }) => running) && parts.every((one) => one.status !== "out" && one.status !== "stalled"),
     ...(recalled ? { recalled } : {}),
+    ...(lesson ? { lesson } : {}),
     parts,
   }
   await store.put(info.projectID, top, record)

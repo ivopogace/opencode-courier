@@ -153,7 +153,7 @@ checks that every live-suite group is in exactly one shard of any count;
 `test/tui.test.tsx` renders the TUI part against a fake TUI context with OpenTUI's `testRender`
 (`bunfig.toml` preloads its Solid transform); `test/inbox.test.tsx` drives the asks inbox's dialogs
 against one, and `test/person-rpc.test.ts` its RPC. `test/notices.test.ts` snapshots every `text.ts`,
-imported each by its path (the import test fails on one it misses), the skill and the thirteen tools'
+imported each by its path (the import test fails on one it misses), the skill and the fourteen tools'
 descriptions and schemas, so a wording change shows up as a diff in `test/__snapshots__/`; update it
 with `bun test --update-snapshots`.
 

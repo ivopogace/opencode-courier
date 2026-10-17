@@ -37,6 +37,11 @@
 #                                     children (default 300 each).
 #   COURIER_NATIVE                   1 loads the plugin with nativeChildren on, so a child started
 #                                     without isolate gets OpenCode's own parentID.
+#   COURIER_SEED                     a JSON file of plugin storage keys to set before the parent's
+#                                     prompt, { "<key>": <value>, ... }, with e2e/kv.ts; "<project>"
+#                                     in a key or value stands for the project's id. For a tree
+#                                     record an earlier tree would have left (docs/reference.md,
+#                                     "Memory").
 #
 # Transcripts (parent.json, child-*.json), timeline.txt, summary.json and the server log stay in
 # the work directory (E2E_WORK, default a new temp dir), which is printed at the end.
@@ -152,6 +157,15 @@ if [ "${COURIER_PERSON:-}" = other-server ]; then
   for _ in $(seq 1 30); do curl -sf -u "opencode:$OPENCODE_PASSWORD" "$OTHER/api/info" >/dev/null 2>&1 && break; sleep 1; done
   curl -sf -u "opencode:$OPENCODE_PASSWORD" "$OTHER/api/info" >/dev/null || { echo "the second server did not start; see $WORK/server-b.log"; exit 1; }
   echo "a second server on the same data directory: $OTHER"
+fi
+if [ -n "${COURIER_SEED:-}" ]; then
+  # By the plugin's id: before the first prompt it may have stored nothing (an idle scheduler drops scheduler/owner).
+  project=$(api project | jq -r --arg dir "$WORK/project" 'first(.[] | select(.canonical == $dir) | .id) // .[0].id')
+  jq -r 'keys[]' "$COURIER_SEED" | while IFS= read -r key; do
+    XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" set "${key//<project>/$project}" \
+      "$(jq -r --arg key "$key" --arg project "$project" '.[$key] | tojson | gsub("<project>"; $project)' "$COURIER_SEED")" @courier
+    echo "seeded ${key//<project>/$project}"
+  done
 fi
 echo "parent prompt: $PROMPT"
 

@@ -1,0 +1,56 @@
+{
+  "memory/<project>/ses_seed0000000000000000000001": {
+    "startedAt": 1792067438672,
+    "movedAt": 1792067978672,
+    "title": "Numbers and count: three files through helper sessions",
+    "split": "split: 2 parts: numbers (two halves, which its session hands to two sessions of its own) and count",
+    "finished": true,
+    "parts": [
+      {
+        "sessionID": "ses_seed0000000000000000numbers",
+        "title": "Part numbers: numbers/a.txt and numbers/b.txt through two sessions",
+        "depth": 1,
+        "isolated": false,
+        "group": "parts",
+        "status": "done",
+        "duration": 420000,
+        "cost": 0,
+        "context": 0.19
+      },
+      {
+        "sessionID": "ses_seed00000000000000000half_a",
+        "title": "numbers/a.txt: sleep 20; echo $((17 * 23))",
+        "depth": 2,
+        "isolated": false,
+        "group": "halves",
+        "status": "done",
+        "duration": 95000,
+        "cost": 0,
+        "context": 0.07
+      },
+      {
+        "sessionID": "ses_seed00000000000000000half_b",
+        "title": "numbers/b.txt: sleep 20; echo $((2 ** 10))",
+        "depth": 2,
+        "isolated": false,
+        "group": "halves",
+        "status": "done",
+        "duration": 90000,
+        "cost": 0,
+        "context": 0.07
+      },
+      {
+        "sessionID": "ses_seed000000000000000000count",
+        "title": "Part count: count/total.txt from sleep 20; echo $((99 - 57))",
+        "depth": 1,
+        "isolated": false,
+        "group": "parts",
+        "status": "done",
+        "duration": 115000,
+        "cost": 0,
+        "context": 0.06
+      }
+    ],
+    "lesson": "the count part is small; do it yourself"
+  }
+}

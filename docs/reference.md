@@ -89,6 +89,7 @@ Each tool's parameters, `?` marking an optional one; the sections below say how 
 | `courier_cancel` | `id` | Drops a message scheduled with `courier_later`, e.g. because the child it was waiting for reported first. |
 | `courier_subscribe` | `topic`, `sessionID?` | Subscribes a session (this one by default) to [webhook](#webhooks) deliveries for a topic: `owner/repo`, `owner/repo#12` (one pull request or issue) or a name for `/hook/<name>`. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. |
 | `courier_unsubscribe` | `sessionID?`, `topic?` | Drops one topic, or all of a session's when `topic` is omitted, e.g. once its pull request is merged. |
+| `courier_recall` | `sessionID?` | One look at the [records](#memory) of the session trees of this project: one line per tree, newest first, or with `sessionID` the record of the tree under that top session in full. Notes the call on the caller's own tree's record. Hidden from a leaf. |
 
 ## The child's model
 
@@ -268,13 +269,15 @@ session is told how to [report](#a-childs-report): once, with a status and its a
 **A `context` hook names the role on every model request.** For a spawned session the plugin adds
 one system part, `opencode-courier role: …`, naming its role and depth: `sub-orchestrator` below
 `maxDepth`, with the limits, and `leaf` at it, which is told it cannot start sessions. A leaf's
-request also goes without `courier_spawn` in its tool list, so its model does not try it. The hook
+request also goes without `courier_spawn` and [`courier_recall`](#memory) in its tool list, so its
+model does not try them, and carries neither description. The hook
 is guidance and `courier_spawn` the guarantee: another plugin's hook can put the tool back, and the
 call is still refused.
 
 A session nobody spawned that has started none gets one part too, `opencode-courier role: root, no
 sessions started yet`, which is a pointer rather than a role: before a task that touches several
-files or areas, load the `courier-orchestrate` skill and decide whether to split it across sessions,
+files or areas, load the `courier-orchestrate` skill, call [`courier_recall`](#memory) once for how
+earlier trees in the project were split and how they went, and decide whether to split it across sessions,
 doing it itself being fine, and say which in one line of the reply (`split: no, because …;
 considered: <the parts you weighed>` or `split: <n> parts: …`). The
 [skill's description](#the-courier-orchestrate-skill) alone fires only once a model already takes its
@@ -308,7 +311,8 @@ dialog, which attaches its text to the next prompt. How OpenCode lists, loads an
 [plugin-api-notes.md](maintainers/plugin-api-notes.md#skills).
 
 Its text is short and model-facing. It names no limits (the role part and the brief give the
-session's own) and says, in order: decide whether to split or do, by [the brief's
+session's own) and says, in order: call [`courier_recall`](#memory) once, before deciding and never in
+a loop, for how earlier trees in the project were split and how each part went; decide whether to split or do, by [the brief's
 rule](#session-trees-and-their-limits), never starting exactly one session for the whole task, and
 keeping the deciding, checking and integrating while handing off the long reading and writing, since
 what a session reads and writes stays in its context for every later turn. An implementation task with
@@ -790,6 +794,112 @@ out, and what is under them, without dropping them. Loading
 the plugin also removes, best-effort, report state whose session has no entry left, as a cleanup that
 failed part-way leaves it. If the roster cannot be written, the child still gets its task and
 `courier_spawn` says it is not on the list.
+
+## Memory
+
+What an orchestrator learns about splitting work in a project, which parts went well, what each cost,
+where a spawn was refused, would otherwise die with its transcript: the [roster](#roster) forgets its
+children in 14 days and keeps nothing of a tree as a whole. So the plugin keeps **one record per session
+tree**, written from facts it already has. No model writes anything into it.
+
+**One record per tree, per project.** A tree is the session nobody spawned, its top, with every session
+started under it. Its record is kept under the storage key `memory/<projectID>/<topSessionID>`, where
+`projectID` is OpenCode's id of the project the top session runs in (`location.project.id`, which every
+worktree of a repository shares, so an isolated child's tree is the same project's). It is written again,
+whole, each time a turn ends in the tree: when a spawned session's turn succeeds, fails or is interrupted
+(not by a shutdown, which the next start resumes), and when the top's own turn ends, once it has started a
+session or called `courier_recall`. The refresh reads the roster's subtree under the top, each session's
+info and stored messages and its [report state](#a-child-that-ends-without-a-report), through the
+plugin's event follower, so whichever instance follows OpenCode's events writes it, once. A session the
+roster has forgotten since (dropped after 14 days, deleted, or removed with `courier_cleanup`) keeps the
+state it was last recorded in, so the record stands on its own once the roster is gone.
+
+**What a record holds.** The value is one JSON object; every time is in epoch milliseconds and every
+duration in milliseconds:
+
+| Field | Holds |
+|---|---|
+| `startedAt` | When the top session was created. |
+| `movedAt` | When a turn in the tree last ended, or the record was first written by `courier_recall`. The newest records are the ones that moved last. |
+| `title` | The top session's title, as OpenCode has it at the last refresh. |
+| `split` | The top's split line, the first line of its replies that states one (`split: no, because …` or `split: <n> parts: …`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), or `not stated`. |
+| `finished` | Whether, at the last refresh, no session in the tree ran (by the same rule as the limits' `busy`) and every part had settled: none was `out` or `stalled`. A tree whose top is still integrating reads as finished until that turn ends. |
+| `recalled` | Absent until `courier_recall` was called from the tree; then `{ "calls": <n> }`, counting every call made from the top and its parts, with `"at"`, when the top itself first called it, once it has. |
+| `parts` | One object per session started in the tree, in the order the tree is drawn (each followed by what it started, siblings oldest first), those recorded earliest first. |
+
+Each part:
+
+| Field | Holds |
+|---|---|
+| `sessionID` | The session. |
+| `title` | Its title, as OpenCode has it, else as `courier_spawn` recorded it. |
+| `depth` | 1 for a session the top started, 2 for one of theirs, and so on. |
+| `isolated` | Whether it runs in a worktree of its own. |
+| `group` | Its [join group](#join-groups), when it was started in one. |
+| `status` | `done`, `partial`, `blocked` or `failed`: the status of its last report, once it owes none; `failed` also for a turn that failed, `interrupted` for one interrupted, `stopped` once `courier_stop` stopped it since its last prompt, `stalled` while a message it does not take [waits in its inbox](#a-missed-wake), and `out` while it owes its parent a report (running or not), or nothing is known of its report state. |
+| `duration` | From its start to the end of its last turn, or to the refresh while it runs. |
+| `cost` | What its session cost so far, as OpenCode counts it, in USD. |
+| `context` | How full its context was at the end, from 0 to 1, as the [tree panel](#in-the-terminal) reads it: its last usage since its last compaction over its model's window. Absent when the window is not known. |
+| `refused` | How many of its own `courier_spawn` calls failed, refused by a [limit](#session-trees-and-their-limits) mostly. Absent when none did. |
+
+The record never holds a report's body or artifacts, nor a session's replies: they can hold code and
+secrets, and the parent has verified the work.
+
+A record can be written by hand, for a test or to seed what the plugin would have recorded, with
+`e2e/kv.ts` against a running test server (the fourth argument names a key the plugin has stored, so the
+tool finds the plugin's prefix): `bun e2e/kv.ts set 'memory/<projectID>/<topSessionID>' '<json>' '<a key the plugin stored>'`.
+Missing fields take their defaults (`not stated`, `false`, empty, `out`), a part without a `sessionID`
+is left out, and a value without `parts` is not a record. One as the plugin writes it:
+
+```json
+{
+  "startedAt": 1760000000000,
+  "movedAt": 1760000900000,
+  "title": "Add memory to courier",
+  "split": "split: 3 parts: core, e2e, docs",
+  "finished": true,
+  "recalled": { "at": 1760000001000, "calls": 1 },
+  "parts": [
+    { "sessionID": "ses_core", "title": "Core", "depth": 1, "isolated": true, "group": "wave", "status": "done", "duration": 540000, "cost": 0.42, "context": 0.31 },
+    { "sessionID": "ses_e2e", "title": "E2E scenario", "depth": 1, "isolated": true, "group": "wave", "status": "partial", "duration": 600000, "cost": 0.81, "refused": 1 },
+    { "sessionID": "ses_review", "title": "Review", "depth": 2, "isolated": false, "status": "done", "duration": 60000, "cost": 0.05, "context": 0.12 }
+  ]
+}
+```
+
+**`courier_recall { sessionID? }`** reads the records back, from any session. Without `sessionID` it
+lists every record of the calling session's project, newest first, one line each:
+
+```
+- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 2 done, 1 partial, 2 levels deep, 2 isolated, 1 spawn refused · 42 min · $1.28 · finished
+```
+
+the top session, the day it started, its title (clipped to 60 characters), its split line (to 160),
+its parts counted by status, how deep the tree went, how many parts were isolated and how many spawns
+were refused, how long the tree ran (`movedAt` less `startedAt`), the parts' costs summed when any is
+known, `finished` or `not finished`, and `recalled` when the top called the tool (`recalled by a part`
+when only a part did). The caller's own tree is listed too, marked `(this tree)`. With `sessionID`, the
+top of a listed tree, it gives that record in full, as JSON; a top with no record in this project is
+said to be missing. Its result's metadata carries the records.
+
+Every call is noted on the record of the caller's own tree, the top of its lineage or itself: `calls`
+counts up, and `at` is set the first time the top itself calls. A tree that has no record yet, a root
+before its first spawn, gets one from the call, with no parts and `split` not stated, which its own turn
+ends then keep current, so a decision not to split is remembered with the call that preceded it. The
+tool is one look, not a loop: the [skill](#the-courier-orchestrate-skill)'s first step asks for one
+call before the split decision, the [root's pointer](#session-trees-and-their-limits) names it, and the
+real-model checker (`e2e/real-model-recursive.mjs`) allows a root exactly one call before its first
+spawn, counting any other as polling. A leaf's requests go without the tool, as without `courier_spawn`.
+
+**Retention.** Each project keeps its newest 30 records, by `movedAt`, and none that last moved more
+than 90 days ago; the rest are dropped when the plugin loads, next to the roster's sweep. Nothing else
+removes a record.
+
+**The option.** `"memory": false` in the plugin's `options`, read per instance like the limits, turns it
+off: no record is written for a tree whose top runs in that location, and `courier_recall` says the option
+is off and writes and lists nothing. Any other value than `true` or `false` is logged and taken as `true`.
+Each OpenCode server reads its own configuration, so with [two servers](#two-servers-on-one-data-directory)
+on one data directory each writes records by its own option.
 
 ## Seeing and stopping a subtree
 

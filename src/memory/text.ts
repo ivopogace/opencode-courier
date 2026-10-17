@@ -41,8 +41,10 @@ const oneLine = (text: string) => text.replace(/\s+/g, " ").trim()
 const day = (at: number) => new Date(at).toISOString().slice(0, 10)
 
 /** A lesson as the listing and the note's result show it: dated, and from which depth when a session below the top wrote it. */
-export const lessonLine = (lesson: Lesson) =>
-  `lesson (${day(lesson.at)}${lesson.depth === undefined ? "" : `, from depth ${lesson.depth}`}): "${clipText(oneLine(lesson.text), LESSON_MAX)}"`
+export function lessonLine(lesson: Lesson) {
+  const from = lesson.depth === undefined ? "" : `, from depth ${lesson.depth}`
+  return `lesson (${day(lesson.at)}${from}): "${clipText(oneLine(lesson.text), LESSON_MAX)}"`
+}
 
 /** One record as the listing shows it: its top, when it started, its title, its split line, its parts, how long it ran and what it cost. */
 export function recordLine(record: StoredRecord, top: string) {

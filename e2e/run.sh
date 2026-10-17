@@ -232,7 +232,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI.
 # `restart-question` and `roster` restart the server and share a shard; `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 nest:6 stall:150 inbox:37 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 nest:6 stall:150 inbox:37 memory:45 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -623,14 +623,14 @@ run_depth() {
   # The child in between never reports: its turns end while its leaves owe it reports, and once more after.
   check "the root was told once that the child in between ended without a report, once its leaves had reported" \
     "$(has_text "$root" "PARENT TOLD SILENT" 60 >/dev/null; turn_ended "$middle"; notices_with "$root" ended | jq -r --arg middle "$middle" 'length == 1 and (.[0] | contains("<courier from=\"" + $middle + "\" ended="))')"
-  check "every request of a leaf was named a leaf, and the courier's hook left it no courier_spawn" \
+  check "every request of a leaf was named a leaf, and the courier's hook left it no courier_spawn and no courier_recall" \
     "$(jq -sr --argjson leaves "$leaves" '[.[] | select(.type == "probe.context" and (.sessionID | IN($leaves[])))]
-      | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_send")))' "$WORK/probe.log")"
+      | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_recall") | not) and (.tools | index("courier_send")))' "$WORK/probe.log")"
   check "the model saw no courier_spawn in a leaf's tool list unless the probe put it back" \
     "$(jq -sr --argjson leaves "$leaves" '[.[] | select((.session | IN($leaves[])) and (.tools | length > 0))] | group_by(.session)
       | map(any(.tools | index("courier_spawn"))) | sort == [false, true]' "$WORK/model.log")"
-  check "the child in between is a sub-orchestrator, with courier_spawn" \
-    "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")))' "$WORK/model.log")"
+  check "the child in between is a sub-orchestrator, with courier_spawn and courier_recall" \
+    "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")) and (.tools | index("courier_recall")))' "$WORK/model.log")"
   # A root's prompt changes once, at its first spawn: the pointer to the skill before, the role part after.
   check "the root was pointed to the skill until it had started a child, then named root orchestrator" \
     "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | index("root orchestrator") as $i
@@ -1254,6 +1254,58 @@ run_inbox() {
   check "the child got it and reported" "$(has_text "$parent" 'CHILD GOT [["Hey"]]' 45)"
   check "the parent was told once that the person answered it, not its own session" \
     "$(sleep 2; notices_with "$parent" answered | jq -r --arg question "$question" 'length == 1 and (.[0] | contains("request=\"" + $question + "\"") and contains("was answered by the person (") and (contains("in its own session") | not))')"
+}
+
+# A tree's record (#260): written as turns end in it, under memory/<projectID>/<topSessionID>, read back with courier_recall.
+# The record of tree $1 once $2, a jq condition, holds, waiting up to $3 (default 30) s; else what is there.
+record_of() {
+  for _ in $(seq 1 "${3:-30}"); do
+    local found
+    found=$(kv get "memory/$project/$1")
+    if [ -n "$found" ] && [ "$(jq -r "$2" <<<"$found")" = true ]; then echo "$found"; return; fi
+    sleep 1
+  done
+  kv get "memory/$project/$1"
+}
+run_memory() {
+  scenario "a tree's record is kept per project, and courier_recall reads it back from the tree, from a new session and seeded by hand"
+  out=$(prompt "COURIER-GROUP")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
+  check "both members reported, in one message" "$([ -n "$(reply_time "$root" "PARENT GOT GROUP" 45)" ] && echo true || echo false)"
+  project=$(session_info "$root" | jq -r '.projectID')
+  check "the root's session names the project the record is keyed by" "$([ -n "$project" ] && [ "$project" != null ] && echo true || echo false)"
+  record=$(record_of "$root" '.finished == true and (.parts | length == 2) and all(.parts[]; .status == "done")')
+  check "once the turns in the tree had ended, the record lists both parts done, in their group, and the tree finished" \
+    "$(jq -r --arg a "$(head -1 <<<"$members")" --arg b "$(tail -1 <<<"$members")" '.finished == true and (.parts | map(.sessionID) == [$a, $b]) and
+      all(.parts[]; .status == "done" and .group == "pair" and .depth == 1 and .isolated == false and (.duration | type) == "number" and (.cost | type) == "number")' <<<"$record")"
+  check "with the top's title and start, its split line not stated, and no recall noted yet" \
+    "$(jq -r --argjson info "$(session_info "$root")" '.title == $info.title and .startedAt == $info.time.created and .split == "not stated" and (has("recalled") | not) and .movedAt >= .startedAt' <<<"$record")"
+  check "and nothing of the reports' bodies or artifacts" "$(jq -r 'tostring | contains("CHILD DONE") or contains("child/work") | not' <<<"$record")"
+  recalled=$(prompt_in "$root" "COURIER-RECALL" | tool_state courier_recall)
+  check "courier_recall from the root lists its own tree, marked, with both parts done" \
+    "$(jq -r --arg root "$root" '.status == "completed" and .metadata.metadata.top == $root and (.output | contains("- " + $root + " (this tree) ") and contains("2 parts: 2 done") and contains("· finished")) and
+      any(.metadata.metadata.records[]; .sessionID == $root and .finished and (.parts | length) == 2)' <<<"$recalled")"
+  check "which noted the root's call on its record" "$(record_of "$root" '.recalled.calls == 1 and (.recalled.at | type) == "number"' | jq -r '.recalled.calls == 1')"
+  out=$(prompt "COURIER-RECALL")
+  other=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  check "a new session of the project lists the same record, and its own tree without parts" \
+    "$(tool_state courier_recall <<<"$out" | jq -r --arg root "$root" --arg other "$other" '.status == "completed" and (.output | contains("- " + $root + " 20") and contains("- " + $other + " (this tree) ") and contains("no parts")) and
+      any(.metadata.metadata.records[]; .sessionID == $root and (.parts | length) == 2)' )"
+  check "the new session's own record was written by the call, with no parts and the call noted" \
+    "$(record_of "$other" '.recalled.calls == 1' | jq -r '.parts == [] and .finished == false and .recalled.calls == 1 and (.recalled.at | type) == "number"')"
+  full=$(prompt "COURIER-RECALL $root" | tool_state courier_recall)
+  check "with a sessionID, courier_recall gives that record in full" \
+    "$(jq -r --arg root "$root" '.status == "completed" and (.output | startswith("Record of the tree under " + $root + ", in project ")) and .metadata.metadata.record.sessionID == $root and (.metadata.metadata.record.parts | length) == 2' <<<"$full")"
+  # A record written by hand, as docs/reference.md's Memory section describes one and the real-model evaluation seeds it.
+  seeded='{"startedAt":1760000000000,"movedAt":1760000900000,"title":"Seeded by hand","split":"split: 2 parts: core, docs","finished":true,"parts":[{"sessionID":"ses_seed_core","title":"Core","depth":1,"isolated":true,"group":"wave","status":"done","duration":540000,"cost":0.42,"context":0.31},{"sessionID":"ses_seed_docs","title":"Docs","depth":1,"isolated":false,"status":"partial","duration":60000,"refused":1}]}'
+  kv set "memory/$project/ses_seeded" "$seeded" "memory/$project/$root"
+  full=$(prompt "COURIER-RECALL ses_seeded" | tool_state courier_recall)
+  check "a record seeded with kv.ts reads back as written, and is listed" \
+    "$(jq -r --argjson seeded "$seeded" '.status == "completed" and (.metadata.metadata.record | del(.projectID, .sessionID)) == $seeded' <<<"$full")"
+  check "in the listing, with its parts counted" "$(prompt "COURIER-RECALL" | tool_state courier_recall | jq -r '.status == "completed" and (.output | contains("- ses_seeded 2025-10-09: \"Seeded by hand\" · split: 2 parts: core, docs · 2 parts: 1 done, 1 partial, 1 isolated, 1 spawn refused · 15 min · $0.42 · finished"))')"
+  check "a record that is not there is said to be missing" \
+    "$(prompt "COURIER-RECALL ses_nowhere" | tool_state courier_recall | jq -r '.status == "completed" and .metadata.metadata.found == false and (.output | startswith("No record of a tree whose top session is ses_nowhere"))')"
 }
 
 run_native() {

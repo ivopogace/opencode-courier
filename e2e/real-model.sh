@@ -159,11 +159,11 @@ if [ "${COURIER_PERSON:-}" = other-server ]; then
   echo "a second server on the same data directory: $OTHER"
 fi
 if [ -n "${COURIER_SEED:-}" ]; then
-  # The plugin has stored scheduler/owner by now, so kv.ts can put the keys under its id.
+  # By the plugin's id: before the first prompt it may have stored nothing (an idle scheduler drops scheduler/owner).
   project=$(api project | jq -r --arg dir "$WORK/project" 'first(.[] | select(.canonical == $dir) | .id) // .[0].id')
   jq -r 'keys[]' "$COURIER_SEED" | while IFS= read -r key; do
     XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" set "${key//<project>/$project}" \
-      "$(jq -r --arg key "$key" --arg project "$project" '.[$key] | tojson | gsub("<project>"; $project)' "$COURIER_SEED")" scheduler/owner
+      "$(jq -r --arg key "$key" --arg project "$project" '.[$key] | tojson | gsub("<project>"; $project)' "$COURIER_SEED")" @courier
     echo "seeded ${key//<project>/$project}"
   done
 fi

@@ -259,6 +259,21 @@ run mem-lesson-2 COURIER_SEED=$PWD/e2e/real-model-seed-lesson.json
 run mem-lesson-3 COURIER_SEED=$PWD/e2e/real-model-seed-lesson.json
 ```
 
+**The open prompt.** The recursive prompt says "one session per part, and do no part yourself", which
+rules out the very change conditions 3 and 4 look for: a root that did "count" itself would disobey
+the person. `e2e/real-model-prompt-open.txt` is the same job with the split left to the root. Its three
+conditions run on this branch alone, so only the seed differs between them; a memory on and empty is
+the baseline, as no record is there to read. The checker's "at least two children" and "no session
+started exactly one" fail by design when the root keeps "count", so the split is read from the
+transcripts, not from the score.
+
+```bash
+open=$(cat e2e/real-model-prompt-open.txt)
+run open-empty-1 COURIER_PROMPT="$open"; run open-empty-2 COURIER_PROMPT="$open"; run open-empty-3 COURIER_PROMPT="$open"
+for n in 1 2 3; do run open-seeded-$n COURIER_PROMPT="$open" COURIER_SEED=$PWD/e2e/real-model-seed.json; done
+for n in 1 2 3; do run open-lesson-$n COURIER_PROMPT="$open" COURIER_SEED=$PWD/e2e/real-model-seed-lesson.json; done
+```
+
 **What to send back.** One zip per condition, each holding every run directory of the condition,
 refused ones included, and the logs next to them:
 
@@ -266,6 +281,7 @@ refused ones included, and the logs next to them:
 cd ~/courier-runs
 zip -qr base.zip base-* && zip -qr mem-empty.zip mem-empty-* && zip -qr mem-seeded.zip mem-seeded-*
 [ -e mem-lesson-1 ] && zip -qr mem-lesson.zip mem-lesson-*
+[ -e open-empty-1 ] && zip -qr open.zip open-*
 ls -la *.zip
 ```
 

@@ -231,12 +231,14 @@ test("registers the courier tools", async () => {
   ])
 })
 
-test("registers the courier RPCs for the TUI part, the tree's and the person's, read from this location's storage", async () => {
+test("registers the courier RPCs for the TUI part, the tree's, the person's and the memory's, read from this location's storage", async () => {
   const { rpcs } = await setUp()
 
-  expect([...rpcs.keys()]).toEqual(["courier", "courier-person"])
+  expect([...rpcs.keys()]).toEqual(["courier", "courier-person", "courier-memory"])
   expect(await rpcs.get("courier")!.handlers.summary({ sessionID: "ses_none" })).toEqual({ running: 0, waiting: 0, idle: 0, groups: [] })
   expect(await rpcs.get("courier-person")!.handlers.asks({ sessionID: "ses_none" })).toEqual({ top: "ses_none", sessions: [], permissions: [], questions: [] })
+  expect(await rpcs.get("courier-memory")!.handlers.records({})).toEqual({ memory: true, projectID: expect.any(String), records: [] })
+  expect(await rpcs.get("courier-memory")!.handlers.forget({ sessionID: "ses_none" })).toEqual({ outcome: "none" })
 })
 
 test("loads all the same when the host cannot register the RPC, and logs it", async () => {

@@ -4,8 +4,9 @@
 # follows a change, opens the tree panel with /courier tree, the 16×16 Digby below its rows (#245), follows it into a child, opens a child with a click (#250), and stops a child with /courier stop;
 # a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188), and the
 # inbox opened from a child lists the top session's courier_answer prompt first and allows it (#185);
-# a child showing a form waits on the person in the footer and the panel (#183); and x in the panel forgets a gone
-# isolated child, with its worktree (#187).
+# a child showing a form waits on the person in the footer and the panel (#183); x in the panel forgets a gone
+# isolated child, with its worktree (#187); and /courier memory lists the project's tree records, x forgets a lesson
+# alone, then every record, and the view says when memory is off (#262).
 # Then the same from the package `opencode plugin add` installs. Driven by e2e/mock-model.mjs's
 # COURIER-TUI, so no API key is needed.
 #
@@ -57,6 +58,10 @@ rpc() {
 }
 person_rpc() {
   curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier-person/$1?directory=$(location)" \
+    -H 'content-type: application/json' -d "{\"input\":$2}"
+}
+memory_rpc() {
+  curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier-memory/$1?directory=$(location)" \
     -H 'content-type: application/json' -d "{\"input\":$2}"
 }
 # Waits up to $2 s until the summary of session $1 is $3 (compact JSON); prints the last one read.
@@ -442,6 +447,86 @@ check "and its worktree is removed" "$(for _ in $(seq 1 20); do [ ! -d "$forget_
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes the panel" "$(hides "courier tree" 10 tui-forget-closed)"
 
+# The memory view (#262): /courier memory lists the project's tree records newest first, the COURIER-TUI tree's among them
+# with a lesson seeded by hand in its footer; enter shows it in full, x on its lesson row forgets the lesson alone, x on a
+# list row forgets a record after a confirm, and the view closes once the project has none; with memory off it says so.
+echo "/courier memory lists the project's tree records; x forgets a lesson, then every record"
+project=$(api "session/$parent" | jq -r '.data.projectID // .projectID')
+record=$(for _ in $(seq 1 30); do found=$(kv get "memory/$project/$parent"); if [ -n "$found" ] && [ "$(jq -r '.finished and (.parts | length) == 2' <<<"$found")" = true ]; then echo "$found"; break; fi; sleep 1; done)
+check "the COURIER-TUI tree has a finished record with its two parts" "$([ -n "$record" ] && echo true || echo false)"
+# A lesson written by hand on it, as docs/reference.md's Memory section describes a record; the top never called courier_note.
+kv set "memory/$project/$parent" "$(jq -c '.lesson = {text: "Give the docs to one session", at: (now * 1000 | floor)}' <<<"$record")" "memory/$project/$parent"
+listed=$(memory_rpc records '{}')
+echo "  $(jq -c '.output | {memory, records: [.records[] | {sessionID, parts: (.parts | length), lesson: .lesson.text}]}' <<<"$listed")"
+check "the RPC lists the project's records newest first, memory on, the seeded lesson among them" \
+  "$(jq -r --arg parent "$parent" '.output.memory == true and (.output.records | length) >= 2 and (.output.records | map(.movedAt) | . == (sort | reverse)) and
+    any(.output.records[]; .sessionID == $parent and .lesson.text == "Give the docs to one session" and (.parts | length) == 2)' <<<"$listed")"
+check "forgetting a record that is not there finds nothing" "$(memory_rpc forget '{"sessionID":"ses_nowhere"}' | jq -r '.output.outcome == "none"')"
+total=$(jq -r '.output.records | length' <<<"$listed")
+index=$(jq -r --arg parent "$parent" '.output.records | map(.sessionID) | index($parent)' <<<"$listed")
+today=$(date -u +%F)
+open_tui tui-memory "$parent"
+check "the TUI is on the parent" "$(shows "courier 2 idle" 60 tui-memory-footer)"
+tmux send-keys -t "$TMUX_SESSION" "/courier memory"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "/courier memory opens the view with every record of the project" "$(shows "Memory ($total)" 30 tui-memory-list)"
+check "the tree's row has the day it started, its parts counted, and the lesson as its footer" \
+  "$(grep -qF "$today  " "$WORK/tui-memory-list.txt" && grep -qF "2 parts: 2 done" "$WORK/tui-memory-list.txt" && grep -qF "lesson ($today): \"Give the docs to one session\"" "$WORK/tui-memory-list.txt" && echo true || echo false)"
+check "the footer offers x to forget and q to close" "$(grep -qF "forget" "$WORK/tui-memory-list.txt" && grep -qF "close" "$WORK/tui-memory-list.txt" && echo true || echo false)"
+# Down to the tree's row, newest first, then enter.
+for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "enter shows the record in full: its top session, its parts and its lesson" \
+  "$([ "$(shows "Top session $parent" 30 tui-memory-record)" = true ] && grep -qF "CHILD-ASKS" "$WORK/tui-memory-record.txt" && grep -qF "Report back to your parent." "$WORK/tui-memory-record.txt" && grep -qF "Give the docs to one session" "$WORK/tui-memory-record.txt" && echo true || echo false)"
+# The lesson's heading is the eighth row: five facts of the tree, then the two parts.
+for _ in $(seq 1 7); do tmux send-keys -t "$TMUX_SESSION" Down; done
+tmux send-keys -t "$TMUX_SESSION" x
+check "x on the lesson asks to forget the lesson alone" "$(shows "Forget lesson" 30 tui-memory-lesson-confirm)"
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "once confirmed, a toast says the lesson went" "$(shows "Forgot the lesson of" 30 tui-memory-lesson-forgotten)"
+check "and the record is shown again without it" "$(shows "No lesson" 30 tui-memory-no-lesson)"
+check "the record kept its parts and lost its lesson" "$(kv get "memory/$project/$parent" | jq -r '(has("lesson") | not) and (.parts | length) == 2')"
+tmux send-keys -t "$TMUX_SESSION" q
+check "q closes the record" "$(hides "Top session $parent" 10 tui-memory-closed)"
+tmux send-keys -t "$TMUX_SESSION" "/courier memory"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "the view opens again" "$(shows "Memory ($total)" 30 tui-memory-again)"
+left=$total
+while [ "$left" -gt 0 ]; do
+  tmux send-keys -t "$TMUX_SESSION" x
+  [ "$(shows "Forget record" 15 tui-memory-confirm)" = true ] || break
+  tmux send-keys -t "$TMUX_SESSION" Enter
+  left=$((left - 1))
+  if [ "$left" -gt 0 ]; then [ "$(shows "Memory ($left)" 15 tui-memory-fewer)" = true ] || break; fi
+done
+check "x and a confirm on each row forgets the records one by one, the list counting down" "$([ "$left" = 0 ] && echo true || echo false)"
+check "the last one gone, a toast says the project has no record, and the list is closed" \
+  "$([ "$(shows "No record of a session tree" 15 tui-memory-empty)" = true ] && ! grep -qF "Memory (" "$WORK/tui-memory-empty.txt" && echo true || echo false)"
+check "and the RPC lists none" "$(memory_rpc records '{}' | jq -r '.output.records == []')"
+
+echo "with the memory option off, the view says so"
+tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+stop_server
+jq '.plugins[0].options.memory = false' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory off"
+start_server
+check "the RPC says memory is off and lists nothing" "$(memory_rpc records '{}' | jq -r '.output.memory == false and .output.records == []')"
+open_tui tui-memory-off "$parent"
+check "the TUI is back on the parent" "$(shows "courier 2 idle" 60 tui-memory-off-footer)"
+tmux send-keys -t "$TMUX_SESSION" "/courier memory"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "/courier memory says memory is off" "$([ "$(shows "Memory is off" 30 tui-memory-off)" = true ] && ! grep -qF "Memory (" "$WORK/tui-memory-off.txt" && echo true || echo false)"
+tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+stop_server
+jq 'del(.plugins[0].options.memory)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory on"
+start_server
+
 echo "opencode plugin add installs the package with its tui and rpc entrypoints"
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 stop_server
@@ -476,7 +561,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-list tui-memory-record tui-memory-lesson-confirm tui-memory-lesson-forgotten tui-memory-no-lesson tui-memory-again tui-memory-confirm tui-memory-fewer tui-memory-empty tui-memory-off tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

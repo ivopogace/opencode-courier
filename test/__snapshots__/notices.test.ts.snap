@@ -1469,7 +1469,7 @@ exports[`memory recallListText 1`] = `
 `;
 
 exports[`memory recallListText 2`] = `
-"No earlier tree is recorded in this project: a record is written as a session started with courier_spawn ends a turn, and kept 90 days. Decide from the task alone.
+"No earlier tree is recorded in this project: a tree's record is written by a courier_recall call and as each turn in it ends, and kept 90 days. Decide from the task alone.
 - ses_now (this tree) 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · no parts · 42 min · not finished · recalled"
 `;
 

@@ -1,5 +1,5 @@
 // What the rest of the plugin uses of the memory: its tool, event module, option and sweep for `src/index.ts`, and
-// the record's types, which later additions (a lesson line, an RPC) build on.
+// the record's types.
 export { MAX_RECORDS, NOT_STATED, readMemory, RETENTION_MS } from "./domain.js"
 export { memoryEvents, type MemoryEventPorts } from "./events.js"
 export type { MemoryPorts, MemoryState, PartRecord, PartStatus, Recalled, RefreshPorts, StoredRecord, TreeRecord } from "./ports.js"

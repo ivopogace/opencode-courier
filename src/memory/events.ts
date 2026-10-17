@@ -32,9 +32,15 @@ export async function noteTurnEnd(ports: RefreshPorts, state: MemoryState, event
   // A shutdown's interruption is resumed on the next start: nothing ended.
   if (event.data.reason === "shutdown") return undefined
   const top = await topOf(ports, state, event.data.sessionID)
-  // Claimed after the lookup, so other sessions' turns do not crowd `seen`.
+  // Claimed after the lookup, so other sessions' turns do not crowd `seen`; released on a failure, as a write is
+  // the same twice, so the hub's other subscription may still make it.
   if (top === undefined || !claim(state.seen, event.id)) return undefined
-  await refresh(ports, state, top, event.created ?? ports.now())
+  try {
+    await refresh(ports, state, top, event.created ?? ports.now())
+  } catch (error) {
+    state.seen.delete(event.id)
+    throw error
+  }
   return top
 }
 

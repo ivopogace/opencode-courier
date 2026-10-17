@@ -50,9 +50,8 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
 }
 
 /**
- * Writes the record of the tree under `top` as it stands at `at`, from the roster, each session's info and messages and
- * its report state; a part the roster has forgotten keeps its last recorded state. Nothing for a top OpenCode no longer
- * knows, or whose location has memory off. Returns the record written.
+ * Writes the record of the tree under `top` as it stands at `at`; a part the roster has forgotten keeps its last recorded
+ * state. Nothing for a top OpenCode no longer knows, or whose location has memory off. Returns the record written.
  */
 export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "windows" | "off">, top: string, at: number): Promise<TreeRecord | undefined> {
   let info: Info
@@ -73,13 +72,15 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   const windows = [...state.windows.values()]
   const read = await Promise.all(nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at)))
   const parts = mergeParts(previous?.parts ?? [], read.map(({ record }) => record))
+  // Read again just before the write: a courier_recall call during the reads above has noted itself meanwhile.
+  const recalled = (await store.get(info.projectID, top).catch(() => previous))?.recalled ?? previous?.recalled
   const record: TreeRecord = {
     startedAt: finite(millis(info.time.created)) ?? previous?.startedAt ?? at,
     movedAt: at,
     title: info.title ?? previous?.title ?? "",
     split: splitLineOf(replies) ?? previous?.split ?? NOT_STATED,
     finished: !busy(info.time) && !read.some(({ running }) => running) && parts.every((one) => one.status !== "out" && one.status !== "stalled"),
-    ...(previous?.recalled ? { recalled: previous.recalled } : {}),
+    ...(recalled ? { recalled } : {}),
     parts,
   }
   await store.put(info.projectID, top, record)

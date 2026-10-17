@@ -391,7 +391,7 @@ describe("the event module", () => {
     expect(readRecord(store.get(recordKey("proj_1", "ses_top")))?.movedAt).toBe(NOW)
   })
 
-  test("logs a failure rather than throwing it", async () => {
+  test("logs a failure rather than throwing it, and gives the event back for the other subscription to record", async () => {
     const { ports, state, logged } = fakePorts({ ses_top: { updated: 1, idle: 1 } })
     await tree(ports)
     ;(ports.storage as any).scan = async () => {
@@ -401,6 +401,29 @@ describe("the event module", () => {
     await memoryEvents(state).after!(ports as never, ended("ses_a"))
 
     expect(logged).toEqual(["courier memory: could not record the tree of ses_a: Error: db locked"])
+    expect(state.seen.has("evt_ses_a")).toBe(false)
+  })
+
+  test("keeps a recall noted while the refresh was reading", async () => {
+    const { ports, state, store } = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_a: { updated: 1, idle: 1 }, ses_b: { updated: 1, idle: 1 } })
+    await tree(ports)
+    const get = ports.storage.get
+    let noted = false
+    ;(ports.storage as any).get = async (key: string) => {
+      // The call lands once the refresh has read the record and before it writes it back.
+      if (!noted && key === recordKey("proj_1", "ses_top")) {
+        noted = true
+        const value = await get(key)
+        await recall(ports, state, "ses_top", {})
+        return value
+      }
+      return get(key)
+    }
+
+    await refresh(ports, state, "ses_top", NOW)
+
+    expect(readRecord(store.get(recordKey("proj_1", "ses_top")))).toMatchObject({ recalled: { at: NOW, calls: 1 }, movedAt: NOW })
+    expect(readRecord(store.get(recordKey("proj_1", "ses_top")))?.parts).toHaveLength(2)
   })
 })
 
@@ -496,7 +519,7 @@ describe("sweepRecords", () => {
 })
 
 describe("duration", () => {
-  test("reads in seconds under a minute, minutes under an hour, hours and minutes past it", () => {
+  test("reads in seconds under half a minute, whole minutes under an hour, hours and minutes past it", () => {
     expect(duration(12_000)).toBe("12 s")
     expect(duration(29_000)).toBe("29 s")
     expect(duration(31_000)).toBe("1 min")

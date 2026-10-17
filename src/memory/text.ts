@@ -7,7 +7,7 @@ export const RECALL_TOOL = "courier_recall"
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`
 
-/** A duration in milliseconds as a model reads it: seconds under a minute, else minutes, else hours and minutes. */
+/** A duration in milliseconds as a model reads it: seconds under half a minute, else whole minutes, else hours and minutes. */
 export function duration(ms: number) {
   const minutes = Math.round(ms / 60_000)
   if (minutes < 1) return `${Math.max(0, Math.round(ms / 1000))} s`
@@ -60,7 +60,7 @@ export function recallListText(records: ReadonlyArray<StoredRecord>, top: string
   const intro = others.length
     ? `${count(others.length, "earlier tree")} recorded in this project, newest first; weigh how they were split and how their parts went before you decide. ` +
       "A record holds what the plugin saw, not the work: courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use."
-    : "No earlier tree is recorded in this project: a record is written as a session started with courier_spawn ends a turn, and kept 90 days. Decide from the task alone."
+    : "No earlier tree is recorded in this project: a tree's record is written by a courier_recall call and as each turn in it ends, and kept 90 days. Decide from the task alone."
   return [intro, ...records.map((record) => recordLine(record, top))].join("\n")
 }
 

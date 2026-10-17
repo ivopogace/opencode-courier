@@ -118,6 +118,8 @@ describe("splitLineOf", () => {
     expect(splitLineOf("Looking.\n**split: 2 parts: core, docs**\nStarting.")).toBe("**split: 2 parts: core, docs**")
     expect(splitLineOf("I decided to split: no, because it is small; considered: tests, docs")).toBe("I decided to split: no, because it is small; considered: tests, docs")
     expect(splitLineOf("Nothing here.")).toBeUndefined()
+    expect(splitLineOf("# split: 3 parts: a, b, c\nsplit: later")).toBe("# split: 3 parts: a, b, c")
+    expect(splitLineOf("- **split: no, because small; considered: docs**")).toBe("- **split: no, because small; considered: docs**")
   })
 })
 
@@ -488,7 +490,7 @@ describe("sweepRecords", () => {
     const dropped = await sweepRecords(ports.storage, NOW)
 
     expect(dropped.map((record) => record.sessionID).toSorted()).toEqual([`ses_${MAX_RECORDS}`, "ses_stale"])
-    expect((await store.ofProject("proj_1")).length).toBe(MAX_RECORDS)
+    expect(await store.ofProject("proj_1")).toHaveLength(MAX_RECORDS)
     expect((await store.ofProject("proj_2")).map((record) => record.sessionID)).toEqual(["ses_recent"])
   })
 })

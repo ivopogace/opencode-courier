@@ -20,6 +20,22 @@ Zen](https://opencode.ai/zen) and needs no key: the provider is declared in `ope
 Zen's endpoint, so OpenCode's model catalog is not needed either. Free models are rate limited;
 check Zen's terms before sending them anything private (the prompts here are trivial on purpose).
 
+Since 2026-10-17 Zen's free tier refuses that declared endpoint: HTTP 403, `provider.auth`, with the
+body `FreeTierError` "OpenCode's free tier can only be used from within OpenCode". A bare request gets
+it at once, and a recursive run got seven requests through before every later one was refused. Set
+`COURIER_BASE_URL=` (empty) so OpenCode's own catalog entry for the `opencode` provider is used, which
+Zen takes as "within OpenCode"; nothing else about the run changes. From a shared cloud address the
+same 403 then comes by volume, not by client: that day, from a Claude Code cloud VM, 14 attempts on
+`longcat-2.5-preview-free` and 7 on `deepseek-v4.1-flash-free` each got 0 to 17 requests of 9 to 14k
+tokens through and then none (49 of about 110 requests refused in the first eight attempts); tiny
+requests of about 500 tokens still passed 7 of 8 and 6 of 6 one at a time while a lone 40 KB prompt
+was refused, and after an hour of attempts tiny ones were refused too (2 of 3). A tree typed into the
+TUI in `tmux` was cut off the same way after seven requests, and the newest published CLI was still
+2.0.32, so it is neither a client check nor a version check; `deepseek-v4.1-flash-free` adds HTTP 429
+`provider.quota` of its own. The recursive scenario needs 15 to 25 such requests in four minutes, more
+than that address's budget allowed at any hour tried, so the memory conditions of #263 are run from a
+machine of one's own: [Running the memory conditions by hand](#running-the-memory-conditions-by-hand).
+
 | Variable | Default | |
 |---|---|---|
 | `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `longcat-2.5-preview-free` | The model, as OpenCode names it. |
@@ -32,6 +48,7 @@ check Zen's terms before sending them anything private (the prompts here are tri
 | `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server on the same data directory. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
 | `COURIER_NATIVE` | | `1` loads the plugin with [`nativeChildren`](../reference.md#native-child-sessions) on. |
+| `COURIER_SEED` | | A JSON file of plugin storage keys, `{ "<key>": <value>, … }`, set with `e2e/kv.ts` once the server is up and before the parent's prompt; `<project>` in a key or value stands for the project's id. For a tree [record](../reference.md#memory) an earlier tree would have left: [the memory conditions](#running-the-memory-conditions-by-hand). |
 | `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, and then for the children. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |
 
@@ -167,6 +184,97 @@ scheduled a check-in or had a spawn refused, and each report's status.
 |---|---|---|
 | `longcat-2.5-preview-free` | 2.0.26 | 8/9: every file right and all four reports `done` through two groups; only the root's last turn was lost to a refused request. Two more runs were refused by Zen's free quota (`provider.quota`) after the root had loaded the skill and split into a group. |
 | `longcat-2.5-preview-free`, through OpenCode's catalog (`COURIER_BASE_URL` empty) | 2.0.29 | Inconclusive, 5/9: the root loaded the skill and started both parts in one group, the "numbers" session split its halves into a group of its own, both leaves said `split: no` and did their part, and no session polled or started exactly one; then Zen's free quota refused 8 of the 15 requests (`provider.quota`), before any file was written or any report sent. A second run was refused on its second request. |
+
+## Running the memory conditions by hand
+
+The evaluation of the tree records (#263, for the epic #259): does an orchestrator read them with
+`courier_recall`, and does what it reads change its split? Three conditions of the recursive scenario,
+three finished trees each, on one free model kept for every condition, from a machine whose address Zen
+does not throttle (see [Running it](#running-it)). Everything below runs from the repository's root in
+`bash`; `~/courier-runs` collects the runs.
+
+Once:
+
+```bash
+git clone https://github.com/ivopogace/opencode-courier && cd opencode-courier
+npm install --prefix ~/oc @opencode/cli@2.0.32
+export OPENCODE_BIN=~/oc/node_modules/.bin/opencode
+mkdir -p ~/courier-runs
+run() {  # run <name> [VAR=value ...]: one tree, its work directory and log under ~/courier-runs/<name>
+  local name=$1; shift
+  env COURIER_SCENARIO=recursive COURIER_BASE_URL= E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
+  echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
+}
+```
+
+`COURIER_BASE_URL=` is the catalog route, and the default model `longcat-2.5-preview-free`; to use
+another free model, add `COURIER_MODEL=<name>` to every `run` of every condition, since the conditions
+compare only on one model. A run is **finished** when its exit is 0 (every check passed) or 1 (a check
+failed) and its directory holds `summary.json`; its log ends in `result: pass` or `result: fail`. A run
+that exits 2 (`result: inconclusive`: model requests failed, usually 429 or 403 from the free tier),
+or that says the parent's first turn did not end or that no parent session appeared, is **refused**:
+repeat it under a new name (`base-4`, …) until the condition has three finished runs. Keep the refused
+runs' directories too; they are not counted.
+
+**Condition 1, baseline: `main` before the records (315587a).** Nothing is written or read.
+
+```bash
+git checkout 315587a && bun install && npm run build
+run base-1; run base-2; run base-3
+```
+
+**Condition 2, memory on, empty.** The branch `issue-263-evaluate-records` carries `main` at 6ea0ca7
+(the records and `courier_recall`, PR #264) and the two files the next conditions need. Every run has a
+fresh data directory, so the project has no record when the root starts.
+
+```bash
+git checkout issue-263-evaluate-records && bun install && npm run build
+run mem-empty-1; run mem-empty-2; run mem-empty-3
+```
+
+**Condition 3, memory on, seeded.** `COURIER_SEED` names a JSON file of storage keys that
+`e2e/real-model.sh` sets with `e2e/kv.ts` once the server is up and before the parent's prompt, with
+`<project>` in a key or value replaced by the project's id (`/api/project`, the id the plugin keys the
+records by). `e2e/real-model-seed.json` is the record of an earlier tree of the same project, shaped
+as [Memory](../reference.md#memory) documents one: two parts in group `parts`, its "count" part
+`done` by one session in 115 s, its "numbers" part split into two halves in group `halves`, both
+`done`, no `recalled`. The log shows `seeded memory/<id>/ses_seed…` before `parent prompt:`.
+
+```bash
+run mem-seeded-1 COURIER_SEED=$PWD/e2e/real-model-seed.json
+run mem-seeded-2 COURIER_SEED=$PWD/e2e/real-model-seed.json
+run mem-seeded-3 COURIER_SEED=$PWD/e2e/real-model-seed.json
+```
+
+**Condition 4, seeded with a lesson**, only if condition 3 shows the record read and the split
+changed (the root's `split:` line names fewer parts than in the baseline, or the root does the "count"
+part itself, in at least two of the three seeded trees and in none of the baseline's).
+`e2e/real-model-seed-lesson.json` is the same record with one line, `"lesson": "the count part is
+small; do it yourself"`, at the top level of the record, where #261 would write it, and no fact that
+says so.
+
+```bash
+run mem-lesson-1 COURIER_SEED=$PWD/e2e/real-model-seed-lesson.json
+run mem-lesson-2 COURIER_SEED=$PWD/e2e/real-model-seed-lesson.json
+run mem-lesson-3 COURIER_SEED=$PWD/e2e/real-model-seed-lesson.json
+```
+
+**What to send back.** One zip per condition, each holding every run directory of the condition,
+refused ones included, and the logs next to them:
+
+```bash
+cd ~/courier-runs
+zip -qr base.zip base-* && zip -qr mem-empty.zip mem-empty-* && zip -qr mem-seeded.zip mem-seeded-*
+[ -e mem-lesson-1 ] && zip -qr mem-lesson.zip mem-lesson-*
+ls -la *.zip
+```
+
+attached to the session that reads them, in the Claude app, or as links. From each finished tree the
+table on #259 takes: `courier_recall` calls (how many in the tree, before or after the root's `split:`
+line, and whether the checker counted one as polling), the root's and the "numbers" session's `split:`
+lines and whether the "count" part went to a session or the root did it, the checker's score (n/9),
+every report's status, the files, model requests and the tree's duration; the transcripts,
+`timeline.txt` and `summary.json` hold all of it.
 
 ## Caveats
 

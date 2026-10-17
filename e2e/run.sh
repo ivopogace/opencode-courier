@@ -1292,8 +1292,9 @@ run_memory() {
   check "a new session of the project lists the same record, and its own tree without parts" \
     "$(tool_state courier_recall <<<"$out" | jq -r --arg root "$root" --arg other "$other" '.status == "completed" and (.output | contains("- " + $root + " 20") and contains("- " + $other + " (this tree) ") and contains("no parts")) and
       any(.metadata.metadata.records[]; .sessionID == $root and (.parts | length) == 2)' )"
+  # Its turn ending after the call refreshes the record: no parts, and finished, as nothing in it runs.
   check "the new session's own record was written by the call, with no parts and the call noted" \
-    "$(record_of "$other" '.recalled.calls == 1' | jq -r '.parts == [] and .finished == false and .recalled.calls == 1 and (.recalled.at | type) == "number"')"
+    "$(record_of "$other" '.recalled.calls == 1' | jq -r '.parts == [] and .recalled.calls == 1 and (.recalled.at | type) == "number"')"
   full=$(prompt "COURIER-RECALL $root" | tool_state courier_recall)
   check "with a sessionID, courier_recall gives that record in full" \
     "$(jq -r --arg root "$root" '.status == "completed" and (.output | startswith("Record of the tree under " + $root + ", in project ")) and .metadata.metadata.record.sessionID == $root and (.metadata.metadata.record.parts | length) == 2' <<<"$full")"

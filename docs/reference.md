@@ -823,7 +823,7 @@ duration in milliseconds:
 | `movedAt` | When a turn in the tree last ended, or the record was first written by `courier_recall`. The newest records are the ones that moved last. |
 | `title` | The top session's title, as OpenCode has it at the last refresh. |
 | `split` | The top's split line, the first line of its replies that states one (`split: no, because …` or `split: <n> parts: …`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), or `not stated`. |
-| `finished` | Whether, at the last refresh, no session in the tree ran (by the same rule as the limits' `busy`) and every part had settled: none was `out` or `stalled`. A tree whose top is still integrating reads as finished until that turn ends. |
+| `finished` | Whether, at the last refresh, no session in the tree ran (by the same rule as the limits' `busy`) and every part had settled: none was `out` or `stalled`. A tree whose top is still integrating reads as finished until that turn ends, and one with no parts as soon as its top is idle. |
 | `recalled` | Absent until `courier_recall` was called from the tree; then `{ "calls": <n> }`, counting every call made from the top and its parts, with `"at"`, when the top itself first called it, once it has. |
 | `parts` | One object per session started in the tree, in the order the tree is drawn (each followed by what it started, siblings oldest first), those recorded earliest first. |
 

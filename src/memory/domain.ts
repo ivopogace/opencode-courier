@@ -75,16 +75,15 @@ export function readMemory(options: unknown) {
   return { memory: true, problems: [`memory must be true or false, not ${JSON.stringify(value)}; using true`] }
 }
 
-/** A line beginning with `split:` after any markdown (whitespace, emphasis, heading, quote and list marks), then one holding it. */
-const SPLIT_LINES = [/^[\s*_#>`-]*split:.*$/im, /^.*\bsplit:.*$/im]
+/** A line beginning with `split:` after any markdown (whitespace, emphasis, heading, quote and list marks). */
+const STARTS_SPLIT = /^[\s*_#>`-]*split:/i
+/** A line holding `split:` as a word. */
+const HOLDS_SPLIT = /\bsplit:/i
 
 /** The split line a text states, as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it. */
 export function splitLineOf(text: string) {
-  for (const pattern of SPLIT_LINES) {
-    const found = pattern.exec(text)
-    if (found) return found[0].trim()
-  }
-  return undefined
+  const lines = text.split("\n")
+  return (lines.find((line) => STARTS_SPLIT.test(line)) ?? lines.find((line) => HOLDS_SPLIT.test(line)))?.trim()
 }
 
 /** What a part's status is read from: whether courier_stop stopped it, whether it is stalled, and its report state. */

@@ -1,5 +1,5 @@
 // Live-test probe: logs each event per instance (location, pid) to its `log` option's file, and, after the
-// courier's context hook, each request's tools and role; puts courier_spawn back for a CHILD-FORCES task.
+// courier's context hook, each request's tools and role; puts courier_spawn and courier_note back for a CHILD-FORCES task.
 import { appendFileSync, realpathSync } from "node:fs"
 
 // The session an event concerns, where the watcher looks for it: `data.sessionID`, or a form's.
@@ -27,11 +27,18 @@ export default {
     await ctx.session.hook("context", (event) => {
       const role = event.system.map((part) => part.text.match(/^opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/)?.[1]).find(Boolean)
       write({ type: "probe.context", sessionID: event.sessionID, tools: Object.keys(event.tools), role: role ?? null })
-      if (!event.tools.courier_spawn && JSON.stringify(event.messages).includes("CHILD-FORCES"))
-        event.tools.courier_spawn = {
-          description: "Start a session.",
-          input: { type: "object", properties: { task: { type: "string" } }, required: ["task"] },
-        }
+      if (JSON.stringify(event.messages).includes("CHILD-FORCES")) {
+        if (!event.tools.courier_spawn)
+          event.tools.courier_spawn = {
+            description: "Start a session.",
+            input: { type: "object", properties: { task: { type: "string" } }, required: ["task"] },
+          }
+        if (!event.tools.courier_note)
+          event.tools.courier_note = {
+            description: "Note a lesson.",
+            input: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+          }
+      }
     })
     const following = new AbortController()
     // Subscribes again when the stream ends or breaks, as the courier's watcher does.

@@ -29,7 +29,7 @@ addWebhookTools(editor, {} as never)
 addMemoryTools(editor, {} as never)
 
 describe("tools", () => {
-  test("are the thirteen courier tools, each a direct tool", () => {
+  test("are the fourteen courier tools, each a direct tool", () => {
     expect(registered.map((tool) => [tool.name, tool.options])).toMatchSnapshot()
   })
 
@@ -67,6 +67,10 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")
     // Step 1 and the root's pointer name one courier_recall before the decision, which the recursive checker allows.
     expect(skill.SKILL_CONTENT).toContain(`First call ${memory.RECALL_TOOL} once`)
+    // Step 8 asks the top for one courier_note, none when there is nothing; the brief never mentions it: children write no lesson.
+    expect(skill.SKILL_CONTENT).toContain(`one ${memory.NOTE_TOOL} with that one line; none when there is nothing`)
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).not.toContain(memory.NOTE_TOOL)
+    expect(tree.rolePart(0, limits)).not.toContain(memory.NOTE_TOOL)
     expect(tree.rolePart(null, limits)).toContain(`call ${memory.RECALL_TOOL} once`)
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(kernel.SPLIT_LINE)
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
@@ -438,4 +442,17 @@ describe("memory", () => {
   })
   test("recallRecordText", () => expect(memory.recallRecordText(record("ses_old"))).toMatchSnapshot())
   test("recallMissingText", () => expect(memory.recallMissingText("ses_none")).toMatchSnapshot())
+  const lesson = { text: "The docs part was ten lines; next time do it yourself.", at: Date.UTC(2026, 9, 3, 9, 40) }
+  test("recordLine with a lesson", () => {
+    expect(memory.recordLine(record("ses_old", { lesson }), "ses_other")).toMatchSnapshot()
+    expect(memory.recordLine(record("ses_old", { lesson: { ...lesson, depth: 2 } }), "ses_other")).toMatchSnapshot()
+  })
+  test("noteText", () => {
+    expect(memory.noteText("ses_top", lesson, undefined, undefined)).toMatchSnapshot()
+    expect(memory.noteText("ses_top", { text: "x".repeat(300), at: lesson.at, depth: 1 }, 312, lesson)).toMatchSnapshot()
+  })
+  test("NOTE_OFF", () => expect(memory.NOTE_OFF).toMatchSnapshot())
+  test("noteLeafRefusal", () => expect(memory.noteLeafRefusal(3, 3)).toMatchSnapshot())
+  test("NOTE_EMPTY", () => expect(memory.NOTE_EMPTY).toMatchSnapshot())
+  test("noteUnrecordedRefusal", () => expect(memory.noteUnrecordedRefusal("ses_top")).toMatchSnapshot())
 })

@@ -26,7 +26,7 @@ import {
   type PersonState,
   type QuestionPorts,
 } from "./person/index.js"
-import { addMemoryTools, memoryEvents, readMemory, RECALL_TOOL, sweepRecords, type MemoryPorts, type MemoryState } from "./memory/index.js"
+import { addMemoryTools, memoryEvents, NOTE_TOOL, readMemory, RECALL_TOOL, sweepRecords, type MemoryPorts, type MemoryState } from "./memory/index.js"
 import { addSkill } from "./skill.js"
 import {
   addTreeTools,
@@ -175,7 +175,7 @@ export const courier = () => Plugin.define({
     }
 
     const stopPorts = { courier: ports, cancelScheduled: (sessionID: string) => cancelScheduled(later, sessionID), cleanup: cleanupPorts }
-    const memoryPorts: MemoryPorts = { storage: ctx.storage, session: ctx.session, now: Date.now, log, projectID: ctx.location.project.id, memory }
+    const memoryPorts: MemoryPorts = { storage: ctx.storage, session: ctx.session, now: Date.now, log, projectID: ctx.location.project.id, memory, maxDepth: limits.maxDepth }
     // The tools in a fixed order: the tree's, then the person's, the scheduled messages', the webhooks' and the memory's.
     await ctx.tool.transform((tools) => {
       addTreeTools(tools, { courier: ports, cleanup: cleanupPorts, stop: stopPorts })
@@ -190,7 +190,7 @@ export const courier = () => Plugin.define({
       .then(() => registerTreeRpc(ctx.rpc, stopPorts))
       .then(() => registerPersonRpc(ctx.rpc, { questions: questionPorts, permissions }))
       .catch((error: unknown) => log(`courier rpc: not registered, the TUI part shows nothing and cannot stop: ${String(error)}`))
-    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, hiddenFromLeaf: [RECALL_TOOL], log }, event))
+    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, hiddenFromLeaf: [RECALL_TOOL, NOTE_TOOL], log }, event))
 
     const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
     const swept = sweepRecords(ctx.storage, Date.now()).catch((error: unknown) => log(`courier memory sweep: ${String(error)}`))

@@ -4,7 +4,7 @@ import type { Storage } from "../platform/storage.js"
 import type { ModelWindow } from "../tree/index.js"
 import type { StoredRecord, TreeRecord } from "./domain.js"
 
-export type { PartRecord, PartStatus, Recalled, StoredRecord, TreeRecord } from "./domain.js"
+export type { Lesson, PartRecord, PartStatus, Recalled, StoredRecord, TreeRecord } from "./domain.js"
 
 type Context = Plugin.Context
 
@@ -16,12 +16,14 @@ export interface RefreshPorts {
   readonly log: (message: string) => void
 }
 
-/** What courier_recall runs on: one instance's ports. */
+/** What courier_recall and courier_note run on: one instance's ports. */
 export interface MemoryPorts extends RefreshPorts {
-  /** The project of the plugin's location, whose records the tool lists. */
+  /** The project of the plugin's location, whose records the tools read and write. */
   readonly projectID: string
-  /** The `memory` option: off, and the tool writes and lists nothing. */
+  /** The `memory` option: off, and the tools write and list nothing. */
   readonly memory: boolean
+  /** The tree's `maxDepth` limit: a session at it is a leaf, which courier_note refuses. */
+  readonly maxDepth: number
 }
 
 /** What every plugin instance in the process shares of the memory, under a fixed key outside the hub. */

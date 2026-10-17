@@ -227,6 +227,7 @@ test("registers the courier tools", async () => {
     "courier_subscribe",
     "courier_unsubscribe",
     "courier_recall",
+    "courier_note",
   ])
 })
 
@@ -244,7 +245,7 @@ test("loads all the same when the host cannot register the RPC, and logs it", as
   try {
     const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { rpc: undefined })
 
-    expect(tools.size).toBe(13)
+    expect(tools.size).toBe(14)
     expect(hooks.has("context")).toBe(true)
     expect(logged.filter((line) => line.startsWith("courier rpc: not registered"))).toHaveLength(1)
   } finally {
@@ -268,10 +269,10 @@ test("registers them as direct tools, not code-mode ones only reachable through 
   for (const tool of tools.values()) expect(tool.options).toEqual({ codemode: false })
 })
 
-test("its context hook, with the limits from the options, hides courier_spawn and courier_recall from a child at maxDepth", async () => {
+test("its context hook, with the limits from the options, hides courier_spawn, courier_recall and courier_note from a child at maxDepth", async () => {
   const { tools, hooks } = await setUp({}, { maxDepth: 1 })
   await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
-  const event = { sessionID: "ses_child", tools: { courier_spawn: {}, courier_send: {}, courier_recall: {} }, system: [] as any[] }
+  const event = { sessionID: "ses_child", tools: { courier_spawn: {}, courier_send: {}, courier_recall: {}, courier_note: {} }, system: [] as any[] }
 
   await hooks.get("context")!(event)
 
@@ -284,11 +285,11 @@ test("its context hook, with the limits from the options, hides courier_spawn an
 
 test("its context hook points a session nobody spawned, with no children, to the skill", async () => {
   const { hooks } = await setUp()
-  const event = { sessionID: "ses_alone", tools: { courier_spawn: {}, courier_send: {}, courier_recall: {} }, system: [] as any[] }
+  const event = { sessionID: "ses_alone", tools: { courier_spawn: {}, courier_send: {}, courier_recall: {}, courier_note: {} }, system: [] as any[] }
 
   await hooks.get("context")!(event)
 
-  expect(Object.keys(event.tools)).toEqual(["courier_spawn", "courier_send", "courier_recall"])
+  expect(Object.keys(event.tools)).toEqual(["courier_spawn", "courier_send", "courier_recall", "courier_note"])
   expect(event.system).toEqual([{ type: "text", text: rolePart(null, DEFAULT_LIMITS) }])
 })
 

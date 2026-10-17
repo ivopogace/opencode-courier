@@ -1,6 +1,6 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`tools are the thirteen courier tools, each a direct tool 1`] = `
+exports[`tools are the fourteen courier tools, each a direct tool 1`] = `
 [
   [
     "courier_spawn",
@@ -76,6 +76,12 @@ exports[`tools are the thirteen courier tools, each a direct tool 1`] = `
   ],
   [
     "courier_recall",
+    {
+      "codemode": false,
+    },
+  ],
+  [
+    "courier_note",
     {
       "codemode": false,
     },
@@ -656,6 +662,25 @@ exports[`tools courier_recall 1`] = `
 }
 `;
 
+exports[`tools courier_note 1`] = `
+{
+  "description": "Write the one lesson of your session tree for the next orchestrator in this project, once you have verified and integrated the work: what it should know about splitting work here that the record's facts do not say, such as which parts collided, what was too small to hand off, or what the person decided. One line, at most 300 characters, kept on your own tree's record and listed by courier_recall after its facts, dated; a second call replaces the first. From the top session or one that started sessions, never a leaf. No code, no secrets, and not a rule that holds every time: that belongs in AGENTS.md or the skill, for the person to put there, so tell them instead.",
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "text": {
+        "description": "The lesson, one line of at most 300 characters (longer is clipped): what the next orchestrator in this project should know about splitting work here.",
+        "type": "string",
+      },
+    },
+    "required": [
+      "text",
+    ],
+    "type": "object",
+  },
+}
+`;
+
 exports[`envelope and child brief END_TURN 1`] = `"If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`envelope and child brief childBrief 1`] = `
@@ -751,7 +776,7 @@ exports[`envelope and child brief the courier-orchestrate skill 2`] = `
 5. Read each report by its status and its artifacts (branch, commits, files, checks). done: verify it. partial: what is left and why; have the session finish it with a courier_send, or do it yourself. blocked: make the decision it asks for and send it with courier_send; if only the person can make it, ask them with your question tool and pass the answer on. failed: read the error; message the session to try again, start a replacement, or carry on without it.
 6. Verify first-hand: open the files, run the checks. Never hand the checking to another session: a review session's findings are a report to act on, and running the checks is still yours. Run checks through the project's scripts (bun run <script>, npm run <script>), not ./node_modules/.bin/<tool>, so that one permission rule covers them: your own permission prompts are relayed nowhere, and each one stalls the whole tree.
 7. Integrate: merge each reported branch into your own checkout (git merge courier/<session>), resolve conflicts yourself, run the checks once more, then courier_cleanup the isolated sessions you are done with.
-8. Report upward if a session started you: one courier_send to it, with one status for the whole (done only when every part is verified and integrated; partial, blocked or failed otherwise) and the artifacts. At the top, reply to the person.
+8. Report upward if a session started you: one courier_send to it, with one status for the whole (done only when every part is verified and integrated; partial, blocked or failed otherwise) and the artifacts. At the top, before you reply to the person: if there is something the next tree in this project should know about splitting work here (which parts collided, what was too small to hand off, what the person decided), one courier_note with that one line; none when there is nothing. A rule that holds every time goes to AGENTS.md or the skill, through the person, not into a note. Then reply to the person.
 
 When a part goes wrong:
 - A failed turn (failed="...") or a silent end (ended="without-report", quoting the session's last reply): message the session with courier_send to carry on, to report, or to try again; or start a replacement. Until it reports, it counts toward the limits.
@@ -1463,7 +1488,7 @@ exports[`webhook deliveries webhookText 1`] = `
 exports[`memory RECALL_OFF 1`] = `"Memory is off: the plugin's memory option is false, so no record of a session tree is kept or listed in this project. Decide from the task alone."`;
 
 exports[`memory recallListText 1`] = `
-"1 earlier tree recorded in this project, newest first; weigh how they were split and how their parts went before you decide. A record holds what the plugin saw, not the work: courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use.
+"1 earlier tree recorded in this project, newest first; weigh how they were split and how their parts went before you decide. A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out: courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use.
 - ses_now (this tree) 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · no parts · 42 min · not finished · recalled
 - ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · 42 min · $1.23 · finished"
 `;
@@ -1474,7 +1499,7 @@ exports[`memory recallListText 2`] = `
 `;
 
 exports[`memory recallListText 3`] = `
-"1 earlier tree recorded in this project, newest first; weigh how they were split and how their parts went before you decide. A record holds what the plugin saw, not the work: courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use.
+"1 earlier tree recorded in this project, newest first; weigh how they were split and how their parts went before you decide. A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out: courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use.
 - ses_part 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · 42 min · $1.23 · finished · recalled by a part"
 `;
 
@@ -1526,3 +1551,19 @@ exports[`memory recallRecordText 1`] = `
 `;
 
 exports[`memory recallMissingText 1`] = `"No record of a tree whose top session is ses_none in this project. courier_recall without sessionID lists the records there are."`;
+
+exports[`memory recordLine with a lesson 1`] = `"- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · 42 min · $1.23 · finished · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself.""`;
+
+exports[`memory recordLine with a lesson 2`] = `"- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · 42 min · $1.23 · finished · lesson (2026-10-03, from depth 2): "The docs part was ten lines; next time do it yourself.""`;
+
+exports[`memory noteText 1`] = `"Noted on the record of the tree under ses_top as its lesson (2026-10-03): "The docs part was ten lines; next time do it yourself.". courier_recall lists it after the tree's facts; a second courier_note replaces it. A lesson that holds every time belongs in AGENTS.md or the skill, which only the person puts there: tell them instead of noting it."`;
+
+exports[`memory noteText 2`] = `"Noted on the record of the tree under ses_top as its lesson (2026-10-03, from depth 1): "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx". Clipped to 300 characters from 312: a lesson is one line. It replaces the lesson (2026-10-03): "The docs part was ten lines; next time do it yourself.". courier_recall lists it after the tree's facts; a second courier_note replaces it. A lesson that holds every time belongs in AGENTS.md or the skill, which only the person puts there: tell them instead of noting it."`;
+
+exports[`memory NOTE_OFF 1`] = `"Not noted: the plugin's memory option is false, so no record of a session tree is kept in this project to write a lesson on."`;
+
+exports[`memory noteLeafRefusal 1`] = `"Not noted: this session is a leaf, at depth 3 of a session tree that goes at most 3 deep (maxDepth). A lesson is written by the session that verified the tree, the top or one that started sessions; put what you learned in your report instead."`;
+
+exports[`memory NOTE_EMPTY 1`] = `"Not noted: text is empty. Write one line, what the next tree in this project should know about splitting work here, or nothing."`;
+
+exports[`memory noteUnrecordedRefusal 1`] = `"Not noted: the tree under ses_top has no record in this project to write a lesson on. A record is written by a courier_recall call and as each turn in the tree ends, so call it once first, or note once a session you started has reported."`;

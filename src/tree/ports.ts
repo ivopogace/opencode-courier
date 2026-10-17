@@ -343,7 +343,7 @@ export interface ContextPorts {
   readonly limits: Limits
   /** Each session's depth once looked up: null for one nobody spawned that has started none, until it starts one. */
   readonly roles: Map<string, number | null>
-  /** Tools of other modules hidden from a leaf alongside courier_spawn; `src/index.ts` names courier_recall. */
+  /** Tools of other modules hidden from a leaf alongside courier_spawn; `src/index.ts` names courier_recall and courier_note. */
   readonly hiddenFromLeaf?: ReadonlyArray<string>
   readonly log: (message: string) => void
 }

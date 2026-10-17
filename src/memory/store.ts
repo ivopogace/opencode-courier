@@ -1,6 +1,6 @@
 import { finite, num, obj, str } from "../platform/json.js"
 import { scanEntries, type Storage } from "../platform/storage.js"
-import { isPartStatus, NOT_STATED, type PartRecord, type Recalled, type StoredRecord, type TreeRecord } from "./domain.js"
+import { isPartStatus, type Lesson, lessonText, NOT_STATED, type PartRecord, type Recalled, type StoredRecord, type TreeRecord } from "./domain.js"
 import type { MemoryStore } from "./ports.js"
 
 // The memory's storage: the only file that knows its key and layout. A record is read leniently, as one written by
@@ -47,18 +47,30 @@ function readRecalled(value: unknown): Recalled | undefined {
   return at === undefined ? { calls } : { at, calls }
 }
 
+/** A lesson as `{ text, at, depth }`, or as a bare string written by hand, dated `movedAt`; none for an empty text. */
+function readLesson(value: unknown, movedAt: number): Lesson | undefined {
+  const given = typeof value === "string" ? { text: value } : obj(value)
+  const { text } = lessonText(str(given.text) ?? "")
+  if (!text) return undefined
+  const depth = num(given.depth)
+  return { text, at: num(given.at) ?? movedAt, ...(depth !== undefined && Number.isInteger(depth) && depth > 0 ? { depth } : {}) }
+}
+
 /** A record as stored, or undefined for a value that is not one. */
 export function readRecord(value: unknown): TreeRecord | undefined {
   const given = obj(value)
   if (!Array.isArray(given.parts)) return undefined
   const recalled = readRecalled(given.recalled)
+  const movedAt = num(given.movedAt) ?? num(given.startedAt) ?? 0
+  const lesson = readLesson(given.lesson, movedAt)
   return {
     startedAt: num(given.startedAt) ?? 0,
-    movedAt: num(given.movedAt) ?? num(given.startedAt) ?? 0,
+    movedAt,
     title: str(given.title) ?? "",
     split: str(given.split) ?? NOT_STATED,
     finished: given.finished === true,
     ...(recalled ? { recalled } : {}),
+    ...(lesson ? { lesson } : {}),
     parts: given.parts.map(readPart).filter((part: PartRecord | undefined): part is PartRecord => part !== undefined),
   }
 }

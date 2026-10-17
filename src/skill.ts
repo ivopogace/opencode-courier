@@ -50,7 +50,11 @@ export const SKILL_CONTENT = [
   "7. Integrate: merge each reported branch into your own checkout (git merge courier/<session>), resolve conflicts " +
     "yourself, run the checks once more, then courier_cleanup the isolated sessions you are done with.",
   "8. Report upward if a session started you: one courier_send to it, with one status for the whole (done only when every " +
-    "part is verified and integrated; partial, blocked or failed otherwise) and the artifacts. At the top, reply to the person.",
+    "part is verified and integrated; partial, blocked or failed otherwise) and the artifacts. At the top, before you reply " +
+    "to the person: if there is something the next tree in this project should know about splitting work here (which parts " +
+    "collided, what was too small to hand off, what the person decided), one courier_note with that one line; none when " +
+    "there is nothing. A rule that holds every time goes to AGENTS.md or the skill, through the person, not into a note. " +
+    "Then reply to the person.",
   "",
   "When a part goes wrong:",
   "- A failed turn (failed=\"...\") or a silent end (ended=\"without-report\", quoting the session's last reply): message " +

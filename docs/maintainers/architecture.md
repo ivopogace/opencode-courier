@@ -18,7 +18,7 @@ inbound and outbound adapters):
 - `scheduling/`: `courier_later` messages.
 - `webhook/`: the receiver and subscriptions.
 - `memory/`: one record per session tree, kept in the project by an event module and read back with
-  `courier_recall`.
+  `courier_recall`, with the one line `courier_note` writes on it.
 - `kernel/`: what models see of the protocol in every module (`envelope`, `END_TURN`,
   `describeFailure`, …) and the tool editor.
 - `platform/`: the hub, following OpenCode's events, storage helpers and JSON readers; it imports
@@ -92,7 +92,7 @@ directory, so a key or a stored value never changes shape. `test/store.test.ts` 
 | `webhook/<topic, URI-encoded>/<sessionID>` | A webhook subscription. |
 | `wake/<sessionID>/<inboxID>` | A courier message waiting in a session's inbox, until delivered or cancelled: `at`, `text`, `description`, `running`, `idleAt`, `rewoken`, `stalled` ([a missed wake](../reference.md#a-missed-wake)). |
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers ([below](#two-servers)). |
-| `memory/<projectID>/<topSessionID>` | A session tree's record, field by field in [the reference](../reference.md#memory): `startedAt`, `movedAt`, `title`, `split`, `finished`, `recalled`, `parts`. `test/store.test.ts` pins it. |
+| `memory/<projectID>/<topSessionID>` | A session tree's record, field by field in [the reference](../reference.md#memory): `startedAt`, `movedAt`, `title`, `split`, `finished`, `recalled`, `lesson`, `parts`. `test/store.test.ts` pins it. |
 
 A session owes a report while `prompt` is later than `settled`, and its parent waits for it while
 `prompt` is later than `told` too. The prompt's time is the one OpenCode published its delivery at

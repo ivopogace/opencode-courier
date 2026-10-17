@@ -14,6 +14,9 @@ export const RETENTION_MS = 90 * 24 * 60 * 60_000
 /** A record's `split` while its top has stated no split line. */
 export const NOT_STATED = "not stated"
 
+/** The most characters a lesson keeps; courier_note clips what is longer and says so. */
+export const LESSON_MAX = 300
+
 /**
  * How a part stands: its last report's status, how its wait ended without one (`failed`, `interrupted`), `stopped` by
  * courier_stop, `stalled` on a message it will not take, or `out`: it owes a report, running or not.
@@ -47,6 +50,16 @@ export interface Recalled {
   readonly calls: number
 }
 
+/**
+ * The one line the tree's orchestrator wrote for the next one with courier_note: when, and from which depth when it was
+ * not the top's own session (1 for a session the top started).
+ */
+export interface Lesson {
+  readonly text: string
+  readonly at: number
+  readonly depth?: number
+}
+
 /** What is remembered of one tree: its top session and each session started in it, never a report's body or artifacts. */
 export interface TreeRecord {
   /** When the top session was created, epoch milliseconds. */
@@ -59,6 +72,8 @@ export interface TreeRecord {
   /** Whether, at the last refresh, no session in the tree ran and every part had settled: none was out or stalled. */
   readonly finished: boolean
   readonly recalled?: Recalled
+  /** Absent until a session of the tree that is not a leaf wrote one; a second note replaces the first. */
+  readonly lesson?: Lesson
   readonly parts: ReadonlyArray<PartRecord>
 }
 
@@ -118,6 +133,13 @@ export function noteRecall(recalled: Recalled | undefined, byTop: boolean, at: n
   const calls = (recalled?.calls ?? 0) + 1
   const first = recalled?.at ?? (byTop ? at : undefined)
   return first === undefined ? { calls } : { at: first, calls }
+}
+
+/** A lesson's text as one line, trimmed and clipped at `LESSON_MAX`; `clipped` is the length it had when it was clipped. */
+export function lessonText(text: string) {
+  const line = text.replace(/\s+/g, " ").trim()
+  if (line.length <= LESSON_MAX) return { text: line }
+  return { text: line.slice(0, LESSON_MAX).trimEnd(), clipped: line.length }
 }
 
 /** The records a project keeps at `now`: the newest `MAX_RECORDS` by `movedAt`, none older than `RETENTION_MS`; the rest are dropped. */

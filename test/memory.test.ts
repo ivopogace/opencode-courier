@@ -1,9 +1,12 @@
 // The memory (#260): a record per tree, built from the roster, each session's info and messages and its report state,
-// kept current by the event module, read back and noted by courier_recall, bounded per project, off with one option.
+// kept current by the event module, read back and noted by courier_recall, bounded per project, off with one option;
+// and its lesson (#261): the one line courier_note writes on it from the top or a sub-orchestrator, never a leaf.
 import { describe, expect, test } from "bun:test"
 import type { ToolEditor } from "../src/kernel/tool.js"
 import {
   keep,
+  LESSON_MAX,
+  lessonText,
   MAX_RECORDS,
   mergeParts,
   noteRecall,
@@ -16,12 +19,13 @@ import {
   type TreeRecord,
 } from "../src/memory/domain.js"
 import { memoryEvents, noteTurnEnd, topOf } from "../src/memory/events.js"
+import { note } from "../src/memory/note.js"
 import type { MemoryPorts, MemoryState, RefreshPorts } from "../src/memory/ports.js"
 import { recall } from "../src/memory/recall.js"
 import { refresh } from "../src/memory/record.js"
 import { memoryStore, readRecord, recordKey } from "../src/memory/store.js"
 import { sweepRecords } from "../src/memory/sweep.js"
-import { duration, recallListText, recordLine } from "../src/memory/text.js"
+import { duration, lessonLine, recallListText, recordLine } from "../src/memory/text.js"
 import { addMemoryTools } from "../src/memory/tools.js"
 import type { RosterEntry } from "../src/tree/domain.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
@@ -63,6 +67,7 @@ function fakePorts(sessions: Record<string, Session>, windows: Array<{ providerI
     log: (message: string) => void logged.push(message),
     projectID: "proj_1",
     memory: true,
+    maxDepth: 3,
   }
   const state: MemoryState = {
     windows: new Map(windows.map((window) => [`${window.providerID}/${window.id}`, window])),
@@ -206,6 +211,14 @@ describe("the store", () => {
       ],
     })
     expect(readRecord({ parts: [], recalled: { calls: 2 } })).toMatchObject({ recalled: { calls: 2 } })
+    expect(readRecord({ parts: [], movedAt: 7, lesson: { text: "Give the docs to one session", at: 5, depth: 2 } })).toMatchObject({ lesson: { text: "Give the docs to one session", at: 5, depth: 2 } })
+    expect(readRecord({ parts: [], movedAt: 7, lesson: "  Do the docs\nyourself " })).toMatchObject({ lesson: { text: "Do the docs yourself", at: 7 } })
+    expect(readRecord({ parts: [], lesson: { text: "x", at: 5, depth: 0 } })?.lesson).toEqual({ text: "x", at: 5 })
+    expect(readRecord({ parts: [], lesson: { text: "x", at: 5, depth: 1.5 } })?.lesson).toEqual({ text: "x", at: 5 })
+    expect(readRecord({ parts: [], lesson: { text: "y".repeat(LESSON_MAX + 1), at: 5 } })?.lesson?.text).toBe("y".repeat(LESSON_MAX))
+    expect(readRecord({ parts: [], lesson: "   " })).not.toHaveProperty("lesson")
+    expect(readRecord({ parts: [], lesson: { at: 5 } })).not.toHaveProperty("lesson")
+    expect(readRecord({ parts: [], lesson: 7 })).not.toHaveProperty("lesson")
     expect(readRecord({ parts: [], recalled: { at: 5, calls: "two" } })).not.toHaveProperty("recalled")
     expect(readRecord({ title: "no parts" })).toBeUndefined()
     expect(readRecord("x")).toBeUndefined()
@@ -314,7 +327,7 @@ describe("refresh", () => {
     })
     await store.set(
       recordKey("proj_1", "ses_top"),
-      stored("ses_top", NOW - 1000, { title: "Old", split: "split: 2 parts: a, b", recalled: { at: 5, calls: 2 }, parts: [part("ses_a", "done", { cost: 0.1 }), part("ses_b", "out")] }),
+      stored("ses_top", NOW - 1000, { title: "Old", split: "split: 2 parts: a, b", recalled: { at: 5, calls: 2 }, lesson: { text: "Keep it", at: 6 }, parts: [part("ses_a", "done", { cost: 0.1 }), part("ses_b", "out")] }),
     )
     const children = childStore(ports.storage)
     await children.record(entry("ses_b", "ses_top"))
@@ -323,7 +336,7 @@ describe("refresh", () => {
 
     const record = await refresh(ports, state, "ses_top", NOW)
 
-    expect(record).toMatchObject({ title: "Renamed", split: "split: 2 parts: a, b", recalled: { at: 5, calls: 2 }, finished: true })
+    expect(record).toMatchObject({ title: "Renamed", split: "split: 2 parts: a, b", recalled: { at: 5, calls: 2 }, lesson: { text: "Keep it", at: 6 }, finished: true })
     expect(record!.parts.map((one) => [one.sessionID, one.status])).toEqual([["ses_a", "done"], ["ses_b", "done"]])
     expect(record!.parts[0]).toEqual(part("ses_a", "done", { cost: 0.1 }))
   })
@@ -404,7 +417,7 @@ describe("the event module", () => {
     expect(state.seen.has("evt_ses_a")).toBe(false)
   })
 
-  test("keeps a recall noted while the refresh was reading", async () => {
+  test("keeps a recall noted, and a lesson written, while the refresh was reading", async () => {
     const { ports, state, store } = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_a: { updated: 1, idle: 1 }, ses_b: { updated: 1, idle: 1 } })
     await tree(ports)
     const get = ports.storage.get
@@ -415,6 +428,7 @@ describe("the event module", () => {
         noted = true
         const value = await get(key)
         await recall(ports, state, "ses_top", {})
+        await note(ports, "ses_top", { text: "Written meanwhile" })
         return value
       }
       return get(key)
@@ -422,7 +436,7 @@ describe("the event module", () => {
 
     await refresh(ports, state, "ses_top", NOW)
 
-    expect(readRecord(store.get(recordKey("proj_1", "ses_top")))).toMatchObject({ recalled: { at: NOW, calls: 1 }, movedAt: NOW })
+    expect(readRecord(store.get(recordKey("proj_1", "ses_top")))).toMatchObject({ recalled: { at: NOW, calls: 1 }, lesson: { text: "Written meanwhile", at: NOW }, movedAt: NOW })
     expect(readRecord(store.get(recordKey("proj_1", "ses_top")))?.parts).toHaveLength(2)
   })
 })
@@ -455,7 +469,8 @@ describe("recall", () => {
     expect(recallListText(result.records, "ses_root")).toBe(
       [
         "2 earlier trees recorded in this project, newest first; weigh how they were split and how their parts went before you decide. " +
-          "A record holds what the plugin saw, not the work: courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use.",
+          "A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out: " +
+          "courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use.",
         `- ses_root (this tree) ${DAY}: "New task" · not stated · no parts · 1 min · not finished · recalled`,
         `- ses_old ${DAY}: "tree ses_old" · not stated · 2 parts: 1 done, 1 failed, 2 levels deep, 1 isolated, 1 spawn refused · 1 s · $0.50 · finished`,
         `- ses_older ${DAY}: "tree ses_older" · not stated · no parts · 1 s · finished`,
@@ -499,6 +514,161 @@ describe("recall", () => {
     expect(await recall(ports, state, "ses_root", {})).toEqual({ kind: "off" })
     expect(store.size).toBe(0)
     expect(state.tops.size).toBe(0)
+  })
+})
+
+describe("lessonText", () => {
+  test("is one line, trimmed, clipped at LESSON_MAX with the length it had", () => {
+    expect(lessonText("  Give the docs\n  to one session.  ")).toEqual({ text: "Give the docs to one session." })
+    expect(lessonText("x".repeat(LESSON_MAX))).toEqual({ text: "x".repeat(LESSON_MAX) })
+    expect(lessonText(`${"x".repeat(LESSON_MAX - 1)} yz`)).toEqual({ text: "x".repeat(LESSON_MAX - 1), clipped: LESSON_MAX + 2 })
+    expect(lessonText(" \n ")).toEqual({ text: "" })
+  })
+})
+
+describe("note", () => {
+  /** A tree whose top started ses_mid, which started ses_leaf, with a record, at maxDepth 2. */
+  async function recorded() {
+    const made = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_mid: { updated: 1, idle: 1 }, ses_leaf: { updated: 1, idle: 1 } })
+    ;(made.ports as any).maxDepth = 2
+    const children = childStore(made.ports.storage)
+    await children.record(entry("ses_mid", "ses_top"))
+    await children.record(entry("ses_leaf", "ses_mid"))
+    await refresh(made.ports, made.state, "ses_top", NOW - 5000)
+    return made
+  }
+  const lessonOf = async (store: Map<string, unknown>) => readRecord(store.get(recordKey("proj_1", "ses_top")))?.lesson
+
+  test("writes the top's line on its own tree's record, dated, and a second note replaces the first", async () => {
+    const { ports, store } = await recorded()
+
+    const first = await note(ports, "ses_top", { text: "  The docs part was\nten lines; do it yourself.  " })
+    expect(first).toEqual({ kind: "noted", projectID: "proj_1", top: "ses_top", lesson: { text: "The docs part was ten lines; do it yourself.", at: NOW } })
+    expect(await lessonOf(store)).toEqual({ text: "The docs part was ten lines; do it yourself.", at: NOW })
+    expect(readRecord(store.get(recordKey("proj_1", "ses_top")))).toMatchObject({ movedAt: NOW - 5000, parts: [{ sessionID: "ses_mid" }, { sessionID: "ses_leaf" }] })
+    ;(ports as any).now = () => NOW + 1000
+
+    const second = await note(ports, "ses_top", { text: "The person chose to squash-merge." })
+    expect(second).toEqual({
+      kind: "noted",
+      projectID: "proj_1",
+      top: "ses_top",
+      lesson: { text: "The person chose to squash-merge.", at: NOW + 1000 },
+      replaced: { text: "The docs part was ten lines; do it yourself.", at: NOW },
+    })
+    expect(await lessonOf(store)).toEqual({ text: "The person chose to squash-merge.", at: NOW + 1000 })
+  })
+
+  test("clips a long text at LESSON_MAX and says what length it had", async () => {
+    const { ports, store } = await recorded()
+    const long = "x".repeat(LESSON_MAX + 20)
+
+    const result = await note(ports, "ses_top", { text: long })
+    expect(result).toEqual({ kind: "noted", projectID: "proj_1", top: "ses_top", lesson: { text: "x".repeat(LESSON_MAX), at: NOW }, clipped: LESSON_MAX + 20 })
+    expect((await lessonOf(store))?.text).toHaveLength(LESSON_MAX)
+  })
+
+  test("a sub-orchestrator's note goes on the same record, marked with its depth", async () => {
+    const { ports, store } = await recorded()
+
+    const result = await note(ports, "ses_mid", { text: "Seen from the middle." })
+    expect(result).toEqual({ kind: "noted", projectID: "proj_1", top: "ses_top", lesson: { text: "Seen from the middle.", at: NOW, depth: 1 } })
+    expect(await lessonOf(store)).toEqual({ text: "Seen from the middle.", at: NOW, depth: 1 })
+    expect(lessonLine((await lessonOf(store))!)).toBe(`lesson (${DAY}, from depth 1): "Seen from the middle."`)
+
+    expect(await note(ports, "ses_top", { text: "The top's own." })).toMatchObject({ lesson: { text: "The top's own.", at: NOW }, replaced: { depth: 1 } })
+    expect(await lessonOf(store)).not.toHaveProperty("depth")
+  })
+
+  test("is refused from a leaf, with an empty text, from a tree with no record and with the option off, writing nothing", async () => {
+    const { ports, store } = await recorded()
+    const before = JSON.stringify([...store])
+
+    expect(await note(ports, "ses_leaf", { text: "From the leaf" })).toEqual({ kind: "leaf", depth: 2, maxDepth: 2 })
+    expect(await note(ports, "ses_top", { text: " \n " })).toEqual({ kind: "empty" })
+    expect(await note(ports, "ses_top", { text: null as never })).toEqual({ kind: "empty" })
+    expect(await note(ports, "ses_alone", { text: "Nowhere to put it" })).toEqual({ kind: "unrecorded", top: "ses_alone" })
+    ;(ports as any).memory = false
+    expect(await note(ports, "ses_top", { text: "Off" })).toEqual({ kind: "off" })
+    expect(JSON.stringify([...store])).toBe(before)
+  })
+
+  test("is listed by courier_recall after the tree's facts, dated, and read back in full", async () => {
+    const { ports, state, store } = await recorded()
+    await note(ports, "ses_top", { text: "Give the docs to one session." })
+
+    const listed = await recall(ports, state, "ses_other", {})
+    if (listed.kind !== "list") throw new Error()
+    expect(recordLine(listed.records.find((record) => record.sessionID === "ses_top")!, "ses_other")).toEndWith(
+      ` · not finished · lesson (${DAY}): "Give the docs to one session."`,
+    )
+    const full = await recall(ports, state, "ses_other", { sessionID: "ses_top" })
+    if (full.kind !== "record") throw new Error()
+    expect(full.record.lesson).toEqual({ text: "Give the docs to one session.", at: NOW })
+    expect(store.has(recordKey("proj_1", "ses_other"))).toBe(true)
+  })
+})
+
+describe("courier_note", () => {
+  function tool(ports: MemoryPorts, state: MemoryState) {
+    const registered: any[] = []
+    addMemoryTools({ add: (tool: unknown) => registered.push(tool) } as unknown as ToolEditor, { memory: ports, state })
+    return registered.find((one) => one.name === "courier_note")
+  }
+  async function recorded() {
+    const made = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_a: { updated: 1, idle: 1 }, ses_b: { updated: 1, idle: 1 } })
+    ;(made.ports as any).maxDepth = 1
+    await tree(made.ports)
+    await refresh(made.ports, made.state, "ses_top", NOW - 5000)
+    return made
+  }
+
+  test("says what it noted, what it replaced and that it clipped, with metadata holding no undefined", async () => {
+    const { ports, state } = await recorded()
+    const noteTool = tool(ports, state)
+    const holdsNoUndefined = (value: unknown) => expect(JSON.parse(JSON.stringify(value))).toEqual(value)
+
+    const first = await noteTool.execute({ text: "The docs part was ten lines." }, { sessionID: "ses_top" })
+    expect(first.content).toStartWith(`Noted on the record of the tree under ses_top as its lesson (${DAY}): "The docs part was ten lines.". courier_recall lists it`)
+    expect(first.content).not.toContain("Clipped")
+    expect(first.content).toContain("AGENTS.md")
+    expect(first.metadata).toEqual({ projectID: "proj_1", top: "ses_top", lesson: { text: "The docs part was ten lines.", at: NOW } })
+    holdsNoUndefined(first.metadata)
+
+    const second = await noteTool.execute({ text: `${"y".repeat(LESSON_MAX)} and more` }, { sessionID: "ses_top" })
+    expect(second.content).toContain(`Clipped to ${LESSON_MAX} characters from ${LESSON_MAX + 9}: a lesson is one line.`)
+    expect(second.content).toContain(`It replaces the lesson (${DAY}): "The docs part was ten lines.".`)
+    expect(second.metadata).toEqual({
+      projectID: "proj_1",
+      top: "ses_top",
+      lesson: { text: "y".repeat(LESSON_MAX), at: NOW },
+      clipped: LESSON_MAX + 9,
+      replaced: { text: "The docs part was ten lines.", at: NOW },
+    })
+    holdsNoUndefined(second.metadata)
+  })
+
+  test("refuses a leaf, an empty text, a tree with no record and the option off as errors the model reads", async () => {
+    const { ports, state } = await recorded()
+    const noteTool = tool(ports, state)
+
+    await expect(noteTool.execute({ text: "From a leaf" }, { sessionID: "ses_a" })).rejects.toThrow(
+      "courier_note failed: Not noted: this session is a leaf, at depth 1 of a session tree that goes at most 1 deep (maxDepth).",
+    )
+    await expect(noteTool.execute({ text: "" }, { sessionID: "ses_top" })).rejects.toThrow("courier_note failed: Not noted: text is empty.")
+    await expect(noteTool.execute({ text: "x" }, { sessionID: "ses_new" })).rejects.toThrow(
+      "courier_note failed: Not noted: the tree under ses_new has no record in this project to write a lesson on.",
+    )
+    ;(ports as any).memory = false
+    await expect(noteTool.execute({ text: "x" }, { sessionID: "ses_top" })).rejects.toThrow("courier_note failed: Not noted: the plugin's memory option is false")
+  })
+
+  test("rethrows a failure as the model reads it", async () => {
+    const { ports, state } = fakePorts({})
+    ;(ports.storage as any).get = async () => {
+      throw { _tag: "StorageError" }
+    }
+    await expect(tool(ports, state).execute({ text: "x" }, { sessionID: "ses_root" })).rejects.toThrow("courier_note failed: StorageError")
   })
 })
 

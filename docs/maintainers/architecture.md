@@ -17,6 +17,8 @@ inbound and outbound adapters):
   the folder); the asks inbox.
 - `scheduling/`: `courier_later` messages.
 - `webhook/`: the receiver and subscriptions.
+- `memory/`: one record per session tree, kept in the project by an event module and read back with
+  `courier_recall`.
 - `kernel/`: what models see of the protocol in every module (`envelope`, `END_TURN`,
   `describeFailure`, …) and the tool editor.
 - `platform/`: the hub, following OpenCode's events, storage helpers and JSON readers; it imports
@@ -31,14 +33,15 @@ The import rules:
 - A module is imported from outside only through its `index.ts`, except that `tui.tsx` and `rpc.ts`
   take a module's `rpc.ts` and `tui.tsx` directly, so the TUI bundle carries nothing of the server
   half.
-- The only dependency between modules is `person/` on `tree/`. Each may import `platform/**` and
-  `kernel/**`.
+- The only dependencies between modules are `person/`'s and `memory/`'s on `tree/`, each through
+  `tree/index.ts`, which exports the queries they read (`lineage`, `subtree`, `reportState`,
+  `stalledAmong`, `contextOf`, `busy`). Each module may import `platform/**` and `kernel/**`.
 - Each module's model-facing strings are pure functions in its `text.ts`, which imports only
   `kernel/**`, `platform/json.ts` and its own `ports.ts` and `domain.ts`. One snapshot test,
   `test/notices.test.ts`, gathers every `text.ts`, the skill and the tool descriptions and schemas,
   so a wording change shows as one diff.
 - `tree/store.ts` is the only file that knows the tree's storage keys; no file outside `tree/` imports
-  it, and no other file names its key prefixes.
+  it, and no other file names its key prefixes. `memory/store.ts` is the same for `memory/`.
 - A module's `tui.tsx` imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, its `rpc.ts`,
   its `text.ts` and its `mascot.ts` (`tree/`'s, Digby's drawings, which imports nothing); a module's
   `rpc.ts` only `@opencode/plugin/rpc` and `effect`.
@@ -47,7 +50,7 @@ Why it is shaped so:
 
 - **The platform does not import features.** Features register with it instead: `index.ts` hands the
   scheduler its ordered tick jobs (`dueJob`, `deliverReleased`, then `wakeMissed`) and
-  the event follower its ordered event modules (`treeEvents`, then `personEvents`), each with phases
+  the event follower its ordered event modules (`treeEvents`, `personEvents`, then `memoryEvents`), each with phases
   (`handle` in list order, `after` in a `finally`, `followed`, `left` and `subscribed` around the
   subscription). There is no application event bus: OpenCode's event stream already is one, and a
   second would lose the order and the visibility.
@@ -55,7 +58,14 @@ Why it is shaped so:
   not change and an unloaded copy leaves nothing behind (below).
 - **The silent-turn rule is a query**, `Waits`, which `tree/` declares and `person/`, `scheduling/`
   and `webhook/` each supply; `index.ts` composes them. That keeps `tree/` from depending on
-  `person/`.
+  `person/`. Likewise the `context` hook takes the tools other modules hide from a leaf
+  (`hiddenFromLeaf`), which `index.ts` names, so `tree/` knows nothing of `courier_recall`.
+- **The memory refreshes in the `after` phase**, once the tree's and the person's notices of a turn's
+  end have gone out and the report state the tree settled is written, and reads only through ports
+  every hub-v2 member joins with (`storage`, `session`), so it runs through whichever member follows
+  the events. What it needs beyond them, the models' context windows and the locations with memory
+  off, is process-wide state under the fixed key `opencode-courier.memory`, filled as each instance
+  loads.
 - **Text lives next to the module that speaks it**, with one snapshot over all of it, so the
   domain types stay in their module and the snapshot stays the one place a wording change shows.
 
@@ -82,6 +92,7 @@ directory, so a key or a stored value never changes shape. `test/store.test.ts` 
 | `webhook/<topic, URI-encoded>/<sessionID>` | A webhook subscription. |
 | `wake/<sessionID>/<inboxID>` | A courier message waiting in a session's inbox, until delivered or cancelled: `at`, `text`, `description`, `running`, `idleAt`, `rewoken`, `stalled` ([a missed wake](../reference.md#a-missed-wake)). |
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers ([below](#two-servers)). |
+| `memory/<projectID>/<topSessionID>` | A session tree's record, field by field in [the reference](../reference.md#memory): `startedAt`, `movedAt`, `title`, `split`, `finished`, `recalled`, `parts`. `test/store.test.ts` pins it. |
 
 A session owes a report while `prompt` is later than `settled`, and its parent waits for it while
 `prompt` is later than `told` too. The prompt's time is the one OpenCode published its delivery at

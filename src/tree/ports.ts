@@ -310,8 +310,8 @@ export interface ExecutionError {
 
 export interface WatchPorts {
   readonly storage: RosterStorage
-  /** `context` reads the last reply of a session that ended its turn without reporting. */
-  readonly session: Pick<Context["session"], "synthetic" | "context">
+  /** `context` reads the last reply of a session that ended its turn without reporting; `get` is what every member joins with too. */
+  readonly session: Pick<Context["session"], "synthetic" | "context" | "get">
   readonly event: Pick<Context["event"], "subscribe">
   /** The permission domains of every loaded location, which the `Waits` suppliers ask; an isolated child's are in its worktree's. */
   readonly permissions: () => Iterable<Pick<Context["permission"], "list">>
@@ -343,5 +343,7 @@ export interface ContextPorts {
   readonly limits: Limits
   /** Each session's depth once looked up: null for one nobody spawned that has started none, until it starts one. */
   readonly roles: Map<string, number | null>
+  /** Tools of other modules hidden from a leaf alongside courier_spawn; `src/index.ts` names courier_recall. */
+  readonly hiddenFromLeaf?: ReadonlyArray<string>
   readonly log: (message: string) => void
 }

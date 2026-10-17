@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs"
+import { isStatus, type Status } from "../kernel/protocol.js"
 import { forgetChild, forgetReports } from "./forget.js"
 import type { ReportKeys, RosterEntry, RosterStorage } from "./ports.js"
+import { stoppedSincePrompt } from "./report.js"
 import { childStore } from "./store.js"
 
 /**
@@ -20,6 +22,43 @@ export async function allEntries(storage: RosterStorage) {
  */
 export async function lineage(storage: RosterStorage, sessionID: string) {
   return childStore(storage).lineage(sessionID)
+}
+
+/** `lineage` by the reverse index alone: empty, without scanning the roster, when it does not name the session. */
+export async function indexedLineage(storage: RosterStorage, sessionID: string) {
+  return childStore(storage).indexedLineage(sessionID)
+}
+
+/** The sessions a session started, oldest first, expired entries included. */
+export async function childrenOf(storage: RosterStorage, parentID: string) {
+  return childStore(storage).children(parentID)
+}
+
+/**
+ * What another module reads of a spawned session's report: `known` once a prompt was noted, whether it `owes` one, how
+ * its wait `ended` when not by a report, the `status` of its last report, and whether courier_stop `stopped` it since its last prompt.
+ */
+export interface ReportState {
+  readonly known: boolean
+  readonly owes: boolean
+  readonly ended?: "failed" | "interrupted"
+  readonly status?: Status
+  readonly stopped: boolean
+}
+
+export async function reportState(storage: RosterStorage, sessionID: string): Promise<ReportState> {
+  const children = childStore(storage)
+  const [{ prompt, settled }, stopped] = await Promise.all([children.notes(sessionID, ["prompt", "settled"]), stoppedSincePrompt(children, sessionID)])
+  const known = prompt.at !== undefined
+  const done = known && settled.at !== undefined && settled.at >= prompt.at!
+  const by = settled.by
+  return {
+    known,
+    owes: known && !done,
+    ...(done && (by === "failed" || by === "interrupted") ? { ended: by } : {}),
+    ...(isStatus(settled.status) ? { status: settled.status } : {}),
+    stopped,
+  }
 }
 
 /**

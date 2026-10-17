@@ -3,6 +3,7 @@ import { forgetChild } from "../src/tree/forget.js"
 import { holdReport, joinGroup, membershipOf } from "../src/tree/group.js"
 import type { RosterStorage } from "../src/tree/ports.js"
 import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
+import { memoryStore } from "../src/memory/store.js"
 
 /** A storage that logs every write and removal with the value as JSON, the form another copy or server reads it in. */
 function loggingStorage() {
@@ -99,4 +100,31 @@ test("the wake store keeps a watched message under wake/<sessionID>/<inboxID>, w
   writes.length = 0
   await wakes.remove("ses_parent", "msg_1")
   expect(writes).toEqual(["remove wake/ses_parent/msg_1"])
+})
+
+// A record is read by the next release, by `e2e/kv.ts` and by a person seeding one by hand (docs/reference.md, § Memory).
+test("the memory store keeps a tree's record under memory/<projectID>/<topSessionID>, as the reference describes it, and reads back what it wrote", async () => {
+  const { storage, writes } = loggingStorage()
+  const records = memoryStore(storage)
+  const record = {
+    startedAt: 1760000000000,
+    movedAt: 1760000900000,
+    title: "Add memory to courier",
+    split: "split: 3 parts: core, e2e, docs",
+    finished: true,
+    recalled: { at: 1760000001000, calls: 1 },
+    parts: [
+      { sessionID: "ses_core", title: "Core", depth: 1, isolated: true, group: "wave", status: "done" as const, duration: 540000, cost: 0.42, context: 0.31, refused: 1 },
+      { sessionID: "ses_docs", title: "Docs", depth: 1, isolated: false, status: "out" as const, duration: 60000 },
+    ],
+  }
+  await records.put("proj_1", "ses_top", record)
+  expect(writes).toEqual([
+    'set memory/proj_1/ses_top {"startedAt":1760000000000,"movedAt":1760000900000,"title":"Add memory to courier","split":"split: 3 parts: core, e2e, docs","finished":true,"recalled":{"at":1760000001000,"calls":1},"parts":[{"sessionID":"ses_core","title":"Core","depth":1,"isolated":true,"group":"wave","status":"done","duration":540000,"cost":0.42,"context":0.31,"refused":1},{"sessionID":"ses_docs","title":"Docs","depth":1,"isolated":false,"status":"out","duration":60000}]}',
+  ])
+  expect(await records.get("proj_1", "ses_top")).toEqual(record)
+  expect(await records.ofProject("proj_1")).toEqual([{ ...record, projectID: "proj_1", sessionID: "ses_top" }])
+  writes.length = 0
+  await records.remove("proj_1", "ses_top")
+  expect(writes).toEqual(["remove memory/proj_1/ses_top"])
 })

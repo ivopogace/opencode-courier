@@ -14,6 +14,8 @@ const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
 const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 3)
 // Calls that look at other sessions; right after spawning, or more than once a turn, that is polling.
 const LOOKS = new Set(["courier_status", "courier_children", "courier_tree"])
+// courier_recall counts as a look too, with one allowance: the one call the skill asks for, before the split, in the first turn.
+const RECALL = "courier_recall"
 
 // A session's whole transcript, oldest first, a page at a time.
 async function messages(sessionID) {
@@ -178,9 +180,16 @@ const spawned = [...tree].filter(([id]) => id !== rootID)
 const orchestrators = [...tree].filter(([, entry]) => spawnsOf(entry.list).length > 0)
 const subOrchestrators = orchestrators.filter(([id]) => id !== rootID)
 const looksIn = (turn) =>
-  toolsOf(turn).filter((part) => LOOKS.has(part.name) || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input)))).length
-// Any look in the first turn, right after spawning, is polling; later, more than one look a turn is a loop.
-const polledIn = (turns) => looksIn(turns[0] ?? []) > 0 || turns.slice(1).some((turn) => looksIn(turn) > 1)
+  toolsOf(turn).filter((part) => LOOKS.has(part.name) || part.name === RECALL || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input)))).length
+// The one courier_recall call a turn may make before its first courier_spawn, which the skill's step 1 asks for; a second, or one after a spawn, is a look like any other.
+const allowedRecall = (turn) => {
+  const tools = toolsOf(turn)
+  const firstSpawn = tools.findIndex(childOf)
+  const recalls = tools.flatMap((part, index) => (part.name === RECALL ? [index] : []))
+  return recalls.length === 1 && (firstSpawn === -1 || recalls[0] < firstSpawn) ? 1 : 0
+}
+// Any look in the first turn, right after spawning, is polling, but the one recall before the split; later, more than one look a turn is a loop.
+const polledIn = (turns) => looksIn(turns[0] ?? []) - allowedRecall(turns[0] ?? []) > 0 || turns.slice(1).some((turn) => looksIn(turn) > 1)
 const pollers = orchestrators.filter(([, entry]) => polledIn(turnsOf(entry.list))).map(([id]) => id)
 // The sessions a turn started; an orchestrator starts its batch in one turn, never one session alone.
 const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length
@@ -224,6 +233,20 @@ for (const [id, entry] of tree) {
   if (loads.length) notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} loaded the skill(s): ${loads.join(", ")}`)
 }
 if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.name === "skill"))) notes.push("no session loaded a skill")
+// Whether and when each session called courier_recall (#260): the skill asks the root for one call before its split.
+for (const [id, entry] of tree) {
+  const turns = turnsOf(entry.list)
+  const calls = turns.flatMap((turn, number) => {
+    const tools = toolsOf(turn)
+    const firstSpawn = tools.findIndex(childOf)
+    return tools.flatMap((part, index) => (part.name === RECALL ? [{ turn: number + 1, beforeSplit: firstSpawn === -1 || index < firstSpawn, status: part.state.status }] : []))
+  })
+  if (!calls.length) continue
+  const first = calls[0]
+  const when = first.turn === 1 ? (first.beforeSplit ? "in its first turn, before its split" : "in its first turn, after its first spawn") : `in turn ${first.turn}`
+  notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} called courier_recall ${calls.length} time(s), the first ${when}${calls.some((call) => call.status === "error") ? ", with an error" : ""}`)
+}
+if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.name === RECALL))) notes.push("no session called courier_recall")
 // The split decision each session's first turn states, as the pointer, the brief and the skill ask (#119): a line that
 // begins with `split:` (after any markdown), else one holding it.
 const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()

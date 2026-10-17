@@ -191,6 +191,7 @@ From a local clone, `bun install && npm run build`, then list its `dist` **direc
 | `courier_cancel` | Drops a message scheduled with `courier_later`. |
 | `courier_subscribe` | Subscribes a session to webhook deliveries for a topic (`owner/repo`, `owner/repo#12` or a name). |
 | `courier_unsubscribe` | Drops one topic, or all of a session's. |
+| `courier_recall` | One look at what earlier session trees in this project did: how each was split and how its parts went; with `sessionID`, one tree's [record](#memory) in full. |
 
 Each tool's parameters: [the reference](docs/reference.md#the-tools).
 
@@ -255,6 +256,26 @@ its parent a report (its task or a message reached it after it last reported, fa
 interrupted), or a session below it is live. One that has reported, with nothing live below it,
 does not. Each spawned session's brief says when to split its task and when to do it itself
 ([more](docs/reference.md#session-trees-and-their-limits)).
+
+## Memory
+
+What an orchestrator learns about splitting work in a project would otherwise die with its transcript,
+so the plugin keeps **one record per session tree**, in the project (every worktree of a repository
+shares it), from facts it already has, with no model writing anything: when the tree started and last
+moved, the top session's title and its `split:` line, whether and when the top called `courier_recall`,
+and for each session started in the tree its title, depth, isolation, join group, status (`done`,
+`partial`, `blocked`, `failed`, `interrupted`, `stopped`, `stalled` or `out`, still owing its report),
+how long it ran, what it cost, how full its context got and how many of its spawns were refused. Never a
+report's body or artifacts: they can hold code and secrets, and the parent has verified the work. A
+record is written again as each turn in the tree ends, so it stands on its own once the
+[roster](docs/reference.md#roster) has forgotten the children, and a tree reads as finished once no
+session in it runs and every part has settled.
+
+`courier_recall` reads them back: one line per tree, newest first, or one record in full. The
+`courier-orchestrate` skill's first step asks for one call before the split decision, and a root that
+has started no sessions is pointed to it; a leaf does not see the tool. Each project keeps its newest 30
+records and none that last moved over 90 days ago. `"memory": false` in the plugin's `options` turns it
+off: nothing is written, and `courier_recall` says so ([more](docs/reference.md#memory)).
 
 ## In the terminal
 

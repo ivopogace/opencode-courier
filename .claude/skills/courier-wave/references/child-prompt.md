@@ -27,8 +27,9 @@ first; its "Done when" is your acceptance bar.
   change to a model-facing string, which CI does not run. Still add the e2e checks the issue's
   "Done when" asks for.
 - Work on branch <issue-N-slug> in small, well-described commits. Open a PR to main whose body
-  says what changed, the decisions you made, how it was tested, and `Closes #<N>`. Never push to
-  main and never merge.
+  says what changed, the decisions you made, how it was tested, and `Closes #<N>`. Open it ready
+  for review, never as a draft, and mark it ready at once if your session opened it as one: the
+  code review plugin does not review a draft. Never push to main and never merge.
 - Get CI green on the PR head. Then review the PR with the code review plugin: the
   `code-review:code-review` skill with the PR number, not the built-in `code-review` skill. It
   posts its findings on the PR as a `### Code review` comment, and posts nothing when no finding

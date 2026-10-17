@@ -18,9 +18,8 @@ export type Refusal =
 export type Noted = { readonly kind: "noted"; readonly projectID: string; readonly top: string; readonly lesson: Lesson; readonly clipped?: number; readonly replaced?: Lesson } | Refusal
 
 /**
- * courier_note: writes `text`, as one line of at most `LESSON_MAX` characters, as the lesson of the caller's own tree,
- * on the record its top session has in this project. Refused from a leaf, with the memory option off, with an empty text
- * and when the tree has no record. A second note replaces the first.
+ * courier_note: writes `text`, as one line, as the lesson on the record of the caller's own tree in this project,
+ * replacing the one there; the top of the tree is the top of the caller's lineage, or itself.
  */
 export async function note(ports: MemoryPorts, callerID: string, input: NoteInput): Promise<Noted> {
   if (!ports.memory) return { kind: "off" }

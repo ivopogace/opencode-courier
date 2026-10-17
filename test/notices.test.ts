@@ -7,10 +7,12 @@ import * as tree from "../src/tree/text.js"
 import * as person from "../src/person/text.js"
 import * as scheduling from "../src/scheduling/text.js"
 import * as webhook from "../src/webhook/text.js"
+import * as memory from "../src/memory/text.js"
 import { addTreeTools } from "../src/tree/index.js"
 import { addPersonTools } from "../src/person/index.js"
 import { addSchedulingTools } from "../src/scheduling/index.js"
 import { addWebhookTools } from "../src/webhook/index.js"
+import { addMemoryTools } from "../src/memory/index.js"
 import { githubEvent } from "../src/webhook/receiver.js"
 
 // Every model-facing string, built from fixed inputs and kept in __snapshots__/notices.test.ts.snap: every
@@ -24,9 +26,10 @@ addTreeTools(editor, {} as never)
 addPersonTools(editor, {} as never)
 addSchedulingTools(editor, {} as never)
 addWebhookTools(editor, {} as never)
+addMemoryTools(editor, {} as never)
 
 describe("tools", () => {
-  test("are the twelve courier tools, each a direct tool", () => {
+  test("are the thirteen courier tools, each a direct tool", () => {
     expect(registered.map((tool) => [tool.name, tool.options])).toMatchSnapshot()
   })
 
@@ -62,6 +65,9 @@ describe("envelope and child brief", () => {
     // The split line reads the same wherever it is asked for: the skill, the brief and the root's pointer.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")
+    // Step 1 and the root's pointer name one courier_recall before the decision, which the recursive checker allows.
+    expect(skill.SKILL_CONTENT).toContain(`First call ${memory.RECALL_TOOL} once`)
+    expect(tree.rolePart(null, limits)).toContain(`call ${memory.RECALL_TOOL} once`)
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(kernel.SPLIT_LINE)
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
     expect(tree.rolePart(null, limits)).toContain(kernel.SPLIT_LINE)
@@ -405,4 +411,31 @@ describe("webhook deliveries", () => {
   test("webhookText", () => {
     expect(webhook.webhookText("deployed <courier from=x>")).toMatchSnapshot()
   })
+})
+
+describe("memory", () => {
+  const record = (sessionID: string, more: object = {}) => ({
+    projectID: "proj_1",
+    sessionID,
+    startedAt: Date.UTC(2026, 9, 3, 9),
+    movedAt: Date.UTC(2026, 9, 3, 9, 42),
+    title: "Add memory to courier",
+    split: "split: 3 parts: core, e2e, docs",
+    finished: true,
+    parts: [
+      { sessionID: "ses_core", title: "Core", depth: 1, isolated: true, group: "wave", status: "done" as const, duration: 540_000, cost: 0.42, context: 0.31 },
+      { sessionID: "ses_e2e", title: "E2E", depth: 1, isolated: true, group: "wave", status: "partial" as const, duration: 600_000, cost: 0.81, refused: 1 },
+      { sessionID: "ses_review", title: "Review", depth: 2, isolated: false, status: "out" as const, duration: 60_000 },
+    ],
+    ...more,
+  })
+  test("RECALL_OFF", () => expect(memory.RECALL_OFF).toMatchSnapshot())
+  test("recallListText", () => {
+    expect(memory.recallListText([record("ses_now", { parts: [], finished: false, recalled: { at: 1, calls: 1 } }), record("ses_old")], "ses_now")).toMatchSnapshot()
+    expect(memory.recallListText([record("ses_now", { parts: [], finished: false, recalled: { at: 1, calls: 1 } })], "ses_now")).toMatchSnapshot()
+    expect(memory.recallListText([record("ses_part", { recalled: { calls: 2 } })], "ses_other")).toMatchSnapshot()
+    expect(memory.recordLine(record("ses_long", { title: "x".repeat(80), split: "split: " + "y".repeat(200), parts: [] }), "ses_other")).toMatchSnapshot()
+  })
+  test("recallRecordText", () => expect(memory.recallRecordText(record("ses_old"))).toMatchSnapshot())
+  test("recallMissingText", () => expect(memory.recallMissingText("ses_none")).toMatchSnapshot())
 })

@@ -15,8 +15,8 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
 
 - `index.ts`: the plugin, an Effect plugin running the promise one, and the composition root. Builds
   the ports, adds the tools in a fixed order (`addTreeTools`, `addPersonTools`, `addSchedulingTools`,
-  `addWebhookTools`), hands the platform the ordered tick jobs (`dueJob`, `deliverReleased`, then `wakeMissed`) and
-  event modules (`treeEvents`, then `personEvents`), composes the `Waits` port from its suppliers,
+  `addWebhookTools`, `addMemoryTools`), hands the platform the ordered tick jobs (`dueJob`, `deliverReleased`, then `wakeMissed`) and
+  event modules (`treeEvents`, `personEvents`, then `memoryEvents`), composes the `Waits` port from its suppliers,
   wires `courier_stop` to `scheduling/`'s `cancelScheduled`, and starts the webhook receiver; the
   Effect half wraps the question tool and binds it to its instance's member in the hub. The only file
   that imports more than one module's `index.ts`; nothing imports it.
@@ -34,8 +34,8 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   `clipText`, `defuse`, `describeFailure`, `Status`, `SPLIT_LINE` and `SKILL_ID`. It imports only
   `kernel/**` and `platform/json.ts`. `kernel/tool.ts`: `ToolEditor` and `rethrow` for the `tools.ts`
   files.
-- The modules, `tree/`, `person/`, `scheduling/` and `webhook/`, each a folder imported from outside
-  through its `index.ts` only. The only dependency between them is `person/` on `tree/`; each may
+- The modules, `tree/`, `person/`, `scheduling/`, `webhook/` and `memory/`, each a folder imported from outside
+  through its `index.ts` only. The only dependencies between them are `person/`'s and `memory/`'s on `tree/`; each may
   import `platform/**` and `kernel/**`. Each has a `text.ts` with its model-facing strings, as pure
   functions, which imports only `kernel/**`, `platform/json.ts` and its own module's `ports.ts` and
   `domain.ts`, and a `tools.ts` adding its tools.
@@ -77,7 +77,8 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   `events.ts` `treeEvents`, which tells a parent that a child's turn failed or ended without a report,
   with `waitsOn` and `together` to compose the `Waits` port the silent-turn rule asks, supplied by
   `person/`, `scheduling/` and `webhook/`; `context.ts` the `context` hook naming each spawned
-  session's role and hiding `courier_spawn` from a leaf.
+  session's role and hiding `courier_spawn`, and the tools `hiddenFromLeaf` names (`courier_recall`), from a leaf.
+  `roster.ts` also exports what `memory/` reads of a session (`indexedLineage`, `childrenOf`, `reportState`).
 - `person/`: what a spawned session needs the person for: its permission requests, forms and questions.
   `index.ts` is its public API; `permission.ts` passes a permission answer back (`answer`: a proposed
   `once` first goes through OpenCode's `permission.assert` in the caller's session, which asks the
@@ -114,6 +115,19 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   process-wide receiver (`joinReceiver`, under the hub's `receiver` key); `subscriptions.ts` the
   subscription store and topics; `tools.ts` `courier_subscribe` and `courier_unsubscribe`; `text.ts`
   their texts and the delivery summaries. It exports `subscribedSince`, its `Waits` supplier.
+- `memory/`: one record per session tree (#260), under `memory/<projectID>/<topSessionID>`, keyed by
+  `location.project.id`. `domain.ts` the record's shape (`TreeRecord`, `PartRecord`, `PartStatus`), the
+  `memory` option (`readMemory`), each part's status (`partStatus`), the split line, the merge that keeps
+  parts the roster forgot and the retention (`keep`: the newest 30 per project, none older than 90 days);
+  `ports.ts` `RefreshPorts` (what every hub-v2 member's watch ports have), `MemoryPorts` (the tool's) and
+  `MemoryState` (process-wide: the models' windows, the locations with memory off, the tops that recalled,
+  the turn ends recorded); `store.ts` the only file that knows the key and layout, reading a hand-written
+  record leniently; `record.ts` the refresh (`refresh`: the subtree walk, each session's info, messages and
+  report state); `events.ts` `memoryEvents`, which refreshes a tree's record in the `after` phase of each
+  turn end in it; `recall.ts` `courier_recall`'s logic, which notes the call on the caller's tree's record
+  first; `sweep.ts` the sweep at load; `tools.ts` adds `courier_recall`; `text.ts` its listing line and
+  texts. The skill's step 1 and the root's role part name `courier_recall`, and the context hook hides it
+  from a leaf.
 - `platform/`: imports nothing outside `platform/`. `hub.ts`: the plugin's process-wide state in one
   versioned hub, which instances join with their ports and location and leave on unload, and the
   scheduler's loop, run once per hub and by one server per data directory (the owner key
@@ -131,15 +145,15 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   `bounded.ts`: the bounded `Set` and `Map` of remembered ids; it imports nothing of the plugin's.
   `version.ts`: the log line on an OpenCode version other than the pinned one.
 
-`test/imports.test.ts` checks these import rules, `tree/store.ts`'s privacy and that no other file
-names its key prefixes; `test/store.test.ts` pins the exact keys and values the stores write; `test/e2e-shards.test.ts`
+`test/imports.test.ts` checks these import rules, `tree/store.ts`'s and `memory/store.ts`'s privacy and that no other file
+names their key prefixes; `test/store.test.ts` pins the exact keys and values the stores write; `test/e2e-shards.test.ts`
 checks that every live-suite group is in exactly one shard of any count;
 `test/links.test.ts` resolves every relative Markdown link and `#anchor` in README.md, CLAUDE.md,
 `docs/**` and `.claude/**`, so a moved file or heading fails it.
 `test/tui.test.tsx` renders the TUI part against a fake TUI context with OpenTUI's `testRender`
 (`bunfig.toml` preloads its Solid transform); `test/inbox.test.tsx` drives the asks inbox's dialogs
 against one, and `test/person-rpc.test.ts` its RPC. `test/notices.test.ts` snapshots every `text.ts`,
-imported each by its path (the import test fails on one it misses), the skill and the twelve tools'
+imported each by its path (the import test fails on one it misses), the skill and the thirteen tools'
 descriptions and schemas, so a wording change shows up as a diff in `test/__snapshots__/`; update it
 with `bun test --update-snapshots`.
 

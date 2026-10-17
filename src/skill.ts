@@ -15,8 +15,9 @@ export const SKILL_CONTENT = [
   "How to split a task across OpenCode sessions with opencode-courier, and bring the results back up. Your brief, or the " +
     "opencode-courier role line in your system prompt, names your depth in the session tree and its limits.",
   "",
-  "1. Decide: split or do. Split when the task has 2 or more independent, substantial parts touching separate files or " +
-    "areas; do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole " +
+  "1. Decide: split or do. First call courier_recall once: it lists how earlier trees in this project were split and how " +
+    "each part went, so weigh that; one call, before you decide, never in a loop. Split when the task has 2 or more " +
+    "independent, substantial parts touching separate files or areas; do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole " +
     "task: it only adds a hop. What you read and write yourself stays in your context for every later turn, so keep the " +
     "deciding, checking and integrating, and hand off the long reading and writing. An implementation task with one tightly " +
     "coupled core usually still has independent parts: finding out what the change needs (a session with isolate: false " +

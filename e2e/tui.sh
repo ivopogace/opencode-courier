@@ -139,11 +139,11 @@ under_digby() {
     console.log(column > 0 && !wrong.length)
   ' "$WORK/$1.ansi"
 }
-# Whether the 16×16 Digby is drawn on the panel's background alone within $1 s; the screen is kept in $WORK/$2.ansi.
+# Whether the 16×16 Digby is drawn on the panel's background alone within $1 s; the screen, trailing spaces kept (-N), in $WORK/$2.ansi.
 digby_settles() {
   local settled=false
   for _ in $(seq 1 "$1"); do
-    tmux capture-pane -ept "$TMUX_SESSION" >"$WORK/$2.ansi" 2>/dev/null || true
+    tmux capture-pane -Nept "$TMUX_SESSION" >"$WORK/$2.ansi" 2>/dev/null || true
     if [ "$(under_digby "$2" 2>/dev/null)" = true ]; then settled=true; break; fi
     sleep 1
   done

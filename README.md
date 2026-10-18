@@ -350,7 +350,8 @@ inbox with `ctrl+x k` (or `/asks` once the prompt is back).
 first, one row each: the day the tree started and its title, its parts counted by status, how long it ran
 and what its parts cost, with its lesson on the line under it. `enter` shows one in full, the tree's facts,
 each part's status, duration, cost and context use, and the lesson; `x` forgets the record under the row
-after you confirm, or, in the record on its lesson's rows, only the lesson, keeping the facts; `q` closes.
+after you confirm, or, in the record on its lesson's rows, only the lesson, keeping the facts; `esc` goes back
+from a record and closes the list. The search takes every letter but `x`.
 With `"memory": false` it says memory is off in this project. Nothing a model sees changes but what
 `courier_recall` lists ([more](docs/reference.md#the-memory-view)).
 

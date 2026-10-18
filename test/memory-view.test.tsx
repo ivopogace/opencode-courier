@@ -64,7 +64,6 @@ function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, loca
   let route: { type: string; sessionID?: string } = { type: "session", sessionID: "ses_root" }
   // As the host's: a dialog shown, or cleared, closes the one before, whose promise resolves with nothing.
   let close: (() => void) | undefined
-  let cleared = 0
   const dialog = (kind: Dialog["kind"]) => (options: any) => {
     close?.()
     const shown = { kind, options }
@@ -120,10 +119,7 @@ function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, loca
         alert: dialog("alert"),
         prompt: dialog("prompt"),
         set: (options: unknown) => void sizes.push(options),
-        clear: () => {
-          cleared++
-          close?.()
-        },
+        clear: () => close?.(),
       },
       toast: { show: (toast: { message: string; variant?: string }) => void toasts.push(toast) },
     },
@@ -138,7 +134,6 @@ function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, loca
     toasts,
     layers,
     sizes,
-    cleared: () => cleared,
     goHome: () => void (route = { type: "home" }),
     forgets: () => calls.filter(({ method }) => method === "forget"),
     reads: () => calls.filter(({ method }) => method === "records"),
@@ -270,10 +265,8 @@ describe("the memory view", () => {
       ["2026-10-17  Add memory to courier (this session)", "3 parts: 1 done, 1 partial, 1 out · 42 min · $1.28", ['lesson (2026-10-17): "The docs part was ten lines; next time do it yourself."']],
       ["2026-10-16  Fix the bug", "no parts · 42 min · not finished", []],
     ])
-    expect(list.actions.map((action: any) => [action.bind, action.title, action.selection])).toEqual([
-      ["x", "forget", undefined],
-      ["q", "close", "none"],
-    ])
+    // `x` alone, so every other letter, `q` among them, goes to the search.
+    expect(list.actions.map((action: any) => [action.bind, action.title, action.selection])).toEqual([["x", "forget", undefined]])
     // Esc left it: nothing more is shown or read.
     expect(fake.dialogs).toHaveLength(1)
     expect(fake.toasts).toEqual([])
@@ -409,18 +402,21 @@ describe("the memory view", () => {
     expect(refused.selects()).toHaveLength(2)
   })
 
-  test("q closes the list, or the record, and reads nothing more", async () => {
+  test("esc on a record goes back to the list, and esc on the list closes it, reading nothing more", async () => {
     const list = fakeContext([newest])
-    list.answers.push(press("q"))
+    list.answers.push(escape)
     await addMemoryView(list.context).open()
-    expect(list.cleared()).toBe(1)
+    expect(list.selects()).toHaveLength(1)
     expect(list.reads()).toHaveLength(1)
 
     const detail = fakeContext([newest])
-    detail.answers.push(pick("2026-10-17"), press("q"))
+    detail.answers.push(pick("2026-10-17"), escape, escape)
     await addMemoryView(detail.context).open()
-    expect(detail.cleared()).toBe(1)
-    expect(detail.selects()).toHaveLength(2)
+    const [first, record, back] = detail.selects()
+    expect([first, record, back].map((one) => one!.options.title)).toEqual(["Memory (1)", "2026-10-17  Add memory to courier", "Memory (1)"])
+    expect(record!.options.actions.map((action: any) => action.bind)).toEqual(["x"])
+    expect(detail.dialogs).toHaveLength(3)
+    expect(detail.reads()).toHaveLength(3)
   })
 
   test("is opened by its command, from the palette, once at a time", async () => {

@@ -447,9 +447,9 @@ check "and its worktree is removed" "$(for _ in $(seq 1 20); do [ ! -d "$forget_
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes the panel" "$(hides "courier tree" 10 tui-forget-closed)"
 
-# The memory view (#262): /courier memory lists the project's tree records newest first, the COURIER-TUI tree's among them
-# with a lesson seeded by hand in its footer; enter shows it in full, x on its lesson row forgets the lesson alone, x on a
-# list row forgets a record after a confirm, and the view closes once the project has none; with memory off it says so.
+# The memory view (#262): /courier memory lists the project's tree records under "Today" and the local days they last
+# moved (#272), the COURIER-TUI tree's with a lesson seeded by hand in its footer; enter shows it in full, x forgets its
+# lesson alone, then each record after a confirm, and the view closes once the project has none; off, it says so.
 echo "/courier memory lists the project's tree records; x forgets a lesson, then every record"
 project=$(api "session/$parent" | jq -r '.data.projectID // .projectID')
 record=$(for _ in $(seq 1 30); do found=$(kv get "memory/$project/$parent"); if [ -n "$found" ] && [ "$(jq -r '.finished and (.parts | length) == 2' <<<"$found")" = true ]; then echo "$found"; break; fi; sleep 1; done)
@@ -464,15 +464,18 @@ check "the RPC lists the project's records newest first, memory on, the seeded l
 check "forgetting a record that is not there finds nothing" "$(memory_rpc forget '{"sessionID":"ses_nowhere"}' | jq -r '.output.outcome == "none"')"
 total=$(jq -r '.output.records | length' <<<"$listed")
 index=$(jq -r --arg parent "$parent" '.output.records | map(.sessionID) | index($parent)' <<<"$listed")
-today=$(date -u +%F)
+# The view's dates are local, as the TUI's zone has them: UTC in CI, the developer's at home.
+today=$(date +%F)
 open_tui tui-memory "$parent"
 check "the TUI is on the parent" "$(shows "courier 2 idle" 60 tui-memory-footer)"
 tmux send-keys -t "$TMUX_SESSION" "/courier memory"
 sleep 1
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "/courier memory opens the view with every record of the project" "$(shows "Memory ($total)" 30 tui-memory-list)"
-check "the tree's row has the day it started, its parts counted, and the lesson as its footer" \
-  "$(grep -qF "$today  " "$WORK/tui-memory-list.txt" && grep -qF "2 parts: 2 done" "$WORK/tui-memory-list.txt" && grep -qF "lesson ($today): \"Give the docs to one session\"" "$WORK/tui-memory-list.txt" && echo true || echo false)"
+# Every record is from this run, so "Today" heads the list and no date heads a group; the seeded lesson sits below it.
+# The dialog is drawn over the transcript, so a header shares its screen line with whatever is behind it.
+check "the tree's row is under Today, with its parts counted and the lesson, dated on the local day, as its footer" \
+  "$(awk -v lesson="lesson ($today): \"Give the docs to one session\"" '/(^|[^A-Za-z])Today([^A-Za-z]|$)/ { today = NR } index($0, lesson) && today && today < NR { under = 1 } /(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z][a-z] [0-9]+ [0-9][0-9][0-9][0-9]/ { dated = 1 } END { exit !(under && !dated) }' "$WORK/tui-memory-list.txt" && grep -qF "2 parts: 2 done" "$WORK/tui-memory-list.txt" && echo true || echo false)"
 check "the footer offers x to forget" "$(grep -qF "forget" "$WORK/tui-memory-list.txt" && echo true || echo false)"
 # Down to the tree's row, newest first, then enter.
 for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done

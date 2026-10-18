@@ -1377,36 +1377,46 @@ The project's [tree records](#memory) in a dialog, for a person to read and clea
 keeps on their behalf, and the one line a model wrote into it, where `courier_recall` reads them. It is
 opened by `/courier memory` or the palette's "Courier: memory", from a session or the home screen, and lists
 the records of the project of the open session's location (where the plugin is loaded), else the TUI's, else
-the server's default one, newest first by when each last moved, one row each:
+the server's default one, newest first by when each last moved, grouped by that day as OpenCode's Sessions
+dialog groups sessions, `Today` first and then each local date, one row each:
 
 ```
 Memory (2)
-  2026-10-17  Add memory to courier (this session) 3 parts: 2 done, 1 partial · 42 min · $1.28
+  Today
+  Add memory to courier (this session) 3 parts: 2 done, 1 partial · 42 min · $1.28
   lesson (2026-10-17): "The docs part was ten lines; next time do it yourself."
-  2026-10-16  Fix the bug no parts · 42 min · not finished
+
+  Fri Oct 16 2026
+  Fix the bug no parts · 42 min · not finished
                                                                                    forget x
 ```
 
-The row's title is the day the tree started and the top session's title (clipped to 34 characters; its
-id when it has none), `(this session)` for the open session's own tree; after it the parts counted
-by status in the record's order (`done`, `partial`, `blocked`, `failed`, `interrupted`, `stopped`,
-`stalled`, `out`), how long the tree ran (`movedAt` less `startedAt`), the parts' costs summed when any
-is known, and `not finished` when it is not; under it, muted, the lesson, dated and `from depth <n>` when
-a sub-orchestrator wrote it, clipped to 160 characters and cut in the middle to the dialog's width (a line
-the host's select draws though the plugin API does not declare it: [plugin-api-notes.md](maintainers/plugin-api-notes.md#tui-and-rpc-entrypoints)).
-The dialog is the widest OpenCode has, 116 columns, or the terminal's width. Searching filters the rows by their titles.
+Every date and time the view shows is local, in the TUI's zone (`TZ`), and a day is a local calendar day:
+a tree whose last turn ended at 01:00 in Berlin is under the same day as in the Sessions dialog next to it,
+where `courier_recall`, which a model reads, dates the same record in UTC. The row's title is the top
+session's title (clipped to 46 characters; its id when it has none), `(this session)` for the open session's
+own tree; after it the parts counted by status in the record's order (`done`, `partial`, `blocked`, `failed`,
+`interrupted`, `stopped`, `stalled`, `out`), how long the tree ran (`movedAt` less `startedAt`), the parts'
+costs summed when any is known, and `not finished` when it is not; under it, muted, the lesson, dated on the
+local day and `from depth <n>` when a sub-orchestrator wrote it, clipped to 160 characters and cut in the
+middle to the dialog's width (a line the host's select draws though the plugin API does not declare it:
+[plugin-api-notes.md](maintainers/plugin-api-notes.md#tui-and-rpc-entrypoints)). The dialog is the widest
+OpenCode has, 116 columns, or the terminal's width. Searching filters the rows, by their titles first and by their
+day too, each kept under its day.
 
-- `enter` shows the record in full, in three groups: **Tree** (the top session, when it started and last
-  moved and how long it ran, its split line or `not stated`, `Finished` or `Not finished` with the
-  cost in all, and `Recalled <n> times`, first by the top when, or by a part only, else `Not
-  recalled`), **Parts** (one row per session started in the tree, indented by depth: its title, then
+- `enter` shows the record in full, titled with the local date it last moved and its title, in three groups:
+  **Tree** (the top session, when it started and last moved, to the minute in local time with the zone's
+  short name as the runtime has it in English, `2026-10-17 12:12 GMT+2`, `06:12 EDT`, `10:12 UTC`, and how
+  long it ran, its split line or `not stated`, `Finished` or
+  `Not finished` with the cost in all, and `Recalled <n> times`, first by the top when, or by a part only,
+  else `Not recalled`), **Parts** (one row per session started in the tree, indented by depth: its title, then
   its status, depth, `isolated`, `group <name>`, duration, cost, `ctx <n>%` and spawns refused, as the
   record has them; `No parts` with none) and **Lesson** (`lesson (<day>[, from depth <n>])` and its text,
   wrapped over rows of 90 characters; `No lesson` without one). `enter` or `esc` there goes back to the
   list, and a second `esc` closes it, as OpenCode's own nested dialogs do.
 - `x` forgets. In the list, the record under the row; in a record, on a **Lesson** row only the lesson,
   the record keeping its facts, and on any other row the record. Each after a confirm that names the
-  record (its title, the day it started, its parts counted) and says what goes and what stays, with
+  record (its title, the local day it last moved, its parts counted) and says what goes and what stays, with
   `Forget` and `Keep`. A toast says what the server did: `Forgot the record of "<title>"`, `Forgot the
   lesson of "<title>"; its facts stay`, or that there was nothing to forget, when another TUI or the sweep
   got there first. The list, or the record, is then read again and shown without what went; once the

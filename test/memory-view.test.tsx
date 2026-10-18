@@ -1,6 +1,7 @@
 // The memory view (#262), the memory module's TUI part: the project's tree records in a dialog, against a fake TUI
-// context whose dialogs a test answers, and whose footer actions a test presses.
-import { describe, expect, test } from "bun:test"
+// context whose dialogs a test answers, and whose footer actions a test presses. Its dates are local (#272): the file
+// runs in Berlin's zone, two hours ahead of UTC in October, so a day differs from UTC's late in the evening.
+import { afterAll, describe, expect, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin/tui"
 import type { Forgotten, MemoryRecord, Records } from "../src/memory/rpc.js"
 import {
@@ -10,21 +11,34 @@ import {
   LESSON_LINE_MAX,
   forgetMessage,
   forgottenLine,
+  lessonHeading,
   LESSON_ROW,
   MEMORY_COMMAND,
   MEMORY_OFF,
   NO_RECORDS,
   partLine,
   partsCounted,
+  recordCategory,
   recordDescription,
   recordDetails,
   recordTitle,
+  ROW_TITLE_MAX,
+  TODAY,
   wrap,
 } from "../src/memory/tui.js"
 
-const NOW = Date.UTC(2026, 9, 17, 10, 54)
+// Set before the records below are made, so that their local days and the view's agree whatever the hour.
+const TZ = process.env.TZ
+process.env.TZ = "Europe/Berlin"
+afterAll(() => {
+  if (TZ === undefined) delete process.env.TZ
+  else process.env.TZ = TZ
+})
 
-const lesson = { text: "The docs part was ten lines; next time do it yourself.", at: Date.UTC(2026, 9, 17, 11, 30) }
+/** 23:30 UTC on 2026-10-17: 01:30 on the 18th in Berlin. */
+const NOW = Date.UTC(2026, 9, 17, 23, 30)
+
+const lesson = { text: "The docs part was ten lines; next time do it yourself.", at: Date.UTC(2026, 9, 17, 22, 30) }
 
 const record = (sessionID: string, title: string, movedAt: number, more: Partial<MemoryRecord> = {}): MemoryRecord => ({
   sessionID,
@@ -43,6 +57,14 @@ const record = (sessionID: string, title: string, movedAt: number, more: Partial
 
 const newest = record("ses_root", "Add memory to courier", NOW, { lesson, recalled: { at: NOW - 40 * 60_000, calls: 2 } })
 const older = record("ses_old", "Fix the bug", NOW - 86_400_000, { parts: [], finished: false, split: "not stated" })
+/** The same two trees, the first last moved now, so that the view lists it under "Today" on the real clock. */
+const LIVE = Date.now()
+const todays = record("ses_root", "Add memory to courier", LIVE, { lesson, recalled: { at: LIVE - 40 * 60_000, calls: 2 } })
+// The same time a local calendar day earlier: 25 hours back on the day the clocks fall back, not 24.
+const YESTERDAY = new Date(LIVE)
+YESTERDAY.setDate(YESTERDAY.getDate() - 1)
+const yesterdays = record("ses_old", "Fix the bug", YESTERDAY.getTime(), { parts: [], finished: false, split: "not stated" })
+const yesterday = YESTERDAY.toDateString()
 
 type Dialog = { kind: "select" | "confirm" | "alert" | "prompt"; options: any }
 
@@ -164,19 +186,35 @@ describe("the memory view's lines", () => {
     expect(costOf(older)).toBeUndefined()
   })
 
-  test("a row: the day the tree started and its title, the open session's own marked; its parts, duration and cost; its lesson on the line under it", () => {
-    expect(recordTitle(newest, "ses_root")).toBe("2026-10-17  Add memory to courier (this session)")
-    expect(recordTitle(newest, "ses_other")).toBe("2026-10-17  Add memory to courier")
-    expect(recordTitle({ ...older, title: "" })).toBe("2026-10-16  ses_old")
+  test("a row: the tree's title, the open session's own marked; its parts, duration and cost; its lesson, dated on the local day, on the line under it", () => {
+    expect(recordTitle(newest, "ses_root")).toBe("Add memory to courier (this session)")
+    expect(recordTitle(newest, "ses_other")).toBe("Add memory to courier")
+    expect(recordTitle({ ...older, title: "" })).toBe("ses_old")
     // Within the 61 characters the host's row keeps of a title, "(this session)" included.
-    expect(recordTitle({ ...newest, title: "x".repeat(80) }, "ses_root")).toBe(`2026-10-17  ${"x".repeat(33)}… (this session)`)
+    expect(recordTitle({ ...newest, title: "x".repeat(80) }, "ses_root")).toBe(`${"x".repeat(ROW_TITLE_MAX - 1)}… (this session)`)
     expect(recordTitle({ ...newest, title: "x".repeat(80) }, "ses_root")).toHaveLength(61)
     expect(recordDescription(newest)).toBe("3 parts: 1 done, 1 partial, 1 out · 42 min · $1.28")
     expect(recordDescription(older)).toBe("no parts · 42 min · not finished")
-    expect(recordDetails(newest)).toEqual(['lesson (2026-10-17): "The docs part was ten lines; next time do it yourself."'])
+    // 22:30 UTC on the 17th is the 18th in Berlin.
+    expect(lessonHeading(lesson)).toBe("lesson (2026-10-18)")
+    expect(recordDetails(newest)).toEqual(['lesson (2026-10-18): "The docs part was ten lines; next time do it yourself."'])
     expect(recordDetails({ ...newest, lesson: { ...lesson, depth: 1, text: "y".repeat(300) } })[0]).toHaveLength(LESSON_LINE_MAX)
-    expect(recordDetails({ ...newest, lesson: { ...lesson, depth: 1, text: "y".repeat(300) } })[0]).toStartWith('lesson (2026-10-17, from depth 1): "yyyy')
+    expect(recordDetails({ ...newest, lesson: { ...lesson, depth: 1, text: "y".repeat(300) } })[0]).toStartWith('lesson (2026-10-18, from depth 1): "yyyy')
     expect(recordDetails(older)).toEqual([])
+  })
+
+  test("a row's group is Today for a tree last moved on the local day, else that local date as the host's Sessions dialog writes it", () => {
+    // 23:30 UTC on the 17th: still the 17th in UTC, the 18th in Berlin, the local day of `now`.
+    expect(recordCategory(newest, NOW)).toBe(TODAY)
+    expect(recordCategory(older, NOW)).toBe("Sat Oct 17 2026")
+    // A tree that started a day earlier and last moved today is under Today: the group follows the order, by the last move.
+    expect(recordCategory({ ...newest, startedAt: NOW - 86_400_000 }, NOW)).toBe(TODAY)
+    expect(recordCategory(newest, NOW + 86_400_000)).toBe("Sun Oct 18 2026")
+    // Just before local midnight on the 17th, and just after it, are two days.
+    expect(recordCategory({ ...newest, movedAt: Date.UTC(2026, 9, 17, 21, 59) }, NOW)).toBe("Sat Oct 17 2026")
+    expect(recordCategory({ ...newest, movedAt: Date.UTC(2026, 9, 17, 22, 0) }, NOW)).toBe(TODAY)
+    expect(recordCategory(todays)).toBe(TODAY)
+    expect(recordCategory(yesterdays)).toBe(yesterday)
   })
 
   test("a part's line: its status, depth, isolation, group, duration, cost, context use and spawns refused", () => {
@@ -191,18 +229,18 @@ describe("the memory view's lines", () => {
     expect(wrap(lesson.text, LESSON_ROW)).toEqual([lesson.text])
   })
 
-  test("a record in full: the tree's facts, its parts indented by depth, and its lesson, in three categories", () => {
+  test("a record in full: the tree's facts, with its times local and the zone named, its parts indented by depth, and its lesson, in three categories", () => {
     const options = detailOptions(newest)
     expect(options.map((option) => [option.category, option.title, option.description])).toEqual([
       ["Tree", "Top session ses_root", undefined],
-      ["Tree", "Started 2026-10-17 10:12 UTC", "last moved 2026-10-17 10:54 UTC, ran 42 min"],
+      ["Tree", "Started 2026-10-18 00:48 GMT+2", "last moved 2026-10-18 01:30 GMT+2, ran 42 min"],
       ["Tree", "split: 2 parts: core, docs", undefined],
       ["Tree", "Finished", "$1.28 in all"],
-      ["Tree", "Recalled 2 times", "first by the top 2026-10-17 10:14 UTC"],
+      ["Tree", "Recalled 2 times", "first by the top 2026-10-18 00:50 GMT+2"],
       ["Parts", "Core", "done · depth 1 · isolated · group wave · 9 min · $0.42 · ctx 31%"],
       ["Parts", "Docs", "partial · depth 1 · 1 min · $0.86 · 1 spawn refused"],
       ["Parts", "  Review", "out · depth 2"],
-      ["Lesson", "lesson (2026-10-17)", undefined],
+      ["Lesson", "lesson (2026-10-18)", undefined],
       ["Lesson", "The docs part was ten lines; next time do it yourself.", undefined],
     ])
     expect(options.map((option) => option.value)).toEqual([
@@ -223,26 +261,26 @@ describe("the memory view's lines", () => {
     const options = detailOptions({ ...older, recalled: { calls: 1 }, lesson: { text: "x ".repeat(100), at: lesson.at, depth: 1 } })
     expect(options.filter((option) => option.category !== "Lesson").map((option) => [option.title, option.description])).toEqual([
       ["Top session ses_old", undefined],
-      ["Started 2026-10-16 10:12 UTC", "last moved 2026-10-16 10:54 UTC, ran 42 min"],
+      ["Started 2026-10-17 00:48 GMT+2", "last moved 2026-10-17 01:30 GMT+2, ran 42 min"],
       ["not stated", undefined],
       ["Not finished", undefined],
       ["Recalled 1 time", "by a part only"],
       ["No parts", "no session was started in this tree"],
     ])
-    expect(options.filter((option) => option.category === "Lesson").map((option) => option.title)).toEqual(["lesson (2026-10-17, from depth 1)", ...wrap("x ".repeat(100), LESSON_ROW)])
+    expect(options.filter((option) => option.category === "Lesson").map((option) => option.title)).toEqual(["lesson (2026-10-18, from depth 1)", ...wrap("x ".repeat(100), LESSON_ROW)])
     expect(detailOptions(older).filter((option) => option.category === "Lesson")).toEqual([{ title: "No lesson", value: { kind: "fact", key: "lesson" }, category: "Lesson", description: "courier_note writes one line per tree" }])
     expect(detailOptions({ ...older, recalled: undefined }).find((option) => option.value.kind === "fact" && option.value.key === "recalled")!.title).toBe("Not recalled")
   })
 
-  test("the confirm names the record and says what goes, the toast what the server did", () => {
+  test("the confirm names the record, with the local day it last moved, and says what goes, the toast what the server did", () => {
     expect(forgetMessage(newest, false)).toBe(
-      'Forget the record of "Add memory to courier" (2026-10-17, 3 parts: 1 done, 1 partial, 1 out), top session ses_root? It leaves this project\'s memory and courier_recall, its lesson with it; the sessions themselves are untouched.',
+      'Forget the record of "Add memory to courier" (2026-10-18, 3 parts: 1 done, 1 partial, 1 out), top session ses_root? It leaves this project\'s memory and courier_recall, its lesson with it; the sessions themselves are untouched.',
     )
     expect(forgetMessage(older, false)).toBe(
-      'Forget the record of "Fix the bug" (2026-10-16, no parts), top session ses_old? It leaves this project\'s memory and courier_recall; the sessions themselves are untouched.',
+      'Forget the record of "Fix the bug" (2026-10-17, no parts), top session ses_old? It leaves this project\'s memory and courier_recall; the sessions themselves are untouched.',
     )
     expect(forgetMessage(newest, true)).toBe(
-      'Forget the lesson of "Add memory to courier" (2026-10-17, 3 parts: 1 done, 1 partial, 1 out)? The record keeps its facts; courier_recall no longer lists the lesson: "The docs part was ten lines; next time do it yourself.".',
+      'Forget the lesson of "Add memory to courier" (2026-10-18, 3 parts: 1 done, 1 partial, 1 out)? The record keeps its facts; courier_recall no longer lists the lesson: "The docs part was ten lines; next time do it yourself.".',
     )
     expect(forgottenLine(newest, "record")).toBe('Forgot the record of "Add memory to courier"')
     expect(forgottenLine(newest, "lesson")).toBe('Forgot the lesson of "Add memory to courier"; its facts stay')
@@ -251,8 +289,8 @@ describe("the memory view's lines", () => {
 })
 
 describe("the memory view", () => {
-  test("lists the project's records as the RPC orders them, read at the open session's location, the open session's own marked", async () => {
-    const fake = fakeContext([newest, older])
+  test("lists the project's records as the RPC orders them, grouped under Today and the local days they last moved, read at the open session's location, the open session's own marked", async () => {
+    const fake = fakeContext([todays, yesterdays])
     fake.answers.push(escape)
     await addMemoryView(fake.context).open()
 
@@ -261,10 +299,11 @@ describe("the memory view", () => {
     const list = fake.selects()[0]!.options
     expect(list.title).toBe("Memory (2)")
     expect(list.placeholder).toBe("Search")
-    expect(list.options.map((option: any) => [option.title, option.description, option.details])).toEqual([
-      ["2026-10-17  Add memory to courier (this session)", "3 parts: 1 done, 1 partial, 1 out · 42 min · $1.28", ['lesson (2026-10-17): "The docs part was ten lines; next time do it yourself."']],
-      ["2026-10-16  Fix the bug", "no parts · 42 min · not finished", []],
+    expect(list.options.map((option: any) => [option.category, option.title, option.description, option.details])).toEqual([
+      [TODAY, "Add memory to courier (this session)", "3 parts: 1 done, 1 partial, 1 out · 42 min · $1.28", ['lesson (2026-10-18): "The docs part was ten lines; next time do it yourself."']],
+      [yesterday, "Fix the bug", "no parts · 42 min · not finished", []],
     ])
+    expect(yesterday).not.toBe(TODAY)
     // `x` alone, so every other letter, `q` among them, goes to the search.
     expect(list.actions.map((action: any) => [action.bind, action.title, action.selection])).toEqual([["x", "forget", undefined]])
     // Esc left it: nothing more is shown or read.
@@ -299,7 +338,7 @@ describe("the memory view", () => {
     home.answers.push(escape)
     await addMemoryView(home.context).open()
     expect(home.reads()[0]!.options).toEqual({ location: { directory: "/workspace" } })
-    expect(home.selects()[0]!.options.options[0].title).toBe("2026-10-17  Add memory to courier")
+    expect(home.selects()[0]!.options.options[0].title).toBe("Add memory to courier")
 
     const bare = fakeContext([newest], { location: null })
     bare.goHome()
@@ -308,17 +347,17 @@ describe("the memory view", () => {
     expect(bare.reads()[0]!.options).toEqual({ location: { directory: "/default" } })
   })
 
-  test("enter shows the record in full, in its categories; enter or esc there goes back to the list", async () => {
+  test("enter shows the record in full, titled with the local day it last moved, in its categories; enter or esc there goes back to the list", async () => {
     const fake = fakeContext([newest, older])
-    fake.answers.push(pick("2026-10-16"), pick("Top session"), pick("2026-10-17"), escape, escape)
+    fake.answers.push(pick("Fix the bug"), pick("Top session"), pick("Add memory"), escape, escape)
     await addMemoryView(fake.context).open()
 
     const [list, detail, listAgain, detailAgain, listOnceMore] = fake.selects()
     expect(list!.options.title).toBe("Memory (2)")
-    expect(detail!.options.title).toBe("2026-10-16  Fix the bug")
+    expect(detail!.options.title).toBe("Sat Oct 17 2026  Fix the bug")
     expect(detail!.options.options.map((option: any) => option.category)).toEqual(["Tree", "Tree", "Tree", "Tree", "Tree", "Parts", "Lesson"])
     expect(listAgain!.options.title).toBe("Memory (2)")
-    expect(detailAgain!.options.title).toBe("2026-10-17  Add memory to courier")
+    expect(detailAgain!.options.title).toBe("Sun Oct 18 2026  Add memory to courier")
     expect(listOnceMore!.options.title).toBe("Memory (2)")
     expect(fake.dialogs).toHaveLength(5)
     // Each list and each record is read anew, so a record forgotten elsewhere meanwhile is gone.
@@ -328,7 +367,7 @@ describe("the memory view", () => {
 
   test("x on a row asks to confirm, then forgets the record through the RPC and lists what is left; none left closes it", async () => {
     const fake = fakeContext([newest, older])
-    fake.answers.push(press("x", "2026-10-16"), yes, press("x", "2026-10-17"), yes)
+    fake.answers.push(press("x", "Fix the bug"), yes, press("x", "Add memory"), yes)
     await addMemoryView(fake.context).open()
 
     const [first, second] = fake.confirms()
@@ -339,7 +378,7 @@ describe("the memory view", () => {
       { method: "forget", input: { sessionID: "ses_root", lesson: false }, options: { location: { directory: "/project" } } },
     ])
     expect(fake.selects().map((one) => one.options.title)).toEqual(["Memory (2)", "Memory (1)"])
-    expect(fake.selects()[1]!.options.options.map((option: any) => option.title)).toEqual(["2026-10-17  Add memory to courier (this session)"])
+    expect(fake.selects()[1]!.options.options.map((option: any) => option.title)).toEqual(["Add memory to courier (this session)"])
     expect(fake.toasts).toEqual([
       { title: "courier", message: 'Forgot the record of "Fix the bug"', variant: "success" },
       { title: "courier", message: 'Forgot the record of "Add memory to courier"', variant: "success" },
@@ -351,7 +390,7 @@ describe("the memory view", () => {
 
   test("keep on the confirm forgets nothing and shows the list again", async () => {
     const fake = fakeContext([newest, older])
-    fake.answers.push(press("x", "2026-10-17"), no, press("x"), escape, escape)
+    fake.answers.push(press("x", "Add memory"), no, press("x"), escape, escape)
     await addMemoryView(fake.context).open()
 
     expect(fake.forgets()).toEqual([])
@@ -363,14 +402,14 @@ describe("the memory view", () => {
   test("x on the lesson of a record in full forgets only the lesson, and shows the record again without it", async () => {
     const fake = fakeContext([newest, older])
     fake.state.forgotten = { outcome: "lesson" }
-    fake.answers.push(pick("2026-10-17"), press("x", "The docs part"), yes, escape, escape)
+    fake.answers.push(pick("Add memory"), press("x", "The docs part"), yes, escape, escape)
     await addMemoryView(fake.context).open()
 
     expect(fake.confirms()[0]!.options).toEqual({ title: "Forget lesson", message: forgetMessage(newest, true), label: { confirm: "Forget", cancel: "Keep" } })
     expect(fake.forgets()).toEqual([{ method: "forget", input: { sessionID: "ses_root", lesson: true }, options: { location: { directory: "/project" } } }])
     const [, detail, detailAgain, list] = fake.selects()
-    expect(detail!.options.options.map((option: any) => option.title)).toContain("lesson (2026-10-17)")
-    expect(detailAgain!.options.title).toBe("2026-10-17  Add memory to courier")
+    expect(detail!.options.options.map((option: any) => option.title)).toContain("lesson (2026-10-18)")
+    expect(detailAgain!.options.title).toBe("Sun Oct 18 2026  Add memory to courier")
     expect(detailAgain!.options.options.filter((option: any) => option.category === "Lesson").map((option: any) => option.title)).toEqual(["No lesson"])
     expect(list!.options.title).toBe("Memory (2)")
     expect(fake.toasts).toEqual([{ title: "courier", message: 'Forgot the lesson of "Add memory to courier"; its facts stay', variant: "success" }])
@@ -378,12 +417,12 @@ describe("the memory view", () => {
 
   test("x on any other row of a record in full forgets the record, and goes back to the list", async () => {
     const fake = fakeContext([newest, older])
-    fake.answers.push(pick("2026-10-17"), press("x", "Docs"), yes, escape)
+    fake.answers.push(pick("Add memory"), press("x", "Docs"), yes, escape)
     await addMemoryView(fake.context).open()
 
     expect(fake.confirms()[0]!.options.title).toBe("Forget record")
     expect(fake.forgets()).toEqual([{ method: "forget", input: { sessionID: "ses_root", lesson: false }, options: { location: { directory: "/project" } } }])
-    expect(fake.selects().map((one) => one.options.title)).toEqual(["Memory (2)", "2026-10-17  Add memory to courier", "Memory (1)"])
+    expect(fake.selects().map((one) => one.options.title)).toEqual(["Memory (2)", "Sun Oct 18 2026  Add memory to courier", "Memory (1)"])
   })
 
   test("a record already gone, or a forget the server refuses, is said in a toast, and the list goes on", async () => {
@@ -410,10 +449,10 @@ describe("the memory view", () => {
     expect(list.reads()).toHaveLength(1)
 
     const detail = fakeContext([newest])
-    detail.answers.push(pick("2026-10-17"), escape, escape)
+    detail.answers.push(pick("Add memory"), escape, escape)
     await addMemoryView(detail.context).open()
     const [first, record, back] = detail.selects()
-    expect([first, record, back].map((one) => one!.options.title)).toEqual(["Memory (1)", "2026-10-17  Add memory to courier", "Memory (1)"])
+    expect([first, record, back].map((one) => one!.options.title)).toEqual(["Memory (1)", "Sun Oct 18 2026  Add memory to courier", "Memory (1)"])
     expect(record!.options.actions.map((action: any) => action.bind)).toEqual(["x"])
     expect(detail.dialogs).toHaveLength(3)
     expect(detail.reads()).toHaveLength(3)

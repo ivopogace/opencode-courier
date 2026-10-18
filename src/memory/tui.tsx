@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin/tui"
-import { memoryRpc, PART_STATUSES, type Forgotten, type MemoryPart, type MemoryRecord, type Records } from "./rpc.js"
-import { duration, lessonLine } from "./text.js"
+import { memoryRpc, PART_STATUSES, type Forgotten, type MemoryLesson, type MemoryPart, type MemoryRecord, type Records } from "./rpc.js"
+import { duration } from "./text.js"
 
 type Context = Plugin.Context
 type Location = ReturnType<Context["data"]["location"]["default"]>
@@ -20,14 +20,30 @@ export const NO_RECORDS = "No record of a session tree in this project: one is w
 /** The most characters of a lesson a list row's line under it shows; the record in full has it whole. */
 export const LESSON_LINE_MAX = 160
 
-/** The most characters of a title a list row shows, so that the day before it and "(this session)" after it fit the host's 61. */
-export const ROW_TITLE_MAX = 34
+/** The most characters of a title a list row shows, so that "(this session)" after it fits the host's 61. */
+export const ROW_TITLE_MAX = 46
+
+/** The group of the records moved on the current local day, over the others' local dates, as the host's Sessions dialog has it. */
+export const TODAY = "Today"
 
 /** The widest a row of the lesson in a record in full is; a longer lesson wraps over rows. */
 export const LESSON_ROW = 90
 
-const day = (at: number) => new Date(at).toISOString().slice(0, 10)
-const minute = (at: number) => `${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC`
+const pad = (n: number) => String(n).padStart(2, "0")
+/** A local calendar day as the host's Sessions dialog groups by it: `Sat Oct 17 2026`. */
+const localDay = (at: number) => new Date(at).toDateString()
+/** A local day inline: `2026-10-17`. */
+const day = (at: number) => {
+  const date = new Date(at)
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+/** The zone's short name as the runtime names it in English, `CEST`, `EDT` or `GMT+2`; `UTC` with `TZ=UTC`. */
+const zone = (date: Date) => new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(date).find((part) => part.type === "timeZoneName")?.value ?? "local"
+/** A local time to the minute, with the zone: `2026-10-17 12:12 CEST`. */
+const minute = (at: number) => {
+  const date = new Date(at)
+  return `${day(at)} ${pad(date.getHours())}:${pad(date.getMinutes())} ${zone(date)}`
+}
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim()
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`
@@ -51,9 +67,21 @@ export function costOf(record: MemoryRecord) {
   return record.parts.some((part) => part.cost !== undefined) ? record.parts.reduce((sum, part) => sum + (part.cost ?? 0), 0) : undefined
 }
 
-/** A list row's title: the day the tree started and its title; the open session's own tree says so. */
+/** A list row's title: the tree's title, its top session's id without one; the open session's own tree says so. */
 export function recordTitle(record: MemoryRecord, open?: string) {
-  return `${day(record.startedAt)}  ${clip(oneLine(record.title) || record.sessionID, ROW_TITLE_MAX)}${record.sessionID === open ? " (this session)" : ""}`
+  return `${clip(oneLine(record.title) || record.sessionID, ROW_TITLE_MAX)}${record.sessionID === open ? " (this session)" : ""}`
+}
+
+/** A list row's group: `Today` for a tree last moved on the local day of `now`, else that local date; the RPC's order, by the last move, keeps the groups newest first. */
+export function recordCategory(record: MemoryRecord, now = Date.now()) {
+  const moved = localDay(record.movedAt)
+  return moved === localDay(now) ? TODAY : moved
+}
+
+/** A lesson as the view shows it: dated on the local day, from which depth when a session below the top wrote it, and its text. */
+export function lessonHeading(lesson: MemoryLesson) {
+  const from = lesson.depth === undefined ? "" : `, from depth ${lesson.depth}`
+  return `lesson (${day(lesson.at)}${from})`
 }
 
 /** A list row's description: its parts by status, how long the tree ran, what its parts cost, and that it is not finished when it is not. */
@@ -66,7 +94,7 @@ export function recordDescription(record: MemoryRecord) {
 
 /** The lines under a list row: the lesson, dated and from which depth, clipped; none without a lesson. */
 export function recordDetails(record: MemoryRecord) {
-  return record.lesson ? [clip(lessonLine(record.lesson), LESSON_LINE_MAX)] : []
+  return record.lesson ? [clip(`${lessonHeading(record.lesson)}: "${oneLine(record.lesson.text)}"`, LESSON_LINE_MAX)] : []
 }
 
 /** One part as the record in full describes it: its status, depth, isolation, group, duration, cost, context use and spawns refused. */
@@ -117,7 +145,7 @@ export function detailOptions(record: MemoryRecord): Array<{ title: string; valu
     : fact("recalled", "Not recalled")
   const lesson = record.lesson
     ? [
-        { title: `lesson (${day(record.lesson.at)}${record.lesson.depth === undefined ? "" : `, from depth ${record.lesson.depth}`})`, value: { kind: "lesson" } as Line, category: "Lesson" },
+        { title: lessonHeading(record.lesson), value: { kind: "lesson" } as Line, category: "Lesson" },
         ...wrap(record.lesson.text, LESSON_ROW).map((row) => ({ title: row, value: { kind: "lesson" } as Line, category: "Lesson" })),
       ]
     : [{ title: "No lesson", value: { kind: "fact", key: "lesson" } as Line, category: "Lesson", description: "courier_note writes one line per tree" }]
@@ -139,9 +167,9 @@ export function detailOptions(record: MemoryRecord): Array<{ title: string; valu
   ]
 }
 
-/** What the confirm asks before a forget: the record named, and what goes and what stays. */
+/** What the confirm asks before a forget: the record named, with the local day it last moved, and what goes and what stays. */
 export function forgetMessage(record: MemoryRecord, lesson: boolean) {
-  const name = `"${nameOf(record)}" (${day(record.startedAt)}, ${partsCounted(record.parts)})`
+  const name = `"${nameOf(record)}" (${day(record.movedAt)}, ${partsCounted(record.parts)})`
   if (lesson)
     return `Forget the lesson of ${name}? The record keeps its facts; courier_recall no longer lists the lesson: "${clip(oneLine(record.lesson?.text ?? ""), 120)}".`
   return `Forget the record of ${name}, top session ${record.sessionID}? It leaves this project's memory and courier_recall${record.lesson ? ", its lesson with it" : ""}; the sessions themselves are untouched.`
@@ -162,9 +190,8 @@ type Request =
   | { readonly kind: "back" }
 
 /**
- * Adds the memory view: the records of the project of the open session's location (else the TUI's, else the server's
- * default), newest first, read through the memory's RPC; `enter` shows one in full, `x` forgets one, or only its lesson,
- * after a confirm, `esc` goes back from a record and closes the list. Opened by its command, from `/courier memory` or the palette.
+ * Adds the memory view: the project's records (the open session's location, else the TUI's, else the server's default) under
+ * `Today` and the local days they last moved; `enter` shows one in full, `x` forgets one or its lesson after a confirm, `esc` goes back and closes.
  */
 export function addMemoryView(ctx: Context) {
   const memory = ctx.client.rpc(memoryRpc)
@@ -203,13 +230,20 @@ export function addMemoryView(ctx: Context) {
 
   const showList = (read: Records) => {
     const open = openSession()
+    const now = Date.now()
     return show<MemoryRecord>(
       {
         title: `Memory (${read.records.length})`,
         placeholder: "Search",
         // The lesson goes under the row as `details`, lines the host's select draws though the plugin API does not declare
         // them (docs/maintainers/plugin-api-notes.md); a host without them shows the row alone.
-        options: read.records.map((record) => ({ title: recordTitle(record, open), value: record, description: recordDescription(record), details: recordDetails(record) })),
+        options: read.records.map((record) => ({
+          title: recordTitle(record, open),
+          value: record,
+          category: recordCategory(record, now),
+          description: recordDescription(record),
+          details: recordDetails(record),
+        })),
       },
       (record) => ({ kind: "open", record }),
       (record) => ({ kind: "forget", record, lesson: false }),
@@ -218,7 +252,7 @@ export function addMemoryView(ctx: Context) {
 
   const showRecord = (record: MemoryRecord) =>
     show<Line>(
-      { title: `${day(record.startedAt)}  ${nameOf(record)}`, placeholder: "Search", options: detailOptions(record) },
+      { title: `${localDay(record.movedAt)}  ${nameOf(record)}`, placeholder: "Search", options: detailOptions(record) },
       // Enter on a row goes back to the list.
       () => ({ kind: "back" }),
       (line) => ({ kind: "forget", record, lesson: line.kind === "lesson" }),
@@ -283,7 +317,7 @@ export function addMemoryView(ctx: Context) {
       {
         id: MEMORY_COMMAND,
         title: "Courier: memory",
-        description: "The records of this project's session trees, newest first: enter for one in full, x to forget one or its lesson",
+        description: "The records of this project's session trees, newest first under the day each last moved: enter for one in full, x to forget one or its lesson",
         group: "Courier",
         palette: true,
         run: () => void open(),

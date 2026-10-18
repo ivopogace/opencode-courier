@@ -445,6 +445,12 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   takes a narrower split for one.
 - **Keys.** `<leader>` bindings OpenCode takes: `a b c e g i l m n q r s t u w x y`, the digits and
   the arrows (`packages/tui/src/config/v1/keybind.ts`); the inbox takes `<leader>k`.
+- **A span's colour is not cleared by `undefined`.** `@opentui/solid`'s `setProperty` sets a
+  `<span>`'s `style` as `node.bg = value.bg ? parseColor(value.bg) : node.bg`, and `fg` alike, so a
+  span whose `bg` goes from a colour to `undefined` keeps the old one, whatever the enclosing box
+  paints, and `attributes` only ever gain bits (`|=`). Digby's frames reuse their spans through
+  `<Index>`, so `drawn` gives every cell a `bg`: its token's, else a transparent `RGBA`, which shows
+  the panel's or the list's background under it. A `<box>`'s `backgroundColor` does clear.
 - **Testing.** Unit tests render against a fake TUI context with OpenTUI's `testRender`, which needs
   Solid's transform (`bunfig.toml` preloads `@opentui/solid/preload`). The live check runs the TUI in
   `tmux` and reads `tmux capture-pane -p`; CI's `ubuntu-24.04` image lacks `tmux`, so the job installs

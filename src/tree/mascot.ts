@@ -114,7 +114,7 @@ export function digby(
   if (eyes === "wide") span(head + 2, 8, "k", (column) => !eyeColumns.includes(column), lean(2))
   span(head + 4, 2, "a", undefined, lean(4))
   span(10, SIZE, ".", (column) => column >= 6 && column <= 9)
-  span(10, top, mound, (column) => column >= 6 && column <= 9, shift)
+  span(10, top, mound, (column) => column + shift >= 6 && column + shift <= 9, shift)
   span(11, 10, mound, undefined, shift)
   span(12, 12, mound, undefined, shift)
   for (const row of [13, 14, 15]) span(row, SIZE, mound)

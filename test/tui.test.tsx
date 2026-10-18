@@ -1761,6 +1761,11 @@ describe("Digby, the tree panel's mascot (#226)", () => {
       }
   })
 
+  test("no 16×16 frame covers the body's columns 6 to 9 on the mound's top row with mound (#286)", () => {
+    for (const [state, frames] of Object.entries(ART))
+      frames.forEach((frame, at) => expect({ state, at, row: frame(true)[10]!.slice(6, 10).replace(/[bk.a]/g, "") }).toEqual({ state, at, row: "" }))
+  })
+
   test("his frames, as the panel draws them", () => {
     const draw = (pixels: ReadonlyArray<string>) => cells(pixels).map((line) => line.map((one) => one.char).join(""))
     const glyphs = Object.fromEntries(Object.entries(GLYPH).map(([state, frames]) => [state, frames.map((frame) => ({ pixels: frame, drawn: draw(frame) }))]))

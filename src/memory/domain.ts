@@ -105,15 +105,22 @@ export function splitLineOf(text: string) {
 }
 
 /** The heading, quote and list marks before a line's words. */
-const BLOCK_MARKS = /^(?:[\s#>+-]|\*\s)*/
-/** Bold, then italic, spans marked with asterisks, anywhere in a line. */
-const EMPHASIS = [/\*\*([^*]+)\*\*/g, /\*([^*\s][^*]*)\*/g]
+const BLOCK_MARKS = /^(?:[\s#>+-]|\*\s|\d+[.)]\s)*/
+/** Bold, then italic, spans marked with asterisks that open and close at a word's edge, unlike those of `src/*.ts` or `2**3`. */
+const EMPHASIS = [/(?<=^|[\s(["'])\*\*([^*]+)\*\*(?=$|[\s.,;:!?)\]"'])/g, /(?<=^|[\s(["'])\*([^*\s][^*]*)\*(?=$|[\s.,;:!?)\]"'])/g]
+/** A code span, whose asterisks are its words', and the stand-in it is masked by while emphasis is taken off. */
+const CODE_SPAN = /`[^`]*`/g
+const MASKED = /\0(\d+)\0/g
 /** Marks taken off only when they wrap the whole line, as elsewhere they may be part of its words (`__init__`, `snake_case`). */
 const WRAPS = ["__", "_", "`"]
 
 /** A split line as the listing shows it: one line, without its block marks, its bold and italic asterisks, nor a code or underscore span wrapping it whole. */
 export function splitProse(split: string) {
-  const line = EMPHASIS.reduce((text, span) => text.replace(span, "$1"), oneLine(split).replace(BLOCK_MARKS, ""))
+  const code: string[] = []
+  const masked = oneLine(split)
+    .replace(BLOCK_MARKS, "")
+    .replace(CODE_SPAN, (span) => `\0${code.push(span) - 1}\0`)
+  const line = EMPHASIS.reduce((text, span) => text.replace(span, "$1"), masked).replace(MASKED, (_, i: string) => code[Number(i)]!)
   const wrap = WRAPS.find((mark) => line.length > 2 * mark.length && line.startsWith(mark) && line.endsWith(mark) && !line.slice(mark.length, -mark.length).includes(mark[0]!))
   return wrap ? line.slice(wrap.length, -wrap.length).trim() : line
 }

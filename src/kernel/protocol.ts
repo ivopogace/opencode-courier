@@ -29,8 +29,17 @@ export function envelope(from: string, message: string, attributes: Record<strin
 /** Longest piece of free text (a review body, a generic payload) copied into a delivered message. */
 const MAX_TEXT = 1500
 
+const clipped = (text: string, kept: string) => `${kept}… [${text.length - kept.length} more characters]`
+
 export function clipText(text: string, max = MAX_TEXT) {
-  return text.length > max ? `${text.slice(0, max)}… [${text.length - max} more characters]` : text
+  return text.length > max ? clipped(text, text.slice(0, max)) : text
+}
+
+/** `clipText` cut at the last space within `max` instead, so no word is cut in two, unless that keeps less than half of `max`. */
+export function clipWords(text: string, max: number) {
+  if (text.length <= max) return text
+  const space = text.lastIndexOf(" ", max)
+  return clipped(text, (space >= max / 2 ? text.slice(0, space) : text.slice(0, max)).trimEnd())
 }
 
 /** Defuses `<courier` and `</courier>` in outside text, so it cannot close the envelope or forge another. */

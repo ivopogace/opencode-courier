@@ -18,6 +18,7 @@ import {
   readMemory,
   RETENTION_MS,
   splitLineOf,
+  splitProse,
   unreadPart,
   type PartRecord,
   type StoredRecord,
@@ -134,6 +135,77 @@ describe("splitLineOf", () => {
     expect(splitLineOf("Nothing here.")).toBeUndefined()
     expect(splitLineOf("# split: 3 parts: a, b, c\nsplit: later")).toBe("# split: 3 parts: a, b, c")
     expect(splitLineOf("- **split: no, because small; considered: docs**")).toBe("- **split: no, because small; considered: docs**")
+  })
+})
+
+// #282: the stored line keeps its markdown; only the listing reads it as prose.
+describe("splitProse", () => {
+  test("splitProse drops the block marks, the bold and italic asterisks, and a code or underscore span wrapping the whole line", () => {
+    expect(splitProse("**split: 2 parts: core, docs**")).toBe("split: 2 parts: core, docs")
+    expect(splitProse("- **split: no, because small; considered: docs**")).toBe("split: no, because small; considered: docs")
+    expect(splitProse("* **split:** no, because small")).toBe("split: no, because small")
+    expect(splitProse("**Decision:** split: no, because *small*")).toBe("Decision: split: no, because small")
+    expect(splitProse("**split: no**.")).toBe("split: no.")
+    expect(splitProse("split: 2 parts (**core**, *docs*): `a`")).toBe("split: 2 parts (core, docs): `a`")
+    expect(splitProse("**split: no, because `src/**/text.ts` and `a*b` are one file**")).toBe("split: no, because `src/**/text.ts` and `a*b` are one file")
+    expect(splitProse("1. **split:** no, because small")).toBe("split: no, because small")
+    expect(splitProse("**split: no, because src/*.ts are one**")).toBe("split: no, because src/*.ts are one")
+    expect(splitProse("***split: no***")).toBe("split: no")
+    expect(splitProse("**split: no, because *small***")).toBe("split: no, because small")
+    expect(splitProse("**a** and **b**: split: 2 parts")).toBe("a and b: split: 2 parts")
+    expect(splitProse("__split: no, because snake_case__")).toBe("split: no, because snake_case")
+    expect(splitProse("*Split: src/*.ts and test/*.ts*")).toBe("Split: src/*.ts and test/*.ts")
+    expect(splitProse("split: 3 parts: **(core)**, **--flag**, **.github/workflows**")).toBe("split: 3 parts: (core), --flag, .github/workflows")
+    expect(splitProse("_split:_ no, because small")).toBe("split: no, because small")
+    expect(splitProse("__split:__ no, because small")).toBe("split: no, because small")
+    expect(splitProse("`split:` no, because small")).toBe("split: no, because small")
+    expect(splitProse("_split: no_")).toBe("split: no")
+    expect(splitProse("Split: *one child per src/*.ts file* and more")).toBe("Split: *one child per src/*.ts file* and more")
+    expect(splitProse("split: no, because\0 1\0 `x`")).toBe("split: no, because 1 `x`")
+    expect(splitProse("> # `split: 3 parts: a, b, c`")).toBe("split: 3 parts: a, b, c")
+    expect(splitProse("__split:\n  no, because small__ ")).toBe("split: no, because small")
+    expect(splitProse("I decided to split: no, because it is small")).toBe("I decided to split: no, because it is small")
+    expect(splitProse("not stated")).toBe("not stated")
+  })
+
+  test("splitProse keeps the marks that are part of the words", () => {
+    for (const line of [
+      "split: 2 parts: a-b, c_d",
+      "split: 2 parts: src/*",
+      "split: no, because only __init__",
+      "split: 2 parts: `a`, `b`",
+      "split: no, because it only touches `src/**/text.ts`",
+      "split: 2 parts: 2 * 3 tests",
+      "split: 2 parts: src/*.ts, lib/*.ts",
+      "split: no, because src/**/a.ts and src/**/b.ts are untouched",
+      "split: no, because `*.ts` and `*.md` are one change",
+      "split: no, because a*b*c and 2**3 and 4**5 are one formula",
+      "split: no, because *.ts and *.md are one change",
+      "split: 2 parts: (*.ts) and (*.md)",
+      "split: no, because __init__ and __main__ are one module",
+      "-5 parts: split: no",
+      "split: 2 parts: **/*.md and **/*.ts",
+      "__init__ split: no, because one module",
+      "#282 split: no, because small",
+      ">5 files: split: 2 parts",
+      "*.ts and src/*: split: no",
+      "`a.ts`/`b.ts`",
+      "**a**-**b** split: no",
+      "_split: no, because snake_case_",
+      "**split: 2 parts: lib/*, test/*",
+      "`split: 2 parts: src/*.ts`,`lib/*.ts`",
+    ])
+      expect(splitProse(line)).toBe(line)
+  })
+
+  test("the listing shows a long markdown split line as prose, cut at a word, while the record keeps it as written", () => {
+    const split =
+      "**split: no, because the stances are a timed sequence that only my own turns can stage and hold; considered: one child per stance (but the flashes are short), a separate orchestrator session (it would only add a hop).**"
+    const record = { ...stored("ses_md", NOW - 1000, { split }), projectID: "proj_1", sessionID: "ses_md" }
+    expect(recordLine(record, "ses_other", NOW).split(" · ")[1]).toBe(
+      "split: no, because the stances are a timed sequence that only my own turns can stage and hold; considered: one child per stance (but the flashes are short), a… [57 more characters]",
+    )
+    expect(record.split).toBe(split)
   })
 })
 

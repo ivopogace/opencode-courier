@@ -30,9 +30,9 @@ import rules and the reasons for them.
   files out and `tsconfig.tui.json` writes `dist/tui.d.ts`. `rpc.ts`: the `rpc` entrypoint, the
   modules' RPC contracts (`treeRpc`, `personRpc`, `memoryRpc`). Neither is imported by the server half.
 - `kernel/protocol.ts`: what the models see of the protocol in every module: `envelope`, `END_TURN`,
-  `clipText`, `defuse`, `describeFailure`, `Status`, `SPLIT_LINE` and `SKILL_ID`. It imports only
-  `kernel/**` and `platform/json.ts`. `kernel/tool.ts`: `ToolEditor` and `rethrow` for the `tools.ts`
-  files.
+  `clipText`, `clipWords`, `defuse`, `describeFailure`, `Status`, `SPLIT_LINE` and `SKILL_ID`. It
+  imports only `kernel/**` and `platform/json.ts`. `kernel/tool.ts`: `ToolEditor` and `rethrow` for
+  the `tools.ts` files.
 - The modules, `tree/`, `person/`, `scheduling/`, `webhook/` and `memory/`, each a folder imported from
   outside through its `index.ts` only. The only dependencies between them are `person/`'s and
   `memory/`'s on `tree/`; each may import `platform/**` and `kernel/**`. Each has a `text.ts` with its
@@ -96,11 +96,12 @@ import rules and the reasons for them.
 - `memory/`: one record per session tree, under `memory/<projectID>/<topSessionID>`, and its lesson.
   `domain.ts` the record's shape (`TreeRecord`, `PartRecord`, `PartStatus`, `Lesson`), the `memory`
   option (`readMemory`), `partStatus`, `isSettled`, what a part whose session cannot be read keeps
-  (`unreadPart`), the split line, `oneLine`, `lessonText` (clips a hand-written
-  record's lesson at `LESSON_MAX`, which `courier_note` refuses instead), the merge that keeps parts the
-  roster forgot and the retention (`keep`); `ports.ts` `RefreshPorts` (what every hub-v2 member's watch
-  ports have), `MemoryPorts` and `MemoryState` (process-wide); `store.ts` the only file that knows the
-  key and layout, reading a hand-written record leniently; `record.ts` the refresh (`refresh`);
+  (`unreadPart`), the split line and how the listing shows it (`splitProse`), `oneLine`, `lessonText`
+  (clips a hand-written record's lesson at `LESSON_MAX`, which `courier_note` refuses instead), the
+  merge that keeps parts the roster forgot and the retention (`keep`); `ports.ts` `RefreshPorts` (what
+  every hub-v2 member's watch ports have), `MemoryPorts` and `MemoryState` (process-wide); `store.ts`
+  the only file that knows the key and layout, reading a hand-written record leniently; `record.ts` the
+  refresh (`refresh`);
   `events.ts` `memoryEvents`, which refreshes a tree's record in the `after` phase of each turn end in
   it; `recall.ts` `courier_recall`'s logic; `note.ts` `courier_note`'s; `forget.ts` the memory view's
   forget; `sweep.ts` the sweep at load; `tools.ts` adds `courier_recall` and `courier_note`; `text.ts`

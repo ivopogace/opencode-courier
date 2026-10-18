@@ -129,6 +129,9 @@ function decide(body) {
     .slice(lastAssistant + 1)
     .map((message) => textOf(message.content))
     .join("\n")
+  // COURIER-SAY replies with the rest of the line, markdown and all, up to the quote the prompt arrives with.
+  const saying = recent.match(/COURIER-SAY ([^"\n]+)/)
+  if (saying) return { text: saying[1] }
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
   // COURIER-NEST's middle session commits on its branch, then merges the branch its leaf reports.
   const nestBranch = branchIn(messages)

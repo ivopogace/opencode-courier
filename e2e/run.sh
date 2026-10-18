@@ -1342,6 +1342,16 @@ run_memory() {
     "$(jq -sr --arg leaf "$leaf" '[.[] | select(.type == "probe.context" and .sessionID == $leaf)] | length > 0 and all(.role == "leaf" and (.tools | index("courier_note") | not) and (.tools | index("courier_recall") | not))' "$WORK/probe.log")"
   check "a session nobody spawned, whose tree has no record yet, is refused" \
     "$(prompt "COURIER-NOTE Nowhere to put it" | tool_state courier_note | jq -r '.status == "error" and (.error | tostring | contains("Not noted: the tree under ") and contains(" has no record in this project to write a lesson on"))')"
+  # A split line stated in markdown (#282): the record keeps it as written, the listing shows it as prose, cut at a word.
+  # Its own record is written by the call first, so the turn that states the line ends in a tree with a record.
+  said=$(prompt "COURIER-RECALL" | jq -r 'select(.type == "tool_use") | .sessionID' | head -1)
+  split='**split: no, because the stances are a timed sequence that only my own turns can stage and hold; considered: one child per stance (but the flashes are short), a separate orchestrator session (it would only add a hop).**'
+  prompt_in "$said" "COURIER-SAY $split" >/dev/null
+  check "a split line stated in markdown is kept on the record as written" \
+    "$(record_of "$said" '.split | startswith("**split: no, because the stances")' | jq -r --arg split "$split" '.split == $split')"
+  check "and listed without its marks, cut at the last word within 160 characters" \
+    "$(prompt_in "$said" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg said "$said" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $said + " (this tree) "))) |
+      length == 1 and (.[0] | contains("\" · split: no, because the stances are a timed sequence that only my own turns can stage and hold; considered: one child per stance (but the flashes are short), a… [57 more characters] · ") and (contains("*") | not)))')"
   # A record written by hand, as docs/reference.md's Memory section describes one and the real-model evaluation seeds it.
   seeded='{"startedAt":1760000000000,"movedAt":1760000900000,"title":"Seeded by hand","split":"split: 2 parts: core, docs","finished":true,"lesson":{"text":"Give the docs to one session","at":1760000890000},"parts":[{"sessionID":"ses_seed_core","title":"Core","depth":1,"isolated":true,"group":"wave","status":"done","duration":540000,"cost":0.42,"context":0.31},{"sessionID":"ses_seed_docs","title":"Docs","depth":1,"isolated":false,"status":"partial","duration":60000,"refused":1}]}'
   kv set "memory/$project/ses_seeded" "$seeded" "memory/$project/$root"

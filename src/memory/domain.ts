@@ -126,7 +126,8 @@ export function partStatus({ stopped, stalled, report }: Standing): PartStatus {
  * last recorded; once OpenCode no longer knows it (`gone`), settled as read, else as last recorded, else `gone`.
  */
 export function unreadPart(read: PartRecord, last: PartRecord | undefined, gone: boolean): PartRecord {
-  const status = !gone || isSettled(read.status) ? read.status : last && isSettled(last.status) ? last.status : "gone"
+  const settledLast = last && isSettled(last.status) ? last.status : "gone"
+  const status = !gone || isSettled(read.status) ? read.status : settledLast
   const { title, duration, cost } = last ?? read
   return { ...read, title, status, ...(duration !== undefined ? { duration } : {}), ...(cost !== undefined ? { cost } : {}) }
 }

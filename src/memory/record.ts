@@ -70,7 +70,7 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
   return { record, use, running, unread: info === undefined, gone }
 }
 
-/** Which parts last recorded, forgotten by the roster since and not settled, OpenCode no longer knows. */
+/** Of the parts last recorded, those the roster has forgotten before they settled whose session OpenCode no longer knows. */
 async function goneSince(ports: RefreshPorts, parts: ReadonlyArray<PartRecord>, onRoster: ReadonlySet<string>) {
   const unsettled = parts.filter((one) => !onRoster.has(one.sessionID) && !isSettled(one.status))
   const looked = await Promise.all(unsettled.map(async ({ sessionID }) => ({ sessionID, ...(await infoOf(ports, sessionID)) })))
@@ -79,7 +79,7 @@ async function goneSince(ports: RefreshPorts, parts: ReadonlyArray<PartRecord>, 
 
 /**
  * Writes the record of the tree under `top` as it stands at `at`, after the turn of `ended`; a part the roster has forgotten
- * keeps its last recorded state. Nothing for a top unknown to OpenCode or in a location with memory off; returns the record.
+ * keeps its last recorded state, unless found gone before it settled. Nothing for a top unknown to OpenCode or with memory off.
  */
 export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "windows" | "off">, top: string, at: number, ended?: string): Promise<TreeRecord | undefined> {
   let info: Info

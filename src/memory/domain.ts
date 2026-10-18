@@ -19,8 +19,7 @@ export const LESSON_MAX = 300
 
 /**
  * How a part stands: its last report's status, how its wait ended without one (`failed`, `interrupted`), `stopped` by
- * courier_stop, `gone` from OpenCode before it settled, `stalled` on a message it will not take, or `out`: it owes a
- * report, running or not.
+ * courier_stop, `gone` before it settled, `stalled` on a message it will not take, or `out`: it owes a report.
  */
 export const PART_STATUSES = [...STATUSES, "interrupted", "stopped", "gone", "stalled", "out"] as const
 export type PartStatus = (typeof PART_STATUSES)[number]
@@ -133,8 +132,8 @@ export function unreadPart(read: PartRecord, last: PartRecord | undefined, gone:
 }
 
 /**
- * The parts of a refreshed record: those recorded before, in their order, each as read now when the roster still has it,
- * else as last recorded, then those first seen now, in the order the tree is drawn.
+ * The parts of a refreshed record: those recorded before, in their order, each as `current` has it (read now, or found
+ * gone), else as last recorded, then those first seen now, in the order the tree is drawn.
  */
 export function mergeParts(previous: ReadonlyArray<PartRecord>, current: ReadonlyArray<PartRecord>) {
   const now = new Map(current.map((part) => [part.sessionID, part]))

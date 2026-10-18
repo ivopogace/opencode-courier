@@ -647,7 +647,8 @@ part's `context` and `refused` are read from its messages when its own turn ends
 and kept from the last refresh otherwise, and the top's, for its `split`, on its own turn ends and
 while the record states no split line yet. It runs through the plugin's event follower, so whichever
 instance follows OpenCode's events writes it, once. A session the roster has forgotten since keeps the
-state it was last recorded in, so the record stands on its own once the roster is gone.
+state it was last recorded in, so the record stands on its own once the roster is gone, unless it had not
+settled and OpenCode no longer knows it (below).
 
 **A session OpenCode no longer knows** (deleted, so `session.get` answers `Session.NotFoundError`)
 cannot settle any more, and its report state went with it. Its part keeps its last recorded title,

@@ -268,7 +268,8 @@ and for each session started in the tree its title, depth, isolation, join group
 `partial`, `blocked`, `failed`, `interrupted`, `stopped`, `stalled` or `out`, still owing its report),
 how long it ran, what it cost, how full its context got and how many of its spawns were refused. Never a
 report's body or artifacts: they can hold code and secrets, and the parent has verified the work. A
-record is written again as each turn in the tree ends, so it stands on its own once the
+record is written again as each turn in the tree ends (reading the messages of that turn's session
+only), so it stands on its own once the
 [roster](docs/reference.md#roster) has forgotten the children, and a tree reads as finished once no
 session in it runs and every part has settled.
 

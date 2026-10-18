@@ -1400,6 +1400,7 @@ run_memory() {
   # and the sweep at the next load keeps it, a year old as it is, while an unpinned record as old goes.
   kv set "memory/$project/ses_seeded/pin" '{"at":1760000950000}' "memory/$project/$root"
   kv set "memory/$project/ses_unpinned" "$(jq -c '.title = "Seeded, unpinned" | del(.lesson)' <<<"$seeded")" "memory/$project/$root"
+  check "an unpinned record as old is seeded beside it, for the sweep at the next load" "$(kv get "memory/$project/ses_unpinned" | jq -r '.title == "Seeded, unpinned"')"
   check "a pinned record is listed first and marked, and the listing says what a pin means" \
     "$(prompt "COURIER-RECALL" | tool_state courier_recall | jq -r '.status == "completed" and (.output | split("\n") | (.[0] | contains("A record marked \"pinned\" is one the person chose to keep and listed first")) and (.[1] | startswith("- ses_seeded 2025-10-09: ") and contains(" · finished · pinned · lesson ("))) and .metadata.metadata.records[0].pinned.at == 1760000950000 and (.metadata.metadata.records[1] | has("pinned") | not)')"
 
@@ -1433,8 +1434,9 @@ run_memory() {
   git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory on"
   start_server
   check "the record kept its lesson meanwhile" "$(record_of "$root" '.lesson.text == "Noted from depth 1"' 5 | jq -r '.lesson.text == "Noted from depth 1" and .lesson.depth == 1')"
+  # The sweep runs as the plugin loads, after the server answers, so the unpinned record's removal is waited for.
   check "the sweep at load kept the pinned record, a year old, with its pin, and dropped the unpinned one as old (#285)" \
-    "$([ -n "$(kv get "memory/$project/ses_seeded")" ] && [ -n "$(kv get "memory/$project/ses_seeded/pin")" ] && [ -z "$(kv get "memory/$project/ses_unpinned")" ] && echo true || echo false)"
+    "$(for _ in $(seq 1 20); do [ -z "$(kv get "memory/$project/ses_unpinned")" ] && break; sleep 1; done; [ -n "$(kv get "memory/$project/ses_seeded")" ] && [ -n "$(kv get "memory/$project/ses_seeded/pin")" ] && [ -z "$(kv get "memory/$project/ses_unpinned")" ] && echo true || echo false)"
 }
 
 run_native() {

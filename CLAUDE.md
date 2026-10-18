@@ -45,8 +45,10 @@ import rules and the reasons for them.
   report body, the notices and the tool results. `store.ts` is the only file that knows the storage
   keys and layouts of `roster/`, `roster-by-child/`, `report/`, `group/` and `wake/`: `childStore`,
   `groupStore` and `wakeStore`, built inside `tree/`; no file outside `tree/` imports it. `forget.ts`
-  is the one cleanup service (`forgetChild`, `forgetDropped`, expired entries, `forgetDeleted`,
-  `forgetReports`). One file per use case: `spawn.ts`, `send.ts`, `status.ts` (`courier_status`,
+  is the one cleanup service (`forgetChild`, which drops the child's group membership too, best
+  effort, `forgetDropped`, expired entries, `forgetDeleted`, `forgetReports`); taking back a write
+  just made (`send.ts`, `spawn.ts`) and dropping a delivered group (`group.ts`) stay with their use
+  case. One file per use case: `spawn.ts`, `send.ts`, `status.ts` (`courier_status`,
   `courier_children`), `subtree.ts` (`courier_tree`), `stop.ts` (`courier_stop`), `cleanup.ts`.
   `limits.ts` the limits `spawn()` checks; `report.ts` whether each spawned session owes a report;
   `group.ts` join groups (joining, holding, leaving, standing, `deliverReleased`); `roster.ts` the
@@ -190,7 +192,8 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   TUI part, and a peer broke `opencode plugin add`; a unit test checks).
 - Every tool is registered with `options: { codemode: false }`, returns metadata without
   `undefined` values, and rethrows failures through `describeFailure`, except the plain permission
-  decline `courier_answer` rethrows as it is, which ends the step as OpenCode's own tools do.
+  decline `courier_answer` rethrows as it is, which ends the step as OpenCode's own tools do (the
+  reasons: `docs/maintainers/plugin-api-notes.md`, Tools).
 - Behaviour changes come with unit tests and an e2e scenario, and update README.md and
   `docs/reference.md`.
 - Feature work goes on a branch and through a PR with green CI; `Closes #N` in the body.

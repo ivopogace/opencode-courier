@@ -199,11 +199,14 @@ yourself" and no fact that says so.
 A run is **finished** when its exit is 0 or 1 and its directory holds `summary.json`; its log ends in
 `result: pass` or `result: fail`. A run that exits 2 (`result: inconclusive`: model requests failed,
 usually 429 or 403 from the free tier), or that says the parent's first turn did not end or that no
-parent session appeared, is refused: repeat it. To compare conditions (no memory, memory on and
-empty, seeded, seeded with a lesson), keep one model for every condition and run each several times:
+parent session appeared, is refused: repeat it under a new name, and keep its directory too. To
+compare conditions (no memory, memory on and empty, seeded, seeded with a lesson), keep one model for
+every condition and run each several times, from the repository's root:
 
 ```bash
+npm install --prefix ~/oc @opencode/cli@2.0.32
 export OPENCODE_BIN=~/oc/node_modules/.bin/opencode
+mkdir -p ~/courier-runs
 run() {  # run <name> [VAR=value ...]: one tree, its work directory and log under ~/courier-runs/<name>
   local name=$1; shift
   env COURIER_SCENARIO=recursive COURIER_BASE_URL= E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"

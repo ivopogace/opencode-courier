@@ -285,8 +285,8 @@ still; the TUI reads a plugin's options only from its own config, `~/.config/ope
 
 `ctrl+x k` (the leader key, then `k`), `/asks` (or `/ask`), the palette's "Courier: what waits on
 you" or a click on "waiting on you" opens the asks inbox: every permission request, question and form
-waiting anywhere in the tree, oldest first, after the top session's own permission requests, with
-where each comes from, kept current while open and answered in a dialog with no model in between.
+waiting anywhere in the tree, after the top session's own permission requests, with where each comes
+from, kept current while open and answered in a dialog with no model in between.
 The TUI plays OpenCode's sounds for a child's report, a group's release and a new ask. While a
 permission prompt or form is shown in the session, OpenCode hides the footer, so open the inbox with
 `ctrl+x k`.

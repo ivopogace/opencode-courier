@@ -333,7 +333,8 @@ activity; not by a shutdown), when its task could not be handed over, when OpenC
 session, or when the parent drops it with `courier_cleanup`. The group is then released once its
 other members have reported and the parent's turn has ended, the message naming who left and why. The
 parent hears of each as of a child in no group: a failed turn at once, in a notice with a line naming
-the group, a task not handed over as `courier_spawn`'s error, an interruption or a deletion only in
+the group (the group's message does not overtake that notice, unless a scheduler tick falls in the
+moment between the two), a task not handed over as `courier_spawn`'s error, an interruption or a deletion only in
 the group's message, and a drop in `courier_cleanup`'s result and the group's message. A group whose
 every member left is dropped unsent.
 
@@ -348,8 +349,9 @@ notice says the group's other reports are held until it reports, or until the pa
 report that cannot be held, the storage failing as `courier_send` runs, is delivered on its own, and
 the member dropped from the group.
 
-**Dropping a member.** A member that will not report holds every other member's report back. The
-parent drops it with `courier_cleanup { sessionID }`, which [forgets the child](#worktree-cleanup),
+**Dropping a member.** A member that will not report holds every other member's report back: one
+that ended its turn without a report, one whose failure or interruption the plugin missed (its watcher
+was resubscribing, or the server was down), or one the parent has given up on. The parent drops it with `courier_cleanup { sessionID }`, which [forgets the child](#worktree-cleanup),
 removing its worktree first if it is isolated (one whose worktree is kept for its work is not
 dropped). A member still out is first marked as left, then its roster entry and report state go; with
 the parent's turn ended, its held reports reach it at once, in one message that names the member under
@@ -367,8 +369,9 @@ parent as having ended without a report, until the group's message has reached i
 without reporting.
 
 **`courier_children`** lists, for a child started in a group, `group: { name, report }`, with `report`
-one of `held`, `out`, `failed`, `interrupted`, `deleted` (it left), `released` or `unknown` (its
-membership could not be read). A child whose group could not be joined when it was started is
+one of `held`, `out`, `failed`, `interrupted`, `deleted` (it left), `released` (the group has been
+delivered, or the child joined an earlier one of that name) or `unknown` (its membership could not be
+read). A child whose group could not be joined when it was started is
 recorded in no group, and `courier_spawn`'s result says so.
 
 **Delivery.** The scheduler that delivers `courier_later` messages delivers released groups too, at
@@ -419,7 +422,9 @@ and copies of the plugin see it; if it cannot be delivered, the parent is taken 
 A turn that ends while the child waits is not reported. It waits while a session it started owes it a
 report that it has not been told about; while it has a permission request or a question pending; and
 while a `courier_later` message for it is pending, or it has subscribed to a webhook topic since its
-last prompt (a subscription made before the last prompt is not waiting). A turn stopped by OpenCode's
+last prompt. A subscription made before the last prompt is not waiting, since it outlives the delivery
+it was made for: once a delivery has come and the child has ended its turn again without reporting,
+its parent is told. A turn stopped by OpenCode's
 shutdown resumes on the next start and does not count as interrupted; one stopped otherwise (by the
 person, or by OpenCode after an hour without activity) settles the report and is not told.
 
@@ -508,9 +513,11 @@ answer (an `always` that covers it, or a rejection, which rejects the session's 
 as well). For a request the parent was told about, the plugin then sends it a short message marked
 `answered="<reply>"` saying the request is settled; after a rejection, the message adds that the child
 may have stopped, and that `courier_send` gets it going again. That message is sent without waking
-the parent (`resume: false`): it waits in the parent's inbox and is read with the parent's next turn,
-usually the child's report or the notice that it ended without one; the [missed-wake
-watch](#a-missed-wake) does not count it as owed a turn. A `courier_answer` that comes later anyway
+the parent (`resume: false`): it waits in the parent's inbox and is read with the parent's next turn:
+for a direct child usually its report or the notice that it ended without one, further down a tree or
+for a member of a join group the next message that reaches the top session, or your own prompt. So a
+request answered elsewhere starts one turn in the top session, for the request, not a second one for
+the answer; the [missed-wake watch](#a-missed-wake) does not count the notice as owed a turn. A `courier_answer` that comes later anyway
 passes nothing on and says so, as does one whose request was answered that way while you were being
 asked in the parent's session; the prompt there stays open until you answer it, and allowing it then
 passes nothing on. The TUI's [asks inbox](#the-asks-inbox) answers as you, through OpenCode's reply,
@@ -946,7 +953,8 @@ confirm with the session's title and id and what happens, then forgets it as `co
 from its own parent, never with `force`, once the open session is found above it. A toast says what it
 did: `Forgot "<title>"`, with `and removed its worktree` or `; its worktree was already gone`, or
 `Kept "<title>" and its worktree: <reason>`, or why it was refused. On a live row `x` forgets nothing
-and says so. The server checks again: a session OpenCode still has is refused.
+and says so. The server checks again: a session OpenCode still has, or one it cannot look up for another reason,
+is refused.
 
 **Attention.** A join group's reports released to a session call for attention, with a notification
 when the terminal is not focused and the `done` sound; a child's report to its parent plays the
@@ -981,7 +989,8 @@ POST /api/rpc/courier/summary?directory=<location> {"input":{"sessionID":"ses_â€
   answers `{stopped: [{sessionID, title, outcome}], cancelled: <count>}`, deepest first, or fails with
   the declared error `refused` and `courier_stop`'s message.
 - `cleanup {sessionID, by}`: `courier_cleanup` for `sessionID`, called from its own parent once `by` is
-  found above it and OpenCode answers that it no longer has the session, without `force`; answers
+  found above it and OpenCode answers that it no longer has the session (one it still has, or a lookup
+that fails otherwise, is refused), without `force`; answers
   `{outcome}`, one of `forgotten`, `removed` or `gone`, or `{outcome: "kept", reason}`, or fails with
   the declared error `refused`.
 
@@ -1005,7 +1014,8 @@ top session's view. Such a prompt reads `Permission (top session): courier_answe
 <resources>"`, and the child's request it is for says `the top's prompt asks`: allowing the prompt
 passes `once` on to the child, so the child's request needs no answer of its own (answered directly,
 it settles and the prompt, once allowed, passes nothing on). Any other request of the top's own reads
-`Permission (top session): <action> <resources>`. One line per ask, the top's first, then oldest first:
+`Permission (top session): <action> <resources>`. One line per ask, the top's first, then in
+the order the inbox first saw them, and in the tree's order among those seen together:
 
 ```
 Waiting on you (3)
@@ -1053,7 +1063,7 @@ open session's tree and looks at each ask it has not seen before. The sound is O
 plays `permission` for a request and `question` for a form, and notifies when the terminal is not
 focused, for every child but a native one, for which the courier adds one notification when the
 terminal is not focused, with the ask and where it comes from. The asks already waiting when the TUI
-starts are not announced, except those of the sessions the events name.
+starts, or when a tree is first read, are not announced, except those of the sessions the events name.
 
 **The RPC.** `courier-person`, registered by every instance next to `courier`; its contract is
 `personRpc` from `opencode-courier/rpc`:
@@ -1147,8 +1157,8 @@ POST /api/rpc/courier-memory/forget?directory=<location> {"input":{"sessionID":"
   record](#memory) has it with its top session as `sessionID`; `memory` is false, and `records`
   empty, when the option is off at that location.
 - `forget {sessionID, lesson?}`: removes the record of the tree under `sessionID` in that project, or
-  with `lesson` true only its lesson; answers `{outcome}`, one of `record`, `lesson` or `none`. It
-  forgets with the memory option off too.
+  with `lesson` true only its lesson; answers `{outcome}`, one of `record`, `lesson` or `none` (no
+  such record, or no lesson to drop). It forgets with the memory option off too.
 
 ## Worktree cleanup
 
@@ -1193,8 +1203,8 @@ uncommitted changes `courier_spawn` says so in its result (the spawn goes on).
 The worktree is kept, and the result says why, when it holds work that would otherwise be lost:
 uncommitted changes, untracked files included (ignored files, such as `node_modules`, are not work),
 or commits that are on no branch, tag or remote-tracking ref, which is where a child's commits on its
-detached HEAD end up (a commit on a branch survives the removal, and neither do commits the worktree
-was made from count, which `courier_spawn` records). The result lists up to 50 changed paths (an
+detached HEAD end up. Commits on a branch survive the removal and do not count; nor do the commits
+the worktree was made from, which `courier_spawn` records. The result lists up to 50 changed paths (an
 untracked directory counts once) and 50 commits. Commit or branch what you want to keep (`git -C
 <worktree> branch <name>` keeps its commits), or call `courier_cleanup` again with `force: true` to
 discard it; `force` also removes a worktree git can no longer read. A worktree whose directory is

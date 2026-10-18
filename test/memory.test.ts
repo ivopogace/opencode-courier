@@ -138,14 +138,28 @@ describe("splitLineOf", () => {
   })
 
   // #282: the stored line keeps its markdown; only the listing reads it as prose.
-  test("splitProse drops the marks the matcher reads past before the line and the emphasis and code marks closing it", () => {
+  test("splitProse drops the block marks, the bold and italic asterisks, and a code or underscore span wrapping the whole line", () => {
     expect(splitProse("**split: 2 parts: core, docs**")).toBe("split: 2 parts: core, docs")
     expect(splitProse("- **split: no, because small; considered: docs**")).toBe("split: no, because small; considered: docs")
+    expect(splitProse("* **split:** no, because small")).toBe("split: no, because small")
+    expect(splitProse("**Decision:** split: no, because *small*")).toBe("Decision: split: no, because small")
+    expect(splitProse("**split: no**.")).toBe("split: no.")
     expect(splitProse("> # `split: 3 parts: a, b, c`")).toBe("split: 3 parts: a, b, c")
     expect(splitProse("__split:\n  no, because small__ ")).toBe("split: no, because small")
     expect(splitProse("I decided to split: no, because it is small")).toBe("I decided to split: no, because it is small")
-    expect(splitProse("split: 2 parts: a-b, c_d")).toBe("split: 2 parts: a-b, c_d")
     expect(splitProse("not stated")).toBe("not stated")
+  })
+
+  test("splitProse keeps the marks that are part of the words", () => {
+    for (const line of [
+      "split: 2 parts: a-b, c_d",
+      "split: 2 parts: src/*",
+      "split: no, because only __init__",
+      "split: 2 parts: `a`, `b`",
+      "split: no, because it only touches `src/**/text.ts`",
+      "split: 2 parts: 2 * 3 tests",
+    ])
+      expect(splitProse(line)).toBe(line)
   })
 
   test("the listing shows a long markdown split line as prose, cut at a word, while the record keeps it as written", () => {

@@ -93,10 +93,8 @@ export function readMemory(options: unknown) {
   return { memory: true, problems: [`memory must be true or false, not ${JSON.stringify(value)}; using true`] }
 }
 
-/** Markdown before a line's words: whitespace, emphasis, heading, quote and list marks. */
-const LEADING_MARKS = /^[\s*_#>`-]*/
-/** A line beginning with `split:` after any markdown. */
-const STARTS_SPLIT = new RegExp(`${LEADING_MARKS.source}split:`, "i")
+/** A line beginning with `split:` after any markdown (whitespace, emphasis, heading, quote and list marks). */
+const STARTS_SPLIT = /^[\s*_#>`-]*split:/i
 /** A line holding `split:` as a word. */
 const HOLDS_SPLIT = /\bsplit:/i
 
@@ -106,12 +104,18 @@ export function splitLineOf(text: string) {
   return (lines.find((line) => STARTS_SPLIT.test(line)) ?? lines.find((line) => HOLDS_SPLIT.test(line)))?.trim()
 }
 
-/** A split line as the listing shows it: one line, without the marks `splitLineOf` reads past before it, nor the emphasis and code marks closing it. */
+/** The heading, quote and list marks before a line's words. */
+const BLOCK_MARKS = /^(?:[\s#>+-]|\*\s)*/
+/** Bold, then italic, spans marked with asterisks, anywhere in a line. */
+const EMPHASIS = [/\*\*([^*]+)\*\*/g, /\*([^*\s][^*]*)\*/g]
+/** Marks taken off only when they wrap the whole line, as elsewhere they may be part of its words (`__init__`, `snake_case`). */
+const WRAPS = ["__", "_", "`"]
+
+/** A split line as the listing shows it: one line, without its block marks, its bold and italic asterisks, nor a code or underscore span wrapping it whole. */
 export function splitProse(split: string) {
-  const line = oneLine(split).replace(LEADING_MARKS, "")
-  let end = line.length
-  while (end > 0 && " *_`".includes(line[end - 1]!)) end--
-  return line.slice(0, end)
+  const line = EMPHASIS.reduce((text, span) => text.replace(span, "$1"), oneLine(split).replace(BLOCK_MARKS, ""))
+  const wrap = WRAPS.find((mark) => line.length > 2 * mark.length && line.startsWith(mark) && line.endsWith(mark) && !line.slice(mark.length, -mark.length).includes(mark[0]!))
+  return wrap ? line.slice(wrap.length, -wrap.length).trim() : line
 }
 
 /** What a part's status is read from: whether courier_stop stopped it, whether it is stalled, and its report state. */

@@ -117,7 +117,7 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   their texts and the delivery summaries. It exports `subscribedSince`, its `Waits` supplier.
 - `memory/`: one record per session tree (#260), under `memory/<projectID>/<topSessionID>`, keyed by
   `location.project.id`, and its lesson (#261). `domain.ts` the record's shape (`TreeRecord`, `PartRecord`, `PartStatus`, `Lesson`), the
-  `memory` option (`readMemory`), each part's status (`partStatus`), the split line, the lesson's line (`lessonText`, clipped at `LESSON_MAX`), the merge that keeps
+  `memory` option (`readMemory`), each part's status (`partStatus`), the split line, the lesson as one line (`oneLine`; `lessonText` clips a hand-written record's at `LESSON_MAX`, which `courier_note` refuses instead), the merge that keeps
   parts the roster forgot and the retention (`keep`: the newest 30 per project, none older than 90 days);
   `ports.ts` `RefreshPorts` (what every hub-v2 member's watch ports have), `MemoryPorts` (the tool's) and
   `MemoryState` (process-wide: the models' windows, the locations with memory off, the tops that recalled,

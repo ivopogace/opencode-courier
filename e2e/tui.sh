@@ -6,7 +6,7 @@
 # inbox opened from a child lists the top session's courier_answer prompt first and allows it (#185);
 # a child showing a form waits on the person in the footer and the panel (#183); x in the panel forgets a gone
 # isolated child, with its worktree (#187); and /courier memory lists the project's tree records, x forgets a lesson
-# alone, then every record, and the view says when memory is off (#262).
+# alone, then every record, and the view says when memory is off (#262); esc goes back and closes, q filters (#273).
 # Then the same from the package `opencode plugin add` installs. Driven by e2e/mock-model.mjs's
 # COURIER-TUI, so no API key is needed.
 #
@@ -476,7 +476,7 @@ check "/courier memory opens the view with every record of the project" "$(shows
 # The dialog is drawn over the transcript, so a header shares its screen line with whatever is behind it.
 check "the tree's row is under Today, with its parts counted and the lesson, dated on the local day, as its footer" \
   "$(awk -v lesson="lesson ($today): \"Give the docs to one session\"" '/(^|[^A-Za-z])Today([^A-Za-z]|$)/ { today = NR } index($0, lesson) && today && today < NR { under = 1 } /(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z][a-z] [0-9]+ [0-9][0-9][0-9][0-9]/ { dated = 1 } END { exit !(under && !dated) }' "$WORK/tui-memory-list.txt" && grep -qF "2 parts: 2 done" "$WORK/tui-memory-list.txt" && echo true || echo false)"
-check "the footer offers x to forget and q to close" "$(grep -qF "forget" "$WORK/tui-memory-list.txt" && grep -qF "close" "$WORK/tui-memory-list.txt" && echo true || echo false)"
+check "the footer offers x to forget" "$(grep -qF "forget" "$WORK/tui-memory-list.txt" && echo true || echo false)"
 # Down to the tree's row, newest first, then enter.
 for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done
 tmux send-keys -t "$TMUX_SESSION" Enter
@@ -490,8 +490,16 @@ tmux send-keys -t "$TMUX_SESSION" Enter
 check "once confirmed, a toast says the lesson went" "$(shows "Forgot the lesson of" 30 tui-memory-lesson-forgotten)"
 check "and the record is shown again without it" "$(shows "No lesson" 30 tui-memory-no-lesson)"
 check "the record kept its parts and lost its lesson" "$(kv get "memory/$project/$parent" | jq -r '(has("lesson") | not) and (.parts | length) == 2')"
-tmux send-keys -t "$TMUX_SESSION" q
-check "q closes the record" "$(hides "Top session $parent" 10 tui-memory-closed)"
+tmux send-keys -t "$TMUX_SESSION" Escape
+check "esc goes back from the record to the list" "$([ "$(hides "Top session $parent" 10 tui-memory-back)" = true ] && [ "$(shows "Memory ($total)" 10 tui-memory-back)" = true ] && echo true || echo false)"
+# q is no footer action (#273): typed in the search, it filters the rows, none of whose titles has three, and the list stays.
+tmux send-keys -t "$TMUX_SESSION" qqq
+check "q typed in the search filters the rows, and the list stays open" \
+  "$([ "$(hides "2 parts: 2 done" 10 tui-memory-search)" = true ] && grep -qF "qqq" "$WORK/tui-memory-search.txt" && grep -qF "Memory ($total)" "$WORK/tui-memory-search.txt" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" BSpace BSpace BSpace
+check "cleared, the search shows every row again" "$(shows "2 parts: 2 done" 10 tui-memory-unfiltered)"
+tmux send-keys -t "$TMUX_SESSION" Escape
+check "esc closes the list" "$(hides "Memory ($total)" 10 tui-memory-closed)"
 tmux send-keys -t "$TMUX_SESSION" "/courier memory"
 sleep 1
 tmux send-keys -t "$TMUX_SESSION" Enter
@@ -564,7 +572,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-list tui-memory-record tui-memory-lesson-confirm tui-memory-lesson-forgotten tui-memory-no-lesson tui-memory-again tui-memory-confirm tui-memory-fewer tui-memory-empty tui-memory-off tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-list tui-memory-record tui-memory-lesson-confirm tui-memory-lesson-forgotten tui-memory-no-lesson tui-memory-back tui-memory-search tui-memory-unfiltered tui-memory-again tui-memory-confirm tui-memory-fewer tui-memory-empty tui-memory-off tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

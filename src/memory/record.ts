@@ -30,20 +30,20 @@ function useOf(messages: Messages, windows: ReadonlyArray<ModelWindow>): Use {
 }
 
 /** A part's use as last recorded. */
-const keptUse = (previous: PartRecord | undefined): Use => ({
-  ...(previous?.context !== undefined ? { context: previous.context } : {}),
-  ...(previous?.refused ? { refused: previous.refused } : {}),
+const keptUse = (last: PartRecord | undefined): Use => ({
+  ...(last?.context !== undefined ? { context: last.context } : {}),
+  ...(last?.refused ? { refused: last.refused } : {}),
 })
 
 /**
- * One session of the tree as its record keeps it, and whether it runs now. Its messages are read only when its turn
- * `ended` or it has no `previous` part, as no other session's use changes with this turn.
+ * One session of the tree as its record keeps it, without its use when its messages were not read (only when its turn
+ * `ended` or it is `known` to no record yet), and whether it runs now.
  */
-async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth }: Below, stalled: boolean, at: number, previous: PartRecord | undefined, ended: boolean) {
+async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth }: Below, stalled: boolean, at: number, known: boolean, ended: boolean) {
   const { sessionID } = entry
   const [info, use, report] = await Promise.all([
     ports.session.get({ sessionID }).catch((): Info | undefined => undefined),
-    ended || !previous ? ports.session.context({ sessionID }).then((messages) => useOf(messages, windows), () => keptUse(previous)) : keptUse(previous),
+    ended || !known ? ports.session.context({ sessionID }).then((messages) => useOf(messages, windows), () => undefined) : undefined,
     reportState(ports.storage, sessionID).catch(() => undefined),
   ])
   const running = info !== undefined && busy(info.time)
@@ -59,15 +59,13 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
     status: partStatus({ stopped: report?.stopped ?? false, stalled, report }),
     duration: Math.max(0, end - created),
     ...(cost !== undefined ? { cost } : {}),
-    ...use,
   }
-  return { record, running }
+  return { record, use, running }
 }
 
 /**
- * Writes the record of the tree under `top` as it stands at `at`, once the turn of `ended` has ended; a part the roster
- * has forgotten keeps its last recorded state. Nothing for a top OpenCode no longer knows, or whose location has memory
- * off. Returns the record written.
+ * Writes the record of the tree under `top` as it stands at `at`, after the turn of `ended`; a part the roster has forgotten
+ * keeps its last recorded state. Nothing for a top unknown to OpenCode or in a location with memory off; returns the record.
  */
 export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "windows" | "off">, top: string, at: number, ended?: string): Promise<TreeRecord | undefined> {
   let info: Info
@@ -84,20 +82,21 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   const replies = ended === top || (previous?.split ?? NOT_STATED) === NOT_STATED ? ports.session.context({ sessionID: top }).then(repliesOf, () => "") : ""
   const stalled = await stalledAmong(ports, nodes.map((node) => node.entry.sessionID))
   const windows = [...state.windows.values()]
-  const before = new Map(previous?.parts.map((one) => [one.sessionID, one]))
+  const known = new Set(previous?.parts.map((one) => one.sessionID))
   const read = await Promise.all(
-    nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at, before.get(node.entry.sessionID), node.entry.sessionID === ended)),
+    nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at, known.has(node.entry.sessionID), node.entry.sessionID === ended)),
   )
-  const parts = mergeParts(previous?.parts ?? [], read.map(({ record }) => record))
-  // Read again just before the write: a courier_recall or courier_note call during the reads above has written meanwhile.
-  const latest = await store.get(info.projectID, top).catch(() => previous)
+  // Read again just before the write: a courier_recall or courier_note call, or another turn end's refresh, wrote meanwhile.
+  const latest = (await store.get(info.projectID, top).catch(() => previous)) ?? previous
+  const last = new Map(latest?.parts.map((one) => [one.sessionID, one]))
+  const parts = mergeParts(latest?.parts ?? [], read.map(({ record, use }) => ({ ...record, ...(use ?? keptUse(last.get(record.sessionID))) })))
   const recalled = latest?.recalled ?? previous?.recalled
   const lesson = latest?.lesson ?? previous?.lesson
   const record: TreeRecord = {
     startedAt: finite(millis(info.time.created)) ?? previous?.startedAt ?? at,
     movedAt: at,
     title: info.title ?? previous?.title ?? "",
-    split: splitLineOf(await replies) ?? previous?.split ?? NOT_STATED,
+    split: splitLineOf(await replies) ?? latest?.split ?? NOT_STATED,
     finished: !busy(info.time) && !read.some(({ running }) => running) && parts.every((one) => one.status !== "out" && one.status !== "stalled"),
     ...(recalled ? { recalled } : {}),
     ...(lesson ? { lesson } : {}),

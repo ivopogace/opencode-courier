@@ -399,6 +399,31 @@ describe("refresh", () => {
     expect(contexts).toEqual(["ses_top"])
   })
 
+  test("keeps the use another turn end's refresh wrote while this one was reading", async () => {
+    const { ports, state, sessions } = fakePorts(
+      { ses_top: { updated: 1, idle: 1 }, ses_a: { updated: 1, idle: 1, messages: [usage(300)] }, ses_b: { updated: 1, idle: 1, messages: [usage(400)] } },
+      [SMALL],
+    )
+    await tree(ports)
+    await refresh(ports, state, "ses_top", NOW - 5000, "ses_a")
+    sessions.ses_a!.messages = [usage(600)]
+    sessions.ses_b!.messages = [usage(900)]
+    const get = ports.storage.get
+    let reads = 0
+    ;(ports.storage as any).get = async (key: string) => {
+      // ses_b's refresh runs whole between ses_a's first read of the record and its read just before the write.
+      if (key === recordKey("proj_1", "ses_top") && ++reads === 2) await refresh(ports, state, "ses_top", NOW - 1000, "ses_b")
+      return get(key)
+    }
+
+    const record = await refresh(ports, state, "ses_top", NOW, "ses_a")
+
+    expect(record!.parts.map(({ sessionID, context }) => [sessionID, context])).toEqual([
+      ["ses_a", 0.6],
+      ["ses_b", 0.9],
+    ])
+  })
+
   test("keeps a part's last recorded use when its messages cannot be read", async () => {
     const { ports, state } = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_a: { updated: 1, idle: 1, messages: [usage(300), spawnCall("error")] }, ses_b: { updated: 1, idle: 1 } }, [SMALL])
     await tree(ports)

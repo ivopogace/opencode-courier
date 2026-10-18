@@ -38,6 +38,10 @@ const Record = Schema.Struct({
   finished: Schema.Boolean,
   recalled: Schema.optionalKey(Schema.Struct({ at: Schema.optionalKey(Schema.Number), calls: Count })),
   lesson: Schema.optionalKey(Lesson),
+  /** How often other trees' courier_recall calls listed the record and gave it in full, and when one last did. */
+  reads: Schema.optionalKey(Schema.Struct({ shown: Count, read: Count, at: Schema.Number })),
+  /** The person's pin, when; a pinned record is listed first and never swept. */
+  pinned: Schema.optionalKey(Schema.Struct({ at: Schema.Number })),
   parts: Schema.Array(Part),
 })
 
@@ -51,11 +55,16 @@ const Records = Schema.Struct({
 /** What a forget did: removed the record, dropped only its lesson, or found nothing to forget. */
 const Forgotten = Schema.Struct({ outcome: Schema.Literals(["record", "lesson", "none"]) })
 
+/** What a pin did: pinned the record, unpinned it, or found no record to pin. */
+const Pinned = Schema.Struct({ outcome: Schema.Literals(["pinned", "unpinned", "none"]) })
+
 export type MemoryRecord = typeof Record.Type
 export type MemoryPart = typeof Part.Type
 export type MemoryLesson = typeof Lesson.Type
+export type MemoryReads = NonNullable<MemoryRecord["reads"]>
 export type Records = typeof Records.Type
 export type Forgotten = typeof Forgotten.Type
+export type Pinned = typeof Pinned.Type
 
 export const memoryRpc = Rpc.define({
   id: "courier-memory",
@@ -68,6 +77,11 @@ export const memoryRpc = Rpc.define({
     forget: {
       input: Schema.toStandardSchemaV1(Schema.Struct({ sessionID: Schema.String, lesson: Schema.optionalKey(Schema.Boolean) })),
       output: Schema.toStandardSchemaV1(Forgotten),
+    },
+    /** Pins the record of the tree under `sessionID` in the project asked, or with `pinned` false unpins it. */
+    pin: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({ sessionID: Schema.String, pinned: Schema.Boolean })),
+      output: Schema.toStandardSchemaV1(Pinned),
     },
   },
   events: {},

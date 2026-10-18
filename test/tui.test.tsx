@@ -8,7 +8,7 @@ import { testRender } from "@opentui/solid"
 import { batch, createRoot, createSignal } from "solid-js"
 import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
 import { activityLine, addTreePanel, addTreeStatus, animationsOn, bar, BAR_MS, blend, restBackground, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, BELOW_ROWS, digbyColours } from "../src/tree/tui.js"
-import { ART, art, cells, digby, glyph, GLYPH, MASCOT_EVERY, type MascotState } from "../src/tree/mascot.js"
+import { ART, art, BLINK_EVERY, cells, digby, glyph, GLYPH, MASCOT_EVERY, type MascotState } from "../src/tree/mascot.js"
 import { MEMORY_USAGE } from "../src/memory/tui.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
@@ -505,11 +505,11 @@ function panelInput(sessionID = "ses_parent", name = PANEL, { presentation = "pa
   }
 }
 
-/** Renders the claimed panel slot, 100 columns by 24 rows unless `height` and `width` say otherwise. */
-async function renderPanel(claim: SlotClaim | undefined, value: ReturnType<typeof panelInput>["value"], height = 24, width = 100) {
+/** Renders the claimed panel slot, 100 columns by 24 rows unless `height` and `width` say otherwise, on `under` as the host's panel background. */
+async function renderPanel(claim: SlotClaim | undefined, value: ReturnType<typeof panelInput>["value"], height = 24, width = 100, under?: RGBA) {
   expect(claim?.append).toBe("session.panel")
   const render = claim!.render as (input: unknown) => any
-  const app = await testRender(() => render(value), { width, height })
+  const app = await testRender(() => (under ? <box flexGrow={1} backgroundColor={under}>{render(value)}</box> : render(value)), { width, height })
   renderers.push(app)
   return app
 }
@@ -1362,7 +1362,7 @@ describe("the tree panel's motion (#224)", () => {
   })
 
   /** Opens the panel, unfocused so no selection colours a row, on the trees `trees()` gives, with fake timers and `options`. */
-  async function motion(trees: () => Tree, options: Record<string, unknown> = {}, height = 24, width = 100) {
+  async function motion(trees: () => Tree, options: Record<string, unknown> = {}, height = 24, width = 100, under?: RGBA) {
     jest.useFakeTimers()
     timers = frameTimers()
     const fake = fakeContext(async () => empty)
@@ -1371,7 +1371,7 @@ describe("the tree panel's motion (#224)", () => {
     await tui.setup(fake.context)
     const [name, setName] = createSignal(PANEL)
     const value = Object.defineProperty(panelInput("ses_parent", PANEL, { focused: false }).value, "name", { get: name })
-    const app = await renderPanel(fake.claim("session.panel"), value, height, width)
+    const app = await renderPanel(fake.claim("session.panel"), value, height, width, under)
     const frame = async () => {
       for (let i = 0; i < 20; i++) await Promise.resolve()
       await app.renderOnce()
@@ -1401,7 +1401,7 @@ describe("the tree panel's motion (#224)", () => {
       const lines = (await frame()).split("\n")
       return lines[0]!.includes("courier tree") && lines[0]!.indexOf("courier tree") > 1 ? [lines[0]!.slice(1, 9), lines[1]!.slice(1, 9)] : undefined
     }
-    return { app, frame, advance, refresh, background, glyph: glyphShown, hide: () => setName("someone-else") }
+    return { app, frame, advance, refresh, background, glyph: glyphShown, hide: () => setName("someone-else"), tokens: digbyColours(fake.context.theme as never) }
   }
 
   const running = (): Tree => ({ rows: [row("ses_run", { state: "running" })] })
@@ -1702,6 +1702,109 @@ describe("the tree panel's motion (#224)", () => {
     }
     expect(timers!.count() + timers!.slow()).toBe(0)
   })
+
+  /** The tree's states Digby shows when no report or spawn holds his pose. */
+  const STEADY = ["idle", "running", "waiting", "stalled", "gone"] as const
+
+  /** The host's background under the panel, as it paints a split one. */
+  const UNDER = RGBA.fromInts(10, 20, 30)
+
+  /** A panel on `UNDER` whose tree `go`, `report` and `spawn` move, and `holds`, which reads Digby back cell by cell, chars and backgrounds. */
+  async function poses(where: "header" | "below") {
+    let state: Row["state"] = "idle"
+    let reported = false
+    let spawned = 0
+    const panel = await motion(
+      () => ({
+        rows: [
+          row("ses_a", { state, report: reported ? { state: "reported", status: "done", progressed: false } : { state: "owed", progressed: false } }),
+          ...Array.from({ length: spawned }, (_, at) => row(`ses_new${at}`, { state })),
+        ],
+      }),
+      {},
+      where === "header" ? GLYPH_ROWS : 40,
+      100,
+      UNDER,
+    )
+    const [height, width] = where === "header" ? [2, 8] : [8, 16]
+    const expected = (lines: ReturnType<typeof art>) => ({
+      chars: lines.map((line) => line.map((one) => one.char).join("")),
+      backgrounds: lines.map((line) => line.map((one) => (one.bg ? panel.tokens[one.bg] : UNDER).toInts())),
+    })
+    const shown = async () => {
+      const lines = (await panel.frame()).split("\n")
+      const top = where === "header" ? 0 : lines.findLastIndex((line) => line.slice(1, 17) === "█".repeat(16)) - 7
+      return {
+        chars: lines.slice(top, top + height).map((line) => line.slice(1, 1 + width)),
+        backgrounds: panel.app
+          .captureSpans()
+          .lines.slice(top, top + height)
+          .map((line) => line.spans.flatMap((span) => Array.from({ length: span.width }, () => span.bg.toInts())).slice(1, 1 + width)),
+      }
+    }
+    /** Digby shows one of `pose`'s frames, each cell's background its own token's or the panel's, now and for `steps` frames on. */
+    const holds = async (pose: MascotState, steps = 3) => {
+      // Every frame until the cycles of 2, 3 and 4 frames and the blink line up again.
+      const each = Array.from({ length: BLINK_EVERY * 12 }, (_, frame) => JSON.stringify(expected(where === "header" ? cells(glyph(pose, frame)) : art(pose, frame))))
+      const frames = [...new Set(each)].map((one) => JSON.parse(one))
+      expect(frames).toContainEqual(await shown())
+      for (let step = 0; step < steps; step++) {
+        await panel.advance(FRAME_MS * MASCOT_EVERY)
+        expect(frames).toContainEqual(await shown())
+      }
+    }
+    return {
+      holds,
+      advance: panel.advance,
+      go: async (next: Row["state"]) => {
+        state = next
+        await panel.refresh()
+      },
+      report: async () => {
+        reported = false
+        await panel.refresh()
+        reported = true
+        await panel.refresh()
+      },
+      spawn: async () => {
+        spawned++
+        await panel.refresh()
+      },
+      settle: () => panel.advance(FLASH_MS + FRAME_MS),
+    }
+  }
+
+  for (const where of ["header", "below"] as const)
+    test(`no cell of Digby's ${where === "header" ? "header glyph" : "16×16 below the rows"} keeps a background the pose he moves to does not give it (#281)`, async () => {
+      const digby = await poses(where)
+      for (const from of STEADY)
+        for (const to of STEADY.filter((one) => one !== from)) {
+          await digby.go(from)
+          await digby.holds(from)
+          await digby.go(to)
+          await digby.holds(to)
+        }
+      for (const under of STEADY) {
+        await digby.go(under)
+        await digby.report()
+        await digby.holds("report", 2)
+        await digby.settle()
+        await digby.holds(under)
+        await digby.spawn()
+        await digby.holds("spawn", 2)
+        await digby.settle()
+        await digby.holds(under)
+      }
+      // A spawn during a report shows once the report ends; a report during a spawn shows at once.
+      await digby.go("idle")
+      await digby.report()
+      await digby.advance(FRAME_MS * MASCOT_EVERY * 2)
+      await digby.spawn()
+      await digby.advance(FLASH_MS - FRAME_MS * MASCOT_EVERY * 2 + FRAME_MS)
+      await digby.holds("spawn", 1)
+      await digby.report()
+      await digby.holds("report", 1)
+    })
 })
 
 describe("Digby, the tree panel's mascot (#226)", () => {

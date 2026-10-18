@@ -582,6 +582,9 @@ export const digbyColours = (theme: Context["theme"]): Record<Token, RGBA> => ({
   s: theme.text.feedback.success.base,
 })
 
+/** A Digby cell's background where its pixels give none: transparent, so the panel's or the list's shows through. */
+const DIGBY_UNDER = RGBA.fromValues(0, 0, 0, 0)
+
 /**
  * A row's background at rest: the selection's while the panel has the keyboard, else one step quieter under the pointer,
  * else none, the panel's.
@@ -732,9 +735,10 @@ function TreePanel(props: {
   const header = createMemo(() => cells(glyph(mascot(), mascotFrame())))
   const art = createMemo(() => artOf(mascot(), mascotFrame()))
   const tokens = digbyColours(theme)
+  // Every cell gets a bg: OpenTUI keeps a span's old one when its style's `bg` goes to undefined (#281).
   const drawn = (line: Accessor<ReadonlyArray<Cell>>) => (
     <text wrapMode="none" flexShrink={0}>
-      <Index each={line()}>{(one) => <span style={{ fg: one().fg && tokens[one().fg!], bg: one().bg && tokens[one().bg!] }}>{one().char}</span>}</Index>
+      <Index each={line()}>{(one) => <span style={{ fg: one().fg && tokens[one().fg!], bg: one().bg ? tokens[one().bg!] : DIGBY_UNDER }}>{one().char}</span>}</Index>
     </text>
   )
   // A flash fades from the theme's success background to the row's own: the selection's, the hover's, else the panel's.

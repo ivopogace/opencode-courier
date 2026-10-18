@@ -80,7 +80,10 @@ export interface TreeRecord {
   /** When a turn in the tree last ended, or the record was first written. */
   readonly movedAt: number
   readonly title: string
-  /** The top's first split line, as `e2e/real-model-recursive.mjs` reads it, or `not stated`; never replaced once stated. */
+  /**
+   * The top's first split line, as `e2e/real-model-recursive.mjs` reads it, or `not stated`; a stated line takes precedence over a
+   * mention, which it replaces once, and is never replaced.
+   */
   readonly split: string
   /** Absent until the top states a split line worded otherwise than `split`; newest last, at most `MAX_REVISIONS`. */
   readonly revisions?: ReadonlyArray<Revision>
@@ -114,6 +117,16 @@ const HOLDS_SPLIT = /\bsplit:/i
 export function splitLineOf(text: string) {
   const lines = text.split("\n")
   return (lines.find((line) => STARTS_SPLIT.test(line)) ?? lines.find((line) => HOLDS_SPLIT.test(line)))?.trim()
+}
+
+/** Whether a split line is stated, beginning with `split:` after any markdown, not a passing mention nor `not stated`. */
+export const isStated = (line: string) => STARTS_SPLIT.test(line)
+
+/** The record's `split` once `text` is read: kept once stated; a mention gives way to the first stated line; `not stated` to either. */
+export function splitOf(recorded: string, text: string) {
+  if (isStated(recorded)) return recorded
+  const found = splitLineOf(text)
+  return found !== undefined && (recorded === NOT_STATED || isStated(found)) ? found : recorded
 }
 
 /** Every line of a text that begins with `split:` after any markdown, trimmed: a passing mention of a split is none. */
@@ -158,6 +171,16 @@ export function revise(previous: Pick<TreeRecord, "split" | "revisions">, stated
   )
   const revisions = [...(previous.revisions ?? []), ...added].slice(-MAX_REVISIONS)
   return revisions.length ? revisions : undefined
+}
+
+/**
+ * The split and revisions once the stated line `found` replaces a mention: when `found` is among the revisions (recorded beside the
+ * mention before #294), the first of them was stated first and is `split`, the rest stay; else `found` is, beside them all.
+ */
+export function replacingMention(found: string, revisions: ReadonlyArray<Revision> | undefined): Pick<TreeRecord, "split" | "revisions"> {
+  const [first, ...rest] = revisions ?? []
+  if (!first || !revisions!.some((one) => splitProse(one.text) === splitProse(found))) return { split: found, ...(first ? { revisions } : {}) }
+  return { split: first.text, ...(rest.length ? { revisions: rest } : {}) }
 }
 
 /** Heading, quote and list marks before a line's words, each with the space markdown puts after it, unlike the `#` of `#282`. */

@@ -423,6 +423,7 @@ describe("webhook deliveries", () => {
 })
 
 describe("memory", () => {
+  const NOW = Date.UTC(2026, 9, 3, 9, 45)
   const record = (sessionID: string, more: object = {}) => ({
     projectID: "proj_1",
     sessionID,
@@ -440,21 +441,21 @@ describe("memory", () => {
   })
   test("RECALL_OFF", () => expect(memory.RECALL_OFF).toMatchSnapshot())
   test("recallListText", () => {
-    expect(memory.recallListText([record("ses_now", { parts: [], finished: false, recalled: { at: 1, calls: 1 } }), record("ses_old")], "ses_now")).toMatchSnapshot()
-    expect(memory.recallListText([record("ses_now", { parts: [], finished: false, recalled: { at: 1, calls: 1 } })], "ses_now")).toMatchSnapshot()
-    expect(memory.recallListText([record("ses_part", { recalled: { calls: 2 } })], "ses_other")).toMatchSnapshot()
-    expect(memory.recordLine(record("ses_long", { title: "x".repeat(80), split: "split: " + "y".repeat(200), parts: [] }), "ses_other")).toMatchSnapshot()
+    expect(memory.recallListText([record("ses_now", { parts: [], finished: false, recalled: { at: 1, calls: 1 } }), record("ses_old")], "ses_now", NOW)).toMatchSnapshot()
+    expect(memory.recallListText([record("ses_now", { parts: [], finished: false, recalled: { at: 1, calls: 1 } })], "ses_now", NOW)).toMatchSnapshot()
+    expect(memory.recallListText([record("ses_part", { recalled: { calls: 2 } })], "ses_other", NOW)).toMatchSnapshot()
+    expect(memory.recordLine(record("ses_long", { title: "x".repeat(80), split: "split: " + "y".repeat(200), parts: [] }), "ses_other", NOW)).toMatchSnapshot()
   })
   test("recordLine with a gone part", () => {
     const gone = { sessionID: "ses_goner", title: "Goner", depth: 1, isolated: true, status: "gone" as const, duration: 30_000 }
-    expect(memory.recordLine(record("ses_old", { parts: [...record("ses_old").parts.slice(0, 2), gone] }), "ses_other")).toMatchSnapshot()
+    expect(memory.recordLine(record("ses_old", { parts: [...record("ses_old").parts.slice(0, 2), gone] }), "ses_other", NOW)).toMatchSnapshot()
   })
   test("recallRecordText", () => expect(memory.recallRecordText(record("ses_old"))).toMatchSnapshot())
   test("recallMissingText", () => expect(memory.recallMissingText("ses_none")).toMatchSnapshot())
   const lesson = { text: "The docs part was ten lines; next time do it yourself.", at: Date.UTC(2026, 9, 3, 9, 40) }
   test("recordLine with a lesson", () => {
-    expect(memory.recordLine(record("ses_old", { lesson }), "ses_other")).toMatchSnapshot()
-    expect(memory.recordLine(record("ses_old", { lesson: { ...lesson, depth: 2 } }), "ses_other")).toMatchSnapshot()
+    expect(memory.recordLine(record("ses_old", { lesson }), "ses_other", NOW)).toMatchSnapshot()
+    expect(memory.recordLine(record("ses_old", { lesson: { ...lesson, depth: 2 } }), "ses_other", NOW)).toMatchSnapshot()
   })
   test("noteText", () => {
     expect(memory.noteText("ses_top", lesson, undefined)).toMatchSnapshot()

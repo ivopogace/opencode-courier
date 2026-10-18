@@ -46,7 +46,7 @@ export function addMemoryTools(tools: ToolEditor, ports: MemoryToolPorts) {
         case "off":
           return { content: RECALL_OFF, metadata: { memory: false } }
         case "list":
-          return { content: recallListText(result.records, result.top), metadata: { projectID: result.projectID, top: result.top, records: result.records } }
+          return { content: recallListText(result.records, result.top, ports.memory.now()), metadata: { projectID: result.projectID, top: result.top, records: result.records } }
         case "record":
           return { content: recallRecordText(result.record), metadata: { projectID: result.projectID, record: result.record } }
         case "missing":

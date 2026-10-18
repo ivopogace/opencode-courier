@@ -30,7 +30,7 @@ import { recall } from "../src/memory/recall.js"
 import { refresh } from "../src/memory/record.js"
 import { memoryStore, readRecord, recordKey } from "../src/memory/store.js"
 import { sweepRecords } from "../src/memory/sweep.js"
-import { duration, lessonLine, recallListText, recordLine } from "../src/memory/text.js"
+import { age, duration, lessonLine, recallListText, recordLine } from "../src/memory/text.js"
 import { addMemoryTools } from "../src/memory/tools.js"
 import type { RosterEntry } from "../src/tree/domain.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
@@ -676,14 +676,15 @@ describe("recall", () => {
       parts: [],
     })
     expect(state.tops.has("ses_root")).toBe(true)
-    expect(recallListText(result.records, "ses_root")).toBe(
+    expect(recallListText(result.records, "ses_root", NOW)).toBe(
       [
         "2 earlier trees recorded in this project, newest first; weigh how they were split and how their parts went before you decide. " +
-          "A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out: " +
+          "A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out. " +
+          "The facts are as they stood when the tree last moved: \"not finished\" with an old \"last moved\" is a stale record, not a tree running now. " +
           "courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use.",
-        `- ses_root (this tree) ${DAY}: "New task" · not stated · no parts · 1 min · not finished · recalled`,
-        `- ses_old ${DAY}: "tree ses_old" · not stated · 2 parts: 1 done, 1 failed, 2 levels deep, 1 isolated, 1 spawn refused · 1 s · $0.50 · finished`,
-        `- ses_older ${DAY}: "tree ses_older" · not stated · no parts · 1 s · finished`,
+        `- ses_root (this tree) ${DAY}: "New task" · not stated · no parts · ran 1 min · last moved 0 s ago · not finished · recalled`,
+        `- ses_old ${DAY}: "tree ses_old" · not stated · 2 parts: 1 done, 1 failed, 2 levels deep, 1 isolated, 1 spawn refused · ran 1 s · last moved 2 min ago · $0.50 · finished`,
+        `- ses_older ${DAY}: "tree ses_older" · not stated · no parts · ran 1 s · last moved 3 min ago · finished`,
       ].join("\n"),
     )
   })
@@ -701,9 +702,9 @@ describe("recall", () => {
     ;(ports as any).now = () => NOW + 1000
     await recall(ports, state, "ses_top", {})
     expect(readRecord(store.get(recordKey("proj_1", "ses_top")))?.recalled).toEqual({ at: NOW, calls: 3 })
-    expect(recordLine({ ...(await memoryStore(ports.storage).get("proj_1", "ses_top"))!, projectID: "proj_1", sessionID: "ses_top" }, "ses_other")).toEndWith(" · recalled")
+    expect(recordLine({ ...(await memoryStore(ports.storage).get("proj_1", "ses_top"))!, projectID: "proj_1", sessionID: "ses_top" }, "ses_other", NOW)).toEndWith(" · recalled")
     await store.set(recordKey("proj_1", "ses_part"), stored("ses_part", 1, { recalled: { calls: 1 } }))
-    expect(recordLine((await memoryStore(ports.storage).ofProject("proj_1")).find((record) => record.sessionID === "ses_part")!, "ses_other")).toEndWith(" · recalled by a part")
+    expect(recordLine((await memoryStore(ports.storage).ofProject("proj_1")).find((record) => record.sessionID === "ses_part")!, "ses_other", NOW)).toEndWith(" · recalled by a part")
   })
 
   test("gives one record in full by its top session, or says there is none, and takes an empty sessionID for none", async () => {
@@ -816,7 +817,7 @@ describe("note", () => {
 
     const listed = await recall(ports, state, "ses_other", {})
     if (listed.kind !== "list") throw new Error()
-    expect(recordLine(listed.records.find((record) => record.sessionID === "ses_top")!, "ses_other")).toEndWith(
+    expect(recordLine(listed.records.find((record) => record.sessionID === "ses_top")!, "ses_other", NOW)).toEndWith(
       ` · not finished · lesson (${DAY}): "Give the docs to one session."`,
     )
     const full = await recall(ports, state, "ses_other", { sessionID: "ses_top" })
@@ -923,6 +924,23 @@ describe("duration", () => {
   })
 })
 
+describe("age", () => {
+  const record = (movedAt: number) => ({ projectID: "proj_1", sessionID: "ses_a", startedAt: movedAt - 32 * 60_000, movedAt, title: "T", split: "not stated", finished: false, parts: [] })
+
+  test("reads as a duration under a day and in whole days past it", () => {
+    expect(age(3 * 60_000)).toBe("3 min")
+    expect(age(23 * 3_600_000 + 59 * 60_000)).toBe("23 h 59 min")
+    expect(age(24 * 3_600_000)).toBe("1 day")
+    expect(age(5 * 86_400_000 + 3_600_000)).toBe("5 days")
+    expect(age(-5000)).toBe("0 s")
+  })
+
+  test("a listed line says how long the tree ran and, apart from it, how long ago it last moved", () => {
+    expect(recordLine(record(NOW - 3 * 60_000), "ses_b", NOW)).toContain(" · ran 32 min · last moved 3 min ago · not finished")
+    expect(recordLine(record(NOW - 5 * 86_400_000), "ses_b", NOW)).toContain(" · ran 32 min · last moved 5 days ago · not finished")
+  })
+})
+
 describe("courier_recall", () => {
   function tool(ports: MemoryPorts, state: MemoryState) {
     const registered: any[] = []
@@ -939,6 +957,8 @@ describe("courier_recall", () => {
     const listed = await recallTool.execute({}, { sessionID: "ses_root" })
     expect(listed.content).toContain("- ses_old ")
     expect(listed.content).toContain("- ses_root (this tree) ")
+    expect(listed.content).toContain(" · last moved 2 min ago · ")
+    expect(listed.content).toContain(" · last moved 0 s ago · ")
     expect(listed.metadata).toMatchObject({ projectID: "proj_1", top: "ses_root" })
     expect(listed.metadata.records.map((record: StoredRecord) => record.sessionID)).toEqual(["ses_root", "ses_old"])
     holdsNoUndefined(listed.metadata)

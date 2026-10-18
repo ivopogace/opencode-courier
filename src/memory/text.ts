@@ -88,12 +88,13 @@ export const RECALL_OFF =
  */
 export function recallListText(records: ReadonlyArray<StoredRecord>, top: string, now: number) {
   const others = records.filter((record) => record.sessionID !== top)
+  const pinned = others.some((record) => record.pinned)
   const intro = others.length
-    ? `${count(others.length, "earlier tree")} recorded in this project, newest first; weigh how they were split and how their parts went before you decide. ` +
+    ? `${count(others.length, "earlier tree")} recorded in this project, ${pinned ? "pinned first, then newest first" : "newest first"}; weigh how they were split and how their parts went before you decide. ` +
       "A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out. " +
       "The facts are as they stood when the tree last moved: \"not finished\" with an old \"last moved\" is a stale record, not a tree running now. " +
       "courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use." +
-      (others.some((record) => record.pinned) ? ` ${PINNED}` : "")
+      (pinned ? ` ${PINNED}` : "")
     : "No earlier tree is recorded in this project: a tree's record is written by a courier_recall call and as each turn in it ends, and kept 90 days. Decide from the task alone."
   return [intro, ...records.map((record) => recordLine(record, top, now))].join("\n")
 }

@@ -35,7 +35,7 @@ export function addMemoryTools(tools: ToolEditor, ports: MemoryToolPorts) {
     options: { codemode: false },
     description:
       "Look once at what earlier session trees in this project did, before you decide whether and how to split a task: " +
-      "one line per tree, newest first, with how its top split the task, how each part went (its status, how long it ran, " +
+      "one line per tree, those the person pinned first and then newest first, with how its top split the task, how each part went (its status, how long it ran, " +
       "what it cost, how full its context got) and whether a spawn was refused; with sessionID, one tree's record in full. " +
       "Records hold no report bodies or files. Call it once at the start, not in a loop, and not to check on sessions you " +
       "started: their reports wake you.",

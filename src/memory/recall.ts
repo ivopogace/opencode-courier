@@ -58,9 +58,8 @@ function count(ports: MemoryPorts, top: string, kind: ReadKind, sessionIDs: Read
 }
 
 /**
- * courier_recall: notes the call on the caller's tree, then lists the project's records, pinned first and then newest
- * first, or gives the one under `sessionID` in full, counting the listing or the read on each record of another tree.
- * With the memory option off, nothing is written or read.
+ * courier_recall: notes the call on the caller's tree, then lists the project's records, pinned first and then newest first,
+ * or gives the one under `sessionID` in full, each counted on the other trees' records; with the memory option off, nothing is written or read.
  */
 export async function recall(ports: MemoryPorts, state: Pick<MemoryState, "tops">, callerID: string, input: RecallInput): Promise<Recall> {
   if (!ports.memory) return { kind: "off" }

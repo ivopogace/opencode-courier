@@ -45,7 +45,7 @@ const Record = Schema.Struct({
   parts: Schema.Array(Part),
 })
 
-/** The records of the project of the location asked, newest first; none, and `memory` false, when the option is off there. */
+/** The records of the project of the location asked, pinned first and then newest first; none, and `memory` false, when the option is off there. */
 const Records = Schema.Struct({
   memory: Schema.Boolean,
   projectID: Schema.String,

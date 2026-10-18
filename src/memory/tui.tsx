@@ -237,8 +237,7 @@ type Request =
 
 /**
  * Adds the memory view: the project's records (the open session's location, else the TUI's, else the server's default) under
- * `Pinned`, `Today` and the local days they last moved; `enter` shows one in full, `p` pins or unpins one, `x` forgets one or
- * its lesson after a confirm, `esc` goes back and closes.
+ * `Pinned`, `Today` and the days they last moved; `enter` shows one in full, `p` pins or unpins one, `x` forgets one or its lesson after a confirm.
  */
 export function addMemoryView(ctx: Context) {
   const memory = ctx.client.rpc(memoryRpc)
@@ -346,9 +345,8 @@ export function addMemoryView(ctx: Context) {
 
   let opened = false
   /**
-   * Lists the project's records, and the one chosen in full, read again after each forget or pin, until the person closes
-   * the list or leaves it; the record on screen in full is shown again after its lesson is forgotten or kept or it is
-   * pinned, the list after it is forgotten.
+   * Lists the project's records, and the one chosen in full, read again after each forget or pin, until the person closes the
+   * list or leaves it; the record in full is shown again after its lesson is forgotten or kept or it is pinned, the list after it is forgotten.
    */
   async function open() {
     if (opened) return

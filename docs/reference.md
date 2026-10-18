@@ -82,7 +82,7 @@ Each tool's parameters, `?` marking an optional one; the sections below say how 
 | `courier_cancel` | `id` | Drops a message scheduled with `courier_later`. |
 | `courier_subscribe` | `topic`, `sessionID?` | Subscribes a session (this one by default) to [webhook](#webhooks) deliveries for a topic: `owner/repo`, `owner/repo#12` (one pull request or issue) or a name for `/hook/<name>`. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. |
 | `courier_unsubscribe` | `sessionID?`, `topic?` | Drops one topic, or all of a session's when `topic` is omitted. |
-| `courier_recall` | `sessionID?` | One look at the [records](#memory) of the session trees of this project: one line per tree, newest first, its lesson after the facts, or with `sessionID` the record of the tree under that top session in full. Notes the call on the caller's own tree's record. Hidden from a leaf. |
+| `courier_recall` | `sessionID?` | One look at the [records](#memory) of the session trees of this project: one line per tree, the pinned first and then newest first, its lesson after the facts, or with `sessionID` the record of the tree under that top session in full. Notes the call on the caller's own tree's record, and counts the look on the others'. Hidden from a leaf. |
 | `courier_note` | `text` | Writes `text`, one line of at most 300 characters, as the [lesson](#the-lesson) of the caller's own session tree; a sub-orchestrator's is marked with its depth, a second call replaces the first. Refused with a longer text, from a leaf, from a tree with no record, with an empty text and with the memory option off. Hidden from a leaf. |
 
 ## The child's model

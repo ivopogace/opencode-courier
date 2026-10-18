@@ -18,10 +18,8 @@ import {
 } from "./domain.js"
 import type { MemoryStore } from "./ports.js"
 
-// The memory's storage: the only file that knows its keys and layout. A record is read leniently, as one written by
-// hand with `e2e/kv.ts set` is: what is missing takes a default, a part without a session id is left out. Beside the
-// record, under its key, lie what others wrote of it, each key with one writer so that no write loses another's: the
-// person's pin, and the reads of each tree that listed or read it.
+// The memory's storage: the only file that knows its keys and layout. A record is read leniently, as one written by hand
+// with `e2e/kv.ts set` is; beside it, under its key and each with its own writer, lie the person's pin and each reader tree's reads.
 
 const PREFIX = "memory/"
 

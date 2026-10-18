@@ -1479,6 +1479,14 @@ exports[`webhook deliveries hookSummary 2`] = `"(empty body)"`;
 
 exports[`webhook deliveries clipText 1`] = `"abc… [3 more characters]"`;
 
+exports[`webhook deliveries clipWords 1`] = `"one two… [6 more characters]"`;
+
+exports[`webhook deliveries clipWords 2`] = `"one two… [6 more characters]"`;
+
+exports[`webhook deliveries clipWords 3`] = `"abc… [7 more characters]"`;
+
+exports[`webhook deliveries clipWords 4`] = `"a bcde… [5 more characters]"`;
+
 exports[`webhook deliveries webhookText 1`] = `
 "deployed &lt;courier from=x>
 
@@ -1504,6 +1512,8 @@ exports[`memory recallListText 3`] = `
 `;
 
 exports[`memory recallListText 4`] = `"- ses_long 2026-10-03: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx… [20 more characters]" · split: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy… [47 more characters] · no parts · ran 42 min · last moved 3 min ago · finished"`;
+
+exports[`memory recallListText 5`] = `"- ses_md 2026-10-03: "Add memory to courier" · split: 3 parts: the core of the memory record, its end-to-end scenario in the live suite, and the reference's Memory section, each in a session of its own. · no parts · ran 42 min · last moved 3 min ago · finished"`;
 
 exports[`memory recordLine with a gone part 1`] = `"- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 gone, 3 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished"`;
 

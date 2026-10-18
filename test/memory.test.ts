@@ -18,6 +18,7 @@ import {
   readMemory,
   RETENTION_MS,
   splitLineOf,
+  splitProse,
   unreadPart,
   type PartRecord,
   type StoredRecord,
@@ -134,6 +135,27 @@ describe("splitLineOf", () => {
     expect(splitLineOf("Nothing here.")).toBeUndefined()
     expect(splitLineOf("# split: 3 parts: a, b, c\nsplit: later")).toBe("# split: 3 parts: a, b, c")
     expect(splitLineOf("- **split: no, because small; considered: docs**")).toBe("- **split: no, because small; considered: docs**")
+  })
+
+  // #282: the stored line keeps its markdown; only the listing reads it as prose.
+  test("splitProse drops the marks the matcher reads past before the line and the emphasis and code marks closing it", () => {
+    expect(splitProse("**split: 2 parts: core, docs**")).toBe("split: 2 parts: core, docs")
+    expect(splitProse("- **split: no, because small; considered: docs**")).toBe("split: no, because small; considered: docs")
+    expect(splitProse("> # `split: 3 parts: a, b, c`")).toBe("split: 3 parts: a, b, c")
+    expect(splitProse("__split:\n  no, because small__ ")).toBe("split: no, because small")
+    expect(splitProse("I decided to split: no, because it is small")).toBe("I decided to split: no, because it is small")
+    expect(splitProse("split: 2 parts: a-b, c_d")).toBe("split: 2 parts: a-b, c_d")
+    expect(splitProse("not stated")).toBe("not stated")
+  })
+
+  test("the listing shows a long markdown split line as prose, cut at a word, while the record keeps it as written", () => {
+    const split =
+      "**split: no, because the stances are a timed sequence that only my own turns can stage and hold; considered: one child per stance (but the flashes are short), a separate orchestrator session (it would only add a hop).**"
+    const record = { ...stored("ses_md", NOW - 1000, { split }), projectID: "proj_1", sessionID: "ses_md" }
+    expect(recordLine(record, "ses_other", NOW).split(" · ")[1]).toBe(
+      "split: no, because the stances are a timed sequence that only my own turns can stage and hold; considered: one child per stance (but the flashes are short), a… [57 more characters]",
+    )
+    expect(record.split).toBe(split)
   })
 })
 

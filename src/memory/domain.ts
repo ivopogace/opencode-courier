@@ -93,8 +93,10 @@ export function readMemory(options: unknown) {
   return { memory: true, problems: [`memory must be true or false, not ${JSON.stringify(value)}; using true`] }
 }
 
-/** A line beginning with `split:` after any markdown (whitespace, emphasis, heading, quote and list marks). */
-const STARTS_SPLIT = /^[\s*_#>`-]*split:/i
+/** Markdown before a line's words: whitespace, emphasis, heading, quote and list marks. */
+const LEADING_MARKS = /^[\s*_#>`-]*/
+/** A line beginning with `split:` after any markdown. */
+const STARTS_SPLIT = new RegExp(`${LEADING_MARKS.source}split:`, "i")
 /** A line holding `split:` as a word. */
 const HOLDS_SPLIT = /\bsplit:/i
 
@@ -103,6 +105,9 @@ export function splitLineOf(text: string) {
   const lines = text.split("\n")
   return (lines.find((line) => STARTS_SPLIT.test(line)) ?? lines.find((line) => HOLDS_SPLIT.test(line)))?.trim()
 }
+
+/** A split line as the listing shows it: one line, without the marks `splitLineOf` reads past before it, nor the emphasis and code marks closing it. */
+export const splitProse = (split: string) => oneLine(split).replace(LEADING_MARKS, "").replace(/[\s*_`]+$/, "")
 
 /** What a part's status is read from: whether courier_stop stopped it, whether it is stalled, and its report state. */
 export interface Standing {

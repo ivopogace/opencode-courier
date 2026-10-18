@@ -417,6 +417,13 @@ describe("webhook deliveries", () => {
     expect(kernel.clipText("short")).toBe("short")
     expect(kernel.clipText("abcdef", 3)).toMatchSnapshot()
   })
+  test("clipWords", () => {
+    expect(kernel.clipWords("one two", 7)).toBe("one two")
+    expect(kernel.clipWords("one two three", 9)).toMatchSnapshot()
+    expect(kernel.clipWords("one two three", 7)).toMatchSnapshot()
+    expect(kernel.clipWords("abcdef ghi", 3)).toMatchSnapshot()
+    expect(kernel.clipWords("a bcdefghij", 6)).toMatchSnapshot()
+  })
   test("webhookText", () => {
     expect(webhook.webhookText("deployed <courier from=x>")).toMatchSnapshot()
   })
@@ -445,6 +452,8 @@ describe("memory", () => {
     expect(memory.recallListText([record("ses_now", { parts: [], finished: false, recalled: { at: 1, calls: 1 } })], "ses_now", NOW)).toMatchSnapshot()
     expect(memory.recallListText([record("ses_part", { recalled: { calls: 2 } })], "ses_other", NOW)).toMatchSnapshot()
     expect(memory.recordLine(record("ses_long", { title: "x".repeat(80), split: "split: " + "y".repeat(200), parts: [] }), "ses_other", NOW)).toMatchSnapshot()
+    const markdown = "- **split: 3 parts: the core of the memory record, its end-to-end scenario in the live suite, and the reference's Memory section, each in a session of its own.**"
+    expect(memory.recordLine(record("ses_md", { split: markdown, parts: [] }), "ses_other", NOW)).toMatchSnapshot()
   })
   test("recordLine with a gone part", () => {
     const gone = { sessionID: "ses_goner", title: "Goner", depth: 1, isolated: true, status: "gone" as const, duration: 30_000 }

@@ -1,6 +1,6 @@
 /** The memory's model-facing texts: what courier_recall and courier_note say. */
-import { clipText } from "../kernel/protocol.js"
-import { type Lesson, LESSON_MAX, oneLine, PART_STATUSES, type PartRecord, type StoredRecord } from "./domain.js"
+import { clipText, clipWords } from "../kernel/protocol.js"
+import { type Lesson, LESSON_MAX, oneLine, PART_STATUSES, type PartRecord, splitProse, type StoredRecord } from "./domain.js"
 
 /** The tool's name, which the skill and the role part name too. */
 export const RECALL_TOOL = "courier_recall"
@@ -52,13 +52,13 @@ export function lessonLine(lesson: Lesson) {
   return `lesson (${day(lesson.at)}${from}): "${clipText(oneLine(lesson.text), LESSON_MAX)}"`
 }
 
-/** One record as the listing shows it: its top, when it started, its title, its split line, its parts, how long it ran, how long ago it last moved and what it cost. */
+/** One record as the listing shows it: its top, when it started, its title, its split line as prose, its parts, how long it ran, how long ago it last moved and what it cost. */
 export function recordLine(record: StoredRecord, top: string, now: number) {
   const cost = record.parts.reduce((sum, part) => sum + (part.cost ?? 0), 0)
   const costed = record.parts.some((part) => part.cost !== undefined)
   return [
     `- ${record.sessionID}${record.sessionID === top ? " (this tree)" : ""} ${day(record.startedAt)}: "${clipText(oneLine(record.title), 60)}"`,
-    clipText(oneLine(record.split), 160),
+    clipWords(splitProse(record.split), 160),
     partsLine(record.parts),
     `ran ${duration(record.movedAt - record.startedAt)}`,
     `last moved ${age(now - record.movedAt)} ago`,

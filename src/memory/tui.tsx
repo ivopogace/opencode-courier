@@ -133,8 +133,18 @@ export function wrap(text: string, width: number) {
   return rows
 }
 
-/** A row of a record in full: a fact of the tree, one of its parts, or its lesson, which `x` forgets alone. */
-export type Line = { readonly kind: "fact"; readonly key: string } | { readonly kind: "part"; readonly sessionID: string } | { readonly kind: "lesson" }
+/** A row of a record in full: a fact of the tree, one of its parts, or a row of its lesson (0 its heading), which `x` forgets alone. */
+export type Line = { readonly kind: "fact"; readonly key: string } | { readonly kind: "part"; readonly sessionID: string } | { readonly kind: "lesson"; readonly row: number }
+
+/** Where the cursor goes in a record in full after its lesson is forgotten: the lesson's first row, or the row that replaced it. */
+export const lessonLine = (record: MemoryRecord): Line => (record.lesson ? { kind: "lesson", row: 0 } : { kind: "fact", key: "lesson" })
+
+/** The records the list's cursor tries, in order, after one is forgotten or kept: it, unless forgotten, then those after it, then those before it, nearest first. */
+export function nearby(sessionIDs: ReadonlyArray<string>, sessionID: string, forgotten: boolean) {
+  const at = sessionIDs.indexOf(sessionID)
+  if (at < 0) return forgotten ? [] : [sessionID]
+  return [...(forgotten ? [] : [sessionID]), ...sessionIDs.slice(at + 1), ...sessionIDs.slice(0, at).reverse()]
+}
 
 /** The rows of a record in full, in three categories: the tree's facts, its parts and its lesson. */
 export function detailOptions(record: MemoryRecord): Array<{ title: string; value: Line; category: string; description?: string }> {
@@ -145,8 +155,8 @@ export function detailOptions(record: MemoryRecord): Array<{ title: string; valu
     : fact("recalled", "Not recalled")
   const lesson = record.lesson
     ? [
-        { title: lessonHeading(record.lesson), value: { kind: "lesson" } as Line, category: "Lesson" },
-        ...wrap(record.lesson.text, LESSON_ROW).map((row) => ({ title: row, value: { kind: "lesson" } as Line, category: "Lesson" })),
+        { title: lessonHeading(record.lesson), value: { kind: "lesson", row: 0 } as Line, category: "Lesson" },
+        ...wrap(record.lesson.text, LESSON_ROW).map((row, at) => ({ title: row, value: { kind: "lesson", row: at + 1 } as Line, category: "Lesson" })),
       ]
     : [{ title: "No lesson", value: { kind: "fact", key: "lesson" } as Line, category: "Lesson", description: "courier_note writes one line per tree" }]
   return [
@@ -186,7 +196,7 @@ export function forgottenLine(record: MemoryRecord, outcome: Forgotten["outcome"
 /** What the person asked of the list or the record on screen. */
 type Request =
   | { readonly kind: "open"; readonly record: MemoryRecord }
-  | { readonly kind: "forget"; readonly record: MemoryRecord; readonly lesson: boolean }
+  | { readonly kind: "forget"; readonly record: MemoryRecord; readonly lesson: boolean; readonly line?: Line }
   | { readonly kind: "back" }
 
 /**
@@ -228,13 +238,15 @@ export function addMemoryView(ctx: Context) {
     return Promise.race([choosing.then((value): Request => (value === undefined ? { kind: "back" } : chosen(value))), requested])
   }
 
-  const showList = (read: Records) => {
+  const showList = (read: Records, current: MemoryRecord | undefined) => {
     const open = openSession()
     const now = Date.now()
     return show<MemoryRecord>(
       {
         title: `Memory (${read.records.length})`,
         placeholder: "Search",
+        // The host puts the cursor on the option whose value deep-equals it, the first row with none.
+        ...(current ? { current } : {}),
         // The lesson goes under the row as `details`, lines the host's select draws though the plugin API does not declare
         // them (docs/maintainers/plugin-api-notes.md); a host without them shows the row alone.
         options: read.records.map((record) => ({
@@ -250,15 +262,15 @@ export function addMemoryView(ctx: Context) {
     )
   }
 
-  const showRecord = (record: MemoryRecord) =>
+  const showRecord = (record: MemoryRecord, current: Line | undefined) =>
     show<Line>(
-      { title: `${localDay(record.movedAt)}  ${nameOf(record)}`, placeholder: "Search", options: detailOptions(record) },
+      { title: `${localDay(record.movedAt)}  ${nameOf(record)}`, placeholder: "Search", options: detailOptions(record), ...(current ? { current } : {}) },
       // Enter on a row goes back to the list.
       () => ({ kind: "back" }),
-      (line) => ({ kind: "forget", record, lesson: line.kind === "lesson" }),
+      (line) => ({ kind: "forget", record, lesson: line.kind === "lesson", line }),
     )
 
-  /** Asks the person to confirm, then forgets the record, or only its lesson, through the RPC; false when they kept it. */
+  /** Asks the person to confirm, then forgets the record, or only its lesson, through the RPC; false when they kept it or the RPC failed. */
   async function confirmForget(record: MemoryRecord, lesson: boolean) {
     const confirmed = await ctx.ui.dialog.confirm({
       title: lesson ? "Forget lesson" : "Forget record",
@@ -269,22 +281,27 @@ export function addMemoryView(ctx: Context) {
     try {
       const result = await memory.forget({ sessionID: record.sessionID, lesson }, { location: where() })
       ctx.ui.toast.show({ title: "courier", message: forgottenLine(record, result.outcome), variant: result.outcome === "none" ? "warning" : "success" })
+      return true
     } catch (error) {
       fail("Not forgotten")(error)
+      return false
     }
-    return true
   }
 
   let opened = false
   /**
    * Lists the project's records, and the one chosen in full, read again after each forget, until the person closes the
-   * list or leaves it; the record on screen in full is shown again after its lesson is forgotten, the list after it is.
+   * list or leaves it; the record on screen in full is shown again after its lesson is forgotten or kept, the list after it is.
    */
   async function open() {
     if (opened) return
     opened = true
     try {
       let viewing: string | undefined
+      // The list's cursor goes to the first of these records still in the fresh read, else to the first row.
+      let near: string[] = []
+      // The record in full's cursor, or its lesson's first row or what replaced it.
+      let line: Line | "lesson" | undefined
       for (;;) {
         const read = await memory.records({}, { location: where() }).catch(fail("The records could not be read"))
         if (!read) return
@@ -292,10 +309,14 @@ export function addMemoryView(ctx: Context) {
         if (!read.records.length) return say(NO_RECORDS)
         const record = viewing === undefined ? undefined : read.records.find((one) => one.sessionID === viewing)
         viewing = record?.sessionID
-        const request = await (record ? showRecord(record) : showList(read))
+        const listed = read.records.map((one) => one.sessionID)
+        const current = near.map((sessionID) => read.records.find((one) => one.sessionID === sessionID)).find((one) => one !== undefined)
+        const request = await (record ? showRecord(record, line === "lesson" ? lessonLine(record) : line) : showList(read, current))
+        line = undefined
         if (request.kind === "back") {
-          // The host closed the dialog on enter or esc: a record goes back to the list, the list is left.
+          // The host closed the dialog on enter or esc: a record goes back to the list, onto its row, the list is left.
           if (!record) return
+          near = nearby(listed, record.sessionID, false)
           viewing = undefined
           continue
         }
@@ -303,8 +324,12 @@ export function addMemoryView(ctx: Context) {
           viewing = request.record.sessionID
           continue
         }
-        await confirmForget(request.record, request.lesson)
-        if (!request.lesson) viewing = undefined
+        const forgotten = await confirmForget(request.record, request.lesson)
+        near = nearby(listed, request.record.sessionID, forgotten && !request.lesson)
+        // Kept, the record in full is shown again on the row under the cursor; its lesson forgotten, on what took its place.
+        if (record && !forgotten) line = request.line
+        else if (request.lesson) line = "lesson"
+        else viewing = undefined
       }
     } finally {
       opened = false

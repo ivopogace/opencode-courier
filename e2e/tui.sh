@@ -6,7 +6,8 @@
 # inbox opened from a child lists the top session's courier_answer prompt first and allows it (#185);
 # a child showing a form waits on the person in the footer and the panel (#183); x in the panel forgets a gone
 # isolated child, with its worktree (#187); and /courier memory lists the project's tree records, x forgets a lesson
-# alone, then every record, and the view says when memory is off (#262); esc goes back and closes, q filters (#273).
+# alone, then every record, and the view says when memory is off (#262); esc goes back and closes, q filters (#273);
+# after a forget the cursor is on the next record (#271).
 # Then the same from the package `opencode plugin add` installs. Driven by e2e/mock-model.mjs's
 # COURIER-TUI, so no API key is needed.
 #
@@ -500,11 +501,27 @@ tmux send-keys -t "$TMUX_SESSION" BSpace BSpace BSpace
 check "cleared, the search shows every row again" "$(shows "2 parts: 2 done" 10 tui-memory-unfiltered)"
 tmux send-keys -t "$TMUX_SESSION" Escape
 check "esc closes the list" "$(hides "Memory ($total)" 10 tui-memory-closed)"
+# Three records seeded as the project's newest (#271): x on the second, confirmed, leaves the cursor on the third, which a
+# second x names in its confirm; kept, the list is back on it.
+seeded=$(date +%s%3N)
+for n in 1 2 3; do
+  kv set "memory/$project/ses_cursor$n" "$(jq -c --arg id "ses_cursor$n" --arg title "Cursor seed $n" --argjson at "$((seeded + (4 - n) * 1000))" \
+    '.sessionID = $id | .title = $title | .movedAt = $at | .startedAt = ($at - 60000) | del(.lesson)' <<<"$record")" "memory/$project/$parent"
+done
+total=$((total + 3))
 tmux send-keys -t "$TMUX_SESSION" "/courier memory"
 sleep 1
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "the view opens again" "$(shows "Memory ($total)" 30 tui-memory-again)"
-left=$total
+tmux send-keys -t "$TMUX_SESSION" Down x
+check "x on the second row asks to forget it" "$(shows "of \"Cursor seed 2\"" 15 tui-memory-cursor-confirm)"
+tmux send-keys -t "$TMUX_SESSION" Enter
+left=$((total - 1))
+check "once forgotten, the list is shown without it" "$(shows "Memory ($left)" 15 tui-memory-cursor-forgotten)"
+tmux send-keys -t "$TMUX_SESSION" x
+check "the cursor is on what was the third row: x names it" "$(shows "of \"Cursor seed 3\"" 15 tui-memory-cursor)"
+tmux send-keys -t "$TMUX_SESSION" Escape
+check "kept, the list is back with every record" "$([ "$(hides "Forget record" 15 tui-memory-cursor-kept)" = true ] && [ "$(shows "Memory ($left)" 15 tui-memory-cursor-kept)" = true ] && echo true || echo false)"
 while [ "$left" -gt 0 ]; do
   tmux send-keys -t "$TMUX_SESSION" x
   [ "$(shows "Forget record" 15 tui-memory-confirm)" = true ] || break
@@ -572,7 +589,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-list tui-memory-record tui-memory-lesson-confirm tui-memory-lesson-forgotten tui-memory-no-lesson tui-memory-back tui-memory-search tui-memory-unfiltered tui-memory-again tui-memory-confirm tui-memory-fewer tui-memory-empty tui-memory-off tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-list tui-memory-record tui-memory-lesson-confirm tui-memory-lesson-forgotten tui-memory-no-lesson tui-memory-back tui-memory-search tui-memory-unfiltered tui-memory-again tui-memory-cursor-confirm tui-memory-cursor-forgotten tui-memory-cursor tui-memory-cursor-kept tui-memory-confirm tui-memory-fewer tui-memory-empty tui-memory-off tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

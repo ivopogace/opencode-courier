@@ -423,7 +423,9 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   dialog through the TUI's `dialog.replace`, which calls the open one's `onClose`: an open `select`
   then resolves with `undefined`, as on `esc`, and `clear()` does the same. `select` takes a fixed
   list and no starting query (`search` only filters), so the asks inbox shows a changed list by
-  opening a new `select`, whose search starts empty, and sets its size again (`replace` resets it).
+  opening a new `select`, whose search starts empty, and sets its size again (`replace` resets it). Its `current`
+  puts the cursor on the option whose value deep-equals it (`isDeepEqual` in `ui/dialog-select.tsx`), the first row
+  with none, so a value read afresh finds its row.
 - **A select's rows.** `DialogSelectOption` in the plugin API declares `title`, `value`, `description`, `footer`,
   `category` and `disabled`. The host's row (`DialogSelectRow` in `packages/tui/src/ui/dialog-select.tsx`) is one
   line: the title, truncated to 61 characters, the description after it in the same text, cut at the row's end,

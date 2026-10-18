@@ -12,9 +12,11 @@ import {
   forgetMessage,
   forgottenLine,
   lessonHeading,
+  lessonLine,
   LESSON_ROW,
   MEMORY_COMMAND,
   MEMORY_OFF,
+  nearby,
   NO_RECORDS,
   partLine,
   partsCounted,
@@ -57,6 +59,7 @@ const record = (sessionID: string, title: string, movedAt: number, more: Partial
 
 const newest = record("ses_root", "Add memory to courier", NOW, { lesson, recalled: { at: NOW - 40 * 60_000, calls: 2 } })
 const older = record("ses_old", "Fix the bug", NOW - 86_400_000, { parts: [], finished: false, split: "not stated" })
+const oldest = record("ses_oldest", "Bump the pin", NOW - 2 * 86_400_000)
 /** The same two trees, the first last moved now, so that the view lists it under "Today" on the real clock. */
 const LIVE = Date.now()
 const todays = record("ses_root", "Add memory to courier", LIVE, { lesson, recalled: { at: LIVE - 40 * 60_000, calls: 2 } })
@@ -252,8 +255,8 @@ describe("the memory view's lines", () => {
       { kind: "part", sessionID: "ses_core" },
       { kind: "part", sessionID: "ses_docs" },
       { kind: "part", sessionID: "ses_review" },
-      { kind: "lesson" },
-      { kind: "lesson" },
+      { kind: "lesson", row: 0 },
+      { kind: "lesson", row: 1 },
     ])
   })
 
@@ -270,6 +273,17 @@ describe("the memory view's lines", () => {
     expect(options.filter((option) => option.category === "Lesson").map((option) => option.title)).toEqual(["lesson (2026-10-18, from depth 1)", ...wrap("x ".repeat(100), LESSON_ROW)])
     expect(detailOptions(older).filter((option) => option.category === "Lesson")).toEqual([{ title: "No lesson", value: { kind: "fact", key: "lesson" }, category: "Lesson", description: "courier_note writes one line per tree" }])
     expect(detailOptions({ ...older, recalled: undefined }).find((option) => option.value.kind === "fact" && option.value.key === "recalled")!.title).toBe("Not recalled")
+  })
+
+  test("the list's cursor after a forget tries the records after it, then those before it, nearest first; after a keep, the record first", () => {
+    const ids = ["a", "b", "c", "d"]
+    expect(nearby(ids, "b", true)).toEqual(["c", "d", "a"])
+    expect(nearby(ids, "d", true)).toEqual(["c", "b", "a"])
+    expect(nearby(ids, "b", false)).toEqual(["b", "c", "d", "a"])
+    expect(nearby(["a"], "a", true)).toEqual([])
+    expect(nearby(ids, "z", false)).toEqual(["z"])
+    expect(lessonLine(newest)).toEqual({ kind: "lesson", row: 0 })
+    expect(lessonLine(older)).toEqual({ kind: "fact", key: "lesson" })
   })
 
   test("the confirm names the record, with the local day it last moved, and says what goes, the toast what the server did", () => {
@@ -388,6 +402,36 @@ describe("the memory view", () => {
     expect(fake.dialogs.at(-1)!.kind).toBe("confirm")
   })
 
+  test("after a forget the cursor is on the record that followed it, or the one before it for the last; the first list has none", async () => {
+    const fake = fakeContext([newest, older, oldest])
+    fake.answers.push(press("x", "Fix the bug"), yes, press("x", "Bump the pin"), yes, escape)
+    await addMemoryView(fake.context).open()
+
+    const [first, second, third] = fake.selects()
+    expect("current" in first!.options).toBe(false)
+    expect(second!.options.options.map((option: any) => option.value.sessionID)).toEqual(["ses_root", "ses_oldest"])
+    expect(second!.options.current).toBe(oldest)
+    expect(third!.options.current).toBe(newest)
+  })
+
+  test("after a forget, a neighbour gone meanwhile is passed over for the next nearest", async () => {
+    const fake = fakeContext([newest, older, oldest])
+    // Another TUI forgets the record after it while the confirm is open.
+    fake.answers.push(press("x", "Fix the bug"), () => {
+      fake.state.records = [newest, older]
+      return true
+    }, escape)
+    await addMemoryView(fake.context).open()
+    expect(fake.selects()[1]!.options.current).toBe(newest)
+  })
+
+  test("after a keep the cursor is on the record kept", async () => {
+    const fake = fakeContext([newest, older, oldest])
+    fake.answers.push(press("x", "Fix the bug"), no, escape)
+    await addMemoryView(fake.context).open()
+    expect(fake.selects()[1]!.options.current).toBe(older)
+  })
+
   test("keep on the confirm forgets nothing and shows the list again", async () => {
     const fake = fakeContext([newest, older])
     fake.answers.push(press("x", "Add memory"), no, press("x"), escape, escape)
@@ -413,6 +457,22 @@ describe("the memory view", () => {
     expect(detailAgain!.options.options.filter((option: any) => option.category === "Lesson").map((option: any) => option.title)).toEqual(["No lesson"])
     expect(list!.options.title).toBe("Memory (2)")
     expect(fake.toasts).toEqual([{ title: "courier", message: 'Forgot the lesson of "Add memory to courier"; its facts stay', variant: "success" }])
+    // The record shown again is on the row that replaced the lesson, and back in the list on its own row.
+    expect("current" in detail!.options).toBe(false)
+    expect(detailAgain!.options.current).toEqual({ kind: "fact", key: "lesson" })
+    expect(list!.options.current).toEqual({ ...newest, lesson: undefined })
+  })
+
+  test("keep on the lesson of a record in full shows the record again on the row under the cursor", async () => {
+    const fake = fakeContext([newest, older])
+    fake.answers.push(pick("Add memory"), press("x", "The docs part"), no, escape, escape)
+    await addMemoryView(fake.context).open()
+
+    expect(fake.forgets()).toEqual([])
+    const [, detail, detailAgain, list] = fake.selects()
+    expect(detailAgain!.options.title).toBe(detail!.options.title)
+    expect(detailAgain!.options.current).toEqual({ kind: "lesson", row: 1 })
+    expect(list!.options.current).toBe(newest)
   })
 
   test("x on any other row of a record in full forgets the record, and goes back to the list", async () => {
@@ -423,6 +483,18 @@ describe("the memory view", () => {
     expect(fake.confirms()[0]!.options.title).toBe("Forget record")
     expect(fake.forgets()).toEqual([{ method: "forget", input: { sessionID: "ses_root", lesson: false }, options: { location: { directory: "/project" } } }])
     expect(fake.selects().map((one) => one.options.title)).toEqual(["Memory (2)", "Sun Oct 18 2026  Add memory to courier", "Memory (1)"])
+    expect(fake.selects()[2]!.options.current).toBe(older)
+  })
+
+  test("keep on any other row of a record in full stays in the record, on that row", async () => {
+    const fake = fakeContext([newest, older])
+    fake.answers.push(pick("Add memory"), press("x", "Docs"), no, escape, escape)
+    await addMemoryView(fake.context).open()
+
+    expect(fake.forgets()).toEqual([])
+    const [, , detailAgain] = fake.selects()
+    expect(detailAgain!.options.title).toBe("Sun Oct 18 2026  Add memory to courier")
+    expect(detailAgain!.options.current).toEqual({ kind: "part", sessionID: "ses_docs" })
   })
 
   test("a record already gone, or a forget the server refuses, is said in a toast, and the list goes on", async () => {

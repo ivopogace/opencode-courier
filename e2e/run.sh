@@ -1366,6 +1366,19 @@ run_memory() {
       length == 1 and (.[0] | contains(" [57 more characters] · then, after 1 part: split: 2 parts: its tests, its docs · 1 part: 1 done")))')"
   check "and the refresh at that turn's end, reading the same replies, appended nothing" \
     "$(record_of "$said" ".movedAt > $(jq '.movedAt' <<<"$record")" | jq -r --argjson before "$record" '.movedAt > $before.movedAt and .revisions == $before.revisions and .split == $before.split')"
+  # A mention, then a stated split line (#294): the stated line replaces the mention, once, and the mention is no revision.
+  mentioned=$(prompt "COURIER-RECALL" | jq -r 'select(.type == "tool_use") | .sessionID' | head -1)
+  mention='I decided to split: after reading the code'
+  prompt_in "$mentioned" "COURIER-SAY $mention" >/dev/null
+  check "a passing mention of a split, while no line states one, is kept as the record's split line" \
+    "$(record_of "$mentioned" ".split == \"$mention\"" | jq -r --arg mention "$mention" '.split == $mention')"
+  stated='split: 2 parts: core, docs'
+  prompt_in "$mentioned" "COURIER-SAY $stated" >/dev/null
+  check "a line stating one then replaces it, with no revisions" \
+    "$(record_of "$mentioned" ".split == \"$stated\"" | jq -r --arg stated "$stated" '.split == $stated and (has("revisions") | not)')"
+  check "which the listing shows with no later line" \
+    "$(prompt_in "$mentioned" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg mentioned "$mentioned" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $mentioned + " (this tree) "))) |
+      length == 1 and (.[0] | contains(" · split: 2 parts: core, docs · ") and (contains("then, after") | not) and (contains("after reading the code") | not)))')"
   # A record written by hand, as docs/reference.md's Memory section describes one and the real-model evaluation seeds it.
   seeded='{"startedAt":1760000000000,"movedAt":1760000900000,"title":"Seeded by hand","split":"split: 2 parts: core, docs","finished":true,"lesson":{"text":"Give the docs to one session","at":1760000890000},"parts":[{"sessionID":"ses_seed_core","title":"Core","depth":1,"isolated":true,"group":"wave","status":"done","duration":540000,"cost":0.42,"context":0.31},{"sessionID":"ses_seed_docs","title":"Docs","depth":1,"isolated":false,"status":"partial","duration":60000,"refused":1}]}'
   kv set "memory/$project/ses_seeded" "$seeded" "memory/$project/$root"

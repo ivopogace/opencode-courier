@@ -1,6 +1,6 @@
 import { finite, isNotFound, millis } from "../platform/json.js"
 import { busy, contextOf, reportState, stalledAmong, subtree, type Below, type ModelWindow } from "../tree/index.js"
-import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, revise, revisionsBeside, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
+import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, replacingMention, revise, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { memoryStore } from "./store.js"
 
@@ -126,10 +126,10 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   const lesson = latest?.lesson ?? previous?.lesson
   // The first stated line stays even when compaction has dropped its reply; a later one is a revision.
   const first = latest?.split ?? NOT_STATED
-  const split = splitOf(first, said.map((reply) => reply.text).join("\n"))
+  const found = splitOf(first, said.map((reply) => reply.text).join("\n"))
   const stated = statedIn(said)
-  const replaced = split !== first
-  const recorded = replaced ? revisionsBeside(split, latest?.revisions) : latest?.revisions
+  const replaced = found !== first
+  const { split, revisions: recorded } = replaced ? replacingMention(found, latest?.revisions) : { split: first, revisions: latest?.revisions }
   // The line that replaced a mention is the first stated, so beside revisions already recorded it is not one of them too.
   const since = replaced && recorded ? stated.slice(1) : stated
   const revisions = split === NOT_STATED ? undefined : revise({ split, revisions: recorded }, since, at, parts.length)

@@ -20,8 +20,8 @@ import {
   partStatus,
   readMemory,
   RETENTION_MS,
+  replacingMention,
   revise,
-  revisionsBeside,
   splitLineOf,
   splitLinesOf,
   splitOf,
@@ -735,7 +735,7 @@ describe("refresh", () => {
     })
   })
 
-  test("a mention recorded with the line replacing it as its first revision, as before #294, keeps that line once, as split", async () => {
+  test("a mention recorded with the stated lines as its revisions, as before #294, has the first of them as split and keeps the rest", async () => {
     const { ports, state, store, sessions } = fakePorts({ ses_top: { updated: 1, idle: 1 } })
     const [a, b] = [{ text: "split: 1 part: core", at: 2, parts: 0 }, { text: "split: 2 parts: core, docs", at: 3, parts: 1 }]
     await store.set(recordKey("proj_1", "ses_top"), stored("ses_top", NOW - 9000, { split: mention, revisions: [a] }))
@@ -746,9 +746,15 @@ describe("refresh", () => {
 
     await store.set(recordKey("proj_1", "ses_top"), stored("ses_top", NOW - 9000, { split: mention, revisions: [a, b] }))
     sessions.ses_top!.messages = [text(mention), done(a.text, 2), done(b.text, 3)]
-    expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toMatchObject({ split: a.text, revisions: [b] })
-    expect(revisionsBeside(`**${a.text}**`, [a, b, a])).toEqual([b, a])
-    expect(revisionsBeside(b.text, [a])).toEqual([a])
+    expect(await refresh(ports, state, "ses_top", NOW - 4000, "ses_top")).toMatchObject({ split: a.text, revisions: [b] })
+
+    // The first line's reply compacted away, the second is still among the revisions: the first is split all the same.
+    await store.set(recordKey("proj_1", "ses_top"), stored("ses_top", NOW - 9000, { split: mention, revisions: [a, b] }))
+    sessions.ses_top!.messages = [done(b.text, 3), done("split: 3 parts", 4)]
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toMatchObject({ split: a.text, revisions: [b, { text: "split: 3 parts", at: 4, parts: 0 }] })
+    expect(replacingMention(`**${a.text}**`, [a, b, a])).toEqual({ split: a.text, revisions: [b, a] })
+    expect(replacingMention(b.text, [a])).toEqual({ split: b.text, revisions: [a] })
+    expect(replacingMention(b.text, undefined)).toEqual({ split: b.text })
   })
 
   test("another session's turn end reads only the top's finished replies, while its record states no split line; the top's own reads all", async () => {

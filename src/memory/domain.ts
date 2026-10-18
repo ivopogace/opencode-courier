@@ -173,10 +173,14 @@ export function revise(previous: Pick<TreeRecord, "split" | "revisions">, stated
   return revisions.length ? revisions : undefined
 }
 
-/** The revisions beside a `split` that replaced a mention: without a first worded as it, as one was recorded before #294; none for none left. */
-export function revisionsBeside(split: string, revisions: ReadonlyArray<Revision> | undefined) {
-  const kept = revisions?.[0] && splitProse(revisions[0].text) === splitProse(split) ? revisions.slice(1) : revisions
-  return kept?.length ? kept : undefined
+/**
+ * The split and revisions once the stated line `found` replaces a mention: when `found` is among the revisions (recorded beside the
+ * mention before #294), the first of them was stated first and is `split`, the rest stay; else `found` is, beside them all.
+ */
+export function replacingMention(found: string, revisions: ReadonlyArray<Revision> | undefined): Pick<TreeRecord, "split" | "revisions"> {
+  const [first, ...rest] = revisions ?? []
+  if (!first || !revisions!.some((one) => splitProse(one.text) === splitProse(found))) return { split: found, ...(first ? { revisions } : {}) }
+  return { split: first.text, ...(rest.length ? { revisions: rest } : {}) }
 }
 
 /** Heading, quote and list marks before a line's words, each with the space markdown puts after it, unlike the `#` of `#282`. */

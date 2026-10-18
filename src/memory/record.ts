@@ -86,6 +86,7 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   const read = await Promise.all(
     nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at, known.has(node.entry.sessionID), node.entry.sessionID === ended)),
   )
+  const split = splitLineOf(await replies)
   // Read again just before the write: a courier_recall or courier_note call, or another turn end's refresh, wrote meanwhile.
   const latest = (await store.get(info.projectID, top).catch(() => previous)) ?? previous
   const last = new Map(latest?.parts.map((one) => [one.sessionID, one]))
@@ -96,7 +97,7 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
     startedAt: finite(millis(info.time.created)) ?? previous?.startedAt ?? at,
     movedAt: at,
     title: info.title ?? previous?.title ?? "",
-    split: splitLineOf(await replies) ?? latest?.split ?? NOT_STATED,
+    split: split ?? latest?.split ?? NOT_STATED,
     finished: !busy(info.time) && !read.some(({ running }) => running) && parts.every((one) => one.status !== "out" && one.status !== "stalled"),
     ...(recalled ? { recalled } : {}),
     ...(lesson ? { lesson } : {}),

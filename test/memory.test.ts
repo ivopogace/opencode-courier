@@ -424,6 +424,26 @@ describe("refresh", () => {
     ])
   })
 
+  test("reads the top's messages before the record it writes over, so a part's refresh meanwhile is kept", async () => {
+    const { ports, state, sessions } = fakePorts(
+      { ses_top: { updated: 1, idle: 1, messages: [text("split: 2 parts: a, b")] }, ses_a: { updated: 1, idle: 1, messages: [usage(300)] }, ses_b: { updated: 1, idle: 1 } },
+      [SMALL],
+    )
+    await tree(ports)
+    await refresh(ports, state, "ses_top", NOW - 5000, "ses_a")
+    sessions.ses_a!.messages = [usage(600)]
+    const context = ports.session.context
+    ;(ports.session as any).context = async (input: { sessionID: string }) => {
+      // ses_a's refresh runs whole while the top's own refresh reads its messages.
+      if (input.sessionID === "ses_top") await refresh(ports, state, "ses_top", NOW - 1000, "ses_a")
+      return context(input)
+    }
+
+    const record = await refresh(ports, state, "ses_top", NOW, "ses_top")
+
+    expect(record!.parts[0]).toMatchObject({ sessionID: "ses_a", context: 0.6 })
+  })
+
   test("keeps a part's last recorded use when its messages cannot be read", async () => {
     const { ports, state } = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_a: { updated: 1, idle: 1, messages: [usage(300), spawnCall("error")] }, ses_b: { updated: 1, idle: 1 } }, [SMALL])
     await tree(ports)

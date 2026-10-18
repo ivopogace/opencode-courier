@@ -96,7 +96,8 @@ import rules and the reasons for them.
 - `memory/`: one record per session tree, under `memory/<projectID>/<topSessionID>`, and its lesson.
   `domain.ts` the record's shape (`TreeRecord`, `PartRecord`, `PartStatus`, `Lesson`, `Revision`), the
   `memory` option (`readMemory`), `partStatus`, `isSettled`, what a part whose session cannot be read keeps
-  (`unreadPart`), the split line, its append-only revisions (`revise`) and how the listing shows it
+  (`unreadPart`), the split line (`splitOf`: a stated line, `isStated`, outranks a mention once), its append-only
+  revisions (`revise`) and how the listing shows it
   (`splitProse`), `oneLine`, `lessonText`
   (clips a hand-written record's lesson at `LESSON_MAX`, which `courier_note` refuses instead), the
   merge that keeps parts the roster forgot and the retention (`keep`); `ports.ts` `RefreshPorts` (what

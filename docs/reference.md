@@ -645,7 +645,9 @@ reads the roster's subtree under the top, each session's info and its [report
 state](#a-child-that-ends-without-a-report), and stored messages only where they can have changed: a
 part's `context` and `refused` are read from its messages when its own turn ends or it is first seen,
 and kept from the last refresh otherwise, and the top's, for its `split` and `revisions`, on its own
-turn ends and while the record states no split line yet. It runs through the plugin's event follower, so whichever
+turn ends and while the record states no split line yet (`not stated`, or only a mention). Another session's turn end
+reads only the top's finished replies (`time.completed` set), so a line the top is still writing waits for its
+own turn end. It runs through the plugin's event follower, so whichever
 instance follows OpenCode's events writes it, once. A session the roster has forgotten since keeps the
 state it was last recorded in, so the record stands on its own once the roster is gone, unless it had not
 settled and OpenCode no longer knows it (below).
@@ -671,7 +673,7 @@ duration in milliseconds:
 | `startedAt` | When the top session was created. |
 | `movedAt` | When a turn in the tree last ended, or the record was first written by `courier_recall`. |
 | `title` | The top session's title, as OpenCode has it at the last refresh. |
-| `split` | The top's split line, the first line of its replies that states one (`split: no, because …` or `split: <n> parts: …`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), kept as written, markdown included, or `not stated`. Once stated it is never replaced, even when compaction has dropped the reply that stated it. |
+| `split` | The top's split line, the first line of its replies that states one (`split: no, because …` or `split: <n> parts: …`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), kept as written, markdown included, or `not stated`. A stated line takes precedence over a mention: while `split` only holds `split:` (`I'll decide the split: after reading the code`), the first line beginning with it replaces the mention, once, and the mention is dropped rather than kept as a revision. A stated line is never replaced, even when compaction has dropped the reply that stated it. |
 | `revisions` | Absent until the top states a second split line worded otherwise; then the later lines, newest last, the newest 3 kept: `[{ "text": "split: 2 parts: its tests, its docs", "at": …, "parts": 1 }]`. Only a line beginning with `split:` after any markdown counts, not a passing mention, and it is appended when its words, markdown aside, differ from the line recorded last (the last revision, else `split`), so a line repeated or only restyled appends nothing, and neither does reading the same replies again. `text` is the line as written, `at` when its reply was created (the refresh's time when the message has none), and `parts` how many parts the tree had at that refresh, which tells a second stage after the first landed from a rewording before any work. A revision whose reply compaction has dropped is kept. |
 | `finished` | Whether, at the last refresh, no session in the tree ran (by the same rule as the limits' `busy`) and every part had settled: none was `out` or `stalled` (a `gone` one has). A tree whose top is still integrating reads as finished until that turn ends, and one with no parts as soon as its top is idle. |
 | `recalled` | Absent until `courier_recall` was called from the tree; then `{ "calls": <n> }`, counting every call made from the top and its parts, with `"at"`, when the top itself first called it. |

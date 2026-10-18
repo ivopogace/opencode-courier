@@ -649,6 +649,19 @@ while the record states no split line yet. It runs through the plugin's event fo
 instance follows OpenCode's events writes it, once. A session the roster has forgotten since keeps the
 state it was last recorded in, so the record stands on its own once the roster is gone.
 
+**A session OpenCode no longer knows** (deleted, so `session.get` answers `Session.NotFoundError`)
+cannot settle any more, and its report state went with it. Its part keeps its last recorded title,
+duration, cost and context use, rather than a duration measured to each refresh. Its status is the
+one its report state still reads, when that has settled; else its last recorded status, when that had
+settled; else `gone`, which counts as settled. So a deleted session never holds its tree at `not
+finished`, as the [tree panel](#in-the-terminal) draws it `gone` and not live. This applies to a part
+still on the roster (an isolated child's entry stays after its session is deleted, for its worktree)
+and to one the roster has forgotten while it was `out` or `stalled`, whose session each refresh looks
+up until it is gone or settles. A session that cannot be read for another reason keeps its last
+recorded title, duration and cost too, its status read as usual, and nothing is settled for it. A
+`gone` status, rather than keeping the last one alone, is what lets a session deleted while it ran,
+whose last status was `out`, still let its tree finish; one that had reported keeps what it reported.
+
 **What a record holds.** The value is one JSON object; every time is in epoch milliseconds and every
 duration in milliseconds:
 
@@ -658,7 +671,7 @@ duration in milliseconds:
 | `movedAt` | When a turn in the tree last ended, or the record was first written by `courier_recall`. |
 | `title` | The top session's title, as OpenCode has it at the last refresh. |
 | `split` | The top's split line, the first line of its replies that states one (`split: no, because …` or `split: <n> parts: …`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), or `not stated`. |
-| `finished` | Whether, at the last refresh, no session in the tree ran (by the same rule as the limits' `busy`) and every part had settled: none was `out` or `stalled`. A tree whose top is still integrating reads as finished until that turn ends, and one with no parts as soon as its top is idle. |
+| `finished` | Whether, at the last refresh, no session in the tree ran (by the same rule as the limits' `busy`) and every part had settled: none was `out` or `stalled` (a `gone` one has). A tree whose top is still integrating reads as finished until that turn ends, and one with no parts as soon as its top is idle. |
 | `recalled` | Absent until `courier_recall` was called from the tree; then `{ "calls": <n> }`, counting every call made from the top and its parts, with `"at"`, when the top itself first called it. |
 | `lesson` | Absent until `courier_note` wrote one; then `{ "text": …, "at": … }`, with `"depth"`, the writer's depth in the tree, when a sub-orchestrator wrote it. A second note replaces the whole object. |
 | `parts` | One object per session started in the tree, in the order the tree is drawn (each followed by what it started, siblings oldest first). |
@@ -672,8 +685,8 @@ Each part:
 | `depth` | 1 for a session the top started, 2 for one of theirs, and so on. |
 | `isolated` | Whether it runs in a worktree of its own. |
 | `group` | Its [join group](#join-groups), when it was started in one. |
-| `status` | `done`, `partial`, `blocked` or `failed`: the status of its last report, once it owes none; `failed` also for a turn that failed, `interrupted` for one interrupted, `stopped` once `courier_stop` stopped it since its last prompt, `stalled` while a message it does not take [waits in its inbox](#a-missed-wake), and `out` while it owes its parent a report, or nothing is known of its report state. |
-| `duration` | From its start to the end of its last turn, or to the refresh while it runs. |
+| `status` | `done`, `partial`, `blocked` or `failed`: the status of its last report, once it owes none; `failed` also for a turn that failed, `interrupted` for one interrupted, `stopped` once `courier_stop` stopped it since its last prompt, `gone` once OpenCode no longer knows its session and it had not settled ([above](#memory)), `stalled` while a message it does not take [waits in its inbox](#a-missed-wake), and `out` while it owes its parent a report, or nothing is known of its report state. |
+| `duration` | From its start to the end of its last turn, or to the refresh while it runs; as last recorded once its session cannot be read, and absent when it never was. |
 | `cost` | What its session cost so far, as OpenCode counts it, in USD. |
 | `context` | How full its context was at the end, from 0 to 1, as the [tree panel](#in-the-terminal) reads it. Absent when the window is not known. |
 | `refused` | How many of its own `courier_spawn` calls failed, refused by a [limit](#session-trees-and-their-limits) mostly. Absent when none did. |

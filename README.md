@@ -248,7 +248,9 @@ Each spawned session's brief says when to split its task and when to do it itsel
 The plugin keeps **one record per session tree** in the project, from facts it already has: when the
 tree started and last moved, the top session's title and `split:` line, and for each session started
 in the tree its title, depth, isolation, join group, status, duration, cost, context use and spawns
-refused; never a report's body or artifacts. The one thing a model writes into it is **the tree's
+refused; never a report's body or artifacts. A session deleted since keeps its last status and
+duration, or reads `gone` when it had not settled, so it never holds its tree at `not finished`.
+The one thing a model writes into it is **the tree's
 lesson**, with `courier_note`: one line of at most 300 characters, from the session that verified the
 tree, with the job it comes from and the reason. `courier_recall` reads the records back; the
 `courier-orchestrate` skill asks for one call before the split decision and one `courier_note` before

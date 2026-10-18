@@ -1,6 +1,6 @@
 import { finite, isNotFound, millis } from "../platform/json.js"
 import { busy, contextOf, reportState, stalledAmong, subtree, type Below, type ModelWindow } from "../tree/index.js"
-import { mergeParts, NOT_STATED, partStatus, splitLineOf, type PartRecord, type TreeRecord } from "./domain.js"
+import { isSettled, mergeParts, NOT_STATED, partStatus, splitLineOf, unreadPart, type PartRecord, type TreeRecord } from "./domain.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { memoryStore } from "./store.js"
 
@@ -35,14 +35,21 @@ const keptUse = (last: PartRecord | undefined): Use => ({
   ...(last?.refused ? { refused: last.refused } : {}),
 })
 
+/** A session's info, or `gone` when OpenCode no longer knows it; neither when it could not be read for another reason. */
+const infoOf = (ports: RefreshPorts, sessionID: string): Promise<{ info?: Info; gone: boolean }> =>
+  ports.session.get({ sessionID }).then(
+    (info) => ({ info, gone: false }),
+    (error: unknown) => ({ gone: isNotFound(error) }),
+  )
+
 /**
  * One session of the tree as its record keeps it, without its use when its messages were not read (only when its turn
- * `ended` or it is `known` to no record yet), and whether it runs now.
+ * `ended` or it is `known` to no record yet), without a duration when its info was not, and whether it runs now.
  */
 async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth }: Below, stalled: boolean, at: number, known: boolean, ended: boolean) {
   const { sessionID } = entry
-  const [info, use, report] = await Promise.all([
-    ports.session.get({ sessionID }).catch((): Info | undefined => undefined),
+  const [{ info, gone }, use, report] = await Promise.all([
+    infoOf(ports, sessionID),
     ended || !known ? ports.session.context({ sessionID }).then((messages) => useOf(messages, windows), () => undefined) : undefined,
     reportState(ports.storage, sessionID).catch(() => undefined),
   ])
@@ -57,10 +64,17 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
     isolated: entry.isolated,
     ...(entry.group ? { group: entry.group } : {}),
     status: partStatus({ stopped: report?.stopped ?? false, stalled, report }),
-    duration: Math.max(0, end - created),
+    ...(info ? { duration: Math.max(0, end - created) } : {}),
     ...(cost !== undefined ? { cost } : {}),
   }
-  return { record, use, running }
+  return { record, use, running, unread: info === undefined, gone }
+}
+
+/** Which parts last recorded, forgotten by the roster since and not settled, OpenCode no longer knows. */
+async function goneSince(ports: RefreshPorts, parts: ReadonlyArray<PartRecord>, onRoster: ReadonlySet<string>) {
+  const unsettled = parts.filter((one) => !onRoster.has(one.sessionID) && !isSettled(one.status))
+  const looked = await Promise.all(unsettled.map(async ({ sessionID }) => ({ sessionID, ...(await infoOf(ports, sessionID)) })))
+  return new Set(looked.flatMap((one) => (one.gone ? [one.sessionID] : [])))
 }
 
 /**
@@ -83,14 +97,20 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   const stalled = await stalledAmong(ports, nodes.map((node) => node.entry.sessionID))
   const windows = [...state.windows.values()]
   const known = new Set(previous?.parts.map((one) => one.sessionID))
-  const read = await Promise.all(
-    nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at, known.has(node.entry.sessionID), node.entry.sessionID === ended)),
-  )
+  const [read, lost] = await Promise.all([
+    Promise.all(nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at, known.has(node.entry.sessionID), node.entry.sessionID === ended))),
+    goneSince(ports, previous?.parts ?? [], new Set(nodes.map((node) => node.entry.sessionID))),
+  ])
   const split = splitLineOf(await replies)
   // Read again just before the write: a courier_recall or courier_note call, or another turn end's refresh, wrote meanwhile.
   const latest = (await store.get(info.projectID, top).catch(() => previous)) ?? previous
   const last = new Map(latest?.parts.map((one) => [one.sessionID, one]))
-  const parts = mergeParts(latest?.parts ?? [], read.map(({ record, use }) => ({ ...record, ...(use ?? keptUse(last.get(record.sessionID))) })))
+  const current = read.map(({ record, use, unread, gone }) => {
+    const before = last.get(record.sessionID)
+    return { ...(unread ? unreadPart(record, before, gone) : record), ...(use ?? keptUse(before)) }
+  })
+  const forgotten = (latest?.parts ?? []).filter((one) => lost.has(one.sessionID)).map((one) => unreadPart(one, one, true))
+  const parts = mergeParts(latest?.parts ?? [], [...current, ...forgotten])
   const recalled = latest?.recalled ?? previous?.recalled
   const lesson = latest?.lesson ?? previous?.lesson
   const record: TreeRecord = {
@@ -98,7 +118,7 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
     movedAt: at,
     title: info.title ?? previous?.title ?? "",
     split: split ?? latest?.split ?? NOT_STATED,
-    finished: !busy(info.time) && !read.some(({ running }) => running) && parts.every((one) => one.status !== "out" && one.status !== "stalled"),
+    finished: !busy(info.time) && !read.some(({ running }) => running) && parts.every((one) => isSettled(one.status)),
     ...(recalled ? { recalled } : {}),
     ...(lesson ? { lesson } : {}),
     parts,

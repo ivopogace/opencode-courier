@@ -19,12 +19,16 @@ export const LESSON_MAX = 300
 
 /**
  * How a part stands: its last report's status, how its wait ended without one (`failed`, `interrupted`), `stopped` by
- * courier_stop, `stalled` on a message it will not take, or `out`: it owes a report, running or not.
+ * courier_stop, `gone` from OpenCode before it settled, `stalled` on a message it will not take, or `out`: it owes a
+ * report, running or not.
  */
-export const PART_STATUSES = [...STATUSES, "interrupted", "stopped", "stalled", "out"] as const
+export const PART_STATUSES = [...STATUSES, "interrupted", "stopped", "gone", "stalled", "out"] as const
 export type PartStatus = (typeof PART_STATUSES)[number]
 
 export const isPartStatus = (value: unknown): value is PartStatus => typeof value === "string" && (PART_STATUSES as readonly string[]).includes(value)
+
+/** Whether a part has settled, as every part of a finished tree has: it neither owes a report nor is stalled. */
+export const isSettled = (status: PartStatus) => status !== "out" && status !== "stalled"
 
 /** One session started in a tree, as its record keeps it; `duration` is in milliseconds, `context` a share of its model's window. */
 export interface PartRecord {
@@ -115,6 +119,16 @@ export function partStatus({ stopped, stalled, report }: Standing): PartStatus {
   if (!report?.known || report.owes) return "out"
   if (report.ended) return report.ended
   return report.status ?? "done"
+}
+
+/**
+ * A part whose session could not be read, from what was read of it and its last record: its title, duration and cost as
+ * last recorded; once OpenCode no longer knows it (`gone`), settled as read, else as last recorded, else `gone`.
+ */
+export function unreadPart(read: PartRecord, last: PartRecord | undefined, gone: boolean): PartRecord {
+  const status = !gone || isSettled(read.status) ? read.status : last && isSettled(last.status) ? last.status : "gone"
+  const { title, duration, cost } = last ?? read
+  return { ...read, title, status, ...(duration !== undefined ? { duration } : {}), ...(cost !== undefined ? { cost } : {}) }
 }
 
 /**

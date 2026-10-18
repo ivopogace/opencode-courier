@@ -424,6 +424,14 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   then resolves with `undefined`, as on `esc`, and `clear()` does the same. `select` takes a fixed
   list and no starting query (`search` only filters), so the asks inbox shows a changed list by
   opening a new `select`, whose search starts empty, and sets its size again (`replace` resets it).
+- **A select's rows.** `DialogSelectOption` in the plugin API declares `title`, `value`, `description`, `footer`,
+  `category` and `disabled`. The host's row (`DialogSelectRow` in `packages/tui/src/ui/dialog-select.tsx`) is one
+  line: the title, truncated to 61 characters, the description after it in the same text, cut at the row's end,
+  and the footer right-aligned at its full width, which squeezes the two; a `large` dialog is 88 columns, an `xlarge`
+  116, or the terminal's width. `createDialogApi` spreads each option into the host's `DialogSelect`, whose rows also
+  take `details: string[]`, muted lines under the row, each cut in the middle to the dialog's content width, which
+  the memory view uses for a record's lesson. Undeclared: a later host may drop the pass-through, and the lesson line
+  would go from the list, not from the record in full. A `disabled` option is left out of the list, not shown greyed.
 - **The panel belongs to one session.** `ui.panel.open` targets the route's session; the app closes the
   panel on any route to another (`packages/tui/src/app.tsx`), each session's frame is keyed by its id, and
   a newly mounted panel takes the keyboard (`component/session-frame.tsx`, `onTarget`). So the tree panel

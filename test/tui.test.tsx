@@ -7,8 +7,9 @@ import { MouseButtons, type MouseButton } from "@opentui/core/testing"
 import { testRender } from "@opentui/solid"
 import { batch, createRoot, createSignal } from "solid-js"
 import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, addTreeStatus, animationsOn, bar, BAR_MS, blend, restBackground, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, BELOW_ROWS, digbyColours } from "../src/tree/tui.js"
+import { activityLine, addTreePanel, addTreeStatus, animationsOn, bar, BAR_MS, blend, restBackground, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, BELOW_ROWS, digbyColours } from "../src/tree/tui.js"
 import { ART, art, cells, digby, glyph, GLYPH, MASCOT_EVERY, type MascotState } from "../src/tree/mascot.js"
+import { MEMORY_USAGE } from "../src/memory/tui.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
 
@@ -1110,7 +1111,24 @@ describe("the /courier command", () => {
     const fake = fakeContext(async () => empty)
     await tui.setup(fake.context)
     await fake.command("courier.command")!.run("frobnicate")
-    expect(fake.state.toasts.at(-1)).toMatchObject({ message: USAGE, variant: "warning" })
+    // With the memory view's verb, which src/tui.tsx hands the command, in the usage.
+    expect(fake.state.toasts.at(-1)).toMatchObject({ message: `${USAGE}; ${MEMORY_USAGE}`, variant: "warning" })
+  })
+
+  test("a further verb another module supplies runs, and its line joins the usage", async () => {
+    const fake = fakeContext(async () => empty)
+    const ran: string[] = []
+    addTreePanel(fake.context, { memory: { run: () => void ran.push("memory"), usage: "/courier memory lists the records" } })
+    const command = fake.command("courier.command")!
+    expect(command.description).toBe(`${USAGE}; /courier memory lists the records`)
+
+    await command.run("memory")
+    expect(ran).toEqual(["memory"])
+    await command.run("remember")
+    expect(fake.state.toasts.at(-1)).toMatchObject({ message: `${USAGE}; /courier memory lists the records`, variant: "warning" })
+    // The verbs are the command's own, not an object's: a prototype's name runs nothing.
+    await command.run("constructor")
+    expect(ran).toEqual(["memory"])
   })
 })
 

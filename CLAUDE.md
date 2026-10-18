@@ -24,12 +24,12 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   imports only `kernel/`.
 - `tui.tsx`: the package's `tui` entrypoint, a second composition root, adding each module's TUI part
   (`addAsksInbox`, whose open list follows the footer's events, `tree/tui.tsx`'s `CHANGES`, then
-  `addTreeStatus`, whose "waiting on you" opens the inbox, `addTreePanel` and
-  `addTreeAttention`); it imports only `@opencode/plugin/tui` and the modules' `tui.tsx` and `rpc.ts`.
+  `addTreeStatus`, whose "waiting on you" opens the inbox, `addTreePanel`, `addTreeAttention` and
+  `addMemoryView`); it imports only `@opencode/plugin/tui` and the modules' `tui.tsx` and `rpc.ts`.
   Bundled alone to `dist/tui.js` by `script/build-tui.ts` (OpenTUI's Solid transform, every package
   external, as the host provides them); `tsconfig.build.json` leaves the `tui.tsx` files out and
   `tsconfig.tui.json` writes `dist/tui.d.ts`. `rpc.ts`: the `rpc` entrypoint, the modules' RPC
-  contracts (`treeRpc`, `personRpc`). Neither is imported by the server half.
+  contracts (`treeRpc`, `personRpc`, `memoryRpc`). Neither is imported by the server half.
 - `kernel/protocol.ts`: what the models see of the protocol in every module: `envelope`, `END_TURN`,
   `clipText`, `defuse`, `describeFailure`, `Status`, `SPLIT_LINE` and `SKILL_ID`. It imports only
   `kernel/**` and `platform/json.ts`. `kernel/tool.ts`: `ToolEditor` and `rethrow` for the `tools.ts`
@@ -68,7 +68,7 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   `busy`, the pending port and `groupStanding`, whose `tree` is `panel.ts`'s (the tree panel's rows: the
   subtree walk, the report notes, each session's times, last tool call, context use, cost and pending requests), whose
   `stop` is `stop.ts`'s and whose `cleanup` is `cleanup.ts`'s, run as the target's parent once `by` is above it; `tui.tsx` the TUI part, the prompt footer's status entry (`addTreeStatus`), the
-  tree panel, with one timer for what moves in it (`createMotion`, `createFlashes`, `createBarFill`, `createSpawns`), and the `/courier` command (`addTreePanel`) and the report sounds (`addTreeAttention`), which imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, `rpc.ts`, `text.ts` and `mascot.ts`;
+  tree panel, with one timer for what moves in it (`createMotion`, `createFlashes`, `createBarFill`, `createSpawns`), and the `/courier` command (`addTreePanel`, whose further verbs, `memory`, `src/tui.tsx` hands it as `Verb`s, so `tree/` knows nothing of `memory/`) and the report sounds (`addTreeAttention`), which imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, `rpc.ts`, `text.ts` and `mascot.ts`;
   `mascot.ts` Digby, the panel's mole: his frames as pixel tokens, the half-block cells they draw to and the 16×16, pure
   and importing nothing, snapshotted in `test/__snapshots__/tui.test.tsx.snap`;
   `wake.ts` the missed wake: it watches each courier message sent with a wake from its enqueue to its delivery (`watchWake`,
@@ -126,8 +126,13 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   report state, keeping the lesson); `events.ts` `memoryEvents`, which refreshes a tree's record in the `after` phase of each
   turn end in it; `recall.ts` `courier_recall`'s logic, which notes the call on the caller's tree's record
   first; `note.ts` `courier_note`'s (`note`: the caller's depth and top by its lineage, the refusals, the lesson
-  replaced on the top's record); `sweep.ts` the sweep at load; `tools.ts` adds `courier_recall` and `courier_note`; `text.ts` the listing line, the
-  lesson's and the tools' texts. The skill's step 1 and the root's role part name `courier_recall`, its step 8
+  replaced on the top's record); `forget.ts` the memory view's forget (`forget`: the record's key removed, or with `lesson` the record
+  written back without its lesson); `sweep.ts` the sweep at load; `tools.ts` adds `courier_recall` and `courier_note`; `text.ts` the listing line, the
+  lesson's and the tools' texts. `rpc.ts` the memory's RPC contract (`memoryRpc`, id `courier-memory`: `records`, `forget`),
+  `rpc-handlers.ts` its server side (`registerMemoryRpc`, after the person's), reading the project's records from the store alone, noted on
+  no record; `tui.tsx` the memory view (`addMemoryView`): the project's records in a `select` dialog, newest first, opened by
+  `/courier memory` or the palette, `enter` for one in full, `x` to forget one or only its lesson after a confirm, `q` to close,
+  which imports only what a `tui.tsx` may (its `rpc.ts` and `text.ts`). The skill's step 1 and the root's role part name `courier_recall`, its step 8
   `courier_note`, and the context hook hides both from a leaf.
 - `platform/`: imports nothing outside `platform/`. `hub.ts`: the plugin's process-wide state in one
   versioned hub, which instances join with their ports and location and leave on unload, and the
@@ -153,7 +158,8 @@ checks that every live-suite group is in exactly one shard of any count;
 `docs/**` and `.claude/**`, so a moved file or heading fails it.
 `test/tui.test.tsx` renders the TUI part against a fake TUI context with OpenTUI's `testRender`
 (`bunfig.toml` preloads its Solid transform); `test/inbox.test.tsx` drives the asks inbox's dialogs
-against one, and `test/person-rpc.test.ts` its RPC. `test/notices.test.ts` snapshots every `text.ts`,
+against one, and `test/person-rpc.test.ts` its RPC; `test/memory-view.test.tsx` drives the memory view's
+dialogs and footer actions the same way, and `test/memory-rpc.test.ts` its RPC and forget. `test/notices.test.ts` snapshots every `text.ts`,
 imported each by its path (the import test fails on one it misses), the skill and the fourteen tools'
 descriptions and schemas, so a wording change shows up as a diff in `test/__snapshots__/`; update it
 with `bun test --update-snapshots`.
@@ -168,7 +174,7 @@ scripted OpenAI-compatible stand-in model, with `search-plugin` as a stand-in we
 `probe-plugin` logging the events each location's instance receives, and `kv.ts` to read, remove or
 set the plugin's storage keys in OpenCode's database. New behaviour gets a scenario there.
 `tui.sh`, in CI as a job next to `run.sh`: the TUI part live, the TUI in `tmux` (CI installs it with `apt-get`),
-its footer entry and the RPC behind it, from `dist/` and from the package `opencode plugin add` installs.
+its footer entry, the panel, the inbox, the memory view and the RPCs behind them, from `dist/` and from the package `opencode plugin add` installs.
 `two-servers.sh`, not in CI: two servers on one data directory; its findings are in
 `docs/maintainers/plugin-api-notes.md`. `real-model.sh` (with `real-model.mjs`, `real-model-permission.mjs`,
 `real-model-question.mjs` and `real-model-recursive.mjs` for `COURIER_SCENARIO=permission`, `question`

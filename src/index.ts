@@ -26,7 +26,7 @@ import {
   type PersonState,
   type QuestionPorts,
 } from "./person/index.js"
-import { addMemoryTools, memoryEvents, NOTE_TOOL, readMemory, RECALL_TOOL, sweepRecords, type MemoryPorts, type MemoryState } from "./memory/index.js"
+import { addMemoryTools, memoryEvents, NOTE_TOOL, readMemory, RECALL_TOOL, registerMemoryRpc, sweepRecords, type MemoryPorts, type MemoryState } from "./memory/index.js"
 import { addSkill } from "./skill.js"
 import {
   addTreeTools,
@@ -189,6 +189,7 @@ export const courier = () => Plugin.define({
     await Promise.resolve()
       .then(() => registerTreeRpc(ctx.rpc, stopPorts))
       .then(() => registerPersonRpc(ctx.rpc, { questions: questionPorts, permissions }))
+      .then(() => registerMemoryRpc(ctx.rpc, memoryPorts))
       .catch((error: unknown) => log(`courier rpc: not registered, the TUI part shows nothing and cannot stop: ${String(error)}`))
     await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, hiddenFromLeaf: [RECALL_TOOL, NOTE_TOOL], log }, event))
 

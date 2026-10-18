@@ -897,14 +897,21 @@ function TreePanel(props: {
   )
 }
 
-/** The usage the `/courier` command shows for an input it does not know. */
+/** The usage the `/courier` command shows for an input it does not know, before the further verbs' lines. */
 export const USAGE = "/courier tree opens the session tree; /courier stop [session] stops a session and those under it"
+
+/** A further verb of the `/courier` command, which another module's TUI part supplies: what it runs, and its line of the usage. */
+export type Verb = { readonly run: () => void; readonly usage: string }
+
+/** The usage with the further verbs' lines. */
+export const usageWith = (verbs: Readonly<Record<string, Verb>>) => [USAGE, ...Object.values(verbs).map((verb) => verb.usage)].join("; ")
 
 /**
  * Adds the tree panel to the `session.panel` slot, opened by `/courier tree` or the palette, which follows the person
- * between sessions until closed, and `/courier stop <session>`, which stops a session under the open one once confirmed.
+ * between sessions until closed, and `/courier stop <session>`, which stops a session under the open one once confirmed;
+ * `verbs` are the command's further verbs, by name.
  */
-export function addTreePanel(ctx: Context) {
+export function addTreePanel(ctx: Context, verbs: Readonly<Record<string, Verb>> = {}) {
   const { courier, location } = courierOf(ctx)
   const animations = animationsOn(ctx.options)
   const [changed, stopListening] = changes(ctx, PANEL_CHANGES, PANEL_SETTLE_MS)
@@ -1019,14 +1026,16 @@ export function addTreePanel(ctx: Context) {
       {
         id: "courier.command",
         title: "Courier",
-        description: USAGE,
+        description: usageWith(verbs),
         group: "Courier",
         slash: { name: "courier", arguments: true },
         run: async (input) => {
           const [verb = "tree", target = ""] = (input ?? "").trim().split(/\s+/).filter(Boolean)
           if (verb === "tree") return openPanel()
           if (verb === "stop") return stopUnder(target)
-          ctx.ui.toast.show({ title: "courier", message: USAGE, variant: "warning" })
+          const further = Object.hasOwn(verbs, verb) ? verbs[verb] : undefined
+          if (further) return further.run()
+          ctx.ui.toast.show({ title: "courier", message: usageWith(verbs), variant: "warning" })
         },
       },
       { id: "courier.tree", title: "Courier session tree", group: "Courier", palette: true, run: openPanel },

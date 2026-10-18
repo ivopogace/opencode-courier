@@ -284,8 +284,9 @@ record in full. The `courier-orchestrate` skill's first step asks for one call b
 decision, and its last for one `courier_note` before the top replies, none when there is nothing; a root
 that has started no sessions is pointed to the first, and a leaf sees neither tool. Each project keeps
 its newest 30 records and none that last moved over 90 days ago. `"memory": false` in the plugin's
-`options` turns it off: nothing is written, `courier_recall` says so and `courier_note` is refused
-([more](docs/reference.md#memory)).
+`options` turns it off: nothing is written, `courier_recall` says so and `courier_note` is refused.
+In the [terminal](#in-the-terminal), `/courier memory` shows the records and forgets one, or only its
+lesson ([more](docs/reference.md#memory)).
 
 ## In the terminal
 
@@ -340,6 +341,14 @@ adds a notification to for a native child ([more](docs/reference.md#in-the-termi
 
 While a permission prompt or form is shown in the session, OpenCode hides the footer, so open the
 inbox with `ctrl+x k` (or `/asks` once the prompt is back).
+
+`/courier memory` (or the palette's "Courier: memory") lists the project's [tree records](#memory), newest
+first, one row each: the day the tree started and its title, its parts counted by status, how long it ran
+and what its parts cost, with its lesson on the line under it. `enter` shows one in full, the tree's facts,
+each part's status, duration, cost and context use, and the lesson; `x` forgets the record under the row
+after you confirm, or, in the record on its lesson's rows, only the lesson, keeping the facts; `q` closes.
+With `"memory": false` it says memory is off in this project. Nothing a model sees changes but what
+`courier_recall` lists ([more](docs/reference.md#the-memory-view)).
 
 ## Native child sessions
 

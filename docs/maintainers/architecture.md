@@ -18,7 +18,8 @@ inbound and outbound adapters):
 - `scheduling/`: `courier_later` messages.
 - `webhook/`: the receiver and subscriptions.
 - `memory/`: one record per session tree, kept in the project by an event module and read back with
-  `courier_recall`, with the one line `courier_note` writes on it.
+  `courier_recall`, with the one line `courier_note` writes on it; its RPC and the memory view, the
+  records in the terminal with a key to forget one.
 - `kernel/`: what models see of the protocol in every module (`envelope`, `END_TURN`,
   `describeFailure`, …) and the tool editor.
 - `platform/`: the hub, following OpenCode's events, storage helpers and JSON readers; it imports
@@ -181,12 +182,16 @@ versions of OpenCode's catalog, for the typecheck and the unit tests. `tsconfig.
 `tui.tsx` files out of the `tsc` build, and `tsconfig.tui.json` writes `dist/tui.d.ts`.
 
 What the TUI part does goes through the same use cases as the tools (`courier_tree`'s walk,
-`courier_stop`'s `stop()`, `courier_answer`'s answer path), over the RPCs `courier` and
-`courier-person` that each instance registers at its location, so a model sees only what the tools
-would tell it. `e2e/tui.sh` checks it live, in `tmux`: the footer entry, the panel opened with
-`/courier tree` on two children with its bar moving from 1/2 to 2/2 when the second reports, `q`
-closing it, `/courier stop` with its confirm, and the asks inbox, from `dist/` and from the package
-`opencode plugin add` installs.
+`courier_stop`'s `stop()`, `courier_answer`'s answer path, the memory's store), over the RPCs `courier`,
+`courier-person` and `courier-memory` that each instance registers at its location, so a model sees only
+what the tools would tell it. The memory view is a dialog rather than a panel: the records are the
+project's, not a session's, and a panel belongs to one session, closed on every route change, which is
+what the tree panel's follow-the-person code is for; the host's own list you delete from, its Sessions
+dialog, is a select with footer actions, which the pinned plugin API gives a plugin too (`actions` on
+`dialog.select`, drawn and run by the host without closing the dialog). `e2e/tui.sh` checks it live, in
+`tmux`: the footer entry, the panel opened with `/courier tree` on two children with its bar moving from
+1/2 to 2/2 when the second reports, `q` closing it, `/courier stop` with its confirm, the asks inbox, and
+the memory view with its forgets, from `dist/` and from the package `opencode plugin add` installs.
 
 The spike that settled how the package ships a TUI part and an RPC, and whether children get a native
 `parentID`, is in the [last commit that had

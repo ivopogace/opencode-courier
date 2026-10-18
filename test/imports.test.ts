@@ -160,7 +160,7 @@ const isTuiPackage = (name: string) =>
 
 test("a module's tui.tsx imports only the TUI's packages and its own module's rpc.ts, text.ts and mascot.ts", () => {
   const parts = sources().filter(({ file }) => /^[^/\\]+[/\\]tui\.tsx$/.test(file)).map(({ module }) => module)
-  expect(parts).toEqual(expect.arrayContaining(["tree/tui", "person/tui"]))
+  expect(parts).toEqual(expect.arrayContaining(["tree/tui", "person/tui", "memory/tui"]))
   const graph = imports()
   const used = packages()
   const reaching = parts.flatMap((module) => {
@@ -180,7 +180,7 @@ test("tree/mascot.ts, Digby's drawings, imports nothing, so the TUI bundle takes
 
 test("a module's rpc.ts imports only @opencode/plugin/rpc and effect, so the TUI bundle takes nothing else of the module", () => {
   const contracts = sources().filter(({ module }) => /^[^/]+\/rpc$/.test(module)).map(({ module }) => module)
-  expect(contracts).toEqual(expect.arrayContaining(["tree/rpc", "person/rpc"]))
+  expect(contracts).toEqual(expect.arrayContaining(["tree/rpc", "person/rpc", "memory/rpc"]))
   const graph = imports()
   const used = packages()
   const reaching = contracts.flatMap((module) =>
@@ -192,8 +192,8 @@ test("a module's rpc.ts imports only @opencode/plugin/rpc and effect, so the TUI
 })
 
 test("the tui entrypoint imports only @opencode/plugin/tui and the modules' tui.tsx and rpc.ts, the rpc entrypoint only their rpc.ts", () => {
-  expect(imports().get("tui")).toEqual(expect.arrayContaining(["tree/tui", "person/tui"]))
-  expect(imports().get("rpc")).toEqual(expect.arrayContaining(["tree/rpc", "person/rpc"]))
+  expect(imports().get("tui")).toEqual(expect.arrayContaining(["tree/tui", "person/tui", "memory/tui"]))
+  expect(imports().get("rpc")).toEqual(expect.arrayContaining(["tree/rpc", "person/rpc", "memory/rpc"]))
   const reaching = (["tui", "rpc"] as const).flatMap((entry) => {
     const allowed = (name: string) => moduleOf(name) !== undefined && ENTRY_REACH[entry]!.some((file) => name === `${moduleOf(name)}/${file}`)
     return [
@@ -270,6 +270,8 @@ test("only tree/store.ts names the tree's storage prefixes, so no other file bui
 test("memory/store.ts is imported from no file outside memory/, and only it names the memory's storage prefix", () => {
   const importing = [...imports()].filter(([, imported]) => imported.includes("memory/store")).map(([module]) => module)
   expect(importing).toContain("memory/record")
+  expect(importing).toContain("memory/forget")
+  expect(importing).toContain("memory/rpc-handlers")
   expect(importing.filter((module) => !module.startsWith("memory/") || module === "memory/index")).toEqual([])
   const naming = sources()
     .filter(({ file }) => /"memory\//.test(readFileSync(join(SRC, file), "utf8")))

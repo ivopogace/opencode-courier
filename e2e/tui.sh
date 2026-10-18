@@ -473,8 +473,9 @@ sleep 1
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "/courier memory opens the view with every record of the project" "$(shows "Memory ($total)" 30 tui-memory-list)"
 # Every record is from this run, so "Today" heads the list and no date heads a group; the seeded lesson sits below it.
+# The dialog is drawn over the transcript, so a header shares its screen line with whatever is behind it.
 check "the tree's row is under Today, with its parts counted and the lesson, dated on the local day, as its footer" \
-  "$(awk -v lesson="lesson ($today): \"Give the docs to one session\"" '/^ *Today *$/ { today = NR } index($0, lesson) && today && today < NR { under = 1 } /^ *(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z][a-z] [0-9]+ [0-9][0-9][0-9][0-9] *$/ { dated = 1 } END { exit !(under && !dated) }' "$WORK/tui-memory-list.txt" && grep -qF "2 parts: 2 done" "$WORK/tui-memory-list.txt" && echo true || echo false)"
+  "$(awk -v lesson="lesson ($today): \"Give the docs to one session\"" '/(^|[^A-Za-z])Today([^A-Za-z]|$)/ { today = NR } index($0, lesson) && today && today < NR { under = 1 } /(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z][a-z] [0-9]+ [0-9][0-9][0-9][0-9]/ { dated = 1 } END { exit !(under && !dated) }' "$WORK/tui-memory-list.txt" && grep -qF "2 parts: 2 done" "$WORK/tui-memory-list.txt" && echo true || echo false)"
 check "the footer offers x to forget and q to close" "$(grep -qF "forget" "$WORK/tui-memory-list.txt" && grep -qF "close" "$WORK/tui-memory-list.txt" && echo true || echo false)"
 # Down to the tree's row, newest first, then enter.
 for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done

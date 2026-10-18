@@ -1401,12 +1401,13 @@ costs summed when any is known, and `not finished` when it is not; under it, mut
 local day and `from depth <n>` when a sub-orchestrator wrote it, clipped to 160 characters and cut in the
 middle to the dialog's width (a line the host's select draws though the plugin API does not declare it:
 [plugin-api-notes.md](maintainers/plugin-api-notes.md#tui-and-rpc-entrypoints)). The dialog is the widest
-OpenCode has, 116 columns, or the terminal's width. Searching filters the rows by their titles, and shows the
-matches in one list, each row's day after it.
+OpenCode has, 116 columns, or the terminal's width. Searching filters the rows, by their titles first and by their
+day too, each kept under its day.
 
 - `enter` shows the record in full, titled with the local date it last moved and its title, in three groups:
   **Tree** (the top session, when it started and last moved, to the minute in local time with the zone's
-  short name, `2026-10-17 12:12 CEST`, and how long it ran, its split line or `not stated`, `Finished` or
+  short name as the runtime has it in English, `2026-10-17 12:12 GMT+2`, `06:12 EDT`, `10:12 UTC`, and how
+  long it ran, its split line or `not stated`, `Finished` or
   `Not finished` with the cost in all, and `Recalled <n> times`, first by the top when, or by a part only,
   else `Not recalled`), **Parts** (one row per session started in the tree, indented by depth: its title, then
   its status, depth, `isolated`, `group <name>`, duration, cost, `ctx <n>%` and spawns refused, as the

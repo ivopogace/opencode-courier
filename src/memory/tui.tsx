@@ -72,7 +72,7 @@ export function recordTitle(record: MemoryRecord, open?: string) {
   return `${clip(oneLine(record.title) || record.sessionID, ROW_TITLE_MAX)}${record.sessionID === open ? " (this session)" : ""}`
 }
 
-/** A list row's group: `Today` for a tree last moved on the local day of `now`, else that local date, the key the list is sorted by. */
+/** A list row's group: `Today` for a tree last moved on the local day of `now`, else that local date; the RPC's order, by the last move, keeps the groups newest first. */
 export function recordCategory(record: MemoryRecord, now = Date.now()) {
   const moved = localDay(record.movedAt)
   return moved === localDay(now) ? TODAY : moved
@@ -190,10 +190,8 @@ type Request =
   | { readonly kind: "back" }
 
 /**
- * Adds the memory view: the records of the project of the open session's location (else the TUI's, else the server's
- * default), newest first under `Today` and the local days they last moved, read through the memory's RPC; `enter` shows
- * one in full, `x` forgets one, or only its lesson, after a confirm, `q` closes. Opened by its command, from
- * `/courier memory` or the palette.
+ * Adds the memory view: the project's records (the open session's location, else the TUI's, else the server's default) under
+ * `Today` and the local days they last moved; `enter` shows one in full, `x` forgets one or its lesson after a confirm, `q` closes.
  */
 export function addMemoryView(ctx: Context) {
   const memory = ctx.client.rpc(memoryRpc)
@@ -239,9 +237,8 @@ export function addMemoryView(ctx: Context) {
       {
         title: `Memory (${read.records.length})`,
         placeholder: "Search",
-        // The host groups the rows by `category` in the order they come, newest first. The lesson goes under the row as
-        // `details`, lines the host's select draws though the plugin API does not declare them
-        // (docs/maintainers/plugin-api-notes.md); a host without them shows the row alone.
+        // The lesson goes under the row as `details`, lines the host's select draws though the plugin API does not declare
+        // them (docs/maintainers/plugin-api-notes.md); a host without them shows the row alone.
         options: read.records.map((record) => ({
           title: recordTitle(record, open),
           value: record,

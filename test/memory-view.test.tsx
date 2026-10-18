@@ -60,8 +60,11 @@ const older = record("ses_old", "Fix the bug", NOW - 86_400_000, { parts: [], fi
 /** The same two trees, the first last moved now, so that the view lists it under "Today" on the real clock. */
 const LIVE = Date.now()
 const todays = record("ses_root", "Add memory to courier", LIVE, { lesson, recalled: { at: LIVE - 40 * 60_000, calls: 2 } })
-const yesterdays = record("ses_old", "Fix the bug", LIVE - 86_400_000, { parts: [], finished: false, split: "not stated" })
-const yesterday = new Date(LIVE - 86_400_000).toDateString()
+// The same time a local calendar day earlier: 25 hours back on the day the clocks fall back, not 24.
+const YESTERDAY = new Date(LIVE)
+YESTERDAY.setDate(YESTERDAY.getDate() - 1)
+const yesterdays = record("ses_old", "Fix the bug", YESTERDAY.getTime(), { parts: [], finished: false, split: "not stated" })
+const yesterday = YESTERDAY.toDateString()
 
 type Dialog = { kind: "select" | "confirm" | "alert" | "prompt"; options: any }
 

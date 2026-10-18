@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test"
 import type { ToolEditor } from "../src/kernel/tool.js"
 import {
   isSettled,
+  isStated,
   keep,
   LESSON_MAX,
   lessonText,
@@ -13,6 +14,7 @@ import {
   MAX_REVISIONS,
   mergeParts,
   noteRecall,
+  NOT_STATED,
   oneLine,
   PART_STATUSES,
   partStatus,
@@ -21,6 +23,7 @@ import {
   revise,
   splitLineOf,
   splitLinesOf,
+  splitOf,
   splitProse,
   unreadPart,
   type PartRecord,
@@ -103,6 +106,8 @@ const entry = (sessionID: string, parentID: string, more: Partial<RosterEntry> =
 })
 
 const text = (text: string) => ({ type: "assistant", id: "msg", time: { created: 1 }, content: [{ type: "text", text }] })
+/** A reply OpenCode has finished, which another session's turn end reads too. */
+const done = (line: string, created = 1) => ({ ...text(line), time: { created, completed: created + 1 } })
 const spawnCall = (status: "completed" | "error") => ({
   type: "assistant",
   id: "msg",
@@ -138,6 +143,19 @@ describe("splitLineOf", () => {
     expect(splitLineOf("Nothing here.")).toBeUndefined()
     expect(splitLineOf("# split: 3 parts: a, b, c\nsplit: later")).toBe("# split: 3 parts: a, b, c")
     expect(splitLineOf("- **split: no, because small; considered: docs**")).toBe("- **split: no, because small; considered: docs**")
+  })
+
+  // #294: a stated line outranks a mention, once; only a stated line is never replaced.
+  test("splitOf keeps a stated line, gives a mention up for the first stated line only, and takes either while none is recorded", () => {
+    const mention = "I'll decide the split: after reading the code"
+    expect([isStated("**split: 1 part: core**"), isStated(mention), isStated(NOT_STATED)]).toEqual([true, false, false])
+    expect(splitOf(NOT_STATED, `${mention}\nsplit: 1 part: core`)).toBe("split: 1 part: core")
+    expect(splitOf(NOT_STATED, mention)).toBe(mention)
+    expect(splitOf(NOT_STATED, "Reading.")).toBe(NOT_STATED)
+    expect(splitOf(mention, "I decided to split: no\n- split: 1 part: core\nsplit: 2 parts")).toBe("- split: 1 part: core")
+    expect(splitOf(mention, "I decided to split: no")).toBe(mention)
+    expect(splitOf(mention, "")).toBe(mention)
+    expect(splitOf("split: 1 part: core", "split: 2 parts\nI decided to split: no")).toBe("split: 1 part: core")
   })
 })
 
@@ -438,7 +456,7 @@ describe("refresh", () => {
   test("writes the record of a tree from the roster, each session's info and messages and its report state", async () => {
     const { ports, state, store } = fakePorts(
       {
-        ses_top: { created: NOW - 400_000, updated: NOW - 50_000, idle: NOW - 50_000, title: "Add memory", messages: [text("Reading."), text("split: 2 parts: core, docs"), text("split: later line")] },
+        ses_top: { created: NOW - 400_000, updated: NOW - 50_000, idle: NOW - 50_000, title: "Add memory", messages: [done("Reading."), done("split: 2 parts: core, docs"), done("split: later line")] },
         ses_a: { created: NOW - 290_000, updated: NOW - 100_000, idle: NOW - 100_000, cost: 0.25, title: "Core", messages: [usage(300)] },
         ses_b: { created: NOW - 280_000, updated: NOW - 10_000, idle: NOW - 200_000, cost: 0.5, messages: [spawnCall("error"), spawnCall("completed"), spawnCall("error")] },
       },
@@ -590,7 +608,7 @@ describe("refresh", () => {
   test("reads the messages of the part whose turn ended and of a part first seen, keeping the others' context use and refused spawns", async () => {
     const { ports, state, contexts, sessions } = fakePorts(
       {
-        ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [text("split: 2 parts: core, docs")] },
+        ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [done("split: 2 parts: core, docs")] },
         ses_a: { updated: NOW - 100_000, idle: NOW - 100_000, messages: [usage(300)] },
         ses_b: { updated: NOW - 100_000, idle: NOW - 100_000, messages: [usage(400), spawnCall("error")] },
       },
@@ -625,7 +643,7 @@ describe("refresh", () => {
     })
     await tree(ports)
     await refresh(ports, state, "ses_top", NOW - 5000, "ses_a")
-    sessions.ses_top!.messages = [text("split: no, because it is small; considered: docs")]
+    sessions.ses_top!.messages = [done("split: no, because it is small; considered: docs")]
 
     contexts.length = 0
     expect((await refresh(ports, state, "ses_top", NOW - 4000, "ses_a"))!.split).toBe("split: no, because it is small; considered: docs")
@@ -673,6 +691,70 @@ describe("refresh", () => {
     })
   })
 
+  // #294: a stated line outranks a mention, once, and another session's turn end reads only the top's finished replies.
+  const mention = "I'll decide the split: after reading the code"
+
+  test("a stated line replaces a mention, which is no revision; a re-read or a later mention then changes nothing", async () => {
+    const { ports, state, sessions } = fakePorts({ ses_top: { updated: 1, idle: 1, messages: [text(mention)] } })
+    expect(await refresh(ports, state, "ses_top", NOW - 5000, "ses_top")).toMatchObject({ split: mention })
+    sessions.ses_top!.messages = [text(mention), text("split: 2 parts: core, docs")]
+
+    const stated = await refresh(ports, state, "ses_top", NOW - 4000, "ses_top")
+
+    expect(stated).toMatchObject({ split: "split: 2 parts: core, docs" })
+    expect(stated).not.toHaveProperty("revisions")
+    expect(await refresh(ports, state, "ses_top", NOW - 3000, "ses_top")).toEqual({ ...stated!, movedAt: NOW - 3000 })
+    sessions.ses_top!.messages = [text(mention), text("split: 2 parts: core, docs"), text("I decided to split: no, after all")]
+    expect(await refresh(ports, state, "ses_top", NOW - 2000, "ses_top")).toEqual({ ...stated!, movedAt: NOW - 2000 })
+    // Its reply compacted away, the stated line stays, and a mention is not taken for it.
+    sessions.ses_top!.messages = [text(mention)]
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toEqual({ ...stated!, movedAt: NOW })
+  })
+
+  test("of a mention and two stated lines in one read, the first stated line replaces the mention and the second is a revision", async () => {
+    const { ports, state, sessions } = fakePorts({ ses_top: { updated: 1, idle: 1, messages: [text(mention)] } })
+    await refresh(ports, state, "ses_top", NOW - 5000, "ses_top")
+    sessions.ses_top!.messages = [text(mention), done("split: 1 part: core", 2), done("split: 2 parts: core, docs", 3)]
+
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toMatchObject({
+      split: "split: 1 part: core",
+      revisions: [{ text: "split: 2 parts: core, docs", at: 3, parts: 0 }],
+    })
+  })
+
+  test("a mention replaced on a record written by hand keeps its revisions, and the line replacing it is not one of them", async () => {
+    const { ports, state, store, sessions } = fakePorts({ ses_top: { updated: 1, idle: 1 } })
+    const revisions = [{ text: "split: 3 parts", at: 5, parts: 1 }]
+    await store.set(recordKey("proj_1", "ses_top"), stored("ses_top", NOW - 9000, { split: mention, revisions }))
+    sessions.ses_top!.messages = [text(mention), done("split: 1 part: core", 10), done("split: 2 parts: core, docs", 11)]
+
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toMatchObject({
+      split: "split: 1 part: core",
+      revisions: [...revisions, { text: "split: 2 parts: core, docs", at: 11, parts: 0 }],
+    })
+  })
+
+  test("another session's turn end reads only the top's finished replies, while its record states no split line; the top's own reads all", async () => {
+    const { ports, state, sessions, contexts } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [text("split: 2 parts: a, b")] },
+      ses_a: { updated: NOW - 100_000, idle: NOW - 100_000 },
+      ses_b: { updated: NOW - 100_000, idle: NOW - 100_000 },
+    })
+    await tree(ports)
+    expect((await refresh(ports, state, "ses_top", NOW - 5000, "ses_a"))!.split).toBe(NOT_STATED)
+    sessions.ses_top!.messages = [done(mention), text("split: 2 parts: a, b")]
+    expect((await refresh(ports, state, "ses_top", NOW - 4000, "ses_a"))!.split).toBe(mention)
+
+    // A mention is no stated line, so the top's replies are still read; its unfinished one waits for its own turn end.
+    contexts.length = 0
+    const record = await refresh(ports, state, "ses_top", NOW - 3000, "ses_b")
+    expect(contexts).toContain("ses_top")
+    expect(record!.split).toBe(mention)
+    const own = await refresh(ports, state, "ses_top", NOW, "ses_top")
+    expect(own).toMatchObject({ split: "split: 2 parts: a, b" })
+    expect(own).not.toHaveProperty("revisions")
+  })
+
   test("keeps the use another turn end's refresh wrote while this one was reading", async () => {
     const { ports, state, sessions } = fakePorts(
       { ses_top: { updated: 1, idle: 1 }, ses_a: { updated: 1, idle: 1, messages: [usage(300)] }, ses_b: { updated: 1, idle: 1, messages: [usage(400)] } },
@@ -700,7 +782,7 @@ describe("refresh", () => {
 
   test("reads the top's messages before the record it writes over, so a part's refresh meanwhile is kept", async () => {
     const { ports, state, sessions } = fakePorts(
-      { ses_top: { updated: 1, idle: 1, messages: [text("split: 2 parts: a, b")] }, ses_a: { updated: 1, idle: 1, messages: [usage(300)] }, ses_b: { updated: 1, idle: 1 } },
+      { ses_top: { updated: 1, idle: 1, messages: [done("split: 2 parts: a, b")] }, ses_a: { updated: 1, idle: 1, messages: [usage(300)] }, ses_b: { updated: 1, idle: 1 } },
       [SMALL],
     )
     await tree(ports)
@@ -781,7 +863,7 @@ describe("the event module", () => {
 
   test("reads the messages of the session whose turn ended only, once the tree's record is written", async () => {
     const { ports, state, contexts } = fakePorts({
-      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [text("split: 2 parts: a, b")] },
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [done("split: 2 parts: a, b")] },
       ses_a: { updated: NOW - 100_000, idle: NOW - 100_000 },
       ses_b: { updated: NOW - 10_000, idle: NOW - 200_000 },
     })

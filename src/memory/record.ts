@@ -1,16 +1,16 @@
 import { finite, isNotFound, millis } from "../platform/json.js"
 import { busy, contextOf, reportState, stalledAmong, subtree, type Below, type ModelWindow } from "../tree/index.js"
-import { isSettled, mergeParts, NOT_STATED, partStatus, revise, splitLineOf, splitLinesOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
+import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, revise, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { memoryStore } from "./store.js"
 
 type Info = Awaited<ReturnType<RefreshPorts["session"]["get"]>>
 type Messages = Awaited<ReturnType<RefreshPorts["session"]["context"]>>
 
-/** A session's replies, in order, each with when it was created, for its split lines. */
-const repliesOf = (messages: Messages) =>
+/** A session's replies, in order, each with when it was created, for its split lines; only the `finished` ones when asked. */
+const repliesOf = (messages: Messages, finished: boolean) =>
   messages.flatMap((message) =>
-    message.type === "assistant"
+    message.type === "assistant" && (!finished || message.time?.completed !== undefined)
       ? [{ text: message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"), at: finite(millis(message.time?.created)) }]
       : [],
   )
@@ -98,8 +98,13 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   if (state.off.has(info.location.directory)) return undefined
   const store = memoryStore(ports.storage)
   const [previous, { nodes }] = await Promise.all([store.get(info.projectID, top), subtree(ports.storage, top)])
-  // The split lines are in the top's own replies, so only its own turn end can revise one stated already.
-  const replies = ended === top || (previous?.split ?? NOT_STATED) === NOT_STATED ? ports.session.context({ sessionID: top }).then(repliesOf, () => []) : []
+  // The split lines are in the top's own replies, so only its own turn end can revise one stated already; another's reads
+  // them while none is stated, and only the replies finished, never a line the top is still writing.
+  const own = ended === top
+  const replies =
+    own || !isStated(previous?.split ?? NOT_STATED)
+      ? ports.session.context({ sessionID: top }).then((messages) => repliesOf(messages, !own), () => [])
+      : []
   const stalled = await stalledAmong(ports, nodes.map((node) => node.entry.sessionID))
   const windows = [...state.windows.values()]
   const known = new Set(previous?.parts.map((one) => one.sessionID))
@@ -119,10 +124,13 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   const parts = mergeParts(latest?.parts ?? [], [...current, ...forgotten])
   const recalled = latest?.recalled ?? previous?.recalled
   const lesson = latest?.lesson ?? previous?.lesson
-  // The first split line stays even when compaction has dropped its reply; a later one is a revision.
+  // The first stated line stays even when compaction has dropped its reply; a later one is a revision.
   const first = latest?.split ?? NOT_STATED
-  const split = first === NOT_STATED ? (splitLineOf(said.map((reply) => reply.text).join("\n")) ?? NOT_STATED) : first
-  const revisions = split === NOT_STATED ? undefined : revise({ split, revisions: latest?.revisions }, statedIn(said), at, parts.length)
+  const split = splitOf(first, said.map((reply) => reply.text).join("\n"))
+  const stated = statedIn(said)
+  // The line that replaced a mention is the first stated, so beside revisions written by hand it is not one of them too.
+  const since = split !== first && latest?.revisions ? stated.slice(1) : stated
+  const revisions = split === NOT_STATED ? undefined : revise({ split, revisions: latest?.revisions }, since, at, parts.length)
   const record: TreeRecord = {
     startedAt: finite(millis(info.time.created)) ?? previous?.startedAt ?? at,
     movedAt: at,

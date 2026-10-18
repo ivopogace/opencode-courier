@@ -80,7 +80,8 @@ export function recordCategory(record: MemoryRecord, now = Date.now()) {
 
 /** A lesson as the view shows it: dated on the local day, from which depth when a session below the top wrote it, and its text. */
 export function lessonHeading(lesson: MemoryLesson) {
-  return `lesson (${day(lesson.at)}${lesson.depth === undefined ? "" : `, from depth ${lesson.depth}`})`
+  const from = lesson.depth === undefined ? "" : `, from depth ${lesson.depth}`
+  return `lesson (${day(lesson.at)}${from})`
 }
 
 /** A list row's description: its parts by status, how long the tree ran, what its parts cost, and that it is not finished when it is not. */

@@ -347,10 +347,12 @@ While a permission prompt or form is shown in the session, OpenCode hides the fo
 inbox with `ctrl+x k` (or `/asks` once the prompt is back).
 
 `/courier memory` (or the palette's "Courier: memory") lists the project's [tree records](#memory), newest
-first, one row each: the day the tree started and its title, its parts counted by status, how long it ran
+first, grouped by the day each tree last moved as OpenCode's Sessions dialog groups sessions, "Today" then
+the dates, in your local time, one row each: the tree's title, its parts counted by status, how long it ran
 and what its parts cost, with its lesson on the line under it. `enter` shows one in full, the tree's facts,
-each part's status, duration, cost and context use, and the lesson; `x` forgets the record under the row
-after you confirm, or, in the record on its lesson's rows, only the lesson, keeping the facts; `q` closes.
+when it started and last moved in local time, each part's status, duration, cost and context use, and the
+lesson; `x` forgets the record under the row after you confirm, or, in the record on its lesson's rows,
+only the lesson, keeping the facts; `q` closes.
 With `"memory": false` it says memory is off in this project. Nothing a model sees changes but what
 `courier_recall` lists ([more](docs/reference.md#the-memory-view)).
 

@@ -107,7 +107,12 @@ export function splitLineOf(text: string) {
 }
 
 /** A split line as the listing shows it: one line, without the marks `splitLineOf` reads past before it, nor the emphasis and code marks closing it. */
-export const splitProse = (split: string) => oneLine(split).replace(LEADING_MARKS, "").replace(/[\s*_`]+$/, "")
+export function splitProse(split: string) {
+  const line = oneLine(split).replace(LEADING_MARKS, "")
+  let end = line.length
+  while (end > 0 && " *_`".includes(line[end - 1]!)) end--
+  return line.slice(0, end)
+}
 
 /** What a part's status is read from: whether courier_stop stopped it, whether it is stalled, and its report state. */
 export interface Standing {

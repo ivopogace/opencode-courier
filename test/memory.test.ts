@@ -147,6 +147,12 @@ describe("splitLineOf", () => {
     expect(splitProse("split: 2 parts (**core**, *docs*): `a`")).toBe("split: 2 parts (core, docs): `a`")
     expect(splitProse("**split: no, because `src/**/text.ts` and `a*b` are one file**")).toBe("split: no, because `src/**/text.ts` and `a*b` are one file")
     expect(splitProse("1. **split:** no, because small")).toBe("split: no, because small")
+    expect(splitProse("**split: no, because src/*.ts are one**")).toBe("split: no, because src/*.ts are one")
+    expect(splitProse("***split: no***")).toBe("split: no")
+    expect(splitProse("**split: no, because *small***")).toBe("split: no, because small")
+    expect(splitProse("**a** and **b**: split: 2 parts")).toBe("a and b: split: 2 parts")
+    expect(splitProse("__split: no, because snake_case__")).toBe("split: no, because snake_case")
+    expect(splitProse("split: no, because\0 1\0 `x`")).toBe("split: no, because 1 `x`")
     expect(splitProse("> # `split: 3 parts: a, b, c`")).toBe("split: 3 parts: a, b, c")
     expect(splitProse("__split:\n  no, because small__ ")).toBe("split: no, because small")
     expect(splitProse("I decided to split: no, because it is small")).toBe("I decided to split: no, because it is small")
@@ -165,6 +171,10 @@ describe("splitLineOf", () => {
       "split: no, because src/**/a.ts and src/**/b.ts are untouched",
       "split: no, because `*.ts` and `*.md` are one change",
       "split: no, because a*b*c and 2**3 and 4**5 are one formula",
+      "split: no, because *.ts and *.md are one change",
+      "split: 2 parts: (*.ts) and (*.md)",
+      "split: no, because __init__ and __main__ are one module",
+      "-5 parts: split: no",
     ])
       expect(splitProse(line)).toBe(line)
   })

@@ -261,6 +261,14 @@ describe("revise", () => {
       { text: "split: 3 parts", at: 4, parts: 2 },
       { text: b, at: 5, parts: 2 },
     ])
+    // Replies read before an overlapping refresh wrote a later revision append nothing; newer ones after a compaction do.
+    expect(revise({ split: a, revisions }, [line(a, 1)], 60, 2)).toEqual(revisions)
+    expect(revise({ split: a, revisions }, [line(a, 1), line("split: 3 parts", 4)], 60, 2)).toEqual([...revisions, { text: "split: 3 parts", at: 4, parts: 2 }])
+    expect(revise({ split: a, revisions }, [line("split: 3 parts", 4), line(b, 5)], 60, 2)).toEqual([
+      ...revisions,
+      { text: "split: 3 parts", at: 4, parts: 2 },
+      { text: b, at: 5, parts: 2 },
+    ])
     // Dated by the refresh, the line recorded last is found by its words alone.
     expect(revise({ split: a, revisions: [{ text: b, at: 50, parts: 1 }] }, [line(a), line(b)], 60, 2)).toEqual([{ text: b, at: 50, parts: 1 }])
   })

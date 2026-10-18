@@ -129,23 +129,27 @@ export interface Stated {
   readonly at?: number
 }
 
-/** Where in `stated` the line recorded last was read: the reply of the last revision, else `split`'s first statement; -1 when gone. */
-function recordedAt(previous: Pick<TreeRecord, "split" | "revisions">, stated: ReadonlyArray<Stated>) {
+/**
+ * The lines after the one recorded last: after its reply, else (compacted, or unread by an overlapping refresh) those stated since its
+ * time; without a revision, after `split`'s first statement; all when neither is found.
+ */
+function statedSince(previous: Pick<TreeRecord, "split" | "revisions">, stated: ReadonlyArray<Stated>) {
   const last = previous.revisions?.at(-1)
-  if (!last) return stated.findIndex((line) => splitProse(line.text) === splitProse(previous.split))
-  const same = (line: Stated) => splitProse(line.text) === splitProse(last.text)
-  const inReply = stated.findLastIndex((line) => same(line) && line.at === last.at)
-  return inReply >= 0 ? inReply : stated.findLastIndex(same)
+  const words = (line: Stated) => splitProse(line.text)
+  if (!last) return stated.slice(stated.findIndex((line) => words(line) === splitProse(previous.split)) + 1)
+  const inReply = stated.findLastIndex((line) => words(line) === splitProse(last.text) && line.at === last.at)
+  if (inReply >= 0) return stated.slice(inReply + 1)
+  if (stated.some((line) => line.at !== undefined)) return stated.filter((line) => line.at !== undefined && line.at > last.at)
+  return stated.slice(stated.findLastIndex((line) => words(line) === splitProse(last.text)) + 1)
 }
 
 /**
- * The revisions once the split lines `stated` are read at a refresh at `at` with `parts` parts: those after the line recorded last (all
- * when the replies no longer hold it), each appended when its words differ from the line before, so a re-read appends nothing.
+ * The revisions once the split lines `stated` are read at a refresh at `at` with `parts` parts: those `statedSince` the line recorded
+ * last, each appended when its words differ from the line before, so a re-read appends nothing.
  */
 export function revise(previous: Pick<TreeRecord, "split" | "revisions">, stated: ReadonlyArray<Stated>, at: number, parts: number) {
   const recorded = splitProse(previous.revisions?.at(-1)?.text ?? previous.split)
-  const after = stated.slice(recordedAt(previous, stated) + 1)
-  const { added } = after.reduce<{ last: string; added: Revision[] }>(
+  const { added } = statedSince(previous, stated).reduce<{ last: string; added: Revision[] }>(
     ({ last, added }, line) => {
       const words = splitProse(line.text)
       return words === last ? { last, added } : { last: words, added: [...added, { text: line.text, at: line.at ?? at, parts }] }

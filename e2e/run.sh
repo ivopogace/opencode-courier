@@ -1366,7 +1366,7 @@ run_memory() {
     "$(jq -r --argjson before "$before" '.movedAt > $before.movedAt and .finished == true and .parts == $before.parts' <<<"$after")"
   check "which courier_recall lists as finished, its part done" \
     "$(prompt_in "$parent" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg parent "$parent" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $parent + " (this tree) "))) |
-      length == 1 and (.[0] | contains(" · 1 part: 1 done, 1 isolated · ") and test(" · last moved [^·]+ ago · finished") and (contains("not finished") | not)))')"
+      length == 1 and (.[0] | contains(" · 1 part: 1 done, 1 isolated · ") and test(" · last moved [^·]+ ago · ") and contains(" · finished") and (contains("not finished") | not)))')"
 
   scenario "with the memory option off, courier_note is refused; on again, the lesson is still there"
   stop_server

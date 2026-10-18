@@ -8,7 +8,7 @@ import { Schema } from "effect"
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 
 /** A part's statuses, as `memory/domain.ts`'s `PART_STATUSES` has them; a unit test keeps the two equal. */
-export const PART_STATUSES = ["done", "partial", "blocked", "failed", "interrupted", "stopped", "stalled", "out"] as const
+export const PART_STATUSES = ["done", "partial", "blocked", "failed", "interrupted", "stopped", "gone", "stalled", "out"] as const
 
 /** One session started in a tree, as its record keeps it: durations in milliseconds, context use a share of the model's window. */
 const Part = Schema.Struct({

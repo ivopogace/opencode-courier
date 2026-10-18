@@ -1505,6 +1505,8 @@ exports[`memory recallListText 3`] = `
 
 exports[`memory recallListText 4`] = `"- ses_long 2026-10-03: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx… [20 more characters]" · split: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy… [47 more characters] · no parts · 42 min · finished"`;
 
+exports[`memory recordLine with a gone part 1`] = `"- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 gone, 3 isolated, 1 spawn refused · 42 min · $1.23 · finished"`;
+
 exports[`memory recallRecordText 1`] = `
 "Record of the tree under ses_old, in project proj_1 (durations in milliseconds, context use as a share of the model's window):
 {

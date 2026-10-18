@@ -1352,6 +1352,22 @@ run_memory() {
   check "a record that is not there is said to be missing" \
     "$(prompt "COURIER-RECALL ses_nowhere" | tool_state courier_recall | jq -r '.status == "completed" and .metadata.metadata.found == false and (.output | startswith("No record of a tree whose top session is ses_nowhere"))')"
 
+  # A part whose session OpenCode deleted (#283): an isolated child keeps its roster entry, but not its report state.
+  scenario "a deleted isolated child's part keeps its last status and duration, and its tree still reads finished"
+  spawn_isolated
+  before=$(record_of "$parent" '.finished == true and (.parts | length == 1) and .parts[0].status == "done"')
+  check "the child's part reads done and the tree finished once it reported" \
+    "$(jq -r --arg child "$child" '.finished == true and .parts[0].sessionID == $child and .parts[0].isolated and (.parts[0].duration | type) == "number"' <<<"$before")"
+  check "the isolated child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
+  # The parent's turn ending after the call refreshes the record, with the child's session gone.
+  prompt_in "$parent" "COURIER-RECALL" >/dev/null
+  after=$(record_of "$parent" ".movedAt > $(jq '.movedAt' <<<"$before")")
+  check "after a refresh, the part is as last recorded, its duration unchanged, and the tree still finished" \
+    "$(jq -r --argjson before "$before" '.movedAt > $before.movedAt and .finished == true and .parts == $before.parts' <<<"$after")"
+  check "which courier_recall lists as finished, its part done" \
+    "$(prompt_in "$parent" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg parent "$parent" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $parent + " (this tree) "))) |
+      length == 1 and (.[0] | contains(" · 1 part: 1 done, 1 isolated · ") and contains(" · finished") and (contains("not finished") | not)))')"
+
   scenario "with the memory option off, courier_note is refused; on again, the lesson is still there"
   stop_server
   jq '.plugins[0].options.memory = false' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"

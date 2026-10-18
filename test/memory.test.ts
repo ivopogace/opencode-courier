@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test"
 import type { ToolEditor } from "../src/kernel/tool.js"
 import {
+  isSettled,
   keep,
   LESSON_MAX,
   lessonText,
@@ -12,10 +13,12 @@ import {
   mergeParts,
   noteRecall,
   oneLine,
+  PART_STATUSES,
   partStatus,
   readMemory,
   RETENTION_MS,
   splitLineOf,
+  unreadPart,
   type PartRecord,
   type StoredRecord,
   type TreeRecord,
@@ -169,6 +172,19 @@ describe("mergeParts", () => {
   })
 })
 
+describe("unreadPart", () => {
+  test("keeps the last title, duration and cost; settles a gone part as read, else as last recorded, else as gone", () => {
+    const read = part("a", "out", { title: "entry a" })
+    const last = part("a", "done", { duration: 30_000, cost: 0.1 })
+    expect(unreadPart(read, last, true)).toEqual(last)
+    expect(unreadPart(part("a", "interrupted"), last, true)).toEqual({ ...last, status: "interrupted" })
+    expect(unreadPart(read, { ...last, status: "stalled" }, true)).toEqual({ ...last, status: "gone" })
+    expect(unreadPart(read, undefined, true)).toEqual({ ...read, status: "gone" })
+    expect(unreadPart(read, last, false)).toEqual({ ...last, status: "out" })
+    expect(PART_STATUSES.filter((status) => !isSettled(status))).toEqual(["stalled", "out"])
+  })
+})
+
 describe("noteRecall", () => {
   test("counts every call, and keeps the top's first as when", () => {
     expect(noteRecall(undefined, false, 10)).toEqual({ calls: 1 })
@@ -285,7 +301,7 @@ describe("refresh", () => {
     expect(store.get(recordKey("proj_1", "ses_top"))).toEqual(record)
   })
 
-  test("reads a session OpenCode no longer knows from its entry and notes, and a tree with nothing running and every part settled as finished", async () => {
+  test("reads a session OpenCode no longer knows from its entry and notes, with no duration, and a tree with nothing running and every part settled as finished", async () => {
     const { ports, state } = fakePorts({ ses_top: { updated: NOW - 50_000, idle: NOW - 50_000 } })
     const children = childStore(ports.storage)
     await children.record(entry("ses_gone", "ses_top"))
@@ -299,9 +315,70 @@ describe("refresh", () => {
 
     expect(record).toMatchObject({ finished: true, split: "not stated", title: "title ses_top" })
     expect(record!.parts).toEqual([
-      { sessionID: "ses_gone", title: "entry ses_gone", depth: 1, isolated: false, status: "interrupted", duration: 300_000 },
-      { sessionID: "ses_deep", title: "entry ses_deep", depth: 2, isolated: false, status: "partial", duration: 200_000 },
+      { sessionID: "ses_gone", title: "entry ses_gone", depth: 1, isolated: false, status: "interrupted" },
+      { sessionID: "ses_deep", title: "entry ses_deep", depth: 2, isolated: false, status: "partial" },
     ])
+  })
+
+  test("keeps the last status and duration of a part whose session OpenCode deleted, so the tree reads finished (#283)", async () => {
+    const { ports, state, sessions } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000 },
+      ses_goner: { created: NOW - 290_000, updated: NOW - 260_000, idle: NOW - 260_000, cost: 0.1, title: "Goner" },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_goner", "ses_top", { isolated: true }))
+    await children.prompted("ses_goner", NOW - 290_000)
+    await children.settled("ses_goner", "report", NOW - 260_000, "done")
+    const before = (await refresh(ports, state, "ses_top", NOW))!.parts[0]
+    expect(before).toEqual({ sessionID: "ses_goner", title: "Goner", depth: 1, isolated: true, status: "done", duration: 30_000, cost: 0.1 })
+    // As noteDeleted leaves an isolated child: its report state forgotten, its entry kept for its worktree.
+    delete sessions.ses_goner
+    await children.forgetReport("ses_goner")
+
+    const after = await refresh(ports, state, "ses_top", NOW + 60_000)
+    const later = await refresh(ports, state, "ses_top", NOW + 600_000)
+
+    expect(after).toMatchObject({ finished: true, parts: [before] })
+    expect(later).toMatchObject({ finished: true, parts: [before] })
+  })
+
+  test("reads a part gone while it owed a report or stalled as gone, settled, with its last duration, on the roster or forgotten by it", async () => {
+    const { ports, state, store, sessions } = fakePorts({ ses_top: { updated: NOW - 50_000, idle: NOW - 50_000 }, ses_known: { updated: NOW - 100_000, idle: NOW - 100_000 } })
+    await store.set(
+      recordKey("proj_1", "ses_top"),
+      stored("ses_top", NOW - 1000, { finished: false, parts: [part("ses_listed", "out", { duration: 40_000 }), part("ses_dropped", "stalled", { duration: 50_000 }), part("ses_known", "out")] }),
+    )
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_listed", "ses_top", { isolated: true }))
+    await children.record(entry("ses_new", "ses_top"))
+
+    const record = await refresh(ports, state, "ses_top", NOW)
+
+    expect(record!.parts).toEqual([
+      part("ses_listed", "gone", { duration: 40_000, isolated: true }),
+      part("ses_dropped", "gone", { duration: 50_000 }),
+      part("ses_known", "out"),
+      { sessionID: "ses_new", title: "entry ses_new", depth: 1, isolated: false, status: "gone" },
+    ])
+    // ses_known is forgotten by the roster but OpenCode still knows it: out as last recorded, until it is gone too.
+    expect(record!.finished).toBe(false)
+    delete sessions.ses_known
+    expect(await refresh(ports, state, "ses_top", NOW + 1000)).toMatchObject({ finished: true, parts: [{}, {}, part("ses_known", "gone"), {}] })
+  })
+
+  test("keeps the last record of a part whose session cannot be read for another reason, without settling it", async () => {
+    const { ports, state, store } = fakePorts({ ses_top: { updated: NOW - 50_000, idle: NOW - 50_000 }, ses_a: { updated: 1, idle: 1 } })
+    await store.set(recordKey("proj_1", "ses_top"), stored("ses_top", NOW - 1000, { parts: [part("ses_a", "out", { duration: 40_000, cost: 0.2 })] }))
+    await childStore(ports.storage).record(entry("ses_a", "ses_top"))
+    const get = ports.session.get
+    ;(ports.session as any).get = async (input: { sessionID: string }) => {
+      if (input.sessionID === "ses_a") throw new Error("db locked")
+      return get(input)
+    }
+
+    const record = await refresh(ports, state, "ses_top", NOW)
+
+    expect(record).toMatchObject({ finished: false, parts: [part("ses_a", "out", { duration: 40_000, cost: 0.2 })] })
   })
 
   test("names a stopped part, a stalled one and a failed turn; a stalled part keeps the tree from reading as finished", async () => {

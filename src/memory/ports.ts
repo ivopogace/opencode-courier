@@ -2,9 +2,9 @@
 import type { Plugin } from "@opencode/plugin"
 import type { Storage } from "../platform/storage.js"
 import type { ModelWindow } from "../tree/index.js"
-import type { StoredRecord, TreeRecord } from "./domain.js"
+import type { Pinned, ReadKind, Reads, StoredRecord, TreeRecord } from "./domain.js"
 
-export type { Lesson, PartRecord, PartStatus, Recalled, Revision, StoredRecord, TreeRecord } from "./domain.js"
+export type { Lesson, PartRecord, PartStatus, Pinned, ReadKind, Reads, Recalled, Revision, StoredRecord, TreeRecord } from "./domain.js"
 
 type Context = Plugin.Context
 
@@ -38,13 +38,21 @@ export interface MemoryState {
   readonly seen: Set<string>
 }
 
-/** The records, by project and top session. */
+/** The records, by project and top session, each read with its reads and pin, which lie beside it and are written apart. */
 export interface MemoryStore {
   get(projectID: string, sessionID: string): Promise<TreeRecord | undefined>
+  /** Writes the record's facts; its `reads` and `pinned` are left out, as nothing but `noteRead` and `pin` write them. */
   put(projectID: string, sessionID: string, record: TreeRecord): Promise<void>
+  /** Removes the record with its reads and pin. */
   remove(projectID: string, sessionID: string): Promise<void>
+  /** Counts a listing or a full read of the record by the tree under `by` at `at`; gives that tree's reads of it. */
+  noteRead(projectID: string, sessionID: string, by: string, kind: ReadKind, at: number): Promise<Reads>
+  /** Pins the record, or with `undefined` unpins it. */
+  pin(projectID: string, sessionID: string, pinned: Pinned | undefined): Promise<void>
   /** A project's records, in key order. */
   ofProject(projectID: string): Promise<StoredRecord[]>
   /** Every project's records. */
   all(): Promise<StoredRecord[]>
+  /** The trees with reads or a pin but no record, left by a record removed while it was read or pinned. */
+  strays(): Promise<Array<{ projectID: string; sessionID: string }>>
 }

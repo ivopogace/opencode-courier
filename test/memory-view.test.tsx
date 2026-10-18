@@ -3,7 +3,7 @@
 // runs in Berlin's zone, two hours ahead of UTC in October, so a day differs from UTC's late in the evening.
 import { afterAll, describe, expect, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin/tui"
-import type { Forgotten, MemoryRecord, Records } from "../src/memory/rpc.js"
+import type { Forgotten, MemoryRecord, Pinned, Records } from "../src/memory/rpc.js"
 import {
   addMemoryView,
   costOf,
@@ -20,6 +20,9 @@ import {
   NO_RECORDS,
   partLine,
   partsCounted,
+  PINNED,
+  pinnedLine,
+  readsLine,
   recordCategory,
   recordDescription,
   recordDetails,
@@ -79,7 +82,15 @@ const HOLD = Symbol("hold")
  * and each dialog is answered by the next of `answers`, which backs out once they run out.
  */
 function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, location = { directory: "/workspace" } }: { memory?: boolean; location?: { directory: string } | null } = {}) {
-  const state = { records: [...records] as MemoryRecord[], memory, forgotten: { outcome: "record" } as Forgotten, readError: undefined as unknown, forgetError: undefined as unknown }
+  const state = {
+    records: [...records] as MemoryRecord[],
+    memory,
+    forgotten: { outcome: "record" } as Forgotten,
+    pinned: undefined as Pinned | undefined,
+    readError: undefined as unknown,
+    forgetError: undefined as unknown,
+    pinError: undefined as unknown,
+  }
   const dialogs: Dialog[] = []
   const answers: ((dialog: Dialog) => unknown)[] = []
   const calls: { method: string; input: unknown; options?: unknown }[] = []
@@ -133,6 +144,20 @@ function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, loca
             if (state.forgotten.outcome === "lesson") state.records = state.records.map((one) => (one.sessionID === input.sessionID ? { ...one, lesson: undefined } : one))
             return state.forgotten
           },
+          // As the server: the pin lies beside the record, and the listing puts the pinned first.
+          pin: async (input: { sessionID: string; pinned: boolean }, options: unknown) => {
+            calls.push({ method: "pin", input, options })
+            if (state.pinError) throw state.pinError
+            if (state.pinned) return state.pinned
+            const found = state.records.find((one) => one.sessionID === input.sessionID)
+            if (!found) return { outcome: "none" }
+            const { pinned: _pin, ...rest } = found
+            const changed: MemoryRecord = input.pinned ? { ...found, pinned: { at: NOW } } : rest
+            state.records = state.records
+              .map((one) => (one === found ? changed : one))
+              .toSorted((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.movedAt - a.movedAt)
+            return { outcome: input.pinned ? "pinned" : "unpinned" }
+          },
         }
       },
     },
@@ -161,6 +186,7 @@ function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, loca
     sizes,
     goHome: () => void (route = { type: "home" }),
     forgets: () => calls.filter(({ method }) => method === "forget"),
+    pins: () => calls.filter(({ method }) => method === "pin"),
     reads: () => calls.filter(({ method }) => method === "records"),
     selects: () => dialogs.filter((one) => one.kind === "select"),
     confirms: () => dialogs.filter((one) => one.kind === "confirm"),
@@ -218,6 +244,25 @@ describe("the memory view's lines", () => {
     expect(recordCategory({ ...newest, movedAt: Date.UTC(2026, 9, 17, 22, 0) }, NOW)).toBe(TODAY)
     expect(recordCategory(todays)).toBe(TODAY)
     expect(recordCategory(yesterdays)).toBe(yesterday)
+    // A pinned record is under Pinned whenever it last moved.
+    expect(recordCategory({ ...older, pinned: { at: NOW } }, NOW)).toBe(PINNED)
+  })
+
+  test("a row says how often other trees' courier_recall showed and opened the record, as the record in full does with when last (#285)", () => {
+    expect(readsLine({ shown: 7, read: 1, at: NOW })).toBe("shown 7 times, opened once")
+    expect(readsLine({ shown: 1, read: 0, at: NOW })).toBe("shown once")
+    expect(readsLine({ shown: 0, read: 2, at: NOW })).toBe("opened 2 times")
+    expect(recordDescription({ ...newest, reads: { shown: 7, read: 1, at: NOW } })).toBe("3 parts: 1 done, 1 partial, 1 out · 42 min · $1.28 · shown 7 times, opened once")
+    const facts = detailOptions({ ...older, reads: { shown: 7, read: 1, at: NOW }, pinned: { at: NOW - 60_000 } }).filter((option) => option.value.kind === "fact")
+    expect(facts.map((option) => [option.title, option.description])).toEqual(
+      expect.arrayContaining([
+        ["Shown 7 times, opened once", "by other trees' courier_recall, last 2026-10-18 01:30 GMT+2"],
+        ["Pinned", "since 2026-10-18 01:29 GMT+2: listed first, never swept; p unpins"],
+      ]),
+    )
+    expect(pinnedLine(newest, "pinned")).toBe('Pinned "Add memory to courier": listed first, never swept')
+    expect(pinnedLine(newest, "unpinned")).toBe('Unpinned "Add memory to courier": kept as the others are')
+    expect(pinnedLine(newest, "none")).toBe('Nothing to pin for "Add memory to courier": it was already gone')
   })
 
   test("a part's line: its status, depth, isolation, group, duration, cost, context use and spawns refused", () => {
@@ -240,6 +285,8 @@ describe("the memory view's lines", () => {
       ["Tree", "split: 2 parts: core, docs", undefined],
       ["Tree", "Finished", "$1.28 in all"],
       ["Tree", "Recalled 2 times", "first by the top 2026-10-18 00:50 GMT+2"],
+      ["Tree", "Never shown", "no other tree's courier_recall has listed it yet"],
+      ["Tree", "Not pinned", "p pins it: listed first, never swept"],
       ["Parts", "Core", "done · depth 1 · isolated · group wave · 9 min · $0.42 · ctx 31%"],
       ["Parts", "Docs", "partial · depth 1 · 1 min · $0.86 · 1 spawn refused"],
       ["Parts", "  Review", "out · depth 2"],
@@ -252,6 +299,8 @@ describe("the memory view's lines", () => {
       { kind: "fact", key: "split" },
       { kind: "fact", key: "finished" },
       { kind: "fact", key: "recalled" },
+      { kind: "fact", key: "reads" },
+      { kind: "fact", key: "pinned" },
       { kind: "part", sessionID: "ses_core" },
       { kind: "part", sessionID: "ses_docs" },
       { kind: "part", sessionID: "ses_review" },
@@ -268,6 +317,8 @@ describe("the memory view's lines", () => {
       ["not stated", undefined],
       ["Not finished", undefined],
       ["Recalled 1 time", "by a part only"],
+      ["Never shown", "no other tree's courier_recall has listed it yet"],
+      ["Not pinned", "p pins it: listed first, never swept"],
       ["No parts", "no session was started in this tree"],
     ])
     expect(options.filter((option) => option.category === "Lesson").map((option) => option.title)).toEqual(["lesson (2026-10-18, from depth 1)", ...wrap("x ".repeat(100), LESSON_ROW)])
@@ -318,8 +369,11 @@ describe("the memory view", () => {
       [yesterday, "Fix the bug", "no parts · 42 min · not finished", []],
     ])
     expect(yesterday).not.toBe(TODAY)
-    // `x` alone, so every other letter, `q` among them, goes to the search.
-    expect(list.actions.map((action: any) => [action.bind, action.title, action.selection])).toEqual([["x", "forget", undefined]])
+    // `x` and `p` alone, so every other letter, `q` among them, goes to the search.
+    expect(list.actions.map((action: any) => [action.bind, action.title, action.selection])).toEqual([
+      ["x", "forget", undefined],
+      ["p", "pin", undefined],
+    ])
     // Esc left it: nothing more is shown or read.
     expect(fake.dialogs).toHaveLength(1)
     expect(fake.toasts).toEqual([])
@@ -369,7 +423,7 @@ describe("the memory view", () => {
     const [list, detail, listAgain, detailAgain, listOnceMore] = fake.selects()
     expect(list!.options.title).toBe("Memory (2)")
     expect(detail!.options.title).toBe("Sat Oct 17 2026  Fix the bug")
-    expect(detail!.options.options.map((option: any) => option.category)).toEqual(["Tree", "Tree", "Tree", "Tree", "Tree", "Parts", "Lesson"])
+    expect(detail!.options.options.map((option: any) => option.category)).toEqual(["Tree", "Tree", "Tree", "Tree", "Tree", "Tree", "Tree", "Parts", "Lesson"])
     expect(listAgain!.options.title).toBe("Memory (2)")
     expect(detailAgain!.options.title).toBe("Sun Oct 18 2026  Add memory to courier")
     expect(listOnceMore!.options.title).toBe("Memory (2)")
@@ -525,9 +579,76 @@ describe("the memory view", () => {
     await addMemoryView(detail.context).open()
     const [first, record, back] = detail.selects()
     expect([first, record, back].map((one) => one!.options.title)).toEqual(["Memory (1)", "Sun Oct 18 2026  Add memory to courier", "Memory (1)"])
-    expect(record!.options.actions.map((action: any) => action.bind)).toEqual(["x"])
+    expect(record!.options.actions.map((action: any) => action.bind)).toEqual(["x", "p"])
     expect(detail.dialogs).toHaveLength(3)
     expect(detail.reads()).toHaveLength(3)
+  })
+
+  test("p on a row pins the record through the RPC, without a confirm; the list is read again with it under Pinned and the cursor on it; p again unpins it (#285)", async () => {
+    const fake = fakeContext([todays, yesterdays])
+    fake.answers.push(press("p", "Fix the bug"), press("p", "Fix the bug"), escape)
+    await addMemoryView(fake.context).open()
+
+    expect(fake.confirms()).toEqual([])
+    expect(fake.pins()).toEqual([
+      { method: "pin", input: { sessionID: "ses_old", pinned: true }, options: { location: { directory: "/project" } } },
+      { method: "pin", input: { sessionID: "ses_old", pinned: false }, options: { location: { directory: "/project" } } },
+    ])
+    const [first, second, third] = fake.selects()
+    expect(first!.options.options.map((option: any) => [option.category, option.title])).toEqual([
+      [TODAY, "Add memory to courier (this session)"],
+      [yesterday, "Fix the bug"],
+    ])
+    expect(second!.options.options.map((option: any) => [option.category, option.title])).toEqual([
+      [PINNED, "Fix the bug"],
+      [TODAY, "Add memory to courier (this session)"],
+    ])
+    expect(second!.options.current).toEqual({ ...yesterdays, pinned: { at: NOW } })
+    expect(third!.options.options.map((option: any) => option.category)).toEqual([TODAY, yesterday])
+    expect(third!.options.current).toEqual(yesterdays)
+    expect(fake.toasts).toEqual([
+      { title: "courier", message: 'Pinned "Fix the bug": listed first, never swept', variant: "success" },
+      { title: "courier", message: 'Unpinned "Fix the bug": kept as the others are', variant: "success" },
+    ])
+    expect(fake.reads()).toHaveLength(3)
+  })
+
+  test("p in a record in full pins it and shows the record again on the same row, its footer then offering unpin", async () => {
+    const fake = fakeContext([newest, older])
+    fake.answers.push(pick("Fix the bug"), press("p", "Top session"), escape, escape)
+    await addMemoryView(fake.context).open()
+
+    expect(fake.pins()).toEqual([{ method: "pin", input: { sessionID: "ses_old", pinned: true }, options: { location: { directory: "/project" } } }])
+    const [, detail, detailAgain, list] = fake.selects()
+    expect(detail!.options.actions.map((action: any) => [action.bind, action.title])).toEqual([
+      ["x", "forget"],
+      ["p", "pin"],
+    ])
+    expect(detailAgain!.options.title).toBe(detail!.options.title)
+    expect(detailAgain!.options.current).toEqual({ kind: "fact", key: "top" })
+    expect(detailAgain!.options.actions.map((action: any) => [action.bind, action.title])).toEqual([
+      ["x", "forget"],
+      ["p", "unpin"],
+    ])
+    expect(detailAgain!.options.options.find((option: any) => option.value.key === "pinned").title).toBe("Pinned")
+    expect(list!.options.current).toEqual({ ...older, pinned: { at: NOW } })
+  })
+
+  test("a record already gone, or a pin the server refuses, is said in a toast, and the list goes on", async () => {
+    const gone = fakeContext([newest])
+    gone.state.pinned = { outcome: "none" }
+    gone.answers.push(press("p"), escape)
+    await addMemoryView(gone.context).open()
+    expect(gone.toasts).toEqual([{ title: "courier", message: 'Nothing to pin for "Add memory to courier": it was already gone', variant: "warning" }])
+    expect(gone.selects()).toHaveLength(2)
+
+    const refused = fakeContext([{ ...newest, pinned: { at: NOW } }])
+    refused.state.pinError = new Error("rpc.unavailable")
+    refused.answers.push(press("p"), escape)
+    await addMemoryView(refused.context).open()
+    expect(refused.pins()[0]!.input).toEqual({ sessionID: "ses_root", pinned: false })
+    expect(refused.toasts).toEqual([{ title: "courier", message: "Not unpinned: rpc.unavailable", variant: "error" }])
+    expect(refused.selects()).toHaveLength(2)
   })
 
   test("is opened by its command, from the palette, once at a time", async () => {

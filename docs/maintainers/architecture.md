@@ -87,6 +87,8 @@ the memory's.
 | `wake/<sessionID>/<inboxID>` | A courier message waiting in a session's inbox, until delivered or cancelled: `at`, `text`, `description`, `running`, `idleAt`, `rewoken`, `stalled` ([a missed wake](../reference.md#a-missed-wake)). |
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers ([below](#two-servers)). |
 | `memory/<projectID>/<topSessionID>` | A session tree's record, field by field in [the reference](../reference.md#memory). |
+| `memory/<projectID>/<topSessionID>/pin` | `{ at }`: the person's pin on the record, written only by the memory view's RPC ([beside the record](../reference.md#what-lies-beside-a-record)). |
+| `memory/<projectID>/<topSessionID>/reads/<readerTopSessionID>` | `{ shown, read, at }`: how often `courier_recall` calls from the tree under `readerTopSessionID` listed the record or gave it in full, written only by that tree's sessions; summed when the record is read. |
 
 A session owes a report while `prompt` is later than `settled`, and its parent waits for it while
 `prompt` is later than `told` too. The prompt's time is the one OpenCode published its delivery at

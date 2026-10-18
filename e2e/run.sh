@@ -1297,9 +1297,16 @@ run_memory() {
   # Its turn ending after the call refreshes the record: no parts, and finished, as nothing in it runs.
   check "the new session's own record was written by the call, with no parts and the call noted" \
     "$(record_of "$other" '.recalled.calls == 1' | jq -r '.parts == [] and .recalled.calls == 1 and (.recalled.at | type) == "number"')"
-  full=$(prompt "COURIER-RECALL $root" | tool_state courier_recall)
-  check "with a sessionID, courier_recall gives that record in full" \
-    "$(jq -r --arg root "$root" '.status == "completed" and (.output | startswith("Record of the tree under " + $root + ", in project ")) and .metadata.metadata.record.sessionID == $root and (.metadata.metadata.record.parts | length) == 2' <<<"$full")"
+  # The listing was counted beside the root's record, under the reader's top (#285); a tree's own record counts nothing.
+  check "the listing counted the root's record as shown once to the new session's tree, beside the record, and neither tree's own" \
+    "$([ "$(kv get "memory/$project/$root/reads/$other" | jq -r '.shown == 1 and .read == 0 and (.at | type) == "number"')" = true ] && [ -z "$(kv get "memory/$project/$other/reads/$other")" ] && [ -z "$(kv get "memory/$project/$root/reads/$root")" ] && [ "$(kv get "memory/$project/$root" | jq -r 'has("reads") | not')" = true ] && echo true || echo false)"
+  out=$(prompt "COURIER-RECALL $root")
+  reader=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  full=$(tool_state courier_recall <<<"$out")
+  check "with a sessionID, courier_recall gives that record in full, its reads summed over both readers with this read counted" \
+    "$(jq -r --arg root "$root" '.status == "completed" and (.output | startswith("Record of the tree under " + $root + ", in project ") and contains("\"reads\": {")) and .metadata.metadata.record.sessionID == $root and (.metadata.metadata.record.parts | length) == 2 and
+      (.metadata.metadata.record.reads | .shown == 1 and .read == 1 and (.at | type) == "number")' <<<"$full")"
+  check "which was counted as a read under the reader's top" "$(kv get "memory/$project/$root/reads/$reader" | jq -r '.shown == 0 and .read == 1')"
   # The lesson (#261): the top writes one line on its record once its parts have reported, and a second note replaces it.
   today=$(date -u +%F)
   line="The docs part was ten lines; next time do it yourself"
@@ -1384,11 +1391,18 @@ run_memory() {
   seeded='{"startedAt":1760000000000,"movedAt":1760000900000,"title":"Seeded by hand","split":"split: 2 parts: core, docs","finished":true,"lesson":{"text":"Give the docs to one session","at":1760000890000},"parts":[{"sessionID":"ses_seed_core","title":"Core","depth":1,"isolated":true,"group":"wave","status":"done","duration":540000,"cost":0.42,"context":0.31},{"sessionID":"ses_seed_docs","title":"Docs","depth":1,"isolated":false,"status":"partial","duration":60000,"refused":1}]}'
   kv set "memory/$project/ses_seeded" "$seeded" "memory/$project/$root"
   full=$(prompt "COURIER-RECALL ses_seeded" | tool_state courier_recall)
-  check "a record seeded with kv.ts, lesson included, reads back as written, and is listed" \
-    "$(jq -r --argjson seeded "$seeded" '.status == "completed" and (.metadata.metadata.record | del(.projectID, .sessionID)) == $seeded' <<<"$full")"
+  check "a record seeded with kv.ts, lesson included, reads back as written, with this read counted, and is listed" \
+    "$(jq -r --argjson seeded "$seeded" '.status == "completed" and (.metadata.metadata.record | del(.projectID, .sessionID, .reads)) == $seeded and .metadata.metadata.record.reads.read == 1' <<<"$full")"
   check "in the listing, with its parts counted and its lesson dated" "$(prompt "COURIER-RECALL" | tool_state courier_recall | jq -r '.status == "completed" and (.output | contains("- ses_seeded 2025-10-09: \"Seeded by hand\" · split: 2 parts: core, docs · 2 parts: 1 done, 1 partial, 1 isolated, 1 spawn refused · ran 15 min · last moved ") and test(" · last moved [0-9]+ days ago · \\$0\\.42 · finished · lesson \\(2025-10-09\\): \"Give the docs to one session\""))')"
   check "a record that is not there is said to be missing" \
     "$(prompt "COURIER-RECALL ses_nowhere" | tool_state courier_recall | jq -r '.status == "completed" and .metadata.metadata.found == false and (.output | startswith("No record of a tree whose top session is ses_nowhere"))')"
+  # The person's pin (#285), beside the record as the memory view writes it: the pinned record is listed first and marked,
+  # and the sweep at the next load keeps it, a year old as it is, while an unpinned record as old goes.
+  kv set "memory/$project/ses_seeded/pin" '{"at":1760000950000}' "memory/$project/$root"
+  kv set "memory/$project/ses_unpinned" "$(jq -c '.title = "Seeded, unpinned" | del(.lesson)' <<<"$seeded")" "memory/$project/$root"
+  check "an unpinned record as old is seeded beside it, for the sweep at the next load" "$(kv get "memory/$project/ses_unpinned" | jq -r '.title == "Seeded, unpinned"')"
+  check "a pinned record is listed first and marked, and the listing says what a pin means" \
+    "$(prompt "COURIER-RECALL" | tool_state courier_recall | jq -r '.status == "completed" and (.output | split("\n") | (.[0] | contains("A record marked \"pinned\" is one the person chose to keep and listed first")) and (.[1] | startswith("- ses_seeded 2025-10-09: ") and contains(" · finished · pinned · lesson ("))) and .metadata.metadata.records[0].pinned.at == 1760000950000 and (.metadata.metadata.records[1] | has("pinned") | not)')"
 
   # A part whose session OpenCode deleted (#283): an isolated child keeps its roster entry, but not its report state.
   scenario "a deleted isolated child's part keeps its last status and duration, and its tree still reads finished"
@@ -1420,6 +1434,9 @@ run_memory() {
   git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory on"
   start_server
   check "the record kept its lesson meanwhile" "$(record_of "$root" '.lesson.text == "Noted from depth 1"' 5 | jq -r '.lesson.text == "Noted from depth 1" and .lesson.depth == 1')"
+  # The sweep runs as the plugin loads, after the server answers, so the unpinned record's removal is waited for.
+  check "the sweep at load kept the pinned record, a year old, with its pin, and dropped the unpinned one as old (#285)" \
+    "$(for _ in $(seq 1 20); do [ -z "$(kv get "memory/$project/ses_unpinned")" ] && break; sleep 1; done; [ -n "$(kv get "memory/$project/ses_seeded")" ] && [ -n "$(kv get "memory/$project/ses_seeded/pin")" ] && [ -z "$(kv get "memory/$project/ses_unpinned")" ] && echo true || echo false)"
 }
 
 run_native() {

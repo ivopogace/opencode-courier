@@ -13,13 +13,16 @@ import {
   MAX_RECORDS,
   MAX_REVISIONS,
   mergeParts,
+  noteRead,
   noteRecall,
   NOT_STATED,
   oneLine,
   PART_STATUSES,
   partStatus,
+  pinnedFirst,
   readMemory,
   RETENTION_MS,
+  sumReads,
   replacingMention,
   revise,
   splitLineOf,
@@ -36,7 +39,7 @@ import { note } from "../src/memory/note.js"
 import type { MemoryPorts, MemoryState, RefreshPorts } from "../src/memory/ports.js"
 import { recall } from "../src/memory/recall.js"
 import { refresh } from "../src/memory/record.js"
-import { memoryStore, readRecord, recordKey } from "../src/memory/store.js"
+import { memoryStore, pinKey, readRecord, readsKey, recordKey } from "../src/memory/store.js"
 import { sweepRecords } from "../src/memory/sweep.js"
 import { age, duration, lessonLine, recallListText, recordLine } from "../src/memory/text.js"
 import { addMemoryTools } from "../src/memory/tools.js"
@@ -379,6 +382,41 @@ describe("keep", () => {
     const old = [stored("ses_new", NOW - RETENTION_MS), stored("ses_old", NOW - RETENTION_MS - 1)]
     expect(keep(old, NOW).kept.map((record) => record.sessionID)).toEqual(["ses_new"])
   })
+
+  test("keeps a pinned record whatever its age and outside the cap, and within the cap a record with a lesson before one without (#285)", () => {
+    const lesson = { text: "Give the docs to one session", at: NOW }
+    const pinned = stored("ses_pinned", NOW - RETENTION_MS - 86_400_000, { pinned: { at: NOW } })
+    const lessoned = stored("ses_lesson", NOW - MAX_RECORDS * 2000, { lesson })
+    const plain = Array.from({ length: MAX_RECORDS }, (_, i) => stored(`ses_${i}`, NOW - i * 1000))
+    const { kept, dropped } = keep([...plain, lessoned, pinned], NOW)
+    expect(kept).toHaveLength(MAX_RECORDS + 1)
+    expect(kept.map((record) => record.sessionID)).toContain("ses_pinned")
+    expect(kept.map((record) => record.sessionID)).toContain("ses_lesson")
+    expect(dropped.map((record) => record.sessionID)).toEqual([`ses_${MAX_RECORDS - 1}`])
+    // A lesson does not keep a record past RETENTION_MS: that is what the pin is for.
+    expect(keep([stored("ses_stale", NOW - RETENTION_MS - 1, { lesson })], NOW).dropped).toHaveLength(1)
+    // Stale records with a lesson take no slot from a live record without one.
+    const stale = Array.from({ length: MAX_RECORDS }, (_, i) => stored(`ses_stale_${i}`, NOW - RETENTION_MS - 1 - i, { lesson }))
+    expect(keep([...stale, stored("ses_live", NOW)], NOW).kept.map((record) => record.sessionID)).toEqual(["ses_live"])
+  })
+})
+
+describe("reads", () => {
+  test("noteRead counts a listing or a full read on one reader's reads, keeping the latest time", () => {
+    expect(noteRead(undefined, "shown", 10)).toEqual({ shown: 1, read: 0, at: 10 })
+    expect(noteRead({ shown: 1, read: 0, at: 10 }, "shown", 20)).toEqual({ shown: 2, read: 0, at: 20 })
+    expect(noteRead({ shown: 2, read: 0, at: 20 }, "read", 15)).toEqual({ shown: 2, read: 1, at: 20 })
+  })
+
+  test("sumReads adds every reader's counts, the latest time theirs; none without a reader", () => {
+    expect(sumReads([])).toBeUndefined()
+    expect(sumReads([{ shown: 3, read: 1, at: 10 }, { shown: 4, read: 0, at: 30 }, { shown: 0, read: 2, at: 20 }])).toEqual({ shown: 7, read: 3, at: 30 })
+  })
+
+  test("pinnedFirst lists the pinned records first, each group newest first", () => {
+    const records = [stored("ses_a", 10), stored("ses_b", 30, { pinned: { at: 1 } }), stored("ses_c", 20), stored("ses_d", 5, { pinned: { at: 2 } })]
+    expect(pinnedFirst(records).map((record) => record.sessionID)).toEqual(["ses_b", "ses_d", "ses_c", "ses_a"])
+  })
 })
 
 describe("the store", () => {
@@ -440,6 +478,54 @@ describe("the store", () => {
     expect(await store.get("proj_1", "ses_x")).toBeUndefined()
     await store.remove("proj_1", "ses_a")
     expect(await store.get("proj_1", "ses_a")).toBeUndefined()
+  })
+
+  test("reads a record with the pin and the reads beside it, summed; writes neither with the record; removes them with it (#285)", async () => {
+    const { ports } = fakePorts({})
+    const store = memoryStore(ports.storage)
+    await store.put("proj_1", "ses_a", stored("ses_a", 10, { reads: { shown: 99, read: 99, at: 99 }, pinned: { at: 99 } }))
+    expect(await ports.storage.get(recordKey("proj_1", "ses_a"))).not.toHaveProperty("reads")
+    expect(await ports.storage.get(recordKey("proj_1", "ses_a"))).not.toHaveProperty("pinned")
+    expect(await store.get("proj_1", "ses_a")).not.toHaveProperty("reads")
+
+    expect(await store.noteRead("proj_1", "ses_a", "ses_r1", "shown", 20)).toEqual({ shown: 1, read: 0, at: 20 })
+    expect(await store.noteRead("proj_1", "ses_a", "ses_r1", "read", 25)).toEqual({ shown: 1, read: 1, at: 25 })
+    expect(await store.noteRead("proj_1", "ses_a", "ses_r2", "shown", 22)).toEqual({ shown: 1, read: 0, at: 22 })
+    await store.pin("proj_1", "ses_a", { at: 30 })
+    expect(await ports.storage.get(readsKey("proj_1", "ses_a", "ses_r1"))).toEqual({ shown: 1, read: 1, at: 25 })
+    expect(await ports.storage.get(pinKey("proj_1", "ses_a"))).toEqual({ at: 30 })
+    const read = await store.get("proj_1", "ses_a")
+    expect(read).toMatchObject({ title: "tree ses_a", reads: { shown: 2, read: 1, at: 25 }, pinned: { at: 30 } })
+    // The record's fields keep their order, the reads and the pin before the parts.
+    expect(Object.keys(read!)).toEqual(["startedAt", "movedAt", "title", "split", "finished", "reads", "pinned", "parts"])
+    expect((await store.ofProject("proj_1")).map((record): unknown[] => [record.sessionID, record.reads, record.pinned])).toEqual([["ses_a", { shown: 2, read: 1, at: 25 }, { at: 30 }]])
+    // A refresh or a note writes the record it read, reads and pin included: neither reaches the storage.
+    await store.put("proj_1", "ses_a", { ...read!, title: "written again" })
+    expect(await store.get("proj_1", "ses_a")).toMatchObject({ title: "written again", reads: { shown: 2, read: 1, at: 25 }, pinned: { at: 30 } })
+    // Any value under the pin key pins, dated 0 without a time; reads without a time, or malformed, count nothing.
+    await ports.storage.set(pinKey("proj_1", "ses_a"), true as never)
+    await ports.storage.set(readsKey("proj_1", "ses_a", "ses_r3"), { shown: 5 } as never)
+    await ports.storage.set(readsKey("proj_1", "ses_a", "ses_r4"), { shown: -1, read: "x", at: 40 } as never)
+    expect(await store.get("proj_1", "ses_a")).toMatchObject({ reads: { shown: 2, read: 1, at: 40 }, pinned: { at: 0 } })
+    await store.pin("proj_1", "ses_a", undefined)
+    expect(await store.get("proj_1", "ses_a")).not.toHaveProperty("pinned")
+
+    await store.remove("proj_1", "ses_a")
+    expect((await ports.storage.scan({ prefix: "memory/" })).entries).toEqual([])
+  })
+
+  test("names the trees with reads or a pin but no record, which a sweep removes", async () => {
+    const { ports } = fakePorts({})
+    const store = memoryStore(ports.storage)
+    await store.put("proj_1", "ses_a", stored("ses_a", 10))
+    await store.noteRead("proj_1", "ses_a", "ses_r", "shown", 20)
+    await store.noteRead("proj_1", "ses_gone", "ses_r", "shown", 20)
+    await store.pin("proj_2", "ses_gone_too", { at: 1 })
+    expect(await store.strays()).toEqual([
+      { projectID: "proj_1", sessionID: "ses_gone" },
+      { projectID: "proj_2", sessionID: "ses_gone_too" },
+    ])
+    expect((await store.all()).map((record) => record.sessionID)).toEqual(["ses_a"])
   })
 })
 
@@ -1011,10 +1097,65 @@ describe("recall", () => {
     await store.set(recordKey("proj_1", "ses_old"), stored("ses_old", NOW - 100_000))
 
     const found = await recall(ports, state, "ses_root", { sessionID: "ses_old" })
-    expect(found).toEqual({ kind: "record", projectID: "proj_1", record: { ...stored("ses_old", NOW - 100_000) } })
+    // The read is counted on the record, and given with it.
+    expect(found).toEqual({ kind: "record", projectID: "proj_1", record: { ...stored("ses_old", NOW - 100_000), reads: { shown: 0, read: 1, at: NOW } } })
     expect(await recall(ports, state, "ses_root", { sessionID: "ses_none" })).toEqual({ kind: "missing", projectID: "proj_1", sessionID: "ses_none" })
     expect((await recall(ports, state, "ses_root", { sessionID: "  " })).kind).toBe("list")
     expect((await recall(ports, state, "ses_root", { sessionID: null as never })).kind).toBe("list")
+  })
+
+  test("counts a listing on each other tree's record and a full read on the one given, under the reader's top, never on the caller's own tree (#285)", async () => {
+    const { ports, state, store, logged } = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_a: { updated: 1, idle: 1 }, ses_b: { updated: 1, idle: 1 } })
+    await tree(ports)
+    await refresh(ports, state, "ses_top", NOW - 5000)
+    await store.set(recordKey("proj_1", "ses_old"), stored("ses_old", NOW - 100_000, { pinned: { at: 1 } } as never))
+    await store.set(pinKey("proj_1", "ses_old"), { at: NOW - 50_000 })
+    await store.set(recordKey("proj_1", "ses_older"), stored("ses_older", NOW - 200_000))
+    const memory = memoryStore(ports.storage)
+
+    // A part's call counts under its tree's top, as the top's own does, on the other trees' records only.
+    const listed = await recall(ports, state, "ses_a", {})
+    if (listed.kind !== "list") throw new Error()
+    expect(listed.records.map((record) => record.sessionID)).toEqual(["ses_old", "ses_top", "ses_older"])
+    expect(store.get(readsKey("proj_1", "ses_old", "ses_top"))).toEqual({ shown: 1, read: 0, at: NOW })
+    expect(store.get(readsKey("proj_1", "ses_older", "ses_top"))).toEqual({ shown: 1, read: 0, at: NOW })
+    expect(store.has(readsKey("proj_1", "ses_top", "ses_top"))).toBe(false)
+    await recall(ports, state, "ses_top", {})
+    expect(store.get(readsKey("proj_1", "ses_old", "ses_top"))).toEqual({ shown: 2, read: 0, at: NOW })
+    expect((await memory.get("proj_1", "ses_old"))?.reads).toEqual({ shown: 2, read: 0, at: NOW })
+
+    // A full read counts apart, and the record is given with it; the caller's own record is given uncounted.
+    const full = await recall(ports, state, "ses_top", { sessionID: "ses_old" })
+    if (full.kind !== "record") throw new Error()
+    expect(full.record.reads).toEqual({ shown: 2, read: 1, at: NOW })
+    expect(full.record.pinned).toEqual({ at: NOW - 50_000 })
+    const own = await recall(ports, state, "ses_top", { sessionID: "ses_top" })
+    if (own.kind !== "record") throw new Error()
+    expect(own.record).not.toHaveProperty("reads")
+    expect(store.has(readsKey("proj_1", "ses_top", "ses_top"))).toBe(false)
+    // Another tree's reads add to the sum; the record's own key was never written by a count.
+    await recall(ports, state, "ses_b", { sessionID: "ses_old" })
+    expect(store.get(readsKey("proj_1", "ses_old", "ses_top"))).toEqual({ shown: 2, read: 2, at: NOW })
+    expect(readRecord(store.get(recordKey("proj_1", "ses_old")))).not.toHaveProperty("reads")
+    expect(logged).toEqual([])
+  })
+
+  test("a count that cannot be written is logged, and the call still answers", async () => {
+    const { ports, state, store, logged } = fakePorts({ ses_root: { updated: 1, idle: 1 } })
+    await store.set(recordKey("proj_1", "ses_old"), stored("ses_old", NOW - 100_000))
+    const set = ports.storage.set
+    ;(ports.storage as any).set = async (key: string, value: Parameters<typeof set>[1]) => {
+      if (key.includes("/reads/")) throw new Error("disk full")
+      return set(key, value)
+    }
+
+    const listed = await recall(ports, state, "ses_root", {})
+    expect(listed.kind).toBe("list")
+    expect(logged).toEqual(["courier memory: could not count the listing of the record under ses_old: Error: disk full"])
+    const full = await recall(ports, state, "ses_root", { sessionID: "ses_old" })
+    if (full.kind !== "record") throw new Error()
+    expect(full.record).not.toHaveProperty("reads")
+    expect(logged[1]).toBe("courier memory: could not count the read of the record under ses_old: Error: disk full")
   })
 
   test("with the memory option off, writes and reads nothing", async () => {
@@ -1211,6 +1352,22 @@ describe("sweepRecords", () => {
     expect(await store.ofProject("proj_1")).toHaveLength(MAX_RECORDS)
     expect((await store.ofProject("proj_2")).map((record) => record.sessionID)).toEqual(["ses_recent"])
   })
+
+  test("keeps a pinned record past both bounds, drops a record's reads and pin with it, and the reads or pin of a record gone (#285)", async () => {
+    const { ports } = fakePorts({})
+    const store = memoryStore(ports.storage)
+    await store.put("proj_1", "ses_pinned", stored("ses_pinned", NOW - RETENTION_MS - 1))
+    await store.pin("proj_1", "ses_pinned", { at: NOW })
+    await store.put("proj_1", "ses_stale", stored("ses_stale", NOW - RETENTION_MS - 1))
+    await store.noteRead("proj_1", "ses_stale", "ses_reader", "shown", NOW)
+    await store.noteRead("proj_1", "ses_forgotten", "ses_reader", "shown", NOW)
+    await store.pin("proj_2", "ses_forgotten_too", { at: NOW })
+
+    const dropped = await sweepRecords(ports.storage, NOW)
+
+    expect(dropped.map((record) => record.sessionID)).toEqual(["ses_stale"])
+    expect((await ports.storage.scan({ prefix: "memory/" })).entries.map((entry) => entry.key).toSorted()).toEqual(["memory/proj_1/ses_pinned", "memory/proj_1/ses_pinned/pin"])
+  })
 })
 
 describe("duration", () => {
@@ -1299,6 +1456,24 @@ describe("courier_recall", () => {
     await store.set(recordKey("proj_1", "ses_seed"), seeded)
 
     const one = await tool(ports, state).execute({ sessionID: "ses_seed" }, { sessionID: "ses_root" })
-    expect(one.metadata.record).toEqual({ ...seeded, projectID: "proj_1", sessionID: "ses_seed" })
+    expect(one.metadata.record).toEqual({ ...seeded, reads: { shown: 0, read: 1, at: NOW }, projectID: "proj_1", sessionID: "ses_seed" })
+    expect(one.content).toContain('"reads": {')
+  })
+
+  test("the listing marks a pinned record, listed first, and says what a pin means (#285)", async () => {
+    const { ports, state, store } = fakePorts({ ses_root: { updated: 1, idle: 1 } })
+    await store.set(recordKey("proj_1", "ses_new"), stored("ses_new", NOW - 1000))
+    await store.set(recordKey("proj_1", "ses_old"), stored("ses_old", NOW - 100_000))
+    await store.set(pinKey("proj_1", "ses_old"), { at: NOW - 500 })
+
+    const listed = await tool(ports, state).execute({}, { sessionID: "ses_root" })
+    const lines: string[] = listed.content.split("\n")
+    expect(lines[0]).toEndWith('A record marked "pinned" is one the person chose to keep and listed first: weigh it before the rest.')
+    expect(lines.slice(1).map((line) => line.split(" ")[1])).toEqual(["ses_old", "ses_root", "ses_new"])
+    expect(lines[1]).toContain(" · finished · pinned")
+    expect(lines[3]).not.toContain("pinned")
+    // A listing without a pinned record among the others says nothing of pins.
+    await store.delete(pinKey("proj_1", "ses_old"))
+    expect((await tool(ports, state).execute({}, { sessionID: "ses_root" })).content).not.toContain("pinned")
   })
 })

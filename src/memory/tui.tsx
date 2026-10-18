@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin/tui"
-import { memoryRpc, PART_STATUSES, type Forgotten, type MemoryLesson, type MemoryPart, type MemoryRecord, type Records } from "./rpc.js"
+import { memoryRpc, PART_STATUSES, type Forgotten, type MemoryLesson, type MemoryPart, type MemoryReads, type MemoryRecord, type Pinned, type Records } from "./rpc.js"
 import { duration } from "./text.js"
 
 type Context = Plugin.Context
@@ -9,7 +9,7 @@ type Location = ReturnType<Context["data"]["location"]["default"]>
 export const MEMORY_COMMAND = "courier.memory"
 
 /** The memory view's line of the `/courier` command's usage. */
-export const MEMORY_USAGE = "/courier memory lists this project's tree records, to read or forget"
+export const MEMORY_USAGE = "/courier memory lists this project's tree records, to read, pin or forget"
 
 /** What the view says, in a toast, with the memory option off in the project asked. */
 export const MEMORY_OFF = "Memory is off in this project: the plugin's memory option is false, so no record of a session tree is kept or listed here."
@@ -25,6 +25,9 @@ export const ROW_TITLE_MAX = 46
 
 /** The group of the records moved on the current local day, over the others' local dates, as the host's Sessions dialog has it. */
 export const TODAY = "Today"
+
+/** The group of the records the person pinned, above the days, shown only while there is one. */
+export const PINNED = "Pinned"
 
 /** The widest a row of the lesson in a record in full is; a longer lesson wraps over rows. */
 export const LESSON_ROW = 90
@@ -47,6 +50,7 @@ const minute = (at: number) => {
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim()
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`
+const times = (n: number) => (n === 1 ? "once" : `${n} times`)
 const money = (cost: number) => `$${cost.toFixed(2)}`
 
 /** A record's name, as its rows and confirms show it: its title on one line, else its top session. */
@@ -72,10 +76,19 @@ export function recordTitle(record: MemoryRecord, open?: string) {
   return `${clip(oneLine(record.title) || record.sessionID, ROW_TITLE_MAX)}${record.sessionID === open ? " (this session)" : ""}`
 }
 
-/** A list row's group: `Today` for a tree last moved on the local day of `now`, else that local date; the RPC's order, by the last move, keeps the groups newest first. */
+/**
+ * A list row's group: `Pinned` for a pinned record, `Today` for a tree last moved on the local day of `now`, else that
+ * local date; the RPC's order, pinned first and then by the last move, keeps the groups in that order.
+ */
 export function recordCategory(record: MemoryRecord, now = Date.now()) {
+  if (record.pinned) return PINNED
   const moved = localDay(record.movedAt)
   return moved === localDay(now) ? TODAY : moved
+}
+
+/** How often other trees' courier_recall calls listed the record and opened it in full: "shown 7 times, opened once"; "shown 7 times" alone when none opened it. */
+export function readsLine(reads: MemoryReads) {
+  return [reads.shown ? `shown ${times(reads.shown)}` : "", reads.read ? `opened ${times(reads.read)}` : ""].filter(Boolean).join(", ")
 }
 
 /** A lesson as the view shows it: dated on the local day, from which depth when a session below the top wrote it, and its text. */
@@ -84,10 +97,16 @@ export function lessonHeading(lesson: MemoryLesson) {
   return `lesson (${day(lesson.at)}${from})`
 }
 
-/** A list row's description: its parts by status, how long the tree ran, what its parts cost, and that it is not finished when it is not. */
+/** A list row's description: its parts by status, how long the tree ran, what its parts cost, that it is not finished when it is not, and how often other trees read it. */
 export function recordDescription(record: MemoryRecord) {
   const cost = costOf(record)
-  return [partsCounted(record.parts), duration(record.movedAt - record.startedAt), cost === undefined ? "" : money(cost), record.finished ? "" : "not finished"]
+  return [
+    partsCounted(record.parts),
+    duration(record.movedAt - record.startedAt),
+    cost === undefined ? "" : money(cost),
+    record.finished ? "" : "not finished",
+    record.reads ? readsLine(record.reads) : "",
+  ]
     .filter(Boolean)
     .join(" · ")
 }
@@ -153,6 +172,12 @@ export function detailOptions(record: MemoryRecord): Array<{ title: string; valu
   const recalled = record.recalled
     ? fact("recalled", `Recalled ${count(record.recalled.calls, "time")}`, record.recalled.at === undefined ? "by a part only" : `first by the top ${minute(record.recalled.at)}`)
     : fact("recalled", "Not recalled")
+  const reads = record.reads
+    ? fact("reads", `${readsLine(record.reads).replace(/^./, (first) => first.toUpperCase())}`, `by other trees' courier_recall, last ${minute(record.reads.at)}`)
+    : fact("reads", "Never shown", "no other tree's courier_recall has listed it yet")
+  const pinned = record.pinned
+    ? fact("pinned", "Pinned", `since ${minute(record.pinned.at)}: listed first, never swept; p unpins`)
+    : fact("pinned", "Not pinned", "p pins it: listed first, never swept")
   const lesson = record.lesson
     ? [
         { title: lessonHeading(record.lesson), value: { kind: "lesson", row: 0 } as Line, category: "Lesson" },
@@ -165,6 +190,8 @@ export function detailOptions(record: MemoryRecord): Array<{ title: string; valu
     fact("split", clip(oneLine(record.split), 160)),
     fact("finished", record.finished ? "Finished" : "Not finished", cost === undefined ? undefined : `${money(cost)} in all`),
     recalled,
+    reads,
+    pinned,
     ...(record.parts.length
       ? record.parts.map((part) => ({
           title: `${"  ".repeat(Math.max(0, part.depth - 1))}${clip(oneLine(part.title) || part.sessionID, 60)}`,
@@ -193,15 +220,24 @@ export function forgottenLine(record: MemoryRecord, outcome: Forgotten["outcome"
   return `Nothing to forget for ${name}: it was already gone`
 }
 
+/** The toast after a pin, as the server reports it. */
+export function pinnedLine(record: MemoryRecord, outcome: Pinned["outcome"]) {
+  const name = `"${nameOf(record)}"`
+  if (outcome === "pinned") return `Pinned ${name}: listed first, never swept`
+  if (outcome === "unpinned") return `Unpinned ${name}: kept as the others are`
+  return `Nothing to pin for ${name}: it was already gone`
+}
+
 /** What the person asked of the list or the record on screen. */
 type Request =
   | { readonly kind: "open"; readonly record: MemoryRecord }
   | { readonly kind: "forget"; readonly record: MemoryRecord; readonly lesson: boolean; readonly line?: Line }
+  | { readonly kind: "pin"; readonly record: MemoryRecord; readonly line?: Line }
   | { readonly kind: "back" }
 
 /**
  * Adds the memory view: the project's records (the open session's location, else the TUI's, else the server's default) under
- * `Today` and the local days they last moved; `enter` shows one in full, `x` forgets one or its lesson after a confirm, `esc` goes back and closes.
+ * `Pinned`, `Today` and the days they last moved; `enter` shows one in full, `p` pins or unpins one, `x` forgets one or its lesson after a confirm.
  */
 export function addMemoryView(ctx: Context) {
   const memory = ctx.client.rpc(memoryRpc)
@@ -222,16 +258,22 @@ export function addMemoryView(ctx: Context) {
   const fail = (what: string) => (error: unknown) => ctx.ui.toast.show({ title: "courier", message: `${what}: ${reason(error)}`, variant: "error" })
   const say = (message: string) => ctx.ui.toast.show({ title: "courier", message, variant: "info" })
 
-  /** A select whose footer action, `x`, answers as the person's choice does; the race settles on the first of the two. */
-  function show<Value>(options: Parameters<typeof ctx.ui.dialog.select<Value>>[0], chosen: (value: Value) => Request, forget: (value: Value) => Request) {
+  /** What a footer action asks of the row under the cursor. */
+  type Action<Value> = (value: Value) => Request
+
+  /** A select whose footer actions, `x` and `p`, answer as the person's choice does; the race settles on the first of them. */
+  function show<Value>(options: Parameters<typeof ctx.ui.dialog.select<Value>>[0], chosen: Action<Value>, forget: Action<Value>, pin: { title: string; ask: Action<Value> }) {
     let request: (one: Request) => void = () => undefined
     const requested = new Promise<Request>((resolve) => {
       request = resolve
     })
     const choosing = ctx.ui.dialog.select<Value>({
       ...options,
-      // The host runs a footer action's key before the search sees it, so `x` is the one letter the search loses.
-      actions: [{ bind: "x", title: "forget", onTrigger: (value) => request(forget(value)) }],
+      // The host runs a footer action's key before the search sees it, so `x` and `p` are the two letters the search loses.
+      actions: [
+        { bind: "x", title: "forget", onTrigger: (value) => request(forget(value)) },
+        { bind: "p", title: pin.title, onTrigger: (value) => request(pin.ask(value)) },
+      ],
     })
     // The widest a dialog goes, for the parts beside each title and the lesson under it.
     ctx.ui.dialog.set({ size: "xlarge" })
@@ -259,6 +301,7 @@ export function addMemoryView(ctx: Context) {
       },
       (record) => ({ kind: "open", record }),
       (record) => ({ kind: "forget", record, lesson: false }),
+      { title: "pin", ask: (record) => ({ kind: "pin", record }) },
     )
   }
 
@@ -268,7 +311,19 @@ export function addMemoryView(ctx: Context) {
       // Enter on a row goes back to the list.
       () => ({ kind: "back" }),
       (line) => ({ kind: "forget", record, lesson: line.kind === "lesson", line }),
+      { title: record.pinned ? "unpin" : "pin", ask: (line) => ({ kind: "pin", record, line }) },
     )
+
+  /** Pins the record, or unpins a pinned one, through the RPC, and says what the server did. */
+  async function togglePin(record: MemoryRecord) {
+    const pinned = !record.pinned
+    try {
+      const result = await memory.pin({ sessionID: record.sessionID, pinned }, { location: where() })
+      ctx.ui.toast.show({ title: "courier", message: pinnedLine(record, result.outcome), variant: result.outcome === "none" ? "warning" : "success" })
+    } catch (error) {
+      fail(pinned ? "Not pinned" : "Not unpinned")(error)
+    }
+  }
 
   /** Asks the person to confirm, then forgets the record, or only its lesson, through the RPC; false when they kept it or the RPC failed. */
   async function confirmForget(record: MemoryRecord, lesson: boolean) {
@@ -290,8 +345,8 @@ export function addMemoryView(ctx: Context) {
 
   let opened = false
   /**
-   * Lists the project's records, and the one chosen in full, read again after each forget, until the person closes the
-   * list or leaves it; the record on screen in full is shown again after its lesson is forgotten or kept, the list after it is.
+   * Lists the project's records, and the one chosen in full, read again after each forget or pin, until the person closes the
+   * list or leaves it; the record in full is shown again after its lesson is forgotten or kept or it is pinned from there, the list after it is forgotten.
    */
   async function open() {
     if (opened) return
@@ -325,6 +380,13 @@ export function addMemoryView(ctx: Context) {
           viewing = request.record.sessionID
           continue
         }
+        if (request.kind === "pin") {
+          // The record moves into or out of the Pinned group; the cursor follows it, in the list or on its row in full.
+          await togglePin(request.record)
+          near = [request.record.sessionID]
+          line = request.line
+          continue
+        }
         const forgotten = await confirmForget(request.record, request.lesson)
         near = nearby(listed, request.record.sessionID, forgotten && !request.lesson)
         // Kept, the record in full is shown again on the row under the cursor; its lesson forgotten, on what took its place.
@@ -343,7 +405,7 @@ export function addMemoryView(ctx: Context) {
       {
         id: MEMORY_COMMAND,
         title: "Courier: memory",
-        description: "The records of this project's session trees, newest first under the day each last moved: enter for one in full, x to forget one or its lesson",
+        description: "The records of this project's session trees, pinned first, then newest first under the day each last moved: enter for one in full, p to pin or unpin one, x to forget one or its lesson",
         group: "Courier",
         palette: true,
         run: () => void open(),

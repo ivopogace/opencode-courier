@@ -256,8 +256,11 @@ lesson**, with `courier_note`: one line of at most 300 characters, from the sess
 tree, with the job it comes from and the reason. `courier_recall` reads the records back, each line
 showing the split line as prose (its markdown marks dropped, the asterisks of its globs kept) cut at a
 word, then the latest later one (`then, after 1 part: split: 2 parts: …`), and saying how long the tree ran and how long ago it last moved; the `courier-orchestrate` skill asks for
-one call before the split decision and one `courier_note` before the top replies. Each project keeps
-its newest 30 records and none older than 90 days. `"memory":
+one call before the split decision and one `courier_note` before the top replies. Each record counts
+how often other trees' `courier_recall` calls listed it and opened it in full, and when last, so the
+person can tell a lesson still read from one nobody reads; a record the person pins in the terminal
+is listed first and never swept. Each project keeps 30 unpinned records, those with a lesson first,
+and none older than 90 days. `"memory":
 false` in the plugin's `options` turns it off ([more](docs/reference.md#memory)).
 
 ## In the terminal
@@ -297,10 +300,11 @@ permission prompt or form is shown in the session, OpenCode hides the footer, so
 `ctrl+x k`.
 
 `/courier memory` (or the palette's "Courier: memory") lists the project's [tree records](#memory),
-newest first, grouped by the day each tree last moved, one row each with its lesson under it.
-`enter` shows one in full; `x` forgets the record under the row, or in a record on its lesson's rows
-only the lesson, after a confirm; `esc` goes back and closes. The search takes every letter but `x`
-([more](docs/reference.md#the-memory-view)).
+pinned first, then newest first grouped by the day each tree last moved, one row each with how often
+other trees read it and its lesson under it. `enter` shows one in full; `p` pins or unpins the record,
+and a pinned one is listed first and never swept; `x` forgets the record under the row, or in a
+record on its lesson's rows only the lesson, after a confirm; `esc` goes back and closes. The search
+takes every letter but `x` and `p` ([more](docs/reference.md#the-memory-view)).
 
 ## Native child sessions
 

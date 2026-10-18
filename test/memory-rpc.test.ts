@@ -1,16 +1,17 @@
-// The memory's RPC (#262), which the TUI's memory view reads the project's tree records through and forgets one, or
-// only its lesson, with; and the forget use case behind it.
+// The memory's RPC (#262), through which the TUI's memory view reads the project's tree records, forgets one or only its
+// lesson, and pins one (#285); and the forget and pin use cases behind it.
 import { describe, expect, test } from "bun:test"
 import { PART_STATUSES } from "../src/memory/domain.js"
 import { forget } from "../src/memory/forget.js"
+import { pin } from "../src/memory/pin.js"
 import { records, registerMemoryRpc } from "../src/memory/rpc-handlers.js"
 import { memoryRpc, PART_STATUSES as RPC_STATUSES } from "../src/memory/rpc.js"
-import { memoryStore } from "../src/memory/store.js"
+import { memoryStore, pinKey, readsKey } from "../src/memory/store.js"
 import type { TreeRecord } from "../src/memory/domain.js"
 
 const NOW = 1_700_000_000_000
 
-/** Ports over a map, with the writes made and the project `proj_1`. */
+/** Ports over a map, with the writes made, the project `proj_1` and the clock at `NOW`. */
 function fakePorts(memory = true) {
   const store = new Map<string, unknown>()
   const writes: string[] = []
@@ -28,8 +29,8 @@ function fakePorts(memory = true) {
       entries: [...store].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })),
     }),
   }
-  const ports = { storage, projectID: "proj_1", memory }
-  return { ports: ports as unknown as Parameters<typeof records>[0], store, writes, records: memoryStore(storage as never) }
+  const ports = { storage, projectID: "proj_1", memory, now: () => NOW }
+  return { ports: ports as unknown as Parameters<typeof registerMemoryRpc>[1], store, writes, records: memoryStore(storage as never) }
 }
 
 const record = (title: string, movedAt: number, more: Partial<TreeRecord> = {}): TreeRecord => ({
@@ -74,6 +75,23 @@ describe("records", () => {
     const read = await records(ports)
 
     expect(read.records[0]).toEqual({ sessionID: "ses_staged", ...record("Staged", NOW) })
+    expect((await memoryRpc.methods.records.output["~standard"].validate(read)).issues).toBeUndefined()
+  })
+
+  test("lists a pinned record first, whatever its age, each record with its reads and pin as they lie beside it (#285)", async () => {
+    const { ports, store, records: memory } = fakePorts()
+    await memory.put("proj_1", "ses_new", record("New", NOW))
+    await memory.put("proj_1", "ses_old", record("Old", NOW - 100_000))
+    await store.set(pinKey("proj_1", "ses_old"), { at: NOW - 50_000 })
+    await store.set(readsKey("proj_1", "ses_old", "ses_reader"), { shown: 3, read: 1, at: NOW - 60_000 })
+    await store.set(readsKey("proj_1", "ses_old", "ses_other"), { shown: 4, read: 0, at: NOW - 70_000 })
+
+    const read = await records(ports)
+
+    expect(read.records.map((one) => one.sessionID)).toEqual(["ses_old", "ses_new"])
+    expect(read.records[0]).toEqual({ sessionID: "ses_old", ...record("Old", NOW - 100_000), reads: { shown: 7, read: 1, at: NOW - 60_000 }, pinned: { at: NOW - 50_000 } })
+    expect(read.records[1]).not.toHaveProperty("reads")
+    expect(read.records[1]).not.toHaveProperty("pinned")
     expect((await memoryRpc.methods.records.output["~standard"].validate(read)).issues).toBeUndefined()
   })
 
@@ -138,19 +156,72 @@ describe("forget", () => {
   })
 })
 
-test("registerMemoryRpc serves both methods under its own id, beside the tree's and the person's", async () => {
+describe("pin", () => {
+  test("pins a record under its own key, dated now, and unpins it by removing the key; the record's facts are not written", async () => {
+    const { ports, store, writes, records: memory } = fakePorts()
+    await memory.put("proj_1", "ses_a", record("A", NOW))
+    writes.length = 0
+
+    expect(await pin(ports, "ses_a", true)).toBe("pinned")
+    expect(writes).toEqual(["set memory/proj_1/ses_a/pin"])
+    expect(store.get("memory/proj_1/ses_a/pin")).toEqual({ at: NOW })
+    expect((await memory.get("proj_1", "ses_a"))?.pinned).toEqual({ at: NOW })
+
+    // Pinned again later, it keeps when it was first pinned.
+    ;(ports as any).now = () => NOW + 5000
+    expect(await pin(ports, "ses_a", true)).toBe("pinned")
+    expect(store.get("memory/proj_1/ses_a/pin")).toEqual({ at: NOW })
+
+    writes.length = 0
+    expect(await pin(ports, "ses_a", false)).toBe("unpinned")
+    expect(writes).toEqual(["remove memory/proj_1/ses_a/pin"])
+    expect(await memory.get("proj_1", "ses_a")).not.toHaveProperty("pinned")
+  })
+
+  test("finds no record to pin, or unpin, under a top with none, and writes nothing", async () => {
+    const { ports, writes } = fakePorts()
+    expect(await pin(ports, "ses_none", true)).toBe("none")
+    expect(await pin(ports, "ses_none", false)).toBe("none")
+    expect(writes).toEqual([])
+  })
+
+  test("a forget removes the pin and the reads with the record", async () => {
+    const { ports, store, records: memory } = fakePorts()
+    await memory.put("proj_1", "ses_a", record("A", NOW))
+    await pin(ports, "ses_a", true)
+    await store.set(readsKey("proj_1", "ses_a", "ses_reader"), { shown: 1, read: 0, at: NOW })
+
+    expect(await forget(ports, "ses_a")).toBe("record")
+    expect([...store.keys()]).toEqual([])
+  })
+
+  test("pins with the memory option off too: a pin is the person's", async () => {
+    const { ports, records: memory } = fakePorts(false)
+    await memory.put("proj_1", "ses_a", record("A", NOW))
+    expect(await pin(ports, "ses_a", true)).toBe("pinned")
+  })
+})
+
+test("registerMemoryRpc serves its three methods under its own id, beside the tree's and the person's", async () => {
   const { ports, records: store } = fakePorts()
   await store.put("proj_1", "ses_a", record("A", NOW, { lesson }))
   const registered: { definition: any; handlers: any }[] = []
   await registerMemoryRpc({ register: async (definition: any, handlers: any) => void registered.push({ definition, handlers }) } as never, ports)
 
-  expect(registered.map(({ definition }) => [definition.id, Object.keys(definition.methods)])).toEqual([["courier-memory", ["records", "forget"]]])
+  expect(registered.map(({ definition }) => [definition.id, Object.keys(definition.methods)])).toEqual([["courier-memory", ["records", "forget", "pin"]]])
   const { handlers } = registered[0]!
   expect((await handlers.records({})).records.map((one: { sessionID: string }) => one.sessionID)).toEqual(["ses_a"])
+  expect(await handlers.pin({ sessionID: "ses_a", pinned: true })).toEqual({ outcome: "pinned" })
+  expect((await handlers.records({})).records[0].pinned).toEqual({ at: NOW })
+  expect(await handlers.pin({ sessionID: "ses_a", pinned: false })).toEqual({ outcome: "unpinned" })
   expect(await handlers.forget({ sessionID: "ses_a", lesson: true })).toEqual({ outcome: "lesson" })
   expect(await handlers.forget({ sessionID: "ses_a" })).toEqual({ outcome: "record" })
   expect(await handlers.forget({ sessionID: "ses_a" })).toEqual({ outcome: "none" })
+  expect(await handlers.pin({ sessionID: "ses_a", pinned: true })).toEqual({ outcome: "none" })
   expect((await memoryRpc.methods.forget.output["~standard"].validate({ outcome: "none" })).issues).toBeUndefined()
   expect((await memoryRpc.methods.forget.input["~standard"].validate({ wrong: 1 })).issues).toBeDefined()
+  expect((await memoryRpc.methods.pin.output["~standard"].validate({ outcome: "unpinned" })).issues).toBeUndefined()
+  expect((await memoryRpc.methods.pin.input["~standard"].validate({ sessionID: "ses_a" })).issues).toBeDefined()
+  expect((await memoryRpc.methods.pin.input["~standard"].validate({ sessionID: "ses_a", pinned: true })).issues).toBeUndefined()
   expect((await memoryRpc.methods.records.input["~standard"].validate({})).issues).toBeUndefined()
 })

@@ -126,7 +126,24 @@ test("the memory store keeps a tree's record under memory/<projectID>/<topSessio
   ])
   expect(await records.get("proj_1", "ses_top")).toEqual(record)
   expect(await records.ofProject("proj_1")).toEqual([{ ...record, projectID: "proj_1", sessionID: "ses_top" }])
+  // Beside the record, under its key (#285): the person's pin, and the reads of each tree that listed or read it, each
+  // key with one writer; the record is read with them, written without them, and removed with them.
+  writes.length = 0
+  await records.pin("proj_1", "ses_top", { at: 1760001000000 })
+  await records.noteRead("proj_1", "ses_top", "ses_reader", "shown", 1760002000000)
+  await records.noteRead("proj_1", "ses_top", "ses_reader", "read", 1760003000000)
+  expect(writes).toEqual([
+    'set memory/proj_1/ses_top/pin {"at":1760001000000}',
+    'set memory/proj_1/ses_top/reads/ses_reader {"shown":1,"read":0,"at":1760002000000}',
+    'set memory/proj_1/ses_top/reads/ses_reader {"shown":1,"read":1,"at":1760003000000}',
+  ])
+  const beside = { reads: { shown: 1, read: 1, at: 1760003000000 }, pinned: { at: 1760001000000 } }
+  expect(await records.get("proj_1", "ses_top")).toEqual({ ...record, ...beside })
+  writes.length = 0
+  await records.put("proj_1", "ses_top", { ...record, ...beside })
+  expect(writes[0]).not.toContain("reads")
+  expect(writes[0]).not.toContain("pinned")
   writes.length = 0
   await records.remove("proj_1", "ses_top")
-  expect(writes).toEqual(["remove memory/proj_1/ses_top"])
+  expect(writes).toEqual(["remove memory/proj_1/ses_top", "remove memory/proj_1/ses_top/pin", "remove memory/proj_1/ses_top/reads/ses_reader"])
 })

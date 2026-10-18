@@ -82,7 +82,7 @@ Each tool's parameters, `?` marking an optional one; the sections below say how 
 | `courier_cancel` | `id` | Drops a message scheduled with `courier_later`. |
 | `courier_subscribe` | `topic`, `sessionID?` | Subscribes a session (this one by default) to [webhook](#webhooks) deliveries for a topic: `owner/repo`, `owner/repo#12` (one pull request or issue) or a name for `/hook/<name>`. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. |
 | `courier_unsubscribe` | `sessionID?`, `topic?` | Drops one topic, or all of a session's when `topic` is omitted. |
-| `courier_recall` | `sessionID?` | One look at the [records](#memory) of the session trees of this project: one line per tree, newest first, its lesson after the facts, or with `sessionID` the record of the tree under that top session in full. Notes the call on the caller's own tree's record. Hidden from a leaf. |
+| `courier_recall` | `sessionID?` | One look at the [records](#memory) of the session trees of this project: one line per tree, the pinned first and then newest first, its lesson after the facts, or with `sessionID` the record of the tree under that top session in full. Notes the call on the caller's own tree's record, and counts the look on the others'. Hidden from a leaf. |
 | `courier_note` | `text` | Writes `text`, one line of at most 300 characters, as the [lesson](#the-lesson) of the caller's own session tree; a sub-orchestrator's is marked with its depth, a second call replaces the first. Refused with a longer text, from a leaf, from a tree with no record, with an empty text and with the memory option off. Hidden from a leaf. |
 
 ## The child's model
@@ -678,6 +678,8 @@ duration in milliseconds:
 | `finished` | Whether, at the last refresh, no session in the tree ran (by the same rule as the limits' `busy`) and every part had settled: none was `out` or `stalled` (a `gone` one has). A tree whose top is still integrating reads as finished until that turn ends, and one with no parts as soon as its top is idle. |
 | `recalled` | Absent until `courier_recall` was called from the tree; then `{ "calls": <n> }`, counting every call made from the top and its parts, with `"at"`, when the top itself first called it. |
 | `lesson` | Absent until `courier_note` wrote one; then `{ "text": …, "at": … }`, with `"depth"`, the writer's depth in the tree, when a sub-orchestrator wrote it. A second note replaces the whole object. |
+| `reads` | Absent until another tree's `courier_recall` listed the record or gave it in full; then `{ "shown": <n>, "read": <m>, "at": … }`: how often a listing included it, how often it was given in full, and when one last did. A call from the tree's own sessions counts nothing, nor does a look from the [memory view](#the-memory-view). Kept [beside the record](#what-lies-beside-a-record), per reader tree, never in its value. |
+| `pinned` | Absent until the person pinned the record in the [memory view](#the-memory-view); then `{ "at": … }`, when. A pinned record is listed first and never swept. Kept [beside the record](#what-lies-beside-a-record), never in its value. |
 | `parts` | One object per session started in the tree, in the order the tree is drawn (each followed by what it started, siblings oldest first). |
 
 Each part:
@@ -697,6 +699,27 @@ Each part:
 
 The record never holds a report's body or artifacts, nor a session's replies: they can hold code and
 secrets, and the parent has verified the work.
+
+#### What lies beside a record
+
+The record's value is written whole, by a refresh, `courier_recall`'s note of a call, `courier_note` and
+a forget of the lesson, each after reading it; the plugin's storage has no compare-and-set, so two
+writers of one key can lose each other's write. What others write of a record therefore lies beside
+it, under its key, each key with one writer:
+
+| Key | Holds | Written by |
+|---|---|---|
+| `memory/<projectID>/<topSessionID>/pin` | `{ "at": … }`, when the person pinned the record. The key's presence pins: any value under it is read as a pin, dated 0 when it names no time. | The [memory view](#the-memory-view)'s `p`, through the `pin` RPC, which removes the key to unpin. |
+| `memory/<projectID>/<topSessionID>/reads/<readerTopSessionID>` | `{ "shown": <n>, "read": <m>, "at": … }`: how often `courier_recall` calls from the tree under `readerTopSessionID` listed the record, how often they gave it in full, and when one last did. A count missing is 0; an entry without `at` counts nothing. | The reader tree's sessions, one key per reader tree, so two trees' calls never write one key. |
+
+Reading the record merges them in: `pinned` as the pin key has it, `reads` as every reader's counts
+summed with the latest `at`. Writing the record leaves them out, whatever the value given, so no
+refresh or note can write over a pin or a count, and two listings from different trees cannot lose
+each other's. Two calls from the same tree in the same instant can lose one count, which is harmless.
+Forgetting the record removes the record with what lies beside it, and so does the sweep; a pin or
+reads left beside a record removed meanwhile are dropped at the next load. A pin can be seeded by
+hand for a test as the record can: `bun e2e/kv.ts set 'memory/<projectID>/<topSessionID>/pin'
+'{"at": 1760000950000}' '<a key the plugin stored>'`.
 
 A record can be written by hand, for a test or to seed what the plugin would have recorded, with
 `e2e/kv.ts` against a running test server (the fourth argument names a key the plugin has stored, so
@@ -726,7 +749,8 @@ non-negative integer is left out, and of more than 3 the newest are kept. One as
 ```
 
 **`courier_recall { sessionID? }`** reads the records back, from any session. Without `sessionID` it
-lists every record of the calling session's project, newest first, one line each:
+lists every record of the calling session's project, the [pinned](#what-lies-beside-a-record) first and
+then newest first, one line each:
 
 ```
 - ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 2 done, 1 partial, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 5 days ago · $1.28 · finished · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
@@ -737,12 +761,15 @@ the top session, the day it started, its title (clipped to 60 characters), its s
 it was stated (`then, after 1 part: split: 2 parts: its tests, its docs`), its parts counted by status, how deep the tree went, how many parts were isolated and how
 many spawns were refused, how long the tree ran (`ran`, `movedAt` less `startedAt`), how long ago it
 last moved (`last moved … ago`, now less `movedAt`: a duration under a day, else whole days), the parts' costs
-summed when any is known, `finished` or `not finished`, `recalled` when the top called the tool (`recalled by a part`
+summed when any is known, `finished` or `not finished`, `pinned` when the person pinned it, `recalled` when the top called the tool (`recalled by a part`
 when only a part did), and last its [lesson](#the-lesson), when there is one, with the day it was
 written and `from depth <n>` when a sub-orchestrator wrote it. The caller's own tree is listed too,
-marked `(this tree)`. With `sessionID`, the top of a listed tree, it gives that record in full, as
-JSON; a top with no record in this project is said to be missing. Its result's metadata carries the
-records.
+marked `(this tree)`. When a pinned record is among the others, the listing's first line adds that a
+record marked `pinned` is one the person chose to keep, listed first, to weigh before the rest. The
+line does not show a record's `reads`: they are for the person pruning, not for the model deciding a
+split. With `sessionID`, the top of a listed tree, it gives that record in full, as JSON, `reads` and
+`pinned` included; a top with no record in this project is said to be missing. Its result's metadata
+carries the records.
 
 **The split line as prose.** The record keeps the top's line as written; the listing drops what is
 markdown in it and keeps what may be its words:
@@ -771,6 +798,14 @@ the call that preceded it. The tool is one look, not a loop: the
 (`e2e/real-model-recursive.mjs`) allows a root exactly one call before its first spawn, counting any
 other as polling. A leaf's requests go without the tool.
 
+Every call is also counted on the records it reads of other trees, [beside each](#what-lies-beside-a-record):
+a listing counts one `shown` on every record it includes but the caller's own tree's, and a record
+given in full counts one `read`, which the record given already holds. The caller's own record is
+never counted: its lesson reaching its own tree is not the signal. The counts are written after the
+records are read, best effort: a count that cannot be written is logged and the call still answers.
+The [memory view](#the-memory-view) shows them, so a person pruning can tell a lesson other trees
+still read from one nobody does.
+
 ### The lesson
 
 A record says what happened; it cannot say what the orchestrator concluded. **`courier_note { text }`**
@@ -796,8 +831,15 @@ What a lesson is not: a rule. One that holds every time belongs in AGENTS.md or 
 the person puts there; the tool's description and the skill say so. Nor code or secrets: the record is
 read by every later session in the project.
 
-**Retention.** Each project keeps its newest 30 records, by `movedAt`, and none that last moved more
-than 90 days ago; the rest are dropped when the plugin loads. Nothing else removes a record.
+**Retention.** A [pinned](#what-lies-beside-a-record) record is never dropped, whatever its age, and
+sits outside the cap. Of the rest, each project keeps 30, those with a lesson before those without and
+within each the newest by `movedAt`, and none that last moved more than 90 days ago; the others are
+dropped when the plugin loads, with what lies beside them. So once a project has more than 30 trees
+in 90 days, a record that holds only facts goes before one that holds a lesson, and a lesson the next
+orchestrator should still read after 90 days is kept by pinning it. The one cost: in a project with
+30 lesson-bearing records within 90 days, a load drops the newest records without a lesson, a tree
+running at that moment among them (its lesson comes last); its next turn end writes its record
+again, from what the roster and OpenCode still hold. Nothing else removes a record.
 
 **The option.** `"memory": false` in the plugin's `options`, read per instance like the limits, turns
 it off: no record is written for a tree whose top runs in that location, `courier_recall` says the
@@ -805,8 +847,8 @@ option is off and writes and lists nothing, and `courier_note` is refused. Any o
 or `false` is logged and taken as `true`. With [two servers](#two-servers-on-one-data-directory) on
 one data directory each writes records by its own option.
 
-**In the terminal.** `/courier memory` lists the project's records and forgets one, or only its
-lesson: [the memory view](#the-memory-view). A look from the terminal is noted on no record.
+**In the terminal.** `/courier memory` lists the project's records, pins one and forgets one, or only
+its lesson: [the memory view](#the-memory-view). A look from the terminal is noted on no record.
 
 ## Seeing and stopping a subtree
 
@@ -1124,28 +1166,35 @@ the answers do not fit. Forms are not in `asks`: the TUI lists them itself (`GET
 
 ### The memory view
 
-The project's [tree records](#memory) in a dialog, for a person to read and clear. It is opened by
+The project's [tree records](#memory) in a dialog, for a person to read, keep and clear. It is opened by
 `/courier memory` or the palette's "Courier: memory", from a session or the home screen, and lists the
 records of the project of the open session's location, else the TUI's, else the server's default one,
-newest first by when each last moved, grouped by that day as OpenCode's Sessions dialog groups
-sessions, `Today` first and then each local date, one row each:
+the pinned first and then newest first by when each last moved, grouped under `Pinned` (shown only
+while a record is pinned) and then by that day as OpenCode's Sessions dialog groups sessions, `Today`
+first and then each local date, one row each:
 
 ```
-Memory (2)
+Memory (3)
+  Pinned
+  Split the parser 2 parts: 2 done · 12 min · $0.70 · shown 7 times, opened once
+  lesson (2026-09-02): "The lexer and the parser collided in one file; give them to one session."
+
   Today
   Add memory to courier (this session) 3 parts: 2 done, 1 partial · 42 min · $1.28
   lesson (2026-10-17): "The docs part was ten lines; next time do it yourself."
 
   Fri Oct 16 2026
-  Fix the bug no parts · 42 min · not finished
-                                                                                   forget x
+  Fix the bug no parts · 42 min · not finished · shown once
+                                                                            forget x  pin p
 ```
 
 Every date and time the view shows is local, in the TUI's zone (`TZ`), where `courier_recall` dates
 the same record in UTC. The row's title is the top session's title (clipped to 46 characters; its id
 when it has none), `(this session)` for the open session's own tree; after it the parts counted by
-status, how long the tree ran, the parts' costs summed when any is known, and `not finished` when it
-is not; under it, muted, the lesson, dated on the local day and `from depth <n>` when a
+status, how long the tree ran, the parts' costs summed when any is known, `not finished` when it
+is not, and how often other trees' `courier_recall` calls listed it and opened it in full (`shown 7
+times, opened once`, from the record's [`reads`](#what-lies-beside-a-record); nothing while none has);
+under it, muted, the lesson, dated on the local day and `from depth <n>` when a
 sub-orchestrator wrote it, clipped to 160 characters and cut in the middle to the dialog's width (a
 line the host's select draws though the plugin API does not declare it:
 [plugin-api-notes.md](maintainers/plugin-api-notes.md#tui-and-rpc-entrypoints)). The dialog is the
@@ -1154,12 +1203,22 @@ first and by their day too.
 
 - `enter` shows the record in full, in three groups: **Tree** (the top session, when it started and
   last moved, to the minute in local time with the zone's short name, `2026-10-17 12:12 GMT+2`, how
-  long it ran, its split line or `not stated` (not its revisions), `Finished` or `Not finished` with the cost in all, and
-  `Recalled <n> times`, first by the top when, or by a part only, else `Not recalled`), **Parts**
+  long it ran, its split line or `not stated` (not its revisions), `Finished` or `Not finished` with the cost in all,
+  `Recalled <n> times`, first by the top when, or by a part only, else `Not recalled`, `Shown <n>
+  times, opened <m>` by other trees' `courier_recall` with when last, else `Never shown`, and `Pinned`
+  since when, else `Not pinned`), **Parts**
   (one row per session, indented by depth: title, status, depth, `isolated`, `group <name>`,
   duration, cost, `ctx <n>%` and spawns refused; `No parts` with none) and **Lesson** (`lesson
   (<day>[, from depth <n>])` and its text, wrapped at 90 characters; `No lesson` without one).
   `enter` or `esc` there goes back to the list, and a second `esc` closes it.
+- `p` pins the record under the row, or in a record the record shown, and unpins a pinned one (the
+  footer reads `pin` or `unpin` there), with no confirm: a pin is reversible. A toast says what the
+  server did: `Pinned "<title>": listed first, never swept`, `Unpinned "<title>": kept as the others
+  are`, or that there was nothing to pin, when the record was forgotten meanwhile. The list, or the
+  record, is then read again, the cursor on the record, which moves into or out of the `Pinned` group;
+  in a record, the footer's `pin` reads `unpin`, and the **Tree** group's `Pinned` row says since
+  when. A pinned record is listed first by `courier_recall` too, marked `pinned`, and the sweep never
+  drops it ([retention](#memory)).
 - `x` forgets. In the list, the record under the row; in a record, on a **Lesson** row only the
   lesson, and on any other row the record. Each after a confirm that names the record and says what
   goes and what stays, with `Forget` and `Keep`. A toast says what the server did: `Forgot the record
@@ -1170,14 +1229,16 @@ first and by their day too.
   the nearest still listed; `Keep` leaves it on the record kept. The search is cleared by a forget or
   a keep, as OpenCode's select takes no starting query.
 - `esc` closes the view from the list, and goes back to the list from a record. Every letter but `x`
-  can be typed in the search, `q` among them: `x` is a footer action, whose key OpenCode runs before
-  the search field sees it, and a plugin's footer action takes only a literal key.
+  and `p` can be typed in the search, `q` among them: `x` and `p` are footer actions, whose keys
+  OpenCode runs before the search field sees them, and a plugin's footer action takes only a literal
+  key.
 
 With `"memory": false` in the plugin's options at the location asked, the view says in a toast that
 memory is off in this project and lists nothing; with no record, that the project has none yet. The
-view notes nothing on any record; forgetting removes the record's storage key, or writes the record
-back without its lesson, and nothing else: the tree's next turn end writes a fresh record, without
-the lesson.
+view notes nothing on any record, and counts no read; forgetting removes the record's storage key with
+what lies beside it, or writes the record back without its lesson, and nothing else: the tree's next
+turn end writes a fresh record, without the lesson. Pinning writes only the pin key [beside the
+record](#what-lies-beside-a-record), and unpinning removes it; the record itself is not written.
 
 **The RPC.** `courier-memory`, registered by every instance next to `courier` and `courier-person`;
 its contract is `memoryRpc` from `opencode-courier/rpc`:
@@ -1186,17 +1247,25 @@ its contract is `memoryRpc` from `opencode-courier/rpc`:
 POST /api/rpc/courier-memory/records?directory=<location> {"input":{}}
 {"output":{"memory":true,"projectID":"proj_…","records":[{"sessionID":"ses_…","startedAt":1760000000000,"movedAt":1760000900000,
   "title":"Add memory to courier","split":"split: 3 parts: core, e2e, docs","finished":true,"recalled":{"at":1760000001000,"calls":1},
-  "lesson":{"text":"The docs part was ten lines; next time do it yourself.","at":1760000890000},"parts":[…]}]}}
+  "lesson":{"text":"The docs part was ten lines; next time do it yourself.","at":1760000890000},
+  "reads":{"shown":7,"read":1,"at":1760001000000},"pinned":{"at":1760000950000},"parts":[…]}]}}
 POST /api/rpc/courier-memory/forget?directory=<location> {"input":{"sessionID":"ses_…","lesson":true}}
 {"output":{"outcome":"lesson"}}
+POST /api/rpc/courier-memory/pin?directory=<location> {"input":{"sessionID":"ses_…","pinned":true}}
+{"output":{"outcome":"pinned"}}
 ```
 
-- `records {}`: the records of the project of the location asked, newest first, each as [the
-  record](#memory) has it with its top session as `sessionID`, without `revisions`; `memory` is false, and `records`
-  empty, when the option is off at that location.
-- `forget {sessionID, lesson?}`: removes the record of the tree under `sessionID` in that project, or
-  with `lesson` true only its lesson; answers `{outcome}`, one of `record`, `lesson` or `none` (no
-  such record, or no lesson to drop). It forgets with the memory option off too.
+- `records {}`: the records of the project of the location asked, the pinned first and then newest
+  first, each as [the record](#memory) has it with its top session as `sessionID`, its `reads` and
+  `pinned` merged in and without `revisions`; `memory` is false, and `records` empty, when the option
+  is off at that location.
+- `forget {sessionID, lesson?}`: removes the record of the tree under `sessionID` in that project, with
+  its pin and reads, or with `lesson` true only its lesson; answers `{outcome}`, one of `record`,
+  `lesson` or `none` (no such record, or no lesson to drop). It forgets with the memory option off too.
+- `pin {sessionID, pinned}`: pins the record of the tree under `sessionID` in that project, or with
+  `pinned` false unpins it; answers `{outcome}`, one of `pinned`, `unpinned` or `none` (no such
+  record). Pinning a pinned record keeps when it was first pinned. `pinned` is explicit rather than a
+  toggle, so two terminals cannot flip each other's pin. It pins with the memory option off too.
 
 ## Worktree cleanup
 

@@ -644,8 +644,8 @@ when the top's own turn ends, once it has started a session or called `courier_r
 reads the roster's subtree under the top, each session's info and its [report
 state](#a-child-that-ends-without-a-report), and stored messages only where they can have changed: a
 part's `context` and `refused` are read from its messages when its own turn ends or it is first seen,
-and kept from the last refresh otherwise, and the top's, for its `split`, on its own turn ends and
-while the record states no split line yet. It runs through the plugin's event follower, so whichever
+and kept from the last refresh otherwise, and the top's, for its `split` and `revisions`, on its own
+turn ends and while the record states no split line yet. It runs through the plugin's event follower, so whichever
 instance follows OpenCode's events writes it, once. A session the roster has forgotten since keeps the
 state it was last recorded in, so the record stands on its own once the roster is gone, unless it had not
 settled and OpenCode no longer knows it (below).
@@ -671,7 +671,8 @@ duration in milliseconds:
 | `startedAt` | When the top session was created. |
 | `movedAt` | When a turn in the tree last ended, or the record was first written by `courier_recall`. |
 | `title` | The top session's title, as OpenCode has it at the last refresh. |
-| `split` | The top's split line, the first line of its replies that states one (`split: no, because …` or `split: <n> parts: …`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), kept as written, markdown included, or `not stated`. |
+| `split` | The top's split line, the first line of its replies that states one (`split: no, because …` or `split: <n> parts: …`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), kept as written, markdown included, or `not stated`. Once stated it is never replaced, even when compaction has dropped the reply that stated it. |
+| `revisions` | Absent until the top states a second split line worded otherwise; then the later lines, newest last, the newest 3 kept: `[{ "text": "split: 2 parts: its tests, its docs", "at": …, "parts": 1 }]`. Only a line beginning with `split:` after any markdown counts, not a passing mention, and it is appended when its words, markdown aside, differ from the line recorded last (the last revision, else `split`), so a line repeated or only restyled appends nothing, and neither does reading the same replies again. `text` is the line as written, `at` when its reply was created (the refresh's time when the message has none), and `parts` how many parts the tree had at that refresh, which tells a second stage after the first landed from a rewording before any work. A revision whose reply compaction has dropped is kept. |
 | `finished` | Whether, at the last refresh, no session in the tree ran (by the same rule as the limits' `busy`) and every part had settled: none was `out` or `stalled` (a `gone` one has). A tree whose top is still integrating reads as finished until that turn ends, and one with no parts as soon as its top is idle. |
 | `recalled` | Absent until `courier_recall` was called from the tree; then `{ "calls": <n> }`, counting every call made from the top and its parts, with `"at"`, when the top itself first called it. |
 | `lesson` | Absent until `courier_note` wrote one; then `{ "text": …, "at": … }`, with `"depth"`, the writer's depth in the tree, when a sub-orchestrator wrote it. A second note replaces the whole object. |
@@ -702,7 +703,8 @@ the tool finds the plugin's prefix): `bun e2e/kv.ts set 'memory/<projectID>/<top
 a part without a `sessionID` is left out, and a value without `parts` is not a record. A `lesson` may
 be written as a bare string, which is read as one dated `movedAt`; an object without a `text`, or an
 empty one, is no lesson, a `depth` that is not a positive integer is dropped, and a text over 300
-characters is clipped when read. One as the plugin writes it:
+characters is clipped when read. A revision without a `text`, an integer `at` or a `parts` that is a
+non-negative integer is left out, and of more than 3 the newest are kept. One as the plugin writes it:
 
 ```json
 {
@@ -729,7 +731,8 @@ lists every record of the calling session's project, newest first, one line each
 ```
 
 the top session, the day it started, its title (clipped to 60 characters), its split line as prose
-(below), its parts counted by status, how deep the tree went, how many parts were isolated and how
+(below), then its latest revision, when the top stated another, as prose too and after how many parts
+it was stated (`then, after 1 part: split: 2 parts: its tests, its docs`), its parts counted by status, how deep the tree went, how many parts were isolated and how
 many spawns were refused, how long the tree ran (`ran`, `movedAt` less `startedAt`), how long ago it
 last moved (`last moved … ago`, now less `movedAt`: a duration under a day, else whole days), the parts' costs
 summed when any is known, `finished` or `not finished`, `recalled` when the top called the tool (`recalled by a part`
@@ -1149,7 +1152,7 @@ first and by their day too.
 
 - `enter` shows the record in full, in three groups: **Tree** (the top session, when it started and
   last moved, to the minute in local time with the zone's short name, `2026-10-17 12:12 GMT+2`, how
-  long it ran, its split line or `not stated`, `Finished` or `Not finished` with the cost in all, and
+  long it ran, its split line or `not stated` (not its revisions), `Finished` or `Not finished` with the cost in all, and
   `Recalled <n> times`, first by the top when, or by a part only, else `Not recalled`), **Parts**
   (one row per session, indented by depth: title, status, depth, `isolated`, `group <name>`,
   duration, cost, `ctx <n>%` and spawns refused; `No parts` with none) and **Lesson** (`lesson
@@ -1187,7 +1190,7 @@ POST /api/rpc/courier-memory/forget?directory=<location> {"input":{"sessionID":"
 ```
 
 - `records {}`: the records of the project of the location asked, newest first, each as [the
-  record](#memory) has it with its top session as `sessionID`; `memory` is false, and `records`
+  record](#memory) has it with its top session as `sessionID`, without `revisions`; `memory` is false, and `records`
   empty, when the option is off at that location.
 - `forget {sessionID, lesson?}`: removes the record of the tree under `sessionID` in that project, or
   with `lesson` true only its lesson; answers `{outcome}`, one of `record`, `lesson` or `none` (no

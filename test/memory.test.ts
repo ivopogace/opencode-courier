@@ -10,6 +10,7 @@ import {
   LESSON_MAX,
   lessonText,
   MAX_RECORDS,
+  MAX_REVISIONS,
   mergeParts,
   noteRecall,
   oneLine,
@@ -17,7 +18,9 @@ import {
   partStatus,
   readMemory,
   RETENTION_MS,
+  revise,
   splitLineOf,
+  splitLinesOf,
   splitProse,
   unreadPart,
   type PartRecord,
@@ -207,6 +210,75 @@ describe("splitProse", () => {
     )
     expect(record.split).toBe(split)
   })
+
+  test("the listing shows the latest revision after the split line, as prose, with how many parts the tree had then", () => {
+    const revisions = [
+      { text: "split: 2 parts: a, b", at: NOW - 3000, parts: 0 },
+      { text: "**split: 2 parts: its tests, its docs**", at: NOW - 2000, parts: 1 },
+    ]
+    const record = { ...stored("ses_staged", NOW - 1000, { split: "split: 1 part: the core", revisions }), projectID: "proj_1", sessionID: "ses_staged" }
+    expect(recordLine(record, "ses_other", NOW).split(" · ").slice(1, 3)).toEqual(["split: 1 part: the core", "then, after 1 part: split: 2 parts: its tests, its docs"])
+    const later = { ...record, revisions: [{ text: "split: 3 parts", at: NOW, parts: 2 }] }
+    expect(recordLine(later, "ses_other", NOW)).toContain(" · split: 1 part: the core · then, after 2 parts: split: 3 parts · no parts · ")
+  })
+})
+
+describe("revise", () => {
+  const line = (text: string, at?: number) => (at === undefined ? { text } : { text, at })
+
+  test("splitLinesOf takes every line beginning with split: after markdown, not one that only holds it", () => {
+    expect(splitLinesOf("Looking.\n**split: 1 part: core**\nI decided to split: no\n  - split: 2 parts: a, b  ")).toEqual(["**split: 1 part: core**", "- split: 2 parts: a, b"])
+  })
+
+  test("appends each line after the last one recorded whose words differ from the line before it, with its time or the refresh's", () => {
+    const previous = { split: "split: 1 part: core" }
+    expect(revise(previous, [line("split: 1 part: core", 1)], 50, 0)).toBeUndefined()
+    expect(revise(previous, [line("split: 1 part: core", 1), line("split: 2 parts: a, b", 2), line("**split: 2 parts: a, b**", 3), line("split: 3 parts", 4)], 50, 1)).toEqual([
+      { text: "split: 2 parts: a, b", at: 2, parts: 1 },
+      { text: "split: 3 parts", at: 4, parts: 1 },
+    ])
+    expect(revise(previous, [line("split: 2 parts: a, b")], 50, 2)).toEqual([{ text: "split: 2 parts: a, b", at: 50, parts: 2 }])
+  })
+
+  test("a re-read appends nothing, a return to an earlier line is appended, and lines no longer in the replies are kept", () => {
+    const stated = [line("split: 1 part: core", 1), line("split: 2 parts: a, b", 2)]
+    const once = revise({ split: "split: 1 part: core" }, stated, 50, 1)
+    expect(revise({ split: "split: 1 part: core", revisions: once }, stated, 60, 2)).toEqual(once)
+    const back = revise({ split: "split: 1 part: core", revisions: once }, [...stated, line("split: 1 part: core", 3)], 70, 2)
+    expect(back).toEqual([...once!, { text: "split: 1 part: core", at: 3, parts: 2 }])
+    expect(revise({ split: "split: 1 part: core", revisions: once }, [], 80, 2)).toEqual(once)
+  })
+
+  test("a line restated later in the replies one refresh reads does not hide the lines stated before it", () => {
+    const [a, b] = ["split: 1 part: core", "split: 2 parts: a, b"]
+    expect(revise({ split: a }, [line(a, 1), line(b, 2), line(a, 3)], 50, 1)).toEqual([
+      { text: b, at: 2, parts: 1 },
+      { text: a, at: 3, parts: 1 },
+    ])
+    const revisions = [{ text: b, at: 2, parts: 1 }]
+    expect(revise({ split: a, revisions }, [line(a, 1), line(b, 2), line("split: 3 parts", 4), line(b, 5)], 60, 2)).toEqual([
+      ...revisions,
+      { text: "split: 3 parts", at: 4, parts: 2 },
+      { text: b, at: 5, parts: 2 },
+    ])
+    // Replies read before an overlapping refresh wrote a later revision append nothing; newer ones after a compaction do.
+    expect(revise({ split: a, revisions }, [line(a, 1)], 60, 2)).toEqual(revisions)
+    expect(revise({ split: a, revisions }, [line(a, 1), line("split: 3 parts", 4)], 60, 2)).toEqual([...revisions, { text: "split: 3 parts", at: 4, parts: 2 }])
+    expect(revise({ split: a, revisions }, [line("split: 3 parts", 4), line(b, 5)], 60, 2)).toEqual([
+      ...revisions,
+      { text: "split: 3 parts", at: 4, parts: 2 },
+      { text: b, at: 5, parts: 2 },
+    ])
+    // Dated by the refresh, the line recorded last is found by its words alone.
+    expect(revise({ split: a, revisions: [{ text: b, at: 50, parts: 1 }] }, [line(a), line(b)], 60, 2)).toEqual([{ text: b, at: 50, parts: 1 }])
+  })
+
+  test("keeps the newest MAX_REVISIONS, the first line untouched", () => {
+    const stated = Array.from({ length: MAX_REVISIONS + 2 }, (_, i) => line(`split: ${i + 2} parts`, i))
+    const revisions = revise({ split: "split: 1 part" }, stated, 50, 1)
+    expect(revisions).toHaveLength(MAX_REVISIONS)
+    expect(revisions!.map((one) => one.text)).toEqual(stated.slice(-MAX_REVISIONS).map((one) => one.text))
+  })
 })
 
 describe("partStatus", () => {
@@ -315,6 +387,23 @@ describe("the store", () => {
     expect(readRecord({ parts: [], lesson: { at: 5 } })).not.toHaveProperty("lesson")
     expect(readRecord({ parts: [], lesson: 7 })).not.toHaveProperty("lesson")
     expect(readRecord({ parts: [], recalled: { at: 5, calls: "two" } })).not.toHaveProperty("recalled")
+    // The split line's revisions: an entry without a text, a time or a count of parts is left out, and the newest MAX_REVISIONS kept.
+    const revisions = [
+      { text: " split: 2 parts: a, b ", at: 5, parts: 1 },
+      { text: "", at: 6, parts: 1 },
+      { text: "split: x", parts: 1 },
+      { text: "split: y", at: 7, parts: -1 },
+      "split: z",
+      { text: "split: 3 parts", at: 8, parts: 2 },
+    ]
+    expect(readRecord({ parts: [], revisions })?.revisions).toEqual([
+      { text: "split: 2 parts: a, b", at: 5, parts: 1 },
+      { text: "split: 3 parts", at: 8, parts: 2 },
+    ])
+    const many = Array.from({ length: MAX_REVISIONS + 1 }, (_, i) => ({ text: `split: ${i}`, at: i, parts: i }))
+    expect(readRecord({ parts: [], revisions: many })?.revisions).toEqual(many.slice(1))
+    expect(readRecord({ parts: [], revisions: [{ text: 7 }] })).not.toHaveProperty("revisions")
+    expect(readRecord({ parts: [], revisions: "split: x" })).not.toHaveProperty("revisions")
     expect(readRecord({ title: "no parts" })).toBeUndefined()
     expect(readRecord("x")).toBeUndefined()
   })
@@ -364,6 +453,7 @@ describe("refresh", () => {
       movedAt: NOW,
       title: "Add memory",
       split: "split: 2 parts: core, docs",
+      revisions: [{ text: "split: later line", at: 1, parts: 2 }],
       finished: false,
       parts: [
         { sessionID: "ses_a", title: "Core", depth: 1, isolated: true, group: "pair", status: "done", duration: 190_000, cost: 0.25, context: 0.3 },
@@ -527,7 +617,7 @@ describe("refresh", () => {
     expect(record!.split).toBe("split: 2 parts: core, docs")
   })
 
-  test("reads the top's messages on its own turn end, or while its record states no split line yet", async () => {
+  test("reads the top's messages on its own turn end, or while its record states no split line yet, and keeps the first line once stated", async () => {
     const { ports, state, contexts, sessions } = fakePorts({
       ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [text("Reading.")] },
       ses_a: { updated: NOW - 100_000, idle: NOW - 100_000 },
@@ -546,9 +636,41 @@ describe("refresh", () => {
     expect((await refresh(ports, state, "ses_top", NOW - 3000, "ses_b"))!.split).toBe("split: no, because it is small; considered: docs")
     expect(contexts).toEqual(["ses_b"])
 
+    // Its first reply compacted away, the top's later line is a revision beside the first, not in its place.
     contexts.length = 0
-    expect((await refresh(ports, state, "ses_top", NOW, "ses_top"))!.split).toBe("split: 2 parts: a, b")
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toMatchObject({
+      split: "split: no, because it is small; considered: docs",
+      revisions: [{ text: "split: 2 parts: a, b", at: 1, parts: 2 }],
+    })
     expect(contexts).toEqual(["ses_top"])
+  })
+
+  test("keeps a split line stated in the first turn and appends a different one stated after the core reported", async () => {
+    const { ports, state, sessions } = fakePorts({ ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [text("split: 1 part: the core")] } })
+    const first = await refresh(ports, state, "ses_top", NOW - 9000, "ses_top")
+    expect(first).toMatchObject({ split: "split: 1 part: the core", parts: [] })
+    expect(first).not.toHaveProperty("revisions")
+
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_core", "ses_top"))
+    await children.prompted("ses_core", NOW - 8000)
+    await children.settled("ses_core", "report", NOW - 6000, "done")
+    sessions.ses_core = { updated: NOW - 6000, idle: NOW - 6000 }
+    const later = { ...text("Merged.\n## split: 2 parts: its tests, its docs\nStarting."), time: { created: NOW - 5000 } }
+    sessions.ses_top!.messages = [text("split: 1 part: the core"), later]
+    const stage = { text: "## split: 2 parts: its tests, its docs", at: NOW - 5000, parts: 1 }
+
+    expect(await refresh(ports, state, "ses_top", NOW - 4000, "ses_top")).toMatchObject({ split: "split: 1 part: the core", revisions: [stage] })
+    // Re-reading the same replies appends nothing, and neither does a rewording of the markdown alone.
+    expect((await refresh(ports, state, "ses_top", NOW - 3000, "ses_top"))!.revisions).toEqual([stage])
+    sessions.ses_top!.messages = [text("split: 1 part: the core"), later, text("**split:  2 parts: its tests, its docs**"), text("I decided to split: no, after all")]
+    expect((await refresh(ports, state, "ses_top", NOW - 2000, "ses_top"))!.revisions).toEqual([stage])
+    // Both replies compacted away, the record keeps both lines; one more is appended, dated by the refresh without a reply time.
+    sessions.ses_top!.messages = [{ type: "assistant", id: "msg", content: [{ type: "text", text: "split: 3 parts: tests, docs, e2e" }] }]
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toMatchObject({
+      split: "split: 1 part: the core",
+      revisions: [stage, { text: "split: 3 parts: tests, docs, e2e", at: NOW, parts: 1 }],
+    })
   })
 
   test("keeps the use another turn end's refresh wrote while this one was reading", async () => {

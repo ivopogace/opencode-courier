@@ -1,6 +1,6 @@
 /**
- * The memory's pure rules, on plain data: the option, a record's shape, each part's status, the split line, the
- * retention and how a refresh keeps the parts the roster has forgotten. Imports nothing of the plugin's but `kernel/` and `platform/json.ts`.
+ * The memory's pure rules, on plain data: the option, a record's shape, each part's status, the split line and its revisions,
+ * the retention and how a refresh keeps the parts the roster has forgotten. Imports nothing of the plugin's but `kernel/` and `platform/json.ts`.
  */
 import { STATUSES, type Status } from "../kernel/protocol.js"
 import { obj } from "../platform/json.js"
@@ -63,6 +63,16 @@ export interface Lesson {
   readonly depth?: number
 }
 
+/** How many revisions of the split line a record keeps, the newest. */
+export const MAX_REVISIONS = 3
+
+/** A later split line the top stated, worded otherwise than the one before it: when, and how many parts the tree had then. */
+export interface Revision {
+  readonly text: string
+  readonly at: number
+  readonly parts: number
+}
+
 /** What is remembered of one tree: its top session and each session started in it, never a report's body or artifacts. */
 export interface TreeRecord {
   /** When the top session was created, epoch milliseconds. */
@@ -70,8 +80,10 @@ export interface TreeRecord {
   /** When a turn in the tree last ended, or the record was first written. */
   readonly movedAt: number
   readonly title: string
-  /** The top's split line, as `e2e/real-model-recursive.mjs` reads it, or `not stated`. */
+  /** The top's first split line, as `e2e/real-model-recursive.mjs` reads it, or `not stated`; never replaced once stated. */
   readonly split: string
+  /** Absent until the top states a split line worded otherwise than `split`; newest last, at most `MAX_REVISIONS`. */
+  readonly revisions?: ReadonlyArray<Revision>
   /** Whether, at the last refresh, no session in the tree ran and every part had settled: none was out or stalled. */
   readonly finished: boolean
   readonly recalled?: Recalled
@@ -102,6 +114,50 @@ const HOLDS_SPLIT = /\bsplit:/i
 export function splitLineOf(text: string) {
   const lines = text.split("\n")
   return (lines.find((line) => STARTS_SPLIT.test(line)) ?? lines.find((line) => HOLDS_SPLIT.test(line)))?.trim()
+}
+
+/** Every line of a text that begins with `split:` after any markdown, trimmed: a passing mention of a split is none. */
+export const splitLinesOf = (text: string) =>
+  text
+    .split("\n")
+    .filter((line) => STARTS_SPLIT.test(line))
+    .map((line) => line.trim())
+
+/** A split line the top's replies state, with when its reply was created when the message says. */
+export interface Stated {
+  readonly text: string
+  readonly at?: number
+}
+
+/**
+ * The lines after the one recorded last: after its reply, else (compacted, or unread by an overlapping refresh) those stated since its
+ * time; without a revision, after `split`'s first statement; all when neither is found.
+ */
+function statedSince(previous: Pick<TreeRecord, "split" | "revisions">, stated: ReadonlyArray<Stated>) {
+  const last = previous.revisions?.at(-1)
+  const words = (line: Stated) => splitProse(line.text)
+  if (!last) return stated.slice(stated.findIndex((line) => words(line) === splitProse(previous.split)) + 1)
+  const inReply = stated.findLastIndex((line) => words(line) === splitProse(last.text) && line.at === last.at)
+  if (inReply >= 0) return stated.slice(inReply + 1)
+  if (stated.some((line) => line.at !== undefined)) return stated.filter((line) => line.at !== undefined && line.at > last.at)
+  return stated.slice(stated.findLastIndex((line) => words(line) === splitProse(last.text)) + 1)
+}
+
+/**
+ * The revisions once the split lines `stated` are read at a refresh at `at` with `parts` parts: those `statedSince` the line recorded
+ * last, each appended when its words differ from the line before, so a re-read appends nothing.
+ */
+export function revise(previous: Pick<TreeRecord, "split" | "revisions">, stated: ReadonlyArray<Stated>, at: number, parts: number) {
+  const recorded = splitProse(previous.revisions?.at(-1)?.text ?? previous.split)
+  const { added } = statedSince(previous, stated).reduce<{ last: string; added: Revision[] }>(
+    ({ last, added }, line) => {
+      const words = splitProse(line.text)
+      return words === last ? { last, added } : { last: words, added: [...added, { text: line.text, at: line.at ?? at, parts }] }
+    },
+    { last: recorded, added: [] },
+  )
+  const revisions = [...(previous.revisions ?? []), ...added].slice(-MAX_REVISIONS)
+  return revisions.length ? revisions : undefined
 }
 
 /** Heading, quote and list marks before a line's words, each with the space markdown puts after it, unlike the `#` of `#282`. */

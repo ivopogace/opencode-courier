@@ -1352,6 +1352,20 @@ run_memory() {
   check "and listed without its marks, cut at the last word within 160 characters" \
     "$(prompt_in "$said" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg said "$said" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $said + " (this tree) "))) |
       length == 1 and (.[0] | contains("\" · split: no, because the stances are a timed sequence that only my own turns can stage and hold; considered: one child per stance (but the flashes are short), a… [57 more characters] · ") and (contains("*") | not)))')"
+  # A revised split line (#292): once a part has reported, the top states another; the record keeps the first and appends it.
+  prompt_in "$said" "COURIER-TEST" >/dev/null
+  check "the top's part reported back" "$([ -n "$(reply_time "$said" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  revised='split: 2 parts: its tests, its docs'
+  prompt_in "$said" "COURIER-SAY $revised" >/dev/null
+  record=$(record_of "$said" '(.revisions | length) == 1')
+  check "a second, different split line is kept as a revision beside the first, with when it was stated and after how many parts" \
+    "$(jq -r --arg split "$split" --arg revised "$revised" '.split == $split and (.revisions | length) == 1 and
+      .revisions[0].text == $revised and (.revisions[0].at | type) == "number" and .revisions[0].parts >= 1' <<<"$record")"
+  check "which the listing shows after the first, with the part count it was stated at" \
+    "$(prompt_in "$said" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg said "$said" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $said + " (this tree) "))) |
+      length == 1 and (.[0] | contains(" [57 more characters] · then, after 1 part: split: 2 parts: its tests, its docs · 1 part: 1 done")))')"
+  check "and the refresh at that turn's end, reading the same replies, appended nothing" \
+    "$(record_of "$said" ".movedAt > $(jq '.movedAt' <<<"$record")" | jq -r --argjson before "$record" '.movedAt > $before.movedAt and .revisions == $before.revisions and .split == $before.split')"
   # A record written by hand, as docs/reference.md's Memory section describes one and the real-model evaluation seeds it.
   seeded='{"startedAt":1760000000000,"movedAt":1760000900000,"title":"Seeded by hand","split":"split: 2 parts: core, docs","finished":true,"lesson":{"text":"Give the docs to one session","at":1760000890000},"parts":[{"sessionID":"ses_seed_core","title":"Core","depth":1,"isolated":true,"group":"wave","status":"done","duration":540000,"cost":0.42,"context":0.31},{"sessionID":"ses_seed_docs","title":"Docs","depth":1,"isolated":false,"status":"partial","duration":60000,"refused":1}]}'
   kv set "memory/$project/ses_seeded" "$seeded" "memory/$project/$root"

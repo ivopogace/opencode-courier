@@ -1,6 +1,17 @@
 import { finite, num, obj, str } from "../platform/json.js"
 import { scanEntries, type Storage } from "../platform/storage.js"
-import { isPartStatus, type Lesson, lessonText, NOT_STATED, type PartRecord, type Recalled, type StoredRecord, type TreeRecord } from "./domain.js"
+import {
+  isPartStatus,
+  type Lesson,
+  lessonText,
+  MAX_REVISIONS,
+  NOT_STATED,
+  type PartRecord,
+  type Recalled,
+  type Revision,
+  type StoredRecord,
+  type TreeRecord,
+} from "./domain.js"
 import type { MemoryStore } from "./ports.js"
 
 // The memory's storage: the only file that knows its key and layout. A record is read leniently, as one written by
@@ -56,6 +67,19 @@ function readLesson(value: unknown, movedAt: number): Lesson | undefined {
   return { text, at: num(given.at) ?? movedAt, ...(depth !== undefined && Number.isInteger(depth) && depth > 0 ? { depth } : {}) }
 }
 
+/** The revisions as `{ text, at, parts }`, the newest `MAX_REVISIONS`, leaving out an entry without a text, a time or a count of parts. */
+function readRevisions(value: unknown): Revision[] {
+  if (!Array.isArray(value)) return []
+  const revisions = value.flatMap((entry: unknown): Revision[] => {
+    const given = obj(entry)
+    const text = str(given.text)?.trim()
+    const at = num(given.at)
+    const parts = num(given.parts)
+    return text && at !== undefined && parts !== undefined && parts >= 0 ? [{ text, at, parts }] : []
+  })
+  return revisions.slice(-MAX_REVISIONS)
+}
+
 /** A record as stored, or undefined for a value that is not one. */
 export function readRecord(value: unknown): TreeRecord | undefined {
   const given = obj(value)
@@ -63,11 +87,13 @@ export function readRecord(value: unknown): TreeRecord | undefined {
   const recalled = readRecalled(given.recalled)
   const movedAt = num(given.movedAt) ?? num(given.startedAt) ?? 0
   const lesson = readLesson(given.lesson, movedAt)
+  const revisions = readRevisions(given.revisions)
   return {
     startedAt: num(given.startedAt) ?? 0,
     movedAt,
     title: str(given.title) ?? "",
     split: str(given.split) ?? NOT_STATED,
+    ...(revisions.length ? { revisions } : {}),
     finished: given.finished === true,
     ...(recalled ? { recalled } : {}),
     ...(lesson ? { lesson } : {}),

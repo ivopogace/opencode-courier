@@ -159,13 +159,12 @@ export function forgottenLine(record: MemoryRecord, outcome: Forgotten["outcome"
 type Request =
   | { readonly kind: "open"; readonly record: MemoryRecord }
   | { readonly kind: "forget"; readonly record: MemoryRecord; readonly lesson: boolean }
-  | { readonly kind: "close" }
   | { readonly kind: "back" }
 
 /**
  * Adds the memory view: the records of the project of the open session's location (else the TUI's, else the server's
  * default), newest first, read through the memory's RPC; `enter` shows one in full, `x` forgets one, or only its lesson,
- * after a confirm, `q` closes. Opened by its command, from `/courier memory` or the palette.
+ * after a confirm, `esc` goes back from a record and closes the list. Opened by its command, from `/courier memory` or the palette.
  */
 export function addMemoryView(ctx: Context) {
   const memory = ctx.client.rpc(memoryRpc)
@@ -186,7 +185,7 @@ export function addMemoryView(ctx: Context) {
   const fail = (what: string) => (error: unknown) => ctx.ui.toast.show({ title: "courier", message: `${what}: ${reason(error)}`, variant: "error" })
   const say = (message: string) => ctx.ui.toast.show({ title: "courier", message, variant: "info" })
 
-  /** A select whose footer actions, `x` and `q`, answer as the person's choice does; the race settles on the first of the two. */
+  /** A select whose footer action, `x`, answers as the person's choice does; the race settles on the first of the two. */
   function show<Value>(options: Parameters<typeof ctx.ui.dialog.select<Value>>[0], chosen: (value: Value) => Request, forget: (value: Value) => Request) {
     let request: (one: Request) => void = () => undefined
     const requested = new Promise<Request>((resolve) => {
@@ -194,10 +193,8 @@ export function addMemoryView(ctx: Context) {
     })
     const choosing = ctx.ui.dialog.select<Value>({
       ...options,
-      actions: [
-        { bind: "x", title: "forget", onTrigger: (value) => request(forget(value)) },
-        { bind: "q", title: "close", selection: "none", onTrigger: () => request({ kind: "close" }) },
-      ],
+      // The host runs a footer action's key before the search sees it, so `x` is the one letter the search loses.
+      actions: [{ bind: "x", title: "forget", onTrigger: (value) => request(forget(value)) }],
     })
     // The widest a dialog goes, for the parts beside each title and the lesson under it.
     ctx.ui.dialog.set({ size: "xlarge" })
@@ -262,7 +259,6 @@ export function addMemoryView(ctx: Context) {
         const record = viewing === undefined ? undefined : read.records.find((one) => one.sessionID === viewing)
         viewing = record?.sessionID
         const request = await (record ? showRecord(record) : showList(read))
-        if (request.kind === "close") return ctx.ui.dialog.clear()
         if (request.kind === "back") {
           // The host closed the dialog on enter or esc: a record goes back to the list, the list is left.
           if (!record) return

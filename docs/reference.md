@@ -1384,7 +1384,7 @@ Memory (2)
   2026-10-17  Add memory to courier (this session) 3 parts: 2 done, 1 partial · 42 min · $1.28
   lesson (2026-10-17): "The docs part was ten lines; next time do it yourself."
   2026-10-16  Fix the bug no parts · 42 min · not finished
-                                                                          forget x  close q
+                                                                                   forget x
 ```
 
 The row's title is the day the tree started and the top session's title (clipped to 34 characters; its
@@ -1403,7 +1403,7 @@ The dialog is the widest OpenCode has, 116 columns, or the terminal's width. Sea
   its status, depth, `isolated`, `group <name>`, duration, cost, `ctx <n>%` and spawns refused, as the
   record has them; `No parts` with none) and **Lesson** (`lesson (<day>[, from depth <n>])` and its text,
   wrapped over rows of 90 characters; `No lesson` without one). `enter` or `esc` there goes back to the
-  list.
+  list, and a second `esc` closes it, as OpenCode's own nested dialogs do.
 - `x` forgets. In the list, the record under the row; in a record, on a **Lesson** row only the lesson,
   the record keeping its facts, and on any other row the record. Each after a confirm that names the
   record (its title, the day it started, its parts counted) and says what goes and what stays, with
@@ -1411,7 +1411,9 @@ The dialog is the widest OpenCode has, 116 columns, or the terminal's width. Sea
   lesson of "<title>"; its facts stay`, or that there was nothing to forget, when another TUI or the sweep
   got there first. The list, or the record, is then read again and shown without what went; once the
   project has no record left, a toast says so and the view closes.
-- `q` closes the view, from the list or a record; `esc` on the list closes it too.
+- `esc` closes the view from the list, and goes back to the list from a record. Every letter but `x` can be
+  typed in the search, `q` among them: `x` is a footer action, whose key OpenCode runs before the search
+  field sees it, and a plugin's footer action takes only a literal key, not a rebindable keymap command.
 
 With `"memory": false` in the plugin's options at the location asked, the view says in a toast that memory
 is off in this project and lists nothing; with no record, that the project has none yet. The view notes

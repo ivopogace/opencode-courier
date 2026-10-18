@@ -93,22 +93,27 @@ import rules and the reasons for them.
   receiver (`joinReceiver`, under the hub's `receiver` key); `subscriptions.ts` the subscription store
   and topics; `tools.ts` `courier_subscribe` and `courier_unsubscribe`; `text.ts` their texts and the
   delivery summaries. It exports `subscribedSince`, its `Waits` supplier.
-- `memory/`: one record per session tree, under `memory/<projectID>/<topSessionID>`, and its lesson.
-  `domain.ts` the record's shape (`TreeRecord`, `PartRecord`, `PartStatus`, `Lesson`, `Revision`), the
+- `memory/`: one record per session tree, under `memory/<projectID>/<topSessionID>`, and its lesson; beside
+  it, each key with one writer, the person's pin (`…/pin`) and each reader tree's reads (`…/reads/<readerTop>`),
+  which the store merges in as `pinned` and `reads` and never writes with the record.
+  `domain.ts` the record's shape (`TreeRecord`, `PartRecord`, `PartStatus`, `Lesson`, `Revision`, `Reads`, `Pinned`), the
   `memory` option (`readMemory`), `partStatus`, `isSettled`, what a part whose session cannot be read keeps
   (`unreadPart`), the split line (`splitOf`: a stated line, `isStated`, outranks a mention once), its append-only
   revisions (`revise`, and `replacingMention` for a record written before the rule) and how the listing shows it
   (`splitProse`), `oneLine`, `lessonText`
   (clips a hand-written record's lesson at `LESSON_MAX`, which `courier_note` refuses instead), the
-  merge that keeps parts the roster forgot and the retention (`keep`); `ports.ts` `RefreshPorts` (what
+  merge that keeps parts the roster forgot, the reads (`noteRead`, `sumReads`), the listing order
+  (`pinnedFirst`) and the retention (`keep`: the pinned outside both bounds, then lesson-bearing records
+  first); `ports.ts` `RefreshPorts` (what
   every hub-v2 member's watch ports have), `MemoryPorts` and `MemoryState` (process-wide); `store.ts`
-  the only file that knows the key and layout, reading a hand-written record leniently; `record.ts` the
+  the only file that knows the keys and layout, reading a hand-written record leniently; `record.ts` the
   refresh (`refresh`);
   `events.ts` `memoryEvents`, which refreshes a tree's record in the `after` phase of each turn end in
-  it; `recall.ts` `courier_recall`'s logic; `note.ts` `courier_note`'s; `forget.ts` the memory view's
-  forget; `sweep.ts` the sweep at load; `tools.ts` adds `courier_recall` and `courier_note`; `text.ts`
+  it; `recall.ts` `courier_recall`'s logic, which counts the listing or the read on each other tree's
+  record, best effort; `note.ts` `courier_note`'s; `forget.ts` the memory view's
+  forget; `pin.ts` its pin; `sweep.ts` the sweep at load, strays included; `tools.ts` adds `courier_recall` and `courier_note`; `text.ts`
   the listing line and the tools' texts. `rpc.ts` the memory's RPC contract (`memoryRpc`, id
-  `courier-memory`: `records`, `forget`), `rpc-handlers.ts` its server side (`registerMemoryRpc`, after
+  `courier-memory`: `records`, `forget`, `pin`), `rpc-handlers.ts` its server side (`registerMemoryRpc`, after
   the person's); `tui.tsx` the memory view (`addMemoryView`), a `select` dialog, which imports only its
   `rpc.ts` and `text.ts`.
 - `platform/`: imports nothing outside `platform/`. `hub.ts`: the plugin's process-wide state in one

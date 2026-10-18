@@ -20,11 +20,11 @@ PR itself and merges.
 - **Sequence** an issue after another when it builds on the other's code (its issue says "ties
   in with", or its design needs the other's storage or tools). Spawn it once the other is merged.
 - **Parallel** is fine when issues only share files textually. Name the shared files to each
-  child, down to the part each one edits. Usual collisions here: the end of the
-  `tool.transform` callback in `src/index.ts`, the expected tool list in `test/plugin.test.ts`,
-  README's Tools table and "How children reach you" list, `docs/reference.md`, the group
-  functions in `e2e/run.sh` (name the group each child edits; a new group also goes into its
-  `SUITE`), and the branches of `decide()` in `e2e/mock-model.mjs`.
+  child, down to the part each one edits. Usual collisions: the end of the `tool.transform`
+  callback in `src/index.ts`, the expected tool list in `test/plugin.test.ts`, README's Tools
+  table and "How children reach you" list, `docs/reference.md`, the group functions in
+  `e2e/run.sh` (name the group each child edits; a new group also goes into its `SUITE`), and
+  the branches of `decide()` in `e2e/mock-model.mjs`.
 - **Hold** an issue that needs something only the owner has: an API key, an account, a decision
   to publish or spend. Say what is needed instead of spawning.
 - Keep a roster in the scratchpad (issue, session id, branch, PR, state, the owner's decisions
@@ -34,21 +34,20 @@ PR itself and merges.
 
 ## 2. Spawn
 
-First assign each issue to the owner on GitHub (`issue_write`, method `update`, `assignees`), so
-nobody else starts on it; note it in the roster. One already assigned to someone else is not
-reassigned or spawned: tell the owner who has it. An issue the wave drops unmerged is unassigned.
+First assign each issue to the owner on GitHub (`issue_write`, method `update`, `assignees`), and
+note it in the roster. One already assigned to someone else is not reassigned or spawned: tell the
+owner who has it. An issue the wave drops unmerged is unassigned.
 
 Then `create_session` per issue: `source_url` the repo, `outcome_branch` `issue-<N>-<slug>`, title
 `opencode-courier #<N>: <scope>`, tags `opencode-courier`, `wave-<K>`, `issue:<N>`, `model` when the
-owner names one for the issue, and the prompt
-from `references/child-prompt.md` with every bracket filled. Put in the prompt what the owner has
-already decided for that issue so the child does not ask again. Never `permission_mode: plan`: no
-one is there to approve the plan.
+owner names one for the issue, and the prompt from `references/child-prompt.md` with every bracket
+filled, including what the owner has already decided for that issue. Never `permission_mode: plan`:
+no one is there to approve the plan.
 
 ## 3. Monitor without polling
 
-- Children send their turn-end block to `@parent`, which wakes the orchestrator. That is the
-  main signal; end your turn to wait for it.
+- Children send their turn-end block to `@parent`, which wakes the orchestrator. End your turn to
+  wait for it.
 - Safety net: one `send_later` check-in 30 minutes out (or the owner's cadence), re-armed first
   thing in every check-in while a child is still working. Never `CronCreate`: it lives in the
   container's memory and dies when an idle container is reclaimed.

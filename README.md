@@ -246,7 +246,8 @@ Each spawned session's brief says when to split its task and when to do it itsel
 ## Memory
 
 The plugin keeps **one record per session tree** in the project, from facts it already has: when the
-tree started and last moved, the top session's title and `split:` line, and for each session started
+tree started and last moved, the top session's title and first `split:` line, with up to 3 later ones
+that read otherwise (when each was stated, and after how many parts), and for each session started
 in the tree its title, depth, isolation, join group, status, duration, cost, context use and spawns
 refused; never a report's body or artifacts. A session deleted since keeps its last status and
 duration, or reads `gone` when it had not settled, so it never holds its tree at `not finished`.
@@ -254,7 +255,7 @@ The one thing a model writes into it is **the tree's
 lesson**, with `courier_note`: one line of at most 300 characters, from the session that verified the
 tree, with the job it comes from and the reason. `courier_recall` reads the records back, each line
 showing the split line as prose (its markdown marks dropped, the asterisks of its globs kept) cut at a
-word, and saying how long the tree ran and how long ago it last moved; the `courier-orchestrate` skill asks for
+word, then the latest later one (`then, after 1 part: split: 2 parts: …`), and saying how long the tree ran and how long ago it last moved; the `courier-orchestrate` skill asks for
 one call before the split decision and one `courier_note` before the top replies. Each project keeps
 its newest 30 records and none older than 90 days. `"memory":
 false` in the plugin's `options` turns it off ([more](docs/reference.md#memory)).

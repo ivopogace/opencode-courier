@@ -4,7 +4,7 @@ import type { Storage } from "../platform/storage.js"
 import type { ModelWindow } from "../tree/index.js"
 import type { StoredRecord, TreeRecord } from "./domain.js"
 
-export type { Lesson, PartRecord, PartStatus, Recalled, StoredRecord, TreeRecord } from "./domain.js"
+export type { Lesson, PartRecord, PartStatus, Recalled, Revision, StoredRecord, TreeRecord } from "./domain.js"
 
 type Context = Plugin.Context
 

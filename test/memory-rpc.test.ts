@@ -67,6 +67,16 @@ describe("records", () => {
     expect((await memoryRpc.methods.records.output["~standard"].validate(read)).issues).toBeUndefined()
   })
 
+  test("leaves the split line's revisions out, which its schema does not hold yet (#292)", async () => {
+    const { ports, records: store } = fakePorts()
+    await store.put("proj_1", "ses_staged", record("Staged", NOW, { revisions: [{ text: "split: 2 parts: tests, docs", at: NOW - 1000, parts: 1 }] }))
+
+    const read = await records(ports)
+
+    expect(read.records[0]).toEqual({ sessionID: "ses_staged", ...record("Staged", NOW) })
+    expect((await memoryRpc.methods.records.output["~standard"].validate(read)).issues).toBeUndefined()
+  })
+
   test("says memory is off, and lists nothing, when the option is", async () => {
     const { ports, records: store } = fakePorts(false)
     await store.put("proj_1", "ses_new", record("New", NOW))

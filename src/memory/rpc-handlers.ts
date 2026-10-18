@@ -5,8 +5,8 @@ import type { MemoryPorts } from "./ports.js"
 import { memoryRpc, type MemoryRecord, type Records } from "./rpc.js"
 import { memoryStore } from "./store.js"
 
-/** A stored record as the RPC gives it: without its project, which the listing names once. */
-const toRecord = ({ projectID: _project, ...record }: StoredRecord): MemoryRecord => record
+/** A stored record as the RPC gives it: without its project, which the listing names once, nor the split line's revisions, which its schema lacks. */
+const toRecord = ({ projectID: _project, revisions: _revisions, ...record }: StoredRecord): MemoryRecord => record
 
 /**
  * The records of the ports' project, newest first, as the memory view lists them; nothing, and `memory` false, with the

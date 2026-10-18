@@ -3,7 +3,7 @@
 export { LESSON_MAX, MAX_RECORDS, NOT_STATED, readMemory, RETENTION_MS } from "./domain.js"
 export { memoryEvents, type MemoryEventPorts } from "./events.js"
 export { note, type Noted, type NoteInput } from "./note.js"
-export type { Lesson, MemoryPorts, MemoryState, PartRecord, PartStatus, Recalled, RefreshPorts, StoredRecord, TreeRecord } from "./ports.js"
+export type { Lesson, MemoryPorts, MemoryState, PartRecord, PartStatus, Recalled, RefreshPorts, Revision, StoredRecord, TreeRecord } from "./ports.js"
 export { recall, type Recall, type RecallInput } from "./recall.js"
 export { refresh } from "./record.js"
 export { registerMemoryRpc } from "./rpc-handlers.js"

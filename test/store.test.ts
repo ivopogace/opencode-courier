@@ -111,6 +111,7 @@ test("the memory store keeps a tree's record under memory/<projectID>/<topSessio
     movedAt: 1760000900000,
     title: "Add memory to courier",
     split: "split: 3 parts: core, e2e, docs",
+    revisions: [{ text: "split: 2 parts: e2e, docs", at: 1760000600000, parts: 1 }],
     finished: true,
     recalled: { at: 1760000001000, calls: 1 },
     lesson: { text: "The docs part was ten lines; next time do it yourself.", at: 1760000890000 },
@@ -121,7 +122,7 @@ test("the memory store keeps a tree's record under memory/<projectID>/<topSessio
   }
   await records.put("proj_1", "ses_top", record)
   expect(writes).toEqual([
-    'set memory/proj_1/ses_top {"startedAt":1760000000000,"movedAt":1760000900000,"title":"Add memory to courier","split":"split: 3 parts: core, e2e, docs","finished":true,"recalled":{"at":1760000001000,"calls":1},"lesson":{"text":"The docs part was ten lines; next time do it yourself.","at":1760000890000},"parts":[{"sessionID":"ses_core","title":"Core","depth":1,"isolated":true,"group":"wave","status":"done","duration":540000,"cost":0.42,"context":0.31,"refused":1},{"sessionID":"ses_docs","title":"Docs","depth":1,"isolated":false,"status":"out","duration":60000}]}',
+    'set memory/proj_1/ses_top {"startedAt":1760000000000,"movedAt":1760000900000,"title":"Add memory to courier","split":"split: 3 parts: core, e2e, docs","revisions":[{"text":"split: 2 parts: e2e, docs","at":1760000600000,"parts":1}],"finished":true,"recalled":{"at":1760000001000,"calls":1},"lesson":{"text":"The docs part was ten lines; next time do it yourself.","at":1760000890000},"parts":[{"sessionID":"ses_core","title":"Core","depth":1,"isolated":true,"group":"wave","status":"done","duration":540000,"cost":0.42,"context":0.31,"refused":1},{"sessionID":"ses_docs","title":"Docs","depth":1,"isolated":false,"status":"out","duration":60000}]}',
   ])
   expect(await records.get("proj_1", "ses_top")).toEqual(record)
   expect(await records.ofProject("proj_1")).toEqual([{ ...record, projectID: "proj_1", sessionID: "ses_top" }])

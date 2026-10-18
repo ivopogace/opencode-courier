@@ -129,7 +129,7 @@ function decide(body) {
     .slice(lastAssistant + 1)
     .map((message) => textOf(message.content))
     .join("\n")
-  // COURIER-SAY replies with the rest of the line as it is, markdown and all.
+  // COURIER-SAY replies with the rest of the line, markdown and all, up to the quote the prompt arrives with.
   const saying = recent.match(/COURIER-SAY ([^"\n]+)/)
   if (saying) return { text: saying[1] }
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)

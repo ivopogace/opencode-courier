@@ -30,7 +30,7 @@ import rules and the reasons for them.
   files out and `tsconfig.tui.json` writes `dist/tui.d.ts`. `rpc.ts`: the `rpc` entrypoint, the
   modules' RPC contracts (`treeRpc`, `personRpc`, `memoryRpc`). Neither is imported by the server half.
 - `kernel/protocol.ts`: what the models see of the protocol in every module: `envelope`, `END_TURN`,
-  `clipText`, `defuse`, `describeFailure`, `Status`, `SPLIT_LINE` and `SKILL_ID`. It imports only
+  `clipText`, `clipWords`, `defuse`, `describeFailure`, `Status`, `SPLIT_LINE` and `SKILL_ID`. It imports only
   `kernel/**` and `platform/json.ts`. `kernel/tool.ts`: `ToolEditor` and `rethrow` for the `tools.ts`
   files.
 - The modules, `tree/`, `person/`, `scheduling/`, `webhook/` and `memory/`, each a folder imported from
@@ -96,7 +96,7 @@ import rules and the reasons for them.
 - `memory/`: one record per session tree, under `memory/<projectID>/<topSessionID>`, and its lesson.
   `domain.ts` the record's shape (`TreeRecord`, `PartRecord`, `PartStatus`, `Lesson`), the `memory`
   option (`readMemory`), `partStatus`, `isSettled`, what a part whose session cannot be read keeps
-  (`unreadPart`), the split line, `oneLine`, `lessonText` (clips a hand-written
+  (`unreadPart`), the split line and how the listing shows it (`splitProse`), `oneLine`, `lessonText` (clips a hand-written
   record's lesson at `LESSON_MAX`, which `courier_note` refuses instead), the merge that keeps parts the
   roster forgot and the retention (`keep`); `ports.ts` `RefreshPorts` (what every hub-v2 member's watch
   ports have), `MemoryPorts` and `MemoryState` (process-wide); `store.ts` the only file that knows the

@@ -1348,7 +1348,7 @@ run_memory() {
   split='**split: no, because the stances are a timed sequence that only my own turns can stage and hold; considered: one child per stance (but the flashes are short), a separate orchestrator session (it would only add a hop).**'
   prompt_in "$said" "COURIER-SAY $split" >/dev/null
   check "a split line stated in markdown is kept on the record as written" \
-    "$(record_of "$said" '.split != "not stated"' | jq -r --arg split "$split" '.split == $split')"
+    "$(record_of "$said" '.split | startswith("**split: no, because the stances")' | jq -r --arg split "$split" '.split == $split')"
   check "and listed without its marks, cut at the last word within 160 characters" \
     "$(prompt_in "$said" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg said "$said" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $said + " (this tree) "))) |
       length == 1 and (.[0] | contains("\" · split: no, because the stances are a timed sequence that only my own turns can stage and hold; considered: one child per stance (but the flashes are short), a… [57 more characters] · ") and (contains("*") | not)))')"

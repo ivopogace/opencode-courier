@@ -729,9 +729,9 @@ lists every record of the calling session's project, newest first, one line each
 ```
 
 the top session, the day it started, its title (clipped to 60 characters), its split line as prose
-(without the markdown before it that the matcher reads past, nor the emphasis and code marks closing
-it, and cut at the last space within 160 characters, or mid-word when that would keep less than half;
-the record keeps the line as written),
+(without its heading, quote and list marks, the asterisks of its bold and italic spans, nor a code or
+underscore span wrapping the whole line, and cut at the last space within 160 characters, or mid-word
+when that would keep less than half; the record keeps the line as written),
 its parts counted by status, how deep the tree went, how many parts were isolated and how many spawns
 were refused, how long the tree ran (`ran`, `movedAt` less `startedAt`), how long ago it last moved
 (`last moved … ago`, now less `movedAt`: a duration under a day, else whole days), the parts' costs

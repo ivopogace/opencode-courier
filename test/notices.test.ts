@@ -459,7 +459,18 @@ describe("memory", () => {
     const gone = { sessionID: "ses_goner", title: "Goner", depth: 1, isolated: true, status: "gone" as const, duration: 30_000 }
     expect(memory.recordLine(record("ses_old", { parts: [...record("ses_old").parts.slice(0, 2), gone] }), "ses_other", NOW)).toMatchSnapshot()
   })
+  test("recordLine with a revised split line", () => {
+    const revisions = [
+      { text: "split: 2 parts: core, e2e", at: Date.UTC(2026, 9, 3, 9, 10), parts: 0 },
+      { text: "**split: 2 parts: its tests, its docs**", at: Date.UTC(2026, 9, 3, 9, 30), parts: 1 },
+    ]
+    expect(memory.recordLine(record("ses_staged", { split: "split: 1 part: the core", revisions }), "ses_other", NOW)).toMatchSnapshot()
+    const long = [{ text: "split: " + "y".repeat(200), at: Date.UTC(2026, 9, 3, 9, 30), parts: 2 }]
+    expect(memory.recordLine(record("ses_long", { revisions: long, parts: [] }), "ses_other", NOW)).toMatchSnapshot()
+  })
   test("recallRecordText", () => expect(memory.recallRecordText(record("ses_old"))).toMatchSnapshot())
+  test("recallRecordText with revisions", () =>
+    expect(memory.recallRecordText(record("ses_staged", { split: "split: 1 part: the core", revisions: [{ text: "split: 2 parts: its tests, its docs", at: Date.UTC(2026, 9, 3, 9, 30), parts: 1 }] }))).toMatchSnapshot())
   test("recallMissingText", () => expect(memory.recallMissingText("ses_none")).toMatchSnapshot())
   const lesson = { text: "The docs part was ten lines; next time do it yourself.", at: Date.UTC(2026, 9, 3, 9, 40) }
   test("recordLine with a lesson", () => {

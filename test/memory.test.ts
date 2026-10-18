@@ -211,6 +211,16 @@ describe("splitProse", () => {
     expect(record.split).toBe(split)
   })
 
+  test("the listing shows the latest revision after the split line, as prose, with how many parts the tree had then", () => {
+    const revisions = [
+      { text: "split: 2 parts: a, b", at: NOW - 3000, parts: 0 },
+      { text: "**split: 2 parts: its tests, its docs**", at: NOW - 2000, parts: 1 },
+    ]
+    const record = { ...stored("ses_staged", NOW - 1000, { split: "split: 1 part: the core", revisions }), projectID: "proj_1", sessionID: "ses_staged" }
+    expect(recordLine(record, "ses_other", NOW).split(" · ").slice(1, 3)).toEqual(["split: 1 part: the core", "then, after 1 part: split: 2 parts: its tests, its docs"])
+    const later = { ...record, revisions: [{ text: "split: 3 parts", at: NOW, parts: 2 }] }
+    expect(recordLine(later, "ses_other", NOW)).toContain(" · split: 1 part: the core · then, after 2 parts: split: 3 parts · no parts · ")
+  })
 })
 
 describe("revise", () => {

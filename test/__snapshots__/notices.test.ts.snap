@@ -1517,6 +1517,10 @@ exports[`memory recallListText 5`] = `"- ses_md 2026-10-03: "Add memory to couri
 
 exports[`memory recordLine with a gone part 1`] = `"- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 gone, 3 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished"`;
 
+exports[`memory recordLine with a revised split line 1`] = `"- ses_staged 2026-10-03: "Add memory to courier" · split: 1 part: the core · then, after 1 part: split: 2 parts: its tests, its docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished"`;
+
+exports[`memory recordLine with a revised split line 2`] = `"- ses_long 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · then, after 2 parts: split: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy… [47 more characters] · no parts · ran 42 min · last moved 3 min ago · finished"`;
+
 exports[`memory recallRecordText 1`] = `
 "Record of the tree under ses_old, in project proj_1 (durations in milliseconds, context use as a share of the model's window):
 {
@@ -1557,6 +1561,58 @@ exports[`memory recallRecordText 1`] = `
       "isolated": false,
       "status": "out",
       "duration": 60000
+    }
+  ]
+}"
+`;
+
+exports[`memory recallRecordText with revisions 1`] = `
+"Record of the tree under ses_staged, in project proj_1 (durations in milliseconds, context use as a share of the model's window):
+{
+  "projectID": "proj_1",
+  "sessionID": "ses_staged",
+  "startedAt": 1791018000000,
+  "movedAt": 1791020520000,
+  "title": "Add memory to courier",
+  "split": "split: 1 part: the core",
+  "finished": true,
+  "parts": [
+    {
+      "sessionID": "ses_core",
+      "title": "Core",
+      "depth": 1,
+      "isolated": true,
+      "group": "wave",
+      "status": "done",
+      "duration": 540000,
+      "cost": 0.42,
+      "context": 0.31
+    },
+    {
+      "sessionID": "ses_e2e",
+      "title": "E2E",
+      "depth": 1,
+      "isolated": true,
+      "group": "wave",
+      "status": "partial",
+      "duration": 600000,
+      "cost": 0.81,
+      "refused": 1
+    },
+    {
+      "sessionID": "ses_review",
+      "title": "Review",
+      "depth": 2,
+      "isolated": false,
+      "status": "out",
+      "duration": 60000
+    }
+  ],
+  "revisions": [
+    {
+      "text": "split: 2 parts: its tests, its docs",
+      "at": 1791019800000,
+      "parts": 1
     }
   ]
 }"

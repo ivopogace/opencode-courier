@@ -52,13 +52,18 @@ export function lessonLine(lesson: Lesson) {
   return `lesson (${day(lesson.at)}${from}): "${clipText(oneLine(lesson.text), LESSON_MAX)}"`
 }
 
-/** One record as the listing shows it: its top, when it started, its title, its split line as prose, its parts, how long it ran, how long ago it last moved and what it cost. */
+/**
+ * One record as the listing shows it: its top, when it started, its title, its split line and its latest revision as prose,
+ * its parts, how long it ran, how long ago it last moved and what it cost.
+ */
 export function recordLine(record: StoredRecord, top: string, now: number) {
   const cost = record.parts.reduce((sum, part) => sum + (part.cost ?? 0), 0)
   const costed = record.parts.some((part) => part.cost !== undefined)
+  const revised = record.revisions?.at(-1)
   return [
     `- ${record.sessionID}${record.sessionID === top ? " (this tree)" : ""} ${day(record.startedAt)}: "${clipText(oneLine(record.title), 60)}"`,
     clipWords(splitProse(record.split), 160),
+    ...(revised ? [`then, after ${count(revised.parts, "part")}: ${clipWords(splitProse(revised.text), 160)}`] : []),
     partsLine(record.parts),
     `ran ${duration(record.movedAt - record.startedAt)}`,
     `last moved ${age(now - record.movedAt)} ago`,

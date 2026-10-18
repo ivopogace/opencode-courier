@@ -729,19 +729,28 @@ lists every record of the calling session's project, newest first, one line each
 ```
 
 the top session, the day it started, its title (clipped to 60 characters), its split line as prose
-(without its heading, quote and list marks or the asterisks of bold and italic, around the whole line
-or around words in it, and without an underscore or code span around the whole line or around the
-label it opens with (`_split:_`), so the asterisks of a glob and the marks in code spans stay; cut at the last space within 160 characters, or
-mid-word when that would keep less than half; the record keeps the line as written),
-its parts counted by status, how deep the tree went, how many parts were isolated and how many spawns
-were refused, how long the tree ran (`ran`, `movedAt` less `startedAt`), how long ago it last moved
-(`last moved … ago`, now less `movedAt`: a duration under a day, else whole days), the parts' costs
+(below), its parts counted by status, how deep the tree went, how many parts were isolated and how
+many spawns were refused, how long the tree ran (`ran`, `movedAt` less `startedAt`), how long ago it
+last moved (`last moved … ago`, now less `movedAt`: a duration under a day, else whole days), the parts' costs
 summed when any is known, `finished` or `not finished`, `recalled` when the top called the tool (`recalled by a part`
 when only a part did), and last its [lesson](#the-lesson), when there is one, with the day it was
 written and `from depth <n>` when a sub-orchestrator wrote it. The caller's own tree is listed too,
 marked `(this tree)`. With `sessionID`, the top of a listed tree, it gives that record in full, as
 JSON; a top with no record in this project is said to be missing. Its result's metadata carries the
 records.
+
+**The split line as prose.** The record keeps the top's line as written; the listing drops what is
+markdown in it and keeps what may be its words:
+
+- heading, quote and list marks before it (`# `, `> `, `- `, `1. `), each with its space, so the `#`
+  of `#282` stays;
+- the asterisks of a bold or italic span around the whole line or around words in it, where an italic
+  one opens before a letter, digit or quote, so the asterisks of `*.ts and *.md`, `src/*.ts` and
+  `2 * 3` stay;
+- underscores or a code span around the whole line, or around a label it opens with (`_split:_`,
+  `` `split:` ``), so `snake_case`, `__init__` and code spans within the line stay;
+
+and cuts it at the last space within 160 characters, or mid-word when that would keep less than half.
 
 Every fact on a line is as it stood at `movedAt`, so `not finished` with `last moved 3 min ago` is a
 tree that may be running, and with `last moved 5 days ago` a record to distrust. The

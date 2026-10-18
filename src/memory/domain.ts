@@ -325,8 +325,10 @@ export function sumReads(reads: ReadonlyArray<Reads>): Reads | undefined {
  */
 export function keep<T extends Pick<StoredRecord, "movedAt" | "lesson" | "pinned">>(records: ReadonlyArray<T>, now: number) {
   const pinned = records.filter((record) => record.pinned)
-  const rest = records.filter((record) => !record.pinned).toSorted((a, b) => Number(Boolean(b.lesson)) - Number(Boolean(a.lesson)) || b.movedAt - a.movedAt)
-  const kept = [...pinned, ...rest.filter((record, index) => index < MAX_RECORDS && now - record.movedAt <= RETENTION_MS)]
+  // Aged out first, so that a stale record takes no slot from a live one behind it in the order.
+  const live = records.filter((record) => !record.pinned && now - record.movedAt <= RETENTION_MS)
+  const ordered = live.toSorted((a, b) => Number(Boolean(b.lesson)) - Number(Boolean(a.lesson)) || b.movedAt - a.movedAt)
+  const kept = [...pinned, ...ordered.slice(0, MAX_RECORDS)]
   return { kept, dropped: records.filter((record) => !kept.includes(record)) }
 }
 

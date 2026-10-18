@@ -395,6 +395,9 @@ describe("keep", () => {
     expect(dropped.map((record) => record.sessionID)).toEqual([`ses_${MAX_RECORDS - 1}`])
     // A lesson does not keep a record past RETENTION_MS: that is what the pin is for.
     expect(keep([stored("ses_stale", NOW - RETENTION_MS - 1, { lesson })], NOW).dropped).toHaveLength(1)
+    // Stale records with a lesson take no slot from a live record without one.
+    const stale = Array.from({ length: MAX_RECORDS }, (_, i) => stored(`ses_stale_${i}`, NOW - RETENTION_MS - 1 - i, { lesson }))
+    expect(keep([...stale, stored("ses_live", NOW)], NOW).kept.map((record) => record.sessionID)).toEqual(["ses_live"])
   })
 })
 

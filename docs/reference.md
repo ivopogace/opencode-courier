@@ -725,18 +725,24 @@ characters is clipped when read. One as the plugin writes it:
 lists every record of the calling session's project, newest first, one line each:
 
 ```
-- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 2 done, 1 partial, 2 levels deep, 2 isolated, 1 spawn refused · 42 min · $1.28 · finished · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
+- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 2 done, 1 partial, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 5 days ago · $1.28 · finished · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
 ```
 
 the top session, the day it started, its title (clipped to 60 characters), its split line (to 160),
 its parts counted by status, how deep the tree went, how many parts were isolated and how many spawns
-were refused, how long the tree ran (`movedAt` less `startedAt`), the parts' costs summed when any is
-known, `finished` or `not finished`, `recalled` when the top called the tool (`recalled by a part`
+were refused, how long the tree ran (`ran`, `movedAt` less `startedAt`), how long ago it last moved
+(`last moved … ago`, now less `movedAt`: a duration under a day, else whole days), the parts' costs
+summed when any is known, `finished` or `not finished`, `recalled` when the top called the tool (`recalled by a part`
 when only a part did), and last its [lesson](#the-lesson), when there is one, with the day it was
 written and `from depth <n>` when a sub-orchestrator wrote it. The caller's own tree is listed too,
 marked `(this tree)`. With `sessionID`, the top of a listed tree, it gives that record in full, as
 JSON; a top with no record in this project is said to be missing. Its result's metadata carries the
 records.
+
+Every fact on a line is as it stood at `movedAt`, so `not finished` with `last moved 3 min ago` is a
+tree that may be running, and with `last moved 5 days ago` a record to distrust. The
+[memory view](#the-memory-view) leaves the age out: it groups its rows by the day each last moved, and
+a dialog left open would not keep an age current.
 
 Every call is noted on the record of the caller's own tree: `calls` counts up, and `at` is set the
 first time the top itself calls. A tree that has no record yet, a root before its first spawn, gets

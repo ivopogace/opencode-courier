@@ -10,12 +10,20 @@ export const NOTE_TOOL = "courier_note"
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`
 
+const DAY_MS = 86_400_000
+
 /** A duration in milliseconds as a model reads it: seconds under half a minute, else whole minutes, else hours and minutes. */
 export function duration(ms: number) {
   const minutes = Math.round(ms / 60_000)
   if (minutes < 1) return `${Math.max(0, Math.round(ms / 1000))} s`
   if (minutes < 60) return `${minutes} min`
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
+}
+
+/** How long ago a record last moved: a duration under a day, else whole days, which a record kept for months is read in. */
+export function age(ms: number) {
+  const days = Math.floor(ms / DAY_MS)
+  return days < 1 ? duration(ms) : count(days, "day")
 }
 
 /** How a listing counts the parts of a record: by status, in the order of `PART_STATUSES`, plus how many were isolated and how many spawns were refused. */
@@ -44,15 +52,16 @@ export function lessonLine(lesson: Lesson) {
   return `lesson (${day(lesson.at)}${from}): "${clipText(oneLine(lesson.text), LESSON_MAX)}"`
 }
 
-/** One record as the listing shows it: its top, when it started, its title, its split line, its parts, how long it ran and what it cost. */
-export function recordLine(record: StoredRecord, top: string) {
+/** One record as the listing shows it: its top, when it started, its title, its split line, its parts, how long it ran, how long ago it last moved and what it cost. */
+export function recordLine(record: StoredRecord, top: string, now: number) {
   const cost = record.parts.reduce((sum, part) => sum + (part.cost ?? 0), 0)
   const costed = record.parts.some((part) => part.cost !== undefined)
   return [
     `- ${record.sessionID}${record.sessionID === top ? " (this tree)" : ""} ${day(record.startedAt)}: "${clipText(oneLine(record.title), 60)}"`,
     clipText(oneLine(record.split), 160),
     partsLine(record.parts),
-    duration(record.movedAt - record.startedAt),
+    `ran ${duration(record.movedAt - record.startedAt)}`,
+    `last moved ${age(now - record.movedAt)} ago`,
     ...(costed ? [`$${cost.toFixed(2)}`] : []),
     record.finished ? "finished" : "not finished",
     ...(record.recalled ? [`recalled${record.recalled.at === undefined ? " by a part" : ""}`] : []),
@@ -64,15 +73,16 @@ export function recordLine(record: StoredRecord, top: string) {
 export const RECALL_OFF =
   "Memory is off: the plugin's memory option is false, so no record of a session tree is kept or listed in this project. Decide from the task alone."
 
-/** The listing: every record of the project, newest first, the caller's own tree marked. */
-export function recallListText(records: ReadonlyArray<StoredRecord>, top: string) {
+/** The listing: every record of the project, newest first, the caller's own tree marked, each aged against `now`. */
+export function recallListText(records: ReadonlyArray<StoredRecord>, top: string, now: number) {
   const others = records.filter((record) => record.sessionID !== top)
   const intro = others.length
     ? `${count(others.length, "earlier tree")} recorded in this project, newest first; weigh how they were split and how their parts went before you decide. ` +
-      "A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out: " +
+      "A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out. " +
+      "The facts are as they stood when the tree last moved: \"not finished\" with an old \"last moved\" is a stale record, not a tree running now. " +
       "courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use."
     : "No earlier tree is recorded in this project: a tree's record is written by a courier_recall call and as each turn in it ends, and kept 90 days. Decide from the task alone."
-  return [intro, ...records.map((record) => recordLine(record, top))].join("\n")
+  return [intro, ...records.map((record) => recordLine(record, top, now))].join("\n")
 }
 
 /** One record in full, as JSON: durations in milliseconds, times in epoch milliseconds, context use as a share of the model's window. */

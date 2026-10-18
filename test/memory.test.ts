@@ -1,6 +1,7 @@
 // The memory (#260): a record per tree, built from the roster, each session's info and messages and its report state,
 // kept current by the event module, read back and noted by courier_recall, bounded per project, off with one option;
-// and its lesson (#261): the one line courier_note writes on it from the top or a sub-orchestrator, never a leaf.
+// and its lesson (#261, #269): the one line courier_note writes on it from the top or a sub-orchestrator, never a leaf,
+// refused over LESSON_MAX rather than clipped.
 import { describe, expect, test } from "bun:test"
 import type { ToolEditor } from "../src/kernel/tool.js"
 import {
@@ -10,6 +11,7 @@ import {
   MAX_RECORDS,
   mergeParts,
   noteRecall,
+  oneLine,
   partStatus,
   readMemory,
   RETENTION_MS,
@@ -219,6 +221,7 @@ describe("the store", () => {
     expect(readRecord({ parts: [], movedAt: 7, lesson: "  Do the docs\nyourself " })).toMatchObject({ lesson: { text: "Do the docs yourself", at: 7 } })
     expect(readRecord({ parts: [], lesson: { text: "x", at: 5, depth: 0 } })?.lesson).toEqual({ text: "x", at: 5 })
     expect(readRecord({ parts: [], lesson: { text: "x", at: 5, depth: 1.5 } })?.lesson).toEqual({ text: "x", at: 5 })
+    // A hand-written lesson is clipped, as a refusal cannot reach a file; courier_note refuses one this long.
     expect(readRecord({ parts: [], lesson: { text: "y".repeat(LESSON_MAX + 1), at: 5 } })?.lesson?.text).toBe("y".repeat(LESSON_MAX))
     expect(readRecord({ parts: [], lesson: "   " })).not.toHaveProperty("lesson")
     expect(readRecord({ parts: [], lesson: { at: 5 } })).not.toHaveProperty("lesson")
@@ -648,7 +651,8 @@ describe("recall", () => {
 })
 
 describe("lessonText", () => {
-  test("is one line, trimmed, clipped at LESSON_MAX with the length it had", () => {
+  test("is one line, trimmed, clipped at LESSON_MAX with the length it had, for a record written by hand", () => {
+    expect(oneLine("  Give the docs\n  to one session.  ")).toBe("Give the docs to one session.")
     expect(lessonText("  Give the docs\n  to one session.  ")).toEqual({ text: "Give the docs to one session." })
     expect(lessonText("x".repeat(LESSON_MAX))).toEqual({ text: "x".repeat(LESSON_MAX) })
     expect(lessonText(`${"x".repeat(LESSON_MAX - 1)} yz`)).toEqual({ text: "x".repeat(LESSON_MAX - 1), clipped: LESSON_MAX + 2 })
@@ -689,12 +693,18 @@ describe("note", () => {
     expect(await lessonOf(store)).toEqual({ text: "The person chose to squash-merge.", at: NOW + 1000 })
   })
 
-  test("clips a long text at LESSON_MAX and says what length it had", async () => {
+  test("writes a line at LESSON_MAX, and refuses a longer one as one line, writing nothing and keeping the earlier lesson", async () => {
     const { ports, store } = await recorded()
-    const long = "x".repeat(LESSON_MAX + 20)
+    await note(ports, "ses_top", { text: "The earlier lesson." })
+    const before = JSON.stringify([...store])
 
-    const result = await note(ports, "ses_top", { text: long })
-    expect(result).toEqual({ kind: "noted", projectID: "proj_1", top: "ses_top", lesson: { text: "x".repeat(LESSON_MAX), at: NOW }, clipped: LESSON_MAX + 20 })
+    expect(await note(ports, "ses_top", { text: "x".repeat(LESSON_MAX + 20) })).toEqual({ kind: "long", length: LESSON_MAX + 20 })
+    expect(await note(ports, "ses_top", { text: `  ${"x".repeat(LESSON_MAX - 1)}\n yz ` })).toEqual({ kind: "long", length: LESSON_MAX + 2 })
+    expect(JSON.stringify([...store])).toBe(before)
+    expect(await lessonOf(store)).toEqual({ text: "The earlier lesson.", at: NOW })
+
+    const atMost = `${"x".repeat(LESSON_MAX - 2)}\n\ny`
+    expect(await note(ports, "ses_top", { text: atMost })).toMatchObject({ kind: "noted", lesson: { text: `${"x".repeat(LESSON_MAX - 2)} y`, at: NOW } })
     expect((await lessonOf(store))?.text).toHaveLength(LESSON_MAX)
   })
 
@@ -753,29 +763,37 @@ describe("courier_note", () => {
     return made
   }
 
-  test("says what it noted, what it replaced and that it clipped, with metadata holding no undefined", async () => {
+  test("says what it noted and what it replaced, with metadata holding no undefined", async () => {
     const { ports, state } = await recorded()
     const noteTool = tool(ports, state)
     const holdsNoUndefined = (value: unknown) => expect(JSON.parse(JSON.stringify(value))).toEqual(value)
 
     const first = await noteTool.execute({ text: "The docs part was ten lines." }, { sessionID: "ses_top" })
     expect(first.content).toStartWith(`Noted on the record of the tree under ses_top as its lesson (${DAY}): "The docs part was ten lines.". courier_recall lists it`)
-    expect(first.content).not.toContain("Clipped")
     expect(first.content).toContain("AGENTS.md")
     expect(first.metadata).toEqual({ projectID: "proj_1", top: "ses_top", lesson: { text: "The docs part was ten lines.", at: NOW } })
     holdsNoUndefined(first.metadata)
 
-    const second = await noteTool.execute({ text: `${"y".repeat(LESSON_MAX)} and more` }, { sessionID: "ses_top" })
-    expect(second.content).toContain(`Clipped to ${LESSON_MAX} characters from ${LESSON_MAX + 9}: a lesson is one line.`)
+    const second = await noteTool.execute({ text: "y".repeat(LESSON_MAX) }, { sessionID: "ses_top" })
     expect(second.content).toContain(`It replaces the lesson (${DAY}): "The docs part was ten lines.".`)
     expect(second.metadata).toEqual({
       projectID: "proj_1",
       top: "ses_top",
       lesson: { text: "y".repeat(LESSON_MAX), at: NOW },
-      clipped: LESSON_MAX + 9,
       replaced: { text: "The docs part was ten lines.", at: NOW },
     })
     holdsNoUndefined(second.metadata)
+  })
+
+  test("refuses a lesson over LESSON_MAX as an error the model reads, naming its length, and keeps the earlier one", async () => {
+    const { ports, state, store } = await recorded()
+    const noteTool = tool(ports, state)
+    await noteTool.execute({ text: "The docs part was ten lines." }, { sessionID: "ses_top" })
+
+    await expect(noteTool.execute({ text: `${"y".repeat(LESSON_MAX)} and more` }, { sessionID: "ses_top" })).rejects.toThrow(
+      `courier_note failed: Not noted: the lesson is ${LESSON_MAX + 9} characters, at most ${LESSON_MAX}; write it shorter.`,
+    )
+    expect(readRecord(store.get(recordKey("proj_1", "ses_top")))?.lesson).toEqual({ text: "The docs part was ten lines.", at: NOW })
   })
 
   test("refuses a leaf, an empty text, a tree with no record and the option off as errors the model reads", async () => {

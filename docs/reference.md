@@ -90,7 +90,7 @@ Each tool's parameters, `?` marking an optional one; the sections below say how 
 | `courier_subscribe` | `topic`, `sessionID?` | Subscribes a session (this one by default) to [webhook](#webhooks) deliveries for a topic: `owner/repo`, `owner/repo#12` (one pull request or issue) or a name for `/hook/<name>`. Each matching delivery arrives as a message, queued behind any running turn and waking the session if idle. |
 | `courier_unsubscribe` | `sessionID?`, `topic?` | Drops one topic, or all of a session's when `topic` is omitted, e.g. once its pull request is merged. |
 | `courier_recall` | `sessionID?` | One look at the [records](#memory) of the session trees of this project: one line per tree, newest first, its lesson after the facts, or with `sessionID` the record of the tree under that top session in full. Notes the call on the caller's own tree's record. Hidden from a leaf. |
-| `courier_note` | `text` | Writes `text`, one line of at most 300 characters (longer is clipped, and the result says so), as the [lesson](#memory) of the caller's own session tree, on its record, dated; a sub-orchestrator's is marked with its depth, and a second call replaces the first. Refused from a leaf, from a tree with no record, with an empty text and with the memory option off. Hidden from a leaf. |
+| `courier_note` | `text` | Writes `text`, one line of at most 300 characters, as the [lesson](#memory) of the caller's own session tree, on its record, dated: what the next orchestrator should know about running a tree like this one, with the job it comes from and the reason. A sub-orchestrator's is marked with its depth, and a second call replaces the first. Refused with a longer text (nothing is written, and the earlier lesson stays), from a leaf, from a tree with no record, with an empty text and with the memory option off. Hidden from a leaf. |
 
 ## The child's model
 
@@ -338,8 +338,9 @@ running checks through the project's scripts (`bun run <script>`, `npm run <scri
 session's own permission prompts are relayed nowhere and each one stalls the whole tree; integrate by
 merging each reported branch, then `courier_cleanup`; report upward with one status for the whole, or,
 at the top, one `courier_note` with the tree's [lesson](#the-lesson) when there is something the next
-tree in the project should know, none when there is not (a rule that holds every time goes to AGENTS.md
-or the skill through the person), then reply to the person. Then what to do when a part goes wrong: a [failed
+tree in the project should know about running a tree like this one, naming the job it comes from and
+the reason, none when there is not (a rule that holds every time goes to AGENTS.md or the skill through
+the person), then reply to the person. Then what to do when a part goes wrong: a [failed
 turn](#a-child-that-fails) or a [silent end](#a-child-that-ends-without-a-report), a `courier_spawn`
 refused by a limit (do the part, or wait for a report; never retry in a loop), losing track (one
 `courier_tree`), and a subtree to abandon (`courier_stop`). The real-model smoke test's [recursive
@@ -860,8 +861,8 @@ tool finds the plugin's prefix): `bun e2e/kv.ts set 'memory/<projectID>/<topSess
 Missing fields take their defaults (`not stated`, `false`, empty, `out`), a part without a `sessionID`
 is left out, and a value without `parts` is not a record. A `lesson` may be written as a bare string,
 which is read as one dated `movedAt`; an object without a `text`, or an empty one, is no lesson, a
-`depth` that is not a positive integer is dropped, and a text over 300 characters is clipped. One as the
-plugin writes it:
+`depth` that is not a positive integer is dropped, and a text over 300 characters is clipped when read
+(a refusal cannot reach a file; `courier_note` refuses one that long). One as the plugin writes it:
 
 ```json
 {
@@ -909,23 +910,31 @@ spawn, counting any other as polling. A leaf's requests go without the tool, as 
 ### The lesson
 
 A record says what happened; it cannot say what the orchestrator concluded: that the docs part was ten
-lines and not worth a session, that two parts collided in one file, that the person chose to squash-merge.
+lines and not worth a session, that two parts collided in one file, that a helper quoted the wrong
+number and the orchestrator's own re-run caught it, that the person chose to squash-merge.
 **`courier_note { text }`** writes that, as the one `lesson` of the caller's own session tree, on the
-record under its top: one line, at most 300 characters (whitespace and line breaks collapse to spaces;
-what is longer is clipped at 300, and the result says from what length), dated when it was written. The
-result says what was noted and what it replaced: a second note replaces the first, whole, so a tree ends
-with one line, and the orchestrator writes it last, once it has verified and integrated the work, in the
-skill's [step 8](#the-courier-orchestrate-skill). `courier_recall` lists it after the tree's facts, so
-the next orchestrator reads it next to the record that bears it out or contradicts it.
+record under its top: one line, at most 300 characters (whitespace and line breaks collapse to spaces),
+dated when it was written. The tool and the skill ask for what the next orchestrator should know about
+running a tree like this one, splitting as one example next to verifying, briefing and what the person
+decided, and for the job it comes from and the reason in the same line, so that "no split needed, for
+three 20 s one-liners" can be told from a lesson that applies everywhere: a line without its scope gets
+widened by the tree that reads it. A longer line is refused, not clipped ("Not noted: the lesson is 312
+characters, at most 300; write it shorter."): nothing is written, the earlier lesson stays, and the
+orchestrator writes it again shorter, since a stored lesson is read by every later tree and a line cut
+mid-word stays cut. The result says what was noted and what it replaced: a second note replaces the
+first, whole, so a tree ends with one line, and the orchestrator writes it last, once it has verified
+and integrated the work, in the skill's [step 8](#the-courier-orchestrate-skill). `courier_recall` lists
+it after the tree's facts, so the next orchestrator reads it next to the record that bears it out or
+contradicts it.
 
 Who may write it: the top session, or a sub-orchestrator below it, whose note goes on the same record
 marked with its `depth`. A leaf cannot: the tool is refused there (naming the depth and `maxDepth`) and
 hidden from a leaf's requests as `courier_spawn` and `courier_recall` are, so it costs a leaf's requests
 nothing. A child never writes memory, and the [brief](#session-trees-and-their-limits) does not mention
-the tool. It is also refused with an empty text, from a session whose tree has no record yet (a record is
-written by a `courier_recall` call and as each turn in the tree ends, so a root notes after its first
-recall or once a session it started has reported) and when the [option](#memory) is off; each refusal
-is the tool's failure, as `courier_spawn`'s are, and writes nothing.
+the tool. It is also refused with an empty text, with one over 300 characters as one line, from a session
+whose tree has no record yet (a record is written by a `courier_recall` call and as each turn in the tree
+ends, so a root notes after its first recall or once a session it started has reported) and when the
+[option](#memory) is off; each refusal is the tool's failure, as `courier_spawn`'s are, and writes nothing.
 
 What a lesson is not: a rule. One that holds every time, "always give the docs to one session", belongs
 in AGENTS.md or the skill, which only the person puts there; the tool's description and the skill say

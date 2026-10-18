@@ -192,7 +192,7 @@ From a local clone, `bun install && npm run build`, then list its `dist` **direc
 | `courier_subscribe` | Subscribes a session to webhook deliveries for a topic (`owner/repo`, `owner/repo#12` or a name). |
 | `courier_unsubscribe` | Drops one topic, or all of a session's. |
 | `courier_recall` | One look at what earlier session trees in this project did: how each was split and how its parts went, and the lesson its orchestrator left; with `sessionID`, one tree's [record](#memory) in full. |
-| `courier_note` | Writes the one lesson of this session tree, a line of at most 300 characters, on its [record](#memory), for the next orchestrator in the project; a second call replaces it. From the top or a sub-orchestrator, never a leaf. |
+| `courier_note` | Writes the one lesson of this session tree on its [record](#memory), for the next orchestrator in the project: what to know about running a tree like this one, with the job it comes from and the reason, in one line of at most 300 characters; a longer one is refused, not clipped, and a second call replaces the first. From the top or a sub-orchestrator, never a leaf. |
 
 Each tool's parameters: [the reference](docs/reference.md#the-tools).
 
@@ -275,9 +275,12 @@ session in it runs and every part has settled.
 
 The one thing a model writes into it is **the tree's lesson**: one line of at most 300 characters,
 with `courier_note`, from the session that verified the tree, what the next orchestrator in the project
-should know about splitting work here that the facts do not say. It is kept dated on the record, a
-second note replaces it, a sub-orchestrator's is marked with its depth, and a leaf cannot write one: a
-child never writes memory. A lesson is history, not a rule: one that holds every time belongs in
+should know about running a tree like this one that the facts do not say: how it was split, what a part
+got wrong and what caught it, what a brief should have said, what the person decided, with the job it
+comes from and the reason, so that a lesson for one kind of job is not taken for every job. A longer
+line is refused, not clipped: nothing is written, and the earlier lesson stays. It is kept dated on the
+record, a second note replaces it, a sub-orchestrator's is marked with its depth, and a leaf cannot write
+one: a child never writes memory. A lesson is history, not a rule: one that holds every time belongs in
 AGENTS.md or the skill, which the tool and the skill say to leave to the person.
 
 `courier_recall` reads them back: one line per tree, newest first, the lesson after the facts, or one

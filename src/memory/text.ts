@@ -1,6 +1,6 @@
 /** The memory's model-facing texts: what courier_recall and courier_note say. */
 import { clipText } from "../kernel/protocol.js"
-import { type Lesson, LESSON_MAX, PART_STATUSES, type PartRecord, type StoredRecord } from "./domain.js"
+import { type Lesson, LESSON_MAX, oneLine, PART_STATUSES, type PartRecord, type StoredRecord } from "./domain.js"
 
 /** The tool's name, which the skill and the role part name too. */
 export const RECALL_TOOL = "courier_recall"
@@ -35,8 +35,6 @@ function partsLine(parts: ReadonlyArray<PartRecord>) {
     ...(refused ? [`${count(refused, "spawn")} refused`] : []),
   ].join(", ")
 }
-
-const oneLine = (text: string) => text.replace(/\s+/g, " ").trim()
 
 const day = (at: number) => new Date(at).toISOString().slice(0, 10)
 
@@ -88,11 +86,10 @@ export const recallMissingText = (sessionID: string) =>
 /** What a lesson is for, which the tool's description and the note's result both say. */
 const NOT_A_RULE = "A lesson that holds every time belongs in AGENTS.md or the skill, which only the person puts there: tell them instead of noting it."
 
-/** What courier_note says once the lesson is written: where, what it replaced, and that it was clipped, when it was. */
-export function noteText(top: string, lesson: Lesson, clipped: number | undefined, replaced: Lesson | undefined) {
+/** What courier_note says once the lesson is written: where, and what it replaced. */
+export function noteText(top: string, lesson: Lesson, replaced: Lesson | undefined) {
   return [
     `Noted on the record of the tree under ${top} as its ${lessonLine(lesson)}.`,
-    ...(clipped ? [`Clipped to ${LESSON_MAX} characters from ${clipped}: a lesson is one line.`] : []),
     ...(replaced ? [`It replaces the ${lessonLine(replaced)}.`] : []),
     `${RECALL_TOOL} lists it after the tree's facts; a second ${NOTE_TOOL} replaces it. ${NOT_A_RULE}`,
   ].join(" ")
@@ -105,7 +102,15 @@ export const noteLeafRefusal = (depth: number, maxDepth: number) =>
   `Not noted: this session is a leaf, at depth ${depth} of a session tree that goes at most ${maxDepth} deep (maxDepth). A lesson is ` +
   "written by the session that verified the tree, the top or one that started sessions; put what you learned in your report instead."
 
-export const NOTE_EMPTY = "Not noted: text is empty. Write one line, what the next tree in this project should know about splitting work here, or nothing."
+/** What a lesson holds, which the empty and the long refusal both ask for. */
+const ONE_LINE = "what the next orchestrator in this project should know about running a tree like this one, with the job it comes from and the reason"
+
+export const NOTE_EMPTY = `Not noted: text is empty. Write one line, ${ONE_LINE}, or nothing.`
+
+/** The refusal of a lesson longer than `LESSON_MAX` as one line: nothing is written, and the earlier lesson stays. */
+export const noteLongRefusal = (length: number) =>
+  `Not noted: the lesson is ${length} characters, at most ${LESSON_MAX}; write it shorter. Nothing was written, and the earlier lesson, ` +
+  `if there was one, stays. Keep one line, ${ONE_LINE}, and leave out what the record's facts already say.`
 
 export const noteUnrecordedRefusal = (top: string) =>
   `Not noted: the tree under ${top} has no record in this project to write a lesson on. A record is written by a ${RECALL_TOOL} call ` +

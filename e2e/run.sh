@@ -1286,7 +1286,7 @@ run_memory() {
   check "and nothing of the reports' bodies or artifacts" "$(jq -r 'tostring | contains("CHILD DONE") or contains("child/work") | not' <<<"$record")"
   recalled=$(prompt_in "$root" "COURIER-RECALL" | tool_state courier_recall)
   check "courier_recall from the root lists its own tree, marked, with both parts done" \
-    "$(jq -r --arg root "$root" '.status == "completed" and .metadata.metadata.top == $root and (.output | contains("- " + $root + " (this tree) ") and contains("2 parts: 2 done") and contains("· finished")) and
+    "$(jq -r --arg root "$root" '.status == "completed" and .metadata.metadata.top == $root and (.output | contains("- " + $root + " (this tree) ") and contains("2 parts: 2 done") and contains("· finished") and test(" · ran [^·]+ · last moved [^·]+ ago · ")) and
       any(.metadata.metadata.records[]; .sessionID == $root and .finished and (.parts | length) == 2)' <<<"$recalled")"
   check "which noted the root's call on its record" "$(record_of "$root" '.recalled.calls == 1 and (.recalled.at | type) == "number"' | jq -r '.recalled.calls == 1')"
   out=$(prompt "COURIER-RECALL")
@@ -1348,7 +1348,7 @@ run_memory() {
   full=$(prompt "COURIER-RECALL ses_seeded" | tool_state courier_recall)
   check "a record seeded with kv.ts, lesson included, reads back as written, and is listed" \
     "$(jq -r --argjson seeded "$seeded" '.status == "completed" and (.metadata.metadata.record | del(.projectID, .sessionID)) == $seeded' <<<"$full")"
-  check "in the listing, with its parts counted and its lesson dated" "$(prompt "COURIER-RECALL" | tool_state courier_recall | jq -r '.status == "completed" and (.output | contains("- ses_seeded 2025-10-09: \"Seeded by hand\" · split: 2 parts: core, docs · 2 parts: 1 done, 1 partial, 1 isolated, 1 spawn refused · 15 min · $0.42 · finished · lesson (2025-10-09): \"Give the docs to one session\""))')"
+  check "in the listing, with its parts counted and its lesson dated" "$(prompt "COURIER-RECALL" | tool_state courier_recall | jq -r '.status == "completed" and (.output | contains("- ses_seeded 2025-10-09: \"Seeded by hand\" · split: 2 parts: core, docs · 2 parts: 1 done, 1 partial, 1 isolated, 1 spawn refused · ran 15 min · last moved ") and test(" · last moved [0-9]+ days ago · \\$0\\.42 · finished · lesson \\(2025-10-09\\): \"Give the docs to one session\""))')"
   check "a record that is not there is said to be missing" \
     "$(prompt "COURIER-RECALL ses_nowhere" | tool_state courier_recall | jq -r '.status == "completed" and .metadata.metadata.found == false and (.output | startswith("No record of a tree whose top session is ses_nowhere"))')"
 
@@ -1366,7 +1366,7 @@ run_memory() {
     "$(jq -r --argjson before "$before" '.movedAt > $before.movedAt and .finished == true and .parts == $before.parts' <<<"$after")"
   check "which courier_recall lists as finished, its part done" \
     "$(prompt_in "$parent" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg parent "$parent" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $parent + " (this tree) "))) |
-      length == 1 and (.[0] | contains(" · 1 part: 1 done, 1 isolated · ") and contains(" · finished") and (contains("not finished") | not)))')"
+      length == 1 and (.[0] | contains(" · 1 part: 1 done, 1 isolated · ") and test(" · last moved [^·]+ ago · finished") and (contains("not finished") | not)))')"
 
   scenario "with the memory option off, courier_note is refused; on again, the lesson is still there"
   stop_server

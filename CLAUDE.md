@@ -131,7 +131,7 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   lesson's and the tools' texts. `rpc.ts` the memory's RPC contract (`memoryRpc`, id `courier-memory`: `records`, `forget`),
   `rpc-handlers.ts` its server side (`registerMemoryRpc`, after the person's), reading the project's records from the store alone, noted on
   no record; `tui.tsx` the memory view (`addMemoryView`): the project's records in a `select` dialog, newest first, opened by
-  `/courier memory` or the palette, `enter` for one in full, `x` to forget one or only its lesson after a confirm, `q` to close,
+  `/courier memory` or the palette, `enter` for one in full, `x` to forget one or only its lesson after a confirm, `esc` to go back and close (the search takes every other letter),
   which imports only what a `tui.tsx` may (its `rpc.ts` and `text.ts`). The skill's step 1 and the root's role part name `courier_recall`, its step 8
   `courier_note`, and the context hook hides both from a leaf.
 - `platform/`: imports nothing outside `platform/`. `hub.ts`: the plugin's process-wide state in one

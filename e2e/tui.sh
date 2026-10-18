@@ -6,7 +6,7 @@
 # inbox opened from a child lists the top session's courier_answer prompt first and allows it (#185);
 # a child showing a form waits on the person in the footer and the panel (#183); x in the panel forgets a gone
 # isolated child, with its worktree (#187); and /courier memory lists the project's tree records, x forgets a lesson
-# alone, then every record, esc goes back and closes, q filters the search (#273), and the view says when memory is off (#262).
+# alone, then every record, and the view says when memory is off (#262); esc goes back and closes, q filters (#273).
 # Then the same from the package `opencode plugin add` installs. Driven by e2e/mock-model.mjs's
 # COURIER-TUI, so no API key is needed.
 #

@@ -7,7 +7,7 @@
 # a child showing a form waits on the person in the footer and the panel (#183); x in the panel forgets a gone
 # isolated child, with its worktree (#187); and /courier memory lists the project's tree records, x forgets a lesson
 # alone, then every record, and the view says when memory is off (#262); esc goes back and closes, q filters (#273);
-# after a forget the cursor is on the next record (#271).
+# after a forget the cursor is on the next record (#271); p pins a record and unpins it (#285).
 # Then the same from the package `opencode plugin add` installs. Driven by e2e/mock-model.mjs's
 # COURIER-TUI, so no API key is needed.
 #
@@ -525,14 +525,16 @@ check "/courier memory opens the view with every record of the project" "$(shows
 # The dialog is drawn over the transcript, so a header shares its screen line with whatever is behind it.
 check "the tree's row is under Today, with its parts counted and the lesson, dated on the local day, as its footer" \
   "$(awk -v lesson="lesson ($today): \"Give the docs to one session\"" '/(^|[^A-Za-z])Today([^A-Za-z]|$)/ { today = NR } index($0, lesson) && today && today < NR { under = 1 } /(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z][a-z] [0-9]+ [0-9][0-9][0-9][0-9]/ { dated = 1 } END { exit !(under && !dated) }' "$WORK/tui-memory-list.txt" && grep -qF "2 parts: 2 done" "$WORK/tui-memory-list.txt" && echo true || echo false)"
-check "the footer offers x to forget" "$(grep -qF "forget" "$WORK/tui-memory-list.txt" && echo true || echo false)"
+check "the footer offers x to forget and p to pin" "$(grep -qF "forget" "$WORK/tui-memory-list.txt" && grep -qF "pin" "$WORK/tui-memory-list.txt" && echo true || echo false)"
 # Down to the tree's row, newest first, then enter.
 for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "enter shows the record in full: its top session, its parts and its lesson" \
   "$([ "$(shows "Top session $parent" 30 tui-memory-record)" = true ] && grep -qF "CHILD-ASKS" "$WORK/tui-memory-record.txt" && grep -qF "Report back to your parent." "$WORK/tui-memory-record.txt" && grep -qF "Give the docs to one session" "$WORK/tui-memory-record.txt" && echo true || echo false)"
-# The lesson's heading is the eighth row: five facts of the tree, then the two parts.
-for _ in $(seq 1 7); do tmux send-keys -t "$TMUX_SESSION" Down; done
+# The lesson's heading is the tenth row: seven facts of the tree (its reads and pin among them, #285), then the two parts.
+check "the record in full says it was never shown to another tree, and is not pinned" \
+  "$(grep -qF "Never shown" "$WORK/tui-memory-record.txt" && grep -qF "Not pinned" "$WORK/tui-memory-record.txt" && echo true || echo false)"
+for _ in $(seq 1 9); do tmux send-keys -t "$TMUX_SESSION" Down; done
 tmux send-keys -t "$TMUX_SESSION" x
 check "x on the lesson asks to forget the lesson alone" "$(shows "Forget lesson" 30 tui-memory-lesson-confirm)"
 tmux send-keys -t "$TMUX_SESSION" Enter
@@ -549,6 +551,24 @@ tmux send-keys -t "$TMUX_SESSION" BSpace BSpace BSpace
 check "cleared, the search shows every row again" "$(shows "2 parts: 2 done" 10 tui-memory-unfiltered)"
 tmux send-keys -t "$TMUX_SESSION" Escape
 check "esc closes the list" "$(hides "Memory ($total)" 10 tui-memory-closed)"
+# The pin (#285): p on the tree's row pins it, with no confirm; the list is read again with the record under Pinned, the
+# cursor on it, and the pin lies beside the record, which is not written; p again unpins it.
+tmux send-keys -t "$TMUX_SESSION" "/courier memory"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "the view opens again, for the pin" "$(shows "Memory ($total)" 30 tui-memory-pin-open)"
+for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done
+tmux send-keys -t "$TMUX_SESSION" p
+# The toast quotes the title after "Pinned"; the group's header does not, and heads the list above Today.
+check "p pins the tree's record: a toast says so, and the list has it under Pinned, above Today" \
+  "$([ "$(shows "Pinned \"" 15 tui-memory-pinned)" = true ] && awk '/(^|[^A-Za-z])Pinned([^A-Za-z"]|$)/ && !/Pinned "/ { pinned = NR } /(^|[^A-Za-z])Today([^A-Za-z]|$)/ { today = NR } END { exit !(pinned && today && pinned < today) }' "$WORK/tui-memory-pinned.txt" && echo true || echo false)"
+check "the pin lies beside the record, which is not written" \
+  "$([ "$(kv get "memory/$project/$parent/pin" | jq -r '(.at | type) == "number"')" = true ] && [ "$(kv get "memory/$project/$parent" | jq -r 'has("pinned") | not')" = true ] && echo true || echo false)"
+check "the RPC lists it first, pinned" "$(memory_rpc records '{}' | jq -r --arg parent "$parent" '.output.records[0].sessionID == $parent and (.output.records[0].pinned.at | type) == "number"')"
+tmux send-keys -t "$TMUX_SESSION" p
+check "p again, the cursor still on it, unpins it" "$([ "$(shows "Unpinned \"" 15 tui-memory-unpinned)" = true ] && [ -z "$(kv get "memory/$project/$parent/pin")" ] && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" Escape
+check "esc closes the list once more" "$(hides "Memory (" 10 tui-memory-pin-closed)"
 # Three records seeded as the project's newest (#271): x on the second, confirmed, leaves the cursor on the third, which a
 # second x names in its confirm; kept, the list is back on it.
 seeded=$(date +%s%3N)

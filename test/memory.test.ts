@@ -21,6 +21,7 @@ import {
   readMemory,
   RETENTION_MS,
   revise,
+  revisionsBeside,
   splitLineOf,
   splitLinesOf,
   splitOf,
@@ -732,6 +733,22 @@ describe("refresh", () => {
       split: "split: 1 part: core",
       revisions: [...revisions, { text: "split: 2 parts: core, docs", at: 11, parts: 0 }],
     })
+  })
+
+  test("a mention recorded with the line replacing it as its first revision, as before #294, keeps that line once, as split", async () => {
+    const { ports, state, store, sessions } = fakePorts({ ses_top: { updated: 1, idle: 1 } })
+    const [a, b] = [{ text: "split: 1 part: core", at: 2, parts: 0 }, { text: "split: 2 parts: core, docs", at: 3, parts: 1 }]
+    await store.set(recordKey("proj_1", "ses_top"), stored("ses_top", NOW - 9000, { split: mention, revisions: [a] }))
+    sessions.ses_top!.messages = [text(mention), done(a.text, 2)]
+    const once = await refresh(ports, state, "ses_top", NOW - 5000, "ses_top")
+    expect(once).toMatchObject({ split: a.text })
+    expect(once).not.toHaveProperty("revisions")
+
+    await store.set(recordKey("proj_1", "ses_top"), stored("ses_top", NOW - 9000, { split: mention, revisions: [a, b] }))
+    sessions.ses_top!.messages = [text(mention), done(a.text, 2), done(b.text, 3)]
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toMatchObject({ split: a.text, revisions: [b] })
+    expect(revisionsBeside(`**${a.text}**`, [a, b, a])).toEqual([b, a])
+    expect(revisionsBeside(b.text, [a])).toEqual([a])
   })
 
   test("another session's turn end reads only the top's finished replies, while its record states no split line; the top's own reads all", async () => {

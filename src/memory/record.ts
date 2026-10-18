@@ -1,6 +1,6 @@
 import { finite, isNotFound, millis } from "../platform/json.js"
 import { busy, contextOf, reportState, stalledAmong, subtree, type Below, type ModelWindow } from "../tree/index.js"
-import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, revise, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
+import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, revise, revisionsBeside, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { memoryStore } from "./store.js"
 
@@ -128,9 +128,11 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   const first = latest?.split ?? NOT_STATED
   const split = splitOf(first, said.map((reply) => reply.text).join("\n"))
   const stated = statedIn(said)
-  // The line that replaced a mention is the first stated, so beside revisions written by hand it is not one of them too.
-  const since = split !== first && latest?.revisions ? stated.slice(1) : stated
-  const revisions = split === NOT_STATED ? undefined : revise({ split, revisions: latest?.revisions }, since, at, parts.length)
+  const replaced = split !== first
+  const recorded = replaced ? revisionsBeside(split, latest?.revisions) : latest?.revisions
+  // The line that replaced a mention is the first stated, so beside revisions already recorded it is not one of them too.
+  const since = replaced && recorded ? stated.slice(1) : stated
+  const revisions = split === NOT_STATED ? undefined : revise({ split, revisions: recorded }, since, at, parts.length)
   const record: TreeRecord = {
     startedAt: finite(millis(info.time.created)) ?? previous?.startedAt ?? at,
     movedAt: at,

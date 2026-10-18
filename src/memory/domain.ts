@@ -173,6 +173,12 @@ export function revise(previous: Pick<TreeRecord, "split" | "revisions">, stated
   return revisions.length ? revisions : undefined
 }
 
+/** The revisions beside a `split` that replaced a mention: without a first worded as it, as one was recorded before #294; none for none left. */
+export function revisionsBeside(split: string, revisions: ReadonlyArray<Revision> | undefined) {
+  const kept = revisions?.[0] && splitProse(revisions[0].text) === splitProse(split) ? revisions.slice(1) : revisions
+  return kept?.length ? kept : undefined
+}
+
 /** Heading, quote and list marks before a line's words, each with the space markdown puts after it, unlike the `#` of `#282`. */
 const BLOCK_MARKS = /^(?:\s|#+\s|>\s|[-+*]\s|\d+[.)]\s)*/
 /** A bold or bold italic span within a line, opening at a word's start and closing at its end, unlike the asterisks of `2**3` or a `**` beside a slash. */

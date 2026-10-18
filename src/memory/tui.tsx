@@ -139,7 +139,7 @@ export type Line = { readonly kind: "fact"; readonly key: string } | { readonly 
 /** Where the cursor goes in a record in full after its lesson is forgotten: the lesson's first row, or the row that replaced it. */
 export const lessonLine = (record: MemoryRecord): Line => (record.lesson ? { kind: "lesson", row: 0 } : { kind: "fact", key: "lesson" })
 
-/** The records the list's cursor tries, in order, after one is forgotten or kept: it, unless forgotten, then those after it, then those before it, nearest first. */
+/** The records the list's cursor tries, in order, after one is forgotten, kept or left: it, unless forgotten, then those after it, then those before it, nearest first. */
 export function nearby(sessionIDs: ReadonlyArray<string>, sessionID: string, forgotten: boolean) {
   const at = sessionIDs.indexOf(sessionID)
   if (at < 0) return forgotten ? [] : [sessionID]
@@ -311,7 +311,8 @@ export function addMemoryView(ctx: Context) {
         viewing = record?.sessionID
         const listed = read.records.map((one) => one.sessionID)
         const current = near.map((sessionID) => read.records.find((one) => one.sessionID === sessionID)).find((one) => one !== undefined)
-        const request = await (record ? showRecord(record, line === "lesson" ? lessonLine(record) : line) : showList(read, current))
+        const at = line === "lesson" ? record && lessonLine(record) : line
+        const request = await (record ? showRecord(record, at) : showList(read, current))
         line = undefined
         if (request.kind === "back") {
           // The host closed the dialog on enter or esc: a record goes back to the list, onto its row, the list is left.

@@ -529,12 +529,14 @@ check "the footer offers x to forget and p to pin" "$(grep -qF "forget" "$WORK/t
 # Down to the tree's row, newest first, then enter.
 for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done
 tmux send-keys -t "$TMUX_SESSION" Enter
-check "enter shows the record in full: its top session, its parts and its lesson" \
-  "$([ "$(shows "Top session $parent" 30 tui-memory-record)" = true ] && grep -qF "CHILD-ASKS" "$WORK/tui-memory-record.txt" && grep -qF "Report back to your parent." "$WORK/tui-memory-record.txt" && grep -qF "Give the docs to one session" "$WORK/tui-memory-record.txt" && echo true || echo false)"
-# The lesson's heading is the tenth row: seven facts of the tree (its reads and pin among them, #285), then the two parts.
+check "enter shows the record in full: its top session and its parts" \
+  "$([ "$(shows "Top session $parent" 30 tui-memory-record)" = true ] && grep -qF "CHILD-ASKS" "$WORK/tui-memory-record.txt" && grep -qF "Report back to your parent." "$WORK/tui-memory-record.txt" && echo true || echo false)"
 check "the record in full says it was never shown to another tree, and is not pinned" \
   "$(grep -qF "Never shown" "$WORK/tui-memory-record.txt" && grep -qF "Not pinned" "$WORK/tui-memory-record.txt" && echo true || echo false)"
+# The lesson's heading is the tenth row: seven facts of the tree (its reads and pin among them, #285), then the two parts;
+# the lesson's text, below the dialog's fold with those above it, scrolls into view with the cursor.
 for _ in $(seq 1 9); do tmux send-keys -t "$TMUX_SESSION" Down; done
+check "on the lesson's heading, its text is in view" "$(shows "Give the docs to one session" 10 tui-memory-lesson)"
 tmux send-keys -t "$TMUX_SESSION" x
 check "x on the lesson asks to forget the lesson alone" "$(shows "Forget lesson" 30 tui-memory-lesson-confirm)"
 tmux send-keys -t "$TMUX_SESSION" Enter

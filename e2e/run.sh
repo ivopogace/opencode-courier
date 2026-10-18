@@ -1367,7 +1367,8 @@ run_memory() {
   check "and the refresh at that turn's end, reading the same replies, appended nothing" \
     "$(record_of "$said" ".movedAt > $(jq '.movedAt' <<<"$record")" | jq -r --argjson before "$record" '.movedAt > $before.movedAt and .revisions == $before.revisions and .split == $before.split')"
   # A mention, then a stated split line (#294): the stated line replaces the mention, once, and the mention is no revision.
-  mentioned=$(prompt "COURIER-RECALL" | jq -r 'select(.type == "tool_use") | .sessionID' | head -1)
+  # Its record is written by a call for a record that is missing: the mock echoes a listing, whose split lines are mentions.
+  mentioned=$(prompt "COURIER-RECALL ses_nowhere" | jq -r 'select(.type == "tool_use") | .sessionID' | head -1)
   mention='I decided to split: after reading the code'
   prompt_in "$mentioned" "COURIER-SAY $mention" >/dev/null
   check "a passing mention of a split, while no line states one, is kept as the record's split line" \

@@ -9,7 +9,7 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
 ## Tools
 
 - A plugin tool is reachable only through code mode's `execute` tool unless it is registered with
-  `options: { codemode: false }`. The courier tools are direct tools.
+  `options: { codemode: false }`.
 - A tool whose result `metadata` holds an `undefined` value never completes: the call stays
   `running` and no error is reported. Results drop `undefined` keys.
 - OpenCode errors such as `Session.NotFoundError` can arrive with an empty message, so the tools
@@ -33,7 +33,7 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   (`packages/core/src/plugin/tool-input-repair.ts`) deletes, on `execute.before`, each key a closed
   schema does not declare, and the decode ignores it too. OpenCode removes keys and never adds one,
   so a renamed optional key stays declared under its old name for as long as it is accepted.
-- A plugin cannot add an HTTP route to OpenCode's server. `rpc.register` is reached through the
+- A plugin cannot add an HTTP route to OpenCode's server: `rpc.register` is reached through the
   authenticated `/api/rpc` endpoint with a JSON envelope, which neither GitHub's headers nor the raw
   body its signature covers would get through. The webhook receiver is its own listener in the
   OpenCode process, shared by the plugin's instances; it waits for the previous listener to close
@@ -61,44 +61,45 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
 - `session.inbox.delivered` (`data.inboxID` only) is published as each prompt, synthetic message,
   requested compaction or move reaches the session; the runner's own compactions skip the inbox, as
   does the synthetic message it adds to continue a response cut off at the output token limit, so a
-  continued turn owes no report again. After two such continuations the turn fails as `output-limit`.
-  The message it makes is stamped with that event's `created`. Only `session.inbox.enqueued`,
-  published as the item is admitted, carries its type (`data.item.type`: `user`, `synthetic`,
-  `compaction` or `move`; a `session.prompt` is `user`), so the plugin remembers it until delivery.
-- A synthetic message steered to an idle session starts its turn in a fixed order: `session.synthetic({ delivery: "steer" })`
-  (`Session.synthetic`, `packages/core/src/session/session.ts`) admits the item — `session.inbox.enqueued`,
-  and a pending row in the session inbox table — then rings the process-local run coordinator's doorbell
-  (`execution.wake`, `packages/core/src/session/run-coordinator.ts`), whose fiber publishes `session.execution.started`
-  with a write-ahead claim in the session store and drains: the runner promotes the pending steer —
-  `session.inbox.delivered`, the row deleted — and runs the turn to its one terminal event. A healthy wake is
-  `enqueued → started → delivered → … → succeeded`; a courier-delivered message is owed a turn when `enqueued` has
-  no `started` behind it (unless it was sent with `resume: false`), and only a new synthetic, prompt or resume for that session rings the doorbell again.
-- A lost wake is silent in the events: `enqueued` with no `started` (and no `delivered`, which only a drain publishes).
-  The host's own paths to it: `synthetic` skips the wake while the session has a staged revert (`session.revert`),
-  holding the input until the revert commits on the next prompt or compaction; and an interrupt landing between the
-  doorbell and the execution's stop clears the pending wake, leaving the row pending with no error and no log
-  (`reportLifecycle` swallows interrupt-only causes). `delivered` without `started` cannot be produced by the host's
-  ordering — promote runs only inside a drain, which follows `started` — so that signature means this instance missed
-  the `started` event (a subscription gap) or the events were reordered. No host bug was confirmed at this pin: neither
-  path reproduces on demand, and the recursive run's stall matches the rare doorbell race above, so the plugin's
-  missed-wake watch keys on the first signature rather than waiting on an upstream fix.
-- An item waiting in the inbox bumps the session's `time.updated` (seen: `updated` equal to the item's
-  `time.created`, `idle` unchanged), so `busy()` reads a session with an undelivered message as running. The
-  plugin API cannot list the inbox (`GET /api/session/:id/inbox` can); a delivered item becomes the stored
-  message with the same id. `session.synthetic` with the `id` of an item still waiting, or already delivered,
-  returns that item (`reconcile` in `packages/core/src/session/inbox.ts` matches on session and type only,
-  publishing nothing) and still wakes the session, so a wake sent again adds no second message. `session.status` and
-  `session.idle` are in the schema but published by nothing in core.
-- **`resume: false` is the only way to send a message that does not start a turn.** `Session.synthetic` admits the
-  item and rings the run coordinator unless `resume === false` (`packages/core/src/session/session.ts`; the
-  `session.synthetic` endpoint documents it: "schedule execution unless resume is false", and the plugin's
-  `session.synthetic` passes the payload through), whatever the `delivery`: `queue` still wakes an idle session
-  (seen in the source at `v2.0.29` to `v2.0.32`). With `resume: false` the item waits in the inbox and is promoted
-  by the session's next turn, whoever starts it; the live test also uses it to stage a missed wake. The
-  `session.inbox.enqueued` event carries the item (`delivery`, `payload`) but not `resume`, so the missed-wake watch
-  cannot tell such an item from a lost wake: the plugin marks the ones it sends so in their metadata (`resume: false`,
-  next to `source: "courier"`) and `watchWake` skips them. The courier sends the settled notice of a permission
-  request this way (#227).
+  continued turn owes no report again (after two such continuations the turn fails as
+  `output-limit`). The message it makes is stamped with that event's `created`. Only
+  `session.inbox.enqueued`, published as the item is admitted, carries its type (`data.item.type`:
+  `user`, `synthetic`, `compaction` or `move`; a `session.prompt` is `user`), so the plugin remembers
+  it until delivery.
+- A synthetic message steered to an idle session starts its turn in a fixed order:
+  `session.synthetic({ delivery: "steer" })` (`Session.synthetic`, `packages/core/src/session/session.ts`)
+  admits the item (`session.inbox.enqueued`, and a pending row in the session inbox table), then
+  rings the process-local run coordinator's doorbell (`execution.wake`,
+  `packages/core/src/session/run-coordinator.ts`), whose fiber publishes `session.execution.started`
+  with a write-ahead claim in the session store and drains: the runner promotes the pending steer
+  (`session.inbox.delivered`, the row deleted) and runs the turn to its one terminal event. A healthy
+  wake is `enqueued → started → delivered → … → succeeded`; a courier-delivered message is owed a
+  turn when `enqueued` has no `started` behind it (unless it was sent with `resume: false`), and only
+  a new synthetic, prompt or resume for that session rings the doorbell again.
+- A lost wake is silent in the events: `enqueued` with no `started` (and no `delivered`, which only a
+  drain publishes). The host's own paths to it: `synthetic` skips the wake while the session has a
+  staged revert (`session.revert`), holding the input until the revert commits on the next prompt or
+  compaction; and an interrupt landing between the doorbell and the execution's stop clears the
+  pending wake, leaving the row pending with no error and no log (`reportLifecycle` swallows
+  interrupt-only causes). `delivered` without `started` cannot be produced by the host's ordering,
+  so that signature means this instance missed the `started` event or the events were reordered.
+  Neither path reproduces on demand, so the missed-wake watch keys on the first signature.
+- An item waiting in the inbox bumps the session's `time.updated` (`updated` equal to the item's
+  `time.created`, `idle` unchanged), so `busy()` reads a session with an undelivered message as
+  running. The plugin API cannot list the inbox (`GET /api/session/:id/inbox` can); a delivered item
+  becomes the stored message with the same id. `session.synthetic` with the `id` of an item still
+  waiting, or already delivered, returns that item (`reconcile` in `packages/core/src/session/inbox.ts`
+  matches on session and type only, publishing nothing) and still wakes the session, so a wake sent
+  again adds no second message. `session.status` and `session.idle` are in the schema but published
+  by nothing in core.
+- **`resume: false` is the only way to send a message that does not start a turn.** `Session.synthetic`
+  admits the item and rings the run coordinator unless `resume === false`, whatever the `delivery`:
+  `queue` still wakes an idle session. With `resume: false` the item waits in the inbox and is
+  promoted by the session's next turn, whoever starts it; the live test also uses it to stage a
+  missed wake. The `session.inbox.enqueued` event carries the item (`delivery`, `payload`) but not
+  `resume`, so the missed-wake watch cannot tell such an item from a lost wake: the plugin marks the
+  ones it sends so in their metadata (`resume: false`, next to `source: "courier"`) and `watchWake`
+  skips them. The settled notice of a permission request is sent this way.
 - Every event carries `created`, the epoch milliseconds OpenCode published it at, which the report
   state compares with the server's clock at `courier_send`.
 - `session.context()` returns the session's stored messages (`SessionMessage.Info[]`), not the
@@ -114,8 +115,9 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   seconds to see whether a shutdown or its instance's unload follows.
 - `GET /api/plugin?directory=<worktree>` does not boot that worktree's location; a session run from
   the directory does. A session whose location's directory no longer exists answers 404 with
-  `LocationNotFoundError`, on routes the courier does not call; the webhook's test for a session OpenCode
-  no longer knows (an error tag with `NotFound`) would match it too. The server's health route is `/api/info` (version, pid, urls).
+  `LocationNotFoundError`, on routes the courier does not call; the webhook's test for a session
+  OpenCode no longer knows (an error tag with `NotFound`) would match it too. The server's health
+  route is `/api/info` (version, pid, urls).
 
 ## Permission requests
 
@@ -133,31 +135,30 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   the session's rules (the agent's and the session's, then the project's saved ones) for every
   resource and, when any says ask, creates a pending request in that session, publishes
   `permission.asked` and waits for the reply (`packages/core/src/permission.ts`). It resolves with
-  nothing, so the request's id and whether the person chose `once` or `always` are not given back;
-  only the session's `permission.asked` and `permission.replied` events carry them, matched by
-  action and resources, which another request of the session can share. With `save`, an `always`
-  reply saves an allow rule for the whole project (`PermissionSaved`, read by every session in it)
-  and OpenCode answers every other pending request of that location the rule now allows, with
-  `always`, a shared child's included. So `courier_answer` asserts without `save` and passes `once`.
-  Through the promise API it rejects with a `Tool.Error` (`_tag` `Tool.Error`, the reason in
-  `message`) whose `error` is OpenCode's `Permission.BlockedError` (a deny rule) or
-  `Permission.CorrectedError` (a rejection with feedback), or `Session.NotFoundError`; a plain
-  rejection rejects with the `Permission.DeclinedError` itself (`_tag` `Permission.DeclinedError`),
-  which the promise tool wrapper attaches to a `Tool.Error` and `SessionModelRequest.executeTool`
-  recovers to end the step, so the tool must rethrow it untouched, not through `describeFailure`.
-  The tool part then ends with `error.type` `aborted` ("The user declined this tool call") and the
-  model is not called again, but neither the session's `time.idle` nor an `idle` message in the
-  transcript marks that turn's end, unlike one that ends normally.
-  `opencode run --auto` replies `once` to every request asked in its own session, the asserted
-  ones included (`packages/cli/src/run/noninteractive.ts`), so the live suite's parent answers its
-  own prompt; the scenario that holds the prompt drives the parent through the API instead. The
-  TUI's prompt (`packages/tui/src/routes/session/permission.tsx`) shows the action and resources,
-  and a `source` of type `tool` adds that tool part's input to the presentation (a shell command
-  from `input.command`, nothing from `courier_answer`'s input); `metadata` is read only for a few
-  keys (`url`, `query`, `provider`, `files`, `diff`), so the child's ids in it are not shown, and
-  the request's `message` cannot be set through `assert`. `permission.list` gives the pending request
-  with the `metadata` and `source` passed to `assert`, so the asks inbox reads from `metadata` which
-  child's request the top's prompt is for.
+  nothing: the request's id and whether the person chose `once` or `always` come only from the
+  session's `permission.asked` and `permission.replied` events, matched by action and resources,
+  which another request of the session can share. With `save`, an `always` reply saves an allow rule
+  for the whole project (`PermissionSaved`, read by every session in it) and OpenCode answers every
+  other pending request of that location the rule now allows, with `always`, a shared child's
+  included; so `courier_answer` asserts without `save` and passes `once`. Through the promise API it
+  rejects with a `Tool.Error` (`_tag` `Tool.Error`, the reason in `message`) whose `error` is
+  OpenCode's `Permission.BlockedError` (a deny rule) or `Permission.CorrectedError` (a rejection with
+  feedback), or `Session.NotFoundError`; a plain rejection rejects with the `Permission.DeclinedError`
+  itself (`_tag` `Permission.DeclinedError`), which the promise tool wrapper attaches to a
+  `Tool.Error` and `SessionModelRequest.executeTool` recovers to end the step, so the tool must
+  rethrow it untouched, not through `describeFailure`. The tool part then ends with `error.type`
+  `aborted` ("The user declined this tool call") and the model is not called again, but neither the
+  session's `time.idle` nor an `idle` message in the transcript marks that turn's end.
+- `opencode run --auto` replies `once` to every request asked in its own session, the asserted ones
+  included (`packages/cli/src/run/noninteractive.ts`), so the live suite's parent answers its own
+  prompt; the scenario that holds the prompt drives the parent through the API instead.
+- The TUI's prompt (`packages/tui/src/routes/session/permission.tsx`) shows the action and
+  resources, and a `source` of type `tool` adds that tool part's input to the presentation (a shell
+  command from `input.command`, nothing from `courier_answer`'s input); `metadata` is read only for
+  a few keys (`url`, `query`, `provider`, `files`, `diff`), so the child's ids in it are not shown,
+  and the request's `message` cannot be set through `assert`. `permission.list` gives the pending
+  request with the `metadata` and `source` passed to `assert`, so the asks inbox reads from
+  `metadata` which child's request the top's prompt is for.
 - `worktree.create`, `worktree.remove` and `worktree.list` take the project, `projectID`
   (`location.project.id`), not a location; `agent.get` takes `location`.
 
@@ -176,8 +177,7 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   and wraps `question` with the Effect API, whose original `execute` can be raced and interrupted.
 - The promise adapter builds the promise plugin's context with the very `location` object the
   Effect half is handed, and the relay finds its instance's ports in the hub by it. An adapter that
-  copied the object would leave every question call unchanged, and the live suite's question
-  scenarios would fail.
+  copied the object would leave every question call unchanged.
 - The question tool asks through a form. `form.created` (ephemeral, never stored) carries the
   form's `metadata.tool.id`, the call's id, and comes only after the call's permission check has
   passed. A person dismissing it makes the tool die with `QuestionTool.CancelledError`, which ends
@@ -205,18 +205,17 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   `effect`, a public `effect/*` path or `@opencode/plugin*` from a plugin or its dependencies
   resolves to OpenCode's own copy (`packages/plugin/src/runtime.ts`), and loading a file of either
   package from a plugin's `node_modules` fails. So the installed peers serve the build, the unit
-  tests and hosts before 2.0.25; on those, the plugin runs on the copy of the plugin API installed
-  next to it. Either way the question relay's Effects and the host's must compose, so the
-  plugin's `effect` is the host's version.
+  tests and hosts before 2.0.25, which run the plugin on the copy installed next to it. Either way
+  the question relay's Effects and the host's must compose, so the plugin's `effect` is the host's
+  version.
 - **The peers stay exact.** `@opencode/plugin` is the same exact version as peer and as
   devDependency: on an older host a range would install the newest matching version, which nothing
   has run the suite with, and on a newer one the pin names exactly one tested version. The README's
   table keeps one version per row for the same reason. `effect` is a peer, not a dependency: the
   host supplies it. Its peer is exact and equal to the `effect` the pinned `@opencode/plugin`
-  depends on, so the courier names no `effect` version of its own that could drift from it; a unit
-  test keeps both. The exact peer can make an `npm install` fail with ERESOLVE in a project that
-  already uses another `effect`; `opencode plugin add` installs into an empty directory and never
-  meets that.
+  depends on; a unit test keeps both. The exact peer can make an `npm install` fail with ERESOLVE in
+  a project that already uses another `effect`; `opencode plugin add` installs into an empty
+  directory and never meets that.
 - **No peers for the TUI part** ([below](#tui-and-rpc-entrypoints)).
 - OpenCode's loader consults the managed policy before loading a plugin and refuses one an
   organisation's policy denies (`integration.use` on `plugin:<name>`); the load reports `blocked`.
@@ -256,16 +255,10 @@ the time the plugin's watcher sees the turn's end and nudges the scheduler.
 ## Isolated children's events
 
 An isolated child runs in a location of its own, its worktree, and OpenCode sets the plugin up once
-per location. The live test's probe plugin (`e2e/probe-plugin`, logging every event each instance
-receives) showed, with the parent's project, the child's worktree and an unrelated worktree loaded:
-
-| Event, from the child's worktree | Parent's instance | Child's instance | Third location's instance |
-|---|---|---|---|
-| `permission.asked`, `permission.replied` | yes | yes | yes |
-| `form.created`, `form.replied`, `form.cancelled` | yes | yes | yes |
-| `session.execution.failed` | yes | yes | yes |
-
-An event's location does not limit who receives it.
+per location. The live test's probe plugin (`e2e/probe-plugin`) showed, with the parent's project,
+the child's worktree and an unrelated worktree loaded, that `permission.asked`, `permission.replied`,
+`form.created`, `form.replied`, `form.cancelled` and `session.execution.failed` from the child's
+worktree reach all three instances: an event's location does not limit who receives it.
 
 ## Two servers on one data directory
 
@@ -408,10 +401,11 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   the location's closing (`rpc.unavailable`) and encodes the output (`rpc.invalid_output`). Over
   HTTP: `POST /api/rpc/:rpcID/:method?directory=…` with `{ "input": … }`, answering `{ "output": … }`.
 - **A TUI part's options.** `ctx.options` is the `options` of the TUI's own config entry (`cli.json`'s
-  `plugins`, the `{ "package", "options" }` form); a plugin the TUI loads from the server's list enters as a bare
-  target (`packages/tui/src/plugin/context.tsx`), so the server's `opencode.json` options never reach it. The TUI's
-  `animations` setting (`cli.json`, toggled by `app.toggle.animations`) is read only by its built-in parts; the
-  plugin API has no settings, so the tree panel takes `"animations": false` from its options.
+  `plugins`, the `{ "package", "options" }` form); a plugin the TUI loads from the server's list
+  enters as a bare target (`packages/tui/src/plugin/context.tsx`), so the server's `opencode.json`
+  options never reach it. The TUI's `animations` setting (`cli.json`, toggled by
+  `app.toggle.animations`) is read only by its built-in parts; the plugin API has no settings, so
+  the tree panel takes `"animations": false` from its options.
 - **The TUI context.** `ctx.client` is the TUI's own client; `ctx.location` may be `undefined`, in
   which case a call goes to the server's default location, so the courier falls back to
   `ctx.data.location.default()`. The prompt footer's slot is on the home screen too, with no
@@ -419,39 +413,39 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   `client.permission.reply`; forms go through `data.session.form.reply` and are listed with
   `client.session.form.list`, since the server API has no form domain. OpenCode's own notifications
   part sounds `permission` and `question` for every request and form the TUI sees.
-- **A dialog replaces the one open.** `createDialogApi` (`packages/tui/src/plugin/api.tsx`) shows every
-  dialog through the TUI's `dialog.replace`, which calls the open one's `onClose`: an open `select`
-  then resolves with `undefined`, as on `esc`, and `clear()` does the same. `select` takes a fixed
-  list and no starting query (`search` only filters), so the asks inbox shows a changed list by
-  opening a new `select`, whose search starts empty, and sets its size again (`replace` resets it). Its `current`
-  puts the cursor on the option whose value deep-equals it (`isDeepEqual` in `ui/dialog-select.tsx`), the first row
-  with none, so a value read afresh finds its row.
-- **A select's rows.** `DialogSelectOption` in the plugin API declares `title`, `value`, `description`, `footer`,
-  `category` and `disabled`. The host's row (`DialogSelectRow` in `packages/tui/src/ui/dialog-select.tsx`) is one
-  line: the title, truncated to 61 characters, the description after it in the same text, cut at the row's end,
-  and the footer right-aligned at its full width, which squeezes the two; a `large` dialog is 88 columns, an `xlarge`
-  116, or the terminal's width. `createDialogApi` spreads each option into the host's `DialogSelect`, whose rows also
-  take `details: string[]`, muted lines under the row, each cut in the middle to the dialog's content width, which
-  the memory view uses for a record's lesson. Undeclared: a later host may drop the pass-through, and the lesson line
-  would go from the list, not from the record in full. A `disabled` option is left out of the list, not shown greyed.
-- **The panel belongs to one session.** `ui.panel.open` targets the route's session; the app closes the
-  panel on any route to another (`packages/tui/src/app.tsx`), each session's frame is keyed by its id, and
-  a newly mounted panel takes the keyboard (`component/session-frame.tsx`, `onTarget`). So the tree panel
-  reopens itself after a route change with `presentation`, and gives the keyboard back with
-  `keymap.dispatch("pane.focus.left")`, the host's own command, when it did not have it.
+- **A dialog replaces the one open.** `createDialogApi` (`packages/tui/src/plugin/api.tsx`) shows
+  every dialog through the TUI's `dialog.replace`, which calls the open one's `onClose`: an open
+  `select` then resolves with `undefined`, as on `esc`, and `clear()` does the same. `select` takes a
+  fixed list and no starting query (`search` only filters), so the asks inbox shows a changed list by
+  opening a new `select`, whose search starts empty, and sets its size again (`replace` resets it).
+  Its `current` puts the cursor on the option whose value deep-equals it (`isDeepEqual` in
+  `ui/dialog-select.tsx`), the first row with none, so a value read afresh finds its row.
+- **A select's rows.** `DialogSelectOption` in the plugin API declares `title`, `value`,
+  `description`, `footer`, `category` and `disabled`. The host's row (`DialogSelectRow` in
+  `packages/tui/src/ui/dialog-select.tsx`) is one line: the title, truncated to 61 characters, the
+  description after it in the same text, cut at the row's end, and the footer right-aligned at its
+  full width, which squeezes the two; a `large` dialog is 88 columns, an `xlarge` 116, or the
+  terminal's width. `createDialogApi` spreads each option into the host's `DialogSelect`, whose rows
+  also take `details: string[]`, muted lines under the row, each cut in the middle to the dialog's
+  content width, which the memory view uses for a record's lesson. Undeclared: a later host may drop
+  the pass-through, and the lesson line would go from the list, not from the record in full. A
+  `disabled` option is left out of the list, not shown greyed.
+- **The panel belongs to one session.** `ui.panel.open` targets the route's session; the app closes
+  the panel on any route to another (`packages/tui/src/app.tsx`), each session's frame is keyed by
+  its id, and a newly mounted panel takes the keyboard (`component/session-frame.tsx`, `onTarget`).
+  So the tree panel reopens itself after a route change with `presentation`, and gives the keyboard
+  back with `keymap.dispatch("pane.focus.left")`, the host's own command, when it did not have it.
 - **A panel splits from 108 columns, measured less the vertical tabs.** `canSplit` in
   `packages/tui/src/context/panel.tsx` is `width() >= SESSION_PANEL_SPLIT_MIN_WIDTH` (64 + 44 = 108,
   `packages/tui/src/ui/layout.ts`); up to 2.0.29 it was `width() > 80`. Narrower, OpenCode shows the
-  panel fullscreen whatever was asked. `width` is the terminal's width minus the vertical session tabs when
-  they show (`app.tsx`, `panels.setWidth(...)`). The plugin cannot read the tabs' width (`PanelInput.width` is
-  the panel's own, `renderer.width` the terminal's), so the tree panel notes what was asked only at a
-  `renderer.width` of 108 or more; with vertical tabs showing it still takes a narrower split for one.
+  panel fullscreen whatever was asked. `width` is the terminal's width minus the vertical session
+  tabs when they show (`app.tsx`, `panels.setWidth(...)`). The plugin cannot read the tabs' width
+  (`PanelInput.width` is the panel's own, `renderer.width` the terminal's), so the tree panel notes
+  what was asked only at a `renderer.width` of 108 or more; with vertical tabs showing it still
+  takes a narrower split for one.
 - **Keys.** `<leader>` bindings OpenCode takes: `a b c e g i l m n q r s t u w x y`, the digits and
   the arrows (`packages/tui/src/config/v1/keybind.ts`); the inbox takes `<leader>k`.
 - **Testing.** Unit tests render against a fake TUI context with OpenTUI's `testRender`, which needs
   Solid's transform (`bunfig.toml` preloads `@opentui/solid/preload`). The live check runs the TUI in
   `tmux` and reads `tmux capture-pane -p`; CI's `ubuntu-24.04` image lacks `tmux`, so the job installs
   it. The TUI logs to `$XDG_DATA_HOME/opencode/log/opencode.log`.
-
-The spike that found these, with source line numbers at `v2.0.28` and its open questions, is in the
-[last commit that had it](https://github.com/ivopogace/opencode-courier/blob/46e78e47b5ac9a0bc2526ad84401c2c3510e0c4d/docs/plugin-api-notes.md#tui-and-rpc-entrypoints-spike-for-130).

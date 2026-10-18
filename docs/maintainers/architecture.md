@@ -1,9 +1,9 @@
 # Architecture
 
-How the plugin is put together, for a person changing it. [CLAUDE.md](../../CLAUDE.md)'s Layout is
-the file-by-file map, and `test/imports.test.ts` enforces the import rules below; the
-[reference](../reference.md) says what the plugin does, and [plugin-api-notes.md](plugin-api-notes.md)
-what the host does that it works around.
+How the plugin is put together. [CLAUDE.md](../../CLAUDE.md)'s Layout is the file-by-file map,
+`test/imports.test.ts` enforces the import rules below, the [reference](../reference.md) says what
+the plugin does, and [plugin-api-notes.md](plugin-api-notes.md) what the host does that it works
+around.
 
 ## Layout
 
@@ -12,14 +12,13 @@ inbound and outbound adapters):
 
 - `tree/`: the session tree: spawning, sending, reports, join groups, limits, the roster, status,
   stopping, cleanup; its tools, RPC and TUI part.
-- `person/`: what a spawned session needs the person for: permission requests, forms and
-  questions (`person/question/` wraps OpenCode's question tool, in Effect code that stays inside
-  the folder); the asks inbox.
+- `person/`: what a spawned session needs the person for: permission requests, forms and questions
+  (`person/question/` wraps OpenCode's question tool, in Effect code that stays inside the folder);
+  the asks inbox.
 - `scheduling/`: `courier_later` messages.
 - `webhook/`: the receiver and subscriptions.
 - `memory/`: one record per session tree, kept in the project by an event module and read back with
-  `courier_recall`, with the one line `courier_note` writes on it; its RPC and the memory view, the
-  records in the terminal with a key to forget one.
+  `courier_recall`, with the one line `courier_note` writes on it; its RPC and the memory view.
 - `kernel/`: what models see of the protocol in every module (`envelope`, `END_TURN`,
   `describeFailure`, …) and the tool editor.
 - `platform/`: the hub, following OpenCode's events, storage helpers and JSON readers; it imports
@@ -39,44 +38,38 @@ The import rules:
   `stalledAmong`, `contextOf`, `busy`). Each module may import `platform/**` and `kernel/**`.
 - Each module's model-facing strings are pure functions in its `text.ts`, which imports only
   `kernel/**`, `platform/json.ts` and its own `ports.ts` and `domain.ts`. One snapshot test,
-  `test/notices.test.ts`, gathers every `text.ts`, the skill and the tool descriptions and schemas,
-  so a wording change shows as one diff.
+  `test/notices.test.ts`, gathers every `text.ts`, the skill and the tool descriptions and schemas.
 - `tree/store.ts` is the only file that knows the tree's storage keys; no file outside `tree/` imports
   it, and no other file names its key prefixes. `memory/store.ts` is the same for `memory/`.
 - A module's `tui.tsx` imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, its `rpc.ts`,
-  its `text.ts` and its `mascot.ts` (`tree/`'s, Digby's drawings, which imports nothing); a module's
-  `rpc.ts` only `@opencode/plugin/rpc` and `effect`.
+  its `text.ts` and its `mascot.ts` (`tree/`'s, which imports nothing); a module's `rpc.ts` only
+  `@opencode/plugin/rpc` and `effect`.
 
 Why it is shaped so:
 
-- **The platform does not import features.** Features register with it instead: `index.ts` hands the
-  scheduler its ordered tick jobs (`dueJob`, `deliverReleased`, then `wakeMissed`) and
-  the event follower its ordered event modules (`treeEvents`, `personEvents`, then `memoryEvents`), each with phases
-  (`handle` in list order, `after` in a `finally`, `followed`, `left` and `subscribed` around the
-  subscription). There is no application event bus: OpenCode's event stream already is one, and a
-  second would lose the order and the visibility.
+- **The platform does not import features.** Features register with it: `index.ts` hands the
+  scheduler its ordered tick jobs (`dueJob`, `deliverReleased`, then `wakeMissed`) and the event
+  follower its ordered event modules (`treeEvents`, `personEvents`, then `memoryEvents`), each with
+  phases (`handle` in list order, `after` in a `finally`, `followed`, `left` and `subscribed` around
+  the subscription). There is no application event bus: OpenCode's event stream already is one.
 - **Registration lives in this copy's closures, never in the hub's state**, so the hub's shape does
-  not change and an unloaded copy leaves nothing behind (below).
+  not change and an unloaded copy leaves nothing behind.
 - **The silent-turn rule is a query**, `Waits`, which `tree/` declares and `person/`, `scheduling/`
-  and `webhook/` each supply; `index.ts` composes them. That keeps `tree/` from depending on
-  `person/`. Likewise the `context` hook takes the tools other modules hide from a leaf
-  (`hiddenFromLeaf`), which `index.ts` names, so `tree/` knows nothing of `courier_recall`.
+  and `webhook/` each supply; `index.ts` composes them, so `tree/` does not depend on `person/`.
+  Likewise the `context` hook takes the tools other modules hide from a leaf (`hiddenFromLeaf`),
+  which `index.ts` names.
 - **The memory refreshes in the `after` phase**, once the tree's and the person's notices of a turn's
-  end have gone out and the report state the tree settled is written, and reads only through ports
-  every hub-v2 member joins with (`storage`, `session`), so it runs through whichever member follows
-  the events. What it needs beyond them, the models' context windows and the locations with memory
-  off, is process-wide state under the fixed key `opencode-courier.memory`, filled as each instance
-  loads.
-- **Text lives next to the module that speaks it**, with one snapshot over all of it, so the
-  domain types stay in their module and the snapshot stays the one place a wording change shows.
-
-The research note behind these decisions, `docs/research/layout.md`, is in the [last commit that had
-it](https://github.com/ivopogace/opencode-courier/blob/46e78e47b5ac9a0bc2526ad84401c2c3510e0c4d/docs/research/layout.md).
+  end have gone out and the report state is written, and reads only through ports every hub-v2
+  member joins with (`storage`, `session`), so it runs through whichever member follows the events.
+  What it needs beyond them, the models' context windows and the locations with memory off, is
+  process-wide state under the fixed key `opencode-courier.memory`, filled as each instance loads.
+- **Text lives next to the module that speaks it**, with one snapshot over all of it.
 
 ## Storage
 
 The plugin's storage is OpenCode's KV, shared by every location, copy and server on one data
-directory, so a key or a stored value never changes shape. `test/store.test.ts` pins the tree's.
+directory, so a key or a stored value never changes shape. `test/store.test.ts` pins the tree's and
+the memory's.
 
 | Key | Holds |
 |---|---|
@@ -93,7 +86,7 @@ directory, so a key or a stored value never changes shape. `test/store.test.ts` 
 | `webhook/<topic, URI-encoded>/<sessionID>` | A webhook subscription. |
 | `wake/<sessionID>/<inboxID>` | A courier message waiting in a session's inbox, until delivered or cancelled: `at`, `text`, `description`, `running`, `idleAt`, `rewoken`, `stalled` ([a missed wake](../reference.md#a-missed-wake)). |
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers ([below](#two-servers)). |
-| `memory/<projectID>/<topSessionID>` | A session tree's record, field by field in [the reference](../reference.md#memory): `startedAt`, `movedAt`, `title`, `split`, `finished`, `recalled`, `lesson`, `parts`. `test/store.test.ts` pins it. |
+| `memory/<projectID>/<topSessionID>` | A session tree's record, field by field in [the reference](../reference.md#memory). |
 
 A session owes a report while `prompt` is later than `settled`, and its parent waits for it while
 `prompt` is later than `told` too. The prompt's time is the one OpenCode published its delivery at
@@ -113,23 +106,21 @@ OpenCode runs one instance of the plugin per location (project or worktree), all
 after an update it loads the new copy of the package next to the old one until the old one unloads.
 All instances share one process-wide hub (`opencode-courier.hub` on `globalThis`), where each
 scheduled message, released join group, OpenCode event, permission request, form and question is
-claimed once before any instance acts on it, so nothing is delivered or told twice, whichever
-instance or copy sees it first. The hub runs the scheduler once per process and follows OpenCode's
-events through two instances, one a standby, so that an instance unloading leaves no gap in which an
-event or a child's question is missed. A webhook receiver started by one instance is the one the
-others join, so two never contend for the port. The `courier_spawn` calls under way, the types
-of the items entering spawned sessions' inboxes, and the forms shown now are kept process-wide under
-fixed keys of their own, so spawns in every location and copy count each other against the limits, whichever instance
-sees an item's delivery knows what it was, and every instance's footer and tree panel see a form
-whichever instance followed its events.
+claimed once before any instance acts on it. The hub runs the scheduler once per process and
+follows OpenCode's events through two instances, one a standby, so that an instance unloading leaves
+no gap. A webhook receiver started by one instance is the one the others join. The `courier_spawn`
+calls under way, the types of the items entering spawned sessions' inboxes, and the forms shown now
+are kept process-wide under fixed keys of their own, so spawns in every location and copy count
+against the limits together, whichever instance sees an item's delivery knows what it was, and every
+instance's footer and tree panel see a form.
 
 The hub carries a version, `HUB_VERSION`, which changes only when its shape or the meaning of a field
-does, not with every release (it is 2 since the join groups: the tick delivers released groups too,
-and takes a nudge to run at once). A copy that finds a hub of another version runs its own, under a
-key of its version, and logs one line saying so. The claim sets are shared across hub versions,
-under keys whose shape and meaning are fixed for good, so an old and a new copy loaded together still
-never both deliver or tell the same thing; a change that needed another meaning for one would make a
-new key and keep claiming in the old one as well.
+does (2 since the join groups: the tick delivers released groups too, and takes a nudge to run at
+once). A copy that finds a hub of another version runs its own, under a key of its version, and logs
+one line saying so. The claim sets are shared across hub versions, under keys whose shape and
+meaning are fixed for good, so an old and a new copy loaded together never both deliver or tell the
+same thing; a change that needed another meaning for one would make a new key and keep claiming in
+the old one as well.
 
 **Version skew.** What a scheduler tick and an event subscription do is the code of the copy loaded
 last, run through the instance loaded first (or the earliest without a subscription), which may
@@ -148,14 +139,15 @@ loading. Past that, what is under way finishes on its own.
 
 Two OpenCode servers on one data directory share the storage but not the hub
 ([plugin-api-notes.md](plugin-api-notes.md#two-servers-on-one-data-directory)). The scheduler's owner
-key, `scheduler/owner`, picks the one that delivers `courier_later` messages and released groups, and wakes a session whose wake was missed:
+key, `scheduler/owner`, picks the one that delivers `courier_later` messages and released groups, and
+wakes a session whose wake was missed:
 
 - A server's scheduler delivers while it holds the key, renewing it as it goes, and skips its tick
   while another server's key is less than 60 seconds old (four ticks, so a tick or two skipped by a
   busy event loop does not hand it over).
 - A missing or expired key is taken after a random wait of 0.5 to 1 second and a read back, so of two
-  servers taking it at once only one delivers; the wait is random so two servers re-taking it in the
-  same rhythm do not keep finishing in step.
+  servers taking it at once only one delivers, and two re-taking it in the same rhythm do not keep
+  finishing in step.
 - The owner renews its key without reading it back only while it is less than 30 seconds old, half
   the expiry, which leaves another server 30 seconds of stall before it could take over; an older one
   is taken again like a free one.
@@ -165,9 +157,7 @@ key, `scheduler/owner`, picks the one that delivers `courier_later` messages and
 With no compare-and-set in the storage, a message delivered twice takes a process stalling for half a
 second or more between two storage calls, or a delivery running for over a minute. Releases before
 the key (0.2.2 and earlier) deliver on their own schedule beside the owner. The live suite's restart
-scenario checks that the key is held, released by a graceful stop, and that another server's key
-planted while the server is stopped holds the restarted server off until it expires;
-`e2e/two-servers.sh` checks that no message is delivered twice.
+scenario checks the key's lifecycle; `e2e/two-servers.sh` checks that no message is delivered twice.
 
 ## The TUI part
 
@@ -182,18 +172,10 @@ versions of OpenCode's catalog, for the typecheck and the unit tests. `tsconfig.
 `tui.tsx` files out of the `tsc` build, and `tsconfig.tui.json` writes `dist/tui.d.ts`.
 
 What the TUI part does goes through the same use cases as the tools (`courier_tree`'s walk,
-`courier_stop`'s `stop()`, `courier_answer`'s answer path, the memory's store), over the RPCs `courier`,
-`courier-person` and `courier-memory` that each instance registers at its location, so a model sees only
-what the tools would tell it. The memory view is a dialog rather than a panel: the records are the
-project's, not a session's, and a panel belongs to one session, closed on every route change, which is
-what the tree panel's follow-the-person code is for; the host's own list you delete from, its Sessions
-dialog, is a select with footer actions, which the pinned plugin API gives a plugin too (`actions` on
-`dialog.select`, drawn and run by the host without closing the dialog). `e2e/tui.sh` checks it live, in
-`tmux`: the footer entry, the panel opened with `/courier tree` on two children with its bar moving from
-1/2 to 2/2 when the second reports, `q` closing it, `/courier stop` with its confirm, the asks inbox, and
-the memory view with its forgets, from `dist/` and from the package `opencode plugin add` installs.
-
-The spike that settled how the package ships a TUI part and an RPC, and whether children get a native
-`parentID`, is in the [last commit that had
-it](https://github.com/ivopogace/opencode-courier/blob/46e78e47b5ac9a0bc2526ad84401c2c3510e0c4d/docs/plugin-api-notes.md#tui-and-rpc-entrypoints-spike-for-130);
-what still holds of it is in [plugin-api-notes.md](plugin-api-notes.md#tui-and-rpc-entrypoints).
+`courier_stop`'s `stop()`, `courier_answer`'s answer path, the memory's store), over the RPCs
+`courier`, `courier-person` and `courier-memory` that each instance registers at its location, so a
+model sees only what the tools would tell it. The memory view is a dialog rather than a panel: the
+records are the project's, not a session's, and a panel belongs to one session, closed on every route
+change; the host's own Sessions dialog is a select with footer actions, which the pinned plugin API
+gives a plugin too (`actions` on `dialog.select`, drawn and run by the host without closing the
+dialog). `e2e/tui.sh` checks it all live, in `tmux`.

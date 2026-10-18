@@ -477,6 +477,12 @@ describe("memory", () => {
     expect(memory.recordLine(record("ses_old", { lesson }), "ses_other", NOW)).toMatchSnapshot()
     expect(memory.recordLine(record("ses_old", { lesson: { ...lesson, depth: 2 } }), "ses_other", NOW)).toMatchSnapshot()
   })
+  test("recordLine and recallListText with a pinned record", () => {
+    const pinned = record("ses_pinned", { pinned: { at: Date.UTC(2026, 9, 3, 9, 44) }, reads: { shown: 7, read: 1, at: Date.UTC(2026, 9, 3, 9, 44) }, lesson })
+    expect(memory.recordLine(pinned, "ses_other", NOW)).toMatchSnapshot()
+    expect(memory.recallListText([pinned, record("ses_now", { parts: [], finished: false, recalled: { at: 1, calls: 1 } }), record("ses_old")], "ses_now", NOW)).toMatchSnapshot()
+    expect(memory.recallRecordText(pinned)).toMatchSnapshot()
+  })
   test("noteText", () => {
     expect(memory.noteText("ses_top", lesson, undefined)).toMatchSnapshot()
     expect(memory.noteText("ses_top", { text: "x".repeat(300), at: lesson.at, depth: 1 }, lesson)).toMatchSnapshot()

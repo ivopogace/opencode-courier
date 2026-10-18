@@ -1,7 +1,7 @@
 import { addBounded, SEEN_MAX } from "../platform/bounded.js"
 import { finite, millis } from "../platform/json.js"
 import { lineage } from "../tree/index.js"
-import { newestFirst, NOT_STATED, noteRecall, type StoredRecord } from "./domain.js"
+import { NOT_STATED, noteRead, noteRecall, pinnedFirst, type ReadKind, type StoredRecord } from "./domain.js"
 import type { MemoryPorts, MemoryState } from "./ports.js"
 import { memoryStore } from "./store.js"
 
@@ -41,8 +41,26 @@ async function note(ports: MemoryPorts, top: string, byTop: boolean) {
 }
 
 /**
- * courier_recall: notes the call on the caller's tree, then lists the project's records newest first, or gives the one
- * under `sessionID` in full. With the memory option off, nothing is written or read.
+ * Counts, on each record of another tree, that this call listed it or gave it in full, best effort: a count lost is
+ * logged, never the call's failure. Gives the reads of the reader's tree on each, in order, or undefined where it failed.
+ */
+function count(ports: MemoryPorts, top: string, kind: ReadKind, sessionIDs: ReadonlyArray<string>) {
+  const store = memoryStore(ports.storage)
+  const now = ports.now()
+  return Promise.all(
+    sessionIDs.map((sessionID) =>
+      store.noteRead(ports.projectID, sessionID, top, kind, now).catch((error: unknown) => {
+        ports.log(`courier memory: could not count the ${kind === "shown" ? "listing" : "read"} of the record under ${sessionID}: ${String(error)}`)
+        return undefined
+      }),
+    ),
+  )
+}
+
+/**
+ * courier_recall: notes the call on the caller's tree, then lists the project's records, pinned first and then newest
+ * first, or gives the one under `sessionID` in full, counting the listing or the read on each record of another tree.
+ * With the memory option off, nothing is written or read.
  */
 export async function recall(ports: MemoryPorts, state: Pick<MemoryState, "tops">, callerID: string, input: RecallInput): Promise<Recall> {
   if (!ports.memory) return { kind: "off" }
@@ -55,7 +73,13 @@ export async function recall(ports: MemoryPorts, state: Pick<MemoryState, "tops"
   const wanted = typeof input.sessionID === "string" ? input.sessionID.trim() : ""
   if (wanted) {
     const record = await store.get(projectID, wanted)
-    return record ? { kind: "record", projectID, record: { ...record, projectID, sessionID: wanted } } : { kind: "missing", projectID, sessionID: wanted }
+    if (!record) return { kind: "missing", projectID, sessionID: wanted }
+    // The record is given with this read counted, as the store now has it.
+    const [counted] = wanted === top ? [undefined] : await count(ports, top, "read", [wanted])
+    const reads = counted ? noteRead(record.reads, "read", counted.at) : record.reads
+    return { kind: "record", projectID, record: { ...record, ...(reads ? { reads } : {}), projectID, sessionID: wanted } }
   }
-  return { kind: "list", projectID, top, records: newestFirst(await store.ofProject(projectID)) }
+  const records = pinnedFirst(await store.ofProject(projectID))
+  await count(ports, top, "shown", records.flatMap((record) => (record.sessionID === top ? [] : [record.sessionID])))
+  return { kind: "list", projectID, top, records }
 }

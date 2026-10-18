@@ -1624,6 +1624,72 @@ exports[`memory recordLine with a lesson 1`] = `"- ses_old 2026-10-03: "Add memo
 
 exports[`memory recordLine with a lesson 2`] = `"- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished · lesson (2026-10-03, from depth 2): "The docs part was ten lines; next time do it yourself.""`;
 
+exports[`memory recordLine and recallListText with a pinned record 1`] = `"- ses_pinned 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished · pinned · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself.""`;
+
+exports[`memory recordLine and recallListText with a pinned record 2`] = `
+"2 earlier trees recorded in this project, newest first; weigh how they were split and how their parts went before you decide. A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out. The facts are as they stood when the tree last moved: "not finished" with an old "last moved" is a stale record, not a tree running now. courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use. A record marked "pinned" is one the person chose to keep and listed first: weigh it before the rest.
+- ses_pinned 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished · pinned · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
+- ses_now (this tree) 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · no parts · ran 42 min · last moved 3 min ago · not finished · recalled
+- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 1 done, 1 partial, 1 out, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 3 min ago · $1.23 · finished"
+`;
+
+exports[`memory recordLine and recallListText with a pinned record 3`] = `
+"Record of the tree under ses_pinned, in project proj_1 (durations in milliseconds, context use as a share of the model's window):
+{
+  "projectID": "proj_1",
+  "sessionID": "ses_pinned",
+  "startedAt": 1791018000000,
+  "movedAt": 1791020520000,
+  "title": "Add memory to courier",
+  "split": "split: 3 parts: core, e2e, docs",
+  "finished": true,
+  "parts": [
+    {
+      "sessionID": "ses_core",
+      "title": "Core",
+      "depth": 1,
+      "isolated": true,
+      "group": "wave",
+      "status": "done",
+      "duration": 540000,
+      "cost": 0.42,
+      "context": 0.31
+    },
+    {
+      "sessionID": "ses_e2e",
+      "title": "E2E",
+      "depth": 1,
+      "isolated": true,
+      "group": "wave",
+      "status": "partial",
+      "duration": 600000,
+      "cost": 0.81,
+      "refused": 1
+    },
+    {
+      "sessionID": "ses_review",
+      "title": "Review",
+      "depth": 2,
+      "isolated": false,
+      "status": "out",
+      "duration": 60000
+    }
+  ],
+  "pinned": {
+    "at": 1791020640000
+  },
+  "reads": {
+    "shown": 7,
+    "read": 1,
+    "at": 1791020640000
+  },
+  "lesson": {
+    "text": "The docs part was ten lines; next time do it yourself.",
+    "at": 1791020400000
+  }
+}"
+`;
+
 exports[`memory noteText 1`] = `"Noted on the record of the tree under ses_top as its lesson (2026-10-03): "The docs part was ten lines; next time do it yourself.". courier_recall lists it after the tree's facts; a second courier_note replaces it. A lesson that holds every time belongs in AGENTS.md or the skill, which only the person puts there: tell them instead of noting it."`;
 
 exports[`memory noteText 2`] = `"Noted on the record of the tree under ses_top as its lesson (2026-10-03, from depth 1): "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx". It replaces the lesson (2026-10-03): "The docs part was ten lines; next time do it yourself.". courier_recall lists it after the tree's facts; a second courier_note replaces it. A lesson that holds every time belongs in AGENTS.md or the skill, which only the person puts there: tell them instead of noting it."`;

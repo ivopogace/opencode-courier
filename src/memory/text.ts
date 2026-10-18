@@ -54,7 +54,7 @@ export function lessonLine(lesson: Lesson) {
 
 /**
  * One record as the listing shows it: its top, when it started, its title, its split line and its latest revision as prose,
- * its parts, how long it ran, how long ago it last moved and what it cost.
+ * its parts, how long it ran, how long ago it last moved, what it cost, and whether the person pinned it.
  */
 export function recordLine(record: StoredRecord, top: string, now: number) {
   const cost = record.parts.reduce((sum, part) => sum + (part.cost ?? 0), 0)
@@ -69,23 +69,31 @@ export function recordLine(record: StoredRecord, top: string, now: number) {
     `last moved ${age(now - record.movedAt)} ago`,
     ...(costed ? [`$${cost.toFixed(2)}`] : []),
     record.finished ? "finished" : "not finished",
+    ...(record.pinned ? ["pinned"] : []),
     ...(record.recalled ? [`recalled${record.recalled.at === undefined ? " by a part" : ""}`] : []),
     ...(record.lesson ? [lessonLine(record.lesson)] : []),
   ].join(" · ")
 }
 
+/** What the listing says of pinned records, when it holds one. */
+const PINNED = "A record marked \"pinned\" is one the person chose to keep and listed first: weigh it before the rest."
+
 /** What courier_recall says when the memory option is off. */
 export const RECALL_OFF =
   "Memory is off: the plugin's memory option is false, so no record of a session tree is kept or listed in this project. Decide from the task alone."
 
-/** The listing: every record of the project, newest first, the caller's own tree marked, each aged against `now`. */
+/**
+ * The listing: every record of the project, the pinned first and then newest first, the caller's own tree marked, each
+ * aged against `now`.
+ */
 export function recallListText(records: ReadonlyArray<StoredRecord>, top: string, now: number) {
   const others = records.filter((record) => record.sessionID !== top)
   const intro = others.length
     ? `${count(others.length, "earlier tree")} recorded in this project, newest first; weigh how they were split and how their parts went before you decide. ` +
       "A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out. " +
       "The facts are as they stood when the tree last moved: \"not finished\" with an old \"last moved\" is a stale record, not a tree running now. " +
-      "courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use."
+      "courier_recall with a sessionID gives one in full, with each part's status, duration, cost and context use." +
+      (others.some((record) => record.pinned) ? ` ${PINNED}` : "")
     : "No earlier tree is recorded in this project: a tree's record is written by a courier_recall call and as each turn in it ends, and kept 90 days. Decide from the task alone."
   return [intro, ...records.map((record) => recordLine(record, top, now))].join("\n")
 }

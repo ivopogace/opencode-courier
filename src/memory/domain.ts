@@ -1,6 +1,6 @@
 /**
  * The memory's pure rules, on plain data: the option, a record's shape, each part's status, the split line and its revisions,
- * the retention and how a refresh keeps the parts the roster has forgotten. Imports nothing of the plugin's but `kernel/` and `platform/json.ts`.
+ * its reads and pin, the retention and how a refresh keeps the parts the roster has forgotten. Imports nothing of the plugin's but `kernel/` and `platform/json.ts`.
  */
 import { STATUSES, type Status } from "../kernel/protocol.js"
 import { obj } from "../platform/json.js"
@@ -63,6 +63,24 @@ export interface Lesson {
   readonly depth?: number
 }
 
+/**
+ * How often other trees' courier_recall calls listed the record (`shown`) or gave it in full (`read`), and when one last
+ * did (`at`). Kept per reader tree and summed when read; a listing to the tree's own sessions counts nothing.
+ */
+export interface Reads {
+  readonly shown: number
+  readonly read: number
+  readonly at: number
+}
+
+/** What a courier_recall call did with a record: listed it, or gave it in full. */
+export type ReadKind = "shown" | "read"
+
+/** The person's pin, set in the memory view: when. A pinned record is listed first and never swept. */
+export interface Pinned {
+  readonly at: number
+}
+
 /** How many revisions of the split line a record keeps, the newest. */
 export const MAX_REVISIONS = 3
 
@@ -92,6 +110,10 @@ export interface TreeRecord {
   readonly recalled?: Recalled
   /** Absent until a session of the tree that is not a leaf wrote one; a second note replaces the first. */
   readonly lesson?: Lesson
+  /** Absent until another tree's courier_recall listed or read the record; kept beside the record, never written with it. */
+  readonly reads?: Reads
+  /** Absent until the person pinned the record in the memory view; kept beside the record, never written with it. */
+  readonly pinned?: Pinned
   readonly parts: ReadonlyArray<PartRecord>
 }
 
@@ -286,12 +308,28 @@ export function lessonText(text: string) {
   return { text: line.slice(0, LESSON_MAX).trimEnd(), clipped: line.length }
 }
 
-/** The records a project keeps at `now`: the newest `MAX_RECORDS` by `movedAt`, none older than `RETENTION_MS`; the rest are dropped. */
-export function keep<T extends Pick<StoredRecord, "movedAt">>(records: ReadonlyArray<T>, now: number) {
-  const newest = records.toSorted((a, b) => b.movedAt - a.movedAt)
-  const kept = newest.filter((record, index) => index < MAX_RECORDS && now - record.movedAt <= RETENTION_MS)
-  return { kept, dropped: newest.filter((record) => !kept.includes(record)) }
+/** One reader tree's `reads` after courier_recall listed the record or gave it in full at `at`. */
+export function noteRead(reads: Reads | undefined, kind: ReadKind, at: number): Reads {
+  return { shown: (reads?.shown ?? 0) + (kind === "shown" ? 1 : 0), read: (reads?.read ?? 0) + (kind === "read" ? 1 : 0), at: Math.max(reads?.at ?? 0, at) }
 }
 
-/** Records newest first, by when each last moved. */
-export const newestFirst = <T extends Pick<StoredRecord, "movedAt">>(records: ReadonlyArray<T>) => records.toSorted((a, b) => b.movedAt - a.movedAt)
+/** The reads of every reader tree as one: the counts summed, `at` the latest; none without a reader. */
+export function sumReads(reads: ReadonlyArray<Reads>): Reads | undefined {
+  if (!reads.length) return undefined
+  return reads.reduce((sum, one) => ({ shown: sum.shown + one.shown, read: sum.read + one.read, at: Math.max(sum.at, one.at) }))
+}
+
+/**
+ * The records a project keeps at `now`: every pinned one, whatever its age, and of the rest the first `MAX_RECORDS` by
+ * whether each has a lesson, then by `movedAt`, none older than `RETENTION_MS`; the rest are dropped.
+ */
+export function keep<T extends Pick<StoredRecord, "movedAt" | "lesson" | "pinned">>(records: ReadonlyArray<T>, now: number) {
+  const pinned = records.filter((record) => record.pinned)
+  const rest = records.filter((record) => !record.pinned).toSorted((a, b) => Number(Boolean(b.lesson)) - Number(Boolean(a.lesson)) || b.movedAt - a.movedAt)
+  const kept = [...pinned, ...rest.filter((record, index) => index < MAX_RECORDS && now - record.movedAt <= RETENTION_MS)]
+  return { kept, dropped: records.filter((record) => !kept.includes(record)) }
+}
+
+/** Records as courier_recall and the memory view list them: the pinned first, then by when each last moved, newest first. */
+export const pinnedFirst = <T extends Pick<StoredRecord, "movedAt" | "pinned">>(records: ReadonlyArray<T>) =>
+  records.toSorted((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.movedAt - a.movedAt)

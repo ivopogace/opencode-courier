@@ -193,28 +193,25 @@ Each tool's parameters: [the reference](docs/reference.md#the-tools).
 ## How children reach you
 
 - **A child reports once, with a status**: `done`, `partial`, `blocked` (it needs a decision from
-  its parent, and says what) or `failed`, with its artifacts (branch, commits, files, checks) in the
-  message. A message without a status is progress, not the report.
-  [More](docs/reference.md#a-childs-report).
+  its parent, and says what) or `failed`, with its artifacts in the message. A message without a
+  status is progress, not the report. [More](docs/reference.md#a-childs-report).
 - **A join group wakes you once.** Start a batch of sessions with the same `group` name, and their
-  `done`, `partial` and `failed` reports are held until the last one is in and your turn has ended,
-  then delivered in one message. A `blocked` report, a failure, a question or a permission request
-  still reaches you at once. A member that will not report holds the others back: drop it with
-  `courier_cleanup`. [More](docs/reference.md#join-groups).
+  `done`, `partial` and `failed` reports are held until the last one is in, then delivered in one
+  message; a `blocked` report, a failure, a question or a permission request still reaches you at
+  once. A member that will not report holds the others back: drop it with `courier_cleanup`.
+  [More](docs/reference.md#join-groups).
 - **A child that fails, or ends its turn without reporting, is reported** to its parent, with the
-  error or its last reply, waking it if idle; one that waits on a request, its own children, a
-  scheduled message or a webhook is not, nor is one that answers what you typed in its session.
-  [More](docs/reference.md#a-child-that-fails).
-- **A message that fails to wake its session is sent again.** One that waits in an idle session's
-  inbox for 30 seconds without a turn starting is sent once more under the same inbox id, which
-  OpenCode takes for the same message. If the session still does not take it, the footer and the
-  tree panel show it as `stalled`, for you to prompt it. [More](docs/reference.md#a-missed-wake).
-- **Permission requests and questions reach you.** A child's request or question is passed to the
-  session at the top of its tree, any number of levels down. For a request, that session proposes an
-  answer with `courier_answer`, and OpenCode asks you in its own permission prompt there before
-  anything is passed on: its model cannot approve, only propose. For a question, it asks you and
-  passes your answer back, or links its own question to the child's so your pick goes straight to it.
-  Whichever answer comes first counts. [More](docs/reference.md#a-child-that-asks-for-permission).
+  error or its last reply, unless it waits on a request, its own children, a scheduled message or a
+  webhook. [More](docs/reference.md#a-child-that-fails).
+- **A message that fails to wake its session is sent again** after 30 seconds; if the session still
+  does not take it, the footer and the tree panel show it as `stalled`, for you to prompt it.
+  [More](docs/reference.md#a-missed-wake).
+- **Permission requests and questions reach you** through the session at the top of the tree, any
+  number of levels down. For a request, that session proposes an answer with `courier_answer`, and
+  OpenCode asks you in its own permission prompt there before anything is passed on: its model
+  cannot approve, only propose. For a question, it asks you and passes your answer back, or links
+  its own question to the child's so your pick goes straight to it.
+  [More](docs/reference.md#a-child-that-asks-for-permission).
 - **Some forms only you can answer**, such as OpenCode's web search asking for a provider: the top
   session is told, and you answer in the child's session. [More](docs/reference.md#a-child-that-shows-a-form).
 - **You can see and stop a whole subtree** with `courier_tree` and `courier_stop`, or in the
@@ -249,23 +246,14 @@ Each spawned session's brief says when to split its task and when to do it itsel
 ## Memory
 
 The plugin keeps **one record per session tree** in the project, from facts it already has: when the
-tree started and last moved, the top session's title and `split:` line, whether the top called
-`courier_recall`, and for each session started in the tree its title, depth, isolation, join group,
-status, duration, cost, context use and spawns refused. Never a report's body or artifacts. The
-record is written again as each turn in the tree ends, so it outlives the
-[roster](docs/reference.md#roster).
-
-The one thing a model writes into it is **the tree's lesson**, with `courier_note`: one line of at
-most 300 characters, from the session that verified the tree, saying what the next orchestrator
-should know about running a tree like this one, with the job it comes from and the reason. A longer
-line is refused, not clipped; a second note replaces the first; a leaf cannot write one. A lesson is
-history, not a rule: one that holds every time belongs in AGENTS.md or the skill.
-
-`courier_recall` reads the records back, one line per tree, newest first, or one in full. The
+tree started and last moved, the top session's title and `split:` line, and for each session started
+in the tree its title, depth, isolation, join group, status, duration, cost, context use and spawns
+refused; never a report's body or artifacts. The one thing a model writes into it is **the tree's
+lesson**, with `courier_note`: one line of at most 300 characters, from the session that verified the
+tree, with the job it comes from and the reason. `courier_recall` reads the records back; the
 `courier-orchestrate` skill asks for one call before the split decision and one `courier_note` before
 the top replies. Each project keeps its newest 30 records and none older than 90 days. `"memory":
-false` in the plugin's `options` turns it off. In the [terminal](#in-the-terminal), `/courier memory`
-shows the records and forgets one, or only its lesson ([more](docs/reference.md#memory)).
+false` in the plugin's `options` turns it off ([more](docs/reference.md#memory)).
 
 ## In the terminal
 
@@ -313,23 +301,12 @@ only the lesson, after a confirm; `esc` goes back and closes. The search takes e
 
 Off by default. With `"nativeChildren": true` in the plugin's `options`, a child started without
 `isolate` is also created with OpenCode's own `parentID`, so OpenCode treats it as the parent's
-subagent: the TUI's view of the top session lists and answers the permission requests and forms of
-every session under it, and the paired web, desktop or mobile app's request dock answers a
-grandchild's ask from the top session, on a phone too. Isolated children are created as before, and
-the courier's own tree, limits and relays work as without the option. What changes
-([more](docs/reference.md#native-child-sessions)):
-
-- **Deleting a session deletes its native children**, as OpenCode does with subagents.
-- **A child does not take its parent's session rules**: courier passes it an empty ruleset.
-- **Providers see a subagent**: the child's model requests carry its parent's id for cache routing
-  and two headers naming the parent; **on GitHub Copilot**, which meters such requests differently,
-  courier was not tested.
-- **A child's asks show in the top session's view**, not in its own, and it leaves the TUI's session
-  lists. Its permission requests and questions are answered once, in OpenCode's own prompt there; the
-  top session's model is only told. `opencode run` and the TUI's auto-accept mode answer them as their
-  own subagents'.
-- **Turn it on only with OpenCode's TUI or the paired app**, which show those prompts; with a bare
-  API client nobody prompts you, and only `courier_answer` is left.
+subagent: the TUI's view of the top session, and the paired app's request dock, list and answer the
+permission requests, questions and forms of every session under it, and the top session's model is
+only told. Deleting a session then deletes its native children, the child gets an empty ruleset
+rather than its parent's, and providers see a subagent (not tested on GitHub Copilot). Turn it on
+only with OpenCode's TUI or the paired app, which show those prompts
+([more](docs/reference.md#native-child-sessions)).
 
 ## Webhooks
 

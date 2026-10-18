@@ -106,21 +106,21 @@ OpenCode runs one instance of the plugin per location (project or worktree), all
 after an update it loads the new copy of the package next to the old one until the old one unloads.
 All instances share one process-wide hub (`opencode-courier.hub` on `globalThis`), where each
 scheduled message, released join group, OpenCode event, permission request, form and question is
-claimed once before any instance acts on it, so nothing is delivered or told twice. The hub runs the
-scheduler once per process and follows OpenCode's events through two instances, one a standby, so
-that an instance unloading leaves no gap. A webhook receiver started by one instance is the one the
-others join. The `courier_spawn` calls under way, the types of the items entering spawned sessions'
-inboxes, and the forms shown now are kept process-wide under fixed keys of their own, so spawns in
-every location and copy count each other against the limits, whichever instance sees an item's
-delivery knows what it was, and every instance's footer and tree panel see a form.
+claimed once before any instance acts on it. The hub runs the scheduler once per process and
+follows OpenCode's events through two instances, one a standby, so that an instance unloading leaves
+no gap. A webhook receiver started by one instance is the one the others join. The `courier_spawn`
+calls under way, the types of the items entering spawned sessions' inboxes, and the forms shown now
+are kept process-wide under fixed keys of their own, so spawns in every location and copy count
+against the limits together, whichever instance sees an item's delivery knows what it was, and every
+instance's footer and tree panel see a form.
 
 The hub carries a version, `HUB_VERSION`, which changes only when its shape or the meaning of a field
-does (it is 2 since the join groups: the tick delivers released groups too, and takes a nudge to run
-at once). A copy that finds a hub of another version runs its own, under a key of its version, and
-logs one line saying so. The claim sets are shared across hub versions, under keys whose shape and
-meaning are fixed for good, so an old and a new copy loaded together still never both deliver or tell
-the same thing; a change that needed another meaning for one would make a new key and keep claiming
-in the old one as well.
+does (2 since the join groups: the tick delivers released groups too, and takes a nudge to run at
+once). A copy that finds a hub of another version runs its own, under a key of its version, and logs
+one line saying so. The claim sets are shared across hub versions, under keys whose shape and
+meaning are fixed for good, so an old and a new copy loaded together never both deliver or tell the
+same thing; a change that needed another meaning for one would make a new key and keep claiming in
+the old one as well.
 
 **Version skew.** What a scheduler tick and an event subscription do is the code of the copy loaded
 last, run through the instance loaded first (or the earliest without a subscription), which may
@@ -157,9 +157,7 @@ wakes a session whose wake was missed:
 With no compare-and-set in the storage, a message delivered twice takes a process stalling for half a
 second or more between two storage calls, or a delivery running for over a minute. Releases before
 the key (0.2.2 and earlier) deliver on their own schedule beside the owner. The live suite's restart
-scenario checks that the key is held, released by a graceful stop, and that another server's key
-planted while the server is stopped holds the restarted server off until it expires;
-`e2e/two-servers.sh` checks that no message is delivered twice.
+scenario checks the key's lifecycle; `e2e/two-servers.sh` checks that no message is delivered twice.
 
 ## The TUI part
 

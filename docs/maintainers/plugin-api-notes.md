@@ -33,7 +33,7 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   (`packages/core/src/plugin/tool-input-repair.ts`) deletes, on `execute.before`, each key a closed
   schema does not declare, and the decode ignores it too. OpenCode removes keys and never adds one,
   so a renamed optional key stays declared under its old name for as long as it is accepted.
-- A plugin cannot add an HTTP route to OpenCode's server. `rpc.register` is reached through the
+- A plugin cannot add an HTTP route to OpenCode's server: `rpc.register` is reached through the
   authenticated `/api/rpc` endpoint with a JSON envelope, which neither GitHub's headers nor the raw
   body its signature covers would get through. The webhook receiver is its own listener in the
   OpenCode process, shared by the plugin's instances; it waits for the previous listener to close
@@ -61,10 +61,11 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
 - `session.inbox.delivered` (`data.inboxID` only) is published as each prompt, synthetic message,
   requested compaction or move reaches the session; the runner's own compactions skip the inbox, as
   does the synthetic message it adds to continue a response cut off at the output token limit, so a
-  continued turn owes no report again. After two such continuations the turn fails as `output-limit`.
-  The message it makes is stamped with that event's `created`. Only `session.inbox.enqueued`,
-  published as the item is admitted, carries its type (`data.item.type`: `user`, `synthetic`,
-  `compaction` or `move`; a `session.prompt` is `user`), so the plugin remembers it until delivery.
+  continued turn owes no report again (after two such continuations the turn fails as
+  `output-limit`). The message it makes is stamped with that event's `created`. Only
+  `session.inbox.enqueued`, published as the item is admitted, carries its type (`data.item.type`:
+  `user`, `synthetic`, `compaction` or `move`; a `session.prompt` is `user`), so the plugin remembers
+  it until delivery.
 - A synthetic message steered to an idle session starts its turn in a fixed order:
   `session.synthetic({ delivery: "steer" })` (`Session.synthetic`, `packages/core/src/session/session.ts`)
   admits the item (`session.inbox.enqueued`, and a pending row in the session inbox table), then
@@ -80,10 +81,9 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   staged revert (`session.revert`), holding the input until the revert commits on the next prompt or
   compaction; and an interrupt landing between the doorbell and the execution's stop clears the
   pending wake, leaving the row pending with no error and no log (`reportLifecycle` swallows
-  interrupt-only causes). `delivered` without `started` cannot be produced by the host's ordering
-  (promote runs only inside a drain, which follows `started`), so that signature means this instance
-  missed the `started` event or the events were reordered. Neither path reproduces on demand, so the
-  missed-wake watch keys on the first signature rather than waiting on an upstream fix.
+  interrupt-only causes). `delivered` without `started` cannot be produced by the host's ordering,
+  so that signature means this instance missed the `started` event or the events were reordered.
+  Neither path reproduces on demand, so the missed-wake watch keys on the first signature.
 - An item waiting in the inbox bumps the session's `time.updated` (`updated` equal to the item's
   `time.created`, `idle` unchanged), so `busy()` reads a session with an undelivered message as
   running. The plugin API cannot list the inbox (`GET /api/session/:id/inbox` can); a delivered item
@@ -99,7 +99,7 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   missed wake. The `session.inbox.enqueued` event carries the item (`delivery`, `payload`) but not
   `resume`, so the missed-wake watch cannot tell such an item from a lost wake: the plugin marks the
   ones it sends so in their metadata (`resume: false`, next to `source: "courier"`) and `watchWake`
-  skips them. The courier sends the settled notice of a permission request this way.
+  skips them. The settled notice of a permission request is sent this way.
 - Every event carries `created`, the epoch milliseconds OpenCode published it at, which the report
   state compares with the server's clock at `courier_send`.
 - `session.context()` returns the session's stored messages (`SessionMessage.Info[]`), not the
@@ -135,29 +135,28 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   the session's rules (the agent's and the session's, then the project's saved ones) for every
   resource and, when any says ask, creates a pending request in that session, publishes
   `permission.asked` and waits for the reply (`packages/core/src/permission.ts`). It resolves with
-  nothing, so the request's id and whether the person chose `once` or `always` are not given back;
-  only the session's `permission.asked` and `permission.replied` events carry them, matched by
-  action and resources, which another request of the session can share. With `save`, an `always`
-  reply saves an allow rule for the whole project (`PermissionSaved`, read by every session in it)
-  and OpenCode answers every other pending request of that location the rule now allows, with
-  `always`, a shared child's included. So `courier_answer` asserts without `save` and passes `once`.
-  Through the promise API it rejects with a `Tool.Error` (`_tag` `Tool.Error`, the reason in
-  `message`) whose `error` is OpenCode's `Permission.BlockedError` (a deny rule) or
-  `Permission.CorrectedError` (a rejection with feedback), or `Session.NotFoundError`; a plain
-  rejection rejects with the `Permission.DeclinedError` itself (`_tag` `Permission.DeclinedError`),
-  which the promise tool wrapper attaches to a `Tool.Error` and `SessionModelRequest.executeTool`
-  recovers to end the step, so the tool must rethrow it untouched, not through `describeFailure`.
-  The tool part then ends with `error.type` `aborted` ("The user declined this tool call") and the
-  model is not called again, but neither the session's `time.idle` nor an `idle` message in the
-  transcript marks that turn's end.
-  `opencode run --auto` replies `once` to every request asked in its own session, the asserted
-  ones included (`packages/cli/src/run/noninteractive.ts`), so the live suite's parent answers its
-  own prompt; the scenario that holds the prompt drives the parent through the API instead. The
-  TUI's prompt (`packages/tui/src/routes/session/permission.tsx`) shows the action and resources,
-  and a `source` of type `tool` adds that tool part's input to the presentation (a shell command
-  from `input.command`, nothing from `courier_answer`'s input); `metadata` is read only for a few
-  keys (`url`, `query`, `provider`, `files`, `diff`), so the child's ids in it are not shown, and
-  the request's `message` cannot be set through `assert`. `permission.list` gives the pending
+  nothing: the request's id and whether the person chose `once` or `always` come only from the
+  session's `permission.asked` and `permission.replied` events, matched by action and resources,
+  which another request of the session can share. With `save`, an `always` reply saves an allow rule
+  for the whole project (`PermissionSaved`, read by every session in it) and OpenCode answers every
+  other pending request of that location the rule now allows, with `always`, a shared child's
+  included; so `courier_answer` asserts without `save` and passes `once`. Through the promise API it
+  rejects with a `Tool.Error` (`_tag` `Tool.Error`, the reason in `message`) whose `error` is
+  OpenCode's `Permission.BlockedError` (a deny rule) or `Permission.CorrectedError` (a rejection with
+  feedback), or `Session.NotFoundError`; a plain rejection rejects with the `Permission.DeclinedError`
+  itself (`_tag` `Permission.DeclinedError`), which the promise tool wrapper attaches to a
+  `Tool.Error` and `SessionModelRequest.executeTool` recovers to end the step, so the tool must
+  rethrow it untouched, not through `describeFailure`. The tool part then ends with `error.type`
+  `aborted` ("The user declined this tool call") and the model is not called again, but neither the
+  session's `time.idle` nor an `idle` message in the transcript marks that turn's end.
+- `opencode run --auto` replies `once` to every request asked in its own session, the asserted ones
+  included (`packages/cli/src/run/noninteractive.ts`), so the live suite's parent answers its own
+  prompt; the scenario that holds the prompt drives the parent through the API instead.
+- The TUI's prompt (`packages/tui/src/routes/session/permission.tsx`) shows the action and
+  resources, and a `source` of type `tool` adds that tool part's input to the presentation (a shell
+  command from `input.command`, nothing from `courier_answer`'s input); `metadata` is read only for
+  a few keys (`url`, `query`, `provider`, `files`, `diff`), so the child's ids in it are not shown,
+  and the request's `message` cannot be set through `assert`. `permission.list` gives the pending
   request with the `metadata` and `source` passed to `assert`, so the asks inbox reads from
   `metadata` which child's request the top's prompt is for.
 - `worktree.create`, `worktree.remove` and `worktree.list` take the project, `projectID`
@@ -206,9 +205,9 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   `effect`, a public `effect/*` path or `@opencode/plugin*` from a plugin or its dependencies
   resolves to OpenCode's own copy (`packages/plugin/src/runtime.ts`), and loading a file of either
   package from a plugin's `node_modules` fails. So the installed peers serve the build, the unit
-  tests and hosts before 2.0.25; on those, the plugin runs on the copy of the plugin API installed
-  next to it. Either way the question relay's Effects and the host's must compose, so the
-  plugin's `effect` is the host's version.
+  tests and hosts before 2.0.25, which run the plugin on the copy installed next to it. Either way
+  the question relay's Effects and the host's must compose, so the plugin's `effect` is the host's
+  version.
 - **The peers stay exact.** `@opencode/plugin` is the same exact version as peer and as
   devDependency: on an older host a range would install the newest matching version, which nothing
   has run the suite with, and on a newer one the pin names exactly one tested version. The README's

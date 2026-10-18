@@ -36,7 +36,7 @@ export async function noteTurnEnd(ports: RefreshPorts, state: MemoryState, event
   // the same twice, so the hub's other subscription may still make it.
   if (top === undefined || !claim(state.seen, event.id)) return undefined
   try {
-    await refresh(ports, state, top, event.created ?? ports.now())
+    await refresh(ports, state, top, event.created ?? ports.now(), event.data.sessionID)
   } catch (error) {
     state.seen.delete(event.id)
     throw error

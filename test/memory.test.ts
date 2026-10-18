@@ -39,6 +39,7 @@ function fakePorts(sessions: Record<string, Session>, windows: Array<{ providerI
   const store = new Map<string, unknown>()
   const logged: string[] = []
   const gets: string[] = []
+  const contexts: string[] = []
   const storage = {
     get: async (key: string) => store.get(key),
     set: async (key: string, value: unknown) => void store.set(key, JSON.parse(JSON.stringify(value))),
@@ -60,7 +61,10 @@ function fakePorts(sessions: Record<string, Session>, windows: Array<{ providerI
         const { created = NOW - 600_000, updated, idle, cost = 0, title = `title ${sessionID}`, projectID = "proj_1", directory = "/repo" } = known(sessionID)
         return { id: sessionID, title, cost, projectID, location: { directory }, time: { created, updated, ...(idle !== undefined ? { idle } : {}) } }
       },
-      context: async ({ sessionID }: { sessionID: string }) => known(sessionID).messages ?? [],
+      context: async ({ sessionID }: { sessionID: string }) => {
+        contexts.push(sessionID)
+        return known(sessionID).messages ?? []
+      },
       synthetic: async () => ({ id: "msg" }),
     },
     now: () => NOW,
@@ -75,7 +79,7 @@ function fakePorts(sessions: Record<string, Session>, windows: Array<{ providerI
     tops: new Set(),
     seen: new Set(),
   }
-  return { ports: ports as unknown as MemoryPorts & RefreshPorts, store, logged, gets, state, sessions }
+  return { ports: ports as unknown as MemoryPorts & RefreshPorts, store, logged, gets, contexts, state, sessions }
 }
 
 const entry = (sessionID: string, parentID: string, more: Partial<RosterEntry> = {}): RosterEntry => ({
@@ -341,6 +345,118 @@ describe("refresh", () => {
     expect(record!.parts[0]).toEqual(part("ses_a", "done", { cost: 0.1 }))
   })
 
+  test("reads the messages of the part whose turn ended and of a part first seen, keeping the others' context use and refused spawns", async () => {
+    const { ports, state, contexts, sessions } = fakePorts(
+      {
+        ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [text("split: 2 parts: core, docs")] },
+        ses_a: { updated: NOW - 100_000, idle: NOW - 100_000, messages: [usage(300)] },
+        ses_b: { updated: NOW - 100_000, idle: NOW - 100_000, messages: [usage(400), spawnCall("error")] },
+      },
+      [SMALL],
+    )
+    await tree(ports)
+    const first = await refresh(ports, state, "ses_top", NOW - 5000, "ses_a")
+    expect(contexts.toSorted()).toEqual(["ses_a", "ses_b", "ses_top"])
+    sessions.ses_a!.messages = [usage(600), spawnCall("error")]
+    sessions.ses_b!.messages = [usage(900), spawnCall("error"), spawnCall("error")]
+    await childStore(ports.storage).record(entry("ses_c", "ses_a"))
+    sessions.ses_c = { updated: NOW - 100_000, messages: [usage(100)] }
+
+    contexts.length = 0
+    const record = await refresh(ports, state, "ses_top", NOW, "ses_a")
+
+    expect(contexts.toSorted()).toEqual(["ses_a", "ses_c"])
+    expect(record!.parts.map(({ sessionID, context, refused }) => [sessionID, context, refused])).toEqual([
+      ["ses_a", 0.6, 1],
+      ["ses_b", 0.4, 1],
+      ["ses_c", 0.1, undefined],
+    ])
+    expect(record!.parts[1]).toEqual(first!.parts[1]!)
+    expect(record!.split).toBe("split: 2 parts: core, docs")
+  })
+
+  test("reads the top's messages on its own turn end, or while its record states no split line yet", async () => {
+    const { ports, state, contexts, sessions } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [text("Reading.")] },
+      ses_a: { updated: NOW - 100_000, idle: NOW - 100_000 },
+      ses_b: { updated: NOW - 100_000, idle: NOW - 100_000 },
+    })
+    await tree(ports)
+    await refresh(ports, state, "ses_top", NOW - 5000, "ses_a")
+    sessions.ses_top!.messages = [text("split: no, because it is small; considered: docs")]
+
+    contexts.length = 0
+    expect((await refresh(ports, state, "ses_top", NOW - 4000, "ses_a"))!.split).toBe("split: no, because it is small; considered: docs")
+    expect(contexts).toEqual(["ses_top", "ses_a"])
+    sessions.ses_top!.messages = [text("split: 2 parts: a, b")]
+
+    contexts.length = 0
+    expect((await refresh(ports, state, "ses_top", NOW - 3000, "ses_b"))!.split).toBe("split: no, because it is small; considered: docs")
+    expect(contexts).toEqual(["ses_b"])
+
+    contexts.length = 0
+    expect((await refresh(ports, state, "ses_top", NOW, "ses_top"))!.split).toBe("split: 2 parts: a, b")
+    expect(contexts).toEqual(["ses_top"])
+  })
+
+  test("keeps the use another turn end's refresh wrote while this one was reading", async () => {
+    const { ports, state, sessions } = fakePorts(
+      { ses_top: { updated: 1, idle: 1 }, ses_a: { updated: 1, idle: 1, messages: [usage(300)] }, ses_b: { updated: 1, idle: 1, messages: [usage(400)] } },
+      [SMALL],
+    )
+    await tree(ports)
+    await refresh(ports, state, "ses_top", NOW - 5000, "ses_a")
+    sessions.ses_a!.messages = [usage(600)]
+    sessions.ses_b!.messages = [usage(900)]
+    const get = ports.storage.get
+    let reads = 0
+    ;(ports.storage as any).get = async (key: string) => {
+      // ses_b's refresh runs whole between ses_a's first read of the record and its read just before the write.
+      if (key === recordKey("proj_1", "ses_top") && ++reads === 2) await refresh(ports, state, "ses_top", NOW - 1000, "ses_b")
+      return get(key)
+    }
+
+    const record = await refresh(ports, state, "ses_top", NOW, "ses_a")
+
+    expect(record!.parts.map(({ sessionID, context }) => [sessionID, context])).toEqual([
+      ["ses_a", 0.6],
+      ["ses_b", 0.9],
+    ])
+  })
+
+  test("reads the top's messages before the record it writes over, so a part's refresh meanwhile is kept", async () => {
+    const { ports, state, sessions } = fakePorts(
+      { ses_top: { updated: 1, idle: 1, messages: [text("split: 2 parts: a, b")] }, ses_a: { updated: 1, idle: 1, messages: [usage(300)] }, ses_b: { updated: 1, idle: 1 } },
+      [SMALL],
+    )
+    await tree(ports)
+    await refresh(ports, state, "ses_top", NOW - 5000, "ses_a")
+    sessions.ses_a!.messages = [usage(600)]
+    const context = ports.session.context
+    ;(ports.session as any).context = async (input: { sessionID: string }) => {
+      // ses_a's refresh runs whole while the top's own refresh reads its messages.
+      if (input.sessionID === "ses_top") await refresh(ports, state, "ses_top", NOW - 1000, "ses_a")
+      return context(input)
+    }
+
+    const record = await refresh(ports, state, "ses_top", NOW, "ses_top")
+
+    expect(record!.parts[0]).toMatchObject({ sessionID: "ses_a", context: 0.6 })
+  })
+
+  test("keeps a part's last recorded use when its messages cannot be read", async () => {
+    const { ports, state } = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_a: { updated: 1, idle: 1, messages: [usage(300), spawnCall("error")] }, ses_b: { updated: 1, idle: 1 } }, [SMALL])
+    await tree(ports)
+    await refresh(ports, state, "ses_top", NOW - 5000, "ses_a")
+    ;(ports.session as any).context = async () => {
+      throw new Error("db locked")
+    }
+
+    const record = await refresh(ports, state, "ses_top", NOW, "ses_a")
+
+    expect(record!.parts[0]).toMatchObject({ sessionID: "ses_a", context: 0.3, refused: 1 })
+  })
+
   test("writes nothing for a top OpenCode no longer knows, or whose location has memory off, and throws another failure", async () => {
     const { ports, state, store } = fakePorts({ ses_off: { updated: 1, idle: 1, directory: "/off" } })
     state.off.add("/off")
@@ -387,6 +503,20 @@ describe("the event module", () => {
     const record = readRecord(store.get(recordKey("proj_1", "ses_top")))
     expect(record?.parts.map((one) => [one.sessionID, one.status])).toEqual([["ses_a", "done"], ["ses_b", "out"]])
     expect(state.seen.has("evt_ses_a")).toBe(true)
+  })
+
+  test("reads the messages of the session whose turn ended only, once the tree's record is written", async () => {
+    const { ports, state, contexts } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [text("split: 2 parts: a, b")] },
+      ses_a: { updated: NOW - 100_000, idle: NOW - 100_000 },
+      ses_b: { updated: NOW - 10_000, idle: NOW - 200_000 },
+    })
+    await tree(ports)
+    await noteTurnEnd(ports, state, ended("ses_a", "evt_1"))
+
+    contexts.length = 0
+    await noteTurnEnd(ports, state, ended("ses_b", "evt_2"))
+    expect(contexts).toEqual(["ses_b"])
   })
 
   test("records the top's own turn ends too, and leaves a shutdown's interruption, another event and a session in no tree alone", async () => {

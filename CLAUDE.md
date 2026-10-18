@@ -122,8 +122,8 @@ layout, the import rules and the reasons for them, the storage keys and the hub'
   `ports.ts` `RefreshPorts` (what every hub-v2 member's watch ports have), `MemoryPorts` (the tool's) and
   `MemoryState` (process-wide: the models' windows, the locations with memory off, the tops that recalled,
   the turn ends recorded); `store.ts` the only file that knows the key and layout, reading a hand-written
-  record leniently, its lesson as an object or a bare string; `record.ts` the refresh (`refresh`: the subtree walk, each session's info, messages and
-  report state, keeping the lesson); `events.ts` `memoryEvents`, which refreshes a tree's record in the `after` phase of each
+  record leniently, its lesson as an object or a bare string; `record.ts` the refresh (`refresh`: the subtree walk, each session's info and
+  report state, the messages of the session whose turn ended, of a part first seen and of the top while no split line is stated, keeping the lesson); `events.ts` `memoryEvents`, which refreshes a tree's record in the `after` phase of each
   turn end in it; `recall.ts` `courier_recall`'s logic, which notes the call on the caller's tree's record
   first; `note.ts` `courier_note`'s (`note`: the caller's depth and top by its lineage, the refusals, the lesson
   replaced on the top's record); `forget.ts` the memory view's forget (`forget`: the record's key removed, or with `lesson` the record

@@ -20,20 +20,36 @@ const refusedIn = (messages: Messages) =>
     0,
   )
 
-/** One session of the tree as its record keeps it, and whether it runs now. */
-async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth }: Below, stalled: boolean, at: number) {
+type Use = Pick<PartRecord, "context" | "refused">
+
+/** A part's context use and refused spawns, as its messages show them. */
+function useOf(messages: Messages, windows: ReadonlyArray<ModelWindow>): Use {
+  const context = contextOf(messages, windows)
+  const refused = refusedIn(messages)
+  return { ...(context !== undefined ? { context: Math.round(context * 100) / 100 } : {}), ...(refused ? { refused } : {}) }
+}
+
+/** A part's use as last recorded. */
+const keptUse = (last: PartRecord | undefined): Use => ({
+  ...(last?.context !== undefined ? { context: last.context } : {}),
+  ...(last?.refused ? { refused: last.refused } : {}),
+})
+
+/**
+ * One session of the tree as its record keeps it, without its use when its messages were not read (only when its turn
+ * `ended` or it is `known` to no record yet), and whether it runs now.
+ */
+async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth }: Below, stalled: boolean, at: number, known: boolean, ended: boolean) {
   const { sessionID } = entry
-  const [info, messages, report] = await Promise.all([
+  const [info, use, report] = await Promise.all([
     ports.session.get({ sessionID }).catch((): Info | undefined => undefined),
-    ports.session.context({ sessionID }).catch((): Messages => []),
+    ended || !known ? ports.session.context({ sessionID }).then((messages) => useOf(messages, windows), () => undefined) : undefined,
     reportState(ports.storage, sessionID).catch(() => undefined),
   ])
   const running = info !== undefined && busy(info.time)
   const created = finite(millis(info?.time.created)) ?? entry.createdAt
   const end = info && !running && info.time.idle !== undefined ? millis(info.time.idle) : at
   const cost = finite(info?.cost)
-  const context = contextOf(messages, windows)
-  const refused = refusedIn(messages)
   const record: PartRecord = {
     sessionID,
     title: info?.title ?? entry.title,
@@ -43,17 +59,15 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
     status: partStatus({ stopped: report?.stopped ?? false, stalled, report }),
     duration: Math.max(0, end - created),
     ...(cost !== undefined ? { cost } : {}),
-    ...(context !== undefined ? { context: Math.round(context * 100) / 100 } : {}),
-    ...(refused ? { refused } : {}),
   }
-  return { record, running }
+  return { record, use, running }
 }
 
 /**
- * Writes the record of the tree under `top` as it stands at `at`; a part the roster has forgotten keeps its last recorded
- * state. Nothing for a top OpenCode no longer knows, or whose location has memory off. Returns the record written.
+ * Writes the record of the tree under `top` as it stands at `at`, after the turn of `ended`; a part the roster has forgotten
+ * keeps its last recorded state. Nothing for a top unknown to OpenCode or in a location with memory off; returns the record.
  */
-export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "windows" | "off">, top: string, at: number): Promise<TreeRecord | undefined> {
+export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "windows" | "off">, top: string, at: number, ended?: string): Promise<TreeRecord | undefined> {
   let info: Info
   try {
     info = await ports.session.get({ sessionID: top })
@@ -63,24 +77,27 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   }
   if (state.off.has(info.location.directory)) return undefined
   const store = memoryStore(ports.storage)
-  const [previous, { nodes }, replies] = await Promise.all([
-    store.get(info.projectID, top),
-    subtree(ports.storage, top),
-    ports.session.context({ sessionID: top }).then(repliesOf, () => ""),
-  ])
+  const [previous, { nodes }] = await Promise.all([store.get(info.projectID, top), subtree(ports.storage, top)])
+  // The split line is in the top's own replies, so only its own turn end can change one stated already.
+  const replies = ended === top || (previous?.split ?? NOT_STATED) === NOT_STATED ? ports.session.context({ sessionID: top }).then(repliesOf, () => "") : ""
   const stalled = await stalledAmong(ports, nodes.map((node) => node.entry.sessionID))
   const windows = [...state.windows.values()]
-  const read = await Promise.all(nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at)))
-  const parts = mergeParts(previous?.parts ?? [], read.map(({ record }) => record))
-  // Read again just before the write: a courier_recall or courier_note call during the reads above has written meanwhile.
-  const latest = await store.get(info.projectID, top).catch(() => previous)
+  const known = new Set(previous?.parts.map((one) => one.sessionID))
+  const read = await Promise.all(
+    nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at, known.has(node.entry.sessionID), node.entry.sessionID === ended)),
+  )
+  const split = splitLineOf(await replies)
+  // Read again just before the write: a courier_recall or courier_note call, or another turn end's refresh, wrote meanwhile.
+  const latest = (await store.get(info.projectID, top).catch(() => previous)) ?? previous
+  const last = new Map(latest?.parts.map((one) => [one.sessionID, one]))
+  const parts = mergeParts(latest?.parts ?? [], read.map(({ record, use }) => ({ ...record, ...(use ?? keptUse(last.get(record.sessionID))) })))
   const recalled = latest?.recalled ?? previous?.recalled
   const lesson = latest?.lesson ?? previous?.lesson
   const record: TreeRecord = {
     startedAt: finite(millis(info.time.created)) ?? previous?.startedAt ?? at,
     movedAt: at,
     title: info.title ?? previous?.title ?? "",
-    split: splitLineOf(replies) ?? previous?.split ?? NOT_STATED,
+    split: split ?? latest?.split ?? NOT_STATED,
     finished: !busy(info.time) && !read.some(({ running }) => running) && parts.every((one) => one.status !== "out" && one.status !== "stalled"),
     ...(recalled ? { recalled } : {}),
     ...(lesson ? { lesson } : {}),

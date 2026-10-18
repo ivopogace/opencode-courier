@@ -813,10 +813,14 @@ worktree of a repository shares, so an isolated child's tree is the same project
 whole, each time a turn ends in the tree: when a spawned session's turn succeeds, fails or is interrupted
 (not by a shutdown, which the next start resumes), and when the top's own turn ends, once it has started a
 session or called `courier_recall`. The refresh reads the roster's subtree under the top, each session's
-info and stored messages and its [report state](#a-child-that-ends-without-a-report), through the
-plugin's event follower, so whichever instance follows OpenCode's events writes it, once. A session the
-roster has forgotten since (dropped after 14 days, deleted, or removed with `courier_cleanup`) keeps the
-state it was last recorded in, so the record stands on its own once the roster is gone.
+info and its [report state](#a-child-that-ends-without-a-report), and stored messages only where they
+can have changed: a part's `context` and `refused` are read from its messages when its own turn ends or
+it is first seen, and kept from the last refresh otherwise (or when its messages cannot be read),
+and the top's, for its `split`, on its own turn ends and while the record states no split line yet. It
+runs through the plugin's event follower, so whichever instance follows OpenCode's events writes it,
+once. A session the roster has forgotten since (dropped after 14 days, deleted, or removed with
+`courier_cleanup`) keeps the state it was last recorded in, so the record stands on its own once the
+roster is gone.
 
 **What a record holds.** The value is one JSON object; every time is in epoch milliseconds and every
 duration in milliseconds:

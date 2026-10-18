@@ -14,7 +14,7 @@ export const RETENTION_MS = 90 * 24 * 60 * 60_000
 /** A record's `split` while its top has stated no split line. */
 export const NOT_STATED = "not stated"
 
-/** The most characters a lesson keeps; courier_note clips what is longer and says so. */
+/** The most characters a lesson holds: courier_note refuses what is longer, and a record written by hand is clipped when read. */
 export const LESSON_MAX = 300
 
 /**
@@ -135,9 +135,15 @@ export function noteRecall(recalled: Recalled | undefined, byTop: boolean, at: n
   return first === undefined ? { calls } : { at: first, calls }
 }
 
-/** A lesson's text as one line, trimmed and clipped at `LESSON_MAX`; `clipped` is the length it had when it was clipped. */
+/** A text as the one line a lesson is: whitespace and line breaks collapsed to spaces, trimmed. */
+export const oneLine = (text: string) => text.replace(/\s+/g, " ").trim()
+
+/**
+ * A hand-written lesson's text as one line, clipped at `LESSON_MAX`; `clipped` is the length it had when it was clipped.
+ * courier_note does not clip: it refuses a line over `LESSON_MAX` (`note.ts`).
+ */
 export function lessonText(text: string) {
-  const line = text.replace(/\s+/g, " ").trim()
+  const line = oneLine(text)
   if (line.length <= LESSON_MAX) return { text: line }
   return { text: line.slice(0, LESSON_MAX).trimEnd(), clipped: line.length }
 }

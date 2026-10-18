@@ -5,7 +5,7 @@ import { LESSON_MAX } from "./domain.js"
 import { note } from "./note.js"
 import type { MemoryPorts, MemoryState } from "./ports.js"
 import { recall } from "./recall.js"
-import { NOTE_EMPTY, NOTE_OFF, NOTE_TOOL, noteLeafRefusal, noteText, noteUnrecordedRefusal, RECALL_OFF, RECALL_TOOL, recallListText, recallMissingText, recallRecordText } from "./text.js"
+import { NOTE_EMPTY, NOTE_OFF, NOTE_TOOL, noteLeafRefusal, noteLongRefusal, noteText, noteUnrecordedRefusal, RECALL_OFF, RECALL_TOOL, recallListText, recallMissingText, recallRecordText } from "./text.js"
 
 export const RecallInput = Schema.Struct({
   sessionID: Schema.optional(
@@ -15,7 +15,10 @@ export const RecallInput = Schema.Struct({
 
 export const NoteInput = Schema.Struct({
   text: Schema.String.annotate({
-    description: `The lesson, one line of at most ${LESSON_MAX} characters (longer is clipped): what the next orchestrator in this project should know about splitting work here.`,
+    description:
+      `The lesson, one line of at most ${LESSON_MAX} characters (longer is refused, not clipped): what the next orchestrator in this ` +
+      "project should know about running a tree like this one, how it was split, verified or briefed, or what the person decided, " +
+      "with the job it comes from and the reason.",
   }),
 })
 
@@ -56,11 +59,14 @@ export function addMemoryTools(tools: ToolEditor, ports: MemoryToolPorts) {
     options: { codemode: false },
     description:
       "Write the one lesson of your session tree for the next orchestrator in this project, once you have verified and " +
-      "integrated the work: what it should know about splitting work here that the record's facts do not say, such as which " +
-      "parts collided, what was too small to hand off, or what the person decided. One line, at most " +
-      `${LESSON_MAX} characters, kept on your own tree's record and listed by courier_recall after its facts, dated; a second ` +
-      "call replaces the first. From the top session or one that started sessions, never a leaf. No code, no secrets, and " +
-      "not a rule that holds every time: that belongs in AGENTS.md or the skill, for the person to put there, so tell them instead.",
+      "integrated the work: what it should know about running a tree like this one that the record's facts do not say. How " +
+      "it was split (which parts collided, what was too small to hand off), how it was verified (what a part got wrong and " +
+      "what caught it), how the parts were briefed, or what the person decided. Name the job it comes from and the reason, " +
+      "so that a lesson for one kind of job can be told from one that holds everywhere. One line, at most " +
+      `${LESSON_MAX} characters; a longer one is refused, not clipped, so write it again shorter. Kept on your own tree's ` +
+      "record and listed by courier_recall after its facts, dated; a second call replaces the first. From the top session " +
+      "or one that started sessions, never a leaf. No code, no secrets, and not a rule that holds every time: that belongs " +
+      "in AGENTS.md or the skill, for the person to put there, so tell them instead.",
     input: NoteInput,
     execute: async (input, context) => {
       const result = await note(ports.memory, context.sessionID, input).catch(rethrow(NOTE_TOOL))
@@ -68,11 +74,8 @@ export function addMemoryTools(tools: ToolEditor, ports: MemoryToolPorts) {
       const refuse = (text: string) => describeFailure(NOTE_TOOL, new Error(text))
       switch (result.kind) {
         case "noted": {
-          const { projectID, top, lesson, clipped, replaced } = result
-          return {
-            content: noteText(top, lesson, clipped, replaced),
-            metadata: { projectID, top, lesson, ...(clipped ? { clipped } : {}), ...(replaced ? { replaced } : {}) },
-          }
+          const { projectID, top, lesson, replaced } = result
+          return { content: noteText(top, lesson, replaced), metadata: { projectID, top, lesson, ...(replaced ? { replaced } : {}) } }
         }
         case "off":
           throw refuse(NOTE_OFF)
@@ -80,6 +83,8 @@ export function addMemoryTools(tools: ToolEditor, ports: MemoryToolPorts) {
           throw refuse(noteLeafRefusal(result.depth, result.maxDepth))
         case "empty":
           throw refuse(NOTE_EMPTY)
+        case "long":
+          throw refuse(noteLongRefusal(result.length))
         case "unrecorded":
           throw refuse(noteUnrecordedRefusal(result.top))
       }

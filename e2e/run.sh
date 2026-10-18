@@ -1257,7 +1257,8 @@ run_inbox() {
 }
 
 # A tree's record (#260): written as turns end in it, under memory/<projectID>/<topSessionID>, read back with courier_recall;
-# and its lesson (#261): one line courier_note writes on it from the top or a sub-orchestrator, never a leaf.
+# and its lesson (#261): one line courier_note writes on it from the top or a sub-orchestrator, never a leaf, refused over
+# 300 characters rather than clipped (#269).
 # The record of tree $1 once $2, a jq condition, holds, waiting up to $3 (default 30) s; else what is there.
 record_of() {
   for _ in $(seq 1 "${3:-30}"); do
@@ -1312,12 +1313,18 @@ run_memory() {
   check "a new session's courier_recall lists it after the tree's facts, dated" \
     "$(prompt "COURIER-RECALL" | tool_state courier_recall | jq -r --arg root "$root" --arg today "$today" --arg line "$line" '.status == "completed" and
       (.output | contains("- " + $root + " 20") and contains(" · finished · recalled · lesson (" + $today + "): \"" + $line + "\""))')"
+  # A lesson over 300 characters is refused, not clipped (#269): nothing is written, and the earlier lesson stays.
   long=$(printf 'y%.0s' $(seq 1 310))
-  noted=$(prompt_in "$root" "COURIER-NOTE $long" | tool_state courier_note)
-  check "a second note replaces the first, and one over 300 characters is clipped at 300, which the result says" \
-    "$(jq -r --arg line "$line" '.status == "completed" and (.metadata.metadata.lesson.text | length) == 300 and .metadata.metadata.clipped == 310 and .metadata.metadata.replaced.text == $line and
-      (.output | contains("Clipped to 300 characters from 310: a lesson is one line.") and contains("It replaces the lesson (") and contains($line))' <<<"$noted")"
-  check "and the record holds the clipped line" "$(record_of "$root" '(.lesson.text | length) == 300' | jq -r '(.lesson.text | length) == 300 and (.lesson.text | startswith("yyyy"))')"
+  check "a note over 300 characters is refused, naming its length and the limit, and asks for a shorter one" \
+    "$(prompt_in "$root" "COURIER-NOTE $long" | tool_state courier_note | jq -r '.status == "error" and (.error | tostring | contains("Not noted: the lesson is 310 characters, at most 300; write it shorter.") and contains("the earlier lesson, if there was one, stays"))')"
+  check "and the record still holds the earlier lesson, whole" \
+    "$(record_of "$root" ".lesson.text == \"$line\"" 3 | jq -r --arg line "$line" '.lesson.text == $line and (.lesson.at | type) == "number"')"
+  short="For three one-line shell parts, one session each paid off: the sleeps ran in parallel"
+  noted=$(prompt_in "$root" "COURIER-NOTE $short" | tool_state courier_note)
+  check "a shorter note is then written, replacing the first, which the result names" \
+    "$(jq -r --arg line "$line" --arg short "$short" '.status == "completed" and .metadata.metadata.lesson.text == $short and .metadata.metadata.replaced.text == $line and (.metadata.metadata | has("clipped") | not) and
+      (.output | contains("It replaces the lesson (") and contains($line))' <<<"$noted")"
+  check "and the record holds it" "$(record_of "$root" ".lesson.text == \"$short\"" | jq -r --arg short "$short" '.lesson.text == $short')"
   # A sub-orchestrator's note goes on the same record, marked with its depth; a leaf is refused by the tool when another
   # plugin's hook puts it back (the probe does, for a CHILD-FORCES task), as the courier's hook had hidden it.
   child_delay 1000

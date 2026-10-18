@@ -67,8 +67,13 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")
     // Step 1 and the root's pointer name one courier_recall before the decision, which the recursive checker allows.
     expect(skill.SKILL_CONTENT).toContain(`First call ${memory.RECALL_TOOL} once`)
-    // Step 8 asks the top for one courier_note, none when there is nothing; the brief never mentions it: children write no lesson.
+    // Step 8 asks the top for one courier_note, none when there is nothing, naming the job it comes from; the brief never
+    // mentions it: children write no lesson. The tool, the skill and the input ask for the lesson's scope, not only splitting.
     expect(skill.SKILL_CONTENT).toContain(`one ${memory.NOTE_TOOL} with that one line; none when there is nothing`)
+    expect(skill.SKILL_CONTENT).toContain("Name the job it comes from and the reason")
+    expect(skill.SKILL_CONTENT).not.toContain("about splitting work here")
+    expect(skill.SKILL_CONTENT).toContain("refuses a line over its limit rather than clipping it")
+    expect(memory.NOTE_EMPTY).toContain("with the job it comes from and the reason")
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).not.toContain(memory.NOTE_TOOL)
     expect(tree.rolePart(0, limits)).not.toContain(memory.NOTE_TOOL)
     expect(tree.rolePart(null, limits)).toContain(`call ${memory.RECALL_TOOL} once`)
@@ -448,11 +453,12 @@ describe("memory", () => {
     expect(memory.recordLine(record("ses_old", { lesson: { ...lesson, depth: 2 } }), "ses_other")).toMatchSnapshot()
   })
   test("noteText", () => {
-    expect(memory.noteText("ses_top", lesson, undefined, undefined)).toMatchSnapshot()
-    expect(memory.noteText("ses_top", { text: "x".repeat(300), at: lesson.at, depth: 1 }, 312, lesson)).toMatchSnapshot()
+    expect(memory.noteText("ses_top", lesson, undefined)).toMatchSnapshot()
+    expect(memory.noteText("ses_top", { text: "x".repeat(300), at: lesson.at, depth: 1 }, lesson)).toMatchSnapshot()
   })
   test("NOTE_OFF", () => expect(memory.NOTE_OFF).toMatchSnapshot())
   test("noteLeafRefusal", () => expect(memory.noteLeafRefusal(3, 3)).toMatchSnapshot())
   test("NOTE_EMPTY", () => expect(memory.NOTE_EMPTY).toMatchSnapshot())
+  test("noteLongRefusal", () => expect(memory.noteLongRefusal(312)).toMatchSnapshot())
   test("noteUnrecordedRefusal", () => expect(memory.noteUnrecordedRefusal("ses_top")).toMatchSnapshot())
 })

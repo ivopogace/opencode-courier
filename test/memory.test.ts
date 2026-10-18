@@ -159,7 +159,7 @@ describe("splitProse", () => {
     expect(splitProse("_split:_ no, because small")).toBe("split: no, because small")
     expect(splitProse("__split:__ no, because small")).toBe("split: no, because small")
     expect(splitProse("`split:` no, because small")).toBe("split: no, because small")
-    expect(splitProse("_split: no, because snake_case_")).toBe("split: no, because snake_case")
+    expect(splitProse("_split: no_")).toBe("split: no")
     expect(splitProse("Split: *one child per src/*.ts file* and more")).toBe("Split: *one child per src/*.ts file* and more")
     expect(splitProse("split: no, because\0 1\0 `x`")).toBe("split: no, because 1 `x`")
     expect(splitProse("> # `split: 3 parts: a, b, c`")).toBe("split: 3 parts: a, b, c")
@@ -186,6 +186,14 @@ describe("splitProse", () => {
       "-5 parts: split: no",
       "split: 2 parts: **/*.md and **/*.ts",
       "__init__ split: no, because one module",
+      "#282 split: no, because small",
+      ">5 files: split: 2 parts",
+      "*.ts and src/*: split: no",
+      "`a.ts`/`b.ts`",
+      "**a**-**b** split: no",
+      "_split: no, because snake_case_",
+      "**split: 2 parts: lib/*, test/*",
+      "`split: 2 parts: src/*.ts`,`lib/*.ts`",
     ])
       expect(splitProse(line)).toBe(line)
   })

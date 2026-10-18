@@ -106,18 +106,25 @@ export function splitLineOf(text: string) {
 
 /** Heading and quote marks before a line's words, and list marks, a `-`, `+` or `*` only with the space a list puts after it. */
 const BLOCK_MARKS = /^(?:[\s#>]|[-+*]\s|\d+[.)]\s)*/
-/** A bold or italic span within a line: it opens before a letter or digit and closes after a word, unlike the asterisks of `*.ts and *.md` or `2 * 3`. */
-const EMPHASIS = /(?<=^|[\s(["'])(\*{1,3})([\p{L}\p{N}\0"'][^*]*?)(?<![\s(])\1(?=$|[\s.,;:!?)\]"'])/gu
+/** A bold, then an italic, span within a line, opening after a space and closing before one, unlike the asterisks of `2**3`, `src/*.ts` or a `**` before a slash. */
+const BOLD = /(?<=^|[\s(["'])(\*\*\*?)([^\s*/][^*]*?)(?<![\s(/])\1(?=$|[\s.,;:!?)\]"'])/gu
+/** An italic span opens only before a letter, digit or quote, which tells it from the globs of `*.ts and *.md`. */
+const ITALIC = /(?<=^|[\s(["'])\*([\p{L}\p{N}\0"'][^*]*?)(?<![\s(/])\*(?=$|[\s.,;:!?)\]"'])/gu
+/** A label the line opens with in underscores or a code span (`_split:_`, `` `split:` ``), which its colon tells from `__init__`. */
+const LABEL = /^(__?|`)([^\s_`][^_`]*:)\1(?=\s)/
 /** A code span, whose asterisks are its words', and the stand-in it is masked by while emphasis is taken off. */
 const CODE_SPAN = /`[^`]*`/g
 const MASKED = /\0(\d+)\0/g
-/** Marks taken off a line they wrap whole, whatever is inside, unless the mark is there too (`**a** and **b**`, `__init__ and __main__`). */
+/** Marks taken off a line they wrap whole, unless the mark is inside too at a space, as two spans (`**a** and **b**`, `__init__ and __main__`). */
 const STARS = ["***", "**", "*"]
 const WRAPS = ["__", "_", "`"]
 
 const unwrapped = (line: string, marks: ReadonlyArray<string>) => {
-  const mark = marks.find((one) => line.length > 2 * one.length && line.startsWith(one) && line.endsWith(one) && !line.slice(one.length, -one.length).includes(one))
-  return mark ? line.slice(mark.length, -mark.length).trim() : line
+  const inner = (one: string) => line.slice(one.length, -one.length)
+  const mark = marks.find(
+    (one) => line.length > 2 * one.length && line.startsWith(one) && line.endsWith(one) && !inner(one).includes(`${one} `) && !inner(one).includes(` ${one}`),
+  )
+  return mark ? inner(mark).trim() : line
 }
 
 /** A split line as the listing shows it: one line, without its block marks, the asterisks wrapping it or a span in it, nor an underscore or code span wrapping it. */
@@ -125,8 +132,10 @@ export function splitProse(split: string) {
   const code: string[] = []
   const masked = oneLine(split.replaceAll("\0", ""))
     .replace(BLOCK_MARKS, "")
+    .replace(LABEL, "$2")
     .replace(CODE_SPAN, (span) => `\0${code.push(span) - 1}\0`)
-  return unwrapped(unwrapped(masked, STARS).replace(EMPHASIS, "$2").replace(MASKED, (_, i: string) => code[Number(i)]!), WRAPS)
+  const prose = unwrapped(masked, STARS).replace(BOLD, "$2").replace(ITALIC, "$1")
+  return unwrapped(prose.replace(MASKED, (_, i: string) => code[Number(i)]!), WRAPS)
 }
 
 /** What a part's status is read from: whether courier_stop stopped it, whether it is stalled, and its report state. */

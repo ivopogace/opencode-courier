@@ -730,8 +730,8 @@ lists every record of the calling session's project, newest first, one line each
 
 the top session, the day it started, its title (clipped to 60 characters), its split line as prose
 (without its heading, quote and list marks or the asterisks of bold and italic, around the whole line
-or around words in it, and without an underscore or code span around the whole line, so the
-asterisks of a glob and the marks in code spans stay; cut at the last space within 160 characters, or
+or around words in it, and without an underscore or code span around the whole line or around the
+label it opens with (`_split:_`), so the asterisks of a glob and the marks in code spans stay; cut at the last space within 160 characters, or
 mid-word when that would keep less than half; the record keeps the line as written),
 its parts counted by status, how deep the tree went, how many parts were isolated and how many spawns
 were refused, how long the tree ran (`ran`, `movedAt` less `startedAt`), how long ago it last moved

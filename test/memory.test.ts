@@ -136,8 +136,10 @@ describe("splitLineOf", () => {
     expect(splitLineOf("# split: 3 parts: a, b, c\nsplit: later")).toBe("# split: 3 parts: a, b, c")
     expect(splitLineOf("- **split: no, because small; considered: docs**")).toBe("- **split: no, because small; considered: docs**")
   })
+})
 
-  // #282: the stored line keeps its markdown; only the listing reads it as prose.
+// #282: the stored line keeps its markdown; only the listing reads it as prose.
+describe("splitProse", () => {
   test("splitProse drops the block marks, the bold and italic asterisks, and a code or underscore span wrapping the whole line", () => {
     expect(splitProse("**split: 2 parts: core, docs**")).toBe("split: 2 parts: core, docs")
     expect(splitProse("- **split: no, because small; considered: docs**")).toBe("split: no, because small; considered: docs")
@@ -152,6 +154,13 @@ describe("splitLineOf", () => {
     expect(splitProse("**split: no, because *small***")).toBe("split: no, because small")
     expect(splitProse("**a** and **b**: split: 2 parts")).toBe("a and b: split: 2 parts")
     expect(splitProse("__split: no, because snake_case__")).toBe("split: no, because snake_case")
+    expect(splitProse("*Split: src/*.ts and test/*.ts*")).toBe("Split: src/*.ts and test/*.ts")
+    expect(splitProse("split: 3 parts: **(core)**, **--flag**, **.github/workflows**")).toBe("split: 3 parts: (core), --flag, .github/workflows")
+    expect(splitProse("_split:_ no, because small")).toBe("split: no, because small")
+    expect(splitProse("__split:__ no, because small")).toBe("split: no, because small")
+    expect(splitProse("`split:` no, because small")).toBe("split: no, because small")
+    expect(splitProse("_split: no, because snake_case_")).toBe("split: no, because snake_case")
+    expect(splitProse("Split: *one child per src/*.ts file* and more")).toBe("Split: *one child per src/*.ts file* and more")
     expect(splitProse("split: no, because\0 1\0 `x`")).toBe("split: no, because 1 `x`")
     expect(splitProse("> # `split: 3 parts: a, b, c`")).toBe("split: 3 parts: a, b, c")
     expect(splitProse("__split:\n  no, because small__ ")).toBe("split: no, because small")
@@ -175,6 +184,8 @@ describe("splitLineOf", () => {
       "split: 2 parts: (*.ts) and (*.md)",
       "split: no, because __init__ and __main__ are one module",
       "-5 parts: split: no",
+      "split: 2 parts: **/*.md and **/*.ts",
+      "__init__ split: no, because one module",
     ])
       expect(splitProse(line)).toBe(line)
   })

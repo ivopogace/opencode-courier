@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Live test of the TUI part: a real OpenCode V2 server loads the package's `tui` and `rpc`
 # entrypoints, its RPC answers over HTTP, and the TUI, in tmux, shows the prompt footer's entry and
-# follows a change, opens the tree panel with /courier tree, the 16×16 Digby below its rows (#245), follows it into a child, opens a child with a click (#250), and stops a child with /courier stop;
+# follows a change, opens the tree panel with /courier tree, the 16×16 Digby below its rows (#245), with no background left of a pose before (#281), follows it into a child, opens a child with a click (#250), and stops a child with /courier stop;
 # a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188), and the
 # inbox opened from a child lists the top session's courier_answer prompt first and allows it (#185);
 # a child showing a form waits on the person in the footer and the panel (#183); x in the panel forgets a gone
@@ -104,6 +104,52 @@ hides() {
 }
 # The footer line of the TUI's screen kept in $WORK/$1.txt, the line the courier's entry is on.
 footer() { grep -F "courier " "$WORK/$1.txt" | tail -1 || true; }
+# Whether each cell of the 16×16 Digby on the screen in $WORK/$1.ansi (capture-pane -e), the eight lines ending on his
+# ground, has the background of the panel's cell left of it; the cells that do not are printed to stderr.
+under_digby() {
+  node -e '
+    const screen = require("fs").readFileSync(process.argv[1], "utf8").replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/gu, "")
+    const lines = [[]]
+    let bg = ""
+    for (const part of screen.split(/(\x1b\[[0-9;]*m)/u)) {
+      const sgr = /^\x1b\[([0-9;]*)m$/u.exec(part)
+      if (!sgr) {
+        for (const char of part) char === "\n" ? lines.push([]) : lines.at(-1).push({ char, bg })
+        continue
+      }
+      const codes = sgr[1].split(";")
+      for (let i = 0; i < codes.length; i++) {
+        const code = Number(codes[i] || 0)
+        const width = codes[i + 1] === "2" ? 4 : 2
+        if (code === 0 || code === 49) bg = ""
+        else if (code === 48) (bg = codes.slice(i, i + 1 + width).join(";")), (i += width)
+        else if (code === 38) i += width
+        else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) bg = String(code)
+      }
+    }
+    const groundAt = (line) => line.findIndex((_, at) => line.slice(at, at + 16).every((one) => one.char === "█") && line.length >= at + 16)
+    const ground = lines.findLastIndex((line) => groundAt(line) > 0)
+    const column = ground < 7 ? -1 : groundAt(lines[ground])
+    const wrong = []
+    for (let y = ground - 7; column > 0 && y <= ground; y++)
+      for (let x = column; x < column + 16; x++)
+        if (lines[y][x]?.bg !== lines[y][column - 1]?.bg) wrong.push(`line ${y} column ${x} "${lines[y][x]?.char}": ${lines[y][x]?.bg} under ${lines[y][column - 1]?.bg}`)
+    if (column < 0) console.error("no 16×16 Digby on the screen")
+    for (const one of wrong) console.error(one)
+    console.log(column > 0 && !wrong.length)
+  ' "$WORK/$1.ansi"
+}
+# Whether the 16×16 Digby is drawn on the panel's background alone within $1 s; the screen is kept in $WORK/$2.ansi.
+digby_settles() {
+  local settled=false
+  for _ in $(seq 1 "$1"); do
+    tmux capture-pane -ept "$TMUX_SESSION" >"$WORK/$2.ansi" 2>/dev/null || true
+    if [ "$(under_digby "$2" 2>/dev/null)" = true ]; then settled=true; break; fi
+    sleep 1
+  done
+  under_digby "$2" >/dev/null || true
+  echo "$settled"
+}
 
 mkdir -p "$WORK/project" "$HOME" "$XDG_CONFIG_HOME/opencode"
 # The slash commands typed below make a prompt history, after which the home screen would open the release highlights over its footer.
@@ -195,6 +241,8 @@ result=$(summary_until "$parent" 60 "$idle")
 echo "  $result"
 check "the summary follows: both children idle, the group released" "$([ "$result" = "$idle" ] && echo true || echo false)"
 check "the panel follows the report: 2 of 2 parts reported" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-reported)"
+# Waiting, then the report, gave cells of the 16×16 a background; idle, after it, gives none, so none may stay (#281).
+check "once the report's pose ends, the 16×16 Digby keeps no background of the poses before" "$(digby_settles 15 tui-panel-settled)"
 # q closes the panel, which has the keyboard while it is open; the footer is whole again.
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes the panel" "$(hides "courier tree" 10 tui-panel-closed)"

@@ -129,13 +129,22 @@ export interface Stated {
   readonly at?: number
 }
 
+/** Where in `stated` the line recorded last was read: the reply of the last revision, else `split`'s first statement; -1 when gone. */
+function recordedAt(previous: Pick<TreeRecord, "split" | "revisions">, stated: ReadonlyArray<Stated>) {
+  const last = previous.revisions?.at(-1)
+  if (!last) return stated.findIndex((line) => splitProse(line.text) === splitProse(previous.split))
+  const same = (line: Stated) => splitProse(line.text) === splitProse(last.text)
+  const inReply = stated.findLastIndex((line) => same(line) && line.at === last.at)
+  return inReply >= 0 ? inReply : stated.findLastIndex(same)
+}
+
 /**
- * The revisions once the split lines `stated` are read at a refresh at `at` with `parts` parts: those after the last line recorded (all
+ * The revisions once the split lines `stated` are read at a refresh at `at` with `parts` parts: those after the line recorded last (all
  * when the replies no longer hold it), each appended when its words differ from the line before, so a re-read appends nothing.
  */
 export function revise(previous: Pick<TreeRecord, "split" | "revisions">, stated: ReadonlyArray<Stated>, at: number, parts: number) {
   const recorded = splitProse(previous.revisions?.at(-1)?.text ?? previous.split)
-  const after = stated.slice(stated.findLastIndex((line) => splitProse(line.text) === recorded) + 1)
+  const after = stated.slice(recordedAt(previous, stated) + 1)
   const { added } = after.reduce<{ last: string; added: Revision[] }>(
     ({ last, added }, line) => {
       const words = splitProse(line.text)

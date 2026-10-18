@@ -249,6 +249,22 @@ describe("revise", () => {
     expect(revise({ split: "split: 1 part: core", revisions: once }, [], 80, 2)).toEqual(once)
   })
 
+  test("a line restated later in the replies one refresh reads does not hide the lines stated before it", () => {
+    const [a, b] = ["split: 1 part: core", "split: 2 parts: a, b"]
+    expect(revise({ split: a }, [line(a, 1), line(b, 2), line(a, 3)], 50, 1)).toEqual([
+      { text: b, at: 2, parts: 1 },
+      { text: a, at: 3, parts: 1 },
+    ])
+    const revisions = [{ text: b, at: 2, parts: 1 }]
+    expect(revise({ split: a, revisions }, [line(a, 1), line(b, 2), line("split: 3 parts", 4), line(b, 5)], 60, 2)).toEqual([
+      ...revisions,
+      { text: "split: 3 parts", at: 4, parts: 2 },
+      { text: b, at: 5, parts: 2 },
+    ])
+    // Dated by the refresh, the line recorded last is found by its words alone.
+    expect(revise({ split: a, revisions: [{ text: b, at: 50, parts: 1 }] }, [line(a), line(b)], 60, 2)).toEqual([{ text: b, at: 50, parts: 1 }])
+  })
+
   test("keeps the newest MAX_REVISIONS, the first line untouched", () => {
     const stated = Array.from({ length: MAX_REVISIONS + 2 }, (_, i) => line(`split: ${i + 2} parts`, i))
     const revisions = revise({ split: "split: 1 part" }, stated, 50, 1)

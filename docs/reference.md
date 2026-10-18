@@ -671,7 +671,7 @@ duration in milliseconds:
 | `startedAt` | When the top session was created. |
 | `movedAt` | When a turn in the tree last ended, or the record was first written by `courier_recall`. |
 | `title` | The top session's title, as OpenCode has it at the last refresh. |
-| `split` | The top's split line, the first line of its replies that states one (`split: no, because …` or `split: <n> parts: …`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), or `not stated`. |
+| `split` | The top's split line, the first line of its replies that states one (`split: no, because …` or `split: <n> parts: …`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), kept as written, markdown included, or `not stated`. |
 | `finished` | Whether, at the last refresh, no session in the tree ran (by the same rule as the limits' `busy`) and every part had settled: none was `out` or `stalled` (a `gone` one has). A tree whose top is still integrating reads as finished until that turn ends, and one with no parts as soon as its top is idle. |
 | `recalled` | Absent until `courier_recall` was called from the tree; then `{ "calls": <n> }`, counting every call made from the top and its parts, with `"at"`, when the top itself first called it. |
 | `lesson` | Absent until `courier_note` wrote one; then `{ "text": …, "at": … }`, with `"depth"`, the writer's depth in the tree, when a sub-orchestrator wrote it. A second note replaces the whole object. |
@@ -728,7 +728,10 @@ lists every record of the calling session's project, newest first, one line each
 - ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 2 done, 1 partial, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 5 days ago · $1.28 · finished · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
 ```
 
-the top session, the day it started, its title (clipped to 60 characters), its split line (to 160),
+the top session, the day it started, its title (clipped to 60 characters), its split line as prose
+(without the markdown before it that the matcher reads past, nor the emphasis and code marks closing
+it, and cut at the last space within 160 characters, or mid-word when that would keep less than half;
+the record keeps the line as written),
 its parts counted by status, how deep the tree went, how many parts were isolated and how many spawns
 were refused, how long the tree ran (`ran`, `movedAt` less `startedAt`), how long ago it last moved
 (`last moved … ago`, now less `movedAt`: a duration under a day, else whole days), the parts' costs

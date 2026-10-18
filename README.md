@@ -253,7 +253,8 @@ duration, or reads `gone` when it had not settled, so it never holds its tree at
 The one thing a model writes into it is **the tree's
 lesson**, with `courier_note`: one line of at most 300 characters, from the session that verified the
 tree, with the job it comes from and the reason. `courier_recall` reads the records back, each line
-saying how long the tree ran and how long ago it last moved; the `courier-orchestrate` skill asks for
+showing the split line as prose, without its markdown and cut at a word, and saying how long the tree
+ran and how long ago it last moved; the `courier-orchestrate` skill asks for
 one call before the split decision and one `courier_note` before the top replies. Each project keeps
 its newest 30 records and none older than 90 days. `"memory":
 false` in the plugin's `options` turns it off ([more](docs/reference.md#memory)).

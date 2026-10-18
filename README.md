@@ -352,8 +352,9 @@ the dates, in your local time, one row each: the tree's title, its parts counted
 and what its parts cost, with its lesson on the line under it. `enter` shows one in full, the tree's facts,
 when it started and last moved in local time, each part's status, duration, cost and context use, and the
 lesson; `x` forgets the record under the row after you confirm, or, in the record on its lesson's rows,
-only the lesson, keeping the facts; `esc` goes back from a record and closes the list. The search takes
-every letter but `x`.
+only the lesson, keeping the facts, and the cursor then moves to the next record (or stays on the one you
+kept); `esc` goes back from a record and closes the list. The search takes every letter but `x`, and is
+cleared by a forget.
 With `"memory": false` it says memory is off in this project. Nothing a model sees changes but what
 `courier_recall` lists ([more](docs/reference.md#the-memory-view)).
 

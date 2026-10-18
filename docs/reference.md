@@ -1420,7 +1420,13 @@ day too, each kept under its day.
   `Forget` and `Keep`. A toast says what the server did: `Forgot the record of "<title>"`, `Forgot the
   lesson of "<title>"; its facts stay`, or that there was nothing to forget, when another TUI or the sweep
   got there first. The list, or the record, is then read again and shown without what went; once the
-  project has no record left, a toast says so and the view closes.
+  project has no record left, a toast says so and the view closes. In the list the cursor is then on the
+  record that followed the one forgotten, or the one before it when it was the last; when that one is gone
+  too (another TUI, or the sweep), on the nearest still listed, after it first, else on the first row. `Keep`
+  leaves the cursor on the record kept; in a record the record stays, on the row the cursor was on. A record whose lesson went is
+  shown again on its first **Lesson** row, `No lesson` now, and back in the list each record is on its own
+  row. The search is cleared by a forget or a keep, and typed again: OpenCode's select takes no starting
+  query ([plugin-api-notes.md](maintainers/plugin-api-notes.md#tui-and-rpc-entrypoints)).
 - `esc` closes the view from the list, and goes back to the list from a record. Every letter but `x` can be
   typed in the search, `q` among them: `x` is a footer action, whose key OpenCode runs before the search
   field sees it, and a plugin's footer action takes only a literal key, not a rebindable keymap command.

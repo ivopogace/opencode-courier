@@ -346,7 +346,7 @@ export function addMemoryView(ctx: Context) {
   let opened = false
   /**
    * Lists the project's records, and the one chosen in full, read again after each forget or pin, until the person closes the
-   * list or leaves it; the record in full is shown again after its lesson is forgotten or kept or it is pinned, the list after it is forgotten.
+   * list or leaves it; the record in full is shown again after its lesson is forgotten or kept or it is pinned from there, the list after it is forgotten.
    */
   async function open() {
     if (opened) return

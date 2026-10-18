@@ -88,7 +88,7 @@ export const RECALL_OFF =
  */
 export function recallListText(records: ReadonlyArray<StoredRecord>, top: string, now: number) {
   const others = records.filter((record) => record.sessionID !== top)
-  const pinned = others.some((record) => record.pinned)
+  const pinned = records.some((record) => record.pinned)
   const intro = others.length
     ? `${count(others.length, "earlier tree")} recorded in this project, ${pinned ? "pinned first, then newest first" : "newest first"}; weigh how they were split and how their parts went before you decide. ` +
       "A record holds what the plugin saw, not the work, and a lesson what its orchestrator concluded, next to the facts that bear it out. " +

@@ -5,10 +5,10 @@
 import { STATUSES, type Status } from "../kernel/protocol.js"
 import { obj } from "../platform/json.js"
 
-/** How many records a project keeps, the newest by `movedAt`. */
+/** How many unpinned records a project keeps: those with a lesson first, then the newest by `movedAt`. */
 export const MAX_RECORDS = 30
 
-/** Records that last moved longer ago than this are dropped when the plugin loads. */
+/** Unpinned records that last moved longer ago than this are dropped when the plugin loads. */
 export const RETENTION_MS = 90 * 24 * 60 * 60_000
 
 /** A record's `split` while its top has stated no split line. */

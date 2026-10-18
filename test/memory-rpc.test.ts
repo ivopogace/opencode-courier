@@ -1,5 +1,5 @@
-// The memory's RPC (#262), which the TUI's memory view reads the project's tree records through, forgets one, or only
-// its lesson, with, and pins one with (#285); and the forget and pin use cases behind it.
+// The memory's RPC (#262), through which the TUI's memory view reads the project's tree records, forgets one or only its
+// lesson, and pins one (#285); and the forget and pin use cases behind it.
 import { describe, expect, test } from "bun:test"
 import { PART_STATUSES } from "../src/memory/domain.js"
 import { forget } from "../src/memory/forget.js"

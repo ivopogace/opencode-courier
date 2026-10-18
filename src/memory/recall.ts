@@ -73,7 +73,7 @@ export async function recall(ports: MemoryPorts, state: Pick<MemoryState, "tops"
   if (wanted) {
     const record = await store.get(projectID, wanted)
     if (!record) return { kind: "missing", projectID, sessionID: wanted }
-    // The record is given with this read counted, as the store now has it.
+    // Another tree's record is given with this read added to the reads just read; the caller's own is not counted.
     const [counted] = wanted === top ? [undefined] : await count(ports, top, "read", [wanted])
     const reads = counted ? noteRead(record.reads, "read", counted.at) : record.reads
     return { kind: "record", projectID, record: { ...record, ...(reads ? { reads } : {}), projectID, sessionID: wanted } }

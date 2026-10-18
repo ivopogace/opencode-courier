@@ -836,7 +836,10 @@ sits outside the cap. Of the rest, each project keeps 30, those with a lesson be
 within each the newest by `movedAt`, and none that last moved more than 90 days ago; the others are
 dropped when the plugin loads, with what lies beside them. So once a project has more than 30 trees
 in 90 days, a record that holds only facts goes before one that holds a lesson, and a lesson the next
-orchestrator should still read after 90 days is kept by pinning it. Nothing else removes a record.
+orchestrator should still read after 90 days is kept by pinning it. The one cost: in a project with
+30 lesson-bearing records within 90 days, a load drops the newest records without a lesson, a tree
+running at that moment among them (its lesson comes last); its next turn end writes its record
+again, from what the roster and OpenCode still hold. Nothing else removes a record.
 
 **The option.** `"memory": false` in the plugin's `options`, read per instance like the limits, turns
 it off: no record is written for a tree whose top runs in that location, `courier_recall` says the

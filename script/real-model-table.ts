@@ -66,8 +66,8 @@ export function parseRun(dir: string): Run {
       const depth = depthOf(loaded[1]!, loaded[3])
       skillLoads.set(depth, (skillLoads.get(depth) ?? 0) + loaded[4]!.split(", ").length)
     }
-    const recalled = note.match(/ called courier_recall (\d+) time/)
-    if (recalled) recalls += Number(recalled[1])
+    const recalled = note.match(new RegExp(`^${WHO} called courier_recall (\\d+) time`))
+    if (recalled) recalls += Number(recalled[4])
     const poll = note.match(/^polled: (.+)$/)
     if (poll) polled = poll[1]!.split(", ").length
     const stated = note.match(new RegExp(`^${WHO} stated: (.+)$`))

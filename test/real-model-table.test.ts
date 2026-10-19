@@ -72,6 +72,13 @@ test("unlabelled directories with one basename stay conditions of their own, nam
   expect(out).toContain(`### ${join(root, "a", "1")}\n`)
 })
 
+test("a recall is counted from a note about a session, not from a model's text quoted in another note", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rmt-"))
+  const notes = ["the root called courier_recall 1 time(s), the first in its first turn, before its split", "fault: its parent ses_num had not loaded courier-orchestrate when the partial report reached it, and messaged it: I called courier_recall 5 times"]
+  writeFileSync(join(dir, "summary.json"), JSON.stringify({ verdict: "pass", checks: { a: true }, notes, usage: { requests: 1 } }))
+  expect(parseRun(dir).recalls).toBe(1)
+})
+
 test("a label with no directory, or a summary.json that is not one, is skipped", () => {
   const dir = mkdtempSync(join(tmpdir(), "rmt-"))
   writeFileSync(join(dir, "summary.json"), '{ "verdict": "pass" }')

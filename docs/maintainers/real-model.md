@@ -61,9 +61,10 @@ be traced in three files of the work directory:
   and for a step how long after the last event before it began. A tool that ended and a next step that
   began minutes later is a gap you can read off as a number; a step shown as `…` has no end, which is a
   request without an answer.
-- `server.log` holds the provider calls and their errors at that level. Look from the time the tool
-  ended: a request and no response means the provider never answered; an error after it means one was
-  swallowed; no request at all means the server never asked, and the cause is in OpenCode or the plugin.
+- `server.log` holds no line per provider request, even at that level (OpenCode 2.0.32), only failures,
+  as `Failed to drain Session` errors with their cause. Look from the time the tool ended: an error
+  after it names what went wrong; no error says nothing, so a request that was never sent or never
+  answered is read from the timeline and `probe.log`.
 - `probe.log` holds one JSON line per event the server emitted (`at`, `type`, `sessionID`). Filter it by
   the stalled session and the minutes after the tool's end: events for that session, such as
   `session.execution.failed`, say what the server did; none say it did nothing.

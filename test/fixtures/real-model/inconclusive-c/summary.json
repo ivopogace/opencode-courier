@@ -1,0 +1,8 @@
+{
+  "verdict": "inconclusive",
+  "rootID": "ses_root",
+  "sessions": { "ses_root": { "depth": 0 } },
+  "checks": { "the root spawned at least two children": true, "no orchestrator polled": false },
+  "notes": ["3 model request(s) failed: provider.quota"],
+  "usage": { "requests": 5 }
+}

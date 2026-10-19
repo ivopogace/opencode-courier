@@ -1,0 +1,18 @@
+{
+  "verdict": "pass",
+  "rootID": "ses_root",
+  "sessions": { "ses_root": { "depth": 0 }, "ses_num": { "parentID": "ses_root", "depth": 1 } },
+  "checks": { "the root spawned at least two children": true, "no orchestrator polled": true },
+  "notes": [
+    "the root loaded the skill(s): courier-orchestrate",
+    "session ses_num (depth 1) loaded the skill(s): courier-orchestrate",
+    "the root called courier_recall 1 time(s), the first in its first turn, before its split",
+    "session ses_num (depth 1) called courier_recall 1 time(s), the first in its first turn, before its split",
+    "the root stated: split: 2 parts | numbers, count",
+    "session ses_num (depth 1) stated: split: 2 halves",
+    "session ses_leaf (depth 2) stated: split: no",
+    "the root started 2 session(s) in group(s) parts",
+    "session ses_num (depth 1) started 2 session(s) in group(s) numbers-halves"
+  ],
+  "usage": { "requests": 26 }
+}

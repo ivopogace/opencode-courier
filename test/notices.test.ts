@@ -90,7 +90,7 @@ describe("envelope and child brief", () => {
     expect(kernel.SPLIT_LINE).not.toContain("1 part")
     for (const depth of [1, 2, 3]) expect(tree.childBrief("ses_parent", "Fix the bug", depth, limits)).not.toContain(kernel.ONE_PART_LINE)
     for (const depth of [0, 1, 2, 3]) expect(tree.rolePart(depth, limits)).not.toContain(kernel.ONE_PART_LINE)
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task; a core you stage before the rest is one part of it, not the whole.")
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("start the parts that run at once in one group, with the same group name for each, then end your turn")
     expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
     expect(tree.rolePart(1, limits)).toContain(`load the ${kernel.SKILL_ID} skill`)

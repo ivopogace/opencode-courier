@@ -209,7 +209,7 @@ days, starts its children as if it were the top of a tree.
 `maxDepth` it is given a rule: split the task when it has 2 or more independent, substantial parts
 touching separate files or areas, one session per part; do it itself when it is small, sequential or
 tightly coupled; never start exactly one session for the whole task (only the root may, by [the skill's rule](#the-courier-orchestrate-skill)
-for a heavy task, so the brief's line has no one-part form); and say which in one line of its
+for a heavy task, so the brief's line has no one-part form; a core it stages before the rest is one part, not the whole); and say which in one line of its
 reply, `split: no, because …; considered: <the parts you weighed>` or `split: <n> parts: …`. A
 session that splits starts the parts that run at once in one group and ends its turn while its children work, without
 polling with `courier_status`, `courier_children`, `courier_tree` or `sleep`: the group's reports wake

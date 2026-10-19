@@ -66,7 +66,7 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain(`the root has a third form, ${kernel.ONE_PART_LINE}`)
     expect(skill.SKILL_CONTENT).toContain("When the core is coupled:")
     expect(skill.SKILL_CONTENT).toContain("Never hand the checking to another session")
-    // The split line reads the same wherever it is asked for: the skill, the brief and the root's pointer.
+    // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")
     // Step 1 and the root's pointer name one courier_recall before the decision, which the recursive checker allows.

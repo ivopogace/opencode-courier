@@ -20,7 +20,7 @@ export const SPLIT_LINE =
 /** The third form, for the root alone: it hands a heavy task whole to one session, to keep its own context. */
 export const ONE_PART_LINE = "split: 1 part: <the task>, to keep my context"
 
-/** `SPLIT_LINE` with the root's third form; a session a parent started is never offered the one-part form. */
+/** `SPLIT_LINE` with the root's third form: the root's pointer offers it, a child's brief and role part never do. */
 export const ROOT_SPLIT_LINE = `${SPLIT_LINE} or ${ONE_PART_LINE}`
 
 export const SKILL_ID = "courier-orchestrate"

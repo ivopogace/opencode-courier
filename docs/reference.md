@@ -211,7 +211,7 @@ touching separate files or areas, one session per part; do it itself when it is 
 tightly coupled; never start exactly one session for the whole task (only the root may, by [the skill's rule](#the-courier-orchestrate-skill)
 for a heavy task, so the brief's line has no one-part form); and say which in one line of its
 reply, `split: no, because …; considered: <the parts you weighed>` or `split: <n> parts: …`. A
-session that splits starts every part in one group and ends its turn while its children work, without
+session that splits starts the parts that run at once in one group and ends its turn while its children work, without
 polling with `courier_status`, `courier_children`, `courier_tree` or `sleep`: the group's reports wake
 it. It checks and integrates each part itself, and sends its parent one combined report. At `maxDepth` it is told to do the task itself. Every
 spawned session is told how to [report](#a-childs-report). The text is `tree/text.ts`'s brief.
@@ -255,7 +255,8 @@ context. Say which in one line of the reply, the root with a third form,
 `split: 1 part: <the task>, to keep my context`. A second paragraph, "when the core is coupled", has it
 weigh the parts an implementation task with one tightly coupled core still has (finding out what
 the change needs, its e2e scenario, its documentation, a review by a session with fresh context), in
-stages when the rest depend on names the core fixes. Then: plan the
+stages when the rest depend on names the core fixes (a staged core is one part of the task, not the whole
+task, so the rule against one session for the whole task does not apply to it). Then: plan the
 parts so that no two edit the same files; start them with one `courier_spawn` per part, all in one
 [join group](#join-groups), `isolate: true` where parts edit files in parallel, and end the turn
 without polling; read each [report](#a-childs-report) by its status; verify first-hand, running

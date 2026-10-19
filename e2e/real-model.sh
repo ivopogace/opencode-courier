@@ -16,7 +16,9 @@
 # script as the person, answering COURIER_ANSWER (default Hi) in the parent's session
 # (e2e/real-model-question.mjs). COURIER_SCENARIO=recursive runs the recursive orchestration: a
 # job of two parts, one of which the session that gets it splits again, checked by
-# e2e/real-model-recursive.mjs down the whole tree.
+# e2e/real-model-recursive.mjs down the whole tree. COURIER_SCENARIO=recursive-fault is the same job with
+# one leaf told to report partial first and to finish only once its parent messages it, checked by the
+# same script with --fault.
 #
 # The default model is a free one on OpenCode Zen, which needs no key. To pick another:
 #
@@ -31,8 +33,8 @@
 #   COURIER_API_KEY_ENV              for a declared provider, the variable holding its key. The
 #                                     config refers to it as {env:NAME}; the key is never written.
 #   COURIER_PROMPT, COURIER_EXPECT   the parent's prompt and the values the reports must hold.
-#   COURIER_FILES                    recursive: the files, relative to the project, that must hold them.
-#   COURIER_MAX_DEPTH                recursive: the maxDepth the checker holds the tree to (default 3).
+#   COURIER_FILES                    recursive(-fault): the files, relative to the project, that must hold them.
+#   COURIER_MAX_DEPTH                recursive(-fault): the maxDepth the checker holds the tree to (default 3).
 #   COURIER_TIMEOUT                  seconds to wait for the parent's turn and then for the
 #                                     children (default 300 each).
 #   COURIER_NATIVE                   1 loads the plugin with nativeChildren on, so a child started
@@ -65,6 +67,7 @@ fi
 KEY_ENV=${COURIER_API_KEY_ENV:-}
 export COURIER_TIMEOUT=${COURIER_TIMEOUT:-300}
 SCENARIO=${COURIER_SCENARIO:-fanout}
+CHECKER_FLAGS=
 # Every action is allowed; the permission scenario adds a rule that makes its one command ask.
 PERMISSIONS='[{ "action": "*", "resource": "*", "effect": "allow" }]'
 case $SCENARIO in
@@ -95,7 +98,16 @@ case $SCENARIO in
     export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
     CHECKER=real-model-recursive.mjs
     ;;
-  *) echo "COURIER_SCENARIO must be fanout, recursive, permission or question"; exit 1 ;;
+  recursive-fault)
+    # The recursive job, with the half for numbers/b.txt passed on word for word: its session reports partial,
+    # leaves the file unwritten, and finishes only once its parent messages it, which the "numbers" session must do.
+    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own, doing neither half itself: one runs `sleep 20; echo $((17 * 23))` and writes the number it printed to numbers/a.txt; the other gets this task, passed on word for word: "Run `sleep 20; echo $((2 ** 10))`. Do not write any file yet: report status partial with the number it printed, saying that writing it to numbers/b.txt is left, and end your turn. Once the session that started you sends you a message to finish, write the number to numbers/b.txt and report status done." Part "count" runs `sleep 20; echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
+    export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
+    export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
+    CHECKER=real-model-recursive.mjs
+    CHECKER_FLAGS=--fault
+    ;;
+  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, permission or question"; exit 1 ;;
 esac
 unset COURIER_OTHER_SERVER
 case ${COURIER_PERSON:-} in
@@ -172,7 +184,7 @@ fi
 echo "parent prompt: $PROMPT"
 
 post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
-if [ "$SCENARIO" != fanout ] && [ "$SCENARIO" != recursive ]; then
+if [ "$SCENARIO" != fanout ] && [ "$SCENARIO" != recursive ] && [ "$SCENARIO" != recursive-fault ]; then
   # Started through the API, as a session in the TUI would be, not with opencode run: run cancels
   # any question form opened in its session while it is attached, and the child's request can wake
   # the parent before run has let go. The checker waits for the turns.
@@ -195,4 +207,4 @@ if [ -z "$parent" ]; then
   exit 1
 fi
 echo "parent $parent; waiting for its children"
-node "$ROOT/e2e/$CHECKER" "$parent"
+node "$ROOT/e2e/$CHECKER" "$parent" ${CHECKER_FLAGS:+"$CHECKER_FLAGS"}

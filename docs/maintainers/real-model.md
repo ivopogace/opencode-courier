@@ -31,10 +31,10 @@ of one's own.
 | `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `longcat-2.5-preview-free` | The model, as OpenCode names it. |
 | `COURIER_BASE_URL` | Zen's endpoint for `opencode` | Declares the provider in `opencode.json` as an OpenAI-compatible endpoint with this URL. Set it empty to use OpenCode's catalog instead, with the provider's usual key variable, such as `ANTHROPIC_API_KEY`. |
 | `COURIER_API_KEY_ENV` | | For a declared provider, the name of the variable holding its key. The config refers to it as `{env:NAME}`, so the key is never written to a file. |
-| `COURIER_SCENARIO` | | `permission`, `question` or `recursive` for the scenarios below; the fan-out by default. |
+| `COURIER_SCENARIO` | | `permission`, `question`, `recursive` or `recursive-fault` for the scenarios below; the fan-out by default. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the final reply must hold. |
-| `COURIER_FILES` | per scenario | With `recursive`: the files, relative to the project, that must hold those values, in the same order. |
-| `COURIER_MAX_DEPTH` | `3` | With `recursive`: the `maxDepth` the checker holds the tree to. |
+| `COURIER_FILES` | per scenario | With `recursive` or `recursive-fault`: the files, relative to the project, that must hold those values, in the same order. |
+| `COURIER_MAX_DEPTH` | `3` | With `recursive` or `recursive-fault`: the `maxDepth` the checker holds the tree to. |
 | `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server on the same data directory. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
 | `COURIER_NATIVE` | | `1` loads the plugin with [`nativeChildren`](../reference.md#native-child-sessions) on. |
@@ -185,7 +185,8 @@ child spawned at least two of its own in one turn, and no sub-orchestrator start
 skill's rule for a heavy task); no session went past `maxDepth`; every spawned session reported to its parent with a status; each
 sub-orchestrator reported upward once, after its own children had reported to it; the files hold the
 expected values; and the root's final reply holds them. Its notes say which sessions loaded the skill,
-used a join group, scheduled a check-in or had a spawn refused, and each report's status.
+whether each orchestrator had `courier-orchestrate` loaded before its first spawn, after it or not at
+all, which used a join group, scheduled a check-in or had a spawn refused, and each report's status.
 
 `e2e/real-model-prompt-open.txt` is the same job with the split left to the root ("one session per
 part, and do no part yourself" rules out a root that does "count" itself). With it, the checker's "at
@@ -217,6 +218,57 @@ records.
 | `longcat-2.5-preview-free`, catalog, 0d02efe (#298), in the Docker sandbox | 2.0.32 | 9/9 in 26 requests and 5/9 in 17: the sub-orchestrator briefs carry the group and no-polling rule and the role part tells it to load the skill. In the pass the "numbers" session loaded `courier-orchestrate`, called `courier_recall` and started its halves in group `numbers-halves`; no session polled, all four reports were `done`, and the files and the root's reply held `391 1024 42`. In the 5/9 run one depth-2 leaf's shell command finished and no next model step was recorded for over four minutes (the server log holds no model requests at any level, the passing runs' included, so the cause is unknown: see the paragraph above the table), leaving `numbers/b.txt` unwritten and the last four checks failing; no session polled in it either. Across the three runs at 0d02efe and e6ec247 the root loaded the skill twice (run 1 included, with a `courier_recall` and a `courier_later` check-in) and the "numbers" session once. |
 | `deepseek-v4.1-flash-free`, catalog, 43393b0 (#306), in the Docker sandbox | 2.0.32 | 9/9 in 26 requests and 52 s: the root and the "numbers" session each loaded `courier-orchestrate` and called `courier_recall` once before their split, and started their parts in groups `parts` and `numbers-halves`; the root scheduled one `courier_later` check-in and cancelled it when the reports came; every session stated its split line with a reason; no session polled, all four reports were `done`, and the files and the root's reply held `391 1024 42`. The timeline's timestamps and the probe log show no gap, and the server log holds no errors. A `longcat-2.5-preview-free` run at the same commit was refused by Zen's free quota (429 on 5 of 9 requests) a minute after the root's two spawns, not counted. |
 | `deepseek-v4.1-flash-free`, catalog, 045ae2c (#303), in the Docker sandbox | 2.0.32 | 9/9 in 30 requests and 52 s on the brief's "parts that run at once in one group" wording: the root loaded `courier-orchestrate`, called `courier_recall` once before its split and started both parts in group `parts`; the "numbers" session loaded neither but stated its split line, started its halves in group `halves`, and like the root scheduled a `courier_later` check-in and cancelled it when the reports came; no session polled, all four reports were `done`, and the files and the root's reply held `391 1024 42`; no gap in the timeline, no error in the log. The job has no staged core, so the new wording had nothing to change here. Not run on `longcat-2.5-preview-free`. |
+
+## A part that goes wrong
+
+`COURIER_SCENARIO=recursive-fault`: the recursive job with one fault in it, so that the skill's steps 5
+to 8 (read a report by its status, have the session finish, verify, report upward once with one status
+for the whole) have something to do. In the recursive scenario every report is `done`, and a tree that
+loaded the skill cannot be told from one that did not. The parent is asked:
+
+> Have this job done through helper sessions started with courier_spawn, one session per part, and
+> do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the
+> session that gets it hands to two sessions of its own, doing neither half itself: one runs
+> `` `sleep 20; echo $((17 * 23))` `` and writes the number it printed to numbers/a.txt; the other gets
+> this task, passed on word for word: "Run `` `sleep 20; echo $((2 ** 10))` ``. Do not write any file
+> yet: report status partial with the number it printed, saying that writing it to numbers/b.txt is
+> left, and end your turn. Once the session that started you sends you a message to finish, write the
+> number to numbers/b.txt and report status done." Part "count" runs `` `sleep 20; echo $((99 - 57))` ``
+> and writes the number it printed to count/total.txt. When the parts have reported back, read the
+> three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
+
+The "numbers" session should start both halves in one group and end its turn; the group is released
+with one `done` and one `partial` report; it reads the status and what is left, sends the second half a
+`courier_send` to finish and ends its turn; that session writes `numbers/b.txt` and reports `done` on its
+own, the group being delivered; the "numbers" session checks both files and reports `done` to the root
+once; the root reads the three files and replies `RESULTS 391 1024 42`. The files check compares
+contents only, so it cannot tell who wrote `numbers/b.txt`; the check that the parent messaged the
+session is what measures the handling.
+
+The checker is the recursive one, run with `--fault`, which `summary.json` records, so that a re-read
+with `--saved` makes the same checks without the flag: its nine checks, then four more. The faulty
+session is found by its first report, a status other than `done` from a session below a
+sub-orchestrator, not by its task, which two sessions pass on in their own words: the fault reached a
+leaf; its parent messaged it with `courier_send` after that report and before reporting upward; it then
+reported `done`; and its parent reported upward once, after that `done`, with status `done`. A message
+sent in the same step as the parent's report upward counts when it comes first in that step. Its notes
+add, for the faulty session, the statuses it reported in order, whether its parent had loaded
+`courier-orchestrate` when the first report reached it (the recursive notes say whether each
+orchestrator had it loaded before its first spawn), what the parent's message said, and the statuses
+the parent reported upward. "Session … reported 2 times" is expected for that session.
+
+Assumptions the design rests on: the task survives two hops word for word (a root or "numbers" session
+that rewrites it so the half reports `done` first fails the first fault check, and the transcripts show
+where it was lost); the faulty half's `partial` report is held with its group, as every report but a
+`blocked` one is, so the "numbers" session reads it in the group's message; and its second report,
+after the group was delivered, comes on its own. "Doing neither half itself" rules out a "numbers"
+session that writes `numbers/b.txt` itself, which step 5 also allows, so that the scenario measures the
+`courier_send`.
+
+Its first runs happen in the Docker sandbox in `todo/sandbox`.
+
+| Model | OpenCode | Result |
+|---|---|---|
 
 ## Seeding a record
 

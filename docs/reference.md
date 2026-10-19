@@ -269,6 +269,19 @@ loop), losing track (one `courier_tree`), a subtree to abandon (`courier_stop`).
 smoke test's [recursive scenario](maintainers/real-model.md#recursive-orchestration) tries it against
 free models.
 
+### Without the skill loaded
+
+A session may never load the skill: a model decides to, and the [recursive runs](maintainers/real-model.md#recursive-orchestration) show some do not.
+
+What holds without it:
+
+- The rules the brief and the role part carry: the split rule and its one line, never exactly one session for the whole task, one group for the parts, ending the turn without polling, checking and integrating each part itself, the limits, and how to [report](#a-childs-report).
+- The guarantees the tools carry: the limits refused at `courier_spawn`, `courier_spawn` hidden from a leaf, the [missed wake](#a-missed-wake), and the notices that carry the next step when it is needed (the three refusals, [`failureNotice`](#a-child-that-fails) and [`silentNotice`](#a-child-that-ends-without-a-report)).
+
+What only the skill adds: the context economy, the root's one-part form, the staged split, planning the parts so that no two edit the same files, `isolate: true` and committing first, `courier_later` check-ins, reading a report by its status, checks through the project's scripts, merging and cleanup, the note at the end, and `courier_tree` after a compaction.
+
+A tool-side gate in `courier_spawn` (refusing or warning when the skill was not loaded) is out: the role part must stay the same on every request of a session for the prompt cache, so the plugin cannot say there that the skill is not loaded; the TUI's `/skills` dialog attaches the skill's text to the prompt without the `skill` tool, so a gate would refuse a session that has the text; and a weak model that meets the refusal retries, without the text that says not to.
+
 ## A child's report
 
 A child reports with `courier_send` to the session that started it, giving a `status`: `done`,

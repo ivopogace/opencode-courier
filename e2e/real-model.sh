@@ -136,8 +136,8 @@ if [ -n "$BASE_URL" ]; then
     }
   }')
 fi
-jq -n --arg plugin "$ROOT/dist" --arg native "${COURIER_NATIVE:-}" --arg model "$PROVIDER/$MODEL" --argjson providers "$provider" --argjson permissions "$PERMISSIONS" '{
-  plugins: [if $native == "1" then { package: $plugin, options: { nativeChildren: true } } else $plugin end],
+jq -n --arg plugin "$ROOT/dist" --arg probe "$ROOT/e2e/probe-plugin" --arg probelog "$WORK/probe.log" --arg native "${COURIER_NATIVE:-}" --arg model "$PROVIDER/$MODEL" --argjson providers "$provider" --argjson permissions "$PERMISSIONS" '{
+  plugins: [if $native == "1" then { package: $plugin, options: { nativeChildren: true } } else $plugin end, { package: $probe, options: { log: $probelog } }],
   providers: $providers,
   model: $model,
   update: "disable",
@@ -145,6 +145,8 @@ jq -n --arg plugin "$ROOT/dist" --arg native "${COURIER_NATIVE:-}" --arg model "
 }' >"$WORK/project/opencode.json"
 commit_config
 
+# DEBUG records the provider calls and their errors, which INFO does not; run.sh keeps the default.
+SERVER_FLAGS="--log-level debug"
 start_server
 echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL${COURIER_NATIVE:+, nativeChildren on}"
 if [ "${COURIER_PERSON:-}" = other-server ]; then

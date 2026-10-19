@@ -20,7 +20,7 @@ export default {
     const location = canonical(ctx.location.directory)
     const write = (line) => {
       try {
-        appendFileSync(file, `${JSON.stringify({ pid: process.pid, location, ...line })}\n`)
+        appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, location, ...line })}\n`)
       } catch {}
     }
     write({ type: "probe.loaded" })

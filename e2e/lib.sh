@@ -1,5 +1,6 @@
 # Shared by run.sh and real-model.sh: a throwaway home directory and an OpenCode V2 server for
-# $WORK/project. Source it after setting ROOT, OPENCODE, WORK and SERVER_PORT.
+# $WORK/project. Source it after setting ROOT, OPENCODE, WORK and SERVER_PORT. SERVER_FLAGS, if set,
+# adds flags to `opencode serve`; real-model.sh sets it to `--log-level debug`.
 
 export HOME=$WORK/home XDG_CONFIG_HOME=$WORK/home/.config XDG_DATA_HOME=$WORK/home/.local/share
 export XDG_STATE_HOME=$WORK/home/.local/state XDG_CACHE_HOME=$WORK/home/.cache
@@ -19,7 +20,8 @@ commit_config() {
   git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -q -m "opencode config"
 }
 start_server() {
-  (cd "$WORK/project" && exec "$OPENCODE" serve --hostname 127.0.0.1 --port "$SERVER_PORT" --print-logs >>"$WORK/server.log" 2>&1 </dev/null) &
+  # shellcheck disable=SC2086 # SERVER_FLAGS is a list of flags
+  (cd "$WORK/project" && exec "$OPENCODE" serve --hostname 127.0.0.1 --port "$SERVER_PORT" --print-logs ${SERVER_FLAGS:-} >>"$WORK/server.log" 2>&1 </dev/null) &
   SERVER_PID=$!
   for _ in $(seq 1 30); do api info >/dev/null 2>&1 && return; sleep 1; done
   echo "OpenCode server did not start; see $WORK/server.log"

@@ -5,10 +5,18 @@ import { join } from "node:path"
 
 const [rootID, ...flags] = process.argv.slice(2)
 const saved = flags.includes("--saved")
-const fault = flags.includes("--fault")
 const server = process.env.SERVER
 const auth = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD}`).toString("base64")}`
 const work = process.env.WORK
+// A re-read keeps the checks the run was made with: summary.json records --fault.
+const savedFault = () => {
+  try {
+    return JSON.parse(readFileSync(join(work, "summary.json"), "utf8")).fault === true
+  } catch {
+    return false
+  }
+}
+const fault = flags.includes("--fault") || (saved && savedFault())
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
 const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
@@ -369,7 +377,7 @@ console.log(`result: ${verdict}${verdict === "inconclusive" ? " (checks failed, 
 writeFileSync(
   join(work, "summary.json"),
   JSON.stringify(
-    { verdict, rootID, sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, usage, finalText },
+    { verdict, rootID, fault, sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, usage, finalText },
     null,
     2,
   ),

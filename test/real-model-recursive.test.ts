@@ -69,23 +69,27 @@ function transcripts(variant: Variant): Record<string, Message[]> {
   return { ses_root: root, ses_num: num, ses_a: a, ses_b: b, ses_count: count }
 }
 
-/** Runs the checker with --saved on a run directory holding `variant`'s transcripts and files; its exit code and summary. */
-function check(variant: Variant, ...flags: string[]) {
+/** Runs the checker with --saved on a run directory holding `variant`'s transcripts and files, once per list of flags; the last run's exit code and summary. */
+function check(variant: Variant, ...runs: string[][]) {
   const work = mkdtempSync(join(tmpdir(), "rmr-"))
-  for (const [id, list] of Object.entries(transcripts(variant))) writeFileSync(join(work, id === "ses_root" ? "parent.json" : `child-${id}.json`), JSON.stringify(list))
-  for (const [file, text] of Object.entries(FILES)) {
-    mkdirSync(dirname(join(work, "project", file)), { recursive: true })
-    writeFileSync(join(work, "project", file), `${text}\n`)
-  }
   // The checker reads COURIER_* from its environment: none of the caller's, such as an exported COURIER_MAX_DEPTH.
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("COURIER_")))
-  const run = Bun.spawnSync([process.execPath, CHECKER, "ses_root", "--saved", ...flags], {
-    env: { ...env, WORK: work, COURIER_EXPECT: "391 1024 42", COURIER_FILES: Object.keys(FILES).join(" ") },
-  })
   try {
-    if (run.exitCode !== 0 && run.exitCode !== 1) throw new Error(`the checker exited ${run.exitCode}: ${run.stderr.toString()}`)
-    const summary = JSON.parse(readFileSync(join(work, "summary.json"), "utf8")) as { verdict: string; checks: Record<string, boolean>; notes: string[] }
-    return { exitCode: run.exitCode, ...summary, failed: Object.entries(summary.checks).flatMap(([name, ok]) => (ok ? [] : [name])) }
+    for (const [id, list] of Object.entries(transcripts(variant))) writeFileSync(join(work, id === "ses_root" ? "parent.json" : `child-${id}.json`), JSON.stringify(list))
+    for (const [file, text] of Object.entries(FILES)) {
+      mkdirSync(dirname(join(work, "project", file)), { recursive: true })
+      writeFileSync(join(work, "project", file), `${text}\n`)
+    }
+    let exitCode: number | null = null
+    for (const flags of runs.length ? runs : [[]]) {
+      const run = Bun.spawnSync([process.execPath, CHECKER, "ses_root", "--saved", ...flags], {
+        env: { ...env, WORK: work, COURIER_EXPECT: "391 1024 42", COURIER_FILES: Object.keys(FILES).join(" ") },
+      })
+      if (run.exitCode !== 0 && run.exitCode !== 1) throw new Error(`the checker exited ${run.exitCode}: ${run.stderr.toString()}`)
+      exitCode = run.exitCode
+    }
+    const summary = JSON.parse(readFileSync(join(work, "summary.json"), "utf8")) as { verdict: string; fault: boolean; checks: Record<string, boolean>; notes: string[] }
+    return { exitCode, ...summary, failed: Object.entries(summary.checks).flatMap(([name, ok]) => (ok ? [] : [name])) }
   } finally {
     rmSync(work, { recursive: true, force: true })
   }
@@ -93,7 +97,7 @@ function check(variant: Variant, ...flags: string[]) {
 
 describe("the recursive checker with --fault", () => {
   test("a fault handled by a message to the leaf, then one done report upward, passes every check", () => {
-    const run = check("handled", "--fault")
+    const run = check("handled", ["--fault"])
     expect(run.failed).toEqual([])
     expect(Object.keys(run.checks)).toHaveLength(13)
     expect(run.exitCode).toBe(0)
@@ -107,7 +111,7 @@ describe("the recursive checker with --fault", () => {
   })
 
   test("a sub-orchestrator that messages the leaf and reports upward in one step fails the checks on its report upward", () => {
-    const run = check("reports-early", "--fault")
+    const run = check("reports-early", ["--fault"])
     expect(run.failed).toEqual([
       "each sub-orchestrator reported upward once, after its own children had reported to it",
       "its parent reported upward once, after that done report, with status done",
@@ -118,7 +122,7 @@ describe("the recursive checker with --fault", () => {
   })
 
   test("a sub-orchestrator that does the half itself sends no message, and the leaf never reports done", () => {
-    const run = check("does-it-itself", "--fault")
+    const run = check("does-it-itself", ["--fault"])
     expect(run.failed).toEqual([
       "its parent messaged it with courier_send after that report and before reporting upward",
       "it then reported done",
@@ -128,7 +132,7 @@ describe("the recursive checker with --fault", () => {
   })
 
   test("a fault that never reached a leaf fails the first fault check and the rest with it", () => {
-    const run = check("no-fault", "--fault")
+    const run = check("no-fault", ["--fault"])
     expect(run.failed).toEqual([
       "the fault reached a leaf: a session below a sub-orchestrator first reported a status other than done",
       "its parent messaged it with courier_send after that report and before reporting upward",
@@ -146,4 +150,11 @@ test("without --fault the recursive checker makes its nine checks only", () => {
     expect(Object.keys(run.checks)).toHaveLength(9)
     expect(run.notes.some((note) => note.startsWith("fault:"))).toBe(false)
   }
+})
+
+test("a re-read with --saved keeps the fault checks of a run made with --fault, which summary.json records", () => {
+  const run = check("does-it-itself", ["--fault"], [])
+  expect(run.fault).toBe(true)
+  expect(Object.keys(run.checks)).toHaveLength(13)
+  expect(run.failed).toContain("it then reported done")
 })

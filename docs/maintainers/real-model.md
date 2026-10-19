@@ -241,10 +241,12 @@ The "numbers" session should start both halves in one group and end its turn; th
 with one `done` and one `partial` report; it reads the status and what is left, sends the second half a
 `courier_send` to finish and ends its turn; that session writes `numbers/b.txt` and reports `done` on its
 own, the group being delivered; the "numbers" session checks both files and reports `done` to the root
-once; the root reads the three files and replies `RESULTS 391 1024 42`. `numbers/b.txt` is written only
-after the message, so the files check holds only when the fault was handled by messaging the session.
+once; the root reads the three files and replies `RESULTS 391 1024 42`. The files check compares
+contents only, so it cannot tell who wrote `numbers/b.txt`; the check that the parent messaged the
+session is what measures the handling.
 
-The checker is the recursive one, run with `--fault`: its nine checks, then four more. The faulty
+The checker is the recursive one, run with `--fault`, which `summary.json` records, so that a re-read
+with `--saved` makes the same checks without the flag: its nine checks, then four more. The faulty
 session is found by its first report, a status other than `done` from a session below a
 sub-orchestrator, not by its task, which two sessions pass on in their own words: the fault reached a
 leaf; its parent messaged it with `courier_send` after that report and before reporting upward; it then

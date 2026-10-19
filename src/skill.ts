@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin"
-import { SKILL_ID, SPLIT_LINE } from "./kernel/protocol.js"
+import { ONE_PART_LINE, SKILL_ID, SPLIT_LINE } from "./kernel/protocol.js"
 
 // The courier-orchestrate skill: the playbook a session loads with its skill tool.
 
@@ -17,19 +17,24 @@ export const SKILL_CONTENT = [
   "",
   "1. Decide: split or do. First call courier_recall once: it lists how earlier trees in this project were split and how " +
     "each part went, so weigh that; one call, before you decide, never in a loop. Split when the task has 2 or more " +
-    "independent, substantial parts touching separate files or areas; do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole " +
-    "task: it only adds a hop. What you read and write yourself stays in your context for every later turn, so keep the " +
-    "deciding, checking and integrating, and hand off the long reading and writing. An implementation task with one tightly " +
-    "coupled core usually still has independent parts: finding out what the change needs (a session with isolate: false " +
-    "reads the code, or a library's or a host's source, tries things and reports what it found), its e2e scenario, its " +
-    "documentation, sometimes a second test file, and a review of the core by a session with fresh context, which reads the " +
-    "committed diff against the task and the repository's rules and reports its findings (isolate: false, it edits nothing). " +
-    "Weigh each of them. When the other parts depend on names and texts the core fixes, split in stages: the core first, " +
-    "yourself when it is small or by one session when it is big, merged and committed before the rest start; then, if 2 or " +
-    "more parts remain, one session per remaining part, in one group. A part that is itself big and divisible is split again " +
-    "by the session that gets it; at the deepest level a session does its part itself. " +
-    `Say which in one line of your reply, before you start: ${SPLIT_LINE}, so that a reasoned decision to do it ` +
-    "yourself can be told from one never made.",
+    "independent, substantial parts touching separate files or areas; do it yourself when it is small, sequential or " +
+    "tightly coupled. What you read and write yourself stays in your context for every later turn, so keep the deciding, " +
+    "checking and integrating, and hand off the long reading and writing. Only the root, the session nobody started, may " +
+    "start exactly one session for the whole task, and only when the task is heavy (long reading, many edits, long runs) " +
+    "and its own context is worth keeping: it still verifies and integrates that session's report itself (steps 5 to 7), " +
+    "and does a small task itself. Every other session never starts exactly one session for the whole task: it only adds " +
+    "a hop, and a chain of single hops uses up the tree's depth. A part that is itself big and divisible is split again by " +
+    "the session that gets it; at the deepest level a session does its part itself. " +
+    `Say which in one line of your reply, before you start, so that a reasoned decision to do it yourself can be told ` +
+    `from one never made: ${SPLIT_LINE}; the root has a third form, ${ONE_PART_LINE}.`,
+  "   When the core is coupled: an implementation task with one tightly coupled core usually still has independent parts: " +
+    "finding out what the change needs (a session with isolate: false reads the code, or a library's or a host's source, " +
+    "tries things and reports what it found), its e2e scenario, its documentation, sometimes a second test file, and a " +
+    "review of the core by a session with fresh context, which reads the committed diff against the task and the " +
+    "repository's rules and reports its findings (isolate: false, it edits nothing). Weigh each of them. When the other " +
+    "parts depend on names and texts the core fixes, split in stages: the core first, yourself when it is small or by one " +
+    "session when it is big, merged and committed before the rest start; then, if 2 or more parts remain, one session per " +
+    "remaining part, in one group.",
   "2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to " +
     "produce and where, how to check it, what to report. Say if it may split its part further, and to run its checks " +
     "through the project's scripts (step 6): each permission request of a session below you wakes you and waits on the person.",

@@ -208,7 +208,8 @@ days, starts its children as if it were the top of a tree.
 **The brief says when to split.** A spawned session is told its depth and the limits. Below
 `maxDepth` it is given a rule: split the task when it has 2 or more independent, substantial parts
 touching separate files or areas, one session per part; do it itself when it is small, sequential or
-tightly coupled; never start exactly one session for the whole task; and say which in one line of its
+tightly coupled; never start exactly one session for the whole task (only the root may, by [the skill's rule](#the-courier-orchestrate-skill)
+for a heavy task, so the brief's line has no one-part form); and say which in one line of its
 reply, `split: no, because …; considered: <the parts you weighed>` or `split: <n> parts: …`. A
 session that splits starts every part in one group and ends its turn while its children work, without
 polling with `courier_status`, `courier_children`, `courier_tree` or `sleep`: the group's reports wake
@@ -223,8 +224,10 @@ list. The hook is guidance and `courier_spawn` the guarantee: another plugin's h
 back, and the call is still refused. A session nobody spawned that has started none gets a pointer
 instead, `opencode-courier role: root, no sessions started yet`: before a task that touches several
 files or areas, load the `courier-orchestrate` skill, call [`courier_recall`](#memory) once, and
-decide whether to split it, saying which in one line of the reply; a request without `courier_spawn`
-in its tool list gets no pointer. After its first spawn the session gets a `root orchestrator` part
+decide whether to split it, do it itself or hand a heavy task whole to one session to keep its
+context, saying which in one line of the reply, `split: no, because …; considered: …`,
+`split: <n> parts: …` or the root's third form, `split: 1 part: <the task>, to keep my context`; a
+request without `courier_spawn` in its tool list gets no pointer. After its first spawn the session gets a `root orchestrator` part
 with the limits instead. Every part begins with the same `opencode-courier role:` prefix, and the hook
 adds none when one is there already, so a second copy of the plugin does not add its own; each part
 is the same on every request of its session, so the provider's prompt cache holds. A child spawned by
@@ -243,10 +246,16 @@ lists, loads and injects a skill: [plugin-api-notes.md](maintainers/plugin-api-n
 Its text is in `src/skill.ts`, snapshotted by `test/notices.test.ts`. It names no limits (the role
 part and the brief give the session's own) and says, in order: call [`courier_recall`](#memory)
 once, before deciding; decide whether to split or do, by [the brief's rule](#session-trees-and-their-limits),
-keeping the deciding, checking and integrating while handing off the long reading and writing, and
-weighing the parts an implementation task with one tightly coupled core still has (finding out what
+keeping the deciding, checking and integrating while handing off the long reading and writing. Only the
+root, the session nobody started, may start exactly one session for the whole task, when it is heavy
+(long reading, many edits, long runs) and the root's context is worth keeping; it still verifies and
+integrates the report itself (steps 5 to 7) and does a small task itself. Every other session never
+does, so that the tree is not a chain of single hops that uses up `maxDepth` for no saving of
+context. Say which in one line of the reply, the root with a third form,
+`split: 1 part: <the task>, to keep my context`. A second paragraph, "when the core is coupled", has it
+weigh the parts an implementation task with one tightly coupled core still has (finding out what
 the change needs, its e2e scenario, its documentation, a review by a session with fresh context), in
-stages when the rest depend on names the core fixes; say which in one line of the reply; plan the
+stages when the rest depend on names the core fixes. Then: plan the
 parts so that no two edit the same files; start them with one `courier_spawn` per part, all in one
 [join group](#join-groups), `isolate: true` where parts edit files in parallel, and end the turn
 without polling; read each [report](#a-childs-report) by its status; verify first-hand, running
@@ -674,7 +683,7 @@ duration in milliseconds:
 | `startedAt` | When the top session was created. |
 | `movedAt` | When a turn in the tree last ended, or the record was first written by `courier_recall`. |
 | `title` | The top session's title, as OpenCode has it at the last refresh. |
-| `split` | The top's split line, the first line of its replies that states one (`split: no, because …` or `split: <n> parts: …`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), kept as written, markdown included, or `not stated`. A stated line takes precedence over a mention: while `split` only holds `split:` (`I'll decide the split: after reading the code`), the first line beginning with it replaces the mention, once, and the mention is dropped rather than kept as a revision. A record written before this rule kept the stated lines as revisions beside the mention: when the line found is among them, the first of them, stated first, becomes `split` instead and the rest stay. A stated line is never replaced, even when compaction has dropped the reply that stated it. |
+| `split` | The top's split line, the first line of its replies that states one (`split: no, because …`, `split: <n> parts: …` or the root's `split: 1 part: <the task>, to keep my context`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), kept as written, markdown included, or `not stated`. A stated line takes precedence over a mention: while `split` only holds `split:` (`I'll decide the split: after reading the code`), the first line beginning with it replaces the mention, once, and the mention is dropped rather than kept as a revision. A record written before this rule kept the stated lines as revisions beside the mention: when the line found is among them, the first of them, stated first, becomes `split` instead and the rest stay. A stated line is never replaced, even when compaction has dropped the reply that stated it. |
 | `revisions` | Absent until the top states a second split line worded otherwise; then the later lines, newest last, the newest 3 kept: `[{ "text": "split: 2 parts: its tests, its docs", "at": …, "parts": 1 }]`. Only a line beginning with `split:` after any markdown counts, not a passing mention, and it is appended when its words, markdown aside, differ from the line recorded last (the last revision, else `split`), so a line repeated or only restyled appends nothing, and neither does reading the same replies again. `text` is the line as written, `at` when its reply was created (the refresh's time when the message has none), and `parts` how many parts the tree had at that refresh, which tells a second stage after the first landed from a rewording before any work. A revision whose reply compaction has dropped is kept. |
 | `finished` | Whether, at the last refresh, no session in the tree ran (by the same rule as the limits' `busy`) and every part had settled: none was `out` or `stalled` (a `gone` one has). A tree whose top is still integrating reads as finished until that turn ends, and one with no parts as soon as its top is idle. |
 | `recalled` | Absent until `courier_recall` was called from the tree; then `{ "calls": <n> }`, counting every call made from the top and its parts, with `"at"`, when the top itself first called it. |

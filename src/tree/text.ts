@@ -1,6 +1,6 @@
 /** The tree's model-facing texts: the child brief, the role part, refusals, reports, notices and tool results. */
 import { obj, str } from "../platform/json.js"
-import { clipText, defuse, END_TURN, SKILL_ID, SPLIT_LINE, STATUSES } from "../kernel/protocol.js"
+import { clipText, defuse, END_TURN, ROOT_SPLIT_LINE, SKILL_ID, SPLIT_LINE, STATUSES } from "../kernel/protocol.js"
 import type { Artifacts, CleanupResult, ExecutionError, HeldReport, LeftMember, Limits, Sent } from "./ports.js"
 
 // The envelope and the child brief.
@@ -77,8 +77,9 @@ export function rolePart(depth: number | null, limits: Limits) {
     return (
       `${ROLE_PREFIX} root, no sessions started yet. Before a task that touches several files or areas, load the ` +
       `${SKILL_ID} skill, call courier_recall once for how earlier trees in this project were split and how they went, ` +
-      `and decide whether to split it across sessions (doing it yourself is fine), and say ` +
-      `which in one line of your reply: ${SPLIT_LINE}`
+      `and decide whether to split it across sessions (doing it yourself is fine; so is handing a heavy task, with long ` +
+      `reading, many edits or long runs, whole to one session to keep your context, but never a small one), and say ` +
+      `which in one line of your reply: ${ROOT_SPLIT_LINE}`
     )
   if (depth === 0)
     return (

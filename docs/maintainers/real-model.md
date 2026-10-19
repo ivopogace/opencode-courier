@@ -163,16 +163,16 @@ checker (`e2e/real-model-recursive.mjs`) reads every session reached from the ro
 `courier_spawn` calls, waits until the tree has settled, and makes nine checks: the root spawned at
 least two children in its first turn; it ended that turn with no reports in it; no orchestrator polled
 (`courier_status`, `courier_children`, `courier_tree`, `sleep`, by the fan-out's rule); at least one
-child spawned at least two of its own in one turn, and no session started exactly one in all; no
-session went past `maxDepth`; every spawned session reported to its parent with a status; each
+child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all (the root may, by the
+skill's rule for a heavy task); no session went past `maxDepth`; every spawned session reported to its parent with a status; each
 sub-orchestrator reported upward once, after its own children had reported to it; the files hold the
 expected values; and the root's final reply holds them. Its notes say which sessions loaded the skill,
 used a join group, scheduled a check-in or had a spawn refused, and each report's status.
 
 `e2e/real-model-prompt-open.txt` is the same job with the split left to the root ("one session per
 part, and do no part yourself" rules out a root that does "count" itself). With it, the checker's "at
-least two children" and "no session started exactly one" fail by design when the root keeps "count",
-so the split is read from the transcripts, not from the score.
+least two children" fails by design when the root keeps "count", and the root may start the one remaining
+part alone, which "no sub-orchestrator started exactly one" does not count, so the split is read from the transcripts, not from the score.
 
 | Model | OpenCode | Result |
 |---|---|---|

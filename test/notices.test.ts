@@ -60,7 +60,11 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toMatchSnapshot()
     // The description is what the model reads in every session's skill list; the content, only once loaded.
     expect(skill.SKILL_DESCRIPTION.length).toBeLessThan(400)
-    expect(skill.SKILL_CONTENT).toContain("Never start exactly one session")
+    // Only the root may start exactly one session for the whole task; every other session never does.
+    expect(skill.SKILL_CONTENT).toContain("Only the root, the session nobody started, may start exactly one session for the whole task")
+    expect(skill.SKILL_CONTENT).toContain("Every other session never starts exactly one session for the whole task")
+    expect(skill.SKILL_CONTENT).toContain(`the root has a third form, ${kernel.ONE_PART_LINE}`)
+    expect(skill.SKILL_CONTENT).toContain("When the core is coupled:")
     expect(skill.SKILL_CONTENT).toContain("Never hand the checking to another session")
     // The split line reads the same wherever it is asked for: the skill, the brief and the root's pointer.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
@@ -79,7 +83,13 @@ describe("envelope and child brief", () => {
     expect(tree.rolePart(null, limits)).toContain(`call ${memory.RECALL_TOOL} once`)
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(kernel.SPLIT_LINE)
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
-    expect(tree.rolePart(null, limits)).toContain(kernel.SPLIT_LINE)
+    expect(tree.rolePart(null, limits)).toContain(kernel.ROOT_SPLIT_LINE)
+    // The one-part form is the root's alone: no brief, no sub-orchestrator's role and no leaf's offers it.
+    expect(kernel.ROOT_SPLIT_LINE).toBe(`${kernel.SPLIT_LINE} or ${kernel.ONE_PART_LINE}`)
+    expect(kernel.SPLIT_LINE).not.toContain("1 part")
+    for (const depth of [1, 2, 3]) expect(tree.childBrief("ses_parent", "Fix the bug", depth, limits)).not.toContain(kernel.ONE_PART_LINE)
+    for (const depth of [0, 1, 2, 3]) expect(tree.rolePart(depth, limits)).not.toContain(kernel.ONE_PART_LINE)
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task")
     expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
     expect(tree.rolePart(1, limits)).toContain(`load the ${kernel.SKILL_ID} skill`)
     expect(tree.rolePart(3, limits)).not.toContain(kernel.SKILL_ID)

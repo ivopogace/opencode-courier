@@ -56,8 +56,10 @@ function splitRule(parentID: string, depth: number, limits: Limits) {
       `session per part with courier_spawn, at most ${limits.maxChildren} of yours running at once and ${limits.maxTotal} in the whole tree.`,
     "- Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task.",
     `- Say which in one line of your reply: ${SPLIT_LINE}.`,
-    "- If you split, you orchestrate: end your turn while they work, check and integrate each part yourself when it " +
-      `reports (never hand that checking to another session), then send ${parentID} one combined report.`,
+    "- If you split, you orchestrate: start every part in one group, with the same group name for each, then end your " +
+      "turn while they work. Do not poll with courier_status, courier_children, courier_tree or sleep: the group's " +
+      "reports wake you. Check and integrate each part yourself when it reports (never hand that checking to another " +
+      `session), then send ${parentID} one combined report.`,
   ]
 }
 
@@ -85,8 +87,8 @@ export function rolePart(depth: number | null, limits: Limits) {
     )
   if (depth < maxDepth)
     return (
-      `${ROLE_PREFIX} sub-orchestrator, at depth ${depth} of at most ${maxDepth}. Split your task with courier_spawn or ` +
-      `do it yourself, as your brief says; sessions can be started ${count(maxDepth - depth, "level")} below you. ${budget}`
+      `${ROLE_PREFIX} sub-orchestrator, at depth ${depth} of at most ${maxDepth}. Before you split, load the ${SKILL_ID} ` +
+      `skill. Split your task with courier_spawn or do it yourself, as your brief says; sessions can be started ${count(maxDepth - depth, "level")} below you. ${budget}`
     )
   return (
     `${ROLE_PREFIX} leaf, at depth ${depth}, the deepest the session tree goes. You cannot start sessions: do your ` +

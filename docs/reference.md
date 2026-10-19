@@ -210,13 +210,14 @@ days, starts its children as if it were the top of a tree.
 touching separate files or areas, one session per part; do it itself when it is small, sequential or
 tightly coupled; never start exactly one session for the whole task; and say which in one line of its
 reply, `split: no, because …; considered: <the parts you weighed>` or `split: <n> parts: …`. A
-session that splits ends its turn while its children work, checks and integrates each part itself,
-and sends its parent one combined report. At `maxDepth` it is told to do the task itself. Every
+session that splits starts every part in one group and ends its turn while its children work, without
+polling with `courier_status`, `courier_children`, `courier_tree` or `sleep`: the group's reports wake
+it. It checks and integrates each part itself, and sends its parent one combined report. At `maxDepth` it is told to do the task itself. Every
 spawned session is told how to [report](#a-childs-report). The text is `tree/text.ts`'s brief.
 
 **A `context` hook names the role on every model request.** For a spawned session the plugin adds
 one system part, `opencode-courier role: …`, naming its role and depth: `sub-orchestrator` below
-`maxDepth`, with the limits, and `leaf` at it, which is told it cannot start sessions and whose
+`maxDepth`, with the limits and the instruction to load the `courier-orchestrate` skill before it splits, and `leaf` at it, which is told it cannot start sessions and whose
 request goes without `courier_spawn`, [`courier_recall` and `courier_note`](#memory) in its tool
 list. The hook is guidance and `courier_spawn` the guarantee: another plugin's hook can put the tool
 back, and the call is still refused. A session nobody spawned that has started none gets a pointer

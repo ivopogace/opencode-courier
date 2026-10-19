@@ -81,6 +81,10 @@ describe("envelope and child brief", () => {
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
     expect(tree.rolePart(null, limits)).toContain(kernel.SPLIT_LINE)
     expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
+    expect(tree.rolePart(1, limits)).toContain(`load the ${kernel.SKILL_ID} skill`)
+    expect(tree.rolePart(3, limits)).not.toContain(kernel.SKILL_ID)
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Do not poll with courier_status, courier_children, courier_tree or sleep")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("poll")
   })
   test("refusals", () => {
     expect(tree.depthRefusal(3, 3)).toMatchSnapshot()

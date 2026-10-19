@@ -279,7 +279,7 @@ passes here can still poll or forget to report on a harder task, so the `courier
 [Using it](../../README.md#using-it) still applies. Which session loads the skill varies from run to
 run; on one-result tasks such as the fan-out and the relays, models do not load it. The tables hold
 runs on the current wording, except the permission table's three rows marked as run on an earlier
-wording of the native notice, which stay as results. Not re-run on the current wording:
+wording of the native notice, which stay as results. A row is an observation of one to three runs, below the [floor](#reading-many-runs) a claim needs. Not re-run on the current wording:
 `COURIER_PERSON=other-server` and the models other than `longcat-2.5-preview-free`; their earlier
 results are in this file's history. Once, in the
 recursive scenario, a "numbers" session's second report landed in its inbox with no turn opened for

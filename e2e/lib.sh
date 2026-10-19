@@ -1,6 +1,5 @@
 # Shared by run.sh and real-model.sh: a throwaway home directory and an OpenCode V2 server for
-# $WORK/project. Source it after setting ROOT, OPENCODE, WORK and SERVER_PORT. SERVER_FLAGS, if set,
-# adds flags to `opencode serve`; real-model.sh sets it to `--log-level debug`.
+# $WORK/project. Source it after setting ROOT, OPENCODE, WORK and SERVER_PORT. SERVER_FLAGS adds flags to serve.
 
 export HOME=$WORK/home XDG_CONFIG_HOME=$WORK/home/.config XDG_DATA_HOME=$WORK/home/.local/share
 export XDG_STATE_HOME=$WORK/home/.local/state XDG_CACHE_HOME=$WORK/home/.cache

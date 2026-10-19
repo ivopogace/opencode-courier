@@ -4,7 +4,7 @@ import { conditionTable, parseRun, secondsOf, tables } from "../script/real-mode
 
 const fixture = (name: string) => join(import.meta.dir, "fixtures", "real-model", name)
 
-describe("real-model-table.js", () => {
+describe("real-model-table", () => {
   test("reads a passing run's summary and timeline", () => {
     const run = parseRun(fixture("pass-a"))
     expect(run).toMatchObject({ name: "pass-a", verdict: "pass", passed: 2, total: 2, recalls: 2, polled: 0, requests: 26, seconds: 52 })

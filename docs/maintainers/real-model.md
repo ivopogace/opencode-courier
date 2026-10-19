@@ -57,7 +57,7 @@ The server runs at `--log-level debug` (`SERVER_FLAGS` in `e2e/lib.sh`, set by `
 `run.sh` keeps the default level) and `e2e/probe-plugin` is loaded, so a session that stops moving can
 be traced in three files of the work directory:
 
-- `timeline.txt` (recursive scenario) gives each step and each tool call with its start and end time,
+- `timeline.txt` (recursive and recursive-fault scenarios) gives each step and each tool call with its start and end time,
   and for a step how long after the last event before it began. A tool that ended and a next step that
   began minutes later is a gap you can read off as a number; a step shown as `…` has no end, which is a
   request without an answer.

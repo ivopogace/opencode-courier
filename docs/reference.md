@@ -268,7 +268,8 @@ the whole, or, at the top, one `courier_note` with the tree's [lesson](#the-less
 end](#a-child-that-ends-without-a-report), a `courier_spawn` refused by a limit (never retry in a
 loop), losing track (one `courier_tree`), a subtree to abandon (`courier_stop`). The real-model
 smoke test's [recursive scenario](maintainers/real-model.md#recursive-orchestration) tries it against
-free models. Steps 3, 4 and 6 repeat the brief's split rule on purpose: the root has no brief, so the skill is the only text that gives it those rules.
+free models, and its [fault variant](maintainers/real-model.md#a-part-that-goes-wrong) a `partial` report a
+sub-orchestrator has to act on. Steps 3, 4 and 6 repeat the brief's split rule on purpose: the root has no brief, so the skill is the only text that gives it those rules.
 
 ### Without the skill loaded
 

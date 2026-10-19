@@ -1,0 +1,7 @@
+root ses_root:
+turn 1 (opened by the prompt):
+  step 12:00:00.000 -> 12:00:05.000 (5.0 s)
+  courier_spawn({}) -> completed [12:00:01.000 -> 12:00:02.000 (1.0 s)]
+  depth 1 ses_num:
+  turn 1 (opened by the prompt):
+    step 12:00:06.000 -> 12:00:52.000 (46.0 s)

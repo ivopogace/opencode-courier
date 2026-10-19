@@ -1,0 +1,13 @@
+{
+  "verdict": "fail",
+  "rootID": "ses_root",
+  "sessions": { "ses_root": { "depth": 0 } },
+  "checks": { "the root spawned at least two children": true, "no orchestrator polled": false, "the files hold the expected values": false },
+  "notes": [
+    "no session loaded a skill",
+    "no session called courier_recall",
+    "the root started 2 session(s), in no group",
+    "polled: the root, ses_num"
+  ],
+  "usage": { "requests": 18 }
+}

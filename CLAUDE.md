@@ -154,7 +154,9 @@ behaviour gets a scenario there. `tui.sh`, a CI job next to `run.sh`: the TUI pa
 `COURIER_SCENARIO=permission`, `question` and `recursive`): smoke test with a real model, not in CI.
 Re-run it after any change to `src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or a tool
 description (in a `src/**/tools.ts`), which is every model-facing string; `docs/maintainers/real-model.md`
-describes it and holds a results table per scenario, which a re-run updates.
+describes it and holds a results table per scenario, which a re-run updates. `script/real-model-table.ts`
+prints one table per condition from many run directories; `test/real-model-table.test.ts` pins the
+checker's note wording it parses.
 
 `.github/workflows/ci.yml`: both suites on every push to `main` and every pull request: `run.sh` in
 four shards and `tui.sh` in parallel, all skipped on a pull request that changes only documentation.

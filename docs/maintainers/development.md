@@ -20,6 +20,7 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode E2E_GROUPS=depth e2e/run.sh
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh            # the TUI part, in tmux
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh     # a real model, not in CI
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh    # two servers, not in CI
+bun script/real-model-table.ts [name=]<run-dir>...   # a table per condition from real-model run directories
 ```
 
 `KEEP=1` keeps a live script's temp directory and logs; `E2E_WORK` sets where it goes.
@@ -61,7 +62,8 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh    # two
   and from the package `opencode plugin add` installs.
 - **The real-model smoke test** (`e2e/real-model.sh`) runs the same server with a real model, free on
   OpenCode Zen by default, and checks that it uses the tools as meant: [real-model.md](real-model.md).
-  Re-run it after any change to a model-facing string.
+  Re-run it after any change to a model-facing string. [`script/real-model-table.ts`](../../script/real-model-table.ts)
+  tabulates many runs per condition ([real-model.md](real-model.md#reading-many-runs)).
 - **Two servers** (`e2e/two-servers.sh`) runs two servers on one data directory:
   [plugin-api-notes.md](plugin-api-notes.md#two-servers-on-one-data-directory).
 

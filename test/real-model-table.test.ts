@@ -31,10 +31,25 @@ describe("real-model-table", () => {
     expect(out).toContain("### base\n")
     expect(out).toContain("### pass-a\n")
     expect(out).toContain("| pass-a | pass | 2/2 | d0: 1, d1: 1 | 2 | 2 (parts, numbers-halves) | 0 | 26 | 52 s | split: 2 parts \\| numbers, count | split: 2 halves |")
-    expect(out).toContain("3 run(s), 2 finished, 1 pass; mean score 1.5/2, 1.0 polled session(s), 22.0 requests.")
+    expect(out).toContain("3 run(s), 2 finished, 1 pass; mean score 1.5/2.5, 1.0 polled session(s), 22.0 requests.")
   })
 
   test("an empty condition still prints a table", () => {
     expect(conditionTable("none", [])).toContain("0 run(s), 0 finished, 0 pass; mean score -/-")
   })
+})
+
+describe("real-model-table, unusable arguments", () => {
+  test("a path without a summary.json is skipped, not fatal", () => {
+    const out = tables([fixture("pass-a"), fixture("missing"), join(fixture("pass-a"), "summary.json")])
+    expect(out.match(/^### /gm)).toHaveLength(1)
+  })
+
+  test("only step spans count towards the duration", () => {
+    expect(secondsOf("step 10:00:00.000 -> 10:00:01.000 (1.0 s)\n  tool() -> completed [10:00:00.500 -> 10:00:09.000 (8.5 s)]")).toBe(1)
+  })
+})
+
+test("a timeline across midnight has no duration", () => {
+  expect(secondsOf("step 23:59:50.000 -> 00:00:10.000 (20.0 s)")).toBeUndefined()
 })

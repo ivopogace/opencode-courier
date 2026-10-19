@@ -29,15 +29,16 @@ export type Run = {
 const WHO = String.raw`(the root|session (ses_\w+)(?: \(depth (\d+)\))?)`
 const depthOf = (who: string, depth: string | undefined) => (who === "the root" ? 0 : Number(depth ?? 1))
 
-/** The span of a timeline in seconds: its earliest step start to its latest end; undefined without any. */
+/** The span of a timeline in seconds: its earliest step start to its latest end; undefined without any, or across midnight. */
 export function secondsOf(timeline: string): number | undefined {
   const at = (clock: string) => {
     const [h = 0, m = 0, s = 0] = clock.split(":").map(Number)
     return h * 3600 + m * 60 + s
   }
-  const spans = [...timeline.matchAll(/(\d\d:\d\d:\d\d\.\d+) -> (\d\d:\d\d:\d\d\.\d+)/g)]
+  const spans = [...timeline.matchAll(/step (\d\d:\d\d:\d\d\.\d+) -> (\d\d:\d\d:\d\d\.\d+)/g)]
   if (!spans.length) return undefined
-  return Math.max(...spans.map((span) => at(span[2]!))) - Math.min(...spans.map((span) => at(span[1]!)))
+  const seconds = Math.max(...spans.map((span) => at(span[2]!))) - Math.min(...spans.map((span) => at(span[1]!)))
+  return seconds < 0 || spans.some((span) => at(span[2]!) < at(span[1]!)) ? undefined : seconds
 }
 
 export function parseRun(dir: string): Run {
@@ -121,7 +122,7 @@ export function conditionTable(condition: string, runs: readonly Run[]): string 
     "|---|---|---|---|---|---|---|---|---|---|---|",
     ...rows.map((row) => `| ${row} |`),
     "",
-    `${runs.length} run(s), ${finished.length} finished, ${finished.filter((run) => run.verdict === "pass").length} pass; mean score ${mean(finished.map((run) => run.passed))}/${finished[0]?.total ?? "-"}, ` +
+    `${runs.length} run(s), ${finished.length} finished, ${finished.filter((run) => run.verdict === "pass").length} pass; mean score ${mean(finished.map((run) => run.passed))}/${mean(finished.map((run) => run.total))}, ` +
       `${mean(finished.map((run) => run.polled))} polled session(s), ${mean(finished.map((run) => run.requests))} requests.`,
   ].join("\n")
 }
@@ -132,6 +133,10 @@ export function tables(args: readonly string[]): string {
   for (const arg of args) {
     const eq = arg.indexOf("=")
     const [label, dir] = eq === -1 ? [basename(arg), arg] : [arg.slice(0, eq), arg.slice(eq + 1)]
+    if (!existsSync(join(dir!, "summary.json"))) {
+      console.error(`skipping ${dir}: no summary.json`)
+      continue
+    }
     conditions.set(label!, [...(conditions.get(label!) ?? []), parseRun(dir!)])
   }
   return [...conditions].map(([label, runs]) => conditionTable(label, runs)).join("\n\n")

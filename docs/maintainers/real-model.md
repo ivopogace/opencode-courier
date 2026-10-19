@@ -252,12 +252,15 @@ bun script/real-model-table.ts baseline=~/courier-runs/base-1 baseline=~/courier
 bun script/real-model-table.ts ~/courier-runs/*   # no label: each directory is a condition of its own, named by its basename
 ```
 
-A label before `=` names the condition and several directories may share one. Each row has the verdict,
-the score (checks passed of all), skill loads per depth, `courier_recall` calls, the join groups used,
-polled sessions, model requests, the duration (the timeline's first step start to its last end) and the
-root's and each sub-orchestrator's `split:` line, all parsed from `summary.json`'s notes; a line under
-the table gives the means over its finished runs, leaving out the inconclusive ones, which stay in the
-table.
+A label before `=` names the condition and several directories may share one. A path without a
+`summary.json`, such as the `.log` files the glob also matches or a run that never got that far, is
+skipped with a line on stderr. Each row has the verdict, the score (checks passed of all), skill loads
+per depth, `courier_recall` calls, the join groups used (distinct names across the tree), polled
+sessions (the root counts as one), model requests, the duration (the timeline's first step start to its
+last step end; `-` for a run from before the timeline carried timestamps, or one that crossed midnight
+UTC) and the root's and each sub-orchestrator's `split:` line, all parsed from `summary.json`'s notes. A
+line under the table gives the counts of runs and passes and the means of the score, polled sessions
+and requests over its finished runs, leaving out the inconclusive ones, which stay in the table.
 
 How many runs a claim needs: a claim such as "the depth-1 polling went away" or "the lesson steered the
 root" is about a rate, and three runs of one model cannot tell a rate from luck. Five finished runs per

@@ -269,6 +269,7 @@ Its first runs happen in the Docker sandbox in `todo/sandbox`.
 
 | Model | OpenCode | Result |
 |---|---|---|
+| `deepseek-v4.1-flash-free`, catalog, c8fe885 (#308), in the Docker sandbox | 2.0.32 | 13/13 in 32 requests and 67 s: the half-B leaf reported `partial` with its number; the "numbers" session, with `courier-orchestrate` loaded, sent it one `courier_send` to finish and ended its turn, the leaf then reported `done`, and "numbers" verified both files and reported upward once, `done`; the root replied `391 1024 42`. The root, "numbers" and the half-A leaf each loaded the skill and called `courier_recall` once before their split; no session polled; no gap in the timeline, no error in the log. |
 
 ## Seeding a record
 

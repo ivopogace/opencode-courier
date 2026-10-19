@@ -51,6 +51,23 @@ checks fail and model requests failed too, usually HTTP 429 from a free model: r
 a plainly named directory (the default temp dir is): a model that copies a long, odd path into its
 children's tasks gets it wrong, and the files land elsewhere.
 
+### Reading a stall
+
+The server runs at `--log-level debug` (`SERVER_FLAGS` in `e2e/lib.sh`, set by `real-model.sh`;
+`run.sh` keeps the default level) and `e2e/probe-plugin` is loaded, so a session that stops moving can
+be traced in three files of the work directory:
+
+- `timeline.txt` (recursive scenario) gives each step and each tool call with its start and end time,
+  and for a step how long after the last event before it began. A tool that ended and a next step that
+  began minutes later is a gap you can read off as a number; a step shown as `…` has no end, which is a
+  request without an answer.
+- `server.log` holds the provider calls and their errors at that level. Look from the time the tool
+  ended: a request and no response means the provider never answered; an error after it means one was
+  swallowed; no request at all means the server never asked, and the cause is in OpenCode or the plugin.
+- `probe.log` holds one JSON line per event the server emitted (`at`, `type`, `sessionID`). Filter it by
+  the stalled session and the minutes after the tool's end: events for that session, such as
+  `session.execution.failed`, say what the server did; none say it did nothing.
+
 ## The fan-out
 
 The default. The parent is asked:

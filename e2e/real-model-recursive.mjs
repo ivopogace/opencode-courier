@@ -50,6 +50,12 @@ const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
 }
+// A time field ({ created, ran?, completed? }, epoch ms) as "12:00:01.234 -> 12:00:05.001 (3.8 s)"; "…" while it has not ended.
+const clock = (ms) => new Date(ms).toISOString().slice(11, 23)
+const spanOf = (time) =>
+  time?.created === undefined
+    ? ""
+    : `${clock(time.created)} -> ${time.completed === undefined ? "…" : `${clock(time.completed)} (${((time.completed - time.created) / 1000).toFixed(1)} s)`}`
 // Splits a transcript into turns: a prompt or delivered message opens one when the last step had
 // ended its turn; otherwise it steered the running turn.
 function turnsOf(list) {
@@ -156,8 +162,12 @@ function describe(id, indent) {
     for (const message of turn) {
       if (message.type === "synthetic") lines.push(`${pad}  <- ${short(message.text.replace(/\s+/g, " "), 200)}`)
       if (message.type !== "assistant") continue
+      // The gap a stall shows as: how long after the last thing before this step ended it began.
+      const earlier = turn.slice(0, turn.indexOf(message)).flatMap((other) => (other.type === "assistant" ? [other.time.completed, ...other.content.map((part) => part.time?.completed)] : [other.time?.created]))
+      const since = Math.max(0, ...earlier.filter((at) => at !== undefined))
+      lines.push(`${pad}  step ${spanOf(message.time)}${since ? `, began ${((message.time.created - since) / 1000).toFixed(1)} s after the last event before it` : ""}`)
       for (const part of message.content) {
-        if (part.type === "tool") lines.push(`${pad}  ${part.name}(${short(part.state.input, 140)}) -> ${part.state.status}${part.state.status === "error" ? `: ${short(part.state.error)}` : ""}`)
+        if (part.type === "tool") lines.push(`${pad}  ${part.name}(${short(part.state.input, 140)}) -> ${part.state.status}${part.state.status === "error" ? `: ${short(part.state.error)}` : ""}${part.time ? ` [${spanOf(part.time)}]` : ""}`)
         if (part.type === "text" && part.text.trim()) lines.push(`${pad}  says: ${short(part.text.trim())}`)
       }
       if (message.error) lines.push(`${pad}  error: ${short(message.error)}`)

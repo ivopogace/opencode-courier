@@ -209,9 +209,9 @@ days, starts its children as if it were the top of a tree.
 `maxDepth` it is given a rule: split the task when it has 2 or more independent, substantial parts
 touching separate files or areas, one session per part; do it itself when it is small, sequential or
 tightly coupled; never start exactly one session for the whole task (only the root may, by [the skill's rule](#the-courier-orchestrate-skill)
-for a heavy task, so the brief's line has no one-part form); and say which in one line of its
+for a heavy task, so the brief's line has no one-part form; a core it stages before the rest is one part, not the whole, when 2 or more parts follow it); and say which in one line of its
 reply, `split: no, because …; considered: <the parts you weighed>` or `split: <n> parts: …`. A
-session that splits starts every part in one group and ends its turn while its children work, without
+session that splits starts the parts that run at once in one group and ends its turn while its children work, without
 polling with `courier_status`, `courier_children`, `courier_tree` or `sleep`: the group's reports wake
 it. It checks and integrates each part itself, and sends its parent one combined report. At `maxDepth` it is told to do the task itself. Every
 spawned session is told how to [report](#a-childs-report). The text is `tree/text.ts`'s brief.
@@ -255,8 +255,9 @@ context. Say which in one line of the reply, the root with a third form,
 `split: 1 part: <the task>, to keep my context`. A second paragraph, "when the core is coupled", has it
 weigh the parts an implementation task with one tightly coupled core still has (finding out what
 the change needs, its e2e scenario, its documentation, a review by a session with fresh context), in
-stages when the rest depend on names the core fixes. Then: plan the
-parts so that no two edit the same files; start them with one `courier_spawn` per part, all in one
+stages when the rest depend on names the core fixes (a staged core is one part of the task, not the whole
+task, so the rule against one session for the whole task does not apply to it when 2 or more parts follow it). Then: plan the
+parts so that no two edit the same files; start them with one `courier_spawn` per part that runs at once, all in one
 [join group](#join-groups), `isolate: true` where parts edit files in parallel, and end the turn
 without polling; read each [report](#a-childs-report) by its status; verify first-hand, running
 checks through the project's scripts (`bun run <script>`, `npm run <script>`) so that one permission
@@ -275,7 +276,7 @@ A session may never load the skill: a model decides to, and the [recursive runs]
 
 What holds without it:
 
-- The rules the brief and the role part carry: the split rule and its one line, never exactly one session for the whole task, one group for the parts, ending the turn without polling, checking and integrating each part itself, the limits, and how to [report](#a-childs-report).
+- The rules the brief and the role part carry: the split rule and its one line, never exactly one session for the whole task, one group for the parts that run at once, ending the turn without polling, checking and integrating each part itself, the limits, and how to [report](#a-childs-report).
 - The guarantees the tools carry: the limits refused at `courier_spawn`, `courier_spawn` hidden from a leaf, the [missed wake](#a-missed-wake), and the notices that carry the next step when it is needed (the three refusals, [`failureNotice`](#a-child-that-fails) and [`silentNotice`](#a-child-that-ends-without-a-report)).
 
 What only the skill adds: the context economy, the root's one-part form, the staged split, planning the parts so that no two edit the same files, `isolate: true` and committing first, `courier_later` check-ins, reading a report by its status, checks through the project's scripts, merging and cleanup, the note at the end, and `courier_tree` after a compaction.

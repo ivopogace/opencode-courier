@@ -65,6 +65,7 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("Every other session never starts exactly one session for the whole task")
     expect(skill.SKILL_CONTENT).toContain(`the root has a third form, ${kernel.ONE_PART_LINE}`)
     expect(skill.SKILL_CONTENT).toContain("When the core is coupled:")
+    expect(skill.SKILL_CONTENT).toContain("A staged core is one part of the task, not the whole task")
     expect(skill.SKILL_CONTENT).toContain("Never hand the checking to another session")
     // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
@@ -89,7 +90,8 @@ describe("envelope and child brief", () => {
     expect(kernel.SPLIT_LINE).not.toContain("1 part")
     for (const depth of [1, 2, 3]) expect(tree.childBrief("ses_parent", "Fix the bug", depth, limits)).not.toContain(kernel.ONE_PART_LINE)
     for (const depth of [0, 1, 2, 3]) expect(tree.rolePart(depth, limits)).not.toContain(kernel.ONE_PART_LINE)
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task; a core you stage before the rest is one part of it, not the whole, when 2 or more parts follow it.")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("start the parts that run at once in one group, with the same group name for each, then end your turn")
     expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
     expect(tree.rolePart(1, limits)).toContain(`load the ${kernel.SKILL_ID} skill`)
     expect(tree.rolePart(3, limits)).not.toContain(kernel.SKILL_ID)

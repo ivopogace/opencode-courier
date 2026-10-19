@@ -37,11 +37,12 @@ export const SKILL_CONTENT = [
     "repository's rules and reports its findings (isolate: false, it edits nothing). Weigh each of them. When the other " +
     "parts depend on names and texts the core fixes, split in stages: the core first, yourself when it is small or by one " +
     "session when it is big, merged and committed before the rest start; then, if 2 or more parts remain, one session per " +
-    "remaining part, in one group.",
+    "remaining part, in one group. A staged core is one part of the task, not the whole task, so the rule against starting exactly one " +
+    "session for the whole task does not apply to it when 2 or more parts follow it.",
   "2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to " +
     "produce and where, how to check it, what to report. Say if it may split its part further, and to run its checks " +
     "through the project's scripts (step 6): each permission request of a session below you wakes you and waits on the person.",
-  "3. Start them: one courier_spawn per part, all with the same group name, so you are woken once with every report; " +
+  "3. Start them: one courier_spawn per part that runs at once, all with the same group name, so you are woken once with every report; " +
     "isolate: true for each part that edits files in parallel with another (commit your own work first if you are isolated " +
     "yourself). For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.",
   "4. End your turn: reply without calling more tools. Do not poll with courier_status, courier_children, courier_tree or " +

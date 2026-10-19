@@ -185,7 +185,8 @@ child spawned at least two of its own in one turn, and no sub-orchestrator start
 skill's rule for a heavy task); no session went past `maxDepth`; every spawned session reported to its parent with a status; each
 sub-orchestrator reported upward once, after its own children had reported to it; the files hold the
 expected values; and the root's final reply holds them. Its notes say which sessions loaded the skill,
-used a join group, scheduled a check-in or had a spawn refused, and each report's status.
+whether each orchestrator had `courier-orchestrate` loaded before its first spawn, after it or not at
+all, which used a join group, scheduled a check-in or had a spawn refused, and each report's status.
 
 `e2e/real-model-prompt-open.txt` is the same job with the split left to the root ("one session per
 part, and do no part yourself" rules out a root that does "count" itself). With it, the checker's "at
@@ -247,11 +248,12 @@ The checker is the recursive one, run with `--fault`: its nine checks, then four
 session is found by its first report, a status other than `done` from a session below a
 sub-orchestrator, not by its task, which two sessions pass on in their own words: the fault reached a
 leaf; its parent messaged it with `courier_send` after that report and before reporting upward; it then
-reported `done`; and its parent reported upward once, after that `done`, with status `done`. Its notes
-add, for each orchestrator, whether it had `courier-orchestrate` loaded before its first spawn, after
-it or not at all; for the faulty session, the statuses it reported in order, whether its parent had
-loaded the skill when the first report reached it, what the parent's message said, and the statuses the
-parent reported upward. "Session … reported 2 times" is expected for that session.
+reported `done`; and its parent reported upward once, after that `done`, with status `done`. A message
+sent in the same step as the parent's report upward counts when it comes first in that step. Its notes
+add, for the faulty session, the statuses it reported in order, whether its parent had loaded
+`courier-orchestrate` when the first report reached it (the recursive notes say whether each
+orchestrator had it loaded before its first spawn), what the parent's message said, and the statuses
+the parent reported upward. "Session … reported 2 times" is expected for that session.
 
 Assumptions the design rests on: the task survives two hops word for word (a root or "numbers" session
 that rewrites it so the half reports `done` first fails the first fault check, and the transcripts show

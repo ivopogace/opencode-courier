@@ -1,6 +1,5 @@
 // Waits for a real model's recursive split to settle, saves every session's transcript to WORK and checks the tree
-// (node e2e/real-model-recursive.mjs <rootSessionID> [--saved] [--fault]: --saved re-reads WORK, --fault adds the checks of
-// COURIER_SCENARIO=recursive-fault). Exit 2 means inconclusive.
+// (node e2e/real-model-recursive.mjs <rootSessionID> [--saved to re-read WORK] [--fault for recursive-fault]). Exit 2 means inconclusive.
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -18,6 +17,8 @@ const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 3)
 const LOOKS = new Set(["courier_status", "courier_children", "courier_tree"])
 // courier_recall counts as a look too, with one allowance: the one call the skill asks for, before the split, in the first turn.
 const RECALL = "courier_recall"
+const SKILL = "courier-orchestrate"
+const loadsAnySkill = (part) => part.type === "tool" && part.name === "skill" && part.state.status === "completed"
 
 // A session's whole transcript, oldest first, a page at a time.
 async function messages(sessionID) {
@@ -100,15 +101,18 @@ const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
 // The reports of `child` delivered to its parent's transcript, in order: a message with its status.
 const deliveriesFrom = (list, child) =>
   list.flatMap((message, index) => (reportersOf(message).includes(child) && statusOf(message, child) ? [{ index, message }] : []))
-// A session's completed courier_send calls to `to`, each with the index of its message.
+// A session's completed courier_send calls to `to`, each with the index of its message and its place among that message's parts.
 const sendsTo = (list, to) =>
   list.flatMap((message, index) =>
     message.type !== "assistant"
       ? []
-      : message.content
-          .filter((part) => part.type === "tool" && part.name === "courier_send" && part.state.status === "completed" && part.state.input?.sessionID === to)
-          .map((part) => ({ index, status: part.state.input.status, message: part.state.input.message })),
+      : message.content.flatMap((part, place) =>
+          part.type === "tool" && part.name === "courier_send" && part.state.status === "completed" && part.state.input?.sessionID === to
+            ? [{ index, place, status: part.state.input.status, message: part.state.input.message }]
+            : [],
+        ),
   )
+const sentBefore = (one, other) => one.index < other.index || (one.index === other.index && one.place < other.place)
 // A session's reports to its parent: its messages to it with a status.
 const reportsTo = (list, parentID) => sendsTo(list, parentID).filter((send) => send.status)
 
@@ -225,8 +229,8 @@ const fileText = (file) => {
   }
 }
 const fileTexts = files.map(fileText)
-// --fault: one leaf is told to report partial first and to finish only once its parent messages it. It is found by its
-// first report, not by its task, which the root and the sub-orchestrator pass on in their own words.
+// The fault --fault checks for: one leaf told to report partial first and to finish only once its parent messages it, found
+// by its first report, not by its task, which the root and the sub-orchestrator pass on in their own words.
 const deliveriesOf = (id) => deliveriesFrom(tree.get(tree.get(id).parentID).list, id).map((delivery) => ({ ...delivery, status: statusOf(delivery.message, id) }))
 const faulty = spawned.filter(([id, entry]) => entry.parentID !== rootID && (deliveriesOf(id)[0]?.status ?? "done") !== "done")
 // How its parent handled it: a courier_send to it after its first report and before the parent's own report upward, its
@@ -235,7 +239,7 @@ const handling = faulty.map(([id, entry]) => {
   const parent = tree.get(entry.parentID)
   const [first, ...later] = deliveriesOf(id)
   const upward = reportsTo(parent.list, parent.parentID)
-  const nudge = sendsTo(parent.list, id).find((send) => send.index > first.index && (upward[0] === undefined || send.index < upward[0].index))
+  const nudge = sendsTo(parent.list, id).find((send) => send.index > first.index && (upward[0] === undefined || sentBefore(send, upward[0])))
   const finished = nudge && later.find((delivery) => delivery.index > nudge.index && delivery.status === "done")
   return { id, entry, parent, first, statuses: [first, ...later].map((delivery) => delivery.status), nudge, finished, upward }
 })
@@ -267,7 +271,7 @@ const checks = [
 
 const notes = []
 for (const [id, entry] of tree) {
-  const loads = toolsOf(entry.list).filter((part) => part.name === "skill" && part.state.status === "completed").map((part) => part.state.input?.id)
+  const loads = toolsOf(entry.list).filter(loadsAnySkill).map((part) => part.state.input?.id)
   if (loads.length) notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} loaded the skill(s): ${loads.join(", ")}`)
 }
 if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.name === "skill"))) notes.push("no session loaded a skill")
@@ -303,8 +307,7 @@ for (const [id, entry] of orchestrators) {
   if (refused.length) notes.push(`${id === rootID ? "the root" : `session ${id}`} had ${refused.length} courier_spawn call(s) refused: ${short(refused[0].state.error, 100)}`)
 }
 // Whether each orchestrator had courier-orchestrate loaded when it split: the skill holds steps 5 to 8, the brief does not.
-const SKILL = "courier-orchestrate"
-const loadsSkill = (part) => part.type === "tool" && part.name === "skill" && part.state.status === "completed" && part.state.input?.id === SKILL
+const loadsSkill = (part) => loadsAnySkill(part) && part.state.input?.id === SKILL
 for (const [id, entry] of orchestrators) {
   const tools = toolsOf(entry.list)
   const load = tools.findIndex(loadsSkill)

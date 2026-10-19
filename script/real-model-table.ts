@@ -131,13 +131,15 @@ export function conditionTable(condition: string, runs: readonly Run[]): string 
 export function tables(args: readonly string[]): string {
   const conditions = new Map<string, Run[]>()
   for (const arg of args) {
-    const eq = arg.indexOf("=")
-    const [label, dir] = eq === -1 ? [basename(arg), arg] : [arg.slice(0, eq), arg.slice(eq + 1)]
-    if (!existsSync(join(dir!, "summary.json"))) {
+    // A label has no path separator, so a directory whose path holds an "=" stays a directory.
+    const label = arg.match(/^([^/\\=]+)=/)?.[1]
+    const dir = label === undefined ? arg : arg.slice(label.length + 1)
+    if (!existsSync(join(dir, "summary.json"))) {
       console.error(`skipping ${dir}: no summary.json`)
       continue
     }
-    conditions.set(label!, [...(conditions.get(label!) ?? []), parseRun(dir!)])
+    const name = label ?? basename(dir)
+    conditions.set(name, [...(conditions.get(name) ?? []), parseRun(dir)])
   }
   return [...conditions].map(([label, runs]) => conditionTable(label, runs)).join("\n\n")
 }

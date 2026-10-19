@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { cpSync, mkdtempSync, readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { conditionTable, parseRun, secondsOf, tables } from "../script/real-model-table.js"
 
@@ -15,7 +17,7 @@ describe("real-model-table", () => {
   })
 
   test("reads a failing run with no skill, no group and two polled sessions", () => {
-    const run = parseRun(fixture("pass-b"))
+    const run = parseRun(fixture("fail-b"))
     expect(run).toMatchObject({ verdict: "fail", passed: 1, total: 3, recalls: 0, polled: 2, groups: [], seconds: undefined, rootSplit: undefined, subSplits: [] })
     expect(run.skillLoads.size).toBe(0)
   })
@@ -26,7 +28,7 @@ describe("real-model-table", () => {
   })
 
   test("a table per condition, runs of one label together, inconclusive runs left out of the means", () => {
-    const out = tables([`base=${fixture("pass-a")}`, `base=${fixture("pass-b")}`, `base=${fixture("inconclusive-c")}`, fixture("pass-a")])
+    const out = tables([`base=${fixture("pass-a")}`, `base=${fixture("fail-b")}`, `base=${fixture("inconclusive-c")}`, fixture("pass-a")])
     expect(out.match(/^### /gm)).toHaveLength(2)
     expect(out).toContain("### base\n")
     expect(out).toContain("### pass-a\n")
@@ -52,4 +54,16 @@ describe("real-model-table, unusable arguments", () => {
 
 test("a timeline across midnight has no duration", () => {
   expect(secondsOf("step 23:59:50.000 -> 00:00:10.000 (20.0 s)")).toBeUndefined()
+})
+
+test("an absolute path holding an = is a directory, not a label", () => {
+  const dir = join(mkdtempSync(join(tmpdir(), "rmt-")), "x=y")
+  cpSync(fixture("pass-a"), dir, { recursive: true })
+  expect(tables([dir]).startsWith("### x=y\n")).toBe(true)
+})
+
+// The parser reads the checker's note wording; a change there fails here, so the parser is changed with it.
+test("the checker still writes the notes the parser reads", () => {
+  const checker = readFileSync(join(import.meta.dir, "..", "e2e", "real-model-recursive.mjs"), "utf8")
+  for (const wording of ["loaded the skill(s): ", " called courier_recall ", " stated: ", " started ", " session(s)", " in group(s) ", ", in no group", "polled: "]) expect(checker).toContain(wording)
 })

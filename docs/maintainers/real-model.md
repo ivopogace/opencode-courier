@@ -252,17 +252,24 @@ bun script/real-model-table.ts baseline=$HOME/courier-runs/base-1 baseline=$HOME
 bun script/real-model-table.ts $HOME/courier-runs/*   # no label: each directory is a condition of its own, named by its basename
 ```
 
-A label before `=` names the condition and several directories may share one. A path without a
-`summary.json`, such as the `.log` files the glob also matches or a run that never got that far, is
-skipped with a line on stderr. Each row has the verdict, the score (checks passed of all), skill loads
-per depth, `courier_recall` calls, the join groups used (distinct names across the tree), polled
-sessions (the root counts as one), model requests, the duration (the timeline's first step start to its
-last step end; `-` for a run from before the timeline carried timestamps, or one that crossed midnight
-UTC) and the root's and each sub-orchestrator's `split:` line (the checker keeps 320 characters of it),
-all parsed from `summary.json`'s notes, whose wording `test/real-model-table.test.ts` checks the checker
-still writes. A label is the text before the first `=` when it holds no path separator. A
-line under the table gives the counts of runs and passes and the means of the score, polled sessions
-and requests over its finished runs, leaving out the inconclusive ones, which stay in the table.
+A label before `=` names the condition and several directories may share one; it is the text before
+the first `=` when that holds no path separator, so an absolute path with an `=` in it is a directory.
+Unlabelled directories are conditions of their own, named by their basename, or by their path when two
+share one. A path that is no run, such as the `.log` files the glob also matches, a run that never got
+as far as a `summary.json`, or a `summary.json` missing the checker's fields, is skipped with a line on
+stderr. Each row has the verdict, the score (checks passed of all), skill loads per depth,
+`courier_recall` calls, the join groups used (distinct names across the tree), polled sessions (the
+root counts as one), model requests, the duration and the root's and each sub-orchestrator's `split:`
+line (the checker keeps 320 characters of it), all parsed from `summary.json`'s notes, whose wording
+`test/real-model-table.test.ts` checks the checker still writes. A group name or session list holding
+`, ` is counted as two. The duration is the timeline's first step start to its last step end, and `-`
+for a run from before the timeline carried timestamps, one with a step still running, or one that
+crossed midnight UTC. A run from before the checker wrote its `courier_recall` or `stated:` notes
+reads 0 recalls and `-` for the splits, as a run that made no call or stated no line does. A line under
+the table gives the counts of runs and passes and the means of the score, polled sessions and requests
+over its finished runs, which here means every verdict but `inconclusive` (the inconclusive ones stay
+in the table); a run refused for another reason, such as a first turn that did not end, still counts,
+so drop its directory from the arguments.
 
 How many runs a claim needs: a claim such as "the depth-1 polling went away" or "the lesson steered the
 root" is about a rate, and three runs of one model cannot tell a rate from luck. Five finished runs per
@@ -279,9 +286,10 @@ passes here can still poll or forget to report on a harder task, so the `courier
 [Using it](../../README.md#using-it) still applies. Which session loads the skill varies from run to
 run; on one-result tasks such as the fan-out and the relays, models do not load it. The tables hold
 runs on the current wording, except the permission table's three rows marked as run on an earlier
-wording of the native notice, which stay as results. A row is an observation of one to three runs, below the [floor](#reading-many-runs) a claim needs. Not re-run on the current wording:
-`COURIER_PERSON=other-server` and the models other than `longcat-2.5-preview-free`; their earlier
-results are in this file's history. Once, in the
+wording of the native notice, which stay as results. No row has five finished runs per condition on
+two models, the [floor](#reading-many-runs) a claim needs, so each is an observation of a few runs. Not
+re-run on the current wording: `COURIER_PERSON=other-server` and the models other than
+`longcat-2.5-preview-free`; their earlier results are in this file's history. Once, in the
 recursive scenario, a "numbers" session's second report landed in its inbox with no turn opened for
 it, and it never reported upward; the plugin now sends such a message again and shows a session that
 still does not take it as stalled ([a missed wake](../reference.md#a-missed-wake)).

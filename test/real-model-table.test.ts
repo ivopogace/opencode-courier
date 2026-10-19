@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { cpSync, mkdtempSync, readFileSync } from "node:fs"
+import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { conditionTable, parseRun, secondsOf, tables } from "../script/real-model-table.js"
@@ -23,7 +23,7 @@ describe("real-model-table", () => {
   })
 
   test("a timeline's span runs from its first start to its last end", () => {
-    expect(secondsOf("step 10:00:00.500 -> 10:00:01.000 (0.5 s)\nstep 10:00:02.000 -> …")).toBe(0.5)
+    expect(secondsOf("step 10:00:00.500 -> 10:00:01.000 (0.5 s)\nstep 10:00:00.700 -> 10:00:01.200 (0.5 s)")).toBeCloseTo(0.7)
     expect(secondsOf("nothing")).toBeUndefined()
   })
 
@@ -52,8 +52,10 @@ describe("real-model-table, unusable arguments", () => {
   })
 })
 
-test("a timeline across midnight has no duration", () => {
+test("a timeline has no duration across midnight or with an unfinished step", () => {
   expect(secondsOf("step 23:59:50.000 -> 00:00:10.000 (20.0 s)")).toBeUndefined()
+  expect(secondsOf("step 23:59:00.000 -> 23:59:30.000 (30.0 s)\nstep 00:00:10.000 -> 00:00:20.000 (10.0 s)")).toBeUndefined()
+  expect(secondsOf("step 12:00:00.000 -> 12:00:05.000 (5.0 s)\nstep 12:00:06.000 -> …")).toBeUndefined()
 })
 
 test("an absolute path holding an = is a directory, not a label", () => {
@@ -62,8 +64,31 @@ test("an absolute path holding an = is a directory, not a label", () => {
   expect(tables([dir]).startsWith("### x=y\n")).toBe(true)
 })
 
-// The parser reads the checker's note wording; a change there fails here, so the parser is changed with it.
+test("unlabelled directories with one basename stay conditions of their own, named by path", () => {
+  const root = mkdtempSync(join(tmpdir(), "rmt-"))
+  for (const parent of ["a", "b"]) cpSync(fixture("pass-a"), join(root, parent, "1"), { recursive: true })
+  const out = tables([join(root, "a", "1"), join(root, "b", "1")])
+  expect(out.match(/^### /gm)).toHaveLength(2)
+  expect(out).toContain(`### ${join(root, "a", "1")}\n`)
+})
+
+test("a label with no directory, or a summary.json that is not one, is skipped", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rmt-"))
+  writeFileSync(join(dir, "summary.json"), '{ "verdict": "pass" }')
+  expect(tables(["base=", dir, fixture("pass-a")]).match(/^### /gm)).toHaveLength(1)
+})
+
+// The parser reads these strings of the checker's notes (e2e/real-model-recursive.mjs); a change there fails here, so the parser is changed with it.
 test("the checker still writes the notes the parser reads", () => {
   const checker = readFileSync(join(import.meta.dir, "..", "e2e", "real-model-recursive.mjs"), "utf8")
-  for (const wording of ["loaded the skill(s): ", " called courier_recall ", " stated: ", " started ", " session(s)", " in group(s) ", ", in no group", "polled: "]) expect(checker).toContain(wording)
+  const who = '${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`}'
+  for (const note of [
+    "notes.push(`" + who + " loaded the skill(s): ${loads.join(\", \")}`)",
+    "notes.push(`" + who + " called courier_recall ${calls.length} time(s), the first ${when}",
+    "notes.push(`" + who + " stated: ${decision.slice(0, 320)}`)",
+    "notes.push(`" + who + " started ${spawnsOf(entry.list).length} session(s)${groups.length ? ` in group(s) ${groups.join(\", \")}` : \", in no group\"}",
+    'notes.push(`polled: ${pollers.map((id) => (id === rootID ? "the root" : id)).join(", ")}`)',
+    "checks: Object.fromEntries(checks)",
+  ])
+    expect(checker).toContain(note)
 })

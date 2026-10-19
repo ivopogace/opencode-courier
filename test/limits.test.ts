@@ -5,7 +5,7 @@ import { admit } from "../src/tree/limits.js"
 import { shapeContext } from "../src/tree/context.js"
 import { busy, DEFAULT_LIMITS, nativeRootOf, readLimits, readNativeChildren, type RosterEntry } from "../src/tree/domain.js"
 import type { ContextPorts, CourierPorts, LimitPorts, SpawnGate } from "../src/tree/ports.js"
-import { SKILL_ID, SPLIT_LINE } from "../src/kernel/protocol.js"
+import { ROOT_SPLIT_LINE, SKILL_ID } from "../src/kernel/protocol.js"
 import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/tree/text.js"
 import { reportOf } from "../src/tree/report.js"
 import { childStore } from "../src/tree/store.js"
@@ -439,7 +439,7 @@ describe("the context hook", () => {
     expect(event).toEqual({ sessionID: "ses_alone", tools: tools(), system: [{ type: "text", text: "base" }, { type: "text", text: rolePart(null, DEFAULT_LIMITS) }] })
     expect(event.system[1]!.text).toStartWith(ROLE_PREFIX)
     expect(event.system[1]!.text).toContain(SKILL_ID)
-    expect(event.system[1]!.text).toContain(SPLIT_LINE)
+    expect(event.system[1]!.text).toContain(ROOT_SPLIT_LINE)
   })
 
   test("points no session that cannot spawn, such as one whose agent lacks the courier tools", async () => {

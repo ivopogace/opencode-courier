@@ -38,7 +38,7 @@ export const SKILL_CONTENT = [
     "parts depend on names and texts the core fixes, split in stages: the core first, yourself when it is small or by one " +
     "session when it is big, merged and committed before the rest start; then, if 2 or more parts remain, one session per " +
     "remaining part, in one group. A staged core is one part of the task, not the whole task, so the rule against starting exactly one " +
-    "session for the whole task does not apply to it.",
+    "session for the whole task does not apply to it when 2 or more parts follow it.",
   "2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to " +
     "produce and where, how to check it, what to report. Say if it may split its part further, and to run its checks " +
     "through the project's scripts (step 6): each permission request of a session below you wakes you and waits on the person.",

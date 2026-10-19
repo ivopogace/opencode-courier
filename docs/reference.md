@@ -256,7 +256,7 @@ context. Say which in one line of the reply, the root with a third form,
 weigh the parts an implementation task with one tightly coupled core still has (finding out what
 the change needs, its e2e scenario, its documentation, a review by a session with fresh context), in
 stages when the rest depend on names the core fixes (a staged core is one part of the task, not the whole
-task, so the rule against one session for the whole task does not apply to it). Then: plan the
+task, so the rule against one session for the whole task does not apply to it when 2 or more parts follow it). Then: plan the
 parts so that no two edit the same files; start them with one `courier_spawn` per part that runs at once, all in one
 [join group](#join-groups), `isolate: true` where parts edit files in parallel, and end the turn
 without polling; read each [report](#a-childs-report) by its status; verify first-hand, running

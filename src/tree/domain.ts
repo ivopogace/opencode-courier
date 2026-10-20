@@ -66,7 +66,6 @@ export function turnEnd<M extends Stored>(messages: ReadonlyArray<M>): M | undef
   return last?.type === "idle" || (last?.type === "assistant" && last.error?.type === "aborted") ? last : undefined
 }
 
-/** Whether a transcript ends on a turn's end (`turnEnd`). */
 export const endsIdle = (messages: ReadonlyArray<Stored>) => turnEnd(messages) !== undefined
 
 /** When the turn `end` ended: the session's idle time for an `idle` message, else when its interrupted step ended. */

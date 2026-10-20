@@ -65,6 +65,5 @@ export function turnOf(session: Session, sessionID: string, time: BusyTimes, now
   return turn
 }
 
-/** Whether a session runs (`turnOf`). */
 export const runs = (session: Session, sessionID: string, time: BusyTimes, now?: number) =>
   turnOf(session, sessionID, time, now).then((turn) => turn.running)

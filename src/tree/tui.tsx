@@ -9,7 +9,10 @@ type Context = Plugin.Context
 type Location = ReturnType<Context["data"]["location"]["default"]>
 type Courier = ReturnType<typeof courierOf>["courier"]
 
-/** The events after which a summary may read differently: a turn started or ended, a request or form, a session made or removed. */
+/**
+ * The events after which a summary may read differently: a turn started or ended, a request or form, a session made, removed,
+ * archived or unarchived.
+ */
 export const CHANGES = new Set<string>([
   "session.created",
   "session.deleted",
@@ -21,6 +24,8 @@ export const CHANGES = new Set<string>([
   "session.execution.interrupted",
   "session.inbox.delivered",
   "session.synthetic",
+  "session.archived",
+  "session.unarchived",
   "permission.asked",
   "permission.replied",
   "form.created",

@@ -30,6 +30,7 @@ export async function status(ports: CourierPorts, input: StatusInput) {
     outcome: info.outcome,
     updated: info.time.updated,
     idle: info.time.idle,
+    archived: info.time.archived,
     lastText,
     pending: pending.length ? pending : undefined,
   })

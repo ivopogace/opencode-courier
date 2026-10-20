@@ -9,7 +9,7 @@ import { registerTreeRpc } from "../src/tree/rpc-handlers.js"
 import { treeRpc } from "../src/tree/rpc.js"
 import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 
-type Session = { updated: number; idle?: number; outcome?: string; cost?: number; title?: string; messages?: unknown[] }
+type Session = { updated: number; idle?: number; archived?: number; outcome?: string; cost?: number; title?: string; messages?: unknown[] }
 type Window = { providerID: string; id: string; context: number }
 
 /** Ports over an in-memory store, with each session as given; one not given is gone. */
@@ -42,8 +42,8 @@ function fakePorts(
     storage,
     session: {
       get: async ({ sessionID }: { sessionID: string }) => {
-        const { updated, idle, outcome, cost = 0, title = `title ${sessionID}` } = known(sessionID)
-        return { id: sessionID, title, cost, ...(outcome ? { outcome } : {}), time: { created: 1, updated, ...(idle !== undefined ? { idle } : {}) } }
+        const { updated, idle, archived, outcome, cost = 0, title = `title ${sessionID}` } = known(sessionID)
+        return { id: sessionID, title, cost, ...(outcome ? { outcome } : {}), time: { created: 1, updated, ...(idle !== undefined ? { idle } : {}), ...(archived !== undefined ? { archived } : {}) } }
       },
       context: async ({ sessionID }: { sessionID: string }) => known(sessionID).messages ?? [],
       interrupt: async (input: { sessionID: string }) => {
@@ -235,6 +235,34 @@ describe("panel", () => {
     ])
     expect(rows[2]).not.toHaveProperty("cost")
     expect(rows[2]!.title).toBe("entry ses_gone")
+  })
+
+  test("reads a session that reported and was archived since as idle, with its last turn's end, not as running (#324)", async () => {
+    const { ports } = fakePorts({ ses_archived: { updated: 9, idle: 5, archived: 9, messages: [assistant(), { type: "idle" }] } })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_archived", "ses_root"))
+    await children.prompted("ses_archived", 900)
+    await children.settled("ses_archived", "report", 950, "done")
+
+    const { rows } = await panel(ports, "ses_root")
+
+    expect(rows.map(({ state, idle, report }) => ({ state, idle, report }))).toEqual([
+      { state: "idle", idle: 5, report: { state: "reported", status: "done", progressed: false } },
+    ])
+  })
+
+  test("reads one archived while its turn runs on between two steps as running, with the form it shows (#324)", async () => {
+    const { ports } = fakePorts(
+      { ses_turn: { updated: 9, idle: 5, archived: 9, messages: [{ type: "idle" }, { type: "user" }, assistant()] } },
+      {},
+      DEFAULT_LIMITS.maxTotal,
+      { ses_turn: [{ id: "frm_1", title: "Web Search" }] },
+    )
+    await childStore(ports.storage).record(entry("ses_turn", "ses_root"))
+
+    const { rows } = await panel(ports, "ses_root")
+
+    expect(rows.map(({ state, idle, waits }) => ({ state, idle, waits }))).toEqual([{ state: "waiting", idle: undefined, waits: [{ type: "form", title: "Web Search" }] }])
   })
 
   test("marks a stalled session stalled, since its oldest message woken again in vain was enqueued, and the root's own stall", async () => {

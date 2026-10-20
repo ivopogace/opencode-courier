@@ -132,6 +132,9 @@ function decide(body) {
   // COURIER-SAY replies with the rest of the line, markdown and all, up to the quote the prompt arrives with.
   const saying = recent.match(/COURIER-SAY ([^"\n]+)/)
   if (saying) return { text: saying[1] }
+  // COURIER-HOLD starts a turn whose reply does not come in time, for the test to archive and interrupt it meanwhile; only
+  // the last prompt holds, as an interrupted hold leaves no reply and a later prompt to the session sees it still.
+  if (textOf(messages.findLast((message) => message.role === "user")?.content).includes("COURIER-HOLD")) return { text: "HOLDING", hold: true }
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
   // COURIER-NEST's middle session commits on its branch, then merges the branch its leaf reports.
   const nestBranch = branchIn(messages)

@@ -1,4 +1,3 @@
-import { busy } from "./domain.js"
 import { groupStandings } from "./group.js"
 import type { CourierPorts } from "./ports.js"
 import type { Summary } from "./rpc.js"
@@ -10,13 +9,13 @@ type Activity = "running" | "waiting" | "idle" | "stalled"
 
 /**
  * What a session is doing: waiting on a request it made or a form it shows, stalled, running, or idle; undefined when
- * OpenCode no longer knows it. A message waiting in its inbox makes a stalled session look busy.
+ * OpenCode no longer knows it. A message waiting in its inbox makes it look busy, unless archived since; a stalled one reads stalled.
  */
-function activity({ info, pending, forms, entry }: Looked, stalled: ReadonlyMap<string, number>): Activity | undefined {
+function activity({ info, running, pending, forms, entry }: Looked, stalled: ReadonlyMap<string, number>): Activity | undefined {
   if (!info) return undefined
   if (pending.length || forms.length) return "waiting"
   if (stalled.has(entry.sessionID)) return "stalled"
-  return busy(info.time) ? "running" : "idle"
+  return running ? "running" : "idle"
 }
 
 /**

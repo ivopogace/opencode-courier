@@ -42,15 +42,30 @@ export function readNativeChildren(options: unknown) {
 /** A session's times, as `session.get` gives them. */
 type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
-/** Whether a session with these times runs: it has never finished a turn, or something reached it after the last one ended. */
-export const busy = (time: Pick<Times, "updated" | "idle">) => time.idle === undefined || millis(time.updated) > millis(time.idle)
+/** A session's times as `busy` and `archivedSinceTurn` read them; `archived` is absent before OpenCode 2.1.0 and when not archived. */
+export type BusyTimes = Pick<Times, "updated" | "idle" | "archived">
+
+/** Whether a session runs by its times alone: it has never finished a turn, or something reached it after the last one ended. */
+export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.updated) > millis(time.idle)
 
 /**
- * Whether a session a tree is read of is live: it runs (as the limits count it: busy, and its turn has not failed or
- * been interrupted since its last prompt), waits on a request or form, or owes a report; one OpenCode no longer knows is not.
+ * Whether the last stamp on `updated` since the session's last turn ended is its archive's: a turn may run still, between two
+ * steps, which stamp nothing, so only its transcript tells (`endsIdle`).
  */
-export const isLive = (time: Pick<Times, "updated" | "idle"> | undefined, waits: number, report: { readonly owes: boolean; readonly ended: boolean } | undefined) =>
-  time !== undefined && ((busy(time) && !report?.ended) || waits > 0 || (report?.owes ?? false))
+export const archivedSinceTurn = (time: BusyTimes) => time.idle !== undefined && busy(time) && millis(time.updated) === millis(time.archived)
+
+/** The messages the person's switch of agent or model, move or shell command appends, at rest or mid-turn alike. */
+const ASIDES = new Set(["agent-switched", "model-switched", "location-switched", "shell"])
+
+/** Whether a transcript ends on a turn's end, which OpenCode records as an `idle` message, but for asides made since. */
+export const endsIdle = (messages: ReadonlyArray<{ readonly type: string }>) => messages.findLast((message) => !ASIDES.has(message.type))?.type === "idle"
+
+/**
+ * Whether a session a tree is read of is live: it runs (as the limits count it: it runs, and its turn has not failed or been
+ * interrupted since its last prompt), waits on a request or form, or owes a report; one OpenCode no longer knows is not.
+ */
+export const isLive = (running: boolean | undefined, waits: number, report: { readonly owes: boolean; readonly ended: boolean } | undefined) =>
+  running !== undefined && ((running && !report?.ended) || waits > 0 || (report?.owes ?? false))
 
 /** A session of a tree read, as `cut` takes it: where it is in the tree, when it was started, and whether it is live. */
 export interface Cuttable {

@@ -314,6 +314,15 @@ describe("the footer status entry", () => {
     await settle()
     await app.waitForFrame((frame) => frame.includes("courier 2 idle"))
     expect(fake.calls).toHaveLength(2)
+
+    // Archiving stamps a session's times, which an archived idle one no longer reads as running by.
+    fake.emit("session.archived")
+    await settle()
+    await app.waitForFrame((frame) => frame.includes("courier 3 idle"))
+    fake.emit("session.unarchived")
+    await settle()
+    await app.waitForFrame((frame) => frame.includes("courier 4 idle"))
+    expect(fake.calls).toHaveLength(4)
   })
 
   test("shows only the open session's summary, not the last one's while the new one is asked", async () => {

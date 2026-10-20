@@ -85,17 +85,37 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   so that signature means this instance missed the `started` event or the events were reordered.
   Neither path reproduces on demand, so the missed-wake watch keys on the first signature.
 - An item waiting in the inbox bumps the session's `time.updated` (`updated` equal to the item's
-  `time.created`, `idle` unchanged), so `busy()` reads a session with an undelivered message as
-  running. The plugin API cannot list the inbox (`GET /api/session/:id/inbox` can); a delivered item
+  `time.created`, `idle` unchanged), so a session with an undelivered message reads as running
+  (`busy()`), unless it was archived since (`runs()`, below). The plugin API cannot list the inbox (`GET /api/session/:id/inbox` can); a delivered item
   becomes the stored message with the same id. `session.synthetic` with the `id` of an item still
   waiting, or already delivered, returns that item (`reconcile` in `packages/core/src/session/inbox.ts`
   matches on session and type only, publishing nothing) and still wakes the session, so a wake sent
   again adds no second message. `session.status` and `session.idle` are in the schema but published
   by nothing in core.
-- Archiving or unarchiving a session bumps its `time.updated` too (`session.archived` and
-  `session.unarchived` project `time_archived` with `time_updated` in
-  `packages/core/src/session/projector.ts`), as a rename or a model switch does, so `busy()` reads an
-  idle child the person archives as running until its next turn ends.
+- Archiving or unarchiving a session bumps its `time.updated` too: `session.archived` and
+  `session.unarchived` set `time_updated` to the event's `created`, with `time_archived` set to it or
+  cleared (`packages/core/src/session/projector.ts`), and neither interrupts a turn. A running turn
+  stamps `time_updated` only as a step starts or ends (`touch`, `applyUsage`), never on its tool,
+  text or reasoning events (`run`), so after an archive `updated` equals `time.archived`, which
+  `session.get` gives, for an idle session and for one between two steps alike, a stretch that can
+  last a whole tool call or a wait on the person. The plugin tells them apart by the transcript
+  (`runs`, `src/tree/running.ts`): a turn's end is recorded as an `idle` message, and one ending on
+  it is at rest, past the `agent-switched`, `model-switched` and `location-switched` messages that
+  `session.agent.selected`, `session.model.selected` and `session.moved` append, at rest or mid-turn
+  alike (`packages/core/src/session/message-updater.ts`), and the `shell` message of a shell command
+  the person runs (`Session.shell`), which is no turn: its start stamps nothing, and its result waits
+  in the inbox (`resume: false`), stamping `updated` as any item does, for the next turn. Any other
+  message after the `idle` one reads running, as a `skill` (which resumes the session unless asked
+  not to) and a `compaction` (admitted through the inbox, waking it) start a turn; so does a `system`
+  notice of updated instructions, and a turn ended by a shutdown or a declined permission, which
+  records no `idle` message (below). The answer holds until the next stamp, so each instance
+  remembers one it read per stamp, at most 500 per session port; a transcript that
+  cannot be read, or holds nothing, is read again and leaves the session running, as its times say.
+  An archive landing while an item waits in the inbox hides the item until the next bump; a courier
+  message there is still flagged stalled. A rename, a metadata or permissions change, a staged or
+  cleared revert and an unarchive bump `time.updated` the same way with nothing in the transcript to
+  tell them by; an agent or model change and a move bump it too, recorded as above, but `busy()` goes
+  by the times alone, so it reads such an idle session as running until its next turn ends (#326).
 - **`resume: false` is the only way to send a message that does not start a turn.** `Session.synthetic`
   admits the item and rings the run coordinator unless `resume === false`, whatever the `delivery`:
   `queue` still wakes an idle session. With `resume: false` the item waits in the inbox and is

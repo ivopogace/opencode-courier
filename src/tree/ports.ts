@@ -247,7 +247,7 @@ export interface SpawnGate {
 
 export interface LimitPorts {
   readonly storage: RosterStorage
-  readonly session: Pick<Context["session"], "get">
+  readonly session: Pick<Context["session"], "get" | "context">
   readonly limits: Limits
   readonly gate: SpawnGate
 }

@@ -46,7 +46,7 @@ import { addMemoryTools } from "../src/memory/tools.js"
 import type { RosterEntry } from "../src/tree/domain.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
 
-type Session = { created?: number; updated: number; idle?: number; cost?: number; title?: string; messages?: unknown[]; projectID?: string; directory?: string }
+type Session = { created?: number; updated: number; idle?: number; archived?: number; cost?: number; title?: string; messages?: unknown[]; projectID?: string; directory?: string }
 
 const NOW = 1_700_000_000_000
 
@@ -74,8 +74,8 @@ function fakePorts(sessions: Record<string, Session>, windows: Array<{ providerI
     session: {
       get: async ({ sessionID }: { sessionID: string }) => {
         gets.push(sessionID)
-        const { created = NOW - 600_000, updated, idle, cost = 0, title = `title ${sessionID}`, projectID = "proj_1", directory = "/repo" } = known(sessionID)
-        return { id: sessionID, title, cost, projectID, location: { directory }, time: { created, updated, ...(idle !== undefined ? { idle } : {}) } }
+        const { created = NOW - 600_000, updated, idle, archived, cost = 0, title = `title ${sessionID}`, projectID = "proj_1", directory = "/repo" } = known(sessionID)
+        return { id: sessionID, title, cost, projectID, location: { directory }, time: { created, updated, ...(idle !== undefined ? { idle } : {}), ...(archived !== undefined ? { archived } : {}) } }
       },
       context: async ({ sessionID }: { sessionID: string }) => {
         contexts.push(sessionID)
@@ -587,6 +587,34 @@ describe("refresh", () => {
     ])
   })
 
+  test("reads a part that reported and was archived since as settled, its duration to its last turn's end, so the tree reads finished (#324)", async () => {
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, archived: NOW - 50_000, messages: [{ type: "idle" }] },
+      ses_a: { created: NOW - 290_000, updated: NOW - 10_000, idle: NOW - 260_000, archived: NOW - 10_000, messages: [{ type: "idle" }] },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 290_000)
+    await children.settled("ses_a", "report", NOW - 260_000, "done")
+
+    const record = await refresh(ports, state, "ses_top", NOW)
+
+    expect(record).toMatchObject({ finished: true, parts: [{ sessionID: "ses_a", status: "done", duration: 30_000 }] })
+  })
+
+  test("does not read a tree as finished while its top, archived between two steps of a turn, runs on (#324)", async () => {
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, archived: NOW - 50_000, messages: [{ type: "idle" }, { type: "user" }] },
+      ses_a: { updated: NOW - 100_000, idle: NOW - 100_000 },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 290_000)
+    await children.settled("ses_a", "report", NOW - 100_000, "done")
+
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_a")).toMatchObject({ finished: false, parts: [{ sessionID: "ses_a", status: "done" }] })
+  })
+
   test("keeps the last status and duration of a part whose session OpenCode deleted, so the tree reads finished (#283)", async () => {
     const { ports, state, sessions } = fakePorts({
       ses_top: { updated: NOW - 50_000, idle: NOW - 50_000 },
@@ -907,6 +935,29 @@ describe("refresh", () => {
     const record = await refresh(ports, state, "ses_top", NOW, "ses_top")
 
     expect(record!.parts[0]).toMatchObject({ sessionID: "ses_a", context: 0.6 })
+  })
+
+  test("reads whether its top runs before the record it writes over, so a lesson noted meanwhile is kept (#274, #324)", async () => {
+    const { ports, state, sessions, contexts } = fakePorts({
+      ses_top: { updated: 1, idle: 1, messages: [done("split: 2 parts: a, b"), { type: "idle" }] },
+      ses_a: { updated: 1, idle: 1 },
+      ses_b: { updated: 1, idle: 1 },
+    })
+    await tree(ports)
+    await refresh(ports, state, "ses_top", NOW - 5000, "ses_top")
+    // Archived since its turn ended, with its split line stated: only whether it runs reads its transcript.
+    sessions.ses_top = { ...sessions.ses_top!, updated: 2, archived: 2 }
+    const context = ports.session.context
+    ;(ports.session as any).context = async (input: { sessionID: string }) => {
+      if (input.sessionID === "ses_top") await note(ports, "ses_top", { text: "Written meanwhile" })
+      return context(input)
+    }
+    const read = contexts.length
+
+    const record = await refresh(ports, state, "ses_top", NOW, "ses_a")
+
+    expect(contexts.slice(read).filter((sessionID) => sessionID === "ses_top")).toHaveLength(1)
+    expect(record).toMatchObject({ lesson: { text: "Written meanwhile" } })
   })
 
   test("keeps a part's last recorded use when its messages cannot be read", async () => {

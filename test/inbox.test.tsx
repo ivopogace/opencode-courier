@@ -328,6 +328,9 @@ describe("the open list follows the tree", () => {
     fake.emit("session.text.delta", "ses_a")
     await settle()
     expect(asksRead(fake)).toBe(read + 1)
+    fake.emit("session.archived", "ses_a")
+    await settle()
+    expect(asksRead(fake)).toBe(read + 2)
     expect(fake.dialogs).toHaveLength(1)
   })
 

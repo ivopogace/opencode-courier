@@ -34,25 +34,24 @@ describe("cut", () => {
 })
 
 describe("isLive", () => {
-  const running = { updated: 9, idle: 5 }
-  const idle = { updated: 5, idle: 5 }
   const owes = { owes: true, ended: false }
   const ended = { owes: false, ended: true }
   test("a session that runs, waits on a request or owes a report is live; one OpenCode no longer knows is not", () => {
-    expect(isLive(running, 0, undefined)).toBe(true)
-    expect(isLive(idle, 1, undefined)).toBe(true)
-    expect(isLive(idle, 0, owes)).toBe(true)
-    expect(isLive(idle, 0, { owes: false, ended: false })).toBe(false)
+    expect(isLive(true, 0, undefined)).toBe(true)
+    expect(isLive(false, 1, undefined)).toBe(true)
+    expect(isLive(false, 0, owes)).toBe(true)
+    expect(isLive(false, 0, { owes: false, ended: false })).toBe(false)
     expect(isLive(undefined, 1, owes)).toBe(false)
   })
 
   test("one whose turn failed or was interrupted since its last prompt is not, as the limits count it, though it still reads busy", () => {
-    expect(isLive({ updated: 5 }, 0, ended)).toBe(false)
-    expect(isLive({ updated: 5 }, 1, ended)).toBe(true)
+    expect(isLive(true, 0, ended)).toBe(false)
+    expect(isLive(true, 1, ended)).toBe(true)
   })
 })
 
-type Times = { updated: number; idle?: number }
+/** A session's times, and `turn` when its transcript does not end on a turn's end, as while a turn runs. */
+type Times = { updated: number; idle?: number; archived?: number; turn?: true }
 
 /** Ports over an in-memory store, with each session's times and pending requests as given; one without times is gone. */
 function fakePorts(times: Record<string, Times>, pending: Record<string, Pending[]> = {}, maxTotal = DEFAULT_LIMITS.maxTotal) {
@@ -71,8 +70,10 @@ function fakePorts(times: Record<string, Times>, pending: Record<string, Pending
       get: async ({ sessionID }: { sessionID: string }) => {
         const time = times[sessionID]
         if (!time) throw new Error(`session ${sessionID} not found`)
-        return { id: sessionID, title: sessionID, time: { created: 1, ...time } }
+        const { turn: _, ...rest } = time
+        return { id: sessionID, title: sessionID, time: { created: 1, ...rest } }
       },
+      context: async ({ sessionID }: { sessionID: string }) => [{ type: times[sessionID]?.turn ? "assistant" : "idle" }],
     } as never,
     pending: async (sessionID: string) => pending[sessionID] ?? [],
     forms: async () => [],
@@ -113,6 +114,33 @@ describe("readTree", () => {
     expect(leftOut).toBe(2)
     expect((await readTree(ports, "ses_root", 3)).kept.map((node) => node.entry.sessionID)).toEqual(["ses_a", "ses_c", "ses_d"])
     expect((await readTree(ports, "ses_root", 4)).kept.map((node) => node.live)).toEqual([true, false, false, true])
+  })
+
+  test("a child that reported and was archived since is not live, so the newest finished ones come before it (#324)", async () => {
+    const { ports } = fakePorts({ ses_archived: { updated: 9, idle: 5, archived: 9 }, ses_a: { updated: 5, idle: 5 }, ses_b: { updated: 5, idle: 5 } }, {}, 2)
+    const children = childStore(ports.storage)
+    for (const [index, child] of ["ses_archived", "ses_a", "ses_b"].entries()) await children.record(entry(child, "ses_root", 900 + index))
+    await children.prompted("ses_archived", 950)
+    await children.settled("ses_archived", "report", 951, "done")
+
+    const { kept, leftOut } = await readTree(ports, "ses_root")
+
+    expect(kept.map((node) => [node.entry.sessionID, node.live])).toEqual([["ses_a", false], ["ses_b", false]])
+    expect(leftOut).toBe(1)
+  })
+
+  test("one archived during a turn that runs on, which its transcript shows, is live, and its form is kept (#324)", async () => {
+    const { ports } = fakePorts({ ses_turn: { updated: 9, idle: 5, archived: 9, turn: true }, ses_rest: { updated: 9, idle: 5, archived: 9 } })
+    ;(ports as any).forms = async () => [{ id: "frm_1", title: "Web Search" }]
+    const children = childStore(ports.storage)
+    for (const [index, child] of ["ses_turn", "ses_rest"].entries()) await children.record(entry(child, "ses_root", 900 + index))
+
+    const { kept } = await readTree(ports, "ses_root")
+
+    expect(kept.map((node) => [node.entry.sessionID, node.running, node.live, node.forms.length])).toEqual([
+      ["ses_turn", true, true, 1],
+      ["ses_rest", false, false, 0],
+    ])
   })
 
   test("a child whose first prompt failed reads busy but is not live, so the newest finished ones come before it", async () => {

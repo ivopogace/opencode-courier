@@ -8,8 +8,11 @@ import { treeRpc } from "../src/tree/rpc.js"
 import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 import { summary } from "../src/tree/summary.js"
 
-/** A session's times, and `turn` when its transcript does not end on a turn's end, as while a turn runs. */
-type Times = { updated: number; idle?: number; archived?: number; turn?: true }
+/** A session's times, and `rest` when its transcript ends on its turn's end though something stamped `updated` since. */
+type Times = { updated: number; idle?: number; archived?: number; rest?: true }
+
+/** Whether a session's transcript runs on: as its times say, unless it is at `rest`. */
+const ranOn = (time: Times | undefined) => time !== undefined && !time.rest && (time.idle === undefined || time.updated > time.idle)
 
 /** Ports over an in-memory store, with each session's times and pending requests as given; one without times is gone. */
 function fakePorts(
@@ -33,10 +36,10 @@ function fakePorts(
       get: async ({ sessionID }: { sessionID: string }) => {
         const time = times[sessionID]
         if (!time) throw new Error(`session ${sessionID} not found`)
-        const { turn: _, ...rest } = time
-        return { id: sessionID, title: sessionID, time: { created: 1, ...rest } }
+        const { rest: _, ...stamps } = time
+        return { id: sessionID, title: sessionID, time: { created: 1, ...stamps } }
       },
-      context: async ({ sessionID }: { sessionID: string }) => [{ type: times[sessionID]?.turn ? "assistant" : "idle" }],
+      context: async ({ sessionID }: { sessionID: string }) => [{ type: ranOn(times[sessionID]) ? "assistant" : "idle" }],
     },
     pending: async (sessionID: string) => pending[sessionID] ?? [],
     forms: async (sessionID: string) => forms[sessionID] ?? [],
@@ -84,28 +87,35 @@ describe("summary", () => {
     expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 1, idle: 1, groups: [] })
   })
 
-  test("counts a stalled session as stalled, not by its times, which a waiting message makes look busy; the root too", async () => {
-    const { ports } = fakePorts({ ses_stalled: { updated: 9, idle: 5 }, ses_run: { updated: 9, idle: 5 } })
-    for (const child of ["ses_stalled", "ses_run"]) await childStore(ports.storage).record(entry(child, "ses_root"))
+  test("counts a stalled session as stalled, whatever its transcript says; the root too", async () => {
+    const { ports } = fakePorts({ ses_stalled: { updated: 9, idle: 5, rest: true }, ses_idle: { updated: 9, idle: 5, rest: true } })
+    for (const child of ["ses_stalled", "ses_idle"]) await childStore(ports.storage).record(entry(child, "ses_root"))
     const stalled = { at: 6, text: "report", running: false, idleAt: 6, rewoken: 7, stalled: 8 }
     await wakeStore(ports.storage).put({ sessionID: "ses_stalled", inboxID: "msg_1", ...stalled })
-    // Woken again but not yet found stalled: it counts by its times.
-    await wakeStore(ports.storage).put({ sessionID: "ses_run", inboxID: "msg_2", ...stalled, stalled: undefined })
+    // Woken again but not yet found stalled: the message waiting in its inbox is no turn, so it counts idle (#326).
+    await wakeStore(ports.storage).put({ sessionID: "ses_idle", inboxID: "msg_2", ...stalled, stalled: undefined })
 
-    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, stalled: 1, groups: [] })
+    expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 0, idle: 1, stalled: 1, groups: [] })
     await wakeStore(ports.storage).put({ sessionID: "ses_root", inboxID: "msg_3", ...stalled })
     expect((await summary(ports, "ses_root")).stalled).toBe(2)
   })
 
   test("counts an idle session the person archived as idle, its updated time the archive's, and one archived mid-turn as running (#324)", async () => {
     const { ports } = fakePorts({
-      ses_archived: { updated: 9, idle: 5, archived: 9 },
+      ses_archived: { updated: 9, idle: 5, archived: 9, rest: true },
       ses_after: { updated: 12, idle: 5, archived: 9 },
-      ses_turn: { updated: 9, idle: 5, archived: 9, turn: true },
+      ses_turn: { updated: 9, idle: 5, archived: 9 },
     })
     for (const child of ["ses_archived", "ses_after", "ses_turn"]) await childStore(ports.storage).record(entry(child, "ses_root"))
 
     expect(await summary(ports, "ses_root")).toEqual({ running: 2, waiting: 0, idle: 1, groups: [] })
+  })
+
+  test("counts an idle session renamed, unarchived, switched or sent an item waiting in its inbox since as idle, by its transcript (#326)", async () => {
+    const { ports } = fakePorts({ ses_renamed: { updated: 9, idle: 5, rest: true }, ses_turn: { updated: 9, idle: 5 } })
+    for (const child of ["ses_renamed", "ses_turn"]) await childStore(ports.storage).record(entry(child, "ses_root"))
+
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 1, groups: [] })
   })
 
   test("counts a session whose forms cannot be read by its requests and times", async () => {

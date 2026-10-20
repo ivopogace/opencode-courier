@@ -42,27 +42,41 @@ export function readNativeChildren(options: unknown) {
 /** A session's times, as `session.get` gives them. */
 type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
-/** A session's times as `busy` and `archivedSinceTurn` read them; `archived` is absent before OpenCode 2.1.0 and when not archived. */
-export type BusyTimes = Pick<Times, "updated" | "idle" | "archived">
-
-/** Whether a session runs by its times alone: it has never finished a turn, or something reached it after the last one ended. */
-export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.updated) > millis(time.idle)
+/** A session's times as `busy` reads them. */
+export type BusyTimes = Pick<Times, "updated" | "idle">
 
 /**
- * Whether the last stamp on `updated` since the session's last turn ended is its archive's: a turn may run still, between two
- * steps, which stamp nothing, so only its transcript tells (`endsIdle`).
+ * Whether a session may run by its times: it has never finished a turn, or `updated` was stamped after the last one ended, as
+ * a step does, and as much that is no activity does (a rename, an archive, a waiting inbox item), so only its transcript tells.
  */
-export const archivedSinceTurn = (time: BusyTimes) => time.idle !== undefined && busy(time) && millis(time.updated) === millis(time.archived)
+export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.updated) > millis(time.idle)
 
 /** The messages the person's switch of agent or model, move or shell command appends, at rest or mid-turn alike. */
 const ASIDES = new Set(["agent-switched", "model-switched", "location-switched", "shell"])
 
-/** Whether a transcript ends on a turn's end, which OpenCode records as an `idle` message, but for asides made since. */
-export const endsIdle = (messages: ReadonlyArray<{ readonly type: string }>) => messages.findLast((message) => !ASIDES.has(message.type))?.type === "idle"
+/** A stored message as `turnEnd` reads it: an assistant message's `error` says how its step ended. */
+type Stored = { readonly type: string; readonly error?: { readonly type: string }; readonly time?: { readonly created?: unknown; readonly completed?: unknown } }
 
 /**
- * Whether a session a tree is read of is live: it runs (as the limits count it: it runs, and its turn has not failed or been
- * interrupted since its last prompt), waits on a request or form, or owes a report; one OpenCode no longer knows is not.
+ * The message a transcript's last turn ended on, unless one runs, past asides made since: an `idle` message, or a step
+ * interrupted with none after it, as a declined permission or dismissed question ends a turn, recording no `idle` (#326).
+ */
+export function turnEnd<M extends Stored>(messages: ReadonlyArray<M>): M | undefined {
+  const last = messages.findLast((message) => !ASIDES.has(message.type))
+  return last?.type === "idle" || (last?.type === "assistant" && last.error?.type === "aborted") ? last : undefined
+}
+
+export const endsIdle = (messages: ReadonlyArray<Stored>) => turnEnd(messages) !== undefined
+
+/** When the turn `end` ended: the session's idle time for an `idle` message, else when its interrupted step ended. */
+export function endedAt(end: Stored, time: BusyTimes) {
+  const at = end.type === "idle" ? millis(time.idle) : millis(end.time?.completed ?? end.time?.created)
+  return Number.isFinite(at) ? at : undefined
+}
+
+/**
+ * Whether a session of a tree read is live, for a cut listing's order: it runs (its turn not failed or interrupted since its last
+ * prompt), waits on a request or form, or owes a report, but not, unlike for the limits, for a message waiting in its inbox.
  */
 export const isLive = (running: boolean | undefined, waits: number, report: { readonly owes: boolean; readonly ended: boolean } | undefined) =>
   running !== undefined && ((running && !report?.ended) || waits > 0 || (report?.owes ?? false))

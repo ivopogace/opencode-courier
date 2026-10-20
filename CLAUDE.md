@@ -50,8 +50,8 @@ import rules and the reasons for them.
   just made (`send.ts`, `spawn.ts`) and dropping a delivered group (`group.ts`) stay with their use
   case. One file per use case: `spawn.ts`, `send.ts`, `status.ts` (`courier_status`,
   `courier_children`), `subtree.ts` (`courier_tree`), `stop.ts` (`courier_stop`), `cleanup.ts`.
-  `limits.ts` the limits `spawn()` checks; `running.ts` whether a session runs (`runs`: its times,
-  and its transcript once its archive stamped them since its last turn ended); `report.ts` whether
+  `limits.ts` the limits `spawn()` checks; `running.ts` whether a session runs (`turnOf`, `runs`: its
+  times, and its transcript once anything stamped them since its last turn ended, and when that turn ended); `report.ts` whether
   each spawned session owes a report;
   `group.ts` join groups (joining, holding, leaving, standing, `deliverReleased`); `roster.ts` the
   retention of each parent's children (`current`, `pruneExpired`) and the lineage queries `person/` and
@@ -66,7 +66,7 @@ import rules and the reasons for them.
   it imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, `rpc.ts`, `text.ts` and
   `mascot.ts`. `mascot.ts` Digby, the panel's mole: his frames as pixel tokens, pure and importing
   nothing, snapshotted in `test/__snapshots__/tui.test.tsx.snap`. `wake.ts` the missed wake
-  (`watchWake`, `wakeMissed`, `stalledAmong`); `events.ts` `treeEvents`, with `waitsOn` and `together`
+  (`watchWake`, `wakeMissed`, `stalledAmong`, `waitsInInbox`); `events.ts` `treeEvents`, with `waitsOn` and `together`
   to compose the `Waits` port; `context.ts` the `context` hook naming each spawned session's role and
   hiding `courier_spawn` and the tools `hiddenFromLeaf` names from a leaf.
 - `person/`: what a spawned session needs the person for. `permission.ts` passes a permission answer

@@ -1,5 +1,5 @@
 import { finite, isNotFound, millis } from "../platform/json.js"
-import { contextOf, reportState, runs, stalledAmong, subtree, type Below, type ModelWindow } from "../tree/index.js"
+import { contextOf, reportState, runs, stalledAmong, subtree, turnOf, waitsInInbox, type Below, type ModelWindow, type Turn } from "../tree/index.js"
 import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, replacingMention, revise, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { memoryStore } from "./store.js"
@@ -50,17 +50,18 @@ const infoOf = (ports: RefreshPorts, sessionID: string): Promise<{ info?: Info; 
 
 /**
  * One session of the tree as its record keeps it, without its use when its messages were not read for it (only when its turn
- * `ended` or it is `known` to no record yet), without a duration when its info was not, and whether it runs now (`runs`).
+ * `ended` or it is `known` to no record yet), without a duration when its info was not, and whether it runs or is owed a turn.
  */
 async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth }: Below, stalled: boolean, at: number, known: boolean, ended: boolean) {
   const { sessionID } = entry
-  const [{ info, gone, running }, use, report] = await Promise.all([
-    infoOf(ports, sessionID).then(async (one) => ({ ...one, running: one.info !== undefined && (await runs(ports.session, sessionID, one.info.time)) })),
+  const [{ info, gone, running, endedAt }, use, report, waiting] = await Promise.all([
+    infoOf(ports, sessionID).then(async (one) => ({ ...one, ...(one.info ? await turnOf(ports.session, sessionID, one.info.time) : ({ running: false } as Turn)) })),
     ended || !known ? ports.session.context({ sessionID }).then((messages) => useOf(messages, windows), () => undefined) : undefined,
     reportState(ports.storage, sessionID).catch(() => undefined),
+    waitsInInbox(ports, sessionID).catch(() => true),
   ])
   const created = finite(millis(info?.time.created)) ?? entry.createdAt
-  const end = info && !running && info.time.idle !== undefined ? millis(info.time.idle) : at
+  const end = info && !running && endedAt !== undefined ? endedAt : at
   const cost = finite(info?.cost)
   const record: PartRecord = {
     sessionID,
@@ -72,7 +73,8 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
     ...(info ? { duration: Math.max(0, end - created) } : {}),
     ...(cost !== undefined ? { cost } : {}),
   }
-  return { record, use, running, unread: info === undefined, gone }
+  // A courier message waiting to be taken keeps it unfinished, unless OpenCode no longer knows it, which then takes none.
+  return { record, use, running: running || (waiting && !gone), unread: info === undefined, gone }
 }
 
 /** Of the parts last recorded, those the roster has forgotten before they settled whose session OpenCode no longer knows. */
@@ -111,7 +113,9 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
     Promise.all(nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at, known.has(node.entry.sessionID), node.entry.sessionID === ended))),
     goneSince(ports, previous?.parts ?? [], new Set(nodes.map((node) => node.entry.sessionID))),
   ])
-  const [said, topRunning] = await Promise.all([replies, runs(ports.session, top, info.time)])
+  // A courier message waiting in the top's inbox is a turn its transcript does not show yet, as for a part; a store that
+  // cannot be read counts as one waiting, as `runs` counts a transcript it cannot read as running.
+  const [said, topRunning, topOwed] = await Promise.all([replies, runs(ports.session, top, info.time), waitsInInbox(ports, top).catch(() => true)])
   // Read again just before the write: a courier_recall or courier_note call, or another turn end's refresh, wrote meanwhile.
   const latest = (await store.get(info.projectID, top).catch(() => previous)) ?? previous
   const last = new Map(latest?.parts.map((one) => [one.sessionID, one]))
@@ -138,7 +142,7 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
     title: info.title ?? previous?.title ?? "",
     split,
     ...(revisions ? { revisions } : {}),
-    finished: !topRunning && !read.some(({ running }) => running) && parts.every((one) => isSettled(one.status)),
+    finished: !topRunning && !topOwed && !read.some(({ running }) => running) && parts.every((one) => isSettled(one.status)),
     ...(recalled ? { recalled } : {}),
     ...(lesson ? { lesson } : {}),
     parts,

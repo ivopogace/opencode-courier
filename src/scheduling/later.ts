@@ -24,8 +24,8 @@ export interface LaterEntry {
 
 export interface LaterPorts {
   readonly storage: Storage
-  /** `get` for the release of a join group, which waits for its parent's turn to end. */
-  readonly session: Pick<Context["session"], "synthetic" | "get">
+  /** `get` for the release of a join group, which waits for its parent's turn to end; `get` and `context` for a missed wake (`ctx.session`). */
+  readonly session: Pick<Context["session"], "synthetic" | "get" | "context">
   readonly now: () => number
   readonly newID: () => string
   readonly log: (message: string) => void

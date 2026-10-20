@@ -141,8 +141,8 @@ async function releaseClaimed(ports: GroupPorts, claimed: Set<string>, key: stri
 }
 
 /**
- * Whether the parent's turn that started a group's last member has ended, so no more join it; `gone` when OpenCode no
- * longer knows the parent. A turn ending stamps the session's `time.idle`, which a shutdown does not.
+ * Whether the parent's turn that started a group's last member has ended, so no more join it; `gone` when OpenCode no longer knows the
+ * parent. Only a turn ending stamps `time.idle`: a shutdown, or a plain permission decline reported as one, holds it until the next ends.
  */
 async function sealed(ports: GroupPorts, parentID: string, members: ReadonlyArray<Member>) {
   const joined = Math.max(...members.map((member) => member.joinedAt))

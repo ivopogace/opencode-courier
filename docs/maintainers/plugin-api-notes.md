@@ -52,7 +52,8 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   (re)subscribe.
 - `session.execution.started`, `.succeeded`, `.failed` and `.interrupted` frame a session's busy
   period: one terminal event however many prompts were steered into it. `.interrupted` carries a
-  `reason`: `user`, `shutdown` (resumed on the next start) or `inactivity` (an idle location is
+  `reason`: `user`, `shutdown` (resumed on the next start; also what a plain permission decline's
+  end reports, [below](#permission-requests)) or `inactivity` (an idle location is
   evicted, which stops its sessions without resuming them); the schema's `superseded` is published
   by nothing. A message steered into a running turn interrupts nothing: `inbox.enqueued`
   (`delivery: "steer"`) as it is sent, `inbox.delivered` at the turn's next step, then the one
@@ -85,37 +86,54 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   so that signature means this instance missed the `started` event or the events were reordered.
   Neither path reproduces on demand, so the missed-wake watch keys on the first signature.
 - An item waiting in the inbox bumps the session's `time.updated` (`updated` equal to the item's
-  `time.created`, `idle` unchanged), so a session with an undelivered message reads as running
-  (`busy()`), unless it was archived since (`runs()`, below). The plugin API cannot list the inbox (`GET /api/session/:id/inbox` can); a delivered item
-  becomes the stored message with the same id. `session.synthetic` with the `id` of an item still
+  `time.created`, `idle` unchanged), and is not in the transcript until delivered, so a session with
+  an undelivered message reads as at rest (`runs()`, below), which it is while nothing runs it. A
+  healthy wake delivers it within moments; a courier message left waiting is flagged stalled by the
+  wake store, which the footer and the panel check before `running`. The limits and the memory
+  record's `finished` count a session while the wake store holds a courier message waiting in it
+  (`waitsInInbox`), and on a failed read, the limits only while it is not yet stalled; one sent
+  with `resume: false` is not watched and owes no turn. The plugin API cannot list the
+  inbox (`GET /api/session/:id/inbox` can); a delivered item becomes the stored message with the same
+  id, and stamps nothing until its step starts. `session.synthetic` with the `id` of an item still
   waiting, or already delivered, returns that item (`reconcile` in `packages/core/src/session/inbox.ts`
   matches on session and type only, publishing nothing) and still wakes the session, so a wake sent
   again adds no second message. `session.status` and `session.idle` are in the schema but published
   by nothing in core.
-- Archiving or unarchiving a session bumps its `time.updated` too: `session.archived` and
-  `session.unarchived` set `time_updated` to the event's `created`, with `time_archived` set to it or
-  cleared (`packages/core/src/session/projector.ts`), and neither interrupts a turn. A running turn
-  stamps `time_updated` only as a step starts or ends (`touch`, `applyUsage`), never on its tool,
-  text or reasoning events (`run`), so after an archive `updated` equals `time.archived`, which
-  `session.get` gives, for an idle session and for one between two steps alike, a stretch that can
-  last a whole tool call or a wait on the person. The plugin tells them apart by the transcript
-  (`runs`, `src/tree/running.ts`): a turn's end is recorded as an `idle` message, and one ending on
-  it is at rest, past the `agent-switched`, `model-switched` and `location-switched` messages that
-  `session.agent.selected`, `session.model.selected` and `session.moved` append, at rest or mid-turn
-  alike (`packages/core/src/session/message-updater.ts`), and the `shell` message of a shell command
-  the person runs (`Session.shell`), which is no turn: its start stamps nothing, and its result waits
-  in the inbox (`resume: false`), stamping `updated` as any item does, for the next turn. Any other
-  message after the `idle` one reads running, as a `skill` (which resumes the session unless asked
-  not to) and a `compaction` (admitted through the inbox, waking it) start a turn; so does a `system`
-  notice of updated instructions, and a turn ended by a shutdown or a declined permission, which
-  records no `idle` message (below). The answer holds until the next stamp, so each instance
-  remembers one it read per stamp, at most 500 per session port; a transcript that
-  cannot be read, or holds nothing, is read again and leaves the session running, as its times say.
-  An archive landing while an item waits in the inbox hides the item until the next bump; a courier
-  message there is still flagged stalled. A rename, a metadata or permissions change, a staged or
-  cleared revert and an unarchive bump `time.updated` the same way with nothing in the transcript to
-  tell them by; an agent or model change and a move bump it too, recorded as above, but `busy()` goes
-  by the times alone, so it reads such an idle session as running until its next turn ends (#326).
+- **`time.updated` is no sign of activity.** The session projector
+  (`packages/core/src/session/projector.ts`) sets `time_updated` to the event's `created` for
+  `session.renamed`, `session.metadata.updated`, `session.permissions`, `session.agent.selected`,
+  `session.model.selected`, `session.moved`, `session.archived` and `session.unarchived` (with
+  `time_archived` set to it or cleared, which `session.get` gives as `time.archived`),
+  `session.revert.staged`, `.cleared` and `.committed`, `session.inbox.enqueued` (above), and as a
+  step starts or ends (`touch`, `applyUsage`); never on a turn's tool, text or reasoning events
+  (`run`), and a turn's end sets `time_idle` ([below](#when-a-sessions-turn-ended)), not
+  `time_updated`. None of them interrupts a turn. So `updated > idle` holds for an idle session
+  renamed or archived since and for one between two steps alike, a stretch that can last a whole tool
+  call or a wait on the person. The plugin reads the transcript whenever the times do not show the
+  session at rest (`runs`, `src/tree/running.ts`): a turn's end is recorded as an `idle` message, and
+  one ending on it is at rest, past the `agent-switched`, `model-switched` and `location-switched`
+  messages that `session.agent.selected`, `session.model.selected` and `session.moved` append, at
+  rest or mid-turn alike (`packages/core/src/session/message-updater.ts`), and the `shell` message of
+  a shell command the person runs (`Session.shell`), which is no turn: its start stamps nothing, and
+  its result waits in the inbox (`resume: false`), stamping `updated` as any item does, for the next
+  turn. A rename, a metadata or permissions change, a revert and an archive or unarchive record
+  nothing. Nor does a turn that a plain permission decline or a dismissed question ended, which sets
+  no `time.idle` either ([below](#permission-requests)): its transcript ends on an assistant message
+  whose `error.type` is `aborted` (`STEP_INTERRUPTED`, `packages/core/src/session/runner/step.ts`),
+  which the plugin reads as at rest too; a shutdown during a step leaves the same mark, and the next
+  boot resumes that turn with a `synthetic` notice. Any other message after the `idle` one reads
+  running, as a `skill` (which resumes the session unless asked not to) and a `compaction` (admitted
+  through the inbox, waking it) start a turn; so does a `system` notice of updated instructions. The
+  answer holds until the next stamp, so each instance remembers the last one it read of each
+  session, at most 500 per session port: a running session is read again as each step starts and
+  ends, as OpenCode reads its history for each step's request. An answer of rest read within 10
+  seconds of its stamp is read again, since an item enqueued at it reaches the transcript only on
+  delivery, which stamps nothing until its first step starts, after the model's first output; and
+  one is kept 30 seconds at most, since a wake sent again under a waiting item's id stamps nothing. A
+  transcript that cannot be read, or holds nothing, is read again and leaves the session running.
+  A session at rest by its transcript ended its last turn at its idle time, or, after a decline, as
+  the interrupted step ended (`time.completed` of that assistant message), which the panel and the
+  memory record show.
 - **`resume: false` is the only way to send a message that does not start a turn.** `Session.synthetic`
   admits the item and rings the run coordinator unless `resume === false`, whatever the `delivery`:
   `queue` still wakes an idle session. With `resume: false` the item waits in the inbox and is
@@ -172,7 +190,21 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   `Tool.Error` and `SessionModelRequest.executeTool` recovers to end the step, so the tool must
   rethrow it untouched, not through `describeFailure`. The tool part then ends with `error.type`
   `aborted` ("The user declined this tool call") and the model is not called again, but neither the
-  session's `time.idle` nor an `idle` message in the transcript marks that turn's end.
+  session's `time.idle` nor an `idle` message in the transcript marks that turn's end: the step's
+  assistant message ends with `error.type` `aborted` (as for a dismissed question), and the
+  execution ends interrupted with no reason, which `terminal` (`packages/core/src/session/execution.ts`)
+  publishes as `session.execution.interrupted` with `reason: "shutdown"`, keeping the execution claim,
+  so the next boot resumes the turn of a session with no OpenCode parent ("The server restarted while
+  you were working", `packages/core/src/session/execution/restart.ts`). The missed-wake watch
+  (`wakeEnded`) tells the two by the transcript: a `shutdown` end whose transcript ends on that
+  aborted message ends the turn (OpenCode then delivers a message steered in during it at once, in
+  a turn of its own, as the live suite shows); one that does not (a real shutdown between steps) leaves the watch
+  to the resumed turn. A real shutdown during a step reads as ended too: the resumed turn's
+  `session.execution.started` marks its messages running again, and should that event come before
+  the subscription, `wakeAgain` reads the session's times and transcript before it sends a message again
+  or flags it stalled, and marks the message running instead while they show a turn running (not on a
+  failed or empty read, which would leave the message unwatched). The other event handlers, and a join
+  group's release (`time.idle`), still treat it as a shutdown.
 - `opencode run --auto` replies `once` to every request asked in its own session, the asserted ones
   included (`packages/cli/src/run/noninteractive.ts`), so the live suite's parent answers its own
   prompt; the scenario that holds the prompt drives the parent through the API instead.

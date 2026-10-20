@@ -193,13 +193,22 @@ log says so when the plugin loads. A changed limit applies once OpenCode loads t
 [roster](#roster) and refuses, with an error naming the limit and what to do instead (do the work
 yourself, or end the turn and try again once a child has reported), when the child would be deeper
 than `maxDepth`, or when `maxChildren` or `maxTotal` sessions are already live. A session is live
-while its turn runs, while it [owes its parent a report](#a-child-that-ends-without-a-report), or
-while a session below it is live; so a child that ends its turn without reporting keeps counting
+while its turn runs, while it [owes its parent a report](#a-child-that-ends-without-a-report), while
+a message the plugin sent it to wake it waits undelivered in its inbox ([a missed
+wake](#a-missed-wake) watches each one; one whose watch cannot be read counts, and one flagged stalled,
+which nothing wakes it for any more, does not, even though it keeps the tree's
+[memory](#memory) unfinished), or while a session
+below it is live; so a child that ends its turn without reporting keeps counting
 until it does, and a session that has split its task and ended its turn to wait for its children
-counts too. One OpenCode no longer knows does not count. Archiving a session in OpenCode stamps its
-updated time, which is not taken for something reaching it: a child that reported and was archived
-since does not count, unless a turn runs in it, which its transcript tells. A session spawned by a release that kept no
-report state, or whose state cannot be read, counts while its turn runs.
+counts too. One OpenCode no longer knows does not count. OpenCode stamps a session's updated time for
+much that starts no turn (renaming, archiving or unarchiving it, switching its agent or model, a
+revert, a message left waiting in its inbox), so once anything stamped it after its last turn ended,
+its transcript tells whether a turn runs: a child that reported and was renamed or archived since
+does not count, while one between two steps of a turn does, and so does one sent a follow-up, from
+the send on, as the message waits in its inbox. A turn that a plain decline of its
+permission request or a dismissed question ended, which OpenCode marks with no idle time, no longer
+runs, though its session still owes its report. A session spawned by a release that kept no report
+state, or whose state cannot be read, counts while its turn runs.
 
 The checks run one at a time in the process, and a spawn under way counts until its child is on the
 roster, so several `courier_spawn` calls made at once cannot get past a limit together, whichever
@@ -344,7 +353,8 @@ place of the earlier.
 
 **The release.** Once every member has a held report, or has left, and the parent's turn that
 started the last of them has ended (a turn ends when it succeeds, fails or is interrupted, not when a
-shutdown stops it), the group is released: the parent gets one message, waking it if idle, wrapped in
+shutdown stops it, nor when a plain permission decline or a dismissed question ends it, which OpenCode
+reports as a shutdown: such a parent holds the group until its next turn ends), the group is released: the parent gets one message, waking it if idle, wrapped in
 `<courier from="<members>" group="<name>" reports="<n>">`, `from` listing the sessions whose reports
 it carries, comma-separated. The body names the group and counts the reports by status, and the
 members without one, then lists every report in the order the members joined, each as `[i/n]
@@ -472,7 +482,13 @@ inbox item whose metadata has `source: "courier"`, except the ones sent with `re
 the note that a [permission request was answered elsewhere](#a-child-that-asks-for-permission)) from
 the moment OpenCode enqueues it until it is delivered or cancelled, noting whether its session runs a
 turn: a running turn takes a steered message at its next step, and a message queued while it runs is
-taken when it ends. A message that has waited in an idle session for 30 seconds is a missed wake: the
+taken when it ends. A session whose turn a plain permission decline or a dismissed question ended is
+idle here too, though OpenCode stamps it no idle time and reports that end as a shutdown: a message
+that arrived while that turn ran waits from its end, though OpenCode takes it at once in a turn of
+its own. A turn a real shutdown stops between steps is
+not over, as the next start resumes it, and its messages stay with it. One stopped during a step
+reads as ended, as a decline does, until its resumed turn is seen to start or is found running when
+its wake would be sent again. A message that has waited in an idle session for 30 seconds is a missed wake: the
 scheduler sends it once more under the same inbox id, which OpenCode takes for the message already
 waiting, not a second one, and wakes the session; if a turn has taken the message meanwhile, nothing
 is sent. A session that still has not taken it 30 seconds after that is stalled: the plugin logs it,
@@ -703,7 +719,7 @@ duration in milliseconds:
 | `title` | The top session's title, as OpenCode has it at the last refresh. |
 | `split` | The top's split line, the first line of its replies that states one (`split: no, because …`, `split: <n> parts: …` or the root's `split: 1 part: <the task>, to keep my context`, read as the real-model checker reads it: a line beginning with `split:` after any markdown, else one holding it), kept as written, markdown included, or `not stated`. A stated line takes precedence over a mention: while `split` only holds `split:` (`I'll decide the split: after reading the code`), the first line beginning with it replaces the mention, once, and the mention is dropped rather than kept as a revision. A record written before this rule kept the stated lines as revisions beside the mention: when the line found is among them, the first of them, stated first, becomes `split` instead and the rest stay. A stated line is never replaced, even when compaction has dropped the reply that stated it. |
 | `revisions` | Absent until the top states a second split line worded otherwise; then the later lines, newest last, the newest 3 kept: `[{ "text": "split: 2 parts: its tests, its docs", "at": …, "parts": 1 }]`. Only a line beginning with `split:` after any markdown counts, not a passing mention, and it is appended when its words, markdown aside, differ from the line recorded last (the last revision, else `split`), so a line repeated or only restyled appends nothing, and neither does reading the same replies again. `text` is the line as written, `at` when its reply was created (the refresh's time when the message has none), and `parts` how many parts the tree had at that refresh, which tells a second stage after the first landed from a rewording before any work. A revision whose reply compaction has dropped is kept. |
-| `finished` | Whether, at the last refresh, no session in the tree ran (its turn ran, or something reached it after its last turn ended, archiving it in OpenCode aside) and every part had settled: none was `out` or `stalled` (a `gone` one has). A tree whose top is still integrating reads as finished until that turn ends, and one with no parts as soon as its top is idle. |
+| `finished` | Whether, at the last refresh, no session in the tree ran (a turn ran in it, as the [limits](#session-trees-and-their-limits) read it: a rename, an archive or a switch of model is no turn), no message the plugin sent to wake a session waited in the inbox of the top or of a part (one whose watch cannot be read counts as waiting), and every part had settled: none was `out` or `stalled` (a `gone` one has). A tree whose top is still integrating reads as finished until that turn ends, and one with no parts as soon as its top is idle. |
 | `recalled` | Absent until `courier_recall` was called from the tree; then `{ "calls": <n> }`, counting every call made from the top and its parts, with `"at"`, when the top itself first called it. |
 | `lesson` | Absent until `courier_note` wrote one; then `{ "text": …, "at": … }`, with `"depth"`, the writer's depth in the tree, when a sub-orchestrator wrote it. A second note replaces the whole object. |
 | `reads` | Absent until another tree's `courier_recall` listed the record or gave it in full; then `{ "shown": <n>, "read": <m>, "at": … }`: how often a listing included it, how often it was given in full, and when one last did. A call from the tree's own sessions counts nothing, nor does a look from the [memory view](#the-memory-view). Kept [beside the record](#what-lies-beside-a-record), per reader tree, never in its value. |
@@ -720,7 +736,7 @@ Each part:
 | `isolated` | Whether it runs in a worktree of its own. |
 | `group` | Its [join group](#join-groups), when it was started in one. |
 | `status` | `done`, `partial`, `blocked` or `failed`: the status of its last report, once it owes none; `failed` also for a turn that failed, `interrupted` for one interrupted, `stopped` once `courier_stop` stopped it since its last prompt, `gone` once OpenCode no longer knows its session and it had not settled ([above](#memory)), `stalled` while a message it does not take [waits in its inbox](#a-missed-wake), and `out` while it owes its parent a report, or nothing is known of its report state. |
-| `duration` | From its start to the end of its last turn, or to the refresh while it runs; as last recorded once its session cannot be read, and absent when it never was. |
+| `duration` | From its start to the end of its last turn (for one a declined permission ended, the end of its interrupted step), or to the refresh while it runs; as last recorded once its session cannot be read, and absent when it never was. |
 | `cost` | What its session cost so far, as OpenCode counts it, in USD. |
 | `context` | How full its context was at the end, from 0 to 1, as the [tree panel](#in-the-terminal) reads it. Absent when the window is not known. |
 | `refused` | How many of its own `courier_spawn` calls failed, refused by a [limit](#session-trees-and-their-limits) mostly. Absent when none did. |
@@ -957,8 +973,9 @@ retention](#roster) left out), each by what it does:
   its running turn shows a form; the [asks inbox](#the-asks-inbox) lists all three;
 - `stalled`: a message the plugin delivered waits in its inbox, and sending it again did not start a
   turn ([a missed wake](#a-missed-wake)); the open session itself is counted too;
-- `running`: its turn runs, or something reached it after its last turn ended (archiving it in
-  OpenCode is not something reaching it), and it waits on no request, shows no form and is not stalled;
+- `running`: its turn runs, as its transcript tells once anything stamped its updated time after its
+  last turn ended (a rename, an archive, a switch of model or a message left waiting in its inbox is
+  no turn), and it waits on no request, shows no form and is not stalled;
 - `idle`: neither.
 
 A session OpenCode no longer knows is not counted. Then, for each join group of the open session's

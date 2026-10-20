@@ -33,6 +33,7 @@ function fakePorts(options: { pageSize?: number; failDelivery?: boolean } = {}) 
         return { id: `msg_${delivered.length}` }
       }) as any,
       get: (async () => ({ time: { idle: clock.now } })) as any,
+      context: (async () => []) as any,
     },
     now: () => clock.now,
     newID: () => `later_${++ids}`,

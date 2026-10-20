@@ -602,6 +602,91 @@ describe("refresh", () => {
     expect(record).toMatchObject({ finished: true, parts: [{ sessionID: "ses_a", status: "done", duration: 30_000 }] })
   })
 
+  test("reads a part and a top renamed or switched since as at rest, by their transcripts, so the tree reads finished (#326)", async () => {
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, messages: [{ type: "idle" }, { type: "agent-switched" }] },
+      ses_a: { created: NOW - 290_000, updated: NOW - 10_000, idle: NOW - 260_000, messages: [{ type: "idle" }] },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 290_000)
+    await children.settled("ses_a", "report", NOW - 260_000, "done")
+
+    const record = await refresh(ports, state, "ses_top", NOW)
+
+    expect(record).toMatchObject({ finished: true, parts: [{ sessionID: "ses_a", status: "done", duration: 30_000 }] })
+  })
+
+  test("ends a part whose later turn a decline ended when its interrupted step ended, not at its turn before (#326)", async () => {
+    const declined = { type: "assistant", content: [], time: { created: NOW - 120_000, completed: NOW - 110_000 }, error: { type: "aborted", message: "Step interrupted" } }
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000 },
+      ses_a: { created: NOW - 290_000, updated: NOW - 110_000, idle: NOW - 260_000, messages: [{ type: "idle" }, { type: "user" }, declined] },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 130_000)
+
+    const record = await refresh(ports, state, "ses_top", NOW)
+
+    expect(record).toMatchObject({ parts: [{ sessionID: "ses_a", status: "out", duration: 180_000 }] })
+  })
+
+  test("does not read a tree as finished while a courier message waits in its top's inbox, which its transcript does not show (#326)", async () => {
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, messages: [{ type: "idle" }] },
+      ses_a: { updated: NOW - 100_000, idle: NOW - 100_000 },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 290_000)
+    await children.settled("ses_a", "report", NOW - 100_000, "done")
+    await wakeStore(ports.storage).put({ sessionID: "ses_top", inboxID: "msg_report", at: NOW - 50_000, text: "report", running: false, idleAt: NOW - 50_000 })
+
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_a")).toMatchObject({ finished: false })
+    await wakeStore(ports.storage).remove("ses_top", "msg_report")
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_a")).toMatchObject({ finished: true })
+  })
+
+  test("nor while one waits in a part's inbox that reported, a follow-up it has yet to take, though its part reads settled", async () => {
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [{ type: "idle" }] },
+      ses_a: { created: NOW - 290_000, updated: NOW - 40_000, idle: NOW - 260_000, messages: [{ type: "idle" }] },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 290_000)
+    await children.settled("ses_a", "report", NOW - 260_000, "done")
+    await wakeStore(ports.storage).put({ sessionID: "ses_a", inboxID: "msg_more", at: NOW - 40_000, text: "more", running: false, idleAt: NOW - 40_000 })
+
+    expect(await refresh(ports, state, "ses_top", NOW)).toMatchObject({ finished: false, parts: [{ sessionID: "ses_a", status: "done", duration: 30_000 }] })
+    await wakeStore(ports.storage).remove("ses_a", "msg_more")
+    expect(await refresh(ports, state, "ses_top", NOW)).toMatchObject({ finished: true })
+  })
+
+  test("nor while the messages waiting in the top's or a part's inbox cannot be read", async () => {
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [{ type: "idle" }] },
+      ses_a: { updated: NOW - 100_000, idle: NOW - 100_000 },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 290_000)
+    await children.settled("ses_a", "report", NOW - 100_000, "done")
+    const scan = ports.storage.scan
+    const failing = (sessionID: string) => {
+      ;(ports.storage as any).scan = async (input: { prefix: string }) =>
+        input.prefix === `wake/${sessionID}/` ? Promise.reject(new Error("db locked")) : scan(input)
+    }
+
+    failing("ses_top")
+    expect(await refresh(ports, state, "ses_top", NOW)).toMatchObject({ finished: false })
+    failing("ses_a")
+    expect(await refresh(ports, state, "ses_top", NOW)).toMatchObject({ finished: false })
+    ;(ports.storage as any).scan = scan
+    expect(await refresh(ports, state, "ses_top", NOW)).toMatchObject({ finished: true })
+  })
+
   test("does not read a tree as finished while its top, archived between two steps of a turn, runs on (#324)", async () => {
     const { ports, state } = fakePorts({
       ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, archived: NOW - 50_000, messages: [{ type: "idle" }, { type: "user" }] },
@@ -740,7 +825,8 @@ describe("refresh", () => {
     contexts.length = 0
     const record = await refresh(ports, state, "ses_top", NOW, "ses_a")
 
-    expect(contexts.toSorted()).toEqual(["ses_a", "ses_c"])
+    // ses_c, which never ended a turn, is read for whether it runs too.
+    expect([...new Set(contexts)].toSorted()).toEqual(["ses_a", "ses_c"])
     expect(record!.parts.map(({ sessionID, context, refused }) => [sessionID, context, refused])).toEqual([
       ["ses_a", 0.6, 1],
       ["ses_b", 0.4, 1],
@@ -1032,7 +1118,8 @@ describe("the event module", () => {
 
     contexts.length = 0
     await noteTurnEnd(ports, state, ended("ses_b", "evt_2"))
-    expect(contexts).toEqual(["ses_b"])
+    // For its use, and for whether it runs, its times stamped since its last turn ended.
+    expect([...new Set(contexts)]).toEqual(["ses_b"])
   })
 
   test("records the top's own turn ends too, and leaves a shutdown's interruption, another event and a session in no tree alone", async () => {

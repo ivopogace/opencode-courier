@@ -3,7 +3,7 @@ import { cut, isLive } from "./domain.js"
 import type { CourierPorts, Pending, RosterEntry, RosterStorage, ShownForm } from "./ports.js"
 import { lastStatus, reportOf } from "./report.js"
 import { isExpired, type Exists } from "./roster.js"
-import { runs } from "./running.js"
+import { turnOf } from "./running.js"
 import { described } from "./status.js"
 import { childStore } from "./store.js"
 
@@ -54,6 +54,8 @@ type Info = Awaited<ReturnType<Plugin.Context["session"]["get"]>>
 export interface Looked extends Below {
   readonly info: Info | undefined
   readonly running: boolean
+  /** When its last turn ended, if it does not run and that is known. */
+  readonly endedAt?: number
   readonly pending: ReadonlyArray<Pending>
   readonly forms: ReadonlyArray<ShownForm>
 }
@@ -76,9 +78,10 @@ export async function lookUp(ports: ReadPorts, rootID: string): Promise<Looked[]
         ports.pending(node.entry.sessionID).catch((): ReadonlyArray<Pending> => []),
         ports.forms(node.entry.sessionID).catch((): ReadonlyArray<ShownForm> => []),
       ])
-      const running = info !== undefined && (await runs(ports.session, node.entry.sessionID, info.time))
+      const turn = info === undefined ? undefined : await turnOf(ports.session, node.entry.sessionID, info.time)
+      const running = turn?.running ?? false
       // A form outlives its session's turn only when its withdrawal was missed, as while no instance followed the events.
-      return { ...node, info, running, pending, forms: running ? forms : [] }
+      return { ...node, info, running, ...(turn?.endedAt !== undefined ? { endedAt: turn.endedAt } : {}), pending, forms: running ? forms : [] }
     }),
   )
 }

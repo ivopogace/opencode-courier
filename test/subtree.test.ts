@@ -50,8 +50,11 @@ describe("isLive", () => {
   })
 })
 
-/** A session's times, and `turn` when its transcript does not end on a turn's end, as while a turn runs. */
-type Times = { updated: number; idle?: number; archived?: number; turn?: true }
+/** A session's times, and `rest` when its transcript ends on its turn's end though something stamped `updated` since. */
+type Times = { updated: number; idle?: number; archived?: number; rest?: true }
+
+/** Whether a session's transcript runs on: as its times say, unless it is at `rest`. */
+const ranOn = (time: Times | undefined) => time !== undefined && !time.rest && (time.idle === undefined || time.updated > time.idle)
 
 /** Ports over an in-memory store, with each session's times and pending requests as given; one without times is gone. */
 function fakePorts(times: Record<string, Times>, pending: Record<string, Pending[]> = {}, maxTotal = DEFAULT_LIMITS.maxTotal) {
@@ -70,10 +73,10 @@ function fakePorts(times: Record<string, Times>, pending: Record<string, Pending
       get: async ({ sessionID }: { sessionID: string }) => {
         const time = times[sessionID]
         if (!time) throw new Error(`session ${sessionID} not found`)
-        const { turn: _, ...rest } = time
-        return { id: sessionID, title: sessionID, time: { created: 1, ...rest } }
+        const { rest: _, ...stamps } = time
+        return { id: sessionID, title: sessionID, time: { created: 1, ...stamps } }
       },
-      context: async ({ sessionID }: { sessionID: string }) => [{ type: times[sessionID]?.turn ? "assistant" : "idle" }],
+      context: async ({ sessionID }: { sessionID: string }) => [{ type: ranOn(times[sessionID]) ? "assistant" : "idle" }],
     } as never,
     pending: async (sessionID: string) => pending[sessionID] ?? [],
     forms: async () => [],
@@ -117,7 +120,7 @@ describe("readTree", () => {
   })
 
   test("a child that reported and was archived since is not live, so the newest finished ones come before it (#324)", async () => {
-    const { ports } = fakePorts({ ses_archived: { updated: 9, idle: 5, archived: 9 }, ses_a: { updated: 5, idle: 5 }, ses_b: { updated: 5, idle: 5 } }, {}, 2)
+    const { ports } = fakePorts({ ses_archived: { updated: 9, idle: 5, archived: 9, rest: true }, ses_a: { updated: 5, idle: 5 }, ses_b: { updated: 5, idle: 5 } }, {}, 2)
     const children = childStore(ports.storage)
     for (const [index, child] of ["ses_archived", "ses_a", "ses_b"].entries()) await children.record(entry(child, "ses_root", 900 + index))
     await children.prompted("ses_archived", 950)
@@ -130,7 +133,7 @@ describe("readTree", () => {
   })
 
   test("one archived during a turn that runs on, which its transcript shows, is live, and its form is kept (#324)", async () => {
-    const { ports } = fakePorts({ ses_turn: { updated: 9, idle: 5, archived: 9, turn: true }, ses_rest: { updated: 9, idle: 5, archived: 9 } })
+    const { ports } = fakePorts({ ses_turn: { updated: 9, idle: 5, archived: 9 }, ses_rest: { updated: 9, idle: 5, archived: 9, rest: true } })
     ;(ports as any).forms = async () => [{ id: "frm_1", title: "Web Search" }]
     const children = childStore(ports.storage)
     for (const [index, child] of ["ses_turn", "ses_rest"].entries()) await children.record(entry(child, "ses_root", 900 + index))
@@ -140,6 +143,21 @@ describe("readTree", () => {
     expect(kept.map((node) => [node.entry.sessionID, node.running, node.live, node.forms.length])).toEqual([
       ["ses_turn", true, true, 1],
       ["ses_rest", false, false, 0],
+    ])
+  })
+
+  test("so is one renamed, unarchived or switched since, whose transcript ends on its turn's end, and so not live (#326)", async () => {
+    const { ports } = fakePorts({ ses_renamed: { updated: 9, idle: 5, rest: true }, ses_turn: { updated: 9, idle: 5 } })
+    const children = childStore(ports.storage)
+    for (const [index, child] of ["ses_renamed", "ses_turn"].entries()) await children.record(entry(child, "ses_root", 900 + index))
+    await children.prompted("ses_renamed", 950)
+    await children.settled("ses_renamed", "report", 951, "done")
+
+    const { kept } = await readTree(ports, "ses_root")
+
+    expect(kept.map((node) => [node.entry.sessionID, node.running, node.live])).toEqual([
+      ["ses_renamed", false, false],
+      ["ses_turn", true, true],
     ])
   })
 

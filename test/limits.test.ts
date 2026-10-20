@@ -3,13 +3,13 @@ import { DateTime } from "effect"
 import { spawn } from "../src/tree/spawn.js"
 import { admit } from "../src/tree/limits.js"
 import { shapeContext } from "../src/tree/context.js"
-import { archivedSinceTurn, busy, DEFAULT_LIMITS, endsIdle, nativeRootOf, readLimits, readNativeChildren, type RosterEntry } from "../src/tree/domain.js"
-import { runs } from "../src/tree/running.js"
+import { busy, DEFAULT_LIMITS, endedAt, endsIdle, nativeRootOf, readLimits, readNativeChildren, turnEnd, type RosterEntry } from "../src/tree/domain.js"
+import { runs, turnOf } from "../src/tree/running.js"
 import type { ContextPorts, CourierPorts, LimitPorts, SpawnGate } from "../src/tree/ports.js"
 import { ROOT_SPLIT_LINE, SKILL_ID } from "../src/kernel/protocol.js"
 import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/tree/text.js"
 import { reportOf } from "../src/tree/report.js"
-import { childStore } from "../src/tree/store.js"
+import { childStore, wakeStore } from "../src/tree/store.js"
 
 /** Whether a spawned session owes its parent a report, as `reportOf` reads it. */
 const owesReport = async (storage: Parameters<typeof childStore>[0], sessionID: string) => (await reportOf(childStore(storage), sessionID))?.owes
@@ -30,7 +30,7 @@ function fakeStorage() {
 const RUNNING = { created: 1, updated: 5 }
 const FINISHED = { created: 1, updated: 5, idle: 5 }
 
-/** Limit ports over a roster and the sessions' times, all running unless `times` says otherwise; `turns` run on in their transcripts. */
+/** Limit ports over a roster and the sessions' times, all running, by their transcripts too, unless `times` says otherwise; `turns` run on in theirs. */
 function limitPorts(limits = DEFAULT_LIMITS, times: Record<string, object> = {}, turns: ReadonlyArray<string> = []) {
   const storage = fakeStorage()
   const gate: SpawnGate = { reserved: new Set(), turn: Promise.resolve() }
@@ -40,7 +40,7 @@ function limitPorts(limits = DEFAULT_LIMITS, times: Record<string, object> = {},
     gate,
     session: {
       get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID, time: times[sessionID] ?? RUNNING }),
-      context: async ({ sessionID }: { sessionID: string }) => [{ type: turns.includes(sessionID) ? "assistant" : "idle" }],
+      context: async ({ sessionID }: { sessionID: string }) => [{ type: turns.includes(sessionID) || !times[sessionID] ? "assistant" : "idle" }],
     } as any,
   }
   const child = (parentID: string, sessionID: string) =>
@@ -129,23 +129,6 @@ describe("busy", () => {
   })
 })
 
-// #324: archiving stamps `updated` with `archived`, and a running turn stamps it only as each step starts or ends.
-describe("archivedSinceTurn", () => {
-  const time = (value: object) => value as Parameters<typeof archivedSinceTurn>[0]
-
-  test("is the archive being the last stamp on updated since the last turn ended", () => {
-    expect(archivedSinceTurn(time({ updated: 9, idle: 5, archived: 9 }))).toBe(true)
-    expect(archivedSinceTurn(time({ updated: DateTime.makeUnsafe(9), idle: DateTime.makeUnsafe(5), archived: DateTime.makeUnsafe(9) }))).toBe(true)
-  })
-
-  test("not when something reached it after the archive, the archive came before the turn ended, or it never ended one", () => {
-    expect(archivedSinceTurn(time({ updated: 12, idle: 5, archived: 9 }))).toBe(false)
-    expect(archivedSinceTurn(time({ updated: 12, idle: 12, archived: 9 }))).toBe(false)
-    expect(archivedSinceTurn(time({ updated: 9, archived: 9 }))).toBe(false)
-    expect(archivedSinceTurn(time({ updated: 9, idle: 5 }))).toBe(false)
-  })
-})
-
 describe("endsIdle", () => {
   test("is a transcript whose last message is a turn's end", () => {
     expect(endsIdle([{ type: "user" }, { type: "assistant" }, { type: "idle" }])).toBe(true)
@@ -164,6 +147,15 @@ describe("endsIdle", () => {
     expect(endsIdle([{ type: "idle" }, { type: "skill" }])).toBe(false)
     expect(endsIdle([{ type: "idle" }, { type: "compaction" }])).toBe(false)
   })
+
+  // #326: a declined permission or dismissed question interrupts the step and ends the turn with no `idle` message.
+  test("on a step interrupted with nothing after it, as a decline ends a turn, but not a step that failed otherwise", () => {
+    const declined = { type: "assistant", error: { type: "aborted" } }
+    expect(endsIdle([{ type: "idle" }, { type: "user" }, declined])).toBe(true)
+    expect(endsIdle([{ type: "user" }, declined, { type: "model-switched" }])).toBe(true)
+    expect(endsIdle([{ type: "idle" }, declined, { type: "synthetic" }])).toBe(false)
+    expect(endsIdle([{ type: "idle" }, { type: "user" }, { type: "assistant", error: { type: "provider" } }])).toBe(false)
+  })
 })
 
 describe("runs", () => {
@@ -173,25 +165,53 @@ describe("runs", () => {
       return messages
     },
   }) as any
-  const archived = { updated: 9, idle: 5, archived: 9 } as Parameters<typeof runs>[2]
+  const stamped = { updated: 9, idle: 5 } as Parameters<typeof runs>[2]
 
-  test("goes by the times, reading no transcript, unless the archive stamped them since the last turn ended", async () => {
+  test("reads no transcript when its last turn ended after its last stamp", async () => {
     const unread = session(new Error("not read"))
-    expect(await runs(unread, "ses_a", { updated: 9, idle: 5 } as any)).toBe(true)
     expect(await runs(unread, "ses_a", { updated: 5, idle: 5 } as any)).toBe(false)
-    expect(await runs(unread, "ses_a", { updated: 12, idle: 5, archived: 9 } as any)).toBe(true)
+    expect(await runs(unread, "ses_a", { updated: 4, idle: 5 } as any)).toBe(false)
   })
 
-  test("then by the transcript: idle when it ends on the turn's end, running while a turn goes on between two steps", async () => {
-    expect(await runs(session([{ type: "assistant" }, { type: "idle" }]), "ses_a", archived)).toBe(false)
-    expect(await runs(session([{ type: "idle" }, { type: "user" }, { type: "assistant" }]), "ses_a", archived)).toBe(true)
-    // The person switched its model, then archived it: the switch stamped nothing the archive did not stamp again.
-    expect(await runs(session([{ type: "idle" }, { type: "model-switched" }]), "ses_a", archived)).toBe(false)
+  // #326: what stamps `updated` after a turn's end, and what each leaves in the transcript (projector.ts, message-updater.ts, v2.1.0).
+  const ended = [{ type: "user" }, { type: "assistant" }, { type: "idle" }]
+  const atRest: Array<[string, Array<{ type: string; error?: { type: string } }>]> = [
+    ["a rename, a metadata or permissions change", ended],
+    ["an archive, or an unarchive", ended],
+    ["a staged or cleared revert", ended],
+    ["an item waiting in the inbox, sent without a wake or its wake lost", ended],
+    ["a switch of agent or model", [...ended, { type: "agent-switched" }, { type: "model-switched" }]],
+    ["a move", [...ended, { type: "location-switched" }]],
+    ["a shell command the person ran", [...ended, { type: "shell" }]],
+    ["a declined permission or dismissed question, which records no idle", [...ended, { type: "user" }, { type: "assistant", error: { type: "aborted" } }]],
+  ]
+  const running: Array<[string, Array<{ type: string }>]> = [
+    ["a step started or ended", [...ended, { type: "user" }, { type: "assistant" }]],
+    ["a prompt or message delivered, its step not yet started", [...ended, { type: "synthetic" }]],
+    ["a skill, or a compaction", [...ended, { type: "skill" }]],
+    ["a switch made during a turn", [...ended, { type: "user" }, { type: "assistant" }, { type: "model-switched" }]],
+  ]
+
+  for (const [stamp, messages] of atRest)
+    test(`else goes by the transcript: idle after ${stamp}`, async () => {
+      expect(await runs(session(messages), "ses_a", stamped)).toBe(false)
+      expect(await runs(session(messages), "ses_a", { updated: 9, idle: 5, archived: 9 } as any)).toBe(false)
+    })
+
+  for (const [stamp, messages] of running)
+    test(`and running after ${stamp}`, async () => {
+      expect(await runs(session(messages), "ses_a", stamped)).toBe(true)
+    })
+
+  test("in a first turn too, which no idle time marks: running until it ends, as a decline ends it", async () => {
+    expect(await runs(session([{ type: "user" }, { type: "assistant" }]), "ses_a", { updated: 9 } as any)).toBe(true)
+    expect(await runs(session([{ type: "user" }, { type: "assistant", error: { type: "aborted" } }] as any), "ses_a", { updated: 9 } as any)).toBe(false)
   })
 
   test("as its times say, running, when the transcript cannot be read or holds nothing", async () => {
-    expect(await runs(session(new Error("db locked")), "ses_a", archived)).toBe(true)
-    expect(await runs(session([]), "ses_a", archived)).toBe(true)
+    expect(await runs(session(new Error("db locked")), "ses_a", stamped)).toBe(true)
+    expect(await runs(session([]), "ses_a", stamped)).toBe(true)
+    expect(await runs(session([]), "ses_a", { updated: 9 } as any)).toBe(true)
   })
 
   test("remembers a transcript read per stamp, calls made together sharing the read, and reads again after a new stamp, a failure or nothing", async () => {
@@ -205,17 +225,17 @@ describe("runs", () => {
         return messages
       },
     } as any
-    expect(await runs(counted, "ses_a", archived)).toBe(true)
+    expect(await runs(counted, "ses_a", stamped)).toBe(true)
     fail = false
-    expect(await runs(counted, "ses_a", archived)).toBe(true)
+    expect(await runs(counted, "ses_a", stamped)).toBe(true)
     expect(reads).toBe(2)
     reads = 0
     messages = [{ type: "idle" }]
-    expect(await Promise.all([runs(counted, "ses_a", archived), runs(counted, "ses_a", archived)])).toEqual([false, false])
-    expect(await runs(counted, "ses_a", archived)).toBe(false)
+    expect(await Promise.all([runs(counted, "ses_a", stamped), runs(counted, "ses_a", stamped)])).toEqual([false, false])
+    expect(await runs(counted, "ses_a", stamped)).toBe(false)
     expect(reads).toBe(1)
-    expect(await runs(counted, "ses_a", { updated: 14, idle: 10, archived: 14 } as any)).toBe(false)
-    expect(await runs(counted, "ses_b", archived)).toBe(false)
+    expect(await runs(counted, "ses_a", { updated: 14, idle: 10 } as any)).toBe(false)
+    expect(await runs(counted, "ses_b", stamped)).toBe(false)
     expect(reads).toBe(3)
   })
 
@@ -229,13 +249,105 @@ describe("runs", () => {
         return Promise.resolve([{ type: "idle" }])
       },
     } as any
-    const first = runs(held, "ses_a", archived)
-    for (let i = 0; i < 500; i++) await runs(held, `ses_${i}`, archived)
-    expect(await runs(held, "ses_a", archived)).toBe(false)
+    const first = runs(held, "ses_a", stamped)
+    for (let i = 0; i < 500; i++) await runs(held, `ses_${i}`, stamped)
+    expect(await runs(held, "ses_a", stamped)).toBe(false)
     fail()
     expect(await first).toBe(true)
-    expect(await runs(held, "ses_a", archived)).toBe(false)
+    expect(await runs(held, "ses_a", stamped)).toBe(false)
     expect(reads.filter((sessionID) => sessionID === "ses_a")).toHaveLength(2)
+  })
+
+  test("remembers one answer per session, so a running session's new stamps evict no other session's", async () => {
+    const reads: string[] = []
+    const counted = {
+      context: async ({ sessionID }: { sessionID: string }) => {
+        reads.push(sessionID)
+        return [{ type: sessionID === "ses_idle" ? "idle" : "assistant" }]
+      },
+    } as any
+    expect(await runs(counted, "ses_idle", stamped)).toBe(false)
+    for (let step = 0; step < 600; step++) expect(await runs(counted, "ses_run", { updated: 10 + step, idle: 5 } as any)).toBe(true)
+    expect(await runs(counted, "ses_idle", stamped)).toBe(false)
+    expect(reads.filter((sessionID) => sessionID === "ses_idle")).toHaveLength(1)
+  })
+
+  // An item enqueued at a stamp is not in the transcript until delivered, which stamps nothing until its first step starts.
+  test("reads a rest answer again while its stamp is fresh, so a delivery after it is seen; a running one, or an older rest, is kept", async () => {
+    let messages: { type: string }[] = [{ type: "idle" }]
+    let reads = 0
+    const counted = {
+      context: async () => {
+        reads++
+        return messages
+      },
+    } as any
+    const enqueued = { updated: 100_000, idle: 5 } as any
+    expect(await runs(counted, "ses_a", enqueued, 100_500)).toBe(false)
+    messages = [{ type: "idle" }, { type: "synthetic" }]
+    expect(await runs(counted, "ses_a", enqueued, 101_000)).toBe(true)
+    expect(await runs(counted, "ses_a", enqueued, 102_000)).toBe(true)
+    expect(reads).toBe(2)
+    messages = [{ type: "idle" }]
+    expect(await runs(counted, "ses_b", enqueued, 110_000)).toBe(false)
+    expect(await runs(counted, "ses_b", enqueued, 120_000)).toBe(false)
+    expect(reads).toBe(3)
+  })
+
+  // A wake sent again under a waiting item's id delivers it with no new stamp, so a rest is read again within 30 s.
+  test("keeps a rest answer 30 s from its read, then reads again; a running one until the next stamp", async () => {
+    let messages: { type: string }[] = [{ type: "idle" }]
+    let reads = 0
+    const counted = {
+      context: async () => {
+        reads++
+        return messages
+      },
+    } as any
+    expect(await runs(counted, "ses_a", stamped, 100_000)).toBe(false)
+    expect(await runs(counted, "ses_a", stamped, 129_999)).toBe(false)
+    expect(reads).toBe(1)
+    messages = [{ type: "idle" }, { type: "synthetic" }]
+    expect(await runs(counted, "ses_a", stamped, 130_000)).toBe(true)
+    expect(await runs(counted, "ses_a", stamped, 900_000)).toBe(true)
+    expect(reads).toBe(2)
+  })
+})
+
+describe("turnOf", () => {
+  const session = (messages: unknown[]) => ({ context: async () => messages }) as any
+
+  test("says when the last turn ended: its idle time, by the times or after an idle message", async () => {
+    expect(await turnOf(session([]), "ses_a", { updated: 5, idle: 7 } as any)).toEqual({ running: false, endedAt: 7 })
+    expect(await turnOf(session([{ type: "idle" }, { type: "model-switched" }]), "ses_a", { updated: 9, idle: 7 } as any)).toEqual({ running: false, endedAt: 7 })
+  })
+
+  test("or when the step a decline interrupted ended, past the last turn's idle time, or in a first turn with none", async () => {
+    const declined = { type: "assistant", time: { created: 8, completed: 9 }, error: { type: "aborted" } }
+    expect(await turnOf(session([{ type: "idle" }, { type: "user" }, declined]), "ses_a", { updated: 10, idle: 7 } as any)).toEqual({ running: false, endedAt: 9 })
+    expect(await turnOf(session([{ type: "user" }, { ...declined, time: { created: 8 } }]), "ses_b", { updated: 10 } as any)).toEqual({ running: false, endedAt: 8 })
+    expect(await turnOf(session([{ type: "user" }, { type: "assistant", error: { type: "aborted" } }]), "ses_c", { updated: 10 } as any)).toEqual({ running: false })
+  })
+
+  test("and nothing while a turn runs", async () => {
+    expect(await turnOf(session([{ type: "idle" }, { type: "user" }]), "ses_a", { updated: 10, idle: 7 } as any)).toEqual({ running: true })
+  })
+})
+
+describe("turnEnd and endedAt", () => {
+  test("turnEnd is the message a transcript's last turn ended on, past asides; none while one runs", () => {
+    const idle = { type: "idle" }
+    const declined = { type: "assistant", error: { type: "aborted" } }
+    expect(turnEnd([{ type: "user" }, idle, { type: "shell" }])).toBe(idle)
+    expect(turnEnd([{ type: "user" }, declined])).toBe(declined)
+    expect(turnEnd([idle, { type: "user" }])).toBeUndefined()
+  })
+
+  test("endedAt is the idle time for an idle message, else when the interrupted step ended, if its times are known", () => {
+    expect(endedAt({ type: "idle", time: { created: 3 } }, { updated: 9, idle: 4 } as any)).toBe(4)
+    expect(endedAt({ type: "assistant", time: { created: 6, completed: 8 } }, { updated: 9, idle: 4 } as any)).toBe(8)
+    expect(endedAt({ type: "assistant", time: { created: DateTime.makeUnsafe(6) } }, { updated: 9 } as any)).toBe(6)
+    expect(endedAt({ type: "assistant" }, { updated: 9 } as any)).toBeUndefined()
   })
 })
 
@@ -397,6 +509,49 @@ describe("admit, with children that owe a report", () => {
     expect((await admit(ports, "ses_root")).depth).toBe(1)
   })
 
+  test("nor one renamed, unarchived, switched or sent an item that waits in its inbox since, which bump its updated time too (#326)", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: { ...FINISHED, updated: 9 } })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150)
+
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  // OpenCode's inbox item is in no transcript until delivered, so the wake store says that a follow-up owes it a turn.
+  test("but one that reported counts while a courier message sent with a wake waits in its inbox, and not once it is delivered", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: { ...FINISHED, updated: 9 } })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150)
+    await wakeStore(storage).put({ sessionID: "ses_a", inboxID: "msg_more", at: 200, text: "more", running: false, idleAt: 200 })
+
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+    await wakeStore(storage).remove("ses_a", "msg_more")
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  test("nor once the message is flagged stalled, which nothing wakes it for any more, as when its turn failed before", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: FINISHED })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "failed", 150)
+    await wakeStore(storage).put({ sessionID: "ses_a", inboxID: "msg_more", at: 200, text: "more", running: false, idleAt: 200, rewoken: 300, stalled: 400 })
+
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  test("and counts when the messages waiting in its inbox cannot be read", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: FINISHED })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150)
+    const scan = storage.scan
+    storage.scan = async (input: { prefix: string }) => (input.prefix.startsWith("wake/") ? Promise.reject(new Error("db locked")) : scan(input))
+
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+  })
+
   test("but one archived after reporting early, while its turn runs on between two steps, still counts", async () => {
     const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, { ses_a: { ...FINISHED, updated: 9, archived: 9 } }, ["ses_a"])
     await child("ses_root", "ses_a")
@@ -448,6 +603,7 @@ describe("admit, with sessions waiting on their own children", () => {
       gate: { reserved: new Set(), turn: Promise.resolve() },
       session: {
         get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID, time: running.includes(sessionID) ? RUNNING : FINISHED }),
+        context: async ({ sessionID }: { sessionID: string }) => [{ type: running.includes(sessionID) ? "assistant" : "idle" }],
       } as any,
     }
     const add = (parentID: string, sessionID: string) =>

@@ -1973,7 +1973,7 @@ describe("Digby's colours", () => {
 
 describe("a hovered row's colour (#250)", () => {
   const hex = RGBA.fromHex
-  // The default `opencode` theme at v2.0.32 (packages/tui/src/theme/assets/v2/opencode.json), resolved with @opencode/theme.
+  // The default `opencode` theme at v2.1.0 (packages/tui/src/theme/assets/v2/opencode.json), resolved with @opencode/theme.
   const themes = {
     dark: { base: "#0a0a0a", raised: "#141414", high: "#1e1e1e" },
     light: { base: "#ffffff", raised: "#fafafa", high: "#f5f5f5" },

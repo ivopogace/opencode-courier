@@ -152,6 +152,12 @@ describe("endsIdle", () => {
     expect(endsIdle([{ type: "idle" }, { type: "synthetic" }, { type: "assistant" }])).toBe(false)
     expect(endsIdle([])).toBe(false)
   })
+
+  test("past a switch of agent or model, or a move, made since: at rest after the turn's end, running within a turn", () => {
+    expect(endsIdle([{ type: "idle" }, { type: "model-switched" }, { type: "agent-switched" }, { type: "location-switched" }])).toBe(true)
+    expect(endsIdle([{ type: "idle" }, { type: "user" }, { type: "model-switched" }])).toBe(false)
+    expect(endsIdle([{ type: "model-switched" }])).toBe(false)
+  })
 })
 
 describe("runs", () => {
@@ -173,6 +179,8 @@ describe("runs", () => {
   test("then by the transcript: idle when it ends on the turn's end, running while a turn goes on between two steps", async () => {
     expect(await runs(session([{ type: "assistant" }, { type: "idle" }]), "ses_a", archived)).toBe(false)
     expect(await runs(session([{ type: "idle" }, { type: "user" }, { type: "assistant" }]), "ses_a", archived)).toBe(true)
+    // The person switched its model, then archived it: the switch stamped nothing the archive did not stamp again.
+    expect(await runs(session([{ type: "idle" }, { type: "model-switched" }]), "ses_a", archived)).toBe(false)
   })
 
   test("as its times say, running, when the transcript cannot be read or holds nothing", async () => {
@@ -180,24 +188,29 @@ describe("runs", () => {
     expect(await runs(session([]), "ses_a", archived)).toBe(true)
   })
 
-  test("reads a transcript once per stamp, calls made together sharing the read, and again after a new stamp or a failure", async () => {
+  test("remembers a transcript read per stamp, calls made together sharing the read, and reads again after a new stamp, a failure or nothing", async () => {
     let reads = 0
     let fail = true
+    let messages: { type: string }[] = []
     const counted = {
       context: async () => {
         reads++
         if (fail) throw new Error("db locked")
-        return [{ type: "idle" }]
+        return messages
       },
     } as any
     expect(await runs(counted, "ses_a", archived)).toBe(true)
     fail = false
+    expect(await runs(counted, "ses_a", archived)).toBe(true)
+    expect(reads).toBe(2)
+    reads = 0
+    messages = [{ type: "idle" }]
     expect(await Promise.all([runs(counted, "ses_a", archived), runs(counted, "ses_a", archived)])).toEqual([false, false])
     expect(await runs(counted, "ses_a", archived)).toBe(false)
-    expect(reads).toBe(2)
+    expect(reads).toBe(1)
     expect(await runs(counted, "ses_a", { updated: 14, idle: 10, archived: 14 } as any)).toBe(false)
     expect(await runs(counted, "ses_b", archived)).toBe(false)
-    expect(reads).toBe(4)
+    expect(reads).toBe(3)
   })
 })
 

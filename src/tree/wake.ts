@@ -1,5 +1,8 @@
+import { endsIdle } from "./domain.js"
 import type { GroupPorts, Wake, WatchPorts } from "./ports.js"
 import { wakeStore } from "./store.js"
+
+type Messages = Awaited<ReturnType<WatchPorts["session"]["context"]>>
 
 /** How long a courier message may wait in an idle session's inbox before its wake counts as missed. */
 export const WAKE_MS = 30_000
@@ -27,11 +30,6 @@ export interface Execution {
   readonly created?: number
   readonly data: { readonly sessionID: string }
 }
-
-type Messages = Awaited<ReturnType<WatchPorts["session"]["context"]>>
-
-/** Whether a session's stored messages end with the marker of an ended turn; one with none yet is taken to run. */
-const endsIdle = (messages: Messages) => messages.at(-1)?.type === "idle"
 
 /**
  * Watches a courier message enqueued for a session until it is delivered, noting whether the session runs.

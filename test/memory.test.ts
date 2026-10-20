@@ -937,6 +937,29 @@ describe("refresh", () => {
     expect(record!.parts[0]).toMatchObject({ sessionID: "ses_a", context: 0.6 })
   })
 
+  test("reads whether its top runs before the record it writes over, so a lesson noted meanwhile is kept (#274, #324)", async () => {
+    const { ports, state, sessions, contexts } = fakePorts({
+      ses_top: { updated: 1, idle: 1, messages: [done("split: 2 parts: a, b"), { type: "idle" }] },
+      ses_a: { updated: 1, idle: 1 },
+      ses_b: { updated: 1, idle: 1 },
+    })
+    await tree(ports)
+    await refresh(ports, state, "ses_top", NOW - 5000, "ses_top")
+    // Archived since its turn ended, with its split line stated: only whether it runs reads its transcript.
+    sessions.ses_top = { ...sessions.ses_top!, updated: 2, archived: 2 }
+    const context = ports.session.context
+    ;(ports.session as any).context = async (input: { sessionID: string }) => {
+      if (input.sessionID === "ses_top") await note(ports, "ses_top", { text: "Written meanwhile" })
+      return context(input)
+    }
+    const read = contexts.length
+
+    const record = await refresh(ports, state, "ses_top", NOW, "ses_a")
+
+    expect(contexts.slice(read).filter((sessionID) => sessionID === "ses_top")).toHaveLength(1)
+    expect(record).toMatchObject({ lesson: { text: "Written meanwhile" } })
+  })
+
   test("keeps a part's last recorded use when its messages cannot be read", async () => {
     const { ports, state } = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_a: { updated: 1, idle: 1, messages: [usage(300), spawnCall("error")] }, ses_b: { updated: 1, idle: 1 } }, [SMALL])
     await tree(ports)

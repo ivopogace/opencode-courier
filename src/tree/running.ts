@@ -13,7 +13,7 @@ const answers = new WeakMap<Session, Map<string, Promise<boolean>>>()
 
 /**
  * Whether a session runs: by its times (`busy`), unless its archive stamped them since its last turn ended, when its transcript
- * says (#324), read once per stamp; one that cannot be read, or holds nothing, leaves it as its times say, running.
+ * says (#324), its answer kept until the next stamp; one unread or empty is read again and leaves it running, as its times say.
  */
 export function runs(session: Session, sessionID: string, time: BusyTimes): Promise<boolean> {
   if (!archivedSinceTurn(time)) return Promise.resolve(busy(time))
@@ -22,13 +22,11 @@ export function runs(session: Session, sessionID: string, time: BusyTimes): Prom
   const key = `${sessionID} ${millis(time.updated)} ${millis(time.idle)}`
   const found = known.get(key)
   if (found) return found
-  const read = session.context({ sessionID }).then(
-    (messages) => !endsIdle(messages),
-    () => {
-      known.delete(key)
-      return true
-    },
-  )
+  const forget = () => {
+    known.delete(key)
+    return true
+  }
+  const read = session.context({ sessionID }).then((messages) => (messages.length ? !endsIdle(messages) : forget()), forget)
   setBounded(known, key, read, ANSWERS_MAX)
   return read
 }

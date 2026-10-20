@@ -100,12 +100,16 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   `session.get` gives, for an idle session and for one between two steps alike, a stretch that can
   last a whole tool call or a wait on the person. The plugin tells them apart by the transcript
   (`runs`, `src/tree/running.ts`): a turn's end is recorded as an `idle` message, and one ending on
-  it is at rest. The answer holds until the next stamp, so each instance reads a transcript once per
-  stamp; one that cannot be read leaves the session running, as its times say. An archive landing while an item waits in the inbox hides the item until the next
-  bump; a courier message there is still flagged stalled. A rename, a metadata,
-  permissions, agent or model change, a staged or cleared revert, a move and an unarchive bump
-  `time.updated` the same way with nothing to tell them by, so `busy()` reads such an idle session as
-  running until its next turn ends (#326).
+  it is at rest, past the `agent-switched`, `model-switched` and `location-switched` messages that
+  `session.agent.selected`, `session.model.selected` and `session.moved` append, at rest or mid-turn
+  alike (`packages/core/src/session/message-updater.ts`). The answer holds until the next stamp, so
+  each instance remembers one it read per stamp, at most 500 per session port; a transcript that
+  cannot be read, or holds nothing, is read again and leaves the session running, as its times say.
+  An archive landing while an item waits in the inbox hides the item until the next bump; a courier
+  message there is still flagged stalled. A rename, a metadata or permissions change, a staged or
+  cleared revert and an unarchive bump `time.updated` the same way with nothing in the transcript to
+  tell them by; an agent or model change and a move bump it too, recorded as above, but `busy()` goes
+  by the times alone, so it reads such an idle session as running until its next turn ends (#326).
 - **`resume: false` is the only way to send a message that does not start a turn.** `Session.synthetic`
   admits the item and rings the run coordinator unless `resume === false`, whatever the `delivery`:
   `queue` still wakes an idle session. With `resume: false` the item waits in the inbox and is

@@ -238,7 +238,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it to change an option); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:45 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:20 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1195,11 +1195,12 @@ run_archive() {
   turn_ended "$second"
 
   scenario "a child archived while its turn runs on reads as running, and still counts against the limits (#324)"
-  # The person prompts the child again, a turn the stand-in model holds open; a turn stamps updated only as a step starts or ends.
+  # The person prompts it again, a turn the stand-in model holds open, which stamps updated only as a step starts or ends; a
+  # step starts once the model answers. The person's own prompt owes its parent no report, so only its transcript counts it.
   api_prompt "$second" "COURIER-HOLD"
   last_message() { api "session/$1/message" | jq -r '.data | sort_by(.id) | last | .type'; }
-  for _ in $(seq 1 30); do [ "$(last_message "$second")" = assistant ] && break; sleep 1; done
-  check "its turn has started a step" "$([ "$(last_message "$second")" = assistant ] && echo true || echo false)"
+  for _ in $(seq 1 30); do [ "$(last_message "$second")" = user ] && break; sleep 1; done
+  check "the prompt reached it, and its turn waits on the model" "$([ "$(last_message "$second")" = user ] && echo true || echo false)"
   check "the person archives it" \
     "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X PATCH -H 'content-type: application/json' --data '{"archived":true}' "$SERVER/api/session/$second") == 20* ]] && echo true || echo false)"
   for _ in $(seq 1 10); do [ "$(session_info "$second" | jq -r '.time.archived != null')" = true ] && break; sleep 1; done
@@ -1208,7 +1209,7 @@ run_archive() {
   row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" |
     jq -c --arg id "$second" '.output.rows[] | select(.sessionID == $id) | {state, report}')
   echo "  $row"
-  check "its transcript tells: the panel's row reads it running, owing a report" "$(jq -r '.state == "running" and .report.state == "owed"' <<<"$row")"
+  check "its transcript tells: the panel's row reads it running, still reported" "$(jq -r '.state == "running" and .report.state == "reported"' <<<"$row")"
   summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -c '.output')
   echo "  $summary"
   check "and the footer counts it running, the first child idle" "$(jq -r '.running == 1 and .idle == 1' <<<"$summary")"

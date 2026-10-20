@@ -66,7 +66,7 @@ import rules and the reasons for them.
   it imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, `rpc.ts`, `text.ts` and
   `mascot.ts`. `mascot.ts` Digby, the panel's mole: his frames as pixel tokens, pure and importing
   nothing, snapshotted in `test/__snapshots__/tui.test.tsx.snap`. `wake.ts` the missed wake
-  (`watchWake`, `wakeMissed`, `stalledAmong`); `events.ts` `treeEvents`, with `waitsOn` and `together`
+  (`watchWake`, `wakeMissed`, `stalledAmong`, `waitsInInbox`); `events.ts` `treeEvents`, with `waitsOn` and `together`
   to compose the `Waits` port; `context.ts` the `context` hook naming each spawned session's role and
   hiding `courier_spawn` and the tools `hiddenFromLeaf` names from a leaf.
 - `person/`: what a spawned session needs the person for. `permission.ts` passes a permission answer

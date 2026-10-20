@@ -124,7 +124,8 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   session, at most 500 per session port: a running session is read again as each step starts and
   ends, as OpenCode reads its history for each step's request. An answer of rest read within 10
   seconds of its stamp is read again, since an item enqueued at it reaches the transcript only on
-  delivery, which stamps nothing until its first step starts, after the model's first output. A
+  delivery, which stamps nothing until its first step starts, after the model's first output; and
+  one is kept 30 seconds at most, since a wake sent again under a waiting item's id stamps nothing. A
   transcript that cannot be read, or holds nothing, is read again and leaves the session running.
   A session at rest by its transcript ended its last turn at its idle time, or, after a decline, as
   the interrupted step ended (`time.completed` of that assistant message), which the panel and the

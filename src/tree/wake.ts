@@ -143,6 +143,11 @@ async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, 
   }
 }
 
+/** Whether a courier message that owes a session a turn waits in its inbox, delivery not yet seen; its transcript says nothing of it. */
+export async function waitsInInbox(ports: Pick<WatchPorts, "storage">, sessionID: string) {
+  return (await wakeStore(ports.storage).of(sessionID)).length > 0
+}
+
 /** The sessions among `sessionIDs` flagged stalled, each with when its oldest stalled message was enqueued. */
 export async function stalledAmong(ports: Pick<WatchPorts, "storage">, sessionIDs: ReadonlyArray<string>) {
   const wanted = new Set(sessionIDs)

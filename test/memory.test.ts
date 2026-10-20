@@ -632,6 +632,22 @@ describe("refresh", () => {
     expect(record).toMatchObject({ parts: [{ sessionID: "ses_a", status: "out", duration: 180_000 }] })
   })
 
+  test("does not read a tree as finished while a courier message waits in its top's inbox, which its transcript does not show (#326)", async () => {
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, messages: [{ type: "idle" }] },
+      ses_a: { updated: NOW - 100_000, idle: NOW - 100_000 },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 290_000)
+    await children.settled("ses_a", "report", NOW - 100_000, "done")
+    await wakeStore(ports.storage).put({ sessionID: "ses_top", inboxID: "msg_report", at: NOW - 50_000, text: "report", running: false, idleAt: NOW - 50_000 })
+
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_a")).toMatchObject({ finished: false })
+    await wakeStore(ports.storage).remove("ses_top", "msg_report")
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_a")).toMatchObject({ finished: true })
+  })
+
   test("does not read a tree as finished while its top, archived between two steps of a turn, runs on (#324)", async () => {
     const { ports, state } = fakePorts({
       ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, archived: NOW - 50_000, messages: [{ type: "idle" }, { type: "user" }] },

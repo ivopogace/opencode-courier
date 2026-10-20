@@ -58,7 +58,7 @@ function stateOf(info: unknown, waits: number, stalled: boolean, running: boolea
   return running ? "running" : "idle"
 }
 /** One session of the panel: what it is doing, its report and group standing, its last tool call, context use and cost. */
-async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth, info, running, ended, pending, forms, report }: Listed, stalled: number | undefined): Promise<Row> {
+async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth, info, running, endedAt, pending, forms, report }: Listed, stalled: number | undefined): Promise<Row> {
   const { sessionID } = entry
   const [messages, status, standing, stopped] = await Promise.all([
     ports.session.context({ sessionID }).catch((): Messages => []),
@@ -81,7 +81,7 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
     ...(entry.group && standing ? { group: { name: entry.group, standing } } : {}),
     isolated: entry.isolated,
     created: info?.time.created ?? entry.createdAt,
-    ...(info && !running && ended !== undefined ? { idle: ended } : {}),
+    ...(info && !running && endedAt !== undefined ? { idle: endedAt } : {}),
     ...(info ? { cost: info.cost } : {}),
     ...(context !== undefined ? { context } : {}),
     ...(tool ? { tool } : {}),

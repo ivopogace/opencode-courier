@@ -293,6 +293,25 @@ describe("runs", () => {
     expect(await runs(counted, "ses_b", enqueued, 120_000)).toBe(false)
     expect(reads).toBe(3)
   })
+
+  // A wake sent again under a waiting item's id delivers it with no new stamp, so a rest is read again within 30 s.
+  test("keeps a rest answer 30 s from its read, then reads again; a running one until the next stamp", async () => {
+    let messages: { type: string }[] = [{ type: "idle" }]
+    let reads = 0
+    const counted = {
+      context: async () => {
+        reads++
+        return messages
+      },
+    } as any
+    expect(await runs(counted, "ses_a", stamped, 100_000)).toBe(false)
+    expect(await runs(counted, "ses_a", stamped, 129_999)).toBe(false)
+    expect(reads).toBe(1)
+    messages = [{ type: "idle" }, { type: "synthetic" }]
+    expect(await runs(counted, "ses_a", stamped, 130_000)).toBe(true)
+    expect(await runs(counted, "ses_a", stamped, 900_000)).toBe(true)
+    expect(reads).toBe(2)
+  })
 })
 
 describe("turnOf", () => {

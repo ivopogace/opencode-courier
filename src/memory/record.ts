@@ -1,5 +1,5 @@
 import { finite, isNotFound, millis } from "../platform/json.js"
-import { contextOf, reportState, runs, stalledAmong, subtree, turnOf, type Below, type ModelWindow, type Turn } from "../tree/index.js"
+import { contextOf, reportState, runs, stalledAmong, subtree, turnOf, waitsInInbox, type Below, type ModelWindow, type Turn } from "../tree/index.js"
 import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, replacingMention, revise, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { memoryStore } from "./store.js"
@@ -111,7 +111,8 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
     Promise.all(nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at, known.has(node.entry.sessionID), node.entry.sessionID === ended))),
     goneSince(ports, previous?.parts ?? [], new Set(nodes.map((node) => node.entry.sessionID))),
   ])
-  const [said, topRunning] = await Promise.all([replies, runs(ports.session, top, info.time)])
+  // A courier message waiting for the top, a report it has yet to take, is a turn its transcript does not show yet.
+  const [said, topRunning, topOwed] = await Promise.all([replies, runs(ports.session, top, info.time), waitsInInbox(ports, top).catch(() => false)])
   // Read again just before the write: a courier_recall or courier_note call, or another turn end's refresh, wrote meanwhile.
   const latest = (await store.get(info.projectID, top).catch(() => previous)) ?? previous
   const last = new Map(latest?.parts.map((one) => [one.sessionID, one]))
@@ -138,7 +139,7 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
     title: info.title ?? previous?.title ?? "",
     split,
     ...(revisions ? { revisions } : {}),
-    finished: !topRunning && !read.some(({ running }) => running) && parts.every((one) => isSettled(one.status)),
+    finished: !topRunning && !topOwed && !read.some(({ running }) => running) && parts.every((one) => isSettled(one.status)),
     ...(recalled ? { recalled } : {}),
     ...(lesson ? { lesson } : {}),
     parts,

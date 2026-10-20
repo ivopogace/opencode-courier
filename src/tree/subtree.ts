@@ -55,7 +55,7 @@ export interface Looked extends Below {
   readonly info: Info | undefined
   readonly running: boolean
   /** When its last turn ended, if it does not run and that is known. */
-  readonly ended?: number
+  readonly endedAt?: number
   readonly pending: ReadonlyArray<Pending>
   readonly forms: ReadonlyArray<ShownForm>
 }
@@ -81,7 +81,7 @@ export async function lookUp(ports: ReadPorts, rootID: string): Promise<Looked[]
       const turn = info === undefined ? undefined : await turnOf(ports.session, node.entry.sessionID, info.time)
       const running = turn?.running ?? false
       // A form outlives its session's turn only when its withdrawal was missed, as while no instance followed the events.
-      return { ...node, info, running, ...(turn?.endedAt !== undefined ? { ended: turn.endedAt } : {}), pending, forms: running ? forms : [] }
+      return { ...node, info, running, ...(turn?.endedAt !== undefined ? { endedAt: turn.endedAt } : {}), pending, forms: running ? forms : [] }
     }),
   )
 }

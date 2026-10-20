@@ -1,9 +1,9 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around, or relies on, at the
-pinned version: `@opencode/plugin@2.0.32` and OpenCode 2.0.32. A pin bump re-checks each trap and
+pinned version: `@opencode/plugin@2.1.0` and OpenCode 2.1.0. A pin bump re-checks each trap and
 updates the ones it changes. OpenCode's source is on the `v2` branch of
-https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths below are in it. The
+https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths below are in it. The
 [reference](../reference.md) says what the plugin does.
 
 ## Tools
@@ -92,6 +92,10 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   matches on session and type only, publishing nothing) and still wakes the session, so a wake sent
   again adds no second message. `session.status` and `session.idle` are in the schema but published
   by nothing in core.
+- Archiving or unarchiving a session bumps its `time.updated` too (`session.archived` and
+  `session.unarchived` project `time_archived` with `time_updated` in
+  `packages/core/src/session/projector.ts`), as a rename or a model switch does, so `busy()` reads an
+  idle child the person archives as running until its next turn ends.
 - **`resume: false` is the only way to send a message that does not start a turn.** `Session.synthetic`
   admits the item and rings the run coordinator unless `resume === false`, whatever the `delivery`:
   `queue` still wakes an idle session. With `resume: false` the item waits in the inbox and is
@@ -157,8 +161,8 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.0.32`); paths be
   command from `input.command`, nothing from `courier_answer`'s input); `metadata` is read only for
   a few keys (`url`, `query`, `provider`, `files`, `diff`), so the child's ids in it are not shown,
   and the request's `message` cannot be set through `assert`. `permission.list` gives the pending
-  request with the `metadata` and `source` passed to `assert`, so the asks inbox reads from
-  `metadata` which child's request the top's prompt is for.
+  request with the `metadata` (less its `undefined` values) and `source` passed to `assert`, so the
+  asks inbox reads from `metadata` which child's request the top's prompt is for.
 - `worktree.create`, `worktree.remove` and `worktree.list` take the project, `projectID`
   (`location.project.id`), not a location; `agent.get` takes `location`.
 
@@ -280,7 +284,7 @@ claim sets, the event bus and pending permission requests. So:
 `e2e/two-servers.sh` measures it (not in CI; a few minutes, no API key; `KEEP=1` keeps the logs):
 
 ```bash
-npm install --prefix <scratch>/oc @opencode/cli@2.0.32
+npm install --prefix <scratch>/oc @opencode/cli@2.1.0
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh
 ```
 
@@ -325,7 +329,8 @@ HEAD commit as `branch`, which the child's roster entry records as `base`.
   `SKILL.md`.
 - **Activating.** The TUI's `/skills` dialog inserts `@<id>` and attaches `skills: [{ id }]` to the
   prompt; the skill's text goes to the model as the first part of that user message. A compaction
-  keeps `[Skill activated: <name>]` and the text.
+  keeps `[Skill activated: <name>]` and the text (`messageToText` in
+  `packages/core/src/session/recent-text.ts`, rebuilding the kept messages from `metadata.keepID`).
 
 ## Native `parentID`
 
@@ -385,7 +390,7 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   npm's `ERESOLVE`, against the newer `@opentui/solid` npm picked for `@opencode/plugin`'s `>=`
   range; with no such peer npm installs no `@opentui` and the host provides them. The TUI's packages
   are devDependencies at the versions OpenCode's root `package.json` catalog pins (`@opentui/*`
-  `0.5.17`, `solid-js` `1.9.15` at `v2.0.32`), and `@opencode/theme` at the pin, for the typecheck and
+  `0.6.6`, `solid-js` `1.9.15` at `v2.1.0`), and `@opencode/theme` at the pin, for the typecheck and
   the tests.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles `src/tui.tsx` with `Bun.build`,

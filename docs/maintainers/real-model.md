@@ -10,7 +10,7 @@ string: `src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or a tool des
 
 ```bash
 bun install
-npm install --prefix <scratch>/oc @opencode/cli@2.0.32
+npm install --prefix <scratch>/oc @opencode/cli@2.1.0
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
 ```
 
@@ -291,7 +291,7 @@ compare conditions (no memory, memory on and empty, seeded, seeded with a lesson
 every condition and run each several times, from the repository's root:
 
 ```bash
-npm install --prefix ~/oc @opencode/cli@2.0.32
+npm install --prefix ~/oc @opencode/cli@2.1.0
 export OPENCODE_BIN=~/oc/node_modules/.bin/opencode
 mkdir -p ~/courier-runs
 run() {  # run <name> [VAR=value ...]: one tree, its work directory and log under ~/courier-runs/<name>

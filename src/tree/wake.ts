@@ -1,6 +1,5 @@
-import { endsIdle } from "./domain.js"
+import { busy, endsIdle } from "./domain.js"
 import type { GroupPorts, Wake, WatchPorts } from "./ports.js"
-import { runs } from "./running.js"
 import { wakeStore } from "./store.js"
 
 type Messages = Awaited<ReturnType<WatchPorts["session"]["context"]>>
@@ -99,8 +98,8 @@ export async function forgetWakes(ports: Pick<WatchPorts, "storage">, sessionID:
 export type WakePorts = GroupPorts & { readonly session: Pick<WatchPorts["session"], "get" | "context">; readonly now: () => number }
 
 /**
- * Sends once more, under its inbox id, each courier message an idle session has left waiting for `WAKE_MS`, and flags
- * stalled one still waiting `WAKE_MS` later; run by the scheduler's owner, `claimed` keeping a tick alongside off it.
+ * Sends once more, under its inbox id, each courier message an idle session has left waiting for `WAKE_MS`, flags stalled one still
+ * waiting `WAKE_MS` later, and marks running one a turn it shows will take; run by the scheduler's owner, `claimed` keeping a tick alongside off it.
  */
 export async function wakeMissed(ports: WakePorts, claimed: Set<string>) {
   const store = wakeStore(ports.storage)
@@ -125,7 +124,7 @@ async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, 
     const current = (await store.of(wake.sessionID)).find((one) => one.inboxID === wake.inboxID)
     if (!current || !missed(current, now)) return
     // A shutdown during a step reads as an end, and the turn the next boot resumes may start unseen: that turn takes the message.
-    if (await runsNow(ports, wake.sessionID, now)) {
+    if (await runsNow(ports, wake.sessionID)) {
       const { idleAt: _, ...running } = current
       return await store.put({ ...running, running: true })
     }
@@ -152,9 +151,13 @@ async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, 
   }
 }
 
-/** Whether a session runs now, by its times and transcript (`runs`); one that cannot be read does not, and is woken again. */
-const runsNow = (ports: WakePorts, sessionID: string, now: number) =>
-  ports.session.get({ sessionID }).then((info) => runs(ports.session, sessionID, info.time, now), () => false)
+/** Whether a session shows a turn running, by its times and its transcript read now; one that cannot be read does not, and is woken again. */
+async function runsNow(ports: WakePorts, sessionID: string) {
+  const info = await ports.session.get({ sessionID }).catch(() => undefined)
+  if (!info || !busy(info.time)) return false
+  const messages = await ports.session.context({ sessionID }).catch((): Messages => [])
+  return messages.length > 0 && !endsIdle(messages)
+}
 
 /**
  * Whether a courier message sent with a wake waits undelivered in the session's inbox while it is idle, waiting or, unless

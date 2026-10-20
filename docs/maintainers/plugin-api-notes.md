@@ -91,8 +91,8 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   healthy wake delivers it within moments; a courier message left waiting is flagged stalled by the
   wake store, which the footer and the panel check before `running`. The limits and the memory
   record's `finished` count a session while the wake store holds a courier message waiting in it
-  (`waitsInInbox`), and on a failed read; one sent with `resume: false` is not watched and owes no
-  turn. The plugin API cannot list the
+  (`waitsInInbox`), and on a failed read, the limits only while it is not yet stalled; one sent
+  with `resume: false` is not watched and owes no turn. The plugin API cannot list the
   inbox (`GET /api/session/:id/inbox` can); a delivered item becomes the stored message with the same
   id, and stamps nothing until its step starts. `session.synthetic` with the `id` of an item still
   waiting, or already delivered, returns that item (`reconcile` in `packages/core/src/session/inbox.ts`
@@ -197,11 +197,13 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   so the next boot resumes the turn of a session with no OpenCode parent ("The server restarted while
   you were working", `packages/core/src/session/execution/restart.ts`). The missed-wake watch
   (`wakeEnded`) tells the two by the transcript: a `shutdown` end whose transcript ends on that
-  aborted message ends the turn; one that does not (a real shutdown between steps) leaves the watch
+  aborted message ends the turn (OpenCode then delivers a message steered in during it at once, in
+  a turn of its own, as the live suite shows); one that does not (a real shutdown between steps) leaves the watch
   to the resumed turn. A real shutdown during a step reads as ended too: the resumed turn's
   `session.execution.started` marks its messages running again, and should that event come before
-  the subscription, `wakeAgain` reads the session (`runs`) before it sends a message again or flags it
-  stalled, and marks the message running instead while its turn runs. The other event handlers, and a join
+  the subscription, `wakeAgain` reads the session's times and transcript before it sends a message again
+  or flags it stalled, and marks the message running instead while they show a turn running (not on a
+  failed or empty read, which would leave the message unwatched). The other event handlers, and a join
   group's release (`time.idle`), still treat it as a shutdown.
 - `opencode run --auto` replies `once` to every request asked in its own session, the asserted ones
   included (`packages/cli/src/run/noninteractive.ts`), so the live suite's parent answers its own

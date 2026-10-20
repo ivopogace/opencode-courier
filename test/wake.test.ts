@@ -290,6 +290,19 @@ describe("waking a session whose wake was missed", () => {
     expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: true, rewoken: 100_000 + WAKE_MS })
   })
 
+  test("but one whose transcript cannot be read when it would be woken again is woken again, not left unwatched as running", async () => {
+    const { ports, sent, at, times } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    times.ses_parent = { created: 0, updated: 100_000 }
+    ;(ports.session as { context: unknown }).context = async () => {
+      throw new Error("db locked")
+    }
+    at(100_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toHaveLength(1)
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: false, rewoken: 100_000 + WAKE_MS })
+  })
+
   test("and drops the watch on a message that declined turn took", async () => {
     const { ports, messages } = fakePorts({ ses_parent: [assistant()] })
     await handle(ports, enqueued())

@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:38 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1156,7 +1156,7 @@ run_subtree() {
 }
 
 # With maxChildren 1, a reported child archived, renamed, switched or unarchived reads idle and frees a spawn, one still running or
-# with a courier message waiting does not (#324, #326); a plain decline ends a child's turn, and a message it missed wakes it again.
+# with a courier message waiting does not (#324, #326); a plain decline ends a child's turn, and OpenCode delivers a message sent during it.
 run_archive() {
   scenario "a child that reported and was archived reads as idle, and no longer counts against the limits (#324)"
   stop_server
@@ -1329,27 +1329,21 @@ run_archive() {
   # OpenCode keeps a declined turn's execution claim and resumes it at the next boot: delete it before the restart below.
   check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
 
-  scenario "a courier message sent to a child while its request waits wakes it again once a plain decline has ended its turn (#326)"
+  scenario "a courier message sent to a child while its request waits is taken once a plain decline has ended its turn (#326)"
   ask_permission ""
   inbox=$(prompt_in "$parent" "COURIER-NUDGE $child" | tool_state courier_send | jq -r '.metadata.metadata.messageID // empty')
   check "the parent sent the waiting child a message ($inbox)" "$([ -n "$inbox" ] && echo true || echo false)"
   check "which the courier watches as the running turn's to take" \
     "$(for _ in $(seq 1 10); do [ "$(wake_row "$child" '.running')" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
   check "and which waits, not taken" "$([ "$(taken "$child")" = false ] && echo true || echo false)"
-  declined=$(now_ms)
   check "the person declines the child's request in its own session, without a reason" \
     "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"reject"}')" = 204 ] && echo true || echo false)"
-  # OpenCode reports that end as a shutdown, after the interrupted step: the message waits from then, in an idle session.
-  for _ in $(seq 1 15); do [ "$(wake_row "$child" '.running == false')" = true ] && break; sleep 1; done
-  check "the courier then watches it as waiting in an idle session since the declined turn ended" \
-    "$(wake_row "$child" --argjson declined "$declined" '.running == false and .idleAt >= $declined and .stalled == null')"
-  check "and it is still not taken" "$([ "$(taken "$child")" = false ] && echo true || echo false)"
-  # Missed after WAKE_MS (30 s), found at the scheduler's next tick, up to 15 s later.
-  for _ in $(seq 1 75); do [ "$(taken "$child")" = true ] && break; sleep 1; done
-  check "the scheduler woke the child again, which took the message" "$(taken "$child")"
-  check "the server log says it was woken again" "$(grep -qF "courier wake: $child left message $inbox waiting while idle; woken again" "$WORK/server.log" && echo true || echo false)"
-  check "and the child reported, waking the parent" "$(has_text "$parent" "CHILD DONE AFTER NUDGE" 45)"
-  check "and the watch is over" "$(for _ in $(seq 1 10); do [ -z "$(kv get "wake/$child/$inbox")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+  # OpenCode reports that end as a shutdown, then delivers the waiting message itself, in a new turn: no wake is missed.
+  for _ in $(seq 1 15); do [ "$(taken "$child")" = true ] && break; sleep 1; done
+  check "the child takes the message at once" "$(taken "$child")"
+  check "and reports, waking the parent" "$(has_text "$parent" "CHILD DONE AFTER NUDGE" 45)"
+  check "and the watch is over, so nothing is to wake it again" \
+    "$(for _ in $(seq 1 10); do [ -z "$(kv get "wake/$child/$inbox")" ] && { echo true; exit; }; sleep 1; done; echo false)"
   turn_ended "$child"
   turn_ended "$parent"
   # Its declined turn's execution claim may outlast the turn that took the message: delete it before the restart too.

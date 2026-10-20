@@ -484,7 +484,8 @@ the moment OpenCode enqueues it until it is delivered or cancelled, noting wheth
 turn: a running turn takes a steered message at its next step, and a message queued while it runs is
 taken when it ends. A session whose turn a plain permission decline or a dismissed question ended is
 idle here too, though OpenCode stamps it no idle time and reports that end as a shutdown: a message
-that arrived while that turn ran waits from its end. A turn a real shutdown stops between steps is
+that arrived while that turn ran waits from its end, though OpenCode takes it at once in a turn of
+its own. A turn a real shutdown stops between steps is
 not over, as the next start resumes it, and its messages stay with it. One stopped during a step
 reads as ended, as a decline does, until its resumed turn is seen to start or is found running when
 its wake would be sent again. A message that has waited in an idle session for 30 seconds is a missed wake: the

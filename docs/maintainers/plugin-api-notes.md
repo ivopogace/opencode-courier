@@ -92,10 +92,16 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   matches on session and type only, publishing nothing) and still wakes the session, so a wake sent
   again adds no second message. `session.status` and `session.idle` are in the schema but published
   by nothing in core.
-- Archiving or unarchiving a session bumps its `time.updated` too (`session.archived` and
-  `session.unarchived` project `time_archived` with `time_updated` in
-  `packages/core/src/session/projector.ts`), as a rename or a model switch does, so `busy()` reads an
-  idle child the person archives as running until its next turn ends.
+- Archiving or unarchiving a session bumps its `time.updated` too: `session.archived` and
+  `session.unarchived` set `time_updated` to the event's `created`, with `time_archived` set to it or
+  cleared (`packages/core/src/session/projector.ts`), and neither interrupts a turn. `session.get`
+  gives `time.archived`, so `busy()` takes an update equal to it for the archive's own, not for
+  something reaching the session: an archived idle child reads idle, and one reached after the
+  archive reads running as before. An archive landing while an item waits in the inbox, or while a
+  turn runs between two of its events, hides that until the next bump. A rename, a metadata,
+  permissions, agent or model change, a staged or cleared revert, a move and an unarchive bump
+  `time.updated` the same way with nothing to tell them by, so `busy()` reads such an idle session as
+  running until its next turn ends (#326).
 - **`resume: false` is the only way to send a message that does not start a turn.** `Session.synthetic`
   admits the item and rings the run coordinator unless `resume === false`, whatever the `delivery`:
   `queue` still wakes an idle session. With `resume: false` the item waits in the inbox and is

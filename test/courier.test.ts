@@ -747,6 +747,12 @@ describe("status", () => {
     expect(Object.values(result)).not.toContain(undefined)
     expect(result).toStrictEqual({ sessionID: "ses_child", updated: 2 })
   })
+
+  test("says when the person archived the session, archiving having stamped its updated time too (#324)", async () => {
+    const { ports } = fakePorts({ info: { time: { created: 1, updated: 9, idle: 5, archived: 9 } } })
+
+    expect(await status(ports, { sessionID: "ses_child" })).toMatchObject({ updated: 9, idle: 5, archived: 9 })
+  })
 })
 
 describe("listChildren", () => {

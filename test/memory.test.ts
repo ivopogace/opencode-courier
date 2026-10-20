@@ -46,7 +46,7 @@ import { addMemoryTools } from "../src/memory/tools.js"
 import type { RosterEntry } from "../src/tree/domain.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
 
-type Session = { created?: number; updated: number; idle?: number; cost?: number; title?: string; messages?: unknown[]; projectID?: string; directory?: string }
+type Session = { created?: number; updated: number; idle?: number; archived?: number; cost?: number; title?: string; messages?: unknown[]; projectID?: string; directory?: string }
 
 const NOW = 1_700_000_000_000
 
@@ -74,8 +74,8 @@ function fakePorts(sessions: Record<string, Session>, windows: Array<{ providerI
     session: {
       get: async ({ sessionID }: { sessionID: string }) => {
         gets.push(sessionID)
-        const { created = NOW - 600_000, updated, idle, cost = 0, title = `title ${sessionID}`, projectID = "proj_1", directory = "/repo" } = known(sessionID)
-        return { id: sessionID, title, cost, projectID, location: { directory }, time: { created, updated, ...(idle !== undefined ? { idle } : {}) } }
+        const { created = NOW - 600_000, updated, idle, archived, cost = 0, title = `title ${sessionID}`, projectID = "proj_1", directory = "/repo" } = known(sessionID)
+        return { id: sessionID, title, cost, projectID, location: { directory }, time: { created, updated, ...(idle !== undefined ? { idle } : {}), ...(archived !== undefined ? { archived } : {}) } }
       },
       context: async ({ sessionID }: { sessionID: string }) => {
         contexts.push(sessionID)
@@ -585,6 +585,21 @@ describe("refresh", () => {
       { sessionID: "ses_gone", title: "entry ses_gone", depth: 1, isolated: false, status: "interrupted" },
       { sessionID: "ses_deep", title: "entry ses_deep", depth: 2, isolated: false, status: "partial" },
     ])
+  })
+
+  test("reads a part that reported and was archived since as settled, its duration to its last turn's end, so the tree reads finished (#324)", async () => {
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, archived: NOW - 50_000 },
+      ses_a: { created: NOW - 290_000, updated: NOW - 10_000, idle: NOW - 260_000, archived: NOW - 10_000 },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 290_000)
+    await children.settled("ses_a", "report", NOW - 260_000, "done")
+
+    const record = await refresh(ports, state, "ses_top", NOW)
+
+    expect(record).toMatchObject({ finished: true, parts: [{ sessionID: "ses_a", status: "done", duration: 30_000 }] })
   })
 
   test("keeps the last status and duration of a part whose session OpenCode deleted, so the tree reads finished (#283)", async () => {

@@ -122,6 +122,16 @@ describe("busy", () => {
     const at = (ms: number) => DateTime.makeUnsafe(ms)
     expect(busy(time({ updated: at(9), idle: at(5) }))).toBe(true)
     expect(busy(time({ updated: at(5), idle: at(5) }))).toBe(false)
+    expect(busy(time({ updated: at(9), idle: at(5), archived: at(9) }))).toBe(false)
+  })
+
+  test("an idle session archived since its last turn is not: archiving stamps updated with the archive's time (#324)", () => {
+    expect(busy(time({ updated: 9, idle: 5, archived: 9 }))).toBe(false)
+  })
+
+  test("an archived one reached after the archive is, and so is one archived before it ever finished a turn", () => {
+    expect(busy(time({ updated: 12, idle: 5, archived: 9 }))).toBe(true)
+    expect(busy(time({ updated: 9, archived: 9 }))).toBe(true)
   })
 })
 
@@ -271,6 +281,23 @@ describe("admit, with children that owe a report", () => {
     await child("ses_root", "ses_a")
     await childStore(storage).prompted("ses_a", 100)
     await childStore(storage).settled("ses_a", "report", 150)
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+  })
+
+  test("not one that reported and that the person archived since, whose archive bumped its updated time (#324)", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: { ...FINISHED, updated: 9, archived: 9 } })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150)
+
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  test("but an archived one that still owes a report counts, as it would unarchived", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, { ses_a: { ...FINISHED, updated: 9, archived: 9 } })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
   })
 

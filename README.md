@@ -175,7 +175,7 @@ From a local clone, `bun install && npm run build`, then list its `dist` **direc
 |---|---|
 | `courier_spawn` | Starts a session on the parent's model with the task and a brief, and returns at once; `isolate: true` gives it its own git worktree, `group` holds its report with its siblings'. |
 | `courier_send` | Messages a session, waking it if idle; from a child to its parent, a `status` and `artifacts` make it the child's [report](docs/reference.md#a-childs-report). |
-| `courier_status` | One look at a session: outcome, idle time, last reply and what it waits on. For check-ins, not for waiting. |
+| `courier_status` | One look at a session: outcome, idle time, when it was archived, last reply and what it waits on. For check-ins, not for waiting. |
 | `courier_children` | Lists the sessions this one (or a given one) started, with their state, worktree and join group. |
 | `courier_tree` | Lists the whole tree under a session, depth first, with each one's depth and report state. |
 | `courier_stop` | Interrupts a session below you and everything under it, and cancels their scheduled messages; `cleanup: true` removes their worktrees too. |
@@ -239,7 +239,8 @@ options in the plugin's `options`, in the global config:
 | `maxTotal` | `20` | How many spawned sessions may be live at once in one tree. |
 
 `courier_spawn` refuses a spawn past a limit, naming it and saying what to do instead. A session
-counts while it is live: its turn runs, it owes its parent a report, or a session below it is live.
+counts while it is live: its turn runs, it owes its parent a report, or a session below it is live;
+archiving it in OpenCode does not make it run.
 Each spawned session's brief says when to split its task and when to do it itself
 ([more](docs/reference.md#session-trees-and-their-limits)).
 

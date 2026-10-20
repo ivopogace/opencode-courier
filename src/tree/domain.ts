@@ -42,14 +42,21 @@ export function readNativeChildren(options: unknown) {
 /** A session's times, as `session.get` gives them. */
 type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
-/** Whether a session with these times runs: it has never finished a turn, or something reached it after the last one ended. */
-export const busy = (time: Pick<Times, "updated" | "idle">) => time.idle === undefined || millis(time.updated) > millis(time.idle)
+/** A session's times as `busy` reads them; `archived` is absent before OpenCode 2.1.0. */
+type BusyTimes = Pick<Times, "updated" | "idle" | "archived">
+
+/**
+ * Whether a session with these times runs: it has never finished a turn, or something reached it after the last one ended.
+ * Archiving stamps `updated` with the archive's own time, so an update that is the archive is not something reaching it.
+ */
+export const busy = (time: BusyTimes) =>
+  time.idle === undefined || (millis(time.updated) > millis(time.idle) && millis(time.updated) !== millis(time.archived))
 
 /**
  * Whether a session a tree is read of is live: it runs (as the limits count it: busy, and its turn has not failed or
  * been interrupted since its last prompt), waits on a request or form, or owes a report; one OpenCode no longer knows is not.
  */
-export const isLive = (time: Pick<Times, "updated" | "idle"> | undefined, waits: number, report: { readonly owes: boolean; readonly ended: boolean } | undefined) =>
+export const isLive = (time: BusyTimes | undefined, waits: number, report: { readonly owes: boolean; readonly ended: boolean } | undefined) =>
   time !== undefined && ((busy(time) && !report?.ended) || waits > 0 || (report?.owes ?? false))
 
 /** A session of a tree read, as `cut` takes it: where it is in the tree, when it was started, and whether it is live. */

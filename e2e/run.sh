@@ -232,7 +232,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI.
 # `restart-question` and `roster` restart the server and share a shard; `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:45 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1144,6 +1144,60 @@ run_subtree() {
     "$([ "$(notices_with "$root" ended)" = '[]' ] && [ "$(notices_with "$middle" ended)" = '[]' ] && echo true || echo false)"
   check "the stop is noted for both" "$([ -n "$(kv get "report/$leaf/stopped")" ] && [ -n "$(kv get "report/$middle/stopped")" ] && echo true || echo false)"
   check "a failure notice did not follow either" "$(notices_with "$root" failed | jq -r 'length == 0')"
+}
+
+# An archived child (#324): OpenCode stamps a session's updated time as it archives it, which read as something reaching
+# it after its last turn. With maxChildren 1, the parent's next spawn goes through only if its archived child reads idle.
+run_archive() {
+  scenario "a child that reported and was archived reads as idle, and no longer counts against the limits (#324)"
+  stop_server
+  jq '.plugins[0].options.maxChildren = 1' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "maxChildren 1"
+  start_server
+  out=$(prompt "COURIER-TEST")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the child reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  turn_ended "$child"
+  turn_ended "$parent"
+  check "the child is idle and owes no report" "$([ "$(finished "$child")" = true ] && [ "$(reported "$child")" = true ] && echo true || echo false)"
+  check "the person archives it" \
+    "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X PATCH -H 'content-type: application/json' --data '{"archived":true}' "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
+  for _ in $(seq 1 10); do [ "$(session_info "$child" | jq -r '.time.archived != null')" = true ] && break; sleep 1; done
+  check "archiving stamped its updated time with the archive's, past its last turn's end" \
+    "$(session_info "$child" | jq -r '.time.archived != null and .time.updated == .time.archived and .time.updated > .time.idle')"
+  listed=$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -c --arg child "$child" '.metadata.metadata.children[] | select(.sessionID == $child)')
+  echo "  $listed"
+  check "courier_children says it was archived when it last changed, its last turn having succeeded" \
+    "$(jq -r '.outcome == "succeeded" and .archived != null and .archived == .updated' <<<"$listed")"
+  directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")
+  row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" |
+    jq -c --arg id "$child" '.output.rows[] | select(.sessionID == $id) | {state, idle, report}')
+  echo "  $row"
+  check "the panel's row reads it idle and reported, with its last turn's end" \
+    "$(jq -r '.state == "idle" and (.idle | type == "number") and .report.state == "reported" and .report.status == "done"' <<<"$row")"
+  summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -c '.output')
+  echo "  $summary"
+  check "and the footer counts it idle, not running" "$(jq -r '.running == 0 and .idle == 1' <<<"$summary")"
+  # The new child's report is held back, so it is still owed when the parent tries a third.
+  child_delay 15000
+  started=$(prompt_in "$parent" "COURIER-TEST" | tool_state courier_spawn)
+  check "with maxChildren 1, the parent starts another child: the archived one does not count" "$(jq -r '.status == "completed"' <<<"$started")"
+  refused=$(prompt_in "$parent" "COURIER-TEST" | tool_state courier_spawn)
+  check "while that one owes its report, the next spawn is refused, naming maxChildren 1" \
+    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxChildren 1)"))' <<<"$refused")"
+  second=$(jq -r '.metadata.metadata.sessionID' <<<"$started")
+  check "the new child reported back" \
+    "$(for _ in $(seq 1 45); do [ "$(reported "$second")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+  project=$(session_info "$parent" | jq -r '.projectID')
+  check "the tree's record settles as finished, the archived part done" \
+    "$(record_of "$parent" '.finished == true and (.parts | length == 2)' 45 | jq -r --arg child "$child" '.finished == true and any(.parts[]; .sessionID == $child and .status == "done")')"
+  stop_server
+  jq 'del(.plugins[0].options.maxChildren)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "maxChildren default"
+  start_server
 }
 
 run_nest() {

@@ -73,7 +73,7 @@ Each tool's parameters, `?` marking an optional one; the sections below say how 
 |---|---|---|
 | `courier_spawn` | `task`, `title?`, `agent?`, `isolate?`, `group?` | Creates a session on the parent's [model](#the-childs-model), in its own git worktree with `isolate: true` ([nested isolation](#nested-isolation)), sends it the task plus a brief, and returns at once. With a `group`, its report is held with the [join group](#join-groups)'s. Refused past the [limits](#session-trees-and-their-limits). |
 | `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `queue?` | Delivers a message to a session, signed with the sender's id, waking it if idle: steered into its running turn, or, with `queue: true`, after the turn ends. From a child to its parent, a `status` makes it the child's [report](#a-childs-report), with its `artifacts` (`branch`, `commits`, `files`, `checks`); from a member of a join group, a `done`, `partial` or `failed` report is held with the group. |
-| `courier_status` | `sessionID` | One look at a session: the outcome of its last turn, how long it has been idle, its last reply and the permission requests and questions it waits on (`pending`). For check-ins, not for waiting. |
+| `courier_status` | `sessionID` | One look at a session: the outcome of its last turn, how long it has been idle, when the person archived it (`archived`, which OpenCode stamps on `updated` too), its last reply and the permission requests and questions it waits on (`pending`). For check-ins, not for waiting. |
 | `courier_children` | `sessionID?` | Lists the sessions this one (or `sessionID`) started with `courier_spawn`, each with what `courier_status` reports plus its directory, whether it is isolated, when it was started and, for one started in a group, the group and its [report's standing](#join-groups). |
 | `courier_tree` | `sessionID?` | Lists the [whole tree](#seeing-and-stopping-a-subtree) under this session (or `sessionID`), depth first, each with what `courier_children` shows plus its depth, its parent and its report state. At most `maxTotal` sessions: the live ones first, then the newest. |
 | `courier_stop` | `sessionID`, `cleanup?` | [Stops](#seeing-and-stopping-a-subtree) a session started from this one, directly or through others, and every session under it, deepest first, and cancels the `courier_later` messages scheduled for them; `cleanup: true` also removes their worktrees by `courier_cleanup`'s rules. |
@@ -196,7 +196,9 @@ than `maxDepth`, or when `maxChildren` or `maxTotal` sessions are already live. 
 while its turn runs, while it [owes its parent a report](#a-child-that-ends-without-a-report), or
 while a session below it is live; so a child that ends its turn without reporting keeps counting
 until it does, and a session that has split its task and ended its turn to wait for its children
-counts too. One OpenCode no longer knows does not count. A session spawned by a release that kept no
+counts too. One OpenCode no longer knows does not count. Archiving a session in OpenCode stamps its
+updated time, which is not taken for something reaching it: a child that reported and was archived
+since does not count. A session spawned by a release that kept no
 report state, or whose state cannot be read, counts while its turn runs.
 
 The checks run one at a time in the process, and a spawn under way counts until its child is on the
@@ -955,8 +957,8 @@ retention](#roster) left out), each by what it does:
   its running turn shows a form; the [asks inbox](#the-asks-inbox) lists all three;
 - `stalled`: a message the plugin delivered waits in its inbox, and sending it again did not start a
   turn ([a missed wake](#a-missed-wake)); the open session itself is counted too;
-- `running`: its turn runs, or something reached it after its last turn ended, and it waits on no
-  request, shows no form and is not stalled;
+- `running`: its turn runs, or something reached it after its last turn ended (archiving it in
+  OpenCode is not something reaching it), and it waits on no request, shows no form and is not stalled;
 - `idle`: neither.
 
 A session OpenCode no longer knows is not counted. Then, for each join group of the open session's

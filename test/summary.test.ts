@@ -8,7 +8,7 @@ import { treeRpc } from "../src/tree/rpc.js"
 import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 import { summary } from "../src/tree/summary.js"
 
-type Times = { updated: number; idle?: number }
+type Times = { updated: number; idle?: number; archived?: number }
 
 /** Ports over an in-memory store, with each session's times and pending requests as given; one without times is gone. */
 function fakePorts(
@@ -92,6 +92,13 @@ describe("summary", () => {
     expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, stalled: 1, groups: [] })
     await wakeStore(ports.storage).put({ sessionID: "ses_root", inboxID: "msg_3", ...stalled })
     expect((await summary(ports, "ses_root")).stalled).toBe(2)
+  })
+
+  test("counts an idle session the person archived as idle, its updated time the archive's (#324)", async () => {
+    const { ports } = fakePorts({ ses_archived: { updated: 9, idle: 5, archived: 9 }, ses_after: { updated: 12, idle: 5, archived: 9 } })
+    for (const child of ["ses_archived", "ses_after"]) await childStore(ports.storage).record(entry(child, "ses_root"))
+
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 1, groups: [] })
   })
 
   test("counts a session whose forms cannot be read by its requests and times", async () => {

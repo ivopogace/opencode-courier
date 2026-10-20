@@ -50,9 +50,16 @@ describe("isLive", () => {
     expect(isLive({ updated: 5 }, 0, ended)).toBe(false)
     expect(isLive({ updated: 5 }, 1, ended)).toBe(true)
   })
+
+  test("one archived since its last turn is not, though archiving bumped its updated time; one archived owing a report is (#324)", () => {
+    const archived = { updated: 9, idle: 5, archived: 9 }
+    expect(isLive(archived, 0, { owes: false, ended: false })).toBe(false)
+    expect(isLive(archived, 0, undefined)).toBe(false)
+    expect(isLive(archived, 0, owes)).toBe(true)
+  })
 })
 
-type Times = { updated: number; idle?: number }
+type Times = { updated: number; idle?: number; archived?: number }
 
 /** Ports over an in-memory store, with each session's times and pending requests as given; one without times is gone. */
 function fakePorts(times: Record<string, Times>, pending: Record<string, Pending[]> = {}, maxTotal = DEFAULT_LIMITS.maxTotal) {
@@ -113,6 +120,19 @@ describe("readTree", () => {
     expect(leftOut).toBe(2)
     expect((await readTree(ports, "ses_root", 3)).kept.map((node) => node.entry.sessionID)).toEqual(["ses_a", "ses_c", "ses_d"])
     expect((await readTree(ports, "ses_root", 4)).kept.map((node) => node.live)).toEqual([true, false, false, true])
+  })
+
+  test("a child that reported and was archived since is not live, so the newest finished ones come before it (#324)", async () => {
+    const { ports } = fakePorts({ ses_archived: { updated: 9, idle: 5, archived: 9 }, ses_a: { updated: 5, idle: 5 }, ses_b: { updated: 5, idle: 5 } }, {}, 2)
+    const children = childStore(ports.storage)
+    for (const [index, child] of ["ses_archived", "ses_a", "ses_b"].entries()) await children.record(entry(child, "ses_root", 900 + index))
+    await children.prompted("ses_archived", 950)
+    await children.settled("ses_archived", "report", 951, "done")
+
+    const { kept, leftOut } = await readTree(ports, "ses_root")
+
+    expect(kept.map((node) => [node.entry.sessionID, node.live])).toEqual([["ses_a", false], ["ses_b", false]])
+    expect(leftOut).toBe(1)
   })
 
   test("a child whose first prompt failed reads busy but is not live, so the newest finished ones come before it", async () => {

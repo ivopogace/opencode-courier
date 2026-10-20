@@ -49,7 +49,7 @@ function reportRow(report: Listed["report"], status: Status | undefined): Pick<R
 
 /**
  * What a session does: waiting on a request to the person or a form it shows them, stalled, running, idle, or gone when
- * OpenCode no longer knows it. A message waiting in its inbox makes it look busy, unless archived since; a stalled one reads stalled.
+ * OpenCode no longer knows it. A message waiting in its inbox is no turn (`runs`); a stalled one reads stalled.
  */
 function stateOf(info: unknown, waits: number, stalled: boolean, running: boolean): Row["state"] {
   if (!info) return "gone"

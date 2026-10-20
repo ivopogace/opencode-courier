@@ -251,6 +251,26 @@ describe("panel", () => {
     ])
   })
 
+  test("reads one renamed or switched since as idle, and one whose turn a decline ended, still owing its report (#326)", async () => {
+    const { ports } = fakePorts({
+      ses_renamed: { updated: 9, idle: 5, messages: [assistant(), { type: "idle" }, { type: "model-switched" }] },
+      ses_declined: { updated: 9, idle: 5, messages: [{ type: "idle" }, { type: "synthetic" }, { ...assistant(), error: { type: "aborted", message: "Step interrupted" } }] },
+    })
+    const children = childStore(ports.storage)
+    for (const child of ["ses_renamed", "ses_declined"]) {
+      await children.record(entry(child, "ses_root"))
+      await children.prompted(child, 900)
+    }
+    await children.settled("ses_renamed", "report", 950, "done")
+
+    const { rows } = await panel(ports, "ses_root")
+
+    expect(rows.map(({ sessionID, state, idle, report }) => ({ sessionID, state, idle, report }))).toEqual([
+      { sessionID: "ses_renamed", state: "idle", idle: 5, report: { state: "reported", status: "done", progressed: false } },
+      { sessionID: "ses_declined", state: "idle", idle: 5, report: { state: "owed", progressed: false } },
+    ])
+  })
+
   test("reads one archived while its turn runs on between two steps as running, with the form it shows (#324)", async () => {
     const { ports } = fakePorts(
       { ses_turn: { updated: 9, idle: 5, archived: 9, messages: [{ type: "idle" }, { type: "user" }, assistant()] } },

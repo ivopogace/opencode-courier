@@ -42,23 +42,29 @@ export function readNativeChildren(options: unknown) {
 /** A session's times, as `session.get` gives them. */
 type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
-/** A session's times as `busy` and `archivedSinceTurn` read them; `archived` is absent before OpenCode 2.1.0 and when not archived. */
-export type BusyTimes = Pick<Times, "updated" | "idle" | "archived">
-
-/** Whether a session runs by its times alone: it has never finished a turn, or something reached it after the last one ended. */
-export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.updated) > millis(time.idle)
+/** A session's times as `busy` reads them. */
+export type BusyTimes = Pick<Times, "updated" | "idle">
 
 /**
- * Whether the last stamp on `updated` since the session's last turn ended is its archive's: a turn may run still, between two
- * steps, which stamp nothing, so only its transcript tells (`endsIdle`).
+ * Whether a session may run by its times: it has never finished a turn, or `updated` was stamped after the last one ended, as
+ * a step does, and as much that is no activity does (a rename, an archive, a waiting inbox item), so only its transcript tells.
  */
-export const archivedSinceTurn = (time: BusyTimes) => time.idle !== undefined && busy(time) && millis(time.updated) === millis(time.archived)
+export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.updated) > millis(time.idle)
 
 /** The messages the person's switch of agent or model, move or shell command appends, at rest or mid-turn alike. */
 const ASIDES = new Set(["agent-switched", "model-switched", "location-switched", "shell"])
 
-/** Whether a transcript ends on a turn's end, which OpenCode records as an `idle` message, but for asides made since. */
-export const endsIdle = (messages: ReadonlyArray<{ readonly type: string }>) => messages.findLast((message) => !ASIDES.has(message.type))?.type === "idle"
+/** A stored message as `endsIdle` reads it: an assistant message's `error` says how its step ended. */
+type Stored = { readonly type: string; readonly error?: { readonly type: string } | undefined }
+
+/**
+ * Whether a transcript ends on a turn's end but for asides made since: an `idle` message, or a step interrupted with none
+ * after it, as a declined permission or dismissed question ends a turn, recording no `idle` (#326).
+ */
+export const endsIdle = (messages: ReadonlyArray<Stored>) => {
+  const last = messages.findLast((message) => !ASIDES.has(message.type))
+  return last?.type === "idle" || (last?.type === "assistant" && last.error?.type === "aborted")
+}
 
 /**
  * Whether a session a tree is read of is live: it runs (as the limits count it: it runs, and its turn has not failed or been

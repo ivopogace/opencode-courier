@@ -73,6 +73,13 @@ describe("watching a courier message until it is delivered", () => {
     expect((await wakeStore(ports.storage).of("ses_parent")).map((wake) => [wake.running, wake.idleAt])).toEqual([[false, 100_000]])
   })
 
+  test("so is one whose turn a declined permission ended, which records no idle message (#326)", async () => {
+    const declined = { ...assistant("msg_declined"), error: { type: "aborted", message: "Step interrupted" } }
+    const { ports } = fakePorts({ ses_parent: [assistant(), idle(), declined] })
+    await handle(ports, enqueued())
+    expect((await wakeStore(ports.storage).of("ses_parent")).map((wake) => [wake.running, wake.idleAt])).toEqual([[false, 100_000]])
+  })
+
   test("a courier message enqueued for an idle session is watched as waiting since it arrived", async () => {
     const { ports, store } = fakePorts({ ses_parent: [assistant(), idle()] })
     await handle(ports, enqueued())

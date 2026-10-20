@@ -602,6 +602,21 @@ describe("refresh", () => {
     expect(record).toMatchObject({ finished: true, parts: [{ sessionID: "ses_a", status: "done", duration: 30_000 }] })
   })
 
+  test("reads a part and a top renamed or switched since as at rest, by their transcripts, so the tree reads finished (#326)", async () => {
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, messages: [{ type: "idle" }, { type: "agent-switched" }] },
+      ses_a: { created: NOW - 290_000, updated: NOW - 10_000, idle: NOW - 260_000, messages: [{ type: "idle" }] },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 290_000)
+    await children.settled("ses_a", "report", NOW - 260_000, "done")
+
+    const record = await refresh(ports, state, "ses_top", NOW)
+
+    expect(record).toMatchObject({ finished: true, parts: [{ sessionID: "ses_a", status: "done", duration: 30_000 }] })
+  })
+
   test("does not read a tree as finished while its top, archived between two steps of a turn, runs on (#324)", async () => {
     const { ports, state } = fakePorts({
       ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, archived: NOW - 50_000, messages: [{ type: "idle" }, { type: "user" }] },
@@ -740,7 +755,8 @@ describe("refresh", () => {
     contexts.length = 0
     const record = await refresh(ports, state, "ses_top", NOW, "ses_a")
 
-    expect(contexts.toSorted()).toEqual(["ses_a", "ses_c"])
+    // ses_c, which never ended a turn, is read for whether it runs too.
+    expect([...new Set(contexts)].toSorted()).toEqual(["ses_a", "ses_c"])
     expect(record!.parts.map(({ sessionID, context, refused }) => [sessionID, context, refused])).toEqual([
       ["ses_a", 0.6, 1],
       ["ses_b", 0.4, 1],
@@ -1032,7 +1048,8 @@ describe("the event module", () => {
 
     contexts.length = 0
     await noteTurnEnd(ports, state, ended("ses_b", "evt_2"))
-    expect(contexts).toEqual(["ses_b"])
+    // For its use, and for whether it runs, its times stamped since its last turn ended.
+    expect([...new Set(contexts)]).toEqual(["ses_b"])
   })
 
   test("records the top's own turn ends too, and leaves a shutdown's interruption, another event and a session in no tree alone", async () => {

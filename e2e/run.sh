@@ -166,15 +166,13 @@ ask_question() {
   check "the child asks, and the parent asks the person in its own session" \
     "$([ -n "$child_form" ] && [ -n "$parent_form" ] && echo true || echo false)"
 }
-# The limits count live sessions: a finished one's last turn ended after anything reached it but its archive, its transcript
-# (as the plugin reads it) ending on that turn's end (#324); and one that has reported owes no report.
+# The limits count live sessions: a finished one's last turn ended after its last stamp on updated, or else its transcript (as
+# the plugin reads it) ends on a turn's end past the asides, or on a step a decline interrupted (#324, #326); and one that has
+# reported owes no report.
 finished() {
-  local info
-  info=$(api "session/$1" | jq -c '.data // .')
-  [ "$(jq -r '.time.idle != null and .time.updated <= .time.idle' <<<"$info")" = true ] && { echo true; return; }
-  [ "$(jq -r '.time.idle != null and .time.archived != null and .time.updated == .time.archived' <<<"$info")" = true ] &&
-    [ "$(api "session/$1/context" | jq -r '[.data[] | select(.type | IN("agent-switched", "model-switched", "location-switched", "shell") | not)] | last | .type')" = idle ] &&
-    echo true || echo false
+  [ "$(api "session/$1" | jq -r '(.data // .) | .time.idle != null and .time.updated <= .time.idle')" = true ] && { echo true; return; }
+  [ "$(api "session/$1/context" | jq -r '[.data[] | select(.type | IN("agent-switched", "model-switched", "location-switched", "shell") | not)] | last |
+    .type == "idle" or (.type == "assistant" and .error.type == "aborted")')" = true ] && echo true || echo false
 }
 reported() {
   local prompted settled
@@ -227,6 +225,11 @@ inbox() {
     -H 'content-type: application/json' -d "{\"input\":$2}"
 }
 session_info() { api "session/$1" | jq -c '.data // .'; }
+# PATCHes session $1 with $2 as the person would, to rename, archive or unarchive it; prints whether OpenCode took it.
+patch_session() {
+  [[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X PATCH -H 'content-type: application/json' --data "$2" "$SERVER/api/session/$1") == 20* ]] &&
+    echo true || echo false
+}
 # The session session $1 started with courier_spawn, waiting up to $2 (default 30) s.
 spawned_by() {
   for _ in $(seq 1 "${2:-30}"); do
@@ -239,7 +242,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:20 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:60 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1154,7 +1157,8 @@ run_subtree() {
 }
 
 # An archived child (#324), its updated time stamped by the archive: with maxChildren 1, the parent's next spawn goes through
-# once its archived idle child reads idle, and is refused while one archived during a turn that runs on reads running.
+# once its archived idle child reads idle, and is refused while one archived during a turn that runs on reads running. The
+# same for a child unarchived, renamed or switched to another model, and one whose turn a plain decline ended (#326).
 run_archive() {
   scenario "a child that reported and was archived reads as idle, and no longer counts against the limits (#324)"
   stop_server
@@ -1169,8 +1173,7 @@ run_archive() {
   turn_ended "$child"
   turn_ended "$parent"
   check "the child is idle and owes no report" "$([ "$(finished "$child")" = true ] && [ "$(reported "$child")" = true ] && echo true || echo false)"
-  check "the person archives it" \
-    "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X PATCH -H 'content-type: application/json' --data '{"archived":true}' "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
+  check "the person archives it" "$(patch_session "$child" '{"archived":true}')"
   for _ in $(seq 1 10); do [ "$(session_info "$child" | jq -r '.time.archived != null')" = true ] && break; sleep 1; done
   check "archiving stamped its updated time with the archive's, past its last turn's end" \
     "$(session_info "$child" | jq -r '.time.archived != null and .time.updated == .time.archived and .time.updated > .time.idle')"
@@ -1202,8 +1205,7 @@ run_archive() {
   last_message() { api "session/$1/message" | jq -r '.data | sort_by(.id) | last | .type'; }
   for _ in $(seq 1 30); do [ "$(last_message "$second")" = user ] && break; sleep 1; done
   check "the prompt reached it, and its turn waits on the model" "$([ "$(last_message "$second")" = user ] && echo true || echo false)"
-  check "the person archives it" \
-    "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X PATCH -H 'content-type: application/json' --data '{"archived":true}' "$SERVER/api/session/$second") == 20* ]] && echo true || echo false)"
+  check "the person archives it" "$(patch_session "$second" '{"archived":true}')"
   for _ in $(seq 1 10); do [ "$(session_info "$second" | jq -r '.time.archived != null')" = true ] && break; sleep 1; done
   check "the archive is the last stamp on its updated time, past its last turn's end, as for an idle one" \
     "$(session_info "$second" | jq -r '.time.archived != null and .time.updated == .time.archived and .time.updated > .time.idle')"
@@ -1224,6 +1226,75 @@ run_archive() {
   project=$(session_info "$parent" | jq -r '.projectID')
   check "the tree's record settles as finished, the first child done, the second interrupted" \
     "$(record_of "$parent" '.finished == true and (.parts | length == 2)' 45 | jq -r --arg child "$child" --arg second "$second" '.finished == true and any(.parts[]; .sessionID == $child and .status == "done") and any(.parts[]; .sessionID == $second and .status == "interrupted")')"
+
+  scenario "a reported idle child the person renames, switches to another model or unarchives reads as idle, and no longer counts (#326)"
+  # Each stamps updated past the last turn's end; a switch also records itself in the transcript, a rename or an unarchive nothing.
+  check "the person unarchives the first child" "$(patch_session "$child" '{"archived":false}')"
+  for _ in $(seq 1 10); do [ "$(session_info "$child" | jq -r '.time.archived == null')" = true ] && break; sleep 1; done
+  check "unarchiving stamped its updated time past its last turn's end" "$(session_info "$child" | jq -r '.time.archived == null and .time.updated > .time.idle')"
+  check "which reads as finished, its transcript ending on that turn's end" "$(finished "$child")"
+  summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -c '.output')
+  echo "  $summary"
+  check "the footer counts it and the archived second child idle" "$(jq -r '.running == 0 and .idle == 2' <<<"$summary")"
+  out=$(prompt "COURIER-TEST")
+  third_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  third=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "a new parent's child reported back, waking it" "$([ -n "$(reply_time "$third_parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  turn_ended "$third"
+  turn_ended "$third_parent"
+  check "the person renames the child" "$(patch_session "$third" '{"title":"Renamed by the person"}')"
+  for _ in $(seq 1 10); do [ "$(session_info "$third" | jq -r '.title')" = "Renamed by the person" ] && break; sleep 1; done
+  check "renaming stamped its updated time past its last turn's end, recording nothing in its transcript" \
+    "$([ "$(session_info "$third" | jq -r '.time.archived == null and .time.updated > .time.idle')" = true ] &&
+      [ "$(api "session/$third/context" | jq -r '.data | last | .type')" = idle ] && echo true || echo false)"
+  check "which reads as finished" "$(finished "$third")"
+  listed=$(prompt "COURIER-CHILDREN $third_parent" | tool_state courier_children | jq -c --arg child "$third" '.metadata.metadata.children[] | select(.sessionID == $child)')
+  echo "  $listed"
+  check "courier_children lists it by its new title, its last turn having succeeded before the rename" \
+    "$(jq -r '.title == "Renamed by the person" and .outcome == "succeeded" and .updated > .idle and .archived == null' <<<"$listed")"
+  row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$third_parent\"}}" |
+    jq -c --arg id "$third" '.output.rows[] | select(.sessionID == $id) | {title, state, idle, report}')
+  echo "  $row"
+  check "the panel's row reads it idle and reported, by its new title, with its last turn's end" \
+    "$(jq -r '.title == "Renamed by the person" and .state == "idle" and (.idle | type == "number") and .report.state == "reported"' <<<"$row")"
+  summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$third_parent\"}}" | jq -c '.output')
+  echo "  $summary"
+  check "and the footer counts it idle, not running" "$(jq -r '.running == 0 and .idle == 1' <<<"$summary")"
+  check "the person switches its model" "$([ "$(person "session/$third/model" '{"model":{"providerID":"mock","id":"other"}}')" = 204 ] && echo true || echo false)"
+  for _ in $(seq 1 10); do [ "$(api "session/$third/context" | jq -r '.data | last | .type')" = model-switched ] && break; sleep 1; done
+  check "the switch is the last message in its transcript, and stamped its updated time again" \
+    "$([ "$(api "session/$third/context" | jq -r '.data | last | .type')" = model-switched ] &&
+      [ "$(session_info "$third" | jq -r '.time.updated > .time.idle')" = true ] && echo true || echo false)"
+  check "it still reads as finished, and the panel's row idle" \
+    "$([ "$(finished "$third")" = true ] && [ "$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$third_parent\"}}" |
+      jq -r --arg id "$third" '.output.rows[] | select(.sessionID == $id) | .state')" = idle ] && echo true || echo false)"
+  started=$(prompt_in "$third_parent" "COURIER-TEST" | tool_state courier_spawn)
+  check "with maxChildren 1, the parent starts another child: the renamed and switched one does not count" "$(jq -r '.status == "completed"' <<<"$started")"
+  fourth=$(jq -r '.metadata.metadata.sessionID' <<<"$started")
+  check "the new child reported back" \
+    "$(for _ in $(seq 1 45); do [ "$(reported "$fourth")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+  turn_ended "$fourth"
+
+  scenario "a child whose first turn the person ended by declining its request plainly reads as idle, still owing its report (#326)"
+  # A plain decline ends the turn with neither an idle time nor an idle message: its step ends interrupted.
+  ask_permission ""
+  check "the person declines the child's request in its own session, without a reason" \
+    "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"reject"}')" = 204 ] && echo true || echo false)"
+  for _ in $(seq 1 30); do [ "$(api "session/$child/context" | jq -r '.data | last | .error.type == "aborted"')" = true ] && break; sleep 1; done
+  check "its transcript ends on the interrupted step, and it has no idle time" \
+    "$([ "$(api "session/$child/context" | jq -r '.data | last | .type == "assistant" and .error.type == "aborted"')" = true ] &&
+      [ "$(session_info "$child" | jq -r '.time.idle == null')" = true ] && echo true || echo false)"
+  check "which reads as finished" "$(finished "$child")"
+  row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" |
+    jq -c --arg id "$child" '.output.rows[] | select(.sessionID == $id) | {state, report, waits}')
+  echo "  $row"
+  check "the panel's row reads it idle, waiting on nothing, its report still owed" \
+    "$(jq -r '.state == "idle" and .waits == [] and .report.state == "owed"' <<<"$row")"
+  summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -c '.output')
+  echo "  $summary"
+  check "and the footer counts it idle" "$(jq -r '.running == 0 and .waiting == 0 and .idle == 1' <<<"$summary")"
+  # OpenCode keeps a declined turn's execution claim and resumes it at the next boot: delete it before the restart below.
+  check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
   stop_server
   jq 'del(.plugins[0].options.maxChildren)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"

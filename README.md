@@ -240,7 +240,7 @@ options in the plugin's `options`, in the global config:
 
 `courier_spawn` refuses a spawn past a limit, naming it and saying what to do instead. A session
 counts while it is live: its turn runs, it owes its parent a report, or a session below it is live;
-archiving it in OpenCode does not make it run.
+renaming, archiving or otherwise changing it in OpenCode does not make it run.
 Each spawned session's brief says when to split its task and when to do it itself
 ([more](docs/reference.md#session-trees-and-their-limits)).
 

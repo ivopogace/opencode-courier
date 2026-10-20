@@ -22,11 +22,12 @@ export function runs(session: Session, sessionID: string, time: BusyTimes): Prom
   const key = `${sessionID} ${millis(time.updated)} ${millis(time.idle)}`
   const found = known.get(key)
   if (found) return found
+  // Only its own answer: one evicted meanwhile may have made way for a newer read of the same stamp.
   const forget = () => {
-    known.delete(key)
+    if (known.get(key) === read) known.delete(key)
     return true
   }
-  const read = session.context({ sessionID }).then((messages) => (messages.length ? !endsIdle(messages) : forget()), forget)
+  const read: Promise<boolean> = session.context({ sessionID }).then((messages) => (messages.length ? !endsIdle(messages) : forget()), forget)
   setBounded(known, key, read, ANSWERS_MAX)
   return read
 }

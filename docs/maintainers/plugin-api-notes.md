@@ -102,8 +102,14 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   (`runs`, `src/tree/running.ts`): a turn's end is recorded as an `idle` message, and one ending on
   it is at rest, past the `agent-switched`, `model-switched` and `location-switched` messages that
   `session.agent.selected`, `session.model.selected` and `session.moved` append, at rest or mid-turn
-  alike (`packages/core/src/session/message-updater.ts`). The answer holds until the next stamp, so
-  each instance remembers one it read per stamp, at most 500 per session port; a transcript that
+  alike (`packages/core/src/session/message-updater.ts`), and the `shell` message of a shell command
+  the person runs (`Session.shell`), which is no turn: its start stamps nothing, and its result waits
+  in the inbox (`resume: false`), stamping `updated` as any item does, for the next turn. Any other
+  message after the `idle` one reads running, as a `skill` (which resumes the session unless asked
+  not to) and a `compaction` (admitted through the inbox, waking it) start a turn; so does a `system`
+  notice of updated instructions, and a turn ended by a shutdown or a declined permission, which
+  records no `idle` message (below). The answer holds until the next stamp, so each instance
+  remembers one it read per stamp, at most 500 per session port; a transcript that
   cannot be read, or holds nothing, is read again and leaves the session running, as its times say.
   An archive landing while an item waits in the inbox hides the item until the next bump; a courier
   message there is still flagged stalled. A rename, a metadata or permissions change, a staged or

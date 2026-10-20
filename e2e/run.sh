@@ -173,7 +173,8 @@ finished() {
   info=$(api "session/$1" | jq -c '.data // .')
   [ "$(jq -r '.time.idle != null and .time.updated <= .time.idle' <<<"$info")" = true ] && { echo true; return; }
   [ "$(jq -r '.time.idle != null and .time.archived != null and .time.updated == .time.archived' <<<"$info")" = true ] &&
-    [ "$(api "session/$1/context" | jq -r '.data | last | .type')" = idle ] && echo true || echo false
+    [ "$(api "session/$1/context" | jq -r '[.data[] | select(.type | IN("agent-switched", "model-switched", "location-switched", "shell") | not)] | last | .type')" = idle ] &&
+    echo true || echo false
 }
 reported() {
   local prompted settled

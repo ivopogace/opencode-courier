@@ -45,7 +45,7 @@ type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 /** A session's times as `busy` and `archivedSinceTurn` read them; `archived` is absent before OpenCode 2.1.0 and when not archived. */
 export type BusyTimes = Pick<Times, "updated" | "idle" | "archived">
 
-/** Whether a session with these times runs: it has never finished a turn, or something reached it after the last one ended. */
+/** Whether a session runs by its times alone: it has never finished a turn, or something reached it after the last one ended. */
 export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.updated) > millis(time.idle)
 
 /**
@@ -54,11 +54,11 @@ export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.
  */
 export const archivedSinceTurn = (time: BusyTimes) => time.idle !== undefined && busy(time) && millis(time.updated) === millis(time.archived)
 
-/** The messages a switch of agent or model, or a move, appends to a transcript, at rest or mid-turn alike. */
-const SWITCHES = new Set(["agent-switched", "model-switched", "location-switched"])
+/** The messages the person's switch of agent or model, move or shell command appends, at rest or mid-turn alike. */
+const ASIDES = new Set(["agent-switched", "model-switched", "location-switched", "shell"])
 
-/** Whether a transcript ends on a turn's end, which OpenCode records as an `idle` message, but for switches made since. */
-export const endsIdle = (messages: ReadonlyArray<{ readonly type: string }>) => messages.findLast((message) => !SWITCHES.has(message.type))?.type === "idle"
+/** Whether a transcript ends on a turn's end, which OpenCode records as an `idle` message, but for asides made since. */
+export const endsIdle = (messages: ReadonlyArray<{ readonly type: string }>) => messages.findLast((message) => !ASIDES.has(message.type))?.type === "idle"
 
 /**
  * Whether a session a tree is read of is live: it runs (as the limits count it: it runs, and its turn has not failed or been

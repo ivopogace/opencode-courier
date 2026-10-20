@@ -158,6 +158,12 @@ describe("endsIdle", () => {
     expect(endsIdle([{ type: "idle" }, { type: "user" }, { type: "model-switched" }])).toBe(false)
     expect(endsIdle([{ type: "model-switched" }])).toBe(false)
   })
+
+  test("past a shell command the person ran since, which is no turn of its own", () => {
+    expect(endsIdle([{ type: "idle" }, { type: "shell" }, { type: "agent-switched" }])).toBe(true)
+    expect(endsIdle([{ type: "idle" }, { type: "skill" }])).toBe(false)
+    expect(endsIdle([{ type: "idle" }, { type: "compaction" }])).toBe(false)
+  })
 })
 
 describe("runs", () => {
@@ -211,6 +217,25 @@ describe("runs", () => {
     expect(await runs(counted, "ses_a", { updated: 14, idle: 10, archived: 14 } as any)).toBe(false)
     expect(await runs(counted, "ses_b", archived)).toBe(false)
     expect(reads).toBe(3)
+  })
+
+  test("a read that fails after it was evicted leaves the newer answer for its stamp", async () => {
+    let fail = () => {}
+    const reads: string[] = []
+    const held = {
+      context: ({ sessionID }: { sessionID: string }) => {
+        reads.push(sessionID)
+        if (reads.length === 1) return new Promise((_, reject) => (fail = () => reject(new Error("db locked"))))
+        return Promise.resolve([{ type: "idle" }])
+      },
+    } as any
+    const first = runs(held, "ses_a", archived)
+    for (let i = 0; i < 500; i++) await runs(held, `ses_${i}`, archived)
+    expect(await runs(held, "ses_a", archived)).toBe(false)
+    fail()
+    expect(await first).toBe(true)
+    expect(await runs(held, "ses_a", archived)).toBe(false)
+    expect(reads.filter((sessionID) => sessionID === "ses_a")).toHaveLength(2)
   })
 })
 

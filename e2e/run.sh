@@ -94,11 +94,11 @@ texts() {
     jq -r '.data[] | (.text // empty), (.content[]? | (.text // empty), (.state.content[]?.text // empty),
       (.state.output? // empty | if type == "string" then . else tojson end))'
 }
-# Waits until session $1's turn has ended, up to $2 (default 30) s, then a second for the plugin to handle
-# that event: the point a session that never gets a notice would have got it, for a "not told" check.
+# Waits up to $2 (default 30) s until session $1's turn has ended and still has a second later, past a message sent it just
+# before (at rest until delivered) and the plugin's handling of the end, for a "not told" check.
 turn_ended() {
   for _ in $(seq 1 $((${2:-30} * 2))); do
-    [ "$(finished "$1")" = true ] && { sleep 1; return 0; }
+    [ "$(finished "$1")" = true ] && { sleep 1; [ "$(finished "$1")" = true ] && return 0; }
     sleep 0.5
   done
   echo "turn_ended: session $1 did not end its turn in ${2:-30} s" >&2
@@ -166,9 +166,8 @@ ask_question() {
   check "the child asks, and the parent asks the person in its own session" \
     "$([ -n "$child_form" ] && [ -n "$parent_form" ] && echo true || echo false)"
 }
-# The limits count live sessions: a finished one's last turn ended after its last stamp on updated, or else its transcript (as
-# the plugin reads it) ends on a turn's end past the asides, or on a step a decline interrupted (#324, #326); and one that has
-# reported owes no report.
+# As the plugin reads a session (#324, #326): at rest when its last turn ended after its last stamp, or else when its transcript
+# ends, past the asides, on a turn's end or a step a decline interrupted.
 finished() {
   [ "$(api "session/$1" | jq -r '(.data // .) | .time.idle != null and .time.updated <= .time.idle')" = true ] && { echo true; return; }
   [ "$(api "session/$1/context" | jq -r '[.data[] | select(.type | IN("agent-switched", "model-switched", "location-switched", "shell") | not)] | last |
@@ -1156,9 +1155,8 @@ run_subtree() {
   check "a failure notice did not follow either" "$(notices_with "$root" failed | jq -r 'length == 0')"
 }
 
-# An archived child (#324), its updated time stamped by the archive: with maxChildren 1, the parent's next spawn goes through
-# once its archived idle child reads idle, and is refused while one archived during a turn that runs on reads running. The
-# same for a child unarchived, renamed or switched to another model, and one whose turn a plain decline ended (#326).
+# With maxChildren 1, a parent's next spawn goes through once its child, archived, renamed, switched or unarchived since it
+# reported, reads idle (#324, #326), and is refused while one archived during a turn that runs on reads running.
 run_archive() {
   scenario "a child that reported and was archived reads as idle, and no longer counts against the limits (#324)"
   stop_server
@@ -1278,6 +1276,10 @@ run_archive() {
   scenario "a child whose first turn the person ended by declining its request plainly reads as idle, still owing its report (#326)"
   # A plain decline ends the turn with neither an idle time nor an idle message: its step ends interrupted.
   ask_permission ""
+  # Read while it waits, so the plugin holds an answer of running for that stamp, which the decline's step end must replace.
+  summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -c '.output')
+  echo "  $summary"
+  check "while its request waits, the footer counts it waiting" "$(jq -r '.waiting == 1 and .running == 0 and .idle == 0' <<<"$summary")"
   check "the person declines the child's request in its own session, without a reason" \
     "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"reject"}')" = 204 ] && echo true || echo false)"
   for _ in $(seq 1 30); do [ "$(api "session/$child/context" | jq -r '.data | last | .error.type == "aborted"')" = true ] && break; sleep 1; done
@@ -1286,10 +1288,10 @@ run_archive() {
       [ "$(session_info "$child" | jq -r '.time.idle == null')" = true ] && echo true || echo false)"
   check "which reads as finished" "$(finished "$child")"
   row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" |
-    jq -c --arg id "$child" '.output.rows[] | select(.sessionID == $id) | {state, report, waits}')
+    jq -c --arg id "$child" '.output.rows[] | select(.sessionID == $id) | {state, report, waits, idle, created}')
   echo "  $row"
-  check "the panel's row reads it idle, waiting on nothing, its report still owed" \
-    "$(jq -r '.state == "idle" and .waits == [] and .report.state == "owed"' <<<"$row")"
+  check "the panel's row reads it idle since its interrupted step ended, waiting on nothing, its report still owed" \
+    "$(jq -r '.state == "idle" and (.idle | type == "number") and .idle > .created and .waits == [] and .report.state == "owed"' <<<"$row")"
   summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -c '.output')
   echo "  $summary"
   check "and the footer counts it idle" "$(jq -r '.running == 0 and .waiting == 0 and .idle == 1' <<<"$summary")"

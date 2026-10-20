@@ -1,5 +1,5 @@
 import { finite, isNotFound, millis } from "../platform/json.js"
-import { contextOf, reportState, runs, stalledAmong, subtree, type Below, type ModelWindow } from "../tree/index.js"
+import { contextOf, reportState, runs, stalledAmong, subtree, turnOf, type Below, type ModelWindow, type Turn } from "../tree/index.js"
 import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, replacingMention, revise, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { memoryStore } from "./store.js"
@@ -50,17 +50,17 @@ const infoOf = (ports: RefreshPorts, sessionID: string): Promise<{ info?: Info; 
 
 /**
  * One session of the tree as its record keeps it, without its use when its messages were not read for it (only when its turn
- * `ended` or it is `known` to no record yet), without a duration when its info was not, and whether it runs now (`runs`).
+ * `ended` or it is `known` to no record yet), without a duration when its info was not, and whether it runs now (`turnOf`).
  */
 async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth }: Below, stalled: boolean, at: number, known: boolean, ended: boolean) {
   const { sessionID } = entry
-  const [{ info, gone, running }, use, report] = await Promise.all([
-    infoOf(ports, sessionID).then(async (one) => ({ ...one, running: one.info !== undefined && (await runs(ports.session, sessionID, one.info.time)) })),
+  const [{ info, gone, running, endedAt }, use, report] = await Promise.all([
+    infoOf(ports, sessionID).then(async (one) => ({ ...one, ...(one.info ? await turnOf(ports.session, sessionID, one.info.time) : ({ running: false } as Turn)) })),
     ended || !known ? ports.session.context({ sessionID }).then((messages) => useOf(messages, windows), () => undefined) : undefined,
     reportState(ports.storage, sessionID).catch(() => undefined),
   ])
   const created = finite(millis(info?.time.created)) ?? entry.createdAt
-  const end = info && !running && info.time.idle !== undefined ? millis(info.time.idle) : at
+  const end = info && !running && endedAt !== undefined ? endedAt : at
   const cost = finite(info?.cost)
   const record: PartRecord = {
     sessionID,

@@ -724,7 +724,7 @@ Each part:
 | `isolated` | Whether it runs in a worktree of its own. |
 | `group` | Its [join group](#join-groups), when it was started in one. |
 | `status` | `done`, `partial`, `blocked` or `failed`: the status of its last report, once it owes none; `failed` also for a turn that failed, `interrupted` for one interrupted, `stopped` once `courier_stop` stopped it since its last prompt, `gone` once OpenCode no longer knows its session and it had not settled ([above](#memory)), `stalled` while a message it does not take [waits in its inbox](#a-missed-wake), and `out` while it owes its parent a report, or nothing is known of its report state. |
-| `duration` | From its start to the end of its last turn, or to the refresh while it runs; as last recorded once its session cannot be read, and absent when it never was. |
+| `duration` | From its start to the end of its last turn (for one a declined permission ended, the end of its interrupted step), or to the refresh while it runs; as last recorded once its session cannot be read, and absent when it never was. |
 | `cost` | What its session cost so far, as OpenCode counts it, in USD. |
 | `context` | How full its context was at the end, from 0 to 1, as the [tree panel](#in-the-terminal) reads it. Absent when the window is not known. |
 | `refused` | How many of its own `courier_spawn` calls failed, refused by a [limit](#session-trees-and-their-limits) mostly. Absent when none did. |

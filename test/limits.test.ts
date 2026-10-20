@@ -3,8 +3,8 @@ import { DateTime } from "effect"
 import { spawn } from "../src/tree/spawn.js"
 import { admit } from "../src/tree/limits.js"
 import { shapeContext } from "../src/tree/context.js"
-import { busy, DEFAULT_LIMITS, endsIdle, nativeRootOf, readLimits, readNativeChildren, type RosterEntry } from "../src/tree/domain.js"
-import { runs } from "../src/tree/running.js"
+import { busy, DEFAULT_LIMITS, endedAt, endsIdle, nativeRootOf, readLimits, readNativeChildren, turnEnd, type RosterEntry } from "../src/tree/domain.js"
+import { runs, turnOf } from "../src/tree/running.js"
 import type { ContextPorts, CourierPorts, LimitPorts, SpawnGate } from "../src/tree/ports.js"
 import { ROOT_SPLIT_LINE, SKILL_ID } from "../src/kernel/protocol.js"
 import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/tree/text.js"
@@ -256,6 +256,79 @@ describe("runs", () => {
     expect(await first).toBe(true)
     expect(await runs(held, "ses_a", stamped)).toBe(false)
     expect(reads.filter((sessionID) => sessionID === "ses_a")).toHaveLength(2)
+  })
+
+  test("remembers one answer per session, so a running session's new stamps evict no other session's", async () => {
+    const reads: string[] = []
+    const counted = {
+      context: async ({ sessionID }: { sessionID: string }) => {
+        reads.push(sessionID)
+        return [{ type: sessionID === "ses_idle" ? "idle" : "assistant" }]
+      },
+    } as any
+    expect(await runs(counted, "ses_idle", stamped)).toBe(false)
+    for (let step = 0; step < 600; step++) expect(await runs(counted, "ses_run", { updated: 10 + step, idle: 5 } as any)).toBe(true)
+    expect(await runs(counted, "ses_idle", stamped)).toBe(false)
+    expect(reads.filter((sessionID) => sessionID === "ses_idle")).toHaveLength(1)
+  })
+
+  // An item enqueued at a stamp is not in the transcript until delivered, which stamps nothing until its first step starts.
+  test("reads a rest answer again while its stamp is fresh, so a delivery after it is seen; a running one, or an older rest, is kept", async () => {
+    let messages: { type: string }[] = [{ type: "idle" }]
+    let reads = 0
+    const counted = {
+      context: async () => {
+        reads++
+        return messages
+      },
+    } as any
+    const enqueued = { updated: 100_000, idle: 5 } as any
+    expect(await runs(counted, "ses_a", enqueued, 100_500)).toBe(false)
+    messages = [{ type: "idle" }, { type: "synthetic" }]
+    expect(await runs(counted, "ses_a", enqueued, 101_000)).toBe(true)
+    expect(await runs(counted, "ses_a", enqueued, 102_000)).toBe(true)
+    expect(reads).toBe(2)
+    messages = [{ type: "idle" }]
+    expect(await runs(counted, "ses_b", enqueued, 110_000)).toBe(false)
+    expect(await runs(counted, "ses_b", enqueued, 120_000)).toBe(false)
+    expect(reads).toBe(3)
+  })
+})
+
+describe("turnOf", () => {
+  const session = (messages: unknown[]) => ({ context: async () => messages }) as any
+
+  test("says when the last turn ended: its idle time, by the times or after an idle message", async () => {
+    expect(await turnOf(session([]), "ses_a", { updated: 5, idle: 7 } as any)).toEqual({ running: false, endedAt: 7 })
+    expect(await turnOf(session([{ type: "idle" }, { type: "model-switched" }]), "ses_a", { updated: 9, idle: 7 } as any)).toEqual({ running: false, endedAt: 7 })
+  })
+
+  test("or when the step a decline interrupted ended, past the last turn's idle time, or in a first turn with none", async () => {
+    const declined = { type: "assistant", time: { created: 8, completed: 9 }, error: { type: "aborted" } }
+    expect(await turnOf(session([{ type: "idle" }, { type: "user" }, declined]), "ses_a", { updated: 10, idle: 7 } as any)).toEqual({ running: false, endedAt: 9 })
+    expect(await turnOf(session([{ type: "user" }, { ...declined, time: { created: 8 } }]), "ses_b", { updated: 10 } as any)).toEqual({ running: false, endedAt: 8 })
+    expect(await turnOf(session([{ type: "user" }, { type: "assistant", error: { type: "aborted" } }]), "ses_c", { updated: 10 } as any)).toEqual({ running: false })
+  })
+
+  test("and nothing while a turn runs", async () => {
+    expect(await turnOf(session([{ type: "idle" }, { type: "user" }]), "ses_a", { updated: 10, idle: 7 } as any)).toEqual({ running: true })
+  })
+})
+
+describe("turnEnd and endedAt", () => {
+  test("turnEnd is the message a transcript's last turn ended on, past asides; none while one runs", () => {
+    const idle = { type: "idle" }
+    const declined = { type: "assistant", error: { type: "aborted" } }
+    expect(turnEnd([{ type: "user" }, idle, { type: "shell" }])).toBe(idle)
+    expect(turnEnd([{ type: "user" }, declined])).toBe(declined)
+    expect(turnEnd([idle, { type: "user" }])).toBeUndefined()
+  })
+
+  test("endedAt is the idle time for an idle message, else when the interrupted step ended, if its times are known", () => {
+    expect(endedAt({ type: "idle", time: { created: 3 } }, { updated: 9, idle: 4 } as any)).toBe(4)
+    expect(endedAt({ type: "assistant", time: { created: 6, completed: 8 } }, { updated: 9, idle: 4 } as any)).toBe(8)
+    expect(endedAt({ type: "assistant", time: { created: DateTime.makeUnsafe(6) } }, { updated: 9 } as any)).toBe(6)
+    expect(endedAt({ type: "assistant" }, { updated: 9 } as any)).toBeUndefined()
   })
 })
 

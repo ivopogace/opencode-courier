@@ -617,6 +617,21 @@ describe("refresh", () => {
     expect(record).toMatchObject({ finished: true, parts: [{ sessionID: "ses_a", status: "done", duration: 30_000 }] })
   })
 
+  test("ends a part whose later turn a decline ended when its interrupted step ended, not at its turn before (#326)", async () => {
+    const declined = { type: "assistant", content: [], time: { created: NOW - 120_000, completed: NOW - 110_000 }, error: { type: "aborted", message: "Step interrupted" } }
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000 },
+      ses_a: { created: NOW - 290_000, updated: NOW - 110_000, idle: NOW - 260_000, messages: [{ type: "idle" }, { type: "user" }, declined] },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 130_000)
+
+    const record = await refresh(ports, state, "ses_top", NOW)
+
+    expect(record).toMatchObject({ parts: [{ sessionID: "ses_a", status: "out", duration: 180_000 }] })
+  })
+
   test("does not read a tree as finished while its top, archived between two steps of a turn, runs on (#324)", async () => {
     const { ports, state } = fakePorts({
       ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, archived: NOW - 50_000, messages: [{ type: "idle" }, { type: "user" }] },

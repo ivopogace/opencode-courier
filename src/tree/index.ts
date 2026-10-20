@@ -21,7 +21,7 @@ export type {
   WatchState,
 } from "./ports.js"
 export { allEntries, answeringTop, childrenOf, indexedLineage, lineage, pruneExpired, reportState, RETENTION_MS, type ReportState } from "./roster.js"
-export { runs } from "./running.js"
+export { runs, turnOf, type Turn } from "./running.js"
 export { subtree, type Below } from "./subtree.js"
 export { registerTreeRpc } from "./rpc-handlers.js"
 export { addTreeTools } from "./tools.js"

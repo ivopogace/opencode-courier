@@ -251,10 +251,14 @@ describe("panel", () => {
     ])
   })
 
-  test("reads one renamed or switched since as idle, and one whose turn a decline ended, still owing its report (#326)", async () => {
+  test("reads one renamed or switched since as idle, and one whose turn a decline ended, since its step ended, still owing its report (#326)", async () => {
     const { ports } = fakePorts({
       ses_renamed: { updated: 9, idle: 5, messages: [assistant(), { type: "idle" }, { type: "model-switched" }] },
-      ses_declined: { updated: 9, idle: 5, messages: [{ type: "idle" }, { type: "synthetic" }, { ...assistant(), error: { type: "aborted", message: "Step interrupted" } }] },
+      ses_declined: {
+        updated: 9,
+        idle: 5,
+        messages: [{ type: "idle" }, { type: "synthetic" }, { ...assistant(), time: { created: 6, completed: 8 }, error: { type: "aborted", message: "Step interrupted" } }],
+      },
     })
     const children = childStore(ports.storage)
     for (const child of ["ses_renamed", "ses_declined"]) {
@@ -267,7 +271,7 @@ describe("panel", () => {
 
     expect(rows.map(({ sessionID, state, idle, report }) => ({ sessionID, state, idle, report }))).toEqual([
       { sessionID: "ses_renamed", state: "idle", idle: 5, report: { state: "reported", status: "done", progressed: false } },
-      { sessionID: "ses_declined", state: "idle", idle: 5, report: { state: "owed", progressed: false } },
+      { sessionID: "ses_declined", state: "idle", idle: 8, report: { state: "owed", progressed: false } },
     ])
   })
 

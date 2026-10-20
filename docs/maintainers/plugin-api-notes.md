@@ -120,10 +120,15 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   boot resumes that turn with a `synthetic` notice. Any other message after the `idle` one reads
   running, as a `skill` (which resumes the session unless asked not to) and a `compaction` (admitted
   through the inbox, waking it) start a turn; so does a `system` notice of updated instructions. The
-  answer holds until the next stamp, so each instance remembers one it read per stamp, at most 500
-  per session port: a running session is read again as each step starts and ends, as OpenCode reads
-  its history for each step's request. A transcript that cannot be read, or holds nothing, is read
-  again and leaves the session running, as its times say.
+  answer holds until the next stamp, so each instance remembers the last one it read of each
+  session, at most 500 per session port: a running session is read again as each step starts and
+  ends, as OpenCode reads its history for each step's request. An answer of rest read within 10
+  seconds of its stamp is read again, since an item enqueued at it reaches the transcript only on
+  delivery, which stamps nothing until its first step starts, after the model's first output. A
+  transcript that cannot be read, or holds nothing, is read again and leaves the session running.
+  A session at rest by its transcript ended its last turn at its idle time, or, after a decline, as
+  the interrupted step ended (`time.completed` of that assistant message), which the panel and the
+  memory record show.
 - **`resume: false` is the only way to send a message that does not start a turn.** `Session.synthetic`
   admits the item and rings the run coordinator unless `resume === false`, whatever the `delivery`:
   `queue` still wakes an idle session. With `resume: false` the item waits in the inbox and is

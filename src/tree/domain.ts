@@ -54,16 +54,25 @@ export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.
 /** The messages the person's switch of agent or model, move or shell command appends, at rest or mid-turn alike. */
 const ASIDES = new Set(["agent-switched", "model-switched", "location-switched", "shell"])
 
-/** A stored message as `endsIdle` reads it: an assistant message's `error` says how its step ended. */
-type Stored = { readonly type: string; readonly error?: { readonly type: string } | undefined }
+/** A stored message as `turnEnd` reads it: an assistant message's `error` says how its step ended. */
+type Stored = { readonly type: string; readonly error?: { readonly type: string }; readonly time?: { readonly created?: unknown; readonly completed?: unknown } }
 
 /**
- * Whether a transcript ends on a turn's end but for asides made since: an `idle` message, or a step interrupted with none
- * after it, as a declined permission or dismissed question ends a turn, recording no `idle` (#326).
+ * The message a transcript's last turn ended on, unless one runs, past asides made since: an `idle` message, or a step
+ * interrupted with none after it, as a declined permission or dismissed question ends a turn, recording no `idle` (#326).
  */
-export const endsIdle = (messages: ReadonlyArray<Stored>) => {
+export function turnEnd<M extends Stored>(messages: ReadonlyArray<M>): M | undefined {
   const last = messages.findLast((message) => !ASIDES.has(message.type))
-  return last?.type === "idle" || (last?.type === "assistant" && last.error?.type === "aborted")
+  return last?.type === "idle" || (last?.type === "assistant" && last.error?.type === "aborted") ? last : undefined
+}
+
+/** Whether a transcript ends on a turn's end (`turnEnd`). */
+export const endsIdle = (messages: ReadonlyArray<Stored>) => turnEnd(messages) !== undefined
+
+/** When the turn `end` ended: the session's idle time for an `idle` message, else when its interrupted step ended. */
+export function endedAt(end: Stored, time: BusyTimes) {
+  const at = end.type === "idle" ? millis(time.idle) : millis(end.time?.completed ?? end.time?.created)
+  return Number.isFinite(at) ? at : undefined
 }
 
 /**

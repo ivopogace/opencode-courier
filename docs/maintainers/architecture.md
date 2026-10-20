@@ -35,7 +35,7 @@ The import rules:
   half.
 - The only dependencies between modules are `person/`'s and `memory/`'s on `tree/`, each through
   `tree/index.ts`, which exports the queries they read (`lineage`, `subtree`, `reportState`,
-  `stalledAmong`, `contextOf`, `runs`). Each module may import `platform/**` and `kernel/**`.
+  `stalledAmong`, `contextOf`, `runs`, `turnOf`). Each module may import `platform/**` and `kernel/**`.
 - Each module's model-facing strings are pure functions in its `text.ts`, which imports only
   `kernel/**`, `platform/json.ts` and its own `ports.ts` and `domain.ts`. One snapshot test,
   `test/notices.test.ts`, gathers every `text.ts`, the skill and the tool descriptions and schemas.

@@ -175,8 +175,29 @@ describe("runs", () => {
     expect(await runs(session([{ type: "idle" }, { type: "user" }, { type: "assistant" }]), "ses_a", archived)).toBe(true)
   })
 
-  test("idle when the transcript cannot be read", async () => {
-    expect(await runs(session(new Error("db locked")), "ses_a", archived)).toBe(false)
+  test("as its times say, running, when the transcript cannot be read or holds nothing", async () => {
+    expect(await runs(session(new Error("db locked")), "ses_a", archived)).toBe(true)
+    expect(await runs(session([]), "ses_a", archived)).toBe(true)
+  })
+
+  test("reads a transcript once per stamp, calls made together sharing the read, and again after a new stamp or a failure", async () => {
+    let reads = 0
+    let fail = true
+    const counted = {
+      context: async () => {
+        reads++
+        if (fail) throw new Error("db locked")
+        return [{ type: "idle" }]
+      },
+    } as any
+    expect(await runs(counted, "ses_a", archived)).toBe(true)
+    fail = false
+    expect(await Promise.all([runs(counted, "ses_a", archived), runs(counted, "ses_a", archived)])).toEqual([false, false])
+    expect(await runs(counted, "ses_a", archived)).toBe(false)
+    expect(reads).toBe(2)
+    expect(await runs(counted, "ses_a", { updated: 14, idle: 10, archived: 14 } as any)).toBe(false)
+    expect(await runs(counted, "ses_b", archived)).toBe(false)
+    expect(reads).toBe(4)
   })
 })
 

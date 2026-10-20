@@ -49,8 +49,8 @@ const infoOf = (ports: RefreshPorts, sessionID: string): Promise<{ info?: Info; 
   )
 
 /**
- * One session of the tree as its record keeps it, without its use when its messages were not read (only when its turn
- * `ended` or it is `known` to no record yet), without a duration when its info was not, and whether it runs now.
+ * One session of the tree as its record keeps it, without its use when its messages were not read for it (only when its turn
+ * `ended` or it is `known` to no record yet), without a duration when its info was not, and whether it runs now (`runs`).
  */
 async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth }: Below, stalled: boolean, at: number, known: boolean, ended: boolean) {
   const { sessionID } = entry

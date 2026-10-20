@@ -167,13 +167,13 @@ ask_question() {
     "$([ -n "$child_form" ] && [ -n "$parent_form" ] && echo true || echo false)"
 }
 # The limits count live sessions: a finished one's last turn ended after anything reached it but its archive, its transcript
-# ending on that turn's end (#324), and one that has reported owes no report, its report settled after its last prompt.
+# (as the plugin reads it) ending on that turn's end (#324); and one that has reported owes no report.
 finished() {
   local info
   info=$(api "session/$1" | jq -c '.data // .')
   [ "$(jq -r '.time.idle != null and .time.updated <= .time.idle' <<<"$info")" = true ] && { echo true; return; }
   [ "$(jq -r '.time.idle != null and .time.archived != null and .time.updated == .time.archived' <<<"$info")" = true ] &&
-    [ "$(api "session/$1/message" | jq -r '.data | sort_by(.id) | last | .type')" = idle ] && echo true || echo false
+    [ "$(api "session/$1/context" | jq -r '.data | last | .type')" = idle ] && echo true || echo false
 }
 reported() {
   local prompted settled
@@ -237,7 +237,7 @@ spawned_by() {
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
-# and `roster` restart the server and share a shard (others restart it to change an option); `epilogue` ends every run.
+# and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
 SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:20 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
@@ -1152,8 +1152,8 @@ run_subtree() {
   check "a failure notice did not follow either" "$(notices_with "$root" failed | jq -r 'length == 0')"
 }
 
-# An archived child (#324): OpenCode stamps a session's updated time as it archives it, which read as something reaching
-# it after its last turn. With maxChildren 1, the parent's next spawn goes through only if its archived child reads idle.
+# An archived child (#324), its updated time stamped by the archive: with maxChildren 1, the parent's next spawn goes through
+# once its archived idle child reads idle, and is refused while one archived during a turn that runs on reads running.
 run_archive() {
   scenario "a child that reported and was archived reads as idle, and no longer counts against the limits (#324)"
   stop_server

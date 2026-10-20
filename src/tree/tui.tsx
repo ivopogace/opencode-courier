@@ -21,6 +21,8 @@ export const CHANGES = new Set<string>([
   "session.execution.interrupted",
   "session.inbox.delivered",
   "session.synthetic",
+  "session.archived",
+  "session.unarchived",
   "permission.asked",
   "permission.replied",
   "form.created",

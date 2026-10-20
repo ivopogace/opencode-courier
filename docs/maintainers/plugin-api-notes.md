@@ -85,8 +85,8 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   so that signature means this instance missed the `started` event or the events were reordered.
   Neither path reproduces on demand, so the missed-wake watch keys on the first signature.
 - An item waiting in the inbox bumps the session's `time.updated` (`updated` equal to the item's
-  `time.created`, `idle` unchanged), so `busy()` reads a session with an undelivered message as
-  running, unless it was archived since (below). The plugin API cannot list the inbox (`GET /api/session/:id/inbox` can); a delivered item
+  `time.created`, `idle` unchanged), so a session with an undelivered message reads as running
+  (`busy()`), unless it was archived since (`runs()`, below). The plugin API cannot list the inbox (`GET /api/session/:id/inbox` can); a delivered item
   becomes the stored message with the same id. `session.synthetic` with the `id` of an item still
   waiting, or already delivered, returns that item (`reconcile` in `packages/core/src/session/inbox.ts`
   matches on session and type only, publishing nothing) and still wakes the session, so a wake sent
@@ -100,7 +100,8 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   `session.get` gives, for an idle session and for one between two steps alike, a stretch that can
   last a whole tool call or a wait on the person. The plugin tells them apart by the transcript
   (`runs`, `src/tree/running.ts`): a turn's end is recorded as an `idle` message, and one ending on
-  it is at rest. An archive landing while an item waits in the inbox hides the item until the next
+  it is at rest. The answer holds until the next stamp, so each instance reads a transcript once per
+  stamp; one that cannot be read leaves the session running, as its times say. An archive landing while an item waits in the inbox hides the item until the next
   bump; a courier message there is still flagged stalled. A rename, a metadata,
   permissions, agent or model change, a staged or cleared revert, a move and an unarchive bump
   `time.updated` the same way with nothing to tell them by, so `busy()` reads such an idle session as

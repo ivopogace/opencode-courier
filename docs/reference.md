@@ -965,9 +965,9 @@ A session OpenCode no longer knows is not counted. Then, for each join group of 
 own children still open, `group <name> <reported>/<members>`: the members whose report is held out of
 those that have not left. A part that is zero is left out; the entry shows nothing on the home
 screen, for a session that started none, and when the RPC fails. It asks again 250 ms after the first
-of the events that may change it (a session created or deleted, a turn started or ended, a permission
-request asked or answered, a form created or settled, a message delivered), once per burst, and every
-15 seconds besides. A server that cannot register the RPC logs `courier rpc: not registered` and
+of the events that may change it (a session created, deleted, archived or unarchived, a turn started
+or ended, a permission request asked or answered, a form created or settled, a message delivered),
+once per burst, and every 15 seconds besides. A server that cannot register the RPC logs `courier rpc: not registered` and
 loads the rest as before.
 
 **The tree panel.** `/courier tree` (or *Courier session tree* in the command palette) opens a panel

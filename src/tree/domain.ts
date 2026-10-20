@@ -42,7 +42,7 @@ export function readNativeChildren(options: unknown) {
 /** A session's times, as `session.get` gives them. */
 type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
-/** A session's times as `busy` reads them; `archived` is absent before OpenCode 2.1.0. */
+/** A session's times as `busy` and `archivedSinceTurn` read them; `archived` is absent before OpenCode 2.1.0. */
 export type BusyTimes = Pick<Times, "updated" | "idle" | "archived">
 
 /** Whether a session with these times runs: it has never finished a turn, or something reached it after the last one ended. */

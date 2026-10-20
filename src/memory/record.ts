@@ -50,14 +50,15 @@ const infoOf = (ports: RefreshPorts, sessionID: string): Promise<{ info?: Info; 
 
 /**
  * One session of the tree as its record keeps it, without its use when its messages were not read for it (only when its turn
- * `ended` or it is `known` to no record yet), without a duration when its info was not, and whether it runs now (`turnOf`).
+ * `ended` or it is `known` to no record yet), without a duration when its info was not, and whether it runs or is owed a turn.
  */
 async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth }: Below, stalled: boolean, at: number, known: boolean, ended: boolean) {
   const { sessionID } = entry
-  const [{ info, gone, running, endedAt }, use, report] = await Promise.all([
+  const [{ info, gone, running, endedAt }, use, report, waiting] = await Promise.all([
     infoOf(ports, sessionID).then(async (one) => ({ ...one, ...(one.info ? await turnOf(ports.session, sessionID, one.info.time) : ({ running: false } as Turn)) })),
     ended || !known ? ports.session.context({ sessionID }).then((messages) => useOf(messages, windows), () => undefined) : undefined,
     reportState(ports.storage, sessionID).catch(() => undefined),
+    waitsInInbox(ports, sessionID).catch(() => true),
   ])
   const created = finite(millis(info?.time.created)) ?? entry.createdAt
   const end = info && !running && endedAt !== undefined ? endedAt : at
@@ -72,7 +73,7 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
     ...(info ? { duration: Math.max(0, end - created) } : {}),
     ...(cost !== undefined ? { cost } : {}),
   }
-  return { record, use, running, unread: info === undefined, gone }
+  return { record, use, running: running || (waiting && !gone), unread: info === undefined, gone }
 }
 
 /** Of the parts last recorded, those the roster has forgotten before they settled whose session OpenCode no longer knows. */
@@ -111,8 +112,9 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
     Promise.all(nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at, known.has(node.entry.sessionID), node.entry.sessionID === ended))),
     goneSince(ports, previous?.parts ?? [], new Set(nodes.map((node) => node.entry.sessionID))),
   ])
-  // A courier message waiting for the top, a report it has yet to take, is a turn its transcript does not show yet.
-  const [said, topRunning, topOwed] = await Promise.all([replies, runs(ports.session, top, info.time), waitsInInbox(ports, top).catch(() => false)])
+  // A courier message waiting for the top, or for a part, a message it has yet to take, is a turn its transcript does not
+  // show yet; a store that cannot be read counts as one waiting, as `runs` counts a transcript it cannot read as running.
+  const [said, topRunning, topOwed] = await Promise.all([replies, runs(ports.session, top, info.time), waitsInInbox(ports, top).catch(() => true)])
   // Read again just before the write: a courier_recall or courier_note call, or another turn end's refresh, wrote meanwhile.
   const latest = (await store.get(info.projectID, top).catch(() => previous)) ?? previous
   const last = new Map(latest?.parts.map((one) => [one.sessionID, one]))

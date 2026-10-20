@@ -9,7 +9,7 @@ import type { ContextPorts, CourierPorts, LimitPorts, SpawnGate } from "../src/t
 import { ROOT_SPLIT_LINE, SKILL_ID } from "../src/kernel/protocol.js"
 import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/tree/text.js"
 import { reportOf } from "../src/tree/report.js"
-import { childStore } from "../src/tree/store.js"
+import { childStore, wakeStore } from "../src/tree/store.js"
 
 /** Whether a spawned session owes its parent a report, as `reportOf` reads it. */
 const owesReport = async (storage: Parameters<typeof childStore>[0], sessionID: string) => (await reportOf(childStore(storage), sessionID))?.owes
@@ -516,6 +516,30 @@ describe("admit, with children that owe a report", () => {
     await childStore(storage).settled("ses_a", "report", 150)
 
     expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  // OpenCode's inbox item is in no transcript until delivered, so the wake store says that a follow-up owes it a turn.
+  test("but one that reported counts while a courier message sent with a wake waits in its inbox, and not once it is delivered", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: { ...FINISHED, updated: 9 } })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150)
+    await wakeStore(storage).put({ sessionID: "ses_a", inboxID: "msg_more", at: 200, text: "more", running: false, idleAt: 200 })
+
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+    await wakeStore(storage).remove("ses_a", "msg_more")
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  test("and counts when the messages waiting in its inbox cannot be read", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: FINISHED })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150)
+    const scan = storage.scan
+    storage.scan = async (input: { prefix: string }) => (input.prefix.startsWith("wake/") ? Promise.reject(new Error("db locked")) : scan(input))
+
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
   })
 
   test("but one archived after reporting early, while its turn runs on between two steps, still counts", async () => {

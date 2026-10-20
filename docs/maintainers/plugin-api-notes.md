@@ -52,7 +52,8 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   (re)subscribe.
 - `session.execution.started`, `.succeeded`, `.failed` and `.interrupted` frame a session's busy
   period: one terminal event however many prompts were steered into it. `.interrupted` carries a
-  `reason`: `user`, `shutdown` (resumed on the next start) or `inactivity` (an idle location is
+  `reason`: `user`, `shutdown` (resumed on the next start; also what a plain permission decline's
+  end reports, [below](#permission-requests)) or `inactivity` (an idle location is
   evicted, which stops its sessions without resuming them); the schema's `superseded` is published
   by nothing. A message steered into a running turn interrupts nothing: `inbox.enqueued`
   (`delivery: "steer"`) as it is sent, `inbox.delivered` at the turn's next step, then the one
@@ -88,7 +89,10 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   `time.created`, `idle` unchanged), and is not in the transcript until delivered, so a session with
   an undelivered message reads as at rest (`runs()`, below), which it is while nothing runs it. A
   healthy wake delivers it within moments; a courier message left waiting is flagged stalled by the
-  wake store, which the footer and the panel check before `running`. The plugin API cannot list the
+  wake store, which the footer and the panel check before `running`. The limits and the memory
+  record's `finished` count a session while the wake store holds a courier message waiting in it
+  (`waitsInInbox`), and on a failed read; one sent with `resume: false` is not watched and owes no
+  turn. The plugin API cannot list the
   inbox (`GET /api/session/:id/inbox` can); a delivered item becomes the stored message with the same
   id, and stamps nothing until its step starts. `session.synthetic` with the `id` of an item still
   waiting, or already delivered, returns that item (`reconcile` in `packages/core/src/session/inbox.ts`
@@ -191,7 +195,12 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   execution ends interrupted with no reason, which `terminal` (`packages/core/src/session/execution.ts`)
   publishes as `session.execution.interrupted` with `reason: "shutdown"`, keeping the execution claim,
   so the next boot resumes the turn of a session with no OpenCode parent ("The server restarted while
-  you were working", `packages/core/src/session/execution/restart.ts`).
+  you were working", `packages/core/src/session/execution/restart.ts`). The missed-wake watch
+  (`wakeEnded`) tells the two by the transcript: a `shutdown` end whose transcript ends on that
+  aborted message ends the turn; one that does not (a real shutdown between steps) leaves the watch
+  to the resumed turn. A real shutdown during a step reads as ended, harmlessly: the resumed turn's
+  `session.execution.started` marks its messages running again. The other event handlers, and a join
+  group's release (`time.idle`), still treat it as a shutdown.
 - `opencode run --auto` replies `once` to every request asked in its own session, the asserted ones
   included (`packages/cli/src/run/noninteractive.ts`), so the live suite's parent answers its own
   prompt; the scenario that holds the prompt drives the parent through the API instead.

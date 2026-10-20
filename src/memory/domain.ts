@@ -105,7 +105,10 @@ export interface TreeRecord {
   readonly split: string
   /** Absent until the top states a split line worded otherwise than `split`; newest last, at most `MAX_REVISIONS`. */
   readonly revisions?: ReadonlyArray<Revision>
-  /** Whether, at the last refresh, no session in the tree ran and every part had settled: none was out or stalled. */
+  /**
+   * Whether, at the last refresh, no session in the tree ran or had a courier message waiting in its inbox for a turn, and
+   * every part had settled: none was out or stalled.
+   */
   readonly finished: boolean
   readonly recalled?: Recalled
   /** Absent until a session of the tree that is not a leaf wrote one; a second note replaces the first. */

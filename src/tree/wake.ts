@@ -73,13 +73,16 @@ export async function wakeStarted(ports: Pick<WatchPorts, "storage">, event: Exe
  * subscription; one still waiting is watched as waiting in an idle session from now.
  */
 export async function wakeEnded(ports: WatchPorts, event: Execution & { readonly data: { readonly reason?: string } }) {
-  if (event.data.reason === "shutdown") return
   const { sessionID } = event.data
   const store = wakeStore(ports.storage)
   const waiting = await store.of(sessionID)
   if (!waiting.length) return
   const at = event.created ?? ports.now()
-  const stored = new Set((await ports.session.context({ sessionID }).catch((): Messages => [])).map((message) => message.id))
+  const messages = await ports.session.context({ sessionID }).catch((): Messages => [])
+  // A plain decline reports a shutdown after the aborted step that ends its turn; a real one between steps ends none. One during a
+  // step reads as ended, harmlessly: the turn the next boot resumes marks its messages running again, and a wake again is idempotent.
+  if (event.data.reason === "shutdown" && !endsIdle(messages)) return
+  const stored = new Set(messages.map((message) => message.id))
   await Promise.all(
     waiting.map((wake) => (stored.has(wake.inboxID) ? store.remove(sessionID, wake.inboxID) : store.put({ ...wake, running: false, idleAt: at }))),
   )
@@ -143,9 +146,12 @@ async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, 
   }
 }
 
-/** Whether a courier message that owes a session a turn waits in its inbox, delivery not yet seen; its transcript says nothing of it. */
+/**
+ * Whether a courier message sent with a wake waits undelivered in the session's inbox while it is idle (waiting or stalled);
+ * one a running turn is to take is not counted, as `runs` says that turn runs.
+ */
 export async function waitsInInbox(ports: Pick<WatchPorts, "storage">, sessionID: string) {
-  return (await wakeStore(ports.storage).of(sessionID)).length > 0
+  return (await wakeStore(ports.storage).of(sessionID)).some((wake) => !wake.running)
 }
 
 /** The sessions among `sessionIDs` flagged stalled, each with when its oldest stalled message was enqueued. */

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { WatchPorts } from "../src/tree/ports.js"
 import { wakeKey, wakeStore } from "../src/tree/store.js"
 import { treeEvents } from "../src/tree/events.js"
-import { missed, stalledAmong, WAKE_MS, wakeMissed, type WakePorts } from "../src/tree/wake.js"
+import { missed, stalledAmong, WAKE_MS, waitsInInbox, wakeMissed, type WakePorts } from "../src/tree/wake.js"
 
 type Message = { id: string; type: string }
 
@@ -240,11 +240,30 @@ describe("waking a session whose wake was missed", () => {
     expect(await wakeStore(ports.storage).all()).toEqual([])
   })
 
-  test("a turn a shutdown stops, which resumes on the next start, leaves the watch as it was", async () => {
+  test("a turn a shutdown stops between steps, which resumes on the next start, leaves the watch as it was", async () => {
     const { ports } = fakePorts({ ses_parent: [assistant()] })
     await handle(ports, enqueued())
     await handle(ports, event("session.execution.interrupted", "ses_parent", 200_000, { reason: "shutdown" }))
     expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: true })
+  })
+
+  test("but a turn a plain decline ended, which OpenCode reports as a shutdown, keeps it waiting from then and wakes it WAKE_MS later", async () => {
+    const { ports, sent, at, messages } = fakePorts({ ses_parent: [assistant()] })
+    await handle(ports, enqueued())
+    messages.ses_parent = [assistant(), { ...assistant("msg_declined"), error: { type: "aborted" } } as Message, { id: "msg_switch", type: "model-switched" }]
+    await handle(ports, event("session.execution.interrupted", "ses_parent", 200_000, { reason: "shutdown" }))
+    expect((await wakeStore(ports.storage).of("ses_parent")).map((wake) => [wake.running, wake.idleAt])).toEqual([[false, 200_000]])
+    at(200_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toHaveLength(1)
+  })
+
+  test("and drops the watch on a message that declined turn took", async () => {
+    const { ports, messages } = fakePorts({ ses_parent: [assistant()] })
+    await handle(ports, enqueued())
+    messages.ses_parent = [assistant(), { id: "msg_report", type: "synthetic" }, { ...assistant("msg_declined"), error: { type: "aborted" } } as Message]
+    await handle(ports, event("session.execution.interrupted", "ses_parent", 200_000, { reason: "shutdown" }))
+    expect(await wakeStore(ports.storage).all()).toEqual([])
   })
 
   test("a message another tick of the process has claimed is left to it", async () => {
@@ -269,6 +288,21 @@ describe("waking a session whose wake was missed", () => {
     await wakeMissed(ports, new Set())
     expect(sent).toHaveLength(1)
   })
+})
+
+test("waitsInInbox counts a message waiting or stalled in an idle session, not one a running turn is to take", async () => {
+  const { ports, at } = fakePorts({ ses_parent: [assistant()], ses_idle: [idle()] })
+  await handle(ports, enqueued())
+  expect(await waitsInInbox(ports, "ses_parent")).toBe(false)
+  await handle(ports, enqueued("ses_idle"))
+  expect(await waitsInInbox(ports, "ses_idle")).toBe(true)
+  at(100_000 + WAKE_MS)
+  await wakeMissed(ports, new Set())
+  at(100_000 + 2 * WAKE_MS)
+  await wakeMissed(ports, new Set())
+  expect((await wakeStore(ports.storage).of("ses_idle"))[0]).toMatchObject({ stalled: 100_000 + 2 * WAKE_MS })
+  expect(await waitsInInbox(ports, "ses_idle")).toBe(true)
+  expect(await waitsInInbox(ports, "ses_none")).toBe(false)
 })
 
 test("missed reads only the stored watch: idle past WAKE_MS since it arrived, went idle or was woken again", () => {

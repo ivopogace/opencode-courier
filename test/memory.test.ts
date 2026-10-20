@@ -589,8 +589,8 @@ describe("refresh", () => {
 
   test("reads a part that reported and was archived since as settled, its duration to its last turn's end, so the tree reads finished (#324)", async () => {
     const { ports, state } = fakePorts({
-      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, archived: NOW - 50_000 },
-      ses_a: { created: NOW - 290_000, updated: NOW - 10_000, idle: NOW - 260_000, archived: NOW - 10_000 },
+      ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, archived: NOW - 50_000, messages: [{ type: "idle" }] },
+      ses_a: { created: NOW - 290_000, updated: NOW - 10_000, idle: NOW - 260_000, archived: NOW - 10_000, messages: [{ type: "idle" }] },
     })
     const children = childStore(ports.storage)
     await children.record(entry("ses_a", "ses_top"))
@@ -600,6 +600,19 @@ describe("refresh", () => {
     const record = await refresh(ports, state, "ses_top", NOW)
 
     expect(record).toMatchObject({ finished: true, parts: [{ sessionID: "ses_a", status: "done", duration: 30_000 }] })
+  })
+
+  test("does not read a tree as finished while its top, archived between two steps of a turn, runs on (#324)", async () => {
+    const { ports, state } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, archived: NOW - 50_000, messages: [{ type: "idle" }, { type: "user" }] },
+      ses_a: { updated: NOW - 100_000, idle: NOW - 100_000 },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 290_000)
+    await children.settled("ses_a", "report", NOW - 100_000, "done")
+
+    expect(await refresh(ports, state, "ses_top", NOW, "ses_a")).toMatchObject({ finished: false, parts: [{ sessionID: "ses_a", status: "done" }] })
   })
 
   test("keeps the last status and duration of a part whose session OpenCode deleted, so the tree reads finished (#283)", async () => {

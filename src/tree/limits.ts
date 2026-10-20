@@ -1,7 +1,8 @@
 import { isNotFound } from "../platform/json.js"
-import { busy, bySession, lineageBy } from "./domain.js"
+import { bySession, lineageBy } from "./domain.js"
 import type { LimitPorts, Reservation } from "./ports.js"
 import { reportOf } from "./report.js"
+import { runs } from "./running.js"
 import { childStore } from "./store.js"
 import { childrenRefusal, depthRefusal, totalRefusal } from "./text.js"
 
@@ -19,8 +20,8 @@ async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: s
   ])
   if (time === null) return false
   // One whose first prompt failed never ran, and has no idle time to tell so.
-  const runs = time !== undefined && busy(time) && !report?.ended
-  return runs || (report?.owes ?? false)
+  const running = time !== undefined && !report?.ended && (await runs(ports.session, sessionID, time))
+  return running || (report?.owes ?? false)
 }
 
 /**

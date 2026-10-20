@@ -1,8 +1,9 @@
 import type { Plugin } from "@opencode/plugin"
-import { busy, cut, isLive } from "./domain.js"
+import { cut, isLive } from "./domain.js"
 import type { CourierPorts, Pending, RosterEntry, RosterStorage, ShownForm } from "./ports.js"
 import { lastStatus, reportOf } from "./report.js"
 import { isExpired, type Exists } from "./roster.js"
+import { runs } from "./running.js"
 import { described } from "./status.js"
 import { childStore } from "./store.js"
 
@@ -49,9 +50,10 @@ function drawn(byParent: ReadonlyMap<string, Below[]>, parentID: string): Below[
 
 type Info = Awaited<ReturnType<Plugin.Context["session"]["get"]>>
 
-/** A session of a tree as a read looks it up: OpenCode's info of it, if it still knows it, and what it waits on. */
+/** A session of a tree as a read looks it up: OpenCode's info of it, if it still knows it, whether it runs, and what it waits on. */
 export interface Looked extends Below {
   readonly info: Info | undefined
+  readonly running: boolean
   readonly pending: ReadonlyArray<Pending>
   readonly forms: ReadonlyArray<ShownForm>
 }
@@ -74,8 +76,9 @@ export async function lookUp(ports: ReadPorts, rootID: string): Promise<Looked[]
         ports.pending(node.entry.sessionID).catch((): ReadonlyArray<Pending> => []),
         ports.forms(node.entry.sessionID).catch((): ReadonlyArray<ShownForm> => []),
       ])
+      const running = info !== undefined && (await runs(ports.session, node.entry.sessionID, info.time))
       // A form outlives its session's turn only when its withdrawal was missed, as while no instance followed the events.
-      return { ...node, info, pending, forms: info && busy(info.time) ? forms : [] }
+      return { ...node, info, running, pending, forms: running ? forms : [] }
     }),
   )
 }
@@ -89,7 +92,7 @@ export async function readTree(ports: ReadPorts, rootID: string, max = ports.lim
   const all = await Promise.all(
     (await lookUp(ports, rootID)).map(async (node): Promise<Listed> => {
       const report = await reportOf(children, node.entry.sessionID).catch(() => undefined)
-      return { ...node, report, live: isLive(node.info?.time, node.pending.length + node.forms.length, report) }
+      return { ...node, report, live: isLive(node.info ? node.running : undefined, node.pending.length + node.forms.length, report) }
     }),
   )
   const listing = cut(

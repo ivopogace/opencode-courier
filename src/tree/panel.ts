@@ -1,5 +1,4 @@
 import type { Status } from "../kernel/protocol.js"
-import { busy } from "./domain.js"
 import type { CourierPorts, ModelWindow, Pending, ShownForm } from "./ports.js"
 import { lastStatus, stoppedSincePrompt } from "./report.js"
 import type { Row, Tree, Wait } from "./rpc.js"
@@ -50,7 +49,7 @@ function reportRow(report: Listed["report"], status: Status | undefined): Pick<R
 
 /**
  * What a session does: waiting on a request to the person or a form it shows them, stalled, running, idle, or gone when
- * OpenCode no longer knows it. A message waiting in its inbox makes a stalled session look busy.
+ * OpenCode no longer knows it. A message waiting in its inbox makes a stalled session look busy, unless archived since.
  */
 function stateOf(info: unknown, waits: number, stalled: boolean, running: boolean): Row["state"] {
   if (!info) return "gone"
@@ -59,7 +58,7 @@ function stateOf(info: unknown, waits: number, stalled: boolean, running: boolea
   return running ? "running" : "idle"
 }
 /** One session of the panel: what it is doing, its report and group standing, its last tool call, context use and cost. */
-async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth, info, pending, forms, report }: Listed, stalled: number | undefined): Promise<Row> {
+async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth, info, running, pending, forms, report }: Listed, stalled: number | undefined): Promise<Row> {
   const { sessionID } = entry
   const [messages, status, standing, stopped] = await Promise.all([
     ports.session.context({ sessionID }).catch((): Messages => []),
@@ -67,7 +66,6 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
     entry.group ? standingIn(ports, entry, entry.group) : undefined,
     stoppedSincePrompt(childStore(ports.storage), sessionID).catch(() => false),
   ])
-  const running = info !== undefined && busy(info.time)
   const tool = lastTool(messages)
   const context = contextOf(messages, windows)
   return {

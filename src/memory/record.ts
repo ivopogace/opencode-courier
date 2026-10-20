@@ -1,5 +1,5 @@
 import { finite, isNotFound, millis } from "../platform/json.js"
-import { busy, contextOf, reportState, stalledAmong, subtree, type Below, type ModelWindow } from "../tree/index.js"
+import { contextOf, reportState, runs, stalledAmong, subtree, type Below, type ModelWindow } from "../tree/index.js"
 import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, replacingMention, revise, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { memoryStore } from "./store.js"
@@ -59,7 +59,7 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
     ended || !known ? ports.session.context({ sessionID }).then((messages) => useOf(messages, windows), () => undefined) : undefined,
     reportState(ports.storage, sessionID).catch(() => undefined),
   ])
-  const running = info !== undefined && busy(info.time)
+  const running = info !== undefined && (await runs(ports.session, sessionID, info.time))
   const created = finite(millis(info?.time.created)) ?? entry.createdAt
   const end = info && !running && info.time.idle !== undefined ? millis(info.time.idle) : at
   const cost = finite(info?.cost)
@@ -139,7 +139,7 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
     title: info.title ?? previous?.title ?? "",
     split,
     ...(revisions ? { revisions } : {}),
-    finished: !busy(info.time) && !read.some(({ running }) => running) && parts.every((one) => isSettled(one.status)),
+    finished: !(await runs(ports.session, top, info.time)) && !read.some(({ running }) => running) && parts.every((one) => isSettled(one.status)),
     ...(recalled ? { recalled } : {}),
     ...(lesson ? { lesson } : {}),
     parts,

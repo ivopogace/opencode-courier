@@ -44,7 +44,7 @@ bun script/real-model-table.ts [name=]<run-dir>...   # a table per condition fro
   which you update when a group changes much), the heaviest first onto the lightest shard, each shard
   keeping the order of a full run. CI runs four, each on its own runner with its own server, mock
   model and stand-in registry. `restart-question` and `roster`, which restart the server, always
-  share a shard, and `epilogue`, the check of the server log, runs last in every shard. `E2E_GROUPS=a,b`
+  share a shard (`archive`, `memory` and `native` restart it too, to change an option, and need no shard mate), and `epilogue`, the check of the server log, runs last in every shard. `E2E_GROUPS=a,b`
   runs the named groups only (it wins over `E2E_SHARD`), and `E2E_PLAN=1` prints what a run would go
   through. A new scenario goes into the group it belongs to, or a new group, which must not rely on
   state another leaves behind: a group that needs an isolated child's worktree starts one, as `probe`

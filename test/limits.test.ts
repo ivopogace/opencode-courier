@@ -3,7 +3,8 @@ import { DateTime } from "effect"
 import { spawn } from "../src/tree/spawn.js"
 import { admit } from "../src/tree/limits.js"
 import { shapeContext } from "../src/tree/context.js"
-import { busy, DEFAULT_LIMITS, nativeRootOf, readLimits, readNativeChildren, type RosterEntry } from "../src/tree/domain.js"
+import { archivedSinceTurn, busy, DEFAULT_LIMITS, endsIdle, nativeRootOf, readLimits, readNativeChildren, type RosterEntry } from "../src/tree/domain.js"
+import { runs } from "../src/tree/running.js"
 import type { ContextPorts, CourierPorts, LimitPorts, SpawnGate } from "../src/tree/ports.js"
 import { ROOT_SPLIT_LINE, SKILL_ID } from "../src/kernel/protocol.js"
 import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/tree/text.js"
@@ -29,15 +30,18 @@ function fakeStorage() {
 const RUNNING = { created: 1, updated: 5 }
 const FINISHED = { created: 1, updated: 5, idle: 5 }
 
-/** Limit ports over a roster and the sessions' times, all running unless `times` says otherwise. */
-function limitPorts(limits = DEFAULT_LIMITS, times: Record<string, object> = {}) {
+/** Limit ports over a roster and the sessions' times, all running unless `times` says otherwise; `turns` run on in their transcripts. */
+function limitPorts(limits = DEFAULT_LIMITS, times: Record<string, object> = {}, turns: ReadonlyArray<string> = []) {
   const storage = fakeStorage()
   const gate: SpawnGate = { reserved: new Set(), turn: Promise.resolve() }
   const ports: LimitPorts = {
     storage,
     limits,
     gate,
-    session: { get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID, time: times[sessionID] ?? RUNNING }) } as any,
+    session: {
+      get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID, time: times[sessionID] ?? RUNNING }),
+      context: async ({ sessionID }: { sessionID: string }) => [{ type: turns.includes(sessionID) ? "assistant" : "idle" }],
+    } as any,
   }
   const child = (parentID: string, sessionID: string) =>
     childStore(storage).record({ sessionID, parentID, title: sessionID, directory: "/repo", isolated: false, createdAt: 1 })
@@ -122,16 +126,57 @@ describe("busy", () => {
     const at = (ms: number) => DateTime.makeUnsafe(ms)
     expect(busy(time({ updated: at(9), idle: at(5) }))).toBe(true)
     expect(busy(time({ updated: at(5), idle: at(5) }))).toBe(false)
-    expect(busy(time({ updated: at(9), idle: at(5), archived: at(9) }))).toBe(false)
+  })
+})
+
+// #324: archiving stamps `updated` with `archived`, and a running turn stamps it only as each step starts or ends.
+describe("archivedSinceTurn", () => {
+  const time = (value: object) => value as Parameters<typeof archivedSinceTurn>[0]
+
+  test("is the archive being the last stamp on updated since the last turn ended", () => {
+    expect(archivedSinceTurn(time({ updated: 9, idle: 5, archived: 9 }))).toBe(true)
+    expect(archivedSinceTurn(time({ updated: DateTime.makeUnsafe(9), idle: DateTime.makeUnsafe(5), archived: DateTime.makeUnsafe(9) }))).toBe(true)
   })
 
-  test("an idle session archived since its last turn is not: archiving stamps updated with the archive's time (#324)", () => {
-    expect(busy(time({ updated: 9, idle: 5, archived: 9 }))).toBe(false)
+  test("not when something reached it after the archive, the archive came before the turn ended, or it never ended one", () => {
+    expect(archivedSinceTurn(time({ updated: 12, idle: 5, archived: 9 }))).toBe(false)
+    expect(archivedSinceTurn(time({ updated: 12, idle: 12, archived: 9 }))).toBe(false)
+    expect(archivedSinceTurn(time({ updated: 9, archived: 9 }))).toBe(false)
+    expect(archivedSinceTurn(time({ updated: 9, idle: 5 }))).toBe(false)
+  })
+})
+
+describe("endsIdle", () => {
+  test("is a transcript whose last message is a turn's end", () => {
+    expect(endsIdle([{ type: "user" }, { type: "assistant" }, { type: "idle" }])).toBe(true)
+    expect(endsIdle([{ type: "idle" }, { type: "synthetic" }, { type: "assistant" }])).toBe(false)
+    expect(endsIdle([])).toBe(false)
+  })
+})
+
+describe("runs", () => {
+  const session = (messages: { type: string }[] | Error) => ({
+    context: async () => {
+      if (messages instanceof Error) throw messages
+      return messages
+    },
+  }) as any
+  const archived = { updated: 9, idle: 5, archived: 9 } as Parameters<typeof runs>[2]
+
+  test("goes by the times, reading no transcript, unless the archive stamped them since the last turn ended", async () => {
+    const unread = session(new Error("not read"))
+    expect(await runs(unread, "ses_a", { updated: 9, idle: 5 } as any)).toBe(true)
+    expect(await runs(unread, "ses_a", { updated: 5, idle: 5 } as any)).toBe(false)
+    expect(await runs(unread, "ses_a", { updated: 12, idle: 5, archived: 9 } as any)).toBe(true)
   })
 
-  test("an archived one reached after the archive is, and so is one archived before it ever finished a turn", () => {
-    expect(busy(time({ updated: 12, idle: 5, archived: 9 }))).toBe(true)
-    expect(busy(time({ updated: 9, archived: 9 }))).toBe(true)
+  test("then by the transcript: idle when it ends on the turn's end, running while a turn goes on between two steps", async () => {
+    expect(await runs(session([{ type: "assistant" }, { type: "idle" }]), "ses_a", archived)).toBe(false)
+    expect(await runs(session([{ type: "idle" }, { type: "user" }, { type: "assistant" }]), "ses_a", archived)).toBe(true)
+  })
+
+  test("idle when the transcript cannot be read", async () => {
+    expect(await runs(session(new Error("db locked")), "ses_a", archived)).toBe(false)
   })
 })
 
@@ -293,7 +338,16 @@ describe("admit, with children that owe a report", () => {
     expect((await admit(ports, "ses_root")).depth).toBe(1)
   })
 
-  test("but an archived one that still owes a report counts, as it would unarchived", async () => {
+  test("but one archived after reporting early, while its turn runs on between two steps, still counts", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, { ses_a: { ...FINISHED, updated: 9, archived: 9 } }, ["ses_a"])
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150)
+
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+  })
+
+  test("and an archived one that still owes a report counts, as it would unarchived", async () => {
     const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, { ses_a: { ...FINISHED, updated: 9, archived: 9 } })
     await child("ses_root", "ses_a")
     await childStore(storage).prompted("ses_a", 100)

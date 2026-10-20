@@ -238,7 +238,7 @@ describe("panel", () => {
   })
 
   test("reads a session that reported and was archived since as idle, with its last turn's end, not as running (#324)", async () => {
-    const { ports } = fakePorts({ ses_archived: { updated: 9, idle: 5, archived: 9 } })
+    const { ports } = fakePorts({ ses_archived: { updated: 9, idle: 5, archived: 9, messages: [assistant(), { type: "idle" }] } })
     const children = childStore(ports.storage)
     await children.record(entry("ses_archived", "ses_root"))
     await children.prompted("ses_archived", 900)
@@ -249,6 +249,20 @@ describe("panel", () => {
     expect(rows.map(({ state, idle, report }) => ({ state, idle, report }))).toEqual([
       { state: "idle", idle: 5, report: { state: "reported", status: "done", progressed: false } },
     ])
+  })
+
+  test("reads one archived while its turn runs on between two steps as running, with the form it shows (#324)", async () => {
+    const { ports } = fakePorts(
+      { ses_turn: { updated: 9, idle: 5, archived: 9, messages: [{ type: "idle" }, { type: "user" }, assistant()] } },
+      {},
+      DEFAULT_LIMITS.maxTotal,
+      { ses_turn: [{ id: "frm_1", title: "Web Search" }] },
+    )
+    await childStore(ports.storage).record(entry("ses_turn", "ses_root"))
+
+    const { rows } = await panel(ports, "ses_root")
+
+    expect(rows.map(({ state, idle, waits }) => ({ state, idle, waits }))).toEqual([{ state: "waiting", idle: undefined, waits: [{ type: "form", title: "Web Search" }] }])
   })
 
   test("marks a stalled session stalled, since its oldest message woken again in vain was enqueued, and the root's own stall", async () => {

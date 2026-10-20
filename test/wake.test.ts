@@ -6,8 +6,9 @@ import { missed, stalledAmong, WAKE_MS, waitsInInbox, wakeMissed, type WakePorts
 
 type Message = { id: string; type: string }
 
-/** Ports over an in-memory store, each session's stored messages as given, the clock as set. */
+/** Ports over an in-memory store, each session's stored messages as given, its times at rest unless set, the clock as set. */
 function fakePorts(messages: Record<string, Message[]> = {}) {
+  const times: Record<string, { created: number; updated: number; idle?: number }> = {}
   const store = new Map<string, unknown>()
   const sent: any[] = []
   const logged: string[] = []
@@ -27,7 +28,7 @@ function fakePorts(messages: Record<string, Message[]> = {}) {
         sent.push(input)
         return { id: input.id ?? "msg_new" }
       },
-      get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID }),
+      get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID, time: times[sessionID] ?? { created: 0, updated: 1, idle: 1 } }),
     },
     now: () => now,
     log: (message: string) => void logged.push(message),
@@ -40,6 +41,7 @@ function fakePorts(messages: Record<string, Message[]> = {}) {
     sent,
     logged,
     messages,
+    times,
     at: (time: number) => void (now = time),
   }
 }
@@ -258,6 +260,36 @@ describe("waking a session whose wake was missed", () => {
     expect(sent).toHaveLength(1)
   })
 
+  test("a shutdown during a step reads as an end too, but the turn the next boot resumes, if seen to start by no one, is found running", async () => {
+    const { ports, sent, at, messages, times, logged } = fakePorts({ ses_parent: [assistant()] })
+    await handle(ports, enqueued())
+    messages.ses_parent = [assistant(), { ...assistant("msg_stopped"), error: { type: "aborted" } } as Message]
+    await handle(ports, event("session.execution.interrupted", "ses_parent", 200_000, { reason: "shutdown" }))
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: false, idleAt: 200_000 })
+    messages.ses_parent = [...messages.ses_parent, assistant("msg_resumed")]
+    times.ses_parent = { created: 0, updated: 210_000 }
+    at(200_000 + 3 * WAKE_MS)
+    await wakeMissed(ports, new Set())
+    await wakeMissed(ports, new Set())
+    expect(sent).toEqual([])
+    expect(logged).toEqual([])
+    expect(await wakeStore(ports.storage).of("ses_parent")).toEqual([expect.objectContaining({ running: true })])
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]?.idleAt).toBeUndefined()
+  })
+
+  test("and a session woken again whose turn runs when it would be flagged stalled is not flagged", async () => {
+    const { ports, at, messages, times } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    at(100_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
+    messages.ses_parent = [idle(), assistant("msg_busy")]
+    times.ses_parent = { created: 0, updated: 100_000 + WAKE_MS + 1_000, idle: 1 }
+    at(100_000 + 2 * WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(await stalledAmong(ports, ["ses_parent"])).toEqual(new Map())
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: true, rewoken: 100_000 + WAKE_MS })
+  })
+
   test("and drops the watch on a message that declined turn took", async () => {
     const { ports, messages } = fakePorts({ ses_parent: [assistant()] })
     await handle(ports, enqueued())
@@ -290,7 +322,7 @@ describe("waking a session whose wake was missed", () => {
   })
 })
 
-test("waitsInInbox counts a message waiting or stalled in an idle session, not one a running turn is to take", async () => {
+test("waitsInInbox counts a message waiting or, unless told not to, stalled in an idle session, not one a running turn is to take", async () => {
   const { ports, at } = fakePorts({ ses_parent: [assistant()], ses_idle: [idle()] })
   await handle(ports, enqueued())
   expect(await waitsInInbox(ports, "ses_parent")).toBe(false)
@@ -302,6 +334,7 @@ test("waitsInInbox counts a message waiting or stalled in an idle session, not o
   await wakeMissed(ports, new Set())
   expect((await wakeStore(ports.storage).of("ses_idle"))[0]).toMatchObject({ stalled: 100_000 + 2 * WAKE_MS })
   expect(await waitsInInbox(ports, "ses_idle")).toBe(true)
+  expect(await waitsInInbox(ports, "ses_idle", { stalled: false })).toBe(false)
   expect(await waitsInInbox(ports, "ses_none")).toBe(false)
 })
 

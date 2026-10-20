@@ -94,8 +94,8 @@ texts() {
     jq -r '.data[] | (.text // empty), (.content[]? | (.text // empty), (.state.content[]?.text // empty),
       (.state.output? // empty | if type == "string" then . else tojson end))'
 }
-# Waits up to $2 (default 30) s until session $1's turn has ended and still has a second later, past a message sent it just
-# before (at rest until delivered) and the plugin's handling of the end, for a "not told" check.
+# Waits up to $2 (default 30) s until session $1's turn has ended, and checks again a second later, as a message sent it just
+# before may yet start another turn; that second also lets the plugin handle the end before a "was not told" check.
 turn_ended() {
   for _ in $(seq 1 $((${2:-30} * 2))); do
     [ "$(finished "$1")" = true ] && { sleep 1; [ "$(finished "$1")" = true ] && return 0; }
@@ -1155,8 +1155,8 @@ run_subtree() {
   check "a failure notice did not follow either" "$(notices_with "$root" failed | jq -r 'length == 0')"
 }
 
-# With maxChildren 1, a parent's next spawn goes through once its child, archived, renamed, switched or unarchived since it
-# reported, reads idle (#324, #326), and is refused while one archived during a turn that runs on reads running.
+# With maxChildren 1, a reported child archived, renamed, switched or unarchived reads idle and frees a spawn, one still running or
+# with a courier message waiting does not (#324, #326); a plain decline ends a child's turn, and a message it missed wakes it again.
 run_archive() {
   scenario "a child that reported and was archived reads as idle, and no longer counts against the limits (#324)"
   stop_server
@@ -1273,6 +1273,37 @@ run_archive() {
     "$(for _ in $(seq 1 45); do [ "$(reported "$fourth")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
   turn_ended "$fourth"
 
+  scenario "a reported idle child with a courier message waiting to wake it counts against the limits until it takes the message (#326)"
+  # Sent with resume: false, which starts no turn and is not watched: the wake row kv.ts writes stands in for a missed wake.
+  wake_row() { kv get "wake/$1/$inbox" | jq -r "${@:2}"; }
+  taken() { api "session/$1/message" | jq -r --arg id "$inbox" 'any(.data[]; .id == $id)'; }
+  at=$(now_ms)
+  text="<courier from=\"$third_parent\">CHILD-REPORT-NOW</courier>"
+  inbox=$(api_post "session/$fourth/synthetic" "$(jq -nc --arg text "$text" --arg from "$third_parent" \
+    '{text: $text, description: ("Message from " + $from), metadata: {source: "courier", from: $from}, delivery: "steer", resume: false}')" | jq -r '.data.id // empty')
+  check "a courier message waits in the idle child's inbox ($inbox)" \
+    "$([ -n "$inbox" ] && api "session/$fourth/inbox" | jq -e --arg id "$inbox" 'any(.data[]; .id == $id)' >/dev/null && echo true || echo false)"
+  kv set "wake/$fourth/$inbox" "$(jq -nc --arg text "$text" --arg from "$third_parent" --argjson at "$at" \
+    '{at: $at, text: $text, description: ("Message from " + $from), running: false, idleAt: $at}')" "report/$fourth/prompt"
+  check "its wake row says it waits in an idle session, not stalled" "$(wake_row "$fourth" '.running == false and .stalled == null')"
+  refused=$(prompt_in "$third_parent" "COURIER-TEST" | tool_state courier_spawn)
+  check "while it waits, the parent's next spawn is refused, naming maxChildren 1" \
+    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxChildren 1)"))' <<<"$refused")"
+  check "and the message still waits, not taken" "$([ "$(taken "$fourth")" = false ] && echo true || echo false)"
+  # Missed after WAKE_MS (30 s) from the row's idle time, found at the scheduler's next tick, up to 15 s later.
+  for _ in $(seq 1 75); do [ "$(taken "$fourth")" = true ] && break; sleep 1; done
+  check "the scheduler woke the child again, which took the message" "$(taken "$fourth")"
+  check "and reported again, waking the parent" "$(has_text "$third_parent" "CHILD DONE AFTER NUDGE" 45)"
+  check "and the watch is over" "$(for _ in $(seq 1 10); do [ -z "$(kv get "wake/$fourth/$inbox")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+  turn_ended "$fourth"
+  turn_ended "$third_parent"
+  started=$(prompt_in "$third_parent" "COURIER-TEST" | tool_state courier_spawn)
+  check "with maxChildren 1, the parent's next spawn then goes through" "$(jq -r '.status == "completed"' <<<"$started")"
+  fifth=$(jq -r '.metadata.metadata.sessionID' <<<"$started")
+  check "the new child reported back" \
+    "$(for _ in $(seq 1 45); do [ "$(reported "$fifth")" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+  turn_ended "$fifth"
+
   scenario "a child whose first turn the person ended by declining its request plainly reads as idle, still owing its report (#326)"
   # A plain decline ends the turn with neither an idle time nor an idle message: its step ends interrupted.
   ask_permission ""
@@ -1296,6 +1327,32 @@ run_archive() {
   echo "  $summary"
   check "and the footer counts it idle" "$(jq -r '.running == 0 and .waiting == 0 and .idle == 1' <<<"$summary")"
   # OpenCode keeps a declined turn's execution claim and resumes it at the next boot: delete it before the restart below.
+  check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
+
+  scenario "a courier message sent to a child while its request waits wakes it again once a plain decline has ended its turn (#326)"
+  ask_permission ""
+  inbox=$(prompt_in "$parent" "COURIER-NUDGE $child" | tool_state courier_send | jq -r '.metadata.metadata.messageID // empty')
+  check "the parent sent the waiting child a message ($inbox)" "$([ -n "$inbox" ] && echo true || echo false)"
+  check "which the courier watches as the running turn's to take" \
+    "$(for _ in $(seq 1 10); do [ "$(wake_row "$child" '.running')" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+  check "and which waits, not taken" "$([ "$(taken "$child")" = false ] && echo true || echo false)"
+  declined=$(now_ms)
+  check "the person declines the child's request in its own session, without a reason" \
+    "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"reject"}')" = 204 ] && echo true || echo false)"
+  # OpenCode reports that end as a shutdown, after the interrupted step: the message waits from then, in an idle session.
+  for _ in $(seq 1 15); do [ "$(wake_row "$child" '.running == false')" = true ] && break; sleep 1; done
+  check "the courier then watches it as waiting in an idle session since the declined turn ended" \
+    "$(wake_row "$child" --argjson declined "$declined" '.running == false and .idleAt >= $declined and .stalled == null')"
+  check "and it is still not taken" "$([ "$(taken "$child")" = false ] && echo true || echo false)"
+  # Missed after WAKE_MS (30 s), found at the scheduler's next tick, up to 15 s later.
+  for _ in $(seq 1 75); do [ "$(taken "$child")" = true ] && break; sleep 1; done
+  check "the scheduler woke the child again, which took the message" "$(taken "$child")"
+  check "the server log says it was woken again" "$(grep -qF "courier wake: $child left message $inbox waiting while idle; woken again" "$WORK/server.log" && echo true || echo false)"
+  check "and the child reported, waking the parent" "$(has_text "$parent" "CHILD DONE AFTER NUDGE" 45)"
+  check "and the watch is over" "$(for _ in $(seq 1 10); do [ -z "$(kv get "wake/$child/$inbox")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+  turn_ended "$child"
+  turn_ended "$parent"
+  # Its declined turn's execution claim may outlast the turn that took the message: delete it before the restart too.
   check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
   stop_server
   jq 'del(.plugins[0].options.maxChildren)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"

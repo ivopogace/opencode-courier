@@ -195,7 +195,9 @@ yourself, or end the turn and try again once a child has reported), when the chi
 than `maxDepth`, or when `maxChildren` or `maxTotal` sessions are already live. A session is live
 while its turn runs, while it [owes its parent a report](#a-child-that-ends-without-a-report), while
 a message the plugin sent it to wake it waits undelivered in its inbox ([a missed
-wake](#a-missed-wake) watches each one; one whose watch cannot be read counts), or while a session
+wake](#a-missed-wake) watches each one; one whose watch cannot be read counts, and one flagged stalled,
+which nothing wakes it for any more, does not, even though it keeps the tree's
+[memory](#memory) unfinished), or while a session
 below it is live; so a child that ends its turn without reporting keeps counting
 until it does, and a session that has split its task and ended its turn to wait for its children
 counts too. One OpenCode no longer knows does not count. OpenCode stamps a session's updated time for
@@ -483,7 +485,9 @@ turn: a running turn takes a steered message at its next step, and a message que
 taken when it ends. A session whose turn a plain permission decline or a dismissed question ended is
 idle here too, though OpenCode stamps it no idle time and reports that end as a shutdown: a message
 that arrived while that turn ran waits from its end. A turn a real shutdown stops between steps is
-not over, as the next start resumes it, and its messages stay with it. A message that has waited in an idle session for 30 seconds is a missed wake: the
+not over, as the next start resumes it, and its messages stay with it. One stopped during a step
+reads as ended, as a decline does, until its resumed turn is seen to start or is found running when
+its wake would be sent again. A message that has waited in an idle session for 30 seconds is a missed wake: the
 scheduler sends it once more under the same inbox id, which OpenCode takes for the message already
 waiting, not a second one, and wakes the session; if a turn has taken the message meanwhile, nothing
 is sent. A session that still has not taken it 30 seconds after that is stalled: the plugin logs it,

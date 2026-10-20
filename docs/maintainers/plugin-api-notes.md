@@ -198,8 +198,10 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   you were working", `packages/core/src/session/execution/restart.ts`). The missed-wake watch
   (`wakeEnded`) tells the two by the transcript: a `shutdown` end whose transcript ends on that
   aborted message ends the turn; one that does not (a real shutdown between steps) leaves the watch
-  to the resumed turn. A real shutdown during a step reads as ended, harmlessly: the resumed turn's
-  `session.execution.started` marks its messages running again. The other event handlers, and a join
+  to the resumed turn. A real shutdown during a step reads as ended too: the resumed turn's
+  `session.execution.started` marks its messages running again, and should that event come before
+  the subscription, `wakeAgain` reads the session (`runs`) before it sends a message again or flags it
+  stalled, and marks the message running instead while its turn runs. The other event handlers, and a join
   group's release (`time.idle`), still treat it as a shutdown.
 - `opencode run --auto` replies `once` to every request asked in its own session, the asserted ones
   included (`packages/cli/src/run/noninteractive.ts`), so the live suite's parent answers its own

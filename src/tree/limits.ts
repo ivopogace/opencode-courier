@@ -8,8 +8,8 @@ import { childrenRefusal, depthRefusal, totalRefusal } from "./text.js"
 import { waitsInInbox } from "./wake.js"
 
 /**
- * Whether a spawned session counts against the limits: it runs, unless its turn failed or was interrupted since its last
- * prompt, owes its parent a report, or a courier message waits in its inbox. One OpenCode no longer knows does not.
+ * Whether a spawned session counts against the limits: it runs (its turn not failed or interrupted since its last prompt), owes
+ * its parent a report, or has a courier message waiting in its inbox that it is to be woken for. One OpenCode no longer knows does not.
  */
 async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: string) {
   const [time, report] = await Promise.all([
@@ -22,8 +22,8 @@ async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: s
   if (time === null) return false
   // One whose first prompt failed never ran, and has no idle time to tell so.
   const running = time !== undefined && !report?.ended && (await runs(ports.session, sessionID, time))
-  // Its transcript shows no such message until delivered; a store that cannot be read counts it, as `runs` would.
-  return running || (report?.owes ?? false) || (await waitsInInbox(ports, sessionID).catch(() => true))
+  // A waiting message is in no transcript until delivered, so `runs` misses it; a stalled one, which nothing wakes it for, is not counted.
+  return running || (report?.owes ?? false) || (await waitsInInbox(ports, sessionID, { stalled: false }).catch(() => true))
 }
 
 /**

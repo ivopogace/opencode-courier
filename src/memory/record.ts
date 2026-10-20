@@ -73,6 +73,7 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
     ...(info ? { duration: Math.max(0, end - created) } : {}),
     ...(cost !== undefined ? { cost } : {}),
   }
+  // A courier message waiting to be taken keeps it unfinished, unless OpenCode no longer knows it, which then takes none.
   return { record, use, running: running || (waiting && !gone), unread: info === undefined, gone }
 }
 
@@ -112,8 +113,8 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
     Promise.all(nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at, known.has(node.entry.sessionID), node.entry.sessionID === ended))),
     goneSince(ports, previous?.parts ?? [], new Set(nodes.map((node) => node.entry.sessionID))),
   ])
-  // A courier message waiting for the top, or for a part, a message it has yet to take, is a turn its transcript does not
-  // show yet; a store that cannot be read counts as one waiting, as `runs` counts a transcript it cannot read as running.
+  // A courier message waiting in the top's inbox is a turn its transcript does not show yet, as for a part; a store that
+  // cannot be read counts as one waiting, as `runs` counts a transcript it cannot read as running.
   const [said, topRunning, topOwed] = await Promise.all([replies, runs(ports.session, top, info.time), waitsInInbox(ports, top).catch(() => true)])
   // Read again just before the write: a courier_recall or courier_note call, or another turn end's refresh, wrote meanwhile.
   const latest = (await store.get(info.projectID, top).catch(() => previous)) ?? previous

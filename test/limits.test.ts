@@ -531,6 +531,16 @@ describe("admit, with children that owe a report", () => {
     expect((await admit(ports, "ses_root")).depth).toBe(1)
   })
 
+  test("nor once the message is flagged stalled, which nothing wakes it for any more, as when its turn failed before", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: FINISHED })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "failed", 150)
+    await wakeStore(storage).put({ sessionID: "ses_a", inboxID: "msg_more", at: 200, text: "more", running: false, idleAt: 200, rewoken: 300, stalled: 400 })
+
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
   test("and counts when the messages waiting in its inbox cannot be read", async () => {
     const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: FINISHED })
     await child("ses_root", "ses_a")

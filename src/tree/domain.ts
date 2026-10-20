@@ -76,8 +76,8 @@ export function endedAt(end: Stored, time: BusyTimes) {
 }
 
 /**
- * Whether a session a tree is read of is live: it runs (as the limits count it: it runs, and its turn has not failed or been
- * interrupted since its last prompt), waits on a request or form, or owes a report; one OpenCode no longer knows is not.
+ * Whether a session of a tree read is live, for a cut listing's order: it runs (its turn not failed or interrupted since its last
+ * prompt), waits on a request or form, or owes a report, but not, unlike for the limits, for a message waiting in its inbox.
  */
 export const isLive = (running: boolean | undefined, waits: number, report: { readonly owes: boolean; readonly ended: boolean } | undefined) =>
   running !== undefined && ((running && !report?.ended) || waits > 0 || (report?.owes ?? false))

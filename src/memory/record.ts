@@ -1,5 +1,5 @@
 import { finite, isNotFound, millis } from "../platform/json.js"
-import { contextOf, reportState, runs, stalledAmong, subtree, turnOf, waitsInInbox, type Below, type ModelWindow, type Turn } from "../tree/index.js"
+import { contextOf, reportState, stalledAmong, subtree, turnIn, turnOf, waitsInInbox, type Below, type ModelWindow, type Turn } from "../tree/index.js"
 import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, replacingMention, revise, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { memoryStore } from "./store.js"
@@ -54,9 +54,15 @@ const infoOf = (ports: RefreshPorts, sessionID: string): Promise<{ info?: Info; 
  */
 async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth }: Below, stalled: boolean, at: number, known: boolean, ended: boolean) {
   const { sessionID } = entry
+  // Read once: for its use, and for whether it runs when its times do not show rest.
+  const messages = ended || !known ? ports.session.context({ sessionID }) : undefined
   const [{ info, gone, running, endedAt }, use, report, waiting] = await Promise.all([
-    infoOf(ports, sessionID).then(async (one) => ({ ...one, ...(one.info ? await turnOf(ports.session, sessionID, one.info.time) : ({ running: false } as Turn)) })),
-    ended || !known ? ports.session.context({ sessionID }).then((messages) => useOf(messages, windows), () => undefined) : undefined,
+    infoOf(ports, sessionID).then(async (one) => {
+      if (!one.info) return { ...one, running: false } as typeof one & Turn
+      const turn = messages ? turnIn(ports.session, sessionID, one.info.time, messages) : turnOf(ports.session, sessionID, one.info.time)
+      return { ...one, ...(await turn) }
+    }),
+    messages?.then((read) => useOf(read, windows), () => undefined),
     reportState(ports.storage, sessionID).catch(() => undefined),
     waitsInInbox(ports, sessionID).catch(() => true),
   ])
@@ -102,10 +108,8 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   // The split lines are in the top's own replies, so only its own turn end can revise one stated already; another's reads
   // them while none is stated, and only the replies finished, never a line the top is still writing.
   const own = ended === top
-  const replies =
-    own || !isStated(previous?.split ?? NOT_STATED)
-      ? ports.session.context({ sessionID: top }).then((messages) => repliesOf(messages, !own), () => [])
-      : []
+  const topMessages = own || !isStated(previous?.split ?? NOT_STATED) ? ports.session.context({ sessionID: top }) : undefined
+  const replies = topMessages ? topMessages.then((messages) => repliesOf(messages, !own), () => []) : []
   const stalled = await stalledAmong(ports, nodes.map((node) => node.entry.sessionID))
   const windows = [...state.windows.values()]
   const known = new Set(previous?.parts.map((one) => one.sessionID))
@@ -115,7 +119,7 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   ])
   // A courier message waiting in the top's inbox is a turn its transcript does not show yet, as for a part; a store that
   // cannot be read counts as one waiting, as `runs` counts a transcript it cannot read as running.
-  const [said, topRunning, topOwed] = await Promise.all([replies, runs(ports.session, top, info.time), waitsInInbox(ports, top).catch(() => true)])
+  const [said, topRunning, topOwed] = await Promise.all([replies, (topMessages ? turnIn(ports.session, top, info.time, topMessages) : turnOf(ports.session, top, info.time)).then((turn) => turn.running), waitsInInbox(ports, top).catch(() => true)])
   // Read again just before the write: a courier_recall or courier_note call, or another turn end's refresh, wrote meanwhile.
   const latest = (await store.get(info.projectID, top).catch(() => previous)) ?? previous
   const last = new Map(latest?.parts.map((one) => [one.sessionID, one]))

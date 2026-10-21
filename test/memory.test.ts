@@ -709,7 +709,7 @@ describe("refresh", () => {
       const read = contexts.filter((id) => id === "ses_a").length
       await turnOf(ports.session, "ses_a", { updated: NOW - 1000, idle: NOW - 100_000 }, clock)
 
-      expect(contexts.filter((id) => id === "ses_a").length).toBe(read + 1)
+      expect(contexts.filter((id) => id === "ses_a")).toHaveLength(read + 1)
     } finally {
       clockSpy.mockRestore()
     }
@@ -742,7 +742,7 @@ describe("refresh", () => {
       const clockSpy = spyOn(Date, "now").mockImplementation(() => NOW)
       try {
         expect(await refresh(made.ports, made.state, "ses_top", NOW, "ses_a")).toMatchObject({ finished: false })
-        expect(made.contexts.filter((id) => id === "ses_top").length).toBe(2)
+        expect(made.contexts.filter((id) => id === "ses_top")).toHaveLength(2)
       } finally {
         clockSpy.mockRestore()
       }
@@ -754,7 +754,7 @@ describe("refresh", () => {
       const clockSpy = spyOn(Date, "now").mockImplementation(() => NOW)
       try {
         expect(await refresh(made.ports, made.state, "ses_top", NOW, "ses_a")).toMatchObject({ finished: true })
-        expect(made.contexts.filter((id) => id === "ses_top").length).toBe(1)
+        expect(made.contexts.filter((id) => id === "ses_top")).toHaveLength(1)
       } finally {
         clockSpy.mockRestore()
       }

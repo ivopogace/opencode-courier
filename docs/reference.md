@@ -30,7 +30,7 @@ Nothing in OpenCode checks the version: `opencode plugin add` installs the plugi
 and the loader warns about nothing. The plugin loads on hosts from 2.0.4 on and fails to load on
 2.0.0 to 2.0.3, which lack a domain the plugin API gained in 2.0.4. On a newer host, tools may still
 break. The terminal part relies on the host to provide its UI modules and is tested on OpenCode
-2.1.0 only; the server part works on older V2 hosts from 2.0.4 on.
+2.1.2 only; the server part works on older V2 hosts from 2.0.4 on.
 
 When the running OpenCode reports a version other than the pinned one (an older server, a
 development build and one whose plugin context reports no version included), the plugin writes one
@@ -367,9 +367,9 @@ waits for it too. A member's report after the release is delivered on its own, a
 in no group.
 
 **A member that leaves.** A member leaves the group without a report when its turn
-[fails](#a-child-that-fails) or is interrupted (by the person, or by OpenCode after an hour without
-activity; not by a shutdown), when its task could not be handed over, when OpenCode deletes its
-session, or when the parent drops it with `courier_cleanup`. The group is then released once its
+[fails](#a-child-that-fails) or is interrupted (by the person, or, before OpenCode 2.1.2, by
+OpenCode after an hour without activity; not by a shutdown), when its task could not be handed over,
+when OpenCode deletes its session, or when the parent drops it with `courier_cleanup`. The group is then released once its
 other members have reported and the parent's turn has ended, the message naming who left and why. The
 parent hears of each as of a child in no group: a failed turn at once, in a notice with a line naming
 the group (the group's message does not overtake that notice, unless a scheduler tick falls in the
@@ -465,8 +465,8 @@ last prompt. A subscription made before the last prompt is not waiting, since it
 it was made for: once a delivery has come and the child has ended its turn again without reporting,
 its parent is told. A turn stopped by OpenCode's
 shutdown resumes on the next start and does not count as interrupted; one stopped otherwise (by the
-person, or by OpenCode after an hour without activity) settles the report and is not told. A turn that
-a plain permission decline or a dismissed question ended, which OpenCode reports as a shutdown, is
+person, or, before OpenCode 2.1.2, by OpenCode after an hour without activity) settles the report
+and is not told. A turn that a plain permission decline or a dismissed question ended, which OpenCode reports as a shutdown, is
 told to the parent like any other turn ending without a report: the plugin reads the child's
 transcript, and one ending on an interrupted step is a decline. A real shutdown during a step ends
 the same way and is told too, as the server is going down.
@@ -641,9 +641,9 @@ parent's question disappears, and its tool result names the answers that went to
 dismissal on either side reaches the other about two seconds later: OpenCode withdraws open questions
 the same way when it shuts down, and the plugin waits that long to tell the two apart.
 
-A question whose call is cut off stays answerable. When the child's turn is stopped (interrupted, or
-by OpenCode after 60 minutes without activity in the project location), or the server restarts or
-closes the project, the question is gone from the screen. The plugin keeps it in its storage, sends
+A question whose call is cut off stays answerable. When the child's turn is stopped (interrupted, or,
+before OpenCode 2.1.2, by OpenCode after 60 minutes without activity in the project location), or the
+server restarts or closes the project, the question is gone from the screen. The plugin keeps it in its storage, sends
 the parent a message marked `stopped="true"`, or `restarted="true"` when the plugin is next loaded,
 with the questions, and passes the answer on as a message to the child, which wakes it. If the parent
 is asking you at that moment, your answer goes that way without a new message. Stored questions are

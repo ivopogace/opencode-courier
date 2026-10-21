@@ -21,6 +21,7 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh            # the
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh     # a real model, not in CI
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh    # two servers, not in CI
 bun script/real-model-table.ts [name=]<run-dir>...   # a table per condition from real-model run directories
+OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode script/record-demo.sh demo.cast   # the README's demo, not in CI
 ```
 
 `KEEP=1` keeps a live script's temp directory and logs; `E2E_WORK` sets where it goes.
@@ -67,6 +68,23 @@ bun script/real-model-table.ts [name=]<run-dir>...   # a table per condition fro
   tabulates many runs per condition ([real-model.md](real-model.md#reading-many-runs)).
 - **Two servers** (`e2e/two-servers.sh`) runs two servers on one data directory:
   [plugin-api-notes.md](plugin-api-notes.md#two-servers-on-one-data-directory).
+
+## Recording the demo
+
+The video at the top of README.md is recorded by [`script/record-demo.sh`](../../script/record-demo.sh):
+`e2e/tui.sh`'s server, project and scripted model, with the TUI in `tmux`, typed into scene by scene
+the way README.md's [Demos](../../README.md#demos) lists them, each step waiting for the screen to
+show what it leads to. [`script/demo-cast.mjs`](../../script/demo-cast.mjs) writes the pane's output
+to an asciicast v2 file, with a marker at the start of each scene for timing the narration. With
+[`agg`](https://github.com/asciinema/agg) and `ffmpeg` on `PATH` the script renders the `.gif` and
+`.mp4` beside it. `COLS` and `ROWS` (160×42) size the terminal, `PACE` scales the holds on each
+finished step (`PACE=0.3` for a quick check of the scenes), and a scene whose screen does not come
+ends the run with that screen printed and the temp directory kept.
+
+A new feature with something to see in the TUI gets a scene there, and README.md's Demos list a
+line. The narration is recorded over the `.mp4` by hand. GitHub plays a video in Markdown only from
+its own uploads, so the finished file is dragged into an issue or PR comment, and README.md carries
+the URL GitHub gives it, on a line of its own.
 
 ## CI
 

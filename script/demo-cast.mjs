@@ -1,7 +1,5 @@
-// Writes what tmux's pipe-pane hands it as an asciicast v2 file, for script/record-demo.sh.
-//   node script/demo-cast.mjs <out.cast> <columns> <rows> <marks file>
-// Each chunk of the pane's output is an "o" event; each `<epoch ms>\t<label>` line of the marks file, written by the
-// recorder as a scene starts, is an "m" marker. Events go to <out.cast>.part as they come, which becomes <out.cast> at the end.
+// script/record-demo.sh's asciicast writer, fed by tmux's pipe-pane: node script/demo-cast.mjs <out.cast> <columns> <rows>
+// <marks file>, each `<epoch ms>\t<label>` line of which is a marker; <out.cast>.part until the pane closes.
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 
 const [out, columns, rows, marks] = process.argv.slice(2)

@@ -1,10 +1,5 @@
-// The timing of script/render-demo.sh, from a cast script/record-demo.sh wrote.
-//   node script/demo-timeline.mjs cast <in.cast> <out.cast> <narration.json> <timeline.json>
-// caps each pause at IDLE seconds, moving the markers with it, checks that the narration has a scene for each scene
-// marker in the same order, and writes the scene bounds and the highlights, in seconds of <out.cast>, to <timeline.json>.
-//   node script/demo-timeline.mjs plan <timeline.json> <voice.json> <font size> <focus filter file>
-// prints each scene's start, length, length once its voice fits and the voice's delay (it starts LEAD in and ends TAIL
-// before the scene's end), one scene a line, and writes the ffmpeg filter that dims the screen around each highlight and frames it.
+// script/render-demo.sh's timing: `cast` caps a cast's pauses and reads its scenes and highlights, `plan` fits each scene
+// to its voice and writes the highlight filter (docs/maintainers/development.md).
 import { readFileSync, writeFileSync } from "node:fs"
 
 const IDLE = Number(process.env.IDLE ?? 3)
@@ -60,24 +55,26 @@ if (command === "cast") {
   const moved = (time) => plan[scene(time)].at + (time - plan[scene(time)].start)
   // agg's cells: 0.6 of the font size wide and 1.4 high, inside a margin of one cell across and half one down.
   const cell = { width: 0.6 * fontSize, height: 1.4 * fontSize }
-  const steps = focus.map((one, index) => {
+  // Boxes only, so a highlight costs the pixels it covers: four dark ones around it, then its frame.
+  const boxes = focus.flatMap((one) => {
     const own = plan[scene(one.start)]
     const end = one.end >= own.start + own.length ? own.at + own.total : moved(one.end)
-    const when = `between(t,${moved(one.start).toFixed(3)},${end.toFixed(3)})`
+    const when = `enable='between(t,${moved(one.start).toFixed(3)},${end.toFixed(3)})'`
     const x = Math.round(cell.width + (one.column - 1) * cell.width) - 6
     const y = Math.round(cell.height / 2 + (one.row - 1) * cell.height) - 3
     const w = Math.round(one.columns * cell.width) + 12
     const h = Math.round(one.rows * cell.height) + 6
+    const dim = (bx, by, bw, bh) => `drawbox=x=${bx}:y=${by}:w=${bw}:h=${bh}:color=black@0.6:t=fill:${when}`
     return [
-      `[v${index}]split[all${index}][box${index}]`,
-      `[box${index}]crop=${w}:${h}:${x}:${y}[lit${index}]`,
-      `[all${index}]colorchannelmixer=rr=0.4:gg=0.4:bb=0.4:enable='${when}'[dim${index}]`,
-      `[dim${index}][lit${index}]overlay=${x}:${y}:enable='${when}'[on${index}]`,
-      `[on${index}]drawbox=${x - 3}:${y - 3}:${w + 6}:${h + 6}:color=0xF5A742:t=3:enable='${when}'[v${index + 1}]`,
-    ].join(";")
+      dim(0, 0, "iw", y),
+      dim(0, y + h, "iw", `ih-${y + h}`),
+      dim(0, y, x, h),
+      dim(x + w, y, `iw-${x + w}`, h),
+      `drawbox=x=${x - 3}:y=${y - 3}:w=${w + 6}:h=${h + 6}:color=0xF5A742:t=3:${when}`,
+    ]
   })
-  const scale = `[v${focus.length}]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p[out]`
-  writeFileSync(filterPath, [`[0:v]null[v0]`, ...steps, scale].join(";\n"))
+  const scale = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p"
+  writeFileSync(filterPath, [...boxes, scale].join(",\n"))
   for (const one of plan) console.log(`${one.start} ${one.length} ${one.total} ${LEAD}`)
 } else {
   console.error("usage: demo-timeline.mjs cast <in.cast> <out.cast> <narration.json> <timeline.json> | plan <timeline.json> <voice.json> <font size> <filter>")

@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
-# Records the README's demo: the TUI in tmux on e2e/mock-model.mjs's scripted model, with e2e/tui.sh's setup, typed
-# into scene by scene, its pane written to an asciicast with a marker per scene (docs/maintainers/development.md).
-#
-#   OPENCODE_BIN=/path/to/opencode script/record-demo.sh [out.cast]   # default demo.cast; KEEP=1 keeps the temp dir
-#
-# COLS and ROWS (160×42) size the terminal, PACE (1) scales each hold on a finished step, TYPE_DELAY (0.05 s) is the
-# pause between typed characters. script/render-demo.sh turns the cast into the narrated video.
+# Records the README's demo, the TUI in tmux on e2e/mock-model.mjs's model, to an asciicast for script/render-demo.sh:
+#   OPENCODE_BIN=/path/to/opencode script/record-demo.sh [out.cast]   # settings: docs/maintainers/development.md
 set -euo pipefail
 # Bash counts characters, not bytes, in what look measures.
 export LC_ALL=C.UTF-8
@@ -88,9 +83,8 @@ memory_rpc() {
   curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' -d "{\"input\":$2}" \
     "$SERVER/api/rpc/courier-memory/$1?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")"
 }
-# Waits for $1 as wait_for does, then highlights it: $2 rows (1) down from its line, $3 columns (its length) from its
-# start, or "line" for its line's text up to its end, on the last line showing it when $4 is "last". Its first cell is left
-# in AT_COLUMN and AT_ROW.
+# Waits up to $5 s for $1, then highlights $2 rows (1) of it, $3 columns (its length) from it or, with "line", from its
+# line's text, on the last line showing it when $4 is "last"; the box's first cell is left in AT_COLUMN and AT_ROW.
 look() {
   wait_for "$1" "${5:-30}"
   local found text prefix columns
@@ -279,6 +273,7 @@ wait_for "Memory ("
 hold 2
 # Down to the first tree's record, the one with the lesson, in the view's order: the RPC's.
 lessoned=$(memory_rpc records '{}' | jq -r '.output.records | map(.lesson != null) | index(true)')
+[ "$lessoned" != null ] || { echo "no record of the project has the first tree's lesson"; KEEP=1; exit 1; }
 for _ in $(seq 1 "$lessoned"); do keys Down; sleep 0.4; done
 look "lesson (" 1 50
 hold 3

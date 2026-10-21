@@ -74,17 +74,21 @@ script/render-demo.sh demo.cast                       # demo.mp4, narrated; need
 
 The video at the top of README.md is made in two steps, neither in CI.
 
-[`script/record-demo.sh`](../../script/record-demo.sh) records it: `e2e/tui.sh`'s server, project and
-scripted model, with the TUI in `tmux`, typed into scene by scene the way README.md's
-[Demos](../../README.md#demos) lists them, each step waiting for the screen to show what it leads to.
+[`script/record-demo.sh`](../../script/record-demo.sh) records it: a server, project and scripted model
+set up as `e2e/tui.sh` sets them up (default limits, and each report held back 3 s), with the TUI in
+`tmux`, typed into scene by scene, each step waiting for the screen to show what it leads to. The
+scenes are those README.md's [Demos](../../README.md#demos) lists, plus a click into each child from the
+tree panel, the asks inbox, the memory view and `courier_recall`.
 [`script/demo-cast.mjs`](../../script/demo-cast.mjs) writes the pane's output to an asciicast v2 file,
 with a marker at the start of each scene and one for each highlight: a step that points at something
-on screen (`look`, or `click` on a tree panel row) marks its cells, until the next key. `COLS` and `ROWS` (160×42) size the terminal, `PACE` scales
-the holds on each finished step (`PACE=0.3` for a quick check of the scenes), and a scene whose
-screen does not come ends the run with that screen printed and the temp directory kept.
+on screen (`look`, or `click` on a tree panel row) marks its cells, until the next key. `COLS` and
+`ROWS` (160×42) size the terminal, `PACE` (1) scales the holds on each finished step (`PACE=0.3` for a
+quick check of the scenes), `TYPE_DELAY` (0.05 s) paces the typing, and a scene whose screen does not
+come ends the run with that screen printed and the temp directory kept (`KEEP=1` keeps it anyway).
+It needs tmux, jq, curl and what `e2e/tui.sh` needs.
 
-[`script/render-demo.sh`](../../script/render-demo.sh) turns the cast into a 1920×1080 `.mp4` with a
-voice-over. [`script/demo-narration.json`](../../script/demo-narration.json) holds a line per scene,
+[`script/render-demo.sh`](../../script/render-demo.sh) turns the cast into a `.mp4` with a voice-over,
+drawn by agg at its own size (`FONT_SIZE`, 20) and scaled to 1920×1080 at the end. [`script/demo-narration.json`](../../script/demo-narration.json) holds a line per scene,
 keyed by the scene's name (`""` for the opening before the first scene), and the voice;
 [`script/demo-timeline.mjs`](../../script/demo-timeline.mjs) caps the cast's pauses at `IDLE` (3 s)
 and refuses a narration whose scenes are not the cast's; [`script/demo-voice.py`](../../script/demo-voice.py),
@@ -92,7 +96,9 @@ run with `uv`, speaks each line with [Kokoro-82M](https://huggingface.co/onnx-co
 downloaded from Hugging Face on the first run, no key needed; [`agg`](https://github.com/asciinema/agg)
 draws the terminal. Each scene's line starts with the scene, and a scene shorter than its line holds
 its last frame until the voice ends. Around each highlight the screen is dimmed and the highlight
-framed in orange, so the viewer follows what the voice names. It needs agg, ffmpeg, node and uv.
+framed in orange, so the viewer follows what the voice names, with plain boxes, so a highlight costs
+only the pixels it covers. It needs agg, ffmpeg (with ffprobe), node and uv; `KEEP=1` keeps its temp
+directory.
 
 ```bash
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode script/record-demo.sh demo.cast

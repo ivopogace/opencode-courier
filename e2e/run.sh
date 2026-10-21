@@ -829,7 +829,6 @@ run_questions_more() {
   check "the parent's question passed it on as a message" "$(has_text "$parent" "as a message, since its question had been cut off")"
   check "which woke the child, and it carried on" "$(has_text "$parent" 'CHILD GOT [["Hello"]]' 45)"
 
-  # What OpenCode's inactivity sweep does to a location after an hour: it interrupts every turn there.
   scenario "both turns are stopped while the question is open; the parent is told and asks again"
   ask_question COURIER-QUESTION
   person "session/$child/interrupt" >/dev/null

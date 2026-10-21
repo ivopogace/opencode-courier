@@ -259,13 +259,16 @@ check "enter on a child row keeps the panel in the child's view, the child marke
 check "with the parent's tree" "$(grep -qF "courier tree  [██████████] 2/2 reported" "$WORK/tui-panel-followed.txt" && echo true || echo false)"
 # A click on the other child's row opens it (#250): the left button down and up on its title, written to the TUI as the
 # SGR mouse report a terminal sends, at the cell tmux shows the title in (1-based, counted in characters, not bytes).
-click_line=$(grep -nF "CHILD-ASKS  idle" "$WORK/tui-panel-followed.txt" | tail -1 | cut -d: -f1 || true)
+# The two were spawned in one step, in either order, so enter opened either one (#341).
+other="CHILD-ASKS"
+grep -qF "CHILD-ASKS (on screen)" "$WORK/tui-panel-followed.txt" && other="Report back to your parent."
+click_line=$(grep -nF "$other  idle" "$WORK/tui-panel-followed.txt" | tail -1 | cut -d: -f1 || true)
 # wc -m counts the line's end too, which makes the characters before the title its 1-based column.
-click_column=$(grep -F "CHILD-ASKS  idle" "$WORK/tui-panel-followed.txt" | tail -1 | sed 's/CHILD-ASKS  idle.*//' | LC_ALL=C.UTF-8 wc -m || true)
+click_column=$(grep -F "$other  idle" "$WORK/tui-panel-followed.txt" | tail -1 | sed "s/$other  idle.*//" | LC_ALL=C.UTF-8 wc -m || true)
 check "the other child's row is on screen to click" "$([ -n "$click_line" ] && echo true || echo false)"
 tmux send-keys -t "$TMUX_SESSION" -l "$(printf '\033[<0;%d;%dM' $((click_column)) "$click_line")"
 tmux send-keys -t "$TMUX_SESSION" -l "$(printf '\033[<0;%d;%dm' $((click_column)) "$click_line")"
-check "a click on its row opens that child, the panel following it there" "$(shows "CHILD-ASKS (on screen)" 30 tui-panel-clicked)"
+check "a click on its row opens that child, the panel following it there" "$(shows "$other (on screen)" 30 tui-panel-clicked)"
 # A new session's home screen hides it; back on the parent's tab, the first, it shows again.
 tmux send-keys -t "$TMUX_SESSION" C-x n
 check "the home screen of /new hides the panel" "$(hides "courier tree" 10 tui-panel-home)"

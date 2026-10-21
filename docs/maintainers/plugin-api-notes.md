@@ -1,9 +1,9 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around, or relies on, at the
-pinned version: `@opencode/plugin@2.1.0` and OpenCode 2.1.0. A pin bump re-checks each trap and
+pinned version: `@opencode/plugin@2.1.2` and OpenCode 2.1.2. A pin bump re-checks each trap and
 updates the ones it changes. OpenCode's source is on the `v2` branch of
-https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths below are in it. The
+https://github.com/anomalyco/opencode, each release tagged (`v2.1.2`); paths below are in it. The
 [reference](../reference.md) says what the plugin does.
 
 ## Tools
@@ -52,10 +52,9 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   (re)subscribe.
 - `session.execution.started`, `.succeeded`, `.failed` and `.interrupted` frame a session's busy
   period: one terminal event however many prompts were steered into it. `.interrupted` carries a
-  `reason`: `user`, `shutdown` (resumed on the next start; also what a plain permission decline's
-  end reports, [below](#permission-requests)) or `inactivity` (an idle location is
-  evicted, which stops its sessions without resuming them); the schema's `superseded` is published
-  by nothing. A message steered into a running turn interrupts nothing: `inbox.enqueued`
+  `reason`: `user` or `shutdown` (resumed on the next start; also what a plain permission decline's
+  end reports, [below](#permission-requests)); the schema's `superseded` and `inactivity` are
+  published by nothing. A message steered into a running turn interrupts nothing: `inbox.enqueued`
   (`delivery: "steer"`) as it is sent, `inbox.delivered` at the turn's next step, then the one
   `.succeeded`. An interrupt with `resume` while a steer waits publishes `.interrupted` (`user`),
   then `.started` and the steer's `inbox.delivered`, so the session owes a report again.
@@ -150,8 +149,9 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   model-facing ones the `context` hook sees. A session's message list records an `idle` message
   when a turn ends, with `outcome: "succeeded" | "failed" | "interrupted"` (and an `error` on a failed
   one); the real-model checkers take it as the end of a turn.
-- OpenCode stops every turn in a project location after 60 minutes without a stored session event
-  there (`inactivity`), which withdraws any open question. A tool call has no timeout of its own.
+- OpenCode evicts a project location after 60 minutes (`experimental.location_idle_timeout`)
+  without a stored session event there, but not while a turn runs in it, one waiting on a question
+  included, or a background job does: it stops no turn. A tool call has no timeout of its own.
 - A graceful shutdown closes the locations one after another. A closing location first withdraws
   its open forms, so a question call dies with `QuestionTool.CancelledError` as if the person had
   dismissed it; some 40 ms later `location.shutdown` (`location.directory` names it) reaches every
@@ -340,7 +340,7 @@ claim sets, the event bus and pending permission requests. So:
 `e2e/two-servers.sh` measures it (not in CI; a few minutes, no API key; `KEEP=1` keeps the logs):
 
 ```bash
-npm install --prefix <scratch>/oc @opencode/cli@2.1.0
+npm install --prefix <scratch>/oc @opencode/cli@2.1.2
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh
 ```
 
@@ -446,7 +446,7 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   npm's `ERESOLVE`, against the newer `@opentui/solid` npm picked for `@opencode/plugin`'s `>=`
   range; with no such peer npm installs no `@opentui` and the host provides them. The TUI's packages
   are devDependencies at the versions OpenCode's root `package.json` catalog pins (`@opentui/*`
-  `0.6.6`, `solid-js` `1.9.15` at `v2.1.0`), and `@opencode/theme` at the pin, for the typecheck and
+  `0.6.6`, `solid-js` `1.9.15` at `v2.1.2`), and `@opencode/theme` at the pin, for the typecheck and
   the tests.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles `src/tui.tsx` with `Bun.build`,

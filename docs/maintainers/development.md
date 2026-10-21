@@ -21,6 +21,8 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh            # the
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh     # a real model, not in CI
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh    # two servers, not in CI
 bun script/real-model-table.ts [name=]<run-dir>...   # a table per condition from real-model run directories
+OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode script/record-demo.sh demo.cast   # the README's demo, not in CI
+script/render-demo.sh demo.cast                       # demo.mp4, narrated; needs agg, ffmpeg and uv
 ```
 
 `KEEP=1` keeps a live script's temp directory and logs; `E2E_WORK` sets where it goes.
@@ -67,6 +69,48 @@ bun script/real-model-table.ts [name=]<run-dir>...   # a table per condition fro
   tabulates many runs per condition ([real-model.md](real-model.md#reading-many-runs)).
 - **Two servers** (`e2e/two-servers.sh`) runs two servers on one data directory:
   [plugin-api-notes.md](plugin-api-notes.md#two-servers-on-one-data-directory).
+
+## Recording the demo
+
+The video at the top of README.md is made in two steps, neither in CI.
+
+[`script/record-demo.sh`](../../script/record-demo.sh) records it: a server, project and scripted model
+set up as `e2e/tui.sh` sets them up (default limits, and each report held back 3 s), with the TUI in
+`tmux`, typed into scene by scene, each step waiting for the screen to show what it leads to. The
+scenes are those README.md's [Demos](../../README.md#demos) lists.
+[`script/demo-cast.mjs`](../../script/demo-cast.mjs) writes the pane's output to an asciicast v2 file,
+with a marker at the start of each scene and one for each highlight: a step that points at something
+on screen (`look`, or `click` on a tree panel row) marks its cells, until the next key. `COLS` and
+`ROWS` (160×42) size the terminal, `PACE` (1) scales the holds on each finished step (`PACE=0.3` for a
+quick check of the scenes), `TYPE_DELAY` (0.05 s) paces the typing, and a scene whose screen does not
+come ends the run with that screen printed and the temp directory kept (`KEEP=1` keeps it anyway).
+It needs tmux, jq, curl and what `e2e/tui.sh` needs.
+
+[`script/render-demo.sh`](../../script/render-demo.sh) turns the cast into a `.mp4` with a voice-over,
+drawn by agg at its own size (`FONT_SIZE`, 20) and `FPS` (15), and scaled to 1920×1080 at the end. [`script/demo-narration.json`](../../script/demo-narration.json) holds a line per scene,
+keyed by the scene's name (`""` for the opening before the first scene), the closing line (`outro`),
+spoken over an end card with the install command, and the voice;
+[`script/demo-timeline.mjs`](../../script/demo-timeline.mjs) caps the cast's pauses at `IDLE` (3 s)
+and refuses a narration whose scenes are not the cast's; [`script/demo-voice.py`](../../script/demo-voice.py),
+run with `uv`, speaks each line with [Kokoro-82M](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX),
+downloaded from Hugging Face on the first run, no key needed; [`agg`](https://github.com/asciinema/agg)
+draws the terminal. Each scene's line starts with the scene, and a scene shorter than its line holds
+its last frame until the voice ends. Around each highlight the screen is dimmed and the highlight
+framed in orange, so the viewer follows what the voice names, with plain boxes, so a highlight costs
+only the pixels it covers. It needs agg, ffmpeg (with ffprobe), node and uv, and fontconfig's `fc-match` unless `FONT` and
+`MONO_FONT` name the end card's font files; `KEEP=1` keeps its temp
+directory. On four cores the recording takes about 4 minutes, as it runs in real
+time, and the render about 6; a change to the narration needs only the render.
+
+```bash
+OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode script/record-demo.sh demo.cast
+script/render-demo.sh demo.cast   # demo.mp4
+```
+
+A new feature with something to see in the TUI gets a scene in `record-demo.sh`, its line in the
+narration, and a line in README.md's Demos. GitHub plays a video in Markdown only from its own
+uploads, so the finished file is dragged into an issue or PR comment, and README.md carries the URL
+GitHub gives it, on a line of its own.
 
 ## CI
 

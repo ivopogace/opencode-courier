@@ -162,6 +162,10 @@ describes it and holds a results table per scenario, which a re-run updates. `sc
 prints one table per condition from many run directories; `test/real-model-table.test.ts` pins the
 checker's note wording it parses; `test/real-model-recursive.test.ts` runs the recursive checker on
 fixture transcripts.
+`script/record-demo.sh` (with `script/demo-cast.mjs`, an asciicast writer): records README.md's demo
+video on `tui.sh`'s setup, scene by scene, not in CI; `script/render-demo.sh` renders it with a
+voice-over and highlights (`demo-narration.json`, `demo-timeline.mjs`, and `demo-voice.py`: Kokoro-82M from Hugging
+Face); `docs/maintainers/development.md` describes both.
 
 `.github/workflows/ci.yml`: both suites on every push to `main` and every pull request: `run.sh` in
 four shards and `tui.sh` in parallel, all skipped on a pull request that changes only documentation.

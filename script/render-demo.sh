@@ -19,8 +19,8 @@ mapfile -t plan < <(node "$ROOT/script/demo-timeline.mjs" plan "$WORK/timeline.j
 [ "${#plan[@]}" -gt 0 ] || { echo "no plan for the scenes; see the error above"; exit 1; }
 
 echo "drawing the terminal"
-agg --idle-time-limit 9999 --last-frame-duration 0 --font-size "$FONT_SIZE" "$WORK/timeline.cast" "$WORK/terminal.gif" >/dev/null 2>&1
-ffmpeg -loglevel error -y -i "$WORK/terminal.gif" -r 30 -pix_fmt yuv420p -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" "$WORK/terminal.mp4"
+agg --fps-cap "${FPS:-15}" --idle-time-limit 9999 --last-frame-duration 0 --font-size "$FONT_SIZE" "$WORK/timeline.cast" "$WORK/terminal.gif" >/dev/null 2>&1
+ffmpeg -loglevel error -y -i "$WORK/terminal.gif" -r 30 -pix_fmt yuv420p -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -c:v libx264 -preset veryfast -crf 12 "$WORK/terminal.mp4"
 
 : >"$WORK/scenes.txt"
 for i in "${!plan[@]}"; do
@@ -28,7 +28,7 @@ for i in "${!plan[@]}"; do
   held=$(awk -v l="$length" -v t="$total" 'BEGIN { print t - l }')
   ffmpeg -loglevel error -y -ss "$start" -t "$length" -i "$WORK/terminal.mp4" -i "$WORK/voice/$i.wav" \
     -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=$held[v];[1:a]adelay=$(awk -v l="$lead" 'BEGIN { print l * 1000 }'):all=1,apad,aresample=48000[a]" \
-    -map '[v]' -map '[a]' -t "$total" -r 30 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -ar 48000 -ac 2 "$WORK/scene-$i.mp4"
+    -map '[v]' -map '[a]' -t "$total" -r 30 -c:v libx264 -preset veryfast -crf 12 -pix_fmt yuv420p -c:a aac -ar 48000 -ac 2 "$WORK/scene-$i.mp4"
   echo "file '$WORK/scene-$i.mp4'" >>"$WORK/scenes.txt"
   printf '  scene %d: %.1f s of screen, %.1f s in the video\n' "$i" "$length" "$total"
 done

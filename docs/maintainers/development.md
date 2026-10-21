@@ -88,7 +88,7 @@ come ends the run with that screen printed and the temp directory kept (`KEEP=1`
 It needs tmux, jq, curl and what `e2e/tui.sh` needs.
 
 [`script/render-demo.sh`](../../script/render-demo.sh) turns the cast into a `.mp4` with a voice-over,
-drawn by agg at its own size (`FONT_SIZE`, 20) and scaled to 1920×1080 at the end. [`script/demo-narration.json`](../../script/demo-narration.json) holds a line per scene,
+drawn by agg at its own size (`FONT_SIZE`, 20) and `FPS` (15), and scaled to 1920×1080 at the end. [`script/demo-narration.json`](../../script/demo-narration.json) holds a line per scene,
 keyed by the scene's name (`""` for the opening before the first scene), and the voice;
 [`script/demo-timeline.mjs`](../../script/demo-timeline.mjs) caps the cast's pauses at `IDLE` (3 s)
 and refuses a narration whose scenes are not the cast's; [`script/demo-voice.py`](../../script/demo-voice.py),
@@ -98,7 +98,8 @@ draws the terminal. Each scene's line starts with the scene, and a scene shorter
 its last frame until the voice ends. Around each highlight the screen is dimmed and the highlight
 framed in orange, so the viewer follows what the voice names, with plain boxes, so a highlight costs
 only the pixels it covers. It needs agg, ffmpeg (with ffprobe), node and uv; `KEEP=1` keeps its temp
-directory.
+directory. On four cores the recording takes about 4 minutes, as it runs in real
+time, and the render about 6; a change to the narration needs only the render.
 
 ```bash
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode script/record-demo.sh demo.cast

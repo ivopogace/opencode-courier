@@ -70,6 +70,28 @@ const sessionState = (session: any) => {
   }
 }
 
+let immediates = 0
+const live = new Map<unknown, number>()
+const setImmediateBefore = globalThis.setImmediate
+const clearImmediateBefore = globalThis.clearImmediate
+globalThis.setImmediate = ((callback: (...args: any[]) => void, ...args: any[]) => {
+  const id = ++immediates
+  const stack = new Error().stack?.split("\n").slice(2, 4).map((line) => line.trim().split(" ")[1]).join("<")
+  push(`imm+ ${id} ${stack}`)
+  const handle = setImmediateBefore(() => {
+    live.delete(handle)
+    push(`imm> ${id}`)
+    callback(...args)
+  })
+  live.set(handle, id)
+  return handle
+}) as typeof setImmediate
+globalThis.clearImmediate = ((handle: any) => {
+  push(`imm- ${live.get(handle) ?? "?"}`)
+  live.delete(handle)
+  clearImmediateBefore(handle)
+}) as typeof clearImmediate
+
 export function trace(app: { renderer: any }) {
   log.length = 0
   pending.clear()
@@ -91,6 +113,7 @@ export function trace(app: { renderer: any }) {
       `#344 renderer destroyed with ${pending.size} await(s) pending: ${[...pending].map(([id, label]) => `${label}#${id}`).join(" ")}`,
       `scheduler ${JSON.stringify(renderer.getSchedulerState())} rendering=${renderer.rendering} running=${renderer._isRunning} control=${renderer._controlState} canRender=${renderer.canRender} renderTimeout=${!!renderer.renderTimeout} cancelReadyFrame=${!!renderer.cancelReadyFrame} transition=${!!renderer.nativeTerminalTransition} fakeTimers=${(() => { try { return jest.getTimerCount() } catch { return "off" } })()}`,
       `session ${sessionState(session)}`,
+      `immediates live: ${[...live.values()].join(" ")}`,
       ...log,
     ]
     process.stderr.write(lines.join("\n") + "\n#344 end\n")

@@ -31,10 +31,11 @@ of one's own.
 | `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `longcat-2.5-preview-free` | The model, as OpenCode names it. |
 | `COURIER_BASE_URL` | Zen's endpoint for `opencode` | Declares the provider in `opencode.json` as an OpenAI-compatible endpoint with this URL. Set it empty to use OpenCode's catalog instead, with the provider's usual key variable, such as `ANTHROPIC_API_KEY`. |
 | `COURIER_API_KEY_ENV` | | For a declared provider, the name of the variable holding its key. The config refers to it as `{env:NAME}`, so the key is never written to a file. |
-| `COURIER_SCENARIO` | | `permission`, `question`, `recursive` or `recursive-fault` for the scenarios below; the fan-out by default. |
+| `COURIER_SCENARIO` | | `permission`, `question`, `recursive`, `recursive-fault` or `recursive-staged` for the scenarios below; the fan-out by default. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the final reply must hold. |
-| `COURIER_FILES` | per scenario | With `recursive` or `recursive-fault`: the files, relative to the project, that must hold those values, in the same order. |
-| `COURIER_MAX_DEPTH` | `3` | With `recursive` or `recursive-fault`: the `maxDepth` the checker holds the tree to. |
+| `COURIER_FILES` | per scenario | With `recursive`, `recursive-fault` or `recursive-staged`: the files, relative to the project, that must hold those values, in the same order; with `recursive-staged` the first is the core's. |
+| `COURIER_MAX_DEPTH` | `3` | With `recursive`, `recursive-fault` or `recursive-staged`: the `maxDepth` the checker holds the tree to. |
+| `COURIER_SKILL` | | `deny` adds the rule `{ "action": "skill", "resource": "courier-orchestrate", "effect": "deny" }` after the others in `opencode.json`'s `permissions`, so no session is offered the skill or can load it ([a part with a core](#a-part-with-a-core)); any scenario. |
 | `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server on the same data directory. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
 | `COURIER_NATIVE` | | `1` loads the plugin with [`nativeChildren`](../reference.md#native-child-sessions) on. |
@@ -57,7 +58,7 @@ The server runs at `--log-level debug` (`SERVER_FLAGS` in `e2e/lib.sh`, set by `
 `run.sh` keeps the default level) and `e2e/probe-plugin` is loaded, so a session that stops moving can
 be traced in three files of the work directory:
 
-- `timeline.txt` (recursive and recursive-fault scenarios) gives each step and each tool call with its start and end time,
+- `timeline.txt` (the recursive scenarios) gives each step and each tool call with its start and end time,
   and for a step how long after the last event before it began. A tool that ended and a next step that
   began minutes later is a gap you can read off as a number; a step shown as `…` has no end, which is a
   request without an answer.
@@ -270,6 +271,78 @@ Its first runs happen in the Docker sandbox in `todo/sandbox`.
 | Model | OpenCode | Result |
 |---|---|---|
 | `deepseek-v4.1-flash-free`, catalog, c8fe885 (#308), in the Docker sandbox | 2.0.32 | 13/13 in 32 requests and 67 s: the half-B leaf reported `partial` with its number; the "numbers" session, with `courier-orchestrate` loaded, sent it one `courier_send` to finish and ended its turn, the leaf then reported `done`, and "numbers" verified both files and reported upward once, `done`; the root replied `391 1024 42`. The root, "numbers" and the half-A leaf each loaded the skill and called `courier_recall` once before their split; no session polled; no gap in the timeline, no error in the log. |
+
+## A part with a core
+
+`COURIER_SCENARIO=recursive-staged`: the recursive job with a core in the "numbers" part that both
+halves need, so that the brief's "parts that run at once in one group" and the skill's "do the core
+first, yourself or in one session, then the rest in one group" have something to tell apart. In the
+other recursive scenarios every part is independent. The parent is asked:
+
+> Have this job done through helper sessions started with courier_spawn, one session per part, and
+> do no part yourself. It has two parts. Part "numbers" has a seed and two halves; the session that
+> gets it hands the halves to two sessions of its own. The seed: run `` `sleep 20; echo $((7 * 61))` ``
+> and write the number it printed to numbers/seed.txt. The halves each read the seed from
+> numbers/seed.txt: one writes the seed times 17 to numbers/a.txt, the other writes the seed plus 1000
+> to numbers/b.txt. Part "count" runs `` `sleep 20; echo $((99 - 57))` `` and writes the number it
+> printed to count/total.txt. When the parts have reported back, read the four files yourself and
+> reply with one line: RESULTS \<seed\> \<a\> \<b\> \<total\>
+
+The prompt does not say to write the seed first: whether a session stages is what is measured. A
+correct "numbers" session writes `numbers/seed.txt` (427) itself, or starts one session for it and
+ends its turn until that session reports; only then does it start the two halves in one turn, in one
+group, and end its turn; when the group wakes it, it checks the files and reports `done` to the root
+once. The halves write 7259 and 1427, values a half that ran before the seed existed does not reach
+by chance; the root reads the four files and replies `RESULTS 427 7259 1427 42`.
+
+The checker is the recursive one with `--staged`, which `summary.json` records like `--fault`: its
+nine checks, then three more. With `--staged` the first of `COURIER_FILES` is the core's file, and two
+of the nine read the staging in: a `sleep` an orchestrator runs before it has started any session is
+the core's work, not polling, and the batch of at least two may come in a later turn than the first,
+after one that started the core's session. The core is found by the first completed write of its file
+across the tree, by timestamp: a `write`, `edit` or `patch` naming it, or a `shell` command redirecting
+into it (`>`, `>>`, `tee`); a write the checker does not see as one, such as `cd numbers && echo … >
+seed.txt`, leaves the first check failing, and the transcripts show it. The session that staged is that
+writer when it started sessions, else the writer's parent, whose other children are the halves. The
+checks: no half started (its `courier_spawn` call's start time) before the core's file was written, nor,
+when the core had a session of its own, before that session's report reached the session that staged;
+the session that staged started at least two halves together in one turn, after any session for the
+core, so that one session for the core is not one for the whole task (one session doing the core and
+both halves fails this, and the batch check); and it reported upward once, with status `done`. Its
+notes give who wrote the core's file first and when, when the core's report arrived, when each half
+started, and whether the session that staged did the core itself or in a session, with
+`courier-orchestrate` loaded before the core, after it and before the halves, only after the halves,
+or not at all (and whether a load was refused).
+
+Run it with the skill listed, as every scenario is, and with it denied: `COURIER_SKILL=deny` adds
+`{ "action": "skill", "resource": "courier-orchestrate", "effect": "deny" }` after the allow-all rule in
+`opencode.json` (OpenCode takes the last rule that matches), which keeps the skill out of every
+session's `<available_skills>` and fails a `skill` call for it; the role part and the brief still name
+it, so a session may try and be refused. The checker notes `the project's permissions deny the skill
+courier-orchestrate` for such a run, in any recursive scenario. Several finished runs per condition,
+as [Reading many runs](#reading-many-runs) asks, then one table per condition:
+
+```bash
+run() {  # run <name> [VAR=value ...]: as in Seeding a record, below
+  local name=$1; shift
+  env COURIER_SCENARIO=recursive-staged COURIER_BASE_URL= E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
+  echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
+}
+for n in 1 2 3 4 5; do run staged-skill-$n; run staged-noskill-$n COURIER_SKILL=deny; done
+bun script/real-model-table.ts $(for n in 1 2 3 4 5; do echo skill=$HOME/courier-runs/staged-skill-$n noskill=$HOME/courier-runs/staged-noskill-$n; done)
+```
+
+Read the two questions of #321 off the `staged:` notes and the first and second new checks: does the
+session that gets "numbers" do the core first, and does it without the skill. The other half of the
+second question, whether a session without the skill handles a `partial` report as one with it does,
+is `COURIER_SCENARIO=recursive-fault` with and without `COURIER_SKILL=deny`, read the same way. The
+checker takes `--staged` and `--fault` together, the fault checks before the staged ones; the scenarios
+set one each.
+
+Its first runs happen in the Docker sandbox in `todo/sandbox`.
+
+| Model | OpenCode | Result |
+|---|---|---|
 
 ## Seeding a record
 

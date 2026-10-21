@@ -18,7 +18,9 @@
 # job of two parts, one of which the session that gets it splits again, checked by
 # e2e/real-model-recursive.mjs down the whole tree. COURIER_SCENARIO=recursive-fault is the same job with
 # one leaf told to report partial first and to finish only once its parent messages it, checked by the
-# same script with --fault.
+# same script with --fault. COURIER_SCENARIO=recursive-staged gives the "numbers" part a core both
+# halves need, a seed in numbers/seed.txt, checked by the same script with --staged for whether the
+# halves started only after it.
 #
 # The default model is a free one on OpenCode Zen, which needs no key. To pick another:
 #
@@ -33,8 +35,11 @@
 #   COURIER_API_KEY_ENV              for a declared provider, the variable holding its key. The
 #                                     config refers to it as {env:NAME}; the key is never written.
 #   COURIER_PROMPT, COURIER_EXPECT   the parent's prompt and the values the reports must hold.
-#   COURIER_FILES                    recursive(-fault): the files, relative to the project, that must hold them.
-#   COURIER_MAX_DEPTH                recursive(-fault): the maxDepth the checker holds the tree to (default 3).
+#   COURIER_FILES                    recursive(-fault, -staged): the files, relative to the project, that must hold
+#                                     them; with recursive-staged the first is the core's.
+#   COURIER_MAX_DEPTH                recursive(-fault, -staged): the maxDepth the checker holds the tree to (default 3).
+#   COURIER_SKILL                    deny adds a skill permission rule denying courier-orchestrate to
+#                                     opencode.json, so no session is offered it or can load it; any scenario.
 #   COURIER_TIMEOUT                  seconds to wait for the parent's turn and then for the
 #                                     children (default 300 each).
 #   COURIER_NATIVE                   1 loads the plugin with nativeChildren on, so a child started
@@ -107,7 +112,22 @@ case $SCENARIO in
     CHECKER=real-model-recursive.mjs
     CHECKER_FLAGS=--fault
     ;;
-  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, permission or question"; exit 1 ;;
+  recursive-staged)
+    # The recursive job, with a seed the "numbers" part's halves both read: whether the session that gets
+    # it writes the seed, itself or in one session, before it starts the halves is the test, so it is not told.
+    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" has a seed and two halves; the session that gets it hands the halves to two sessions of its own. The seed: run `sleep 20; echo $((7 * 61))` and write the number it printed to numbers/seed.txt. The halves each read the seed from numbers/seed.txt: one writes the seed times 17 to numbers/a.txt, the other writes the seed plus 1000 to numbers/b.txt. Part "count" runs `sleep 20; echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the four files yourself and reply with one line: RESULTS <seed> <a> <b> <total>'}
+    export COURIER_EXPECT=${COURIER_EXPECT:-"427 7259 1427 42"}
+    export COURIER_FILES=${COURIER_FILES:-"numbers/seed.txt numbers/a.txt numbers/b.txt count/total.txt"}
+    CHECKER=real-model-recursive.mjs
+    CHECKER_FLAGS=--staged
+    ;;
+  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, recursive-staged, permission or question"; exit 1 ;;
+esac
+case ${COURIER_SKILL:-} in
+  "") ;;
+  # Last match wins (evaluate in OpenCode's packages/core/src/permission.ts), so this follows the allow-all.
+  deny) PERMISSIONS=$(jq -c '. + [{ action: "skill", resource: "courier-orchestrate", effect: "deny" }]' <<<"$PERMISSIONS") ;;
+  *) echo "COURIER_SKILL must be deny, or unset"; exit 1 ;;
 esac
 unset COURIER_OTHER_SERVER
 case ${COURIER_PERSON:-} in
@@ -160,7 +180,7 @@ commit_config
 # DEBUG records the provider calls and their errors, which INFO does not; run.sh keeps the default.
 SERVER_FLAGS="--log-level debug"
 start_server
-echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL${COURIER_NATIVE:+, nativeChildren on}"
+echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL${COURIER_NATIVE:+, nativeChildren on}${COURIER_SKILL:+, courier-orchestrate denied}"
 if [ "${COURIER_PERSON:-}" = other-server ]; then
   # A second server on the same data directory, started once the first is up (two starting at once
   # race to create the database's tables), as in e2e/two-servers.sh.
@@ -184,7 +204,7 @@ fi
 echo "parent prompt: $PROMPT"
 
 post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
-if [ "$SCENARIO" != fanout ] && [ "$SCENARIO" != recursive ] && [ "$SCENARIO" != recursive-fault ]; then
+if [ "$SCENARIO" != fanout ] && [ "$SCENARIO" != recursive ] && [ "$SCENARIO" != recursive-fault ] && [ "$SCENARIO" != recursive-staged ]; then
   # Started through the API, as a session in the TUI would be, not with opencode run: run cancels
   # any question form opened in its session while it is attached, and the child's request can wake
   # the parent before run has let go. The checker waits for the turns.

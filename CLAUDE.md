@@ -164,7 +164,7 @@ checker's note wording it parses; `test/real-model-recursive.test.ts` runs the r
 fixture transcripts.
 `script/record-demo.sh` (with `script/demo-cast.mjs`, an asciicast writer): records README.md's demo
 video on `tui.sh`'s setup, scene by scene, not in CI; `script/render-demo.sh` renders it with a
-voice-over (`demo-narration.json`, `demo-timeline.mjs`, and `demo-voice.py`: Kokoro-82M from Hugging
+voice-over and highlights (`demo-narration.json`, `demo-timeline.mjs`, and `demo-voice.py`: Kokoro-82M from Hugging
 Face); `docs/maintainers/development.md` describes both.
 
 `.github/workflows/ci.yml`: both suites on every push to `main` and every pull request: `run.sh` in

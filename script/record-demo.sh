@@ -7,6 +7,8 @@
 # COLS and ROWS (160×42) size the terminal, PACE (1) scales each hold on a finished step, TYPE_DELAY (0.05 s) is the
 # pause between typed characters. script/render-demo.sh turns the cast into the narrated video.
 set -euo pipefail
+# Bash counts characters, not bytes, in what look measures.
+export LC_ALL=C.UTF-8
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OPENCODE=${OPENCODE_BIN:-opencode}
@@ -33,7 +35,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-keys() { tmux send-keys -t "$TMUX_SESSION" "$@"; }
+# A marker $1 in the cast: a scene's name, "focus <column> <row> <columns> <rows>" or "focus off", in cells from 1.
+mark() { printf '%s\t%s\n' "$(date +%s%3N)" "$1" >>"$WORK/marks.tsv"; }
+# Sends keys to the TUI; a key ends the highlight, so what is typed is never dimmed.
+FOCUSED=
+keys() {
+  if [ -n "$FOCUSED" ]; then mark "focus off"; FOCUSED=; fi
+  tmux send-keys -t "$TMUX_SESSION" "$@"
+}
 hold() { sleep "$(awk -v s="$1" -v p="$PACE" 'BEGIN { print s * p }')"; }
 # Types $1 a character at a time, as a person would.
 type_text() {
@@ -56,6 +65,7 @@ wait_for() {
   for _ in $(seq 1 "${2:-30}"); do
     if tmux capture-pane -pt "$TMUX_SESSION" | grep -qF -- "$1"; then
       tmux capture-pane -pt "$TMUX_SESSION" >"$WORK/screens/$name.txt"
+      SCREEN=$WORK/screens/$name.txt
       return
     fi
     sleep 1
@@ -78,10 +88,40 @@ memory_rpc() {
   curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' -d "{\"input\":$2}" \
     "$SERVER/api/rpc/courier-memory/$1?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")"
 }
+# Waits for $1 as wait_for does, then highlights it: $2 rows (1) down from its line, $3 columns (its length) from its
+# start, or "line" for its line's text up to its end, on the last line showing it when $4 is "last". Its first cell is left
+# in AT_COLUMN and AT_ROW.
+look() {
+  wait_for "$1" "${5:-30}"
+  local found text prefix columns
+  found=$(grep -nF -- "$1" "$SCREEN")
+  if [ "${4:-}" = last ]; then found=$(tail -1 <<<"$found"); else found=$(head -1 <<<"$found"); fi
+  AT_ROW=${found%%:*}
+  text=${found#*:}
+  prefix=${text%%"$1"*}
+  AT_COLUMN=$((${#prefix} + 1))
+  columns=${3:-${#1}}
+  if [ "$columns" = line ]; then
+    columns=$((AT_COLUMN - 1 + ${#1}))
+    prefix=${text%%[! ]*}
+    AT_COLUMN=$((${#prefix} + 1))
+    columns=$((columns - ${#prefix}))
+  fi
+  [ $((AT_COLUMN + columns - 1)) -le "$COLS" ] || columns=$((COLS - AT_COLUMN + 1))
+  mark "focus $AT_COLUMN $AT_ROW $columns ${2:-1}"
+  FOCUSED=1
+}
+# Highlights $1 as look does, $2 columns wide, then clicks its first cell, as a terminal reports the left button.
+click() {
+  look "$1" 1 "${2:-}"
+  hold 1.5
+  keys -l "$(printf '\033[<0;%d;%dM' "$AT_COLUMN" "$AT_ROW")"
+  keys -l "$(printf '\033[<0;%d;%dm' "$AT_COLUMN" "$AT_ROW")"
+}
 # Starts scene $1: a marker in the cast, and a line here.
 scene() {
   echo "scene: $1"
-  printf '%s\t%s\n' "$(date +%s%3N)" "$1" >>"$WORK/marks.tsv"
+  mark "$1"
 }
 # A new session from wherever the TUI is, its prompt ready.
 new_session() {
@@ -127,113 +167,139 @@ tmux new-session -d -s "$TMUX_SESSION" -x "$COLS" -y "$ROWS" \
 tmux pipe-pane -t "$TMUX_SESSION" -o "node '$ROOT/script/demo-cast.mjs' '$OUT' $COLS $ROWS '$WORK/marks.tsv'"
 keys Enter
 wait_for "ctrl+p" 60
-hold 2
+hold 3
 
-scene "A join group: one report held, the other member waiting on a permission"
+scene "A join group"
 submit "COURIER-TUI"
-wait_for "1 waiting on you"
+look "courier_spawn [task=Report back" 3 50
+hold 2.5
+look "1 waiting on you" 1 "" last
 hold 3
 submit "/courier tree"
+look "courier tree  [" 6 76 "" 45
+hold 6
+
+scene "A click opens a child"
+click "CHILD-ASKS  waiting" 50
+look "CHILD-ASKS (on screen)" 2 60
+hold 3
+look "Allow once" 3 40 last
+hold 3
+click "Report back to your parent.  idle" 50
+look "courier_send [" 1 60 last
+hold 3
+# Back to the parent, the first tab.
+keys C-x
+sleep 0.3
+keys 1
 wait_for "1/2 reported"
-hold 5
+hold 1.5
 keys q
 hold 1
+
+scene "The asks inbox"
 keys C-x k
-wait_for "Waiting on you (1)"
-hold 2
+look "Permission: shell echo courier-asks" 1 60
+hold 2.5
 keys Enter
-wait_for "Allow once"
+look "Allow once" 1 30
 hold 1.5
 keys Enter
-wait_for "2 idle"
-hold 4
-# The tree's top notes a lesson on its record, for the memory scene.
+look "Reports of group pair" 1 line last
+hold 2
+look "2 idle" 1 "" last
+hold 2
+# The tree's top notes a lesson on its record, for the memory scenes.
 submit "COURIER-NOTE Give the docs to one session"
-wait_for "✓ courier_note"
+look "courier_note [text=" 1 50
 hold 3
 
 scene "A child whose turn fails"
 new_session
 submit "COURIER-FAIL"
-wait_for "Session failed"
+look "Session failed" 3 46
 hold 3
 wait_gone "Session failed"
+look " failed" 1 line last
+hold 2
 submit "/courier tree"
-wait_for "courier tree  ["
-hold 4
-keys Enter
-wait_for "(on screen)"
+look "CHILD-FAILS  failed" 2 60
 hold 4
 keys q
 
 scene "A child that ends its turn without a report"
 new_session
 submit "COURIER-SILENT"
-wait_for "ended without a report"
+look "ended without a report" 1 line last
 hold 3
 submit "/courier tree"
-wait_for "courier tree  ["
+look "CHILD-SILENT  " 2 60
 hold 4
 keys q
 
 scene "/courier stop"
 new_session
 submit "COURIER-SUBTREE-START"
-wait_for "2 running"
+look "2 running" 1 "" last
 hold 2
 submit "/courier stop"
-wait_for "Stop which session?"
-hold 2
+look "Stop which session?" 5 60
+hold 2.5
 keys Enter
-wait_for "Stop \""
-hold 2
+look "Stop \"" 4 52
+hold 3
 keys Enter
-wait_for "Stopped"
-hold 4
+look "Stopped" 1 34
+hold 3
 
 scene "A form only you can answer"
 new_session
 submit "COURIER-SEARCH"
-wait_for "1 waiting on you" 45
+look "shows a form" 1 line last 45
+hold 2
+look "1 waiting on you" 1 "" last
 hold 2
 submit "/courier tree"
-wait_for "shows a form: Web Search"
+look "CHILD-SEARCHES  waiting" 2 60
 hold 4
 keys q
 hold 1
 keys C-x k
-wait_for "Waiting on you (1)"
-hold 2
+look "Form: Web Search" 1 60
+hold 2.5
 keys Enter
 hold 2
 keys Enter
-wait_for "1 idle" 45
-hold 4
+look "Message from" 1 line last 45
+hold 3
 
-scene "Memory: a lesson, the records in the terminal, and recall from another tree"
+scene "The memory view"
 submit "/courier memory"
 wait_for "Memory ("
-hold 4
+hold 2
 # Down to the first tree's record, the one with the lesson, in the view's order: the RPC's.
 lessoned=$(memory_rpc records '{}' | jq -r '.output.records | map(.lesson != null) | index(true)')
 for _ in $(seq 1 "$lessoned"); do keys Down; sleep 0.4; done
-hold 2
+look "lesson (" 1 50
+hold 3
 keys Enter
-wait_for "Top session"
+look "Top session" 8 70
 hold 4
 keys Escape
 hold 1
 keys p
-wait_for "Pinned \""
+look "Pinned \"" 1 50
 hold 3
 keys Escape
 hold 1
+
+scene "Recall from another tree"
 new_session
 submit "COURIER-RECALL"
-wait_for "TOOL DONE courier_recall"
+look "pinned · lesson" 1 line "" 45
 hold 6
 
 tmux kill-session -t "$TMUX_SESSION"
 for _ in $(seq 1 20); do [ -f "$OUT" ] && break; sleep 0.5; done
 [ -f "$OUT" ] || { echo "the cast was not written; see $OUT.part"; KEEP=1; exit 1; }
-echo "wrote $OUT ($(grep -c '^\[[0-9.]*, *"m"' "$OUT") scenes)"
+echo "wrote $OUT ($(grep -c '^\[[0-9.]*, *"m", *"[^f]' "$OUT") scenes)"

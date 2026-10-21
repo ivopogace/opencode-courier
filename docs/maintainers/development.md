@@ -78,7 +78,8 @@ The video at the top of README.md is made in two steps, neither in CI.
 scripted model, with the TUI in `tmux`, typed into scene by scene the way README.md's
 [Demos](../../README.md#demos) lists them, each step waiting for the screen to show what it leads to.
 [`script/demo-cast.mjs`](../../script/demo-cast.mjs) writes the pane's output to an asciicast v2 file,
-with a marker at the start of each scene. `COLS` and `ROWS` (160×42) size the terminal, `PACE` scales
+with a marker at the start of each scene and one for each highlight: a step that points at something
+on screen (`look`, or `click` on a tree panel row) marks its cells, until the next key. `COLS` and `ROWS` (160×42) size the terminal, `PACE` scales
 the holds on each finished step (`PACE=0.3` for a quick check of the scenes), and a scene whose
 screen does not come ends the run with that screen printed and the temp directory kept.
 
@@ -90,7 +91,8 @@ and refuses a narration whose scenes are not the cast's; [`script/demo-voice.py`
 run with `uv`, speaks each line with [Kokoro-82M](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX),
 downloaded from Hugging Face on the first run, no key needed; [`agg`](https://github.com/asciinema/agg)
 draws the terminal. Each scene's line starts with the scene, and a scene shorter than its line holds
-its last frame until the voice ends. It needs agg, ffmpeg, node and uv.
+its last frame until the voice ends. Around each highlight the screen is dimmed and the highlight
+framed in orange, so the viewer follows what the voice names. It needs agg, ffmpeg, node and uv.
 
 ```bash
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode script/record-demo.sh demo.cast

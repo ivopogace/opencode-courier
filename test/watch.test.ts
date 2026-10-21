@@ -11,12 +11,13 @@ import { resetHub } from "./fixtures/reset.js"
 import { shared as relayState } from "../src/person/question/shared.js"
 import { send } from "../src/tree/send.js"
 import { joinGroup } from "../src/tree/group.js"
-import { reportOf } from "../src/tree/report.js"
+import { awaited, reportOf } from "../src/tree/report.js"
 import { forgetChild } from "../src/tree/forget.js"
 import { childStore, groupStore, memberKey, promptKey, settledKey, toldKey } from "../src/tree/store.js"
 import {
   noteDeleted,
   noteInterrupted,
+  reportDeclined,
   noteEnqueued,
   notePrompt,
   reportFailure,
@@ -819,6 +820,25 @@ describe("what settles a child's report", () => {
     expect(await owesReport(ports.storage, "ses_child")).toBe(false)
     expect(await reportSilent(ports, seen, succeeded("evt_s", 200), outside)).toEqual([])
     expect(sent).toEqual([])
+  })
+
+  test("a plain decline's end, which OpenCode reports as a shutdown, tells the parent as a silent turn does; a real shutdown between steps does not", async () => {
+    const declined = [{ type: "user" }, { type: "assistant", content: [], error: { type: "aborted" } }]
+    const { ports, sent } = fakePorts()
+    await childStore(ports.storage).record(child())
+    const seen = new Set<string>()
+    await notePrompt(ports, delivered("evt_d", 100))
+    const shutdown = sessionEvent("session.execution.interrupted", "evt_i1", 150, "ses_child", "shutdown") as SessionEvent
+
+    expect(await reportDeclined(ports, seen, shutdown, outside)).toEqual([])
+    expect(await owesReport(ports.storage, "ses_child")).toBe(true)
+
+    ;(ports.session as { context: unknown }).context = async () => declined
+    expect(await awaited(childStore(ports.storage), "ses_child")).toBe(true)
+    expect(await reportDeclined(ports, seen, shutdown, outside)).toEqual(["ses_parent"])
+    expect(await awaited(childStore(ports.storage), "ses_child")).toBe(false)
+    expect(sent).toHaveLength(1)
+    expect(await reportDeclined(ports, seen, { ...shutdown, data: { ...shutdown.data, reason: "user" } }, outside)).toEqual([])
   })
 
   test("a failed turn does, and is reported as a failure", async () => {

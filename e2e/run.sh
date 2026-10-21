@@ -1326,6 +1326,9 @@ run_archive() {
   summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -c '.output')
   echo "  $summary"
   check "and the footer counts it idle" "$(jq -r '.running == 0 and .waiting == 0 and .idle == 1' <<<"$summary")"
+  # Reported as a shutdown, which ends no turn by itself: the transcript tells the decline from a real shutdown (#332).
+  check "and the parent was told the child ended without a report, as for any silent turn" \
+    "$(for _ in $(seq 1 30); do [ "$(notices_with "$parent" ended | jq -r 'length')" -ge 1 ] && { echo true; exit; }; sleep 1; done; echo false)"
   # OpenCode keeps a declined turn's execution claim and resumes it at the next boot: delete it before the restart below.
   check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
 

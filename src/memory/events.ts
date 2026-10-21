@@ -1,6 +1,6 @@
 import { claim } from "../platform/bounded.js"
 import type { EventModule, EventPorts, HostEvent } from "../platform/events.js"
-import { childrenOf, indexedLineage } from "../tree/index.js"
+import { childrenOf, endsIdle, indexedLineage } from "../tree/index.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { refresh } from "./record.js"
 
@@ -29,12 +29,13 @@ export async function topOf(ports: Pick<RefreshPorts, "storage">, state: Pick<Me
 
 /** A turn ended in a tree: its record is written again, once however many subscriptions see the event. Returns the top refreshed. */
 export async function noteTurnEnd(ports: RefreshPorts, state: MemoryState, event: Execution) {
-  // A shutdown's interruption is resumed on the next start: nothing ended.
-  if (event.data.reason === "shutdown") return undefined
   const top = await topOf(ports, state, event.data.sessionID)
+  if (top === undefined) return undefined
+  // A shutdown's interruption is resumed on the next start, unless a plain decline ended the turn: its transcript ends on an aborted step.
+  if (event.data.reason === "shutdown" && !endsIdle(await ports.session.context({ sessionID: event.data.sessionID }).catch(() => []))) return undefined
   // Claimed after the lookup, so other sessions' turns do not crowd `seen`; released on a failure, as a write is
   // the same twice, so the hub's other subscription may still make it.
-  if (top === undefined || !claim(state.seen, event.id)) return undefined
+  if (!claim(state.seen, event.id)) return undefined
   try {
     await refresh(ports, state, top, event.created ?? ports.now(), event.data.sessionID)
   } catch (error) {

@@ -1137,6 +1137,20 @@ describe("the event module", () => {
     expect(readRecord(store.get(recordKey("proj_1", "ses_top")))?.movedAt).toBe(NOW)
   })
 
+  test("records a turn a plain decline ended, which is reported as a shutdown, but not one a shutdown stopped between steps", async () => {
+    const declined = [{ type: "user" }, { type: "assistant", content: [], error: { type: "aborted" } }]
+    const { ports, state, store } = fakePorts({
+      ses_top: { updated: NOW, idle: NOW },
+      ses_a: { updated: 1, idle: 1, messages: declined },
+      ses_b: { updated: 1, idle: 1, messages: [{ type: "idle" }, { type: "user" }] },
+    })
+    await tree(ports)
+
+    expect(await noteTurnEnd(ports, state, ended("ses_b", "evt_1", "session.execution.interrupted", "shutdown"))).toBeUndefined()
+    expect(await noteTurnEnd(ports, state, ended("ses_a", "evt_2", "session.execution.interrupted", "shutdown"))).toBe("ses_top")
+    expect(store.has(recordKey("proj_1", "ses_top"))).toBe(true)
+  })
+
   test("logs a failure rather than throwing it, and gives the event back for the other subscription to record", async () => {
     const { ports, state, logged } = fakePorts({ ses_top: { updated: 1, idle: 1 } })
     await tree(ports)

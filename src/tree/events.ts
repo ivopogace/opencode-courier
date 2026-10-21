@@ -1,6 +1,7 @@
 import { envelope } from "../kernel/protocol.js"
 import { claim, SEEN_MAX, setBounded } from "../platform/bounded.js"
 import type { EventModule, HostEvent } from "../platform/events.js"
+import { endsIdle } from "./domain.js"
 import { forgetChild, forgetDeleted } from "./forget.js"
 import { hasCompleteGroup, leave, outIn } from "./group.js"
 import type { ExecutionError, Waits, WatchPorts, WatchState } from "./ports.js"
@@ -103,8 +104,8 @@ export async function notePrompt(
 }
 
 /**
- * Notes that a spawned session's turn was stopped, which takes it out of its group without a report; one
- * stopped by a shutdown resumes on the next start.
+ * Notes that a spawned session's turn was stopped, which takes it out of its group without a report; a
+ * shutdown's is left to `reportDeclined`, as one stopped between steps resumes on the next start.
  */
 export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
   if (event.data.reason === "shutdown") return false
@@ -199,9 +200,19 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   return [entry.parentID]
 }
 
+/**
+ * A session's turn that OpenCode reports as a shutdown ended in a plain decline, if its transcript ends on an aborted step: its
+ * parent is told as for a turn that succeeded without a report. A real shutdown during a step reads the same, and is told too.
+ */
+export async function reportDeclined(ports: WatchPorts, seen: Set<string>, event: SessionEvent, outside: Waits) {
+  if (event.data.reason !== "shutdown" || (await childStore(ports.storage).indexedParent(event.data.sessionID)) === undefined) return []
+  if (!endsIdle(await ports.session.context({ sessionID: event.data.sessionID }).catch(() => []))) return []
+  return reportSilent(ports, seen, event, outside)
+}
+
 const TURN_ENDS = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
 
-/** A session's turn ended, sealing its groups: one that is complete has the scheduler deliver it now. */
+/** A session's turn ended, sealing its groups: one that is complete has the scheduler deliver it now; not a shutdown's, which stamps no idle time. */
 async function sealGroups(ports: WatchPorts, event: SessionEvent) {
   if (event.data.reason === "shutdown") return
   try {
@@ -215,7 +226,10 @@ async function sealGroups(ports: WatchPorts, event: SessionEvent) {
 function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: HostEvent) {
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent, outside)
-  if (event.type === "session.execution.interrupted") return noteInterrupted(ports, event as unknown as SessionEvent)
+  if (event.type === "session.execution.interrupted") {
+    const interrupted = event as unknown as SessionEvent
+    return interrupted.data.reason === "shutdown" ? reportDeclined(ports, state.seen, interrupted, outside) : noteInterrupted(ports, interrupted)
+  }
   if (event.type === "session.inbox.enqueued") return noteEnqueued(ports, state.inbox, event as unknown as InboxEnqueued)
   if (event.type === "session.inbox.delivered") return notePrompt(ports, event as unknown as SessionEvent, state.inbox)
   if (event.type === "session.deleted") return noteDeleted(ports, event as unknown as SessionEvent)

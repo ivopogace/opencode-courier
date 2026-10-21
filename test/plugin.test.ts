@@ -557,9 +557,10 @@ test("courier_send signs the message with the calling session, and carries the s
   await tools.get("courier_send").execute({ sessionID: "ses_parent", message: "done" }, { sessionID: "ses_child" })
   const result = await tools.get("courier_send").execute({ sessionID: "ses_parent", message: "done", status: "done" }, { sessionID: "ses_child" })
 
-  expect(calls[0]!.input.metadata).toEqual({ source: "courier", from: "ses_child" })
-  expect(calls[1]!.input.metadata).toEqual({ source: "courier", from: "ses_child", status: "done" })
-  expect(calls[1]!.input.text).toStartWith('<courier from="ses_child" status="done">')
+  const sent = calls.filter((call) => call.method === "session.synthetic")
+  expect(sent[0]!.input.metadata).toEqual({ source: "courier", from: "ses_child" })
+  expect(sent[1]!.input.metadata).toEqual({ source: "courier", from: "ses_child", status: "done" })
+  expect(sent[1]!.input.text).toStartWith('<courier from="ses_child" status="done">')
   expect(result.metadata).toEqual({ messageID: "msg_2", status: "done" })
 })
 

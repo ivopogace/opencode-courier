@@ -240,7 +240,8 @@ options in the plugin's `options`, in the global config:
 
 `courier_spawn` refuses a spawn past a limit, naming it and saying what to do instead. A session
 counts while it is live: its turn runs, it owes its parent a report, a message the plugin sent to
-wake it waits undelivered in its inbox, or a session below it is live; renaming, archiving or
+wake it waits undelivered in its inbox (from the moment `courier_send` returns, so a `courier_spawn` in the same step counts it),
+or a session below it is live; renaming, archiving or
 otherwise changing it in OpenCode does not make it run.
 Each spawned session's brief says when to split its task and when to do it itself
 ([more](docs/reference.md#session-trees-and-their-limits)).

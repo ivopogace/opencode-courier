@@ -194,7 +194,8 @@ log says so when the plugin loads. A changed limit applies once OpenCode loads t
 yourself, or end the turn and try again once a child has reported), when the child would be deeper
 than `maxDepth`, or when `maxChildren` or `maxTotal` sessions are already live. A session is live
 while its turn runs, while it [owes its parent a report](#a-child-that-ends-without-a-report), while
-a message the plugin sent it to wake it waits undelivered in its inbox ([a missed
+a message the plugin sent it to wake it waits undelivered in its inbox (`courier_send` notes it as it returns, so a
+`courier_spawn` in the same step counts it; [a missed
 wake](#a-missed-wake) watches each one; one whose watch cannot be read counts, and one flagged stalled,
 which nothing wakes it for any more, does not, even though it keeps the tree's
 [memory](#memory) unfinished), or while a session

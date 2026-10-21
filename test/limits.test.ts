@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { DateTime } from "effect"
+import { send } from "../src/tree/send.js"
 import { spawn } from "../src/tree/spawn.js"
 import { admit } from "../src/tree/limits.js"
 import { shapeContext } from "../src/tree/context.js"
@@ -529,6 +530,33 @@ describe("admit, with children that owe a report", () => {
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
     await wakeStore(storage).remove("ses_a", "msg_more")
     expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  // #330: the enqueued event is handled after the send returns, so the spawn in the same step must not wait for it.
+  test("and counts it as soon as courier_send returns, before OpenCode's enqueued event is handled (#330)", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: { ...FINISHED, updated: 9 } })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150)
+    const sending = { ...ports, now: () => 200, nudge: () => undefined, log: () => undefined, session: { ...ports.session, synthetic: async () => ({ id: "msg_more" }) } }
+
+    await send(sending as unknown as CourierPorts, "ses_root", { sessionID: "ses_a", message: "more" })
+
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+    expect(await wakeStore(storage).of("ses_a")).toEqual([{ sessionID: "ses_a", inboxID: "msg_more", at: 200, text: expect.any(String), description: "Message from ses_root", running: false, idleAt: 200 }])
+  })
+
+  test("and a message delivered before courier_send could note it leaves no row behind (#330)", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: FINISHED })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150)
+    const context = async () => [{ id: "msg_more", type: "user" }, { id: "msg_idle", type: "idle" }]
+    const sending = { ...ports, now: () => 200, nudge: () => undefined, log: () => undefined, session: { ...ports.session, context, synthetic: async () => ({ id: "msg_more" }) } }
+
+    await send(sending as unknown as CourierPorts, "ses_root", { sessionID: "ses_a", message: "more" })
+
+    expect(await wakeStore(storage).of("ses_a")).toEqual([])
   })
 
   test("nor once the message is flagged stalled, which nothing wakes it for any more, as when its turn failed before", async () => {

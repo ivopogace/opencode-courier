@@ -715,6 +715,64 @@ describe("refresh", () => {
     }
   })
 
+  describe("a turn that starts in the top during the parts phase (#337)", () => {
+    const setup = (stamp: boolean) => {
+      const made = fakePorts({
+        ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [{ type: "idle" }] },
+        ses_a: { updated: NOW - 100_000, idle: NOW - 100_000 },
+      })
+      const get = made.ports.session.get
+      ;(made.ports.session as any).get = async (input: { sessionID: string }) => {
+        const one = await get(input)
+        if (stamp && input.sessionID === "ses_a") Object.assign(made.sessions.ses_top!, { updated: NOW + 5_000, messages: [{ type: "idle" }, { type: "user" }] })
+        return one
+      }
+      return made
+    }
+    const arrange = async (made: ReturnType<typeof setup>) => {
+      const children = childStore(made.ports.storage)
+      await children.record(entry("ses_a", "ses_top"))
+      await children.prompted("ses_a", NOW - 290_000)
+      await children.settled("ses_a", "report", NOW - 100_000, "done")
+    }
+
+    test("is read as running, the top's transcript read a second time", async () => {
+      const made = setup(true)
+      await arrange(made)
+      const clockSpy = spyOn(Date, "now").mockImplementation(() => NOW)
+      try {
+        expect(await refresh(made.ports, made.state, "ses_top", NOW, "ses_a")).toMatchObject({ finished: false })
+        expect(made.contexts.filter((id) => id === "ses_top").length).toBe(2)
+      } finally {
+        clockSpy.mockRestore()
+      }
+    })
+
+    test("is not looked for when the top was not stamped: one transcript read, as before", async () => {
+      const made = setup(false)
+      await arrange(made)
+      const clockSpy = spyOn(Date, "now").mockImplementation(() => NOW)
+      try {
+        expect(await refresh(made.ports, made.state, "ses_top", NOW, "ses_a")).toMatchObject({ finished: true })
+        expect(made.contexts.filter((id) => id === "ses_top").length).toBe(1)
+      } finally {
+        clockSpy.mockRestore()
+      }
+    })
+
+    test("keeps the first answer when the second session.get fails", async () => {
+      const made = setup(false)
+      await arrange(made)
+      const get = made.ports.session.get
+      let tops = 0
+      ;(made.ports.session as any).get = async (input: { sessionID: string }) => {
+        if (input.sessionID === "ses_top" && ++tops > 1) throw new Error("down")
+        return get(input)
+      }
+      expect(await refresh(made.ports, made.state, "ses_top", NOW, "ses_a")).toMatchObject({ finished: true })
+    })
+  })
+
   test("does not read a tree as finished while its top, archived between two steps of a turn, runs on (#324)", async () => {
     const { ports, state } = fakePorts({
       ses_top: { updated: NOW - 50_000, idle: NOW - 60_000, archived: NOW - 50_000, messages: [{ type: "idle" }, { type: "user" }] },

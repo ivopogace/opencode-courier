@@ -22,6 +22,7 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh     # a r
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh    # two servers, not in CI
 bun script/real-model-table.ts [name=]<run-dir>...   # a table per condition from real-model run directories
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode script/record-demo.sh demo.cast   # the README's demo, not in CI
+script/render-demo.sh demo.cast                       # demo.mp4, narrated; needs agg, ffmpeg and uv
 ```
 
 `KEEP=1` keeps a live script's temp directory and logs; `E2E_WORK` sets where it goes.
@@ -71,20 +72,35 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode script/record-demo.sh demo.
 
 ## Recording the demo
 
-The video at the top of README.md is recorded by [`script/record-demo.sh`](../../script/record-demo.sh):
-`e2e/tui.sh`'s server, project and scripted model, with the TUI in `tmux`, typed into scene by scene
-the way README.md's [Demos](../../README.md#demos) lists them, each step waiting for the screen to
-show what it leads to. [`script/demo-cast.mjs`](../../script/demo-cast.mjs) writes the pane's output
-to an asciicast v2 file, with a marker at the start of each scene for timing the narration. With
-[`agg`](https://github.com/asciinema/agg) and `ffmpeg` on `PATH` the script renders the `.gif` and
-`.mp4` beside it. `COLS` and `ROWS` (160×42) size the terminal, `PACE` scales the holds on each
-finished step (`PACE=0.3` for a quick check of the scenes), and a scene whose screen does not come
-ends the run with that screen printed and the temp directory kept.
+The video at the top of README.md is made in two steps, neither in CI.
 
-A new feature with something to see in the TUI gets a scene there, and README.md's Demos list a
-line. The narration is recorded over the `.mp4` by hand. GitHub plays a video in Markdown only from
-its own uploads, so the finished file is dragged into an issue or PR comment, and README.md carries
-the URL GitHub gives it, on a line of its own.
+[`script/record-demo.sh`](../../script/record-demo.sh) records it: `e2e/tui.sh`'s server, project and
+scripted model, with the TUI in `tmux`, typed into scene by scene the way README.md's
+[Demos](../../README.md#demos) lists them, each step waiting for the screen to show what it leads to.
+[`script/demo-cast.mjs`](../../script/demo-cast.mjs) writes the pane's output to an asciicast v2 file,
+with a marker at the start of each scene. `COLS` and `ROWS` (160×42) size the terminal, `PACE` scales
+the holds on each finished step (`PACE=0.3` for a quick check of the scenes), and a scene whose
+screen does not come ends the run with that screen printed and the temp directory kept.
+
+[`script/render-demo.sh`](../../script/render-demo.sh) turns the cast into a 1920×1080 `.mp4` with a
+voice-over. [`script/demo-narration.json`](../../script/demo-narration.json) holds a line per scene,
+keyed by the scene's name (`""` for the opening before the first scene), and the voice;
+[`script/demo-timeline.mjs`](../../script/demo-timeline.mjs) caps the cast's pauses at `IDLE` (3 s)
+and refuses a narration whose scenes are not the cast's; [`script/demo-voice.py`](../../script/demo-voice.py),
+run with `uv`, speaks each line with [Kokoro-82M](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX),
+downloaded from Hugging Face on the first run, no key needed; [`agg`](https://github.com/asciinema/agg)
+draws the terminal. Each scene's line starts with the scene, and a scene shorter than its line holds
+its last frame until the voice ends. It needs agg, ffmpeg, node and uv.
+
+```bash
+OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode script/record-demo.sh demo.cast
+script/render-demo.sh demo.cast   # demo.mp4
+```
+
+A new feature with something to see in the TUI gets a scene in `record-demo.sh`, its line in the
+narration, and a line in README.md's Demos. GitHub plays a video in Markdown only from its own
+uploads, so the finished file is dragged into an issue or PR comment, and README.md carries the URL
+GitHub gives it, on a line of its own.
 
 ## CI
 

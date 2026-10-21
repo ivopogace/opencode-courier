@@ -5,7 +5,7 @@
 #   OPENCODE_BIN=/path/to/opencode script/record-demo.sh [out.cast]   # default demo.cast; KEEP=1 keeps the temp dir
 #
 # COLS and ROWS (160×42) size the terminal, PACE (1) scales each hold on a finished step, TYPE_DELAY (0.05 s) is the
-# pause between typed characters. With agg and ffmpeg on PATH it also writes the .gif and .mp4 beside the cast.
+# pause between typed characters. script/render-demo.sh turns the cast into the narrated video.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -237,8 +237,3 @@ tmux kill-session -t "$TMUX_SESSION"
 for _ in $(seq 1 20); do [ -f "$OUT" ] && break; sleep 0.5; done
 [ -f "$OUT" ] || { echo "the cast was not written; see $OUT.part"; KEEP=1; exit 1; }
 echo "wrote $OUT ($(grep -c '^\[[0-9.]*, *"m"' "$OUT") scenes)"
-if command -v agg >/dev/null && command -v ffmpeg >/dev/null; then
-  agg --idle-time-limit 3 "$OUT" "${OUT%.cast}.gif"
-  ffmpeg -loglevel error -y -i "${OUT%.cast}.gif" -movflags faststart -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" "${OUT%.cast}.mp4"
-  echo "wrote ${OUT%.cast}.gif and ${OUT%.cast}.mp4"
-fi

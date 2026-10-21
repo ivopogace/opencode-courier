@@ -1,0 +1,13 @@
+{
+  "voice": "af_heart",
+  "speed": 1.0,
+  "scenes": {
+    "": "This is opencode courier: an OpenCode session hands work to other sessions, ends its turn, and is woken when they report. The model here is a scripted stand-in, so every scene is the plugin's real behaviour in the real terminal.",
+    "A join group: one report held, the other member waiting on a permission": "The parent starts two children in one join group. One reports at once, and its report is held with the group. The other asks for a permission, so the footer says one is waiting on you. The tree panel shows both: Digby the mole, a mark and a colour for each row, how long it ran, and what it waits on. You allow it from the asks inbox, the child reports, and both reports reach the parent in one message. Then the parent notes a one line lesson on the tree's record.",
+    "A child whose turn fails": "A child whose turn fails. OpenCode says the session failed, the parent is told at once, and in the tree panel the row reads failed, ended without a report.",
+    "A child that ends its turn without a report": "A child that ends its turn without a report. The parent is told so, with the child's last reply, and the tree panel's row says so too.",
+    "/courier stop": "Courier stop. Pick the session, confirm, and it is stopped, with every session under it.",
+    "A form only you can answer": "A form only you can answer. A child's web search shows a form. The footer, the panel row and the asks inbox all point to it, and answering it there lets the child go on, which wakes the parent.",
+    "Memory: a lesson, the records in the terminal, and recall from another tree": "Memory. Courier memory lists the project's session trees: how each was split, how its parts went, and the lesson its top session noted. Pin one, and it is listed first and never swept. A new tree calls courier recall, and gets the pinned record first, lesson and all, before it decides how to split its own work."
+  }
+}

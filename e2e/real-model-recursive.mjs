@@ -1,5 +1,6 @@
 // Waits for a real model's recursive split to settle, saves every session's transcript to WORK and checks the tree
-// (node e2e/real-model-recursive.mjs <rootSessionID> [--saved to re-read WORK] [--fault for recursive-fault]). Exit 2 means inconclusive.
+// (node e2e/real-model-recursive.mjs <rootSessionID> [--saved to re-read WORK] [--fault for recursive-fault] [--staged for recursive-staged]).
+// Exit 2 means inconclusive.
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -8,15 +9,16 @@ const saved = flags.includes("--saved")
 const server = process.env.SERVER
 const auth = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD}`).toString("base64")}`
 const work = process.env.WORK
-// A re-read keeps the checks the run was made with: summary.json records --fault.
-const savedFault = () => {
+// A re-read keeps the checks the run was made with: summary.json records --fault and --staged.
+const savedFlag = (name) => {
   try {
-    return JSON.parse(readFileSync(join(work, "summary.json"), "utf8")).fault === true
+    return JSON.parse(readFileSync(join(work, "summary.json"), "utf8"))[name] === true
   } catch {
     return false
   }
 }
-const fault = flags.includes("--fault") || (saved && savedFault())
+const fault = flags.includes("--fault") || (saved && savedFlag("fault"))
+const staged = flags.includes("--staged") || (saved && savedFlag("staged"))
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
 const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
@@ -205,8 +207,15 @@ const first = rootTurns[0] ?? []
 const spawned = [...tree].filter(([id]) => id !== rootID)
 const orchestrators = [...tree].filter(([, entry]) => spawnsOf(entry.list).length > 0)
 const subOrchestrators = orchestrators.filter(([id]) => id !== rootID)
-const looksIn = (turn) =>
-  toolsOf(turn).filter((part) => LOOKS.has(part.name) || part.name === RECALL || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input)))).length
+const sleeps = (part) => part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))
+// With --staged a session may run the core's command itself: a sleep before it has started any session is that work, not waiting.
+const sleepsBeforeSpawn = (list) => {
+  const tools = toolsOf(list)
+  const firstSpawn = tools.findIndex(childOf)
+  return new Set(staged ? tools.slice(0, firstSpawn === -1 ? tools.length : firstSpawn).filter(sleeps) : [])
+}
+const looksIn = (turn, exempt = new Set()) =>
+  toolsOf(turn).filter((part) => LOOKS.has(part.name) || part.name === RECALL || (sleeps(part) && !exempt.has(part))).length
 // The one courier_recall call a turn may make before its first courier_spawn, which the skill's step 1 asks for; a second, or one after a spawn, is a look like any other.
 const allowedRecall = (turn) => {
   const tools = toolsOf(turn)
@@ -215,10 +224,16 @@ const allowedRecall = (turn) => {
   return recalls.length === 1 && (firstSpawn === -1 || recalls[0] < firstSpawn) ? 1 : 0
 }
 // Any look in the first turn, right after spawning, is polling, but the one recall before the split; later, more than one look a turn is a loop.
-const polledIn = (turns) => looksIn(turns[0] ?? []) - allowedRecall(turns[0] ?? []) > 0 || turns.slice(1).some((turn) => looksIn(turn) > 1)
-const pollers = orchestrators.filter(([, entry]) => polledIn(turnsOf(entry.list))).map(([id]) => id)
+const polledIn = (list) => {
+  const [firstTurn = [], ...later] = turnsOf(list)
+  const exempt = sleepsBeforeSpawn(list)
+  return looksIn(firstTurn, exempt) - allowedRecall(firstTurn) > 0 || later.some((turn) => looksIn(turn, exempt) > 1)
+}
+const pollers = orchestrators.filter(([, entry]) => polledIn(entry.list)).map(([id]) => id)
 // The sessions a turn started; a sub-orchestrator starts its batch in one turn, never one session alone (only the root may).
+// With --staged the batch may follow a turn that started the core's session.
 const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length
+const batchIn = (list) => (staged ? turnsOf(list) : turnsOf(list).slice(0, 1)).some((turn) => spawnsIn(turn) >= 2)
 const notOneInAll = (list) => spawnsOf(list).length !== 1
 const finalText = textOf(root.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
 // A session's report, as its parent got it; the first one, since the brief asks for exactly one.
@@ -261,13 +276,56 @@ const faultChecks = [
   ],
 ]
 
+// The core --staged checks for: the first of the files, which the halves read. Who wrote it first, and when, from the
+// transcripts' timestamps: a write, edit or patch naming it, or a shell command redirecting into it.
+const coreFile = files[0] ?? ""
+const escaped = coreFile.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+const redirects = new RegExp(String.raw`(?:>>?|\btee\b[^|;&]*?)\s*["']?(?:[^\s"';&|<>]*/)?${escaped}(?![\w./-])`)
+const writesCore = (part) =>
+  part.type === "tool" &&
+  part.state.status === "completed" &&
+  coreFile !== "" &&
+  (part.name === "shell" ? redirects.test(part.state.input?.command ?? "") : ["write", "edit", "patch"].includes(part.name) && JSON.stringify(part.state.input ?? {}).includes(coreFile))
+const partStart = (part, message) => part.time?.created ?? message.time.created
+const partEnd = (part, message) => part.time?.completed ?? message.time.completed ?? message.time.created
+const coreWrite = [...tree]
+  .flatMap(([id, entry]) => entry.list.flatMap((message) => (message.type === "assistant" ? message.content.filter(writesCore).map((part) => ({ id, part, at: partEnd(part, message) })) : [])))
+  .sort((one, other) => one.at - other.at)[0]
+// The session that staged: the core's writer when it also started sessions, else the parent of the session that wrote it.
+const writerIsOrchestrator = coreWrite && orchestrators.some(([id]) => id === coreWrite.id)
+const stagerID = coreWrite ? (writerIsOrchestrator ? coreWrite.id : tree.get(coreWrite.id).parentID) : (subOrchestrators.find(([, entry]) => entry.depth === 1) ?? subOrchestrators[0])?.[0]
+const stager = stagerID === undefined ? undefined : tree.get(stagerID)
+const coreSession = coreWrite && !writerIsOrchestrator && stagerID !== undefined ? coreWrite.id : undefined
+// Each courier_spawn of the stager's, with its turn, its place and its time.
+const stagerSpawns = stager
+  ? turnsOf(stager.list).flatMap((turn, number) =>
+      turn.flatMap((message) => (message.type === "assistant" ? message.content.filter(childOf).map((part) => ({ id: childOf(part), part, turn: number, at: partStart(part, message) })) : [])),
+    )
+  : []
+const halves = stagerSpawns.filter((spawn) => spawn.id !== coreSession && tree.has(spawn.id))
+const coreSpawn = stagerSpawns.find((spawn) => spawn.id === coreSession)
+const coreReport = coreSession ? deliveriesFrom(stager.list, coreSession)[0] : undefined
+const coreReady = coreWrite && (coreSession === undefined || coreReport) ? Math.max(coreWrite.at, coreReport?.message.time.created ?? 0) : undefined
+const stagerUpward = stager && stager.parentID !== undefined ? reportsTo(stager.list, stager.parentID) : []
+const stagedChecks = [
+  [
+    `no half started before ${coreFile} existed, nor, when the core had a session of its own, before that session's report reached the session that staged`,
+    coreReady !== undefined && halves.length > 0 && halves.every((half) => half.at > coreReady),
+  ],
+  [
+    "the session that staged started at least two halves together in one turn, after any session for the core: one session for the core is not one for the whole task",
+    halves.length >= 2 && halves.every((half) => half.turn === halves[0].turn) && (coreSpawn === undefined || stagerSpawns.indexOf(coreSpawn) < stagerSpawns.indexOf(halves[0])),
+  ],
+  ["the session that staged reported upward once, with status done", stagerUpward.length === 1 && stagerUpward[0].status === "done"],
+]
+
 const checks = [
   ["the root spawned at least two children with courier_spawn in its first turn", spawnsIn(first) >= 2],
   ["the root ended its first turn after spawning, with no reports in it", ended(first.at(-1)) && !failed(first.at(-1)) && !first.some((message) => reportersOf(message).some((from) => tree.has(from)))],
   ["no orchestrator polled (courier_status, courier_children, courier_tree, sleep)", pollers.length === 0],
   [
     "at least one child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all",
-    subOrchestrators.some(([, entry]) => spawnsIn(turnsOf(entry.list)[0] ?? []) >= 2) && subOrchestrators.every(([, entry]) => notOneInAll(entry.list)),
+    subOrchestrators.some(([, entry]) => batchIn(entry.list)) && subOrchestrators.every(([, entry]) => notOneInAll(entry.list)),
   ],
   [`no session went past maxDepth ${maxDepth}`, [...tree.values()].every((entry) => entry.depth <= maxDepth)],
   ["every spawned session reported to its parent, with a status", spawned.length > 0 && spawned.every(([id]) => reportOf(id) !== undefined)],
@@ -275,6 +333,7 @@ const checks = [
   ["the files hold the expected values", files.length > 0 && files.length === expected.length && fileTexts.every((text, index) => text === expected[index])],
   ["the root's final reply holds every expected result", expected.length > 0 && expected.every((value) => finalText.includes(value))],
   ...(fault ? faultChecks : []),
+  ...(staged ? stagedChecks : []),
 ]
 
 const notes = []
@@ -333,6 +392,44 @@ if (fault)
     if (one.upward.length) notes.push(`fault: its parent reported upward ${one.upward.map((report) => report.status).join(", then ")}`)
   }
 if (fault && !faulty.length) notes.push("fault: every session below a sub-orchestrator first reported done; the fault did not reach a leaf")
+if (staged) {
+  const who = (id) => (id === rootID ? "the root" : `session ${id} (depth ${tree.get(id).depth})`)
+  if (!coreWrite) notes.push(`staged: no session wrote ${coreFile}`)
+  else
+    notes.push(
+      `staged: ${coreFile} first written by ${who(coreWrite.id)} at ${clock(coreWrite.at)}` +
+        (coreSession ? `, ${coreReport ? `its report reaching ${stagerID} at ${clock(coreReport.message.time.created)}` : "which never reported"}` : "") +
+        `; halves started at ${halves.length ? halves.map((half) => clock(half.at)).join(", ") : "(none)"}`,
+    )
+  if (stager) {
+    // When the stager had courier-orchestrate loaded: against the core (its write, or its session's spawn) and the halves' first spawn.
+    const tools = toolsOf(stager.list)
+    const load = tools.findIndex(loadsSkill)
+    const core = coreSession ? tools.indexOf(coreSpawn?.part) : coreWrite?.id === stagerID ? tools.indexOf(coreWrite.part) : -1
+    const firstHalf = halves.length ? tools.indexOf(halves[0].part) : -1
+    const refused = tools.some((part) => part.name === "skill" && part.state.status === "error" && part.state.input?.id === SKILL)
+    const when =
+      load === -1
+        ? `without ${SKILL} loaded${refused ? ", its load refused" : ""}`
+        : core !== -1 && load < core
+          ? `with ${SKILL} loaded before the core`
+          : firstHalf === -1 || load < firstHalf
+            ? `with ${SKILL} loaded after the core, before the halves`
+            : `with ${SKILL} loaded only after starting the halves`
+    notes.push(`staged: ${who(stagerID)} did the core ${coreSession ? `in session ${coreSession}` : coreWrite?.id === stagerID ? "itself" : "nowhere it could be seen"}, ${when}`)
+  }
+}
+// Whether the project's permissions deny the skill, as COURIER_SKILL=deny writes them: the last rule matching wins, as in OpenCode.
+const glob = (pattern) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")}$`)
+const skillRule = (() => {
+  try {
+    const rules = JSON.parse(readFileSync(join(work, "project", "opencode.json"), "utf8")).permissions ?? []
+    return rules.findLast((rule) => glob(rule.action).test("skill") && glob(rule.resource).test(SKILL))
+  } catch {
+    return undefined
+  }
+})()
+if (skillRule?.effect === "deny") notes.push(`the project's permissions deny the skill ${SKILL}`)
 if (pollers.length) notes.push(`polled: ${pollers.map((id) => (id === rootID ? "the root" : id)).join(", ")}`)
 for (const [id, entry] of spawned) {
   const report = reportOf(id)
@@ -377,7 +474,7 @@ console.log(`result: ${verdict}${verdict === "inconclusive" ? " (checks failed, 
 writeFileSync(
   join(work, "summary.json"),
   JSON.stringify(
-    { verdict, rootID, fault, sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, usage, finalText },
+    { verdict, rootID, fault, staged, sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, usage, finalText },
     null,
     2,
   ),

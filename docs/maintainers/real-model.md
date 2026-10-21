@@ -271,6 +271,8 @@ Its first runs happen in the Docker sandbox in `todo/sandbox`.
 | Model | OpenCode | Result |
 |---|---|---|
 | `deepseek-v4.1-flash-free`, catalog, c8fe885 (#308), in the Docker sandbox | 2.0.32 | 13/13 in 32 requests and 67 s: the half-B leaf reported `partial` with its number; the "numbers" session, with `courier-orchestrate` loaded, sent it one `courier_send` to finish and ended its turn, the leaf then reported `done`, and "numbers" verified both files and reported upward once, `done`; the root replied `391 1024 42`. The root, "numbers" and the half-A leaf each loaded the skill and called `courier_recall` once before their split; no session polled; no gap in the timeline, no error in the log. |
+| `deepseek-v4.1-flash-free`, catalog, 1dbebb3 (#321), skill listed, in the Docker sandbox | 2.1.2 | 4 of 5 passed, 13, 13, 13, 12 and 13 of 13, 32 to 36 requests, 60 to 97 s. In every run the half-B leaf reported `partial`, its parent messaged it once to finish, it reported `done`, and the files and the root's reply held `391 1024 42`. Every root loaded `courier-orchestrate`; the "numbers" session had it loaded when the partial report came in 4 of 5. The one lost point: a root scheduled a `courier_later` check-in and then called `courier_children` itself. |
+| `deepseek-v4.1-flash-free`, catalog, 1dbebb3 (#321), `COURIER_SKILL=deny`, in the Docker sandbox | 2.1.2 | 5 of 5 passed, 13/13 each, 27 to 34 requests, 51 to 68 s. No session loaded the skill, and each "numbers" session handled the `partial` report as the runs with it did: one message to finish, then a verified `done` upward. One "numbers" session started its halves without a join group; no session polled. Without the skill a session handles a `partial` report no worse. |
 
 ## A part with a core
 
@@ -343,6 +345,8 @@ Its first runs happen in the Docker sandbox in `todo/sandbox`.
 
 | Model | OpenCode | Result |
 |---|---|---|
+| `deepseek-v4.1-flash-free`, catalog, 1dbebb3 (#321), skill listed, in the Docker sandbox | 2.1.2 | 4 of 5 passed, 12, 12, 11, 12 and 12 of 12, 31 to 37 requests, 62 to 91 s. Every "numbers" session wrote `numbers/seed.txt` (427) itself, then started both halves in one turn, in one group, and reported `done` once; the files and the root's reply held `427 7259 1427 42`. Every root loaded `courier-orchestrate`, the "numbers" session in 3 of 5; in some runs the root's brief already said to do the seed first, so the order was the root's. The one lost point: a "numbers" session called `courier_children` once. |
+| `deepseek-v4.1-flash-free`, catalog, 1dbebb3 (#321), `COURIER_SKILL=deny`, in the Docker sandbox | 2.1.2 | 5 of 5 passed, 12/12 each, 30 to 36 requests, 62 to 145 s. Sessions that tried to load the skill were refused, and staged all the same: four "numbers" sessions wrote the seed themselves, one started a session for it and started the halves only after its report; every time both halves came together in one group, and no session polled. Staging does not depend on the skill. |
 
 ## Seeding a record
 

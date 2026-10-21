@@ -2,7 +2,7 @@
 // for `src/index.ts`, the lineage and subtree queries and types `person/` reads, and what `memory/` reads of each session.
 export { dirtyOf, headOf, inspectWorktree } from "./cleanup.js"
 export { shapeContext } from "./context.js"
-export { lineageIn, nativeRootOf, readLimits, readNativeChildren } from "./domain.js"
+export { endsIdle, lineageIn, nativeRootOf, readLimits, readNativeChildren } from "./domain.js"
 export { together, treeEvents, waitsOn } from "./events.js"
 export { deliverReleased } from "./group.js"
 export { contextOf } from "./panel.js"

@@ -199,7 +199,9 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   (`wakeEnded`) tells the two by the transcript: a `shutdown` end whose transcript ends on that
   aborted message ends the turn (OpenCode then delivers a message steered in during it at once, in
   a turn of its own, as the live suite shows); one that does not (a real shutdown between steps) leaves the watch
-  to the resumed turn. A real shutdown during a step reads as ended too: the resumed turn's
+  to the resumed turn. The tree's silent-end notice and the memory refresh read a `shutdown` end the same way
+  (`endsIdle` on the transcript); the group seal (`sealed`) does not, as it reads `time.idle`, which a decline
+  never stamps. A real shutdown during a step reads as ended too: the resumed turn's
   `session.execution.started` marks its messages running again, and should that event come before
   the subscription, `wakeAgain` reads the session's times and transcript before it sends a message again
   or flags it stalled, and marks the message running instead while they show a turn running (not on a

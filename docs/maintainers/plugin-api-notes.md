@@ -92,7 +92,9 @@ https://github.com/anomalyco/opencode, each release tagged (`v2.1.0`); paths bel
   wake store, which the footer and the panel check before `running`. The limits and the memory
   record's `finished` count a session while the wake store holds a courier message waiting in it
   (`waitsInInbox`), and on a failed read, the limits only while it is not yet stalled; one sent
-  with `resume: false` is not watched and owes no turn. The plugin API cannot list the
+  with `resume: false` is not watched and owes no turn. `courier_send` writes the row itself
+  once `synthetic` returns (`noteSent`), as the enqueued event is handled apart from the call and a
+  spawn in the same step would otherwise read the child at rest; `watchWake` keeps a row already there. The plugin API cannot list the
   inbox (`GET /api/session/:id/inbox` can); a delivered item becomes the stored message with the same
   id, and stamps nothing until its step starts. `session.synthetic` with the `id` of an item still
   waiting, or already delivered, returns that item (`reconcile` in `packages/core/src/session/inbox.ts`

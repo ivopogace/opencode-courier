@@ -3,6 +3,7 @@ import { groupStanding, holdReport, membershipFor, unholdForBlocked } from "./gr
 import type { Artifacts, CourierPorts, Held, HeldReport, Membership, RosterEntry, Sent } from "./ports.js"
 import { childStore, groupStore } from "./store.js"
 import { reportBody } from "./text.js"
+import { noteSent } from "./wake.js"
 
 export interface SendInput {
   readonly sessionID: string
@@ -25,13 +26,17 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
   try {
     const held = noted?.member && status && status !== "blocked" ? await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) }) : undefined
     if (held) return { status, report: true, held }
+    const text = envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {})
+    const description = `Message from ${from}`
     const delivered = await ports.session.synthetic({
       sessionID: input.sessionID,
-      text: envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {}),
-      description: `Message from ${from}`,
+      text,
+      description,
       metadata: { source: "courier", from, ...(status ? { status } : {}) },
       delivery: input.queue ? "queue" : "steer",
     })
+    // Watched now, not when OpenCode's enqueued event is handled: a spawn in the same step must count the child it wakes.
+    await noteSent(ports, { sessionID: input.sessionID, inboxID: delivered.id, text, description }).catch(() => undefined)
     // A blocked report, once delivered, is the member's latest word: an earlier report held for it would be stale.
     if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)
     return { messageID: delivered.id, ...(status ? { status } : {}), ...(noted ? { report: noted.report } : {}) }

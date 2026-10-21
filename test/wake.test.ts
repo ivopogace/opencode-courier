@@ -69,6 +69,16 @@ const handle = (ports: WatchPorts, e: { type: string; data?: unknown }) =>
   treeEvents({ seen: new Set(), inbox: new Map() }, async () => false).handle!(ports, e as never)
 
 describe("watching a courier message until it is delivered", () => {
+  test("leaves the row courier_send noted for the message as it is (#330)", async () => {
+    const { ports } = fakePorts({ ses_parent: [assistant(), idle()] })
+    const store = wakeStore(ports.storage)
+    await store.put({ sessionID: "ses_parent", inboxID: "msg_report", at: 99_000, text: "noted", running: true })
+
+    await handle(ports, enqueued())
+
+    expect(await store.of("ses_parent")).toEqual([{ sessionID: "ses_parent", inboxID: "msg_report", at: 99_000, text: "noted", running: true }])
+  })
+
   test("a session whose agent or model was switched since its last turn ended is idle, not running", async () => {
     const { ports } = fakePorts({ ses_parent: [assistant(), idle(), { id: "msg_switch", type: "model-switched" }] })
     await handle(ports, enqueued())

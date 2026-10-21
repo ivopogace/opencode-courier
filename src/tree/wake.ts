@@ -42,18 +42,28 @@ export async function watchWake(ports: WatchPorts, event: Enqueued) {
   // Sent without a wake: it waits for the next turn, which nothing owes it.
   if (payload.metadata.resume === false) return false
   const at = event.created ?? ports.now()
-  // Read after the enqueue: a turn it started has stored messages since, and an unknown session is taken to run.
-  const idle = await ports.session.context({ sessionID }).then(endsIdle, () => false)
-  await wakeStore(ports.storage).put({
-    sessionID,
-    inboxID,
-    at,
-    text: payload.text,
-    ...(typeof payload.description === "string" ? { description: payload.description } : {}),
-    running: !idle,
-    ...(idle ? { idleAt: at } : {}),
-  })
+  // A row `noteSent` wrote already is kept: it may have moved on since, and is no later than this one.
+  if ((await wakeStore(ports.storage).of(sessionID)).some((wake) => wake.inboxID === inboxID)) return true
+  await watch(ports, { sessionID, inboxID, at, text: payload.text, ...(typeof payload.description === "string" ? { description: payload.description } : {}) })
   return true
+}
+
+/**
+ * Watches a message `courier_send` has just had enqueued, without waiting for its enqueued event, so the limits see a reported child woken
+ * for it at once; the event leaves this row be. Dropped again if the message is already stored, delivered before it was written.
+ */
+export async function noteSent(ports: Pick<WatchPorts, "storage" | "session" | "now">, sent: { readonly sessionID: string; readonly inboxID: string; readonly text: string; readonly description?: string }) {
+  const store = wakeStore(ports.storage)
+  if ((await store.of(sent.sessionID)).some((wake) => wake.inboxID === sent.inboxID)) return
+  await watch(ports, { ...sent, at: ports.now() })
+  const stored = await ports.session.context({ sessionID: sent.sessionID }).then((messages) => messages.some((message) => message.id === sent.inboxID), () => false)
+  if (stored) await store.remove(sent.sessionID, sent.inboxID)
+}
+
+async function watch(ports: Pick<WatchPorts, "storage" | "session">, wake: { readonly sessionID: string; readonly inboxID: string; readonly at: number; readonly text: string; readonly description?: string }) {
+  // Read after the enqueue: a turn it started has stored messages since, and an unknown session is taken to run.
+  const idle = await ports.session.context({ sessionID: wake.sessionID }).then(endsIdle, () => false)
+  await wakeStore(ports.storage).put({ ...wake, running: !idle, ...(idle ? { idleAt: wake.at } : {}) })
 }
 
 /** Stops watching a message once it is delivered or cancelled. */

@@ -91,6 +91,13 @@ async function goneSince(ports: RefreshPorts, parts: ReadonlyArray<PartRecord>, 
   return new Set(looked.flatMap((one) => (one.gone ? [one.sessionID] : [])))
 }
 
+/** The top's turn: from the transcript read at `readAt`, unless a stamp since then moved its times, which `turnOf` reads again. */
+async function topTurnAfter(ports: RefreshPorts, top: string, info: Info, messages: Promise<Messages> | undefined, readAt: number): Promise<Turn> {
+  const fresh = await ports.session.get({ sessionID: top }).catch(() => undefined)
+  if (fresh && millis(fresh.time.updated) > readAt) return turnOf(ports.session, top, fresh.time)
+  return messages ? turnIn(ports.session, top, info.time, messages, readAt) : turnOf(ports.session, top, info.time)
+}
+
 /**
  * Writes the record of the tree under `top` as it stands at `at`, after the turn of `ended`; a part the roster has forgotten
  * keeps its last recorded state, unless found gone before it settled. Nothing for a top unknown to OpenCode or with memory off.
@@ -121,7 +128,8 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   ])
   // A courier message waiting in the top's inbox is a turn its transcript does not show yet, as for a part; a store that
   // cannot be read counts as one waiting, as `runs` counts a transcript it cannot read as running.
-  const [said, topRunning, topOwed] = await Promise.all([replies, (topMessages ? turnIn(ports.session, top, info.time, topMessages, topReadAt) : turnOf(ports.session, top, info.time)).then((turn) => turn.running), waitsInInbox(ports, top).catch(() => true)])
+  const topTurn = topTurnAfter(ports, top, info, topMessages, topReadAt)
+  const [said, topRunning, topOwed] = await Promise.all([replies, topTurn.then((turn) => turn.running), waitsInInbox(ports, top).catch(() => true)])
   // Read again just before the write: a courier_recall or courier_note call, or another turn end's refresh, wrote meanwhile.
   const latest = (await store.get(info.projectID, top).catch(() => previous)) ?? previous
   const last = new Map(latest?.parts.map((one) => [one.sessionID, one]))

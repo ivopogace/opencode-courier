@@ -14,9 +14,10 @@ polling.
 [![License: MIT](https://img.shields.io/npm/l/opencode-courier)](LICENSE)
 [![Supported OpenCode V2 version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fivopogace%2Fopencode-courier%2Fmain%2Fpackage.json&query=%24.peerDependencies%5B%27%40opencode%2Fplugin%27%5D&label=opencode&color=blue)](#supported-opencode-version)
 
-https://github.com/user-attachments/assets/74a50b9c-462a-43f5-8737-bc7dd1917988
+https://github.com/user-attachments/assets/d7cf74f8-15b3-4cc1-866e-b75ba0ac3f8a
 
-The edge cases on the live terminal UI, narrated ([what it shows](#demos)).
+The tree panel, the asks inbox, the edge cases and memory on the live terminal UI, narrated
+([what it shows](#demos)).
 
 ## Quickstart
 
@@ -74,18 +75,26 @@ turn ends.
 
 ## Demos
 
-The video at the top (1:46, narrated) is the TUI driven in `tmux` on the live test's scripted
-stand-in model, so each scene is real plugin behaviour:
+The video at the top (3:01, narrated) is the TUI driven in `tmux` on the live test's scripted
+stand-in model, so each scene is real plugin behaviour, the thing each step points at framed:
 
 - **A join group:** one member reports and its report is held with the group, while the other waits
-  on a permission request, so the footer says one is waiting on you. You allow it from the asks inbox
-  (`ctrl+x k`), and both reports reach the parent in one message.
+  on a permission request, so the footer says one is waiting on you. `/courier tree` opens the panel,
+  with Digby and a row for each child saying what it waits on.
+- **A click opens a child:** a click on a row opens that child's session, the panel following you
+  there: one waits on the permission, the other shows the report it sent.
+- **The asks inbox:** back on the parent, you allow the permission from the inbox (`ctrl+x k`), and
+  both reports reach the parent in one message; the parent notes a lesson with `courier_note`.
 - **A child whose turn fails:** OpenCode shows "Session failed", the parent is told, and the
   `/courier tree` row reads `failed`.
 - **A child that ends its turn without a report:** the parent is told, and the row says so.
 - **`/courier stop`:** pick the session, confirm, and it is stopped.
 - **A form only you can answer:** a child's web search shows a form; the footer, the panel row and
   the asks inbox point to it, and answering it there wakes the parent.
+- **The memory view:** `/courier memory` lists the project's session trees, each with how it was
+  split, how its parts went and its lesson; `p` pins one, listed first and never swept.
+- **Recall from another tree:** a new tree's `courier_recall` lists the pinned record first, lesson
+  and all.
 
 ## Recursive orchestration
 

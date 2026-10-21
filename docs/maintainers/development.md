@@ -77,8 +77,7 @@ The video at the top of README.md is made in two steps, neither in CI.
 [`script/record-demo.sh`](../../script/record-demo.sh) records it: a server, project and scripted model
 set up as `e2e/tui.sh` sets them up (default limits, and each report held back 3 s), with the TUI in
 `tmux`, typed into scene by scene, each step waiting for the screen to show what it leads to. The
-scenes are those README.md's [Demos](../../README.md#demos) lists, plus a click into each child from the
-tree panel, the asks inbox, the memory view and `courier_recall`.
+scenes are those README.md's [Demos](../../README.md#demos) lists.
 [`script/demo-cast.mjs`](../../script/demo-cast.mjs) writes the pane's output to an asciicast v2 file,
 with a marker at the start of each scene and one for each highlight: a step that points at something
 on screen (`look`, or `click` on a tree panel row) marks its cells, until the next key. `COLS` and

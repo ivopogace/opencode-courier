@@ -465,7 +465,11 @@ last prompt. A subscription made before the last prompt is not waiting, since it
 it was made for: once a delivery has come and the child has ended its turn again without reporting,
 its parent is told. A turn stopped by OpenCode's
 shutdown resumes on the next start and does not count as interrupted; one stopped otherwise (by the
-person, or by OpenCode after an hour without activity) settles the report and is not told.
+person, or by OpenCode after an hour without activity) settles the report and is not told. A turn that
+a plain permission decline or a dismissed question ended, which OpenCode reports as a shutdown, is
+told to the parent like any other turn ending without a report: the plugin reads the child's
+transcript, and one ending on an interrupted step is a decline. A real shutdown during a step ends
+the same way and is told too, as the server is going down.
 
 The state is kept in the plugin's storage, so a restart does not lose it. It goes with the child's
 roster entry, and when OpenCode deletes the session; deleting a session drops that of the sessions it
@@ -684,7 +688,7 @@ tree.
 session started under it. Its record is kept under the storage key `memory/<projectID>/<topSessionID>`,
 where `projectID` is OpenCode's id of the project the top session runs in (`location.project.id`,
 which every worktree of a repository shares). It is written again, whole, each time a turn ends in
-the tree: when a spawned session's turn succeeds, fails or is interrupted (not by a shutdown), and
+the tree: when a spawned session's turn succeeds, fails or is interrupted (not by a shutdown, unless a plain decline ended it), and
 when the top's own turn ends, once it has started a session or called `courier_recall`. The refresh
 reads the roster's subtree under the top, each session's info and its [report
 state](#a-child-that-ends-without-a-report), and stored messages only where they can have changed: a

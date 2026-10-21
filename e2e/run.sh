@@ -1305,7 +1305,7 @@ run_archive() {
   turn_ended "$fifth"
 
   scenario "a follow-up courier_send to a reported child is watched when the tool returns, so a spawn in the same step counts it (#330)"
-  reports_before=$(texts "$third_parent" | grep -cF "CHILD DONE AFTER NUDGE")
+  reports_before=$(texts "$third_parent" | grep -cF "CHILD DONE AFTER NUDGE" || true)
   nudged=$(prompt_in "$third_parent" "COURIER-NUDGE $fifth" | tool_state courier_send | jq -r '.metadata.metadata.messageID // empty')
   check "the parent sent its reported child a follow-up ($nudged)" "$([ -n "$nudged" ] && echo true || echo false)"
   # The enqueued event is handled apart from the send; the row is there at once, or the child has already taken the message.

@@ -12,7 +12,6 @@ import { ART, art, BLINK_EVERY, cells, digby, glyph, GLYPH, MASCOT_EVERY, type M
 import { MEMORY_USAGE } from "../src/memory/tui.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
-import { step, trace } from "./trace-344.js"
 
 /** The fake theme's success background, a row's flash. */
 const FLASH = RGBA.fromInts(0, 200, 0)
@@ -1371,7 +1370,7 @@ const SETTLE_TURNS = 100
  * to wake Bun's event loop, which can then sleep on a pending immediate until the test times out (#344).
  */
 function immediates() {
-  const pending = new Map<unknown, () => void>()
+  const pending = new Map<ReturnType<typeof setImmediate>, () => void>()
   const set = globalThis.setImmediate
   const clear = globalThis.clearImmediate
   globalThis.setImmediate = ((callback: (...args: unknown[]) => void, ...args: unknown[]) => {
@@ -1381,8 +1380,8 @@ function immediates() {
     pending.set(handle, () => callback(...args))
     return handle
   }) as typeof setImmediate
-  globalThis.clearImmediate = ((handle: Parameters<typeof clearImmediate>[0]) => {
-    pending.delete(handle)
+  globalThis.clearImmediate = ((handle?: ReturnType<typeof setImmediate>) => {
+    if (handle) pending.delete(handle)
     clear(handle)
   }) as typeof clearImmediate
   return {
@@ -1390,7 +1389,7 @@ function immediates() {
     turn: () => {
       for (const [handle, run] of [...pending])
         if (pending.delete(handle)) {
-          clear(handle as Parameters<typeof clearImmediate>[0])
+          clear(handle)
           run()
         }
     },
@@ -1440,25 +1439,19 @@ describe("the tree panel's motion (#224)", () => {
     const [name, setName] = createSignal(PANEL)
     const value = Object.defineProperty(panelInput("ses_parent", PANEL, { focused: false }).value, "name", { get: name })
     const app = await settle(renderPanel(fake.claim("session.panel"), value, height, width, under))
-    trace(app)
     const frame = async () => {
-      step("frame ticks")
       for (let i = 0; i < 20; i++) await Promise.resolve()
-      step("frame renderOnce")
       await settle(app.renderOnce())
-      step(`frame capture destroyed=${app.renderer.isDestroyed}`)
       // The renderer is gone only once a timeout ended the test: stop its body here rather than draw on a freed buffer.
       if (app.renderer.isDestroyed) await new Promise(() => {})
       return app.captureCharFrame()
     }
     /** Moves the fake clock by `ms` and draws what follows. */
     const advance = async (ms: number) => {
-      step(`advance ${ms}`)
       jest.advanceTimersByTime(ms)
       return frame()
     }
     const refresh = async () => {
-      step("refresh")
       fake.command("r").run()
       return frame()
     }
@@ -1820,7 +1813,6 @@ describe("the tree panel's motion (#224)", () => {
     }
     /** Digby shows one of `pose`'s frames, each cell's background its own token's or the panel's, now and for `steps` frames on. */
     const holds = async (pose: MascotState, steps = 3) => {
-      step(`holds ${pose} ${steps}`)
       // Every frame until the cycles of 2, 3 and 4 frames and the blink line up again.
       const each = Array.from({ length: BLINK_EVERY * 12 }, (_, frame) => JSON.stringify(expected(where === "header" ? cells(glyph(pose, frame)) : art(pose, frame))))
       const frames = [...new Set(each)].map((one) => JSON.parse(one))
@@ -1834,19 +1826,16 @@ describe("the tree panel's motion (#224)", () => {
       holds,
       advance: panel.advance,
       go: async (next: Row["state"]) => {
-        step(`go ${next}`)
         state = next
         await panel.refresh()
       },
       report: async () => {
-        step("report")
         reported = false
         await panel.refresh()
         reported = true
         await panel.refresh()
       },
       spawn: async () => {
-        step("spawn")
         spawned++
         await panel.refresh()
       },

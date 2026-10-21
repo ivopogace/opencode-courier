@@ -1305,12 +1305,14 @@ run_archive() {
   turn_ended "$fifth"
 
   scenario "a follow-up courier_send to a reported child is watched when the tool returns, so a spawn in the same step counts it (#330)"
+  reports_before=$(texts "$third_parent" | grep -cF "CHILD DONE AFTER NUDGE")
   nudged=$(prompt_in "$third_parent" "COURIER-NUDGE $fifth" | tool_state courier_send | jq -r '.metadata.metadata.messageID // empty')
   check "the parent sent its reported child a follow-up ($nudged)" "$([ -n "$nudged" ] && echo true || echo false)"
   # The enqueued event is handled apart from the send; the row is there at once, or the child has already taken the message.
   check "which is watched, or already taken and the watch over" \
     "$(for _ in $(seq 1 10); do [ -n "$(kv get "wake/$fifth/$nudged")" ] || [ "$(api "session/$fifth/message" | jq -r --arg id "$nudged" 'any(.data[]; .id == $id)')" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
-  check "the child reported again, waking the parent" "$(has_text "$third_parent" "CHILD DONE AFTER NUDGE" 45)"
+  check "the child reported again, waking the parent" \
+    "$(for _ in $(seq 1 45); do [ "$(texts "$third_parent" | grep -cF "CHILD DONE AFTER NUDGE")" -gt "$reports_before" ] && { echo true; exit; }; sleep 1; done; echo false)"
   check "and the watch is over" "$(for _ in $(seq 1 10); do [ -z "$(kv get "wake/$fifth/$nudged")" ] && { echo true; exit; }; sleep 1; done; echo false)"
   turn_ended "$fifth"
   turn_ended "$third_parent"

@@ -89,7 +89,8 @@ It needs tmux, jq, curl and what `e2e/tui.sh` needs.
 
 [`script/render-demo.sh`](../../script/render-demo.sh) turns the cast into a `.mp4` with a voice-over,
 drawn by agg at its own size (`FONT_SIZE`, 20) and `FPS` (15), and scaled to 1920×1080 at the end. [`script/demo-narration.json`](../../script/demo-narration.json) holds a line per scene,
-keyed by the scene's name (`""` for the opening before the first scene), and the voice;
+keyed by the scene's name (`""` for the opening before the first scene), the closing line (`outro`),
+spoken over an end card with the install command, and the voice;
 [`script/demo-timeline.mjs`](../../script/demo-timeline.mjs) caps the cast's pauses at `IDLE` (3 s)
 and refuses a narration whose scenes are not the cast's; [`script/demo-voice.py`](../../script/demo-voice.py),
 run with `uv`, speaks each line with [Kokoro-82M](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX),
@@ -97,7 +98,8 @@ downloaded from Hugging Face on the first run, no key needed; [`agg`](https://gi
 draws the terminal. Each scene's line starts with the scene, and a scene shorter than its line holds
 its last frame until the voice ends. Around each highlight the screen is dimmed and the highlight
 framed in orange, so the viewer follows what the voice names, with plain boxes, so a highlight costs
-only the pixels it covers. It needs agg, ffmpeg (with ffprobe), node and uv; `KEEP=1` keeps its temp
+only the pixels it covers. It needs agg, ffmpeg (with ffprobe), node and uv, and fontconfig's `fc-match` unless `FONT` and
+`MONO_FONT` name the end card's font files; `KEEP=1` keeps its temp
 directory. On four cores the recording takes about 4 minutes, as it runs in real
 time, and the render about 6; a change to the narration needs only the render.
 

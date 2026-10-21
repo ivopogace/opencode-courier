@@ -35,5 +35,17 @@ done
 ffmpeg -loglevel error -y -f concat -safe 0 -i "$WORK/scenes.txt" -c copy "$WORK/narrated.mp4"
 echo "highlighting"
 ffmpeg -loglevel error -y -i "$WORK/narrated.mp4" -filter_script:v "$WORK/focus.txt" \
-  -c:v libx264 -preset veryfast -crf 18 -c:a copy -movflags faststart "$OUT"
+  -c:v libx264 -preset veryfast -crf 18 -c:a copy "$WORK/highlighted.mp4"
+
+echo "the end card"
+outro=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).outro' "$WORK/voice/voice.json")
+card=$(awk -v s="$outro" 'BEGIN { print s + 3.5 }')
+font=${FONT:-$(fc-match -f '%{file}' 'Inter:style=Bold')}
+mono=${MONO_FONT:-$(fc-match -f '%{file}' monospace)}
+text() { echo "drawtext=fontfile='$1':text='$2':fontsize=$3:fontcolor=$4:x=(w-text_w)/2:y=$5"; }
+ffmpeg -loglevel error -y -f lavfi -i "color=c=0x0d0d0d:s=1920x1080:r=30:d=$card" -i "$WORK/voice/outro.wav" -filter_complex \
+  "[0:v]$(text "$font" "Thanks for watching" 104 0xF5A742 380),$(text "$font" "opencode-courier" 56 white 540),$(text "$mono" "opencode plugin add opencode-courier" 36 0x9a9a9a 640),$(text "$mono" "github.com/ivopogace/opencode-courier" 30 0x6a6a6a 710),fade=in:st=0:d=0.6,format=yuv420p[v];[1:a]adelay=500:all=1,apad,aresample=48000[a]" \
+  -map '[v]' -map '[a]' -t "$card" -c:v libx264 -preset veryfast -crf 18 -c:a aac -ar 48000 -ac 2 "$WORK/outro.mp4"
+printf "file '%s'\nfile '%s'\n" "$WORK/highlighted.mp4" "$WORK/outro.mp4" >"$WORK/final.txt"
+ffmpeg -loglevel error -y -f concat -safe 0 -i "$WORK/final.txt" -c copy -movflags faststart "$OUT"
 echo "wrote $OUT ($(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT" | cut -d. -f1) s)"

@@ -1,6 +1,7 @@
 {
   "voice": "af_heart",
   "speed": 1.0,
+  "outro": "Thanks for watching!",
   "scenes": {
     "": "opencode courier: sessions hand work to other sessions, and are woken when they report.",
     "A join group": "The parent starts two children in one join group. One reports at once, and its report is held with the group. The other asks for a permission, so the footer says one is waiting on you. Courier tree opens the panel: Digby the mole, and a row for each child with what it waits on.",

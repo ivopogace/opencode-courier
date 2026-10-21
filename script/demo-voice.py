@@ -6,8 +6,8 @@
 
     uv run script/demo-voice.py <narration.json> <out dir>
 
-Writes <out dir>/<n>.wav for the n-th scene in the file's order, and <out dir>/voice.json with each one's
-seconds. The model and voice come from onnx-community/Kokoro-82M-v1.0-ONNX, cached by huggingface_hub."""
+Writes <out dir>/<n>.wav for the n-th scene in the file's order, <out dir>/outro.wav for the closing line, and
+<out dir>/voice.json with their seconds. The model and voice come from onnx-community/Kokoro-82M-v1.0-ONNX, cached by huggingface_hub."""
 import json
 import sys
 from pathlib import Path
@@ -28,10 +28,13 @@ style = np.fromfile(hf_hub_download(REPO, f"voices/{voice}.bin"), dtype=np.float
 np.savez(out / "voices.npz", **{voice: style})
 kokoro = Kokoro(hf_hub_download(REPO, "onnx/model.onnx"), str(out / "voices.npz"))
 
-seconds = []
-for index, text in enumerate(narration["scenes"].values()):
+
+def speak(text, name):
     audio, rate = kokoro.create(text, voice=voice, speed=narration.get("speed", 1.0), lang="en-us")
-    sf.write(out / f"{index}.wav", audio, rate)
-    seconds.append(len(audio) / rate)
-    print(f"{index}: {seconds[-1]:.1f} s")
-(out / "voice.json").write_text(json.dumps({"seconds": seconds}))
+    sf.write(out / f"{name}.wav", audio, rate)
+    print(f"{name}: {len(audio) / rate:.1f} s")
+    return len(audio) / rate
+
+
+seconds = [speak(text, index) for index, text in enumerate(narration["scenes"].values())]
+(out / "voice.json").write_text(json.dumps({"seconds": seconds, "outro": speak(narration["outro"], "outro")}))

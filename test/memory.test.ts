@@ -825,8 +825,8 @@ describe("refresh", () => {
     contexts.length = 0
     const record = await refresh(ports, state, "ses_top", NOW, "ses_a")
 
-    // ses_c, which never ended a turn, is read for whether it runs too.
-    expect([...new Set(contexts)].toSorted()).toEqual(["ses_a", "ses_c"])
+    // Once each: ses_c, never recorded, is read for its use and for whether it runs by the same read.
+    expect(contexts.toSorted()).toEqual(["ses_a", "ses_c"])
     expect(record!.parts.map(({ sessionID, context, refused }) => [sessionID, context, refused])).toEqual([
       ["ses_a", 0.6, 1],
       ["ses_b", 0.4, 1],
@@ -1118,8 +1118,8 @@ describe("the event module", () => {
 
     contexts.length = 0
     await noteTurnEnd(ports, state, ended("ses_b", "evt_2"))
-    // For its use, and for whether it runs, its times stamped since its last turn ended.
-    expect([...new Set(contexts)]).toEqual(["ses_b"])
+    // For its use and for whether it runs (its times stamped since its last turn ended), by one read.
+    expect(contexts).toEqual(["ses_b"])
   })
 
   test("records the top's own turn ends too, and leaves a shutdown's interruption, another event and a session in no tree alone", async () => {

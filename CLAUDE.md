@@ -50,7 +50,7 @@ import rules and the reasons for them.
   just made (`send.ts`, `spawn.ts`) and dropping a delivered group (`group.ts`) stay with their use
   case. One file per use case: `spawn.ts`, `send.ts`, `status.ts` (`courier_status`,
   `courier_children`), `subtree.ts` (`courier_tree`), `stop.ts` (`courier_stop`), `cleanup.ts`.
-  `limits.ts` the limits `spawn()` checks; `running.ts` whether a session runs (`turnOf`, `runs`: its
+  `limits.ts` the limits `spawn()` checks; `running.ts` whether a session runs (`turnOf`, `turnIn` for messages the caller read, `runs`: its
   times, and its transcript once anything stamped them since its last turn ended, and when that turn ended); `report.ts` whether
   each spawned session owes a report;
   `group.ts` join groups (joining, holding, leaving, standing, `deliverReleased`); `roster.ts` the

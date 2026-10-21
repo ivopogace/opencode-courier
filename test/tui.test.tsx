@@ -1362,28 +1362,88 @@ function frameTimers() {
   }
 }
 
+/** How many turns of immediates `settle` runs before it gives up on what it awaits. */
+const SETTLE_TURNS = 100
+
+/**
+ * Lets the test run the pending `setImmediate` callbacks itself, each still once: under fake timers no real timer is left
+ * to wake Bun's event loop, which can then sleep on a pending immediate until the test times out (#344).
+ */
+function immediates() {
+  const pending = new Map<ReturnType<typeof setImmediate>, () => void>()
+  const set = globalThis.setImmediate
+  const clear = globalThis.clearImmediate
+  globalThis.setImmediate = ((callback: (...args: unknown[]) => void, ...args: unknown[]) => {
+    const handle = set(() => {
+      if (pending.delete(handle)) callback(...args)
+    })
+    pending.set(handle, () => callback(...args))
+    return handle
+  }) as typeof setImmediate
+  globalThis.clearImmediate = ((handle?: ReturnType<typeof setImmediate>) => {
+    if (handle) pending.delete(handle)
+    clear(handle)
+  }) as typeof clearImmediate
+  return {
+    /** Runs the callbacks pending now, in the order they were set, as a turn of the event loop does. */
+    turn: () => {
+      for (const [handle, run] of [...pending])
+        if (pending.delete(handle)) {
+          clear(handle)
+          run()
+        }
+    },
+    restore: () => {
+      globalThis.setImmediate = set
+      globalThis.clearImmediate = clear
+    },
+  }
+}
+
 describe("the tree panel's motion (#224)", () => {
   let timers: ReturnType<typeof frameTimers> | undefined
+  let turns: ReturnType<typeof immediates> | undefined
   afterEach(() => {
     timers?.restore()
     timers = undefined
+    turns?.restore()
+    turns = undefined
     jest.useRealTimers()
   })
+
+  /** Awaits `work`, running the immediates it waits on, and fails rather than hangs when they never finish it. */
+  async function settle<T>(work: Promise<T>): Promise<T> {
+    let done = false
+    work.then(
+      () => (done = true),
+      () => (done = true),
+    )
+    for (let turn = 0; ; turn++) {
+      await new Promise<void>((resolve) => process.nextTick(resolve))
+      if (done) return work
+      if (turn === SETTLE_TURNS) throw new Error(`still waiting after ${SETTLE_TURNS} turns of immediates`)
+      turns!.turn()
+    }
+  }
 
   /** Opens the panel, unfocused so no selection colours a row, on the trees `trees()` gives, with fake timers and `options`. */
   async function motion(trees: () => Tree, options: Record<string, unknown> = {}, height = 24, width = 100, under?: RGBA) {
     jest.useFakeTimers()
     timers = frameTimers()
+    turns?.restore()
+    turns = immediates()
     const fake = fakeContext(async () => empty)
     Object.assign(fake.context, { options })
     fake.state.tree = async () => trees()
     await tui.setup(fake.context)
     const [name, setName] = createSignal(PANEL)
     const value = Object.defineProperty(panelInput("ses_parent", PANEL, { focused: false }).value, "name", { get: name })
-    const app = await renderPanel(fake.claim("session.panel"), value, height, width, under)
+    const app = await settle(renderPanel(fake.claim("session.panel"), value, height, width, under))
     const frame = async () => {
       for (let i = 0; i < 20; i++) await Promise.resolve()
-      await app.renderOnce()
+      await settle(app.renderOnce())
+      // The renderer is gone only once a timeout ended the test: stop its body here rather than draw on a freed buffer.
+      if (app.renderer.isDestroyed) await new Promise(() => {})
       return app.captureCharFrame()
     }
     /** Moves the fake clock by `ms` and draws what follows. */

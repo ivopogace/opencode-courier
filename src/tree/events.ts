@@ -104,8 +104,8 @@ export async function notePrompt(
 }
 
 /**
- * Notes that a spawned session's turn was stopped, which takes it out of its group without a report; one
- * stopped by a shutdown resumes on the next start.
+ * Notes that a spawned session's turn was stopped, which takes it out of its group without a report; a
+ * shutdown's is left to `reportDeclined`, as one stopped between steps resumes on the next start.
  */
 export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
   if (event.data.reason === "shutdown") return false
@@ -212,7 +212,7 @@ export async function reportDeclined(ports: WatchPorts, seen: Set<string>, event
 
 const TURN_ENDS = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
 
-/** A session's turn ended, sealing its groups: one that is complete has the scheduler deliver it now. */
+/** A session's turn ended, sealing its groups: one that is complete has the scheduler deliver it now; not a shutdown's, which stamps no idle time. */
 async function sealGroups(ports: WatchPorts, event: SessionEvent) {
   if (event.data.reason === "shutdown") return
   try {

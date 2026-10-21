@@ -2,7 +2,7 @@
 // kept current by the event module, read back and noted by courier_recall, bounded per project, off with one option;
 // and its lesson (#261, #269): the one line courier_note writes on it from the top or a sub-orchestrator, never a leaf,
 // refused over LESSON_MAX rather than clipped.
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import type { ToolEditor } from "../src/kernel/tool.js"
 import {
   isSettled,
@@ -44,6 +44,7 @@ import { sweepRecords } from "../src/memory/sweep.js"
 import { age, duration, lessonLine, recallListText, recordLine } from "../src/memory/text.js"
 import { addMemoryTools } from "../src/memory/tools.js"
 import type { RosterEntry } from "../src/tree/domain.js"
+import { turnOf } from "../src/tree/index.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
 
 type Session = { created?: number; updated: number; idle?: number; archived?: number; cost?: number; title?: string; messages?: unknown[]; projectID?: string; directory?: string }
@@ -685,6 +686,33 @@ describe("refresh", () => {
     expect(await refresh(ports, state, "ses_top", NOW)).toMatchObject({ finished: false })
     ;(ports.storage as any).scan = scan
     expect(await refresh(ports, state, "ses_top", NOW)).toMatchObject({ finished: true })
+  })
+
+  test("measures a rest read just after a stamp from the read, not from when a slow session.get resolves (#336)", async () => {
+    const { ports, state, contexts } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000, messages: [{ type: "idle" }] },
+      ses_a: { updated: NOW - 1000, idle: NOW - 100_000, messages: [{ type: "idle" }] },
+    })
+    const children = childStore(ports.storage)
+    await children.record(entry("ses_a", "ses_top"))
+    await children.prompted("ses_a", NOW - 290_000)
+    let clock = NOW
+    const clockSpy = spyOn(Date, "now").mockImplementation(() => clock)
+    try {
+      const get = ports.session.get
+      ;(ports.session as any).get = async (input: { sessionID: string }) => {
+        if (input.sessionID === "ses_a") clock += 20_000
+        return get(input)
+      }
+
+      await refresh(ports, state, "ses_top", NOW)
+      const read = contexts.filter((id) => id === "ses_a").length
+      await turnOf(ports.session, "ses_a", { updated: NOW - 1000, idle: NOW - 100_000 }, clock)
+
+      expect(contexts.filter((id) => id === "ses_a").length).toBe(read + 1)
+    } finally {
+      clockSpy.mockRestore()
+    }
   })
 
   test("does not read a tree as finished while its top, archived between two steps of a turn, runs on (#324)", async () => {

@@ -693,7 +693,7 @@ reads the roster's subtree under the top, each session's info and its [report
 state](#a-child-that-ends-without-a-report), and stored messages only where they can have changed: a
 part's `context` and `refused` are read from its messages when its own turn ends or it is first seen,
 and kept from the last refresh otherwise, and the top's, for its `split` and `revisions`, on its own
-turn ends and while the record states no split line yet (`not stated`, or only a mention). Another session's turn end
+turn ends and while the record states no split line yet (`not stated`, or only a mention). A refresh reads each session's messages at most once: the same read gives a part its use and tells whether it runs, and the top's gives its replies and whether it runs; a session whose times show rest and whose messages are not wanted for the record is not read, and one whose times do not show rest is read for whether it runs, unless that answer is still held. Another session's turn end
 reads only the top's finished replies (`time.completed` set), so a line the top is still writing waits for its
 own turn end. It runs through the plugin's event follower, so whichever
 instance follows OpenCode's events writes it, once. A session the roster has forgotten since keeps the

@@ -65,7 +65,8 @@ import rules and the reasons for them.
   verbs such as `memory` `src/tui.tsx` hands it as `Verb`s) and the report sounds (`addTreeAttention`);
   it imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, `rpc.ts`, `text.ts` and
   `mascot.ts`. `mascot.ts` Digby, the panel's mole: his frames as pixel tokens, pure and importing
-  nothing, snapshotted in `test/__snapshots__/tui.test.tsx.snap`. `wake.ts` the missed wake
+  nothing, snapshotted in `test/__snapshots__/tui.test.tsx.snap`; his muted pixels never touch the
+  mound's, as `background.raised.max` is close to `text.muted`. `wake.ts` the missed wake
   (`watchWake`, `wakeMissed`, `stalledAmong`, `waitsInInbox`); `events.ts` `treeEvents`, with `waitsOn` and `together`
   to compose the `Waits` port; `context.ts` the `context` hook naming each spawned session's role and
   hiding `courier_spawn` and the tools `hiddenFromLeaf` names from a leaf.
@@ -203,8 +204,8 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   newest three rows and `docs/reference.md`'s all, are generated from the release tags by
   `script/compat-table.ts`, which Start a release runs and CI checks: never edit them by hand. A pin
   bump, asked for by the issue `latest.yml` opens for a new OpenCode release, moves the version README
-  names (Quickstart, OpenCode V2 native, the install command, the terminal part's line under the
-  table; a unit test checks the first three), is followed by a patch release, and updates the affected
+  names (Quickstart, the Install section's "tested on" line, the install command, the terminal part's
+  line under the table; a unit test checks the first three), is followed by a patch release, and updates the affected
   traps in `docs/maintainers/plugin-api-notes.md` and the version they are current at; that file has no
   per-version sections. It also reads OpenCode's root `package.json` catalog at the new tag for
   `@opentui/*` and `solid-js`, and moves the devDependencies `@opentui/core`, `@opentui/solid`,
@@ -215,7 +216,15 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   decline `courier_answer` rethrows as it is, which ends the step as OpenCode's own tools do (the
   reasons: `docs/maintainers/plugin-api-notes.md`, Tools).
 - Behaviour changes come with unit tests and an e2e scenario, and update README.md and
-  `docs/reference.md`.
+  `docs/reference.md`. README.md keeps the pitch, the install, a short how-it-works, the options, the
+  tools table and the demo video, at about 150 lines; every other behaviour goes in
+  `docs/reference.md`, stated once. The maintainer docs keep only what the code and CI do not show.
+- Model-facing design constraints: the role part `context.ts` adds is the same on every request of a
+  session, so the provider's prompt cache holds; so `courier_spawn` does not gate on the skill being
+  loaded (the role part could not say it, `/skills` attaches the text without the `skill` tool, and a
+  weak model retries without the text). The skill's steps repeat the brief's split rule on purpose,
+  since the root has no brief. `courier_recall`'s listing leaves out a record's reads: they are for
+  the person pruning, not for the model deciding a split.
 - Feature work goes on a branch and through a PR with green CI; `Closes #N` in the body.
 - Code comments and TSDoc only where the code cannot say it itself, and at most two lines each.
 - Running several issues at once in child sessions: the `courier-wave` skill.

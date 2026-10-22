@@ -1,10 +1,10 @@
 # Smoke test with a real model
 
 `e2e/run.sh` proves the plumbing with a scripted model. `e2e/real-model.sh` checks that a real model
-uses the tools as meant: the parent spawns sessions instead of doing the work itself, ends its turn
-instead of waiting or polling, each child calls `courier_send` with a status before it stops, and
-each report wakes the idle parent. It is not part of CI. Re-run it after any change to a model-facing
-string: `src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or a tool description.
+uses the tools as meant: the parent spawns instead of doing the work, ends its turn instead of
+polling, each child reports with a status, and each report wakes the parent. It is not in CI.
+Re-run it after any change to a model-facing string: `src/**/text.ts`, `src/kernel/protocol.ts`,
+`src/skill.ts` or a tool description.
 
 ## Running it
 
@@ -14,61 +14,49 @@ npm install --prefix <scratch>/oc @opencode/cli@2.1.3
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
 ```
 
-It sets up the same throwaway home directory, project and server as `run.sh`, with the plugin loaded
-from the local build. The default model, `opencode/longcat-2.5-preview-free`, is free on [OpenCode
-Zen](https://opencode.ai/zen) and needs no key. Free models are rate limited; check Zen's terms before
-sending them anything private (the prompts here are trivial on purpose).
+It uses the same throwaway server as `run.sh`, with the local build. The default model,
+`opencode/longcat-2.5-preview-free`, is free on [OpenCode Zen](https://opencode.ai/zen) and needs no
+key. Free models are rate limited; check Zen's terms before sending anything private.
 
-Zen's free tier refuses the provider declared by `COURIER_BASE_URL` (HTTP 403, `provider.auth`,
-`FreeTierError` "OpenCode's free tier can only be used from within OpenCode"): set `COURIER_BASE_URL=`
-(empty) so OpenCode's own catalog entry for the `opencode` provider is used. From a shared cloud
-address the same 403 then comes by volume: a handful of requests get through and the rest are
-refused, so the recursive scenario, which needs 15 to 25 requests in four minutes, runs from a machine
-of one's own.
+Zen's free tier refuses the provider `COURIER_BASE_URL` declares (403, `FreeTierError`): set
+`COURIER_BASE_URL=` (empty) to use OpenCode's own catalog entry. From a shared cloud address the
+free tier refuses by volume too, so run the recursive scenarios (15 to 25 requests in four minutes)
+from your own machine.
 
 | Variable | Default | |
 |---|---|---|
 | `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `longcat-2.5-preview-free` | The model, as OpenCode names it. |
-| `COURIER_BASE_URL` | Zen's endpoint for `opencode` | Declares the provider in `opencode.json` as an OpenAI-compatible endpoint with this URL. Set it empty to use OpenCode's catalog instead, with the provider's usual key variable, such as `ANTHROPIC_API_KEY`. |
-| `COURIER_API_KEY_ENV` | | For a declared provider, the name of the variable holding its key. The config refers to it as `{env:NAME}`, so the key is never written to a file. |
-| `COURIER_SCENARIO` | | `permission`, `question`, `recursive`, `recursive-fault` or `recursive-staged` for the scenarios below; the fan-out by default. |
-| `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the final reply must hold. |
-| `COURIER_FILES` | per scenario | With `recursive`, `recursive-fault` or `recursive-staged`: the files, relative to the project, that must hold those values, in the same order; with `recursive-staged` the first is the core's. |
-| `COURIER_MAX_DEPTH` | `3` | With `recursive`, `recursive-fault` or `recursive-staged`: the `maxDepth` the checker holds the tree to. |
-| `COURIER_SKILL` | | `deny` adds the rule `{ "action": "skill", "resource": "courier-orchestrate", "effect": "deny" }` after the others in `opencode.json`'s `permissions`, so no session is offered the skill or can load it ([a part with a core](#a-part-with-a-core)); any scenario. |
-| `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server on the same data directory. |
+| `COURIER_BASE_URL` | Zen's endpoint | Declares the provider as an OpenAI-compatible endpoint. Empty uses OpenCode's catalog, with the provider's usual key variable. |
+| `COURIER_API_KEY_ENV` | | For a declared provider, the variable holding its key (written as `{env:NAME}`, never to a file). |
+| `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault` or `recursive-staged`. |
+| `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the reply must hold. |
+| `COURIER_FILES` | per scenario | Recursive scenarios: the files that must hold those values, in order; for `recursive-staged` the first is the core's. |
+| `COURIER_MAX_DEPTH` | `3` | Recursive scenarios: the `maxDepth` the checker holds the tree to. |
+| `COURIER_SKILL` | | `deny` denies `courier-orchestrate` in `permissions`, so no session can load it. |
+| `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
-| `COURIER_NATIVE` | | `1` loads the plugin with [`nativeChildren`](../reference.md#native-child-sessions) on. |
-| `COURIER_SEED` | | A JSON file of plugin storage keys, `{ "<key>": <value>, … }`, set with `e2e/kv.ts` once the server is up and before the parent's prompt; `<project>` in a key or value stands for the project's id ([seeding a record](#seeding-a-record)). |
-| `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, and then for the children. |
+| `COURIER_NATIVE` | | `1` turns `nativeChildren` on. |
+| `COURIER_SEED` | | A JSON file of storage keys to set before the prompt ([seeding a record](#seeding-a-record)). |
+| `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, then for the children. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |
 
-Each run prints a timeline of every session's turns and tool calls, its checks and notes, and keeps
+Each run prints a timeline of every session's turns and tool calls, its checks and notes. It keeps
 `parent.json`, `child-<id>.json`, `timeline.txt`, `summary.json` and the server log in the work
-directory. Turns are read from the transcript: OpenCode records an `idle` message when a turn ends,
-and a delivered message opens a new turn when it arrived after that marker; otherwise it was steered
-into the running turn. The exit code is 0 when every check passes and 1 when one fails; it is 2 when
-checks fail and model requests failed too, usually HTTP 429 from a free model: run it again. Run it in
-a plainly named directory (the default temp dir is): a model that copies a long, odd path into its
-children's tasks gets it wrong, and the files land elsewhere.
+directory. The exit code is 0 when every check passes, 1 when one fails, and 2 when checks fail and
+model requests failed too (usually a 429): run it again. Use a plainly named work directory: a model
+that copies a long, odd path into a task gets it wrong.
 
 ### Reading a stall
 
-The server runs at `--log-level debug` (`SERVER_FLAGS` in `e2e/lib.sh`, set by `real-model.sh`;
-`run.sh` keeps the default level) and `e2e/probe-plugin` is loaded, so a session that stops moving can
-be traced in three files of the work directory:
+The server runs at `--log-level debug` with `e2e/probe-plugin` loaded. To trace a session that
+stops moving:
 
-- `timeline.txt` (the recursive scenarios) gives each step and each tool call with its start and end time,
-  and for a step how long after the last event before it began. A tool that ended and a next step that
-  began minutes later is a gap you can read off as a number; a step shown as `…` has no end, which is a
-  request without an answer.
-- `server.log` holds no line per provider request, even at that level (OpenCode 2.0.32), only failures,
-  as `Failed to drain Session` errors with their cause. Look from the time the tool ended: an error
-  after it names what went wrong; no error says nothing, so a request that was never sent or never
-  answered is read from the timeline and `probe.log`.
-- `probe.log` holds one JSON line per event the server emitted (`at`, `type`, `sessionID`). Filter it by
-  the stalled session and the minutes after the tool's end: events for that session, such as
-  `session.execution.failed`, say what the server did; none say it did nothing.
+- `timeline.txt` gives each step and tool call with start and end times. A long gap between a tool's
+  end and the next step is visible; a step shown as `…` is a request with no answer.
+- `server.log` logs no line per provider request, only failures (`Failed to drain Session`). No
+  error after the tool's end says nothing.
+- `probe.log` has one JSON line per event (`at`, `type`, `sessionID`). No events for the session
+  after the tool's end means the server did nothing.
 
 ## The fan-out
 
@@ -79,63 +67,43 @@ The default. The parent is asked:
 > reports the number it printed. Start them with courier_spawn and do not run the commands
 > yourself. When both have reported back, reply with one line: RESULTS \<first\> \<second\>
 
-The sleeps stand in for real work, so each report finds the parent idle, 20 seconds apart. Eight
-checks: the parent spawned two children; it ended its first turn after spawning, with no reports in
-it; it did not poll (any `courier_status`, `courier_children` or `sleep` right after spawning, or more
-than one in a later turn; a single look after being woken is only noted); both children called
-`courier_send` to the parent; both reports woke it (each arrived after its first turn and got a
-reply); each report carries a status; each holds its child's answer; and the final reply holds both.
-A `courier_later` check-in is not a report.
-
-The README's [Quickstart](../../README.md#quickstart) prompt is a shorter wording of the same task:
-set `COURIER_PROMPT` to it. A [join group](../reference.md#join-groups) is checked by adding *Start
-them with courier_spawn, both in one join group named "pair", so that you are woken once with both
-reports*; the checker takes the group's message as the report of each member it lists.
+Eight checks: two children spawned; the first turn ended after spawning; no polling (a
+`courier_status`, `courier_children` or `sleep` right after spawning, or more than one in a later
+turn); both children reported to the parent; both reports woke it; each carries a status and its
+answer; the reply holds both. The README's Quickstart prompt is a shorter wording: set
+`COURIER_PROMPT` to it. To check a join group, add *both in one join group named "pair"*.
 
 | Model | OpenCode | Result |
 |---|---|---|
-| `longcat-2.5-preview-free` | 2.0.28 | 8/8 in 9 model requests: a `split: 2 parts: …` line, both children in one join group it named itself, one woken turn, every report `done`, `RESULTS 391 1024`. |
-| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 8/8 in 11 requests; both children recorded with the parent as `parent_id` and an empty ruleset. |
-| `longcat-2.5-preview-free`, two `isolate: true` helpers that each commit a file | 2.0.26 | Pass: both created `courier/<their session ID>`, committed on it and named it in their report. |
+| `longcat-2.5-preview-free` | 2.0.28 | 8/8 in 9 requests, both children in one group it named itself, `RESULTS 391 1024`. |
+| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 8/8 in 11 requests; both children native, with an empty ruleset. |
+| `longcat-2.5-preview-free`, two isolated helpers that commit | 2.0.26 | Pass: each committed on `courier/<its session ID>` and named it in its report. |
 
 ## The permission relay
 
-`COURIER_SCENARIO=permission`. The project config makes `shell` ask for any command containing
-`courier-permission`, and the parent is asked:
+`COURIER_SCENARIO=permission`. `shell` asks for any command containing `courier-permission`, and
+the parent is asked:
 
 > Have a helper session run the shell command `` `echo courier-permission-$((6 * 7))` `` and report
 > back what it printed. Start it with courier_spawn and do not run the command yourself. When it has
 > reported back, reply with one line: RESULT \<what it printed\>
 
-The script plays the person: it answers OpenCode's permission prompt in the parent's session, the one
-`courier_answer`'s `permission.assert` opens for the child's request, with `once`. A parent that asks
-the person first, with a question form or in text, gets its form answered with the option for "once"
-or the reply "Allow it once.", and the prompt is then answered all the same. Seven checks: the parent
-spawned a child, which asked, and the parent was told; nothing was passed on before the person had
-answered; the parent proposed `once` with `courier_answer` without asking first; OpenCode asked the
-person in the parent's session for what the child asked, holding the call; `courier_answer` passed
-`once` on after the person allowed it; the child ran its command and reported
-`courier-permission-42`; the final reply holds it. The parent is started over the HTTP API, as a TUI
-session would be: `opencode run` answers the prompts in its own session itself, and cancels question
-forms there while attached.
+The script plays the person and allows OpenCode's prompt in the parent's session. A parent that
+asks first gets "once" as the answer. Seven checks: the parent was told of the request; nothing
+passed on before the person answered; the parent proposed `once` without asking first; OpenCode
+asked the person in the parent's session; `once` was passed on after the person allowed it; the
+child reported `courier-permission-42`; the reply holds it. The parent is started over the HTTP API,
+since `opencode run` answers its own session's prompts.
 
-`COURIER_PERSON=other-server` adds a second server on the same data directory: the person rejects
-the parent's prompt without a reason, which ends the parent's step and leaves the child's request
-waiting (or dismisses the parent's form, for a parent that asked first), and sends "Allow it once."
-through the second server, whose `courier_answer` holds no request, so the fifth check becomes "the
-parent's courier_answer on the other server passed nothing on and named another server". The person
-then allows the request in the child's own session on the first server. With `COURIER_NATIVE=1` the
-script answers the child's request directly, as OpenCode's prompt in the parent's view would, and
-fails a parent that asks with a form.
+`COURIER_PERSON=other-server` has the person reject the parent's prompt and answer through a second
+server, whose `courier_answer` holds no request; then allow the request in the child's session. With
+`COURIER_NATIVE=1` the script answers the child's request directly, as OpenCode's view of the parent
+would.
 
 | Model | OpenCode | Result |
 |---|---|---|
-| `longcat-2.5-preview-free` | 2.0.29 | 7/7: told, the parent proposed `once` with `courier_answer` at once, asking nothing itself; the call was held while OpenCode's prompt in its session showed the child's command, and once the person allowed it there the child ran it, reported `done`, and the parent replied `RESULT courier-permission-42`. |
-| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.29 | 6/6: told with the `shown="native"` notice, the parent wrote one line (*The helper session is waiting on your permission to run the `echo` shell command.*) and ended its turn, calling nothing; told `answered="once"` after the person allowed it in OpenCode's prompt, it replied `RESULT courier-permission-42`. |
-| `longcat-2.5-preview-free`, `COURIER_NATIVE=1`, run on an earlier wording of the native notice, which still listed `once` and `reject` for a person who asks the model to answer for them | 2.0.29 | 0/6: told with the `shown="native"` notice, the parent wrote one line and then proposed `once` with `courier_answer` all the same ("Proposing approval to the user now"), so OpenCode asked the person a second time, in the parent's session, and held the call; the notice now says not to call `courier_answer`, and names the ids only for a person who tells the model to. |
-| `longcat-2.5-preview-free`, `COURIER_NATIVE=1`, run on an earlier wording of the native notice | 2.0.28 | 6/6: told with the `shown="native"` notice, the parent wrote one line (*The helper session is waiting on your permission to run the shell command.*) and ended its turn; after the person allowed it, it was told `answered="once"` and replied `RESULT courier-permission-42`. |
-| `longcat-2.5-preview-free`, `COURIER_NATIVE=1`, run before native children got their own notice, so on the notice every other child gets | 2.0.28 | 6/6: asked the person with a question form offering `once`, `always` and `reject`, and passed `once` on with `courier_answer`. |
-| `longcat-2.5-preview-free` | 2.0.26 | Pass, with the status on `courier_send` and again with the skill listed. |
+| `longcat-2.5-preview-free` | 2.0.29 | 7/7: proposed `once` at once; the person allowed it in OpenCode's prompt; `RESULT courier-permission-42`. |
+| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.29 | 6/6: told with the `shown="native"` notice, the parent wrote one line and ended its turn; told `answered="once"`, it replied. |
 
 ## The question relay
 
@@ -147,25 +115,19 @@ fails a parent that asks with a form.
 > not do the task yourself. When the helper reports back, reply with one line: GREETING \<the
 > greeting it reported\>
 
-The child is not told how to ask: the brief's line on the question tool is part of the test. The
-script waits for the parent to ask the person, with a question form or in text, and answers with
-`COURIER_ANSWER`. Six checks: the parent spawned a child that asked, and asked the person; it did not
-answer by itself; it asked with the child's options; it passed the answer on (a linked question,
-`courier_answer` or `courier_send`); the child got it and reported it; the final reply holds it. Its
-notes say how the child asked and how the answer went on. With `COURIER_NATIVE=1` the script answers
-the child's form, as the TUI's view of the parent does, and fails a parent that asks with its question
-tool. The person answers in the parent's session or the child's form, never through the TUI's asks
-inbox, so the inbox's settled-notice wording is checked by the unit and live suites only.
+The child is not told how to ask: the brief's line on the question tool is under test. The script
+answers with `COURIER_ANSWER` when the parent asks. Six checks: the child asked and the parent asked
+the person; it did not answer by itself; it used the child's options; it passed the answer on; the
+child reported it; the reply holds it. With `COURIER_NATIVE=1` the script answers the child's form.
 
 | Model | OpenCode | Result |
 |---|---|---|
-| `longcat-2.5-preview-free` | 2.0.28 | 6/6: the child asked with its question tool, the parent asked with a form holding its three options, `Hi` went on through the linked question, the child reported `done` 6 s later, `GREETING Hi`. |
-| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 6/6: the parent wrote one line (*The helper session is waiting for your answer to its question about which greeting you'd like to use.*) and nothing else; told `answered="elsewhere"`, it replied `GREETING Hi`. |
+| `longcat-2.5-preview-free` | 2.0.28 | 6/6: the parent asked with the child's three options, `Hi` went on through the linked question, `GREETING Hi`. |
+| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 6/6: the parent wrote one line; told `answered="elsewhere"`, it replied `GREETING Hi`. |
 
 ## Recursive orchestration
 
-`COURIER_SCENARIO=recursive`: a job whose shape calls for one split at the root and one more below it,
-with the `courier-orchestrate` skill listed in every session. The parent is asked:
+`COURIER_SCENARIO=recursive`: one split at the root and one more below it. The parent is asked:
 
 > Have this job done through helper sessions started with courier_spawn, one session per part, and
 > do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the
@@ -175,57 +137,33 @@ with the `courier-orchestrate` skill listed in every session. The parent is aske
 > and writes the number it printed to count/total.txt. When the parts have reported back, read the
 > three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
 
-The root should start two sessions and end its turn; the "numbers" session starts two of its own,
-ends its turn, checks both files when their reports wake it and reports once to the root; the "count"
-session does its part itself; the root reads the three files and replies `RESULTS 391 1024 42`. The
-checker (`e2e/real-model-recursive.mjs`) reads every session reached from the root through its
-`courier_spawn` calls, waits until the tree has settled, and makes nine checks: the root spawned at
-least two children in its first turn; it ended that turn with no reports in it; no orchestrator polled
-(`courier_status`, `courier_children`, `courier_tree`, `sleep`, by the fan-out's rule); at least one
-child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all (the root may, by the
-skill's rule for a heavy task); no session went past `maxDepth`; every spawned session reported to its parent with a status; each
-sub-orchestrator reported upward once, after its own children had reported to it; the files hold the
-expected values; and the root's final reply holds them. Its notes say which sessions loaded the skill,
-whether each orchestrator had `courier-orchestrate` loaded before its first spawn, after it or not at
-all, which used a join group, scheduled a check-in or had a spawn refused, and each report's status.
+The checker (`e2e/real-model-recursive.mjs`) reads every session reached from the root and makes
+nine checks: the root spawned two or more in its first turn and ended it; no orchestrator polled; a
+child spawned two or more of its own in one turn, and no sub-orchestrator started exactly one; no
+session went past `maxDepth`; every session reported with a status; each sub-orchestrator reported
+once, after its children; the files and the reply hold the values. Its notes say who loaded the skill
+and when, who used a group, a check-in or had a spawn refused.
 
-`e2e/real-model-prompt-open.txt` is the same job with the split left to the root ("one session per
-part, and do no part yourself" rules out a root that does "count" itself). With it, the checker's "at
-least two children" fails by design when the root keeps "count", and the root may start the one remaining
-part alone, which "no sub-orchestrator started exactly one" does not count, so the split is read from the transcripts, not from the score.
-
-The scripted prompt fixes the split, so a `courier_recall` before it can change nothing, and a session
-that skips the skill or the recall loses nothing in the score. The evidence for recall's value is in the
-`glm-5.3-flash-free` rows with the open prompt and a seeded record or lesson, not in the scripted rows.
-
-The server log at the default level records no provider calls, so "no model requests in the log" says
-nothing about a stall. #306 (merged as #310) found that on OpenCode 2.0.32 even `--log-level DEBUG` logs
-no line per provider request, only failures, as `Failed to drain Session` errors with their cause. For a
-request that was never sent or never answered the signals are the timeline's timestamps (the gap between
-a tool's end and the next step) and `probe.log` (whether a `message.updated` or `session.idle` event
-followed the tool's end). The deepseek row at 43393b0 shows what a clean run looks like in those three
-records.
+`e2e/real-model-prompt-open.txt` leaves the split to the root. With it, the "two or more children"
+checks fail by design when the root keeps a part, so read the split from the transcripts. The
+scripted prompt fixes the split, so it cannot show what `courier_recall` is worth; the open prompt
+with a seeded record can.
 
 | Model | OpenCode | Result |
 |---|---|---|
-| `longcat-2.5-preview-free` | 2.0.26 | 8/9: every file right and all four reports `done` through two groups; only the root's last turn was lost to a refused request. Two more runs were refused by Zen's free quota (`provider.quota`) after the root had loaded the skill and split into a group. |
-| `longcat-2.5-preview-free`, through OpenCode's catalog (`COURIER_BASE_URL` empty) | 2.0.29 | Inconclusive, 5/9: the root loaded the skill and started both parts in one group, the "numbers" session split its halves into a group of its own, both leaves said `split: no` and did their part, and no session polled or started exactly one; then Zen's free quota refused 8 of the 15 requests (`provider.quota`), before any file was written or any report sent. A second run was refused on its second request. |
-| `longcat-2.5-preview-free`, catalog, 315587a | 2.0.32 | 9/9 twice: the root split into "numbers" and "count", "numbers" into two halves, and every file and report right; then Zen's free tier answered `FreeUsageLimitError` to every request, about 70 in, for over an hour. |
-| `glm-5.3-flash-free`, catalog, 315587a and the memory conditions (#263) | 2.0.32 | Baseline 8, 9 and 8 of 9; memory on and empty 9, 9, 9; seeded 8, 9, 8. Every lost point was polling, mostly by the "numbers" session, in every condition, plus one list-then-detail `courier_recall` counted as polling. The root called `courier_recall` before its split in all six memory trees and cited the seeded record in all three. Every root kept the prompt's split. |
-| `glm-5.3-flash-free`, catalog, the open prompt (#263) | 2.0.32 | Empty and seeded 7/9 each, lesson 6, 5 and 6: the two checks for a second split fail by design once the root keeps parts. Empty and seeded roots handed off all three commands as flat parts for the parallel sleeps, without mentioning the record. Every lesson root did "count" itself, saying it followed the earlier tree's lesson (3, 1 and 3 sessions, 20, 7 and 16 requests, against 4 sessions and 18 to 25 requests). In one seeded tree a child wrote 506 for 17 × 23; the root caught it from the report and fixed the file. |
-| `glm-5.3-flash-free`, catalog, the open prompt, model-written lessons (#263) | 2.0.32 | The top wrote a `courier_note` in 4 of the 9 trees above: three specific and correct, one cut mid-word at 300 characters, one the hand-written lesson widened ("No splitting needed for tasks this small"). Three were seeded, each its tree's record with `<project>` for the id, into two fresh trees: "split pays off" kept the 3 flat parts; "no splitting needed" had the root do all three itself as background subshells (1 session, 5 and 6 requests); "quote the exact command" had every brief ask for the command's output, which 1 of 8 trees without it did. Each lesson steered its tree, and 3 of the 6 wrote a lesson repeating it. |
-| `glm-5.3-flash-free`, catalog, the open prompt, memory on and empty, #269's wording | 2.0.32 | Three finished trees, each 3 flat parallel parts (4 sessions, 24, 16 and 24 requests), files verified first-hand. One wrote a lesson, in one call and complete at 269 characters, naming its job, its reason and how to verify: "Job "sleep-compute files": … tiny time-bound jobs are worth a session each only for wall-clock parallelism; verify by reading the files yourself". That is 1 of 3, against 2 of 3 under the old wording, within noise at three trees. A tree refused by Zen's 503s (not counted) recovered two failed helpers with a `courier_send` and noted it: "Math-sleep job …: a courier_send "try again" recovered both", a lesson about the provider rather than the job. No lesson reached the limit, so the refusal is covered by the unit and live tests only. |
-| `longcat-2.5-preview-free`, catalog, e6ec247 (#298, #299), in the Docker sandbox | 2.0.32 | 9/9 in 24 requests: no session polled, the root and the "numbers" session each started their parts in one group, all four reports were `done`, and the files and the root's reply held `391 1024 42`. No session loaded `courier-orchestrate` or called `courier_recall` in this run, the "numbers" session included, although its role part now says to load the skill before it splits. Across the three runs at 0d02efe and e6ec247 the root loaded the skill twice (run 1 included, with a `courier_recall` and a `courier_later` check-in) and the "numbers" session once. |
-| `longcat-2.5-preview-free`, catalog, 0d02efe (#298), in the Docker sandbox | 2.0.32 | 9/9 in 26 requests and 5/9 in 17: the sub-orchestrator briefs carry the group and no-polling rule and the role part tells it to load the skill. In the pass the "numbers" session loaded `courier-orchestrate`, called `courier_recall` and started its halves in group `numbers-halves`; no session polled, all four reports were `done`, and the files and the root's reply held `391 1024 42`. In the 5/9 run one depth-2 leaf's shell command finished and no next model step was recorded for over four minutes (the server log holds no model requests at any level, the passing runs' included, so the cause is unknown: see the paragraph above the table), leaving `numbers/b.txt` unwritten and the last four checks failing; no session polled in it either. Across the three runs at 0d02efe and e6ec247 the root loaded the skill twice (run 1 included, with a `courier_recall` and a `courier_later` check-in) and the "numbers" session once. |
-| `deepseek-v4.1-flash-free`, catalog, 43393b0 (#306), in the Docker sandbox | 2.0.32 | 9/9 in 26 requests and 52 s: the root and the "numbers" session each loaded `courier-orchestrate` and called `courier_recall` once before their split, and started their parts in groups `parts` and `numbers-halves`; the root scheduled one `courier_later` check-in and cancelled it when the reports came; every session stated its split line with a reason; no session polled, all four reports were `done`, and the files and the root's reply held `391 1024 42`. The timeline's timestamps and the probe log show no gap, and the server log holds no errors. A `longcat-2.5-preview-free` run at the same commit was refused by Zen's free quota (429 on 5 of 9 requests) a minute after the root's two spawns, not counted. |
-| `deepseek-v4.1-flash-free`, catalog, 045ae2c (#303), in the Docker sandbox | 2.0.32 | 9/9 in 30 requests and 52 s on the brief's "parts that run at once in one group" wording: the root loaded `courier-orchestrate`, called `courier_recall` once before its split and started both parts in group `parts`; the "numbers" session loaded neither but stated its split line, started its halves in group `halves`, and like the root scheduled a `courier_later` check-in and cancelled it when the reports came; no session polled, all four reports were `done`, and the files and the root's reply held `391 1024 42`; no gap in the timeline, no error in the log. The job has no staged core, so the new wording had nothing to change here. Not run on `longcat-2.5-preview-free`. |
+| `deepseek-v4.1-flash-free`, catalog, 045ae2c | 2.0.32 | 9/9 in 30 requests, 52 s: both orchestrators split into groups and scheduled and cancelled a check-in; no polling. |
+| `deepseek-v4.1-flash-free`, catalog, 43393b0 | 2.0.32 | 9/9 in 26 requests, 52 s: both orchestrators loaded the skill and recalled once before splitting; no gap in the timeline. |
+| `longcat-2.5-preview-free`, catalog, e6ec247 and 0d02efe | 2.0.32 | 9/9 twice and 5/9 once. In the 5/9 a leaf's next step never came, for unknown reasons. Skill loads varied from run to run. |
+| `longcat-2.5-preview-free`, catalog, 315587a | 2.0.32 | 9/9 twice, then Zen's free tier refused every request for over an hour. |
+| `glm-5.3-flash-free`, catalog, 315587a, memory off / on and empty / seeded | 2.0.32 | 8–9 of 9 in every condition; every lost point was polling. With memory on, the root recalled before its split in all six trees and cited the seeded record in all three. |
+| `glm-5.3-flash-free`, catalog, the open prompt, empty / seeded / lesson | 2.0.32 | Empty and seeded roots handed off all three parts flat. Every root with the lesson did "count" itself, as the lesson said (1 to 3 sessions, against 4). |
+| `glm-5.3-flash-free`, catalog, the open prompt, model-written lessons | 2.0.32 | The top wrote a lesson in 4 of 9 trees, and in 1 of 3 on the current wording. Each lesson, seeded into a fresh tree, steered it. |
 
 ## A part that goes wrong
 
-`COURIER_SCENARIO=recursive-fault`: the recursive job with one fault in it, so that the skill's steps 5
-to 8 (read a report by its status, have the session finish, verify, report upward once with one status
-for the whole) have something to do. In the recursive scenario every report is `done`, and a tree that
-loaded the skill cannot be told from one that did not. The parent is asked:
+`COURIER_SCENARIO=recursive-fault`: the recursive job with one half told to report `partial` first,
+then finish when its parent says so. It tests the skill's steps 5 to 8. The prompt passes that half
+its task word for word:
 
 > Have this job done through helper sessions started with courier_spawn, one session per part, and
 > do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the
@@ -238,48 +176,20 @@ loaded the skill cannot be told from one that did not. The parent is asked:
 > and writes the number it printed to count/total.txt. When the parts have reported back, read the
 > three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
 
-The "numbers" session should start both halves in one group and end its turn; the group is released
-with one `done` and one `partial` report; it reads the status and what is left, sends the second half a
-`courier_send` to finish and ends its turn; that session writes `numbers/b.txt` and reports `done` on its
-own, the group being delivered; the "numbers" session checks both files and reports `done` to the root
-once; the root reads the three files and replies `RESULTS 391 1024 42`. The files check compares
-contents only, so it cannot tell who wrote `numbers/b.txt`; the check that the parent messaged the
-session is what measures the handling.
-
-The checker is the recursive one, run with `--fault`, which `summary.json` records, so that a re-read
-with `--saved` makes the same checks without the flag: its nine checks, then four more. The faulty
-session is found by its first report, a status other than `done` from a session below a
-sub-orchestrator, not by its task, which two sessions pass on in their own words: the fault reached a
-leaf; its parent messaged it with `courier_send` after that report and before reporting upward; it then
-reported `done`; and its parent reported upward once, after that `done`, with status `done`. A message
-sent in the same step as the parent's report upward counts when it comes first in that step. Its notes
-add, for the faulty session, the statuses it reported in order, whether its parent had loaded
-`courier-orchestrate` when the first report reached it (the recursive notes say whether each
-orchestrator had it loaded before its first spawn), what the parent's message said, and the statuses
-the parent reported upward. "Session … reported 2 times" is expected for that session.
-
-Assumptions the design rests on: the task survives two hops word for word (a root or "numbers" session
-that rewrites it so the half reports `done` first fails the first fault check, and the transcripts show
-where it was lost); the faulty half's `partial` report is held with its group, as every report but a
-`blocked` one is, so the "numbers" session reads it in the group's message; and its second report,
-after the group was delivered, comes on its own. "Doing neither half itself" rules out a "numbers"
-session that writes `numbers/b.txt` itself, which step 5 also allows, so that the scenario measures the
-`courier_send`.
-
-Its first runs happen in the Docker sandbox in `todo/sandbox`.
+The checker runs with `--fault` (recorded in `summary.json`, so `--saved` repeats it): the nine
+checks, then four. The faulty session is found by its first non-`done` report: the fault reached a
+leaf; its parent messaged it before reporting upward; it then reported `done`; its parent reported
+upward once, `done`. "Session … reported 2 times" is expected for it.
 
 | Model | OpenCode | Result |
 |---|---|---|
-| `deepseek-v4.1-flash-free`, catalog, c8fe885 (#308), in the Docker sandbox | 2.0.32 | 13/13 in 32 requests and 67 s: the half-B leaf reported `partial` with its number; the "numbers" session, with `courier-orchestrate` loaded, sent it one `courier_send` to finish and ended its turn, the leaf then reported `done`, and "numbers" verified both files and reported upward once, `done`; the root replied `391 1024 42`. The root, "numbers" and the half-A leaf each loaded the skill and called `courier_recall` once before their split; no session polled; no gap in the timeline, no error in the log. |
-| `deepseek-v4.1-flash-free`, catalog, 1dbebb3 (#321), skill listed, in the Docker sandbox | 2.1.2 | 4 of 5 passed, 13, 13, 13, 12 and 13 of 13, 32 to 36 requests, 60 to 97 s. In every run the half-B leaf reported `partial`, its parent messaged it once to finish, it reported `done`, and the files and the root's reply held `391 1024 42`. Every root loaded `courier-orchestrate`; the "numbers" session had it loaded when the partial report came in 4 of 5. The one lost point: a root scheduled a `courier_later` check-in and then called `courier_children` itself. |
-| `deepseek-v4.1-flash-free`, catalog, 1dbebb3 (#321), `COURIER_SKILL=deny`, in the Docker sandbox | 2.1.2 | 5 of 5 passed, 13/13 each, 27 to 34 requests, 51 to 68 s. No session loaded the skill, and each "numbers" session handled the `partial` report as the runs with it did: one message to finish, then a verified `done` upward. One "numbers" session started its halves without a join group; no session polled. Without the skill a session handles a `partial` report no worse. |
+| `deepseek-v4.1-flash-free`, catalog, 1dbebb3, skill listed | 2.1.2 | 4 of 5 passed. Every run handled the `partial` report: one message to finish, then `done`. The lost point was a root calling `courier_children`. |
+| `deepseek-v4.1-flash-free`, catalog, 1dbebb3, `COURIER_SKILL=deny` | 2.1.2 | 5 of 5 passed, 13/13 each. Without the skill, the `partial` report was handled no worse. |
 
 ## A part with a core
 
-`COURIER_SCENARIO=recursive-staged`: the recursive job with a core in the "numbers" part that both
-halves need, so that the brief's "parts that run at once in one group" and the skill's "do the core
-first, yourself or in one session, then the rest in one group" have something to tell apart. In the
-other recursive scenarios every part is independent. The parent is asked:
+`COURIER_SCENARIO=recursive-staged`: the "numbers" part has a seed both halves need, so a correct
+session does the seed first, then starts the halves together. The prompt does not say to:
 
 > Have this job done through helper sessions started with courier_spawn, one session per part, and
 > do no part yourself. It has two parts. Part "numbers" has a seed and two halves; the session that
@@ -290,42 +200,16 @@ other recursive scenarios every part is independent. The parent is asked:
 > printed to count/total.txt. When the parts have reported back, read the four files yourself and
 > reply with one line: RESULTS \<seed\> \<a\> \<b\> \<total\>
 
-The prompt does not say to write the seed first: whether a session stages is what is measured. A
-correct "numbers" session writes `numbers/seed.txt` (427) itself, or starts one session for it and
-ends its turn until that session reports; only then does it start the two halves in one turn, in one
-group, and end its turn; when the group wakes it, it checks the files and reports `done` to the root
-once. The halves write 7259 and 1427, values a half that ran before the seed existed does not reach
-by chance; the root reads the four files and replies `RESULTS 427 7259 1427 42`.
+The checker runs with `--staged`: the nine checks, then three. A `sleep` before any spawn is the
+core's work, not polling. The core is found by the first write of its file (`write`, `edit`, `patch`,
+or a shell redirect; `cd numbers && echo … > seed.txt` is not seen). The checks: no half started
+before the seed was written (or its session reported); the session that staged started two or more
+halves together; it reported upward once, `done`.
 
-The checker is the recursive one with `--staged`, which `summary.json` records like `--fault`: its
-nine checks, then three more. With `--staged` the first of `COURIER_FILES` is the core's file, and two
-of the nine read the staging in: a `sleep` an orchestrator runs before it has started any session is
-the core's work, not polling, and the batch of at least two may come in a later turn than the first,
-after one that started the core's session. The core is found by the first completed write of its file
-across the tree, by timestamp: a `write`, `edit` or `patch` naming it, or a `shell` command redirecting
-into it (`>`, `>>`, `tee`); a write the checker does not see as one, such as `cd numbers && echo … >
-seed.txt`, leaves the first check failing, and the transcripts show it. The session that staged is that
-writer when it started sessions, else the writer's parent, whose other children are the halves. The
-checks: no half started (its `courier_spawn` call's start time) before the core's file was written, nor,
-when the core had a session of its own, before that session's report reached the session that staged;
-the session that staged started at least two halves together in one turn, after any session for the
-core, so that one session for the core is not one for the whole task (one session doing the core and
-both halves fails this, and the batch check); and it reported upward once, with status `done`. Its
-notes give who wrote the core's file first and when, when the core's report arrived, when each half
-started, and whether the session that staged did the core itself or in a session, with
-`courier-orchestrate` loaded before the core, after it and before the halves, only after the halves,
-or not at all (and whether a load was refused).
-
-Run it with the skill listed, as every scenario is, and with it denied: `COURIER_SKILL=deny` adds
-`{ "action": "skill", "resource": "courier-orchestrate", "effect": "deny" }` after the allow-all rule in
-`opencode.json` (OpenCode takes the last rule that matches), which keeps the skill out of every
-session's `<available_skills>` and fails a `skill` call for it; the role part and the brief still name
-it, so a session may try and be refused. The checker notes `the project's permissions deny the skill
-courier-orchestrate` for such a run, in any recursive scenario. Several finished runs per condition,
-as [Reading many runs](#reading-many-runs) asks, then one table per condition:
+Run it with the skill and without, several runs each, and table them:
 
 ```bash
-run() {  # run <name> [VAR=value ...]: as in Seeding a record, below
+run() {  # run <name> [VAR=value ...]
   local name=$1; shift
   env COURIER_SCENARIO=recursive-staged COURIER_BASE_URL= E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
   echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
@@ -334,44 +218,25 @@ for n in 1 2 3 4 5; do run staged-skill-$n; run staged-noskill-$n COURIER_SKILL=
 bun script/real-model-table.ts $(for n in 1 2 3 4 5; do echo skill=$HOME/courier-runs/staged-skill-$n noskill=$HOME/courier-runs/staged-noskill-$n; done)
 ```
 
-Read the two questions of #321 off the `staged:` notes and the first and second new checks: does the
-session that gets "numbers" do the core first, and does it without the skill. The other half of the
-second question, whether a session without the skill handles a `partial` report as one with it does,
-is `COURIER_SCENARIO=recursive-fault` with and without `COURIER_SKILL=deny`, read the same way. The
-checker takes `--staged` and `--fault` together, the fault checks before the staged ones; the scenarios
-set one each.
-
-Its first runs happen in the Docker sandbox in `todo/sandbox`.
-
 | Model | OpenCode | Result |
 |---|---|---|
-| `deepseek-v4.1-flash-free`, catalog, 1dbebb3 (#321), skill listed, in the Docker sandbox | 2.1.2 | 4 of 5 passed, 12, 12, 11, 12 and 12 of 12, 31 to 37 requests, 62 to 91 s. Every "numbers" session wrote `numbers/seed.txt` (427) itself, then started both halves in one turn, in one group, and reported `done` once; the files and the root's reply held `427 7259 1427 42`. Every root loaded `courier-orchestrate`, the "numbers" session in 3 of 5; in some runs the root's brief already said to do the seed first, so the order was the root's. The one lost point: a "numbers" session called `courier_children` once. |
-| `deepseek-v4.1-flash-free`, catalog, 1dbebb3 (#321), `COURIER_SKILL=deny`, in the Docker sandbox | 2.1.2 | 5 of 5 passed, 12/12 each, 30 to 36 requests, 62 to 145 s. Sessions that tried to load the skill were refused, and staged all the same: four "numbers" sessions wrote the seed themselves, one started a session for it and started the halves only after its report; every time both halves came together in one group, and no session polled. Staging does not depend on the skill. |
+| `deepseek-v4.1-flash-free`, catalog, 1dbebb3, skill listed | 2.1.2 | 4 of 5 passed. Every "numbers" session wrote the seed itself, then started both halves in one group. The lost point was one `courier_children` call. |
+| `deepseek-v4.1-flash-free`, catalog, 1dbebb3, `COURIER_SKILL=deny` | 2.1.2 | 5 of 5 passed. Every run staged; staging does not depend on the skill. |
 
 ## Seeding a record
 
-`COURIER_SEED` names a JSON file of storage keys that `e2e/real-model.sh` sets with `e2e/kv.ts` once
-the server is up and before the parent's prompt, with `<project>` in a key or value replaced by the
-project's id (`/api/project`, the id the plugin keys the records by). The log shows `seeded
-memory/<id>/ses_seed…` before `parent prompt:`. Two seeds are checked in, shaped as
-[Memory](../reference.md#memory) documents a record: `e2e/real-model-seed.json`, the record of an
-earlier tree of the same project (two parts in group `parts`, its "count" part `done` by one session
-in 115 s, its "numbers" part split into two halves in group `halves`, both `done`, no `recalled`), and
-`e2e/real-model-seed-lesson.json`, the same record with the lesson "the count part is small; do it
-yourself" and no fact that says so.
+`COURIER_SEED` names a JSON file of storage keys, `{ "<key>": <value> }`, set with `e2e/kv.ts`
+before the parent's prompt. `<project>` in a key or value stands for the project's id. The log shows
+`seeded memory/<id>/…` before `parent prompt:`. Two seeds are checked in:
+`e2e/real-model-seed.json`, an earlier tree's record, and `e2e/real-model-seed-lesson.json`, the
+same with the lesson "the count part is small; do it yourself".
 
-A run is **finished** when its exit is 0 or 1 and its directory holds `summary.json`; its log ends in
-`result: pass` or `result: fail`. A run that exits 2 (`result: inconclusive`: model requests failed,
-usually 429 or 403 from the free tier), or that says the parent's first turn did not end or that no
-parent session appeared, is refused: repeat it under a new name, and keep its directory too. To
-compare conditions (no memory, memory on and empty, seeded, seeded with a lesson), keep one model for
-every condition and run each several times, from the repository's root:
+A run is **finished** when it exits 0 or 1 and has a `summary.json`. Repeat a run that exits 2, or
+whose first turn did not end, under a new name. To compare conditions, keep one model and run each
+several times:
 
 ```bash
-npm install --prefix ~/oc @opencode/cli@2.1.3
-export OPENCODE_BIN=~/oc/node_modules/.bin/opencode
-mkdir -p ~/courier-runs
-run() {  # run <name> [VAR=value ...]: one tree, its work directory and log under ~/courier-runs/<name>
+run() {  # run <name> [VAR=value ...]: work directory and log under ~/courier-runs/<name>
   local name=$1; shift
   env COURIER_SCENARIO=recursive COURIER_BASE_URL= E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
   echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
@@ -380,60 +245,30 @@ run mem-seeded-1 COURIER_SEED=$PWD/e2e/real-model-seed.json
 run open-lesson-1 COURIER_PROMPT="$(cat e2e/real-model-prompt-open.txt)" COURIER_SEED=$PWD/e2e/real-model-seed-lesson.json
 ```
 
-From each finished tree read: the `courier_recall` calls (how many, before or after the root's
-`split:` line, and whether the checker counted one as polling), the root's and the "numbers"
-session's `split:` lines and whether the "count" part went to a session or the root did it, the
-checker's score, every report's status, the files, model requests and the tree's duration; the
-transcripts, `timeline.txt` and `summary.json` hold all of it.
-
 ### Reading many runs
 
-`script/real-model-table.ts` reads run directories (each with `summary.json`, and `timeline.txt` where
-there is one) and prints one Markdown table per condition, a row per run:
+`script/real-model-table.ts` prints one Markdown table per condition, a row per run directory:
 
 ```bash
-bun script/real-model-table.ts baseline=$HOME/courier-runs/base-1 baseline=$HOME/courier-runs/base-2 seeded=$HOME/courier-runs/mem-seeded-1
-bun script/real-model-table.ts $HOME/courier-runs/*   # no label: each directory is a condition of its own, named by its basename
+bun script/real-model-table.ts baseline=$HOME/courier-runs/base-1 seeded=$HOME/courier-runs/mem-seeded-1
+bun script/real-model-table.ts $HOME/courier-runs/*   # no label: each directory is its own condition
 ```
 
-A label before `=` names the condition and several directories may share one; it is the text before
-the first `=` when that holds no path separator, so an absolute path with an `=` in it is a directory.
-Unlabelled directories are conditions of their own, named by their basename, or by their path when two
-share one. A path that is no run, such as the `.log` files the glob also matches, a run that never got
-as far as a `summary.json`, or a `summary.json` missing the checker's fields, is skipped with a line on
-stderr. Each row has the verdict, the score (checks passed of all), skill loads per depth,
-`courier_recall` calls, the join groups used (distinct names across the tree), polled sessions (the
-root counts as one), model requests, the duration and the root's and each sub-orchestrator's `split:`
-line (the checker keeps 320 characters of it), all parsed from `summary.json`'s notes, whose wording
-`test/real-model-table.test.ts` checks the checker still writes. A group name or session list holding
-`, ` is counted as two. The duration is the timeline's first step start to its last step end, and `-`
-for a run from before the timeline carried timestamps, one with a step still running, or one that
-crossed midnight UTC. A run from before the checker wrote its `courier_recall` or `stated:` notes
-reads 0 recalls and `-` for the splits, as a run that made no call or stated no line does. A line under
-the table gives the counts of runs and passes and the means of the score, polled sessions and requests
-over its finished runs, which here means every verdict but `inconclusive` (the inconclusive ones stay
-in the table); a run refused for another reason, such as a first turn that did not end, still counts,
-so drop its directory from the arguments.
+A label before `=` names the condition; several directories may share one. A path that is no run is
+skipped with a line on stderr. Each row has the verdict, the score, skill loads per depth, recalls,
+join groups, polled sessions, requests, the duration and the `split:` lines. A line under each
+table gives the means over its finished runs.
 
-How many runs a claim needs: a claim such as "the depth-1 polling went away" or "the lesson steered the
-root" is about a rate, and three runs of one model cannot tell a rate from luck. Five finished runs per
-condition on each of two models is the floor; with fewer, say that the result is an observation and
-what it was seen on. Choose the metric (polled sessions, skill loads at depth 1, the root's split) and
-the conditions to compare before changing a wording, and read the same columns after; picking the
-column that moved after the runs are in is looking for a result in noise.
+**How many runs a claim needs.** A claim such as "the polling went away" is about a rate. Five
+finished runs per condition on each of two models is the floor; with fewer, call the result an
+observation. Pick the metric and the conditions before changing a wording, and read the same columns
+after.
 
 ## Caveats
 
-This is a smoke test, not a benchmark: a handful of runs per model, on free models that are rate
-limited and change without notice, and Zen publishes no versions beyond the names. A model that
-passes here can still poll or forget to report on a harder task, so the `courier_later` safety net in
-[Using it](../../README.md#using-it) still applies. Which session loads the skill varies from run to
-run; on one-result tasks such as the fan-out and the relays, models do not load it. The tables hold
-runs on the current wording, except the permission table's three rows marked as run on an earlier
-wording of the native notice, which stay as results. No row has five finished runs per condition on
-two models, the [floor](#reading-many-runs) a claim needs, so each is an observation of a few runs. Not
-re-run on the current wording: `COURIER_PERSON=other-server` and the models other than
-`longcat-2.5-preview-free`; their earlier results are in this file's history. Once, in the
-recursive scenario, a "numbers" session's second report landed in its inbox with no turn opened for
-it, and it never reported upward; the plugin now sends such a message again and shows a session that
-still does not take it as stalled ([a missed wake](../reference.md#a-missed-wake)).
+This is a smoke test, not a benchmark: a few runs on free models that change without notice. A
+model that passes here can still poll or forget to report on a harder task, so a `courier_later`
+check-in still pays. Which session loads the skill varies from run to run; on one-result tasks,
+models do not load it. No row reaches the five-run floor on two models. Not re-run on the current
+wording: `COURIER_PERSON=other-server` and the models other than `longcat-2.5-preview-free`. Earlier
+rows, among them a native-notice wording that scored 0/6, are in this file's history.

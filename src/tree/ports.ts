@@ -19,11 +19,12 @@ export type Settled = "report" | "failed" | "interrupted"
 /** The notes kept of a spawned session's report state; docs/maintainers/architecture.md has each. */
 export type ReportField = "prompt" | "settled" | "progress" | "told" | "stopped"
 
-/** A report note as read: when it was made, and for `settled` how the wait ended and the report's status, as stored. */
+/** A report note as read: when it was made, and for `settled` how the wait ended, the report's status or a failure's `resumesAt`, as stored. */
 export interface ReportNote {
   readonly at: number | undefined
   readonly by: unknown
   readonly status: unknown
+  readonly resumesAt: unknown
 }
 
 /** A stored value, as `Storage` gives and takes it. */
@@ -66,8 +67,11 @@ export interface ChildStore {
   notes<F extends ReportField>(sessionID: string, fields: ReadonlyArray<F>): Promise<{ readonly [K in F]: ReportNote }>
   /** Notes that a prompt or message reached a spawned session at `at`, unless a later one is noted. */
   prompted(sessionID: string, at: number): Promise<void>
-  /** Notes how a spawned session's wait for a report ended at `at`, with its report's status, unless a later end is noted. */
-  settled(sessionID: string, by: Settled, at: number, status?: Status): Promise<void>
+  /**
+   * Notes how a spawned session's wait for a report ended at `at`, with its report's status or, for a failed turn, when the
+   * provider's limit lifts (`resumesAt`), unless a later end is noted.
+   */
+  settled(sessionID: string, by: Settled, at: number, status?: Status, resumesAt?: number): Promise<void>
   /** Notes that a spawned session messaged its parent without a status at `at`, unless a later one is noted. */
   progressed(sessionID: string, at: number): Promise<void>
   /** Notes that a spawned session's parent was told at `at` that a turn ended without a report, unless a later telling is noted. */
@@ -306,6 +310,8 @@ export interface ExecutionError {
   readonly type: string
   readonly message: string
   readonly status?: number
+  /** How long the provider asked to wait before trying again, counted from the event's `created`; set by rate and quota limits and some provider errors. */
+  readonly retryAfterMs?: number
 }
 
 export interface WatchPorts {

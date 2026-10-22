@@ -51,9 +51,9 @@ A parent calls `courier_spawn`, gets the child's session id at once, and ends it
 or stuck, the child calls `courier_send` with a status (`done`, `partial`, `blocked` or `failed`).
 The message lands in the parent's inbox and starts a new turn if the parent is idle.
 
-Children started with the same `group` report together, in one message. A child that fails, or
-ends its turn without reporting, is reported to its parent. A message that does not wake its
-session is sent once more, then shown as `stalled`. Children, held reports and scheduled messages
+Children started with the same `group` report together, in one message. A child that fails (a
+rate or quota limit with when it lifts), or ends its turn without reporting, is reported to its
+parent. A message that does not wake its session is sent once more, then shown as `stalled`. Children, held reports and scheduled messages
 survive a restart. The `courier-orchestrate` skill, listed in every session, tells a model when to
 split a task and how to check and merge the parts. Every detail: [the reference](docs/reference.md).
 

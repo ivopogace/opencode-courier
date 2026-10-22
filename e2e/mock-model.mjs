@@ -148,6 +148,9 @@ function decide(body) {
   if (recent.includes("COURIER-NEST")) return { tool: "courier_spawn", args: { task: "CHILD-NEST-MID", isolate: true } }
   // The child of COURIER-FAIL cannot reach its model, as with a model blocked for the account.
   if (parent && recent.includes("CHILD-FAILS")) return { status: 403, error: "This model is not available in your country" }
+  // The child of COURIER-LIMIT is out of quota, and the provider says when it lifts. A 402 is a quota error OpenCode does not retry; a 429 it retries for minutes.
+  if (parent && recent.includes("CHILD-LIMITED"))
+    return { status: 402, error: "You exceeded your current quota", headers: { "retry-after": "1800" } }
   // The child of COURIER-PROBE first runs a command the test's permission rules make it ask for.
   if (parent && recent.includes("CHILD-PROBES")) return { tool: "shell", args: { command: "echo courier-asks probe" } }
   // The child of COURIER-ASK runs a command the test's permission rules make it ask for.
@@ -331,6 +334,7 @@ function decide(body) {
     }
   if (recent.includes("COURIER-DEPTH")) return { tool: "courier_spawn", args: { task: "CHILD-DEEPENS" } }
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
+  if (recent.includes("COURIER-LIMIT")) return { tool: "courier_spawn", args: { task: "CHILD-LIMITED" } }
   if (recent.includes("COURIER-SILENT")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT" } }
   if (recent.includes("COURIER-PROGRESS")) return { tool: "courier_spawn", args: { task: "CHILD-PROGRESSES" } }
   if (recent.includes("COURIER-WAITING")) return { tool: "courier_spawn", args: { task: "CHILD-WAITS" } }
@@ -393,7 +397,7 @@ createServer((request, response) => {
     const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])
     if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, skills, tools: (body.tools ?? []).map((tool) => tool.function?.name), reply })}\n`)
     if (reply.status) {
-      response.writeHead(reply.status, { "content-type": "application/json" })
+      response.writeHead(reply.status, { "content-type": "application/json", ...reply.headers })
       response.end(JSON.stringify({ error: { message: reply.error, type: "forbidden" } }))
       return
     }

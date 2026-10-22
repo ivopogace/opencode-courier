@@ -32,7 +32,7 @@ export function reverseKey(sessionID: string) {
 
 /**
  * Whether a spawned session has reported since its last prompt, under `report/<sessionID>/`: `prompt`, `settled` (with
- * the report's status), `progress` (a message to its parent without a status) and `told`; docs/maintainers/architecture.md has each.
+ * the report's status, or when a failed turn's wait lifts), `progress` (a message to its parent without a status) and `told`; docs/maintainers/architecture.md has each.
  */
 const REPORT_PREFIX = "report/"
 
@@ -85,7 +85,7 @@ const timeOf = (value: unknown) => {
   return typeof at === "number" && Number.isFinite(at) ? at : undefined
 }
 
-const noteOf = (value: unknown): ReportNote => ({ at: timeOf(value), by: obj(value).by, status: obj(value).status })
+const noteOf = (value: unknown): ReportNote => ({ at: timeOf(value), by: obj(value).by, status: obj(value).status, resumesAt: obj(value).resumesAt })
 
 /** The `ChildStore` over the plugin's storage. */
 export function childStore(storage: Storage): ChildStore {
@@ -204,9 +204,9 @@ export function childStore(storage: Storage): ChildStore {
     async prompted(sessionID, at) {
       if ((timeOf(await storage.get(promptKey(sessionID))) ?? -Infinity) < at) await storage.set(promptKey(sessionID), { at })
     },
-    async settled(sessionID: string, by: Settled, at: number, status?: Status) {
+    async settled(sessionID: string, by: Settled, at: number, status?: Status, resumesAt?: number) {
       if ((timeOf(await storage.get(settledKey(sessionID))) ?? -Infinity) <= at)
-        await storage.set(settledKey(sessionID), { at, by, ...(status ? { status } : {}) })
+        await storage.set(settledKey(sessionID), { at, by, ...(status ? { status } : {}), ...(resumesAt === undefined ? {} : { resumesAt }) })
     },
     async progressed(sessionID, at) {
       if ((timeOf(await storage.get(progressKey(sessionID))) ?? -Infinity) <= at) await storage.set(progressKey(sessionID), { at })

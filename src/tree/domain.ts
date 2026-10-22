@@ -208,3 +208,12 @@ export function standingOf(member: Member | undefined): Standing {
 
 /** Whether every member of a group has a held report or has left: released once the parent's turn has ended. */
 export const complete = (members: ReadonlyArray<Member>) => members.every((member) => member.report || member.left)
+
+/** Longer than this is no wait a notice can plan around; OpenCode clamps a header to 2^53 ms, past what a `Date` holds. */
+const RETRY_MAX_MS = 30 * 24 * 3_600_000
+
+/** How long the provider asked to wait after a failed turn, if it did: a positive number of milliseconds, at most `RETRY_MAX_MS`. */
+export function retryDelay(error: { readonly retryAfterMs?: unknown }) {
+  const wait = error.retryAfterMs
+  return typeof wait === "number" && Number.isFinite(wait) && wait > 0 && wait <= RETRY_MAX_MS ? wait : undefined
+}

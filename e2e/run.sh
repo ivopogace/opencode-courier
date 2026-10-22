@@ -382,6 +382,31 @@ run_reports() {
   check "the parent was told once" "$(jq -r 'length == 1' <<<"$notices")"
   check "which child failed, and with what error"   "$(jq -r --arg child "$child" 'join("") | contains("<courier from=\"" + $child + "\" failed=") and contains("not available in your country")' <<<"$notices")"
 
+  failed_parent=$parent failed_child=$child
+  scenario "a child that hit a quota limit is reported with when it lifts, and the panel shows it"
+  out=$(prompt "COURIER-LIMIT")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the parent was woken by the failure" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  notices=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "synthetic") | .text]')
+  echo "  $notices"
+  check "the notice names the quota error and says to wait about 30 minutes" \
+    "$(jq -r 'join("") | contains("provider.quota") and contains("asked to wait about 30 minutes before trying again, until about") and contains("UTC")' <<<"$notices")"
+  check "and says not to message the child before then" "$(jq -r 'join("") | contains("Do not message it with courier_send before then")' <<<"$notices")"
+  settled=$(kv get "report/$child/settled")
+  echo "  $settled"
+  check "the child's settled note keeps when the limit lifts, the failure plus 30 minutes" \
+    "$(jq -r '.by == "failed" and (.resumesAt - .at) == 1800000' <<<"$settled")"
+  directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")
+  row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" |
+    jq -c --arg id "$child" '.output.rows[] | select(.sessionID == $id) | {state, outcome, resumes}')
+  echo "  $row"
+  check "the panel's row is idle and failed, with a resume time 30 minutes after the failure" \
+    "$(jq -r --argjson settled "$settled" '.state == "idle" and .outcome == "failed" and .resumes == $settled.resumesAt' <<<"$row")"
+  check "while the child that failed without a retry time has a row without one" \
+    "$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$failed_parent\"}}" |
+      jq -r --arg id "$failed_child" '[.output.rows[] | select(.sessionID == $id) | select(.outcome == "failed" and (has("resumes") | not))] | length == 1')"
+
 
   scenario "a child whose turn ends without a report is reported to its idle parent"
   out=$(prompt "COURIER-SILENT")

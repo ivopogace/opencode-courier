@@ -25,6 +25,20 @@ storage helpers. Three composition roots sit on top: `index.ts` (the server plug
   the RPCs `courier`, `courier-person` and `courier-memory`.
 - **Text lives next to the module that speaks it**, with one snapshot over all of it.
 
+The import rules:
+
+- A module is imported from outside only through its `index.ts`, except that `tui.tsx` and `rpc.ts`
+  take a module's `tui.tsx` and `rpc.ts` directly.
+- The only dependencies between modules are `person/`'s and `memory/`'s on `tree/`, through
+  `tree/index.ts`. Each module may import `platform/**` and `kernel/**`; `platform/` imports
+  nothing outside itself.
+- A module's `text.ts` imports only `kernel/**`, `platform/json.ts` and its own `ports.ts` and
+  `domain.ts`.
+- `tree/store.ts` and `memory/store.ts` are the only files that know their storage keys; no file
+  outside the module imports them, and no other file names their key prefixes.
+- A module's `tui.tsx` imports only `@opencode/plugin/tui`, `solid-js`, `@opentui/*`, its `rpc.ts`,
+  `text.ts` and `mascot.ts`; a module's `rpc.ts` only `@opencode/plugin/rpc` and `effect`.
+
 ## Storage
 
 The storage is OpenCode's KV, shared by every location, copy and server on one data directory. So a

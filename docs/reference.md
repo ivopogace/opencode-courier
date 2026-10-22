@@ -405,6 +405,49 @@ With `sessionID`, a listed top, it gives that record in full as JSON. Each call 
 trees' records, as how often each was listed and opened; the [memory view](#the-memory-view) shows
 the counts.
 
+### The record
+
+A record is one JSON object under the storage key `memory/<projectID>/<topSessionID>`, where
+`projectID` is shared by every worktree of a repository. Times are epoch milliseconds, durations
+milliseconds:
+
+```json
+{
+  "startedAt": 1760000000000,
+  "movedAt": 1760000900000,
+  "title": "Add memory to courier",
+  "split": "split: 3 parts: core, e2e, docs",
+  "finished": true,
+  "recalled": { "at": 1760000001000, "calls": 1 },
+  "lesson": { "text": "The docs part was ten lines; next time do it yourself.", "at": 1760000890000 },
+  "parts": [
+    { "sessionID": "ses_core", "title": "Core", "depth": 1, "isolated": true, "group": "wave", "status": "done", "duration": 540000, "cost": 0.42, "context": 0.31 },
+    { "sessionID": "ses_e2e", "title": "E2E scenario", "depth": 1, "isolated": true, "group": "wave", "status": "partial", "duration": 600000, "cost": 0.81, "refused": 1 }
+  ]
+}
+```
+
+| Field | Holds |
+|---|---|
+| `startedAt`, `movedAt` | When the top was created, and when a turn in the tree last ended. |
+| `title` | The top session's title. |
+| `split` | The top's first `split:` line as written, or `not stated`. |
+| `revisions` | Absent until the top states another split line: `[{ text, at, parts }]`, the newest 3. |
+| `finished` | Whether nothing in the tree ran or waited and every part had settled. |
+| `recalled` | `{ calls, at? }`: `courier_recall` calls from the tree; `at` when the top first called. |
+| `lesson` | `{ text, at, depth? }`, from `courier_note`; `depth` for a sub-orchestrator's. |
+| `reads`, `pinned` | Merged in when read, from keys beside the record (below); never written with it. |
+| `parts` | One per session started in the tree, in tree order: `sessionID`, `title`, `depth`, `isolated`, `group`, `status`, `duration`, `cost`, `context` (0 to 1) and `refused`. |
+
+Beside the record, each key with one writer: `…/<topSessionID>/pin` (`{ at }`, the memory view's
+pin) and `…/<topSessionID>/reads/<readerTopSessionID>` (`{ shown, read, at }`, from that reader
+tree's `courier_recall` calls, summed when read).
+
+To seed a record by hand for a test, set it with `e2e/kv.ts` against a running test server:
+`bun e2e/kv.ts set 'memory/<projectID>/<topSessionID>' '<json>' '<a key the plugin stored>'`.
+Missing fields take their defaults, a part without `sessionID` is dropped, and a value without
+`parts` is not a record. A `lesson` may be a bare string; one over 300 characters is clipped.
+
 ### The lesson
 
 **`courier_note { text }`** writes the caller's tree's one lesson: one line, at most 300 characters,

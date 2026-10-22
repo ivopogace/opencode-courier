@@ -213,8 +213,9 @@ is not.
   `permission.asked` or `execution.failed`.
 - `courier_answer` reaches a request only from the server where the child waits.
 
-`e2e/two-servers.sh` (not in CI, a few minutes, no API key) schedules ten messages due together,
-twice, has a child ask for permission and answers from each server, and fails a child's turn. It
+`e2e/two-servers.sh` (not in CI, a few minutes, no API key; `KEEP=1` keeps the logs) schedules ten
+messages due together, twice (ticks in step, then half a tick apart), has a child ask for permission
+and answers from each server, and fails a child's turn. It
 exits 1 on a double delivery or any other result than the above. It does not cover the webhook
 receiver or the question relay.
 

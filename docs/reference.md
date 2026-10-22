@@ -363,7 +363,9 @@ Its parent merges that branch.
 
 The worktree starts from the project's last commit. When an isolated child spawns an isolated child,
 the new worktree starts from the commit the parent's worktree is on now. Uncommitted work is not
-handed down, so an isolated session is told to commit before it spawns.
+handed down, so an isolated session is told to commit before it spawns, and `courier_spawn` says so
+when the parent has uncommitted changes. If the parent's HEAD cannot be read, the spawn fails and
+starts nothing; start it without `isolate`.
 
 Nothing removes a worktree on its own. When the parent has what it needs, it calls
 `courier_cleanup { sessionID }`. The worktree is kept, and the result says why, when it holds

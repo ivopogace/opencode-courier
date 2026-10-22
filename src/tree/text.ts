@@ -1,6 +1,7 @@
 /** The tree's model-facing texts: the child brief, the role part, refusals, reports, notices and tool results. */
 import { obj, str } from "../platform/json.js"
 import { clipText, defuse, END_TURN, ROOT_SPLIT_LINE, SKILL_ID, SPLIT_LINE, STATUSES } from "../kernel/protocol.js"
+import { retryDelay } from "./domain.js"
 import type { Artifacts, CleanupResult, ExecutionError, HeldReport, LeftMember, Limits, Sent } from "./ports.js"
 
 // The envelope and the child brief.
@@ -277,12 +278,37 @@ function preview(items: readonly string[]) {
 
 // Turn failures.
 
-export function failureNotice(title: string, error: ExecutionError, group?: string) {
+/** A wait in whole minutes, rounded up: "1 minute", "45 minutes", "2 hours 5 minutes". */
+function wait(ms: number) {
+  const minutes = Math.ceil(ms / 60_000)
+  if (minutes < 60) return count(minutes, "minute")
+  const rest = minutes % 60
+  return [count(Math.floor(minutes / 60), "hour"), rest ? count(rest, "minute") : ""].filter(Boolean).join(" ")
+}
+
+/** A time as the notices say it, in UTC, with its date when it is not the day of `from`. */
+function clock(at: number, from: number) {
+  const iso = new Date(at).toISOString()
+  return iso.slice(0, 10) === new Date(from).toISOString().slice(0, 10) ? `${iso.slice(11, 16)} UTC` : `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
+}
+
+/**
+ * What the parent is told when a session it started failed its turn; `at` is when the failure happened, which the provider's
+ * retry time (`retryAfterMs`) counts from. Message the child before that and it fails again, so the notice says to wait.
+ */
+export function failureNotice(title: string, error: ExecutionError, group?: string, at?: number) {
   const status = error.status === undefined ? "" : `, status ${error.status}`
+  const delay = retryDelay(error)
   return [
     `This session, "${title}", which you started with courier_spawn, failed: ${error.message} (${error.type}${status}).`,
+    ...(delay === undefined
+      ? []
+      : [`The provider limit lifts in about ${wait(delay)}${at === undefined ? "" : `, at about ${clock(at + delay, at)}`}.`]),
     "Its turn ended without finishing, so it will not report back on its own.",
-    "Message it with courier_send to have it try again, start a replacement, or carry on without it.",
+    delay === undefined
+      ? "Message it with courier_send to have it try again, start a replacement, or carry on without it."
+      : "Do not message it with courier_send before then, as the turn would fail again. Message it after, start a replacement, or carry on without it; " +
+        "courier_later can remind you when the limit lifts.",
     ...(group
       ? [
           `It is a member of group "${group}", which no longer waits for it: its other members' reports reach you once they have ` +

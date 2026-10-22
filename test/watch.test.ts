@@ -82,6 +82,43 @@ describe("reportFailure", () => {
     expect(failureNotice("t", { type: "unknown", message: "boom" })).toContain("failed: boom (unknown).")
   })
 
+  test("gives the time a provider limit lifts, from the event, and notes it for the panel (#353)", async () => {
+    const { ports, sent, store } = fakePorts()
+    await childStore(ports.storage).record(child())
+    await notePrompt(ports, delivered("evt_d", 100))
+    const error = { type: "provider.rate-limit", message: "Rate limit reached", status: 429, retryAfterMs: 90_000 }
+
+    await reportFailure(ports, new Set(), { ...failed(), created: 1_000_000, data: { sessionID: "ses_child", error } })
+
+    expect(sent[0].text).toBe(envelope("ses_child", failureNotice("Fix the bug", error, undefined, 1_000_000), { failed: "provider.rate-limit" }))
+    expect(sent[0].text).toContain("lifts in about 2 minutes")
+    expect(sent[0].text).toContain("Do not message it with courier_send before then")
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000_000, by: "failed", resumesAt: 1_090_000 })
+    expect(await reportOf(childStore(ports.storage), "ses_child")).toMatchObject({ ended: true, resumesAt: 1_090_000 })
+  })
+
+  test("takes no retry time for a failure without one, or with one that is not a positive number", async () => {
+    for (const retryAfterMs of [undefined, 0, -5, Number.NaN, "soon"]) {
+      const { ports, sent, store } = fakePorts()
+      await childStore(ports.storage).record(child())
+      await reportFailure(ports, new Set(), { ...failed(), data: { sessionID: "ses_child", error: { ...blocked, retryAfterMs } as never } })
+      expect(sent[0].text).not.toContain("limit lifts")
+      expect(sent[0].text).toContain("Message it with courier_send to have it try again")
+      expect(store.get(settledKey("ses_child"))).not.toHaveProperty("resumesAt")
+    }
+  })
+
+  test("forgets the retry time once the child is prompted again", async () => {
+    const { ports } = fakePorts()
+    await childStore(ports.storage).record(child())
+    await notePrompt(ports, delivered("evt_d", 100))
+    await reportFailure(ports, new Set(), { ...failed(), created: 200, data: { sessionID: "ses_child", error: { ...blocked, retryAfterMs: 60_000 } } })
+    expect(await reportOf(childStore(ports.storage), "ses_child")).toHaveProperty("resumesAt", 60_200)
+
+    await notePrompt(ports, delivered("evt_d2", 300))
+    expect(await reportOf(childStore(ports.storage), "ses_child")).not.toHaveProperty("resumesAt")
+  })
+
   test("ignores a failed session that courier_spawn did not start", async () => {
     const { ports, sent } = fakePorts()
     await childStore(ports.storage).record(child())

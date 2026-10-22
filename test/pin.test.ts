@@ -31,7 +31,7 @@ describe("the @opencode/plugin pin", () => {
   })
 
   // The README names the pin where a newcomer reads it: the CLI its Quickstart and Install sections
-  // install, and the version its "OpenCode V2 native" section says the release is tested on.
+  // install, and the version its Install section says the release is tested on.
   test("is the OpenCode version the README installs and names as tested", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
     const peer = manifest.peerDependencies["@opencode/plugin"]

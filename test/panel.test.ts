@@ -237,6 +237,33 @@ describe("panel", () => {
     expect(rows[2]!.title).toBe("entry ses_gone")
   })
 
+  test("carries when a provider limit lifts on the failed row, until it has passed, the child is prompted again or it is stopped (#353)", async () => {
+    const sessions = Object.fromEntries(["ses_limited", "ses_lifted", "ses_retried", "ses_stopped", "ses_plain"].map((id) => [id, { updated: 5, idle: 5, outcome: "failed" }]))
+    const { ports } = fakePorts(sessions)
+    const children = childStore(ports.storage)
+    for (const sessionID of Object.keys(sessions)) {
+      await children.record(entry(sessionID, "ses_root"))
+      await children.prompted(sessionID, 900)
+    }
+    await children.settled("ses_limited", "failed", 950, undefined, 600_950)
+    await children.settled("ses_lifted", "failed", 950, undefined, 999)
+    await children.settled("ses_retried", "failed", 950, undefined, 600_950)
+    await children.prompted("ses_retried", 960)
+    await children.settled("ses_stopped", "failed", 950, undefined, 600_950)
+    await children.stopped("ses_stopped", 955)
+    await children.settled("ses_plain", "failed", 950)
+
+    const { rows } = await panel(ports, "ses_root")
+    expect(Object.fromEntries(rows.map((row) => [row.sessionID, row.resumes]))).toEqual({
+      ses_limited: 600_950,
+      ses_lifted: undefined,
+      ses_retried: undefined,
+      ses_stopped: undefined,
+      ses_plain: undefined,
+    })
+    expect(rows.find((row) => row.sessionID === "ses_limited")).toMatchObject({ state: "idle", outcome: "failed" })
+  })
+
   test("reads a session that reported and was archived since as idle, with its last turn's end, not as running (#324)", async () => {
     const { ports } = fakePorts({ ses_archived: { updated: 9, idle: 5, archived: 9, messages: [assistant(), { type: "idle" }] } })
     const children = childStore(ports.storage)

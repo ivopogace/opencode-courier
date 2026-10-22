@@ -294,16 +294,16 @@ export function waitLine(wait: Wait) {
 }
 
 /** What a row's session is doing, its report and its group standing: "idle · reported done · group pair held". */
-export function statusLine(row: Row) {
-  return statusParts(row)
+export function statusLine(row: Row, now = Date.now()) {
+  return statusParts(row, now)
     .map((part) => part.text)
     .join(" · ")
 }
 
 /** The parts of `statusLine`, each with the row part the panel colours it as. */
-export function statusParts(row: Row) {
+export function statusParts(row: Row, now = Date.now()) {
   const parts: Array<{ text: string; kind: "state" | "report" | "plain" }> = [
-    { text: stateWord(row), kind: "state" },
+    { text: stateWord(row, now), kind: "state" },
     { text: reportWords(row.report, row.stopped), kind: "report" },
     { text: row.group ? `group ${row.group.name} ${row.group.standing}` : "", kind: "plain" },
     { text: row.isolated ? "isolated" : "", kind: "plain" },
@@ -331,11 +331,23 @@ export function rowMark<Color>(row: Row, theme: Feedback<Color>, frame?: number)
   return { mark: " ", color: undefined }
 }
 
-/** What a session does, an idle one stopped, or whose last turn failed or was interrupted, saying so. */
-function stateWord(row: Row) {
+/** A time of day in the panel's own zone, with its date when it is not today: "14:32", "10-23 03:10". */
+function resumeTime(at: number, now: number) {
+  const time = new Date(at)
+  const pad = (value: number) => String(value).padStart(2, "0")
+  const clock = `${pad(time.getHours())}:${pad(time.getMinutes())}`
+  return time.toDateString() === new Date(now).toDateString() ? clock : `${pad(time.getMonth() + 1)}-${pad(time.getDate())} ${clock}`
+}
+
+/**
+ * What a session does, an idle one stopped, or whose last turn failed or was interrupted, saying so; a failure that is a
+ * provider limit says when it lifts, until `now` passes that.
+ */
+function stateWord(row: Row, now: number) {
   if (row.state === "waiting") return "waiting on you"
   if (row.state === "stalled") return "stalled"
   if (row.state === "idle" && row.stopped) return "stopped"
+  if (row.state === "idle" && row.outcome === "failed" && row.resumes !== undefined && row.resumes > now) return `limit, resumes ${resumeTime(row.resumes, now)}`
   if (row.state === "idle" && (row.outcome === "failed" || row.outcome === "interrupted")) return row.outcome
   return row.state
 }
@@ -856,7 +868,7 @@ function TreePanel(props: {
                   <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
                     {"  "}
                   </text>
-                  <For each={statusParts(row)}>
+                  <For each={statusParts(row, now())}>
                     {(part, at) => (
                       <>
                         <Show when={at()}>

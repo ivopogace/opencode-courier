@@ -1,7 +1,7 @@
 import { envelope } from "../kernel/protocol.js"
 import { claim, SEEN_MAX, setBounded } from "../platform/bounded.js"
 import type { EventModule, HostEvent } from "../platform/events.js"
-import { endsIdle } from "./domain.js"
+import { endsIdle, retryDelay } from "./domain.js"
 import { forgetChild, forgetDeleted } from "./forget.js"
 import { hasCompleteGroup, leave, outIn } from "./group.js"
 import type { ExecutionError, Waits, WatchPorts, WatchState } from "./ports.js"
@@ -39,9 +39,10 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   const children = childStore(ports.storage)
   const entries = await children.entriesOf(sessionID)
   const at = event.created ?? ports.now()
-  // Not in the way of the notice: kept only so the limits stop counting the child.
+  const wait = retryDelay(error)
+  // Not in the way of the notice: kept only so the limits stop counting the child, and the panel can say when its limit lifts.
   if (entries.length)
-    await children.settled(sessionID, "failed", at).catch((error: unknown) =>
+    await children.settled(sessionID, "failed", at, undefined, wait === undefined ? undefined : at + wait).catch((error: unknown) =>
       ports.log(`courier watch: could not note the failed turn of ${sessionID}: ${String(error)}`),
     )
   const out = await Promise.all(entries.map((entry) => outIn(ports, entry)))
@@ -56,7 +57,7 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
       entries.map((entry, index) =>
         ports.session.synthetic({
           sessionID: entry.parentID,
-          text: envelope(sessionID, failureNotice(entry.title, error, out[index]?.group), { failed: error.type }),
+          text: envelope(sessionID, failureNotice(entry.title, error, out[index]?.group, at), { failed: error.type }),
           description: `Session ${sessionID} failed`,
           metadata: { source: "courier", from: sessionID, failed: true },
           delivery: "steer",

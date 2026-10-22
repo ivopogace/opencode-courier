@@ -68,14 +68,18 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
   ])
   const tool = lastTool(messages)
   const context = contextOf(messages, windows)
+  const state = stateOf(info, pending.length + forms.length, stalled !== undefined, running)
+  // A prompt since the failure drops it from the report, so `resumesAt` here is that of the last turn alone.
+  const resumes = state === "idle" && !stopped && report?.resumesAt !== undefined && report.resumesAt > ports.now() ? report.resumesAt : undefined
   return {
     sessionID,
     parentID: entry.parentID,
     title: info?.title ?? entry.title,
     depth,
-    state: stateOf(info, pending.length + forms.length, stalled !== undefined, running),
+    state,
     ...(stalled !== undefined ? { stalled } : {}),
     ...(info?.outcome ? { outcome: info.outcome } : {}),
+    ...(resumes !== undefined ? { resumes } : {}),
     ...(stopped ? { stopped } : {}),
     ...reportRow(report, status),
     ...(entry.group && standing ? { group: { name: entry.group, standing } } : {}),

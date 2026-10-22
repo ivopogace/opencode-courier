@@ -232,6 +232,10 @@ describe("turn failures", () => {
     expect(tree.failureNotice("Fix the bug", { type: "provider.auth", message: "blocked", status: 403 })).toMatchSnapshot()
     expect(tree.failureNotice("Fix the bug", { type: "unknown", message: "boom" })).toMatchSnapshot()
     expect(tree.failureNotice("Fix the bug", { type: "unknown", message: "boom" }, "reviews")).toMatchSnapshot()
+    const limited = { type: "provider.rate-limit", message: "Rate limit reached", status: 429, retryAfterMs: 1_800_000 }
+    expect(tree.failureNotice("Fix the bug", limited, undefined, Date.UTC(2026, 0, 5, 14, 2))).toMatchSnapshot()
+    expect(tree.failureNotice("Fix the bug", { ...limited, retryAfterMs: 7_500_000 }, "reviews", Date.UTC(2026, 0, 5, 23, 0))).toMatchSnapshot()
+    expect(tree.failureNotice("Fix the bug", limited)).toMatchSnapshot()
   })
   test("silentNotice", () => {
     expect(tree.silentNotice("Fix the bug", "I looked at src/a.ts; the bug is on line 4.")).toMatchSnapshot()

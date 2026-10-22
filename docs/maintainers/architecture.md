@@ -52,7 +52,7 @@ the tree's and the memory's keys.
 | `roster/<parentID>/<sessionID>` | A child's entry: title, directory, `isolated` (with `source`, `project` and `base` commit), `createdAt`, `reports: "status"`, `group`, `native`. |
 | `roster-by-child/<sessionID>` | `{ ancestors }`, parent first, top last. Only an index: `roster/` confirms a hit. |
 | `report/<sessionID>/prompt` | `{ at }`: when a prompt last reached the session. |
-| `report/<sessionID>/settled` | `{ at, by, status }`: when it last reported, failed or was interrupted. |
+| `report/<sessionID>/settled` | `{ at, by, status, resumesAt }`: when it last reported, failed or was interrupted; `resumesAt` only for a failed turn whose provider limit gave a retry time, the event's `created` plus `retryAfterMs`. |
 | `report/<sessionID>/progress` | `{ at }`: when it last messaged its parent without a status. |
 | `report/<sessionID>/told` | `{ at }`: when its parent was last told of a silent end. |
 | `report/<sessionID>/stopped` | `{ at }`: when `courier_stop` stopped it. |

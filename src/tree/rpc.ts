@@ -48,6 +48,8 @@ const Row = Schema.Struct({
   stalled: Schema.optionalKey(Schema.Number),
   /** How its last turn ended. */
   outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "interrupted"])),
+  /** When the provider limit that failed its last turn lifts; left out once that has passed, or when it runs again or was stopped. */
+  resumes: Schema.optionalKey(Schema.Number),
   /** Set when courier_stop stopped it since its last prompt. */
   stopped: Schema.optionalKey(Schema.Boolean),
   /** Its report since its last prompt: still owed, arrived (held with its group or delivered), or its turn ended without one. */

@@ -1011,6 +1011,28 @@ Message it with courier_send to have it try again, start a replacement, or carry
 It is a member of group "reviews", which no longer waits for it: its other members' reports reach you once they have reported and your turn has ended, and if it reports after all before then, its report joins them."
 `;
 
+exports[`turn failures failureNotice 4`] = `
+"This session, "Fix the bug", which you started with courier_spawn, failed: Rate limit reached (provider.rate-limit, status 429).
+The provider limit lifts in about 30 minutes, at about 14:32 UTC.
+Its turn ended without finishing, so it will not report back on its own.
+Do not message it with courier_send before then, as the turn would fail again. Message it after, start a replacement, or carry on without it; courier_later can remind you when the limit lifts."
+`;
+
+exports[`turn failures failureNotice 5`] = `
+"This session, "Fix the bug", which you started with courier_spawn, failed: Rate limit reached (provider.rate-limit, status 429).
+The provider limit lifts in about 2 hours 5 minutes, at about 2026-01-06 01:05 UTC.
+Its turn ended without finishing, so it will not report back on its own.
+Do not message it with courier_send before then, as the turn would fail again. Message it after, start a replacement, or carry on without it; courier_later can remind you when the limit lifts.
+It is a member of group "reviews", which no longer waits for it: its other members' reports reach you once they have reported and your turn has ended, and if it reports after all before then, its report joins them."
+`;
+
+exports[`turn failures failureNotice 6`] = `
+"This session, "Fix the bug", which you started with courier_spawn, failed: Rate limit reached (provider.rate-limit, status 429).
+The provider limit lifts in about 30 minutes.
+Its turn ended without finishing, so it will not report back on its own.
+Do not message it with courier_send before then, as the turn would fail again. Message it after, start a replacement, or carry on without it; courier_later can remind you when the limit lifts."
+`;
+
 exports[`turn failures silentNotice 1`] = `
 "This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
 Its last reply:

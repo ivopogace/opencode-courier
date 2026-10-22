@@ -552,7 +552,8 @@ sessions and hides where there is no tree.
 asks you to confirm, then stops as `courier_stop` would from the open session.
 
 **Forgetting.** `x` on a `gone` row (deleted in OpenCode, kept for its worktree or its children)
-forgets it as `courier_cleanup` would, never with `force`, after a confirm.
+forgets it as `courier_cleanup` would, never with `force`, after a confirm. The server refuses a
+session OpenCode still has, or cannot look up, so `x` on a live row forgets nothing.
 
 **Sounds.** A child's report plays OpenCode's `subagent_done` sound. A group's release plays `done`,
 with a notification when the terminal is not focused.

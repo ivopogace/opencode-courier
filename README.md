@@ -22,7 +22,7 @@ The tree panel, the asks inbox, the edge cases and memory on the live terminal U
 ## Quickstart
 
 ```bash
-npm install -g @opencode/cli@2.1.2   # OpenCode V2, at the version courier is tested on
+npm install -g @opencode/cli@2.1.3   # OpenCode V2, at the version courier is tested on
 opencode plugin add opencode-courier  # by name, so OpenCode offers new releases
 opencode                              # in any folder
 ```
@@ -43,7 +43,7 @@ sometimes stall on a request; if nothing moves for a few minutes, send the promp
 
 Courier is built on OpenCode V2's plugin API (`@opencode/plugin`), not the V1 one
 (`@opencode-ai/plugin`). Each release is pinned to one V2 version and tested against it end to end;
-the current one is tested on **OpenCode 2.1.2**. CI also runs the live suite on the newest OpenCode
+the current one is tested on **OpenCode 2.1.3**. CI also runs the live suite on the newest OpenCode
 release, on `main` and nightly. Older releases: [every release](docs/reference.md#the-opencode-version).
 
 ## Courier or the built-in subagent tool?
@@ -125,12 +125,12 @@ version than the pinned one writes one line to the server log
 Older releases and their versions: [every release](docs/reference.md#the-opencode-version).
 
 The [terminal part](#in-the-terminal) relies on the host to provide its UI modules and is tested on
-OpenCode 2.1.2 only; the server part works on older V2 hosts from 2.0.4 on.
+OpenCode 2.1.3 only; the server part works on older V2 hosts from 2.0.4 on.
 
 Check yours with `opencode --version`, and install the matching CLI with:
 
 ```bash
-npm install -g @opencode/cli@2.1.2
+npm install -g @opencode/cli@2.1.3
 ```
 
 ### The plugin

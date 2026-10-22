@@ -1,9 +1,9 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around, or relies on, at the
-pinned version: `@opencode/plugin@2.1.2` and OpenCode 2.1.2. A pin bump re-checks each trap and
+pinned version: `@opencode/plugin@2.1.3` and OpenCode 2.1.3. A pin bump re-checks each trap and
 updates the ones it changes. OpenCode's source is on the `v2` branch of
-https://github.com/anomalyco/opencode, each release tagged (`v2.1.2`); paths below are in it. The
+https://github.com/anomalyco/opencode, each release tagged (`v2.1.3`); paths below are in it. The
 [reference](../reference.md) says what the plugin does.
 
 ## Tools
@@ -340,7 +340,7 @@ claim sets, the event bus and pending permission requests. So:
 `e2e/two-servers.sh` measures it (not in CI; a few minutes, no API key; `KEEP=1` keeps the logs):
 
 ```bash
-npm install --prefix <scratch>/oc @opencode/cli@2.1.2
+npm install --prefix <scratch>/oc @opencode/cli@2.1.3
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/two-servers.sh
 ```
 
@@ -377,7 +377,7 @@ HEAD commit as `branch`, which the child's roster entry records as `base`.
 - **Listing.** Every skill with a `description`, `autoinvoke` not `false`, and not denied by a
   `skill` permission rule, is listed in every session's system prompt under the instruction key
   `core/skill-guidance`, in an `<available_skills>` block sorted by id; a change reaches a running
-  session as a delta. `GET /api/skill?directory=…` lists them.
+  session as a delta (a changed entry too, since 2.1.3). `GET /api/skill?directory=…` lists them.
 - **Loading.** The model calls OpenCode's `skill` tool (`skill({ id })`), which asks the `skill`
   permission for the id (with `save: [id]`, so "always" is offered). Its result is
   `<skill_content name="…">`: `# Skill: <name>`, the content, `Base directory for this skill:
@@ -446,7 +446,7 @@ What `nativeChildren` ([reference](../reference.md#native-child-sessions)) rests
   npm's `ERESOLVE`, against the newer `@opentui/solid` npm picked for `@opencode/plugin`'s `>=`
   range; with no such peer npm installs no `@opentui` and the host provides them. The TUI's packages
   are devDependencies at the versions OpenCode's root `package.json` catalog pins (`@opentui/*`
-  `0.6.6`, `solid-js` `1.9.15` at `v2.1.2`), and `@opencode/theme` at the pin, for the typecheck and
+  `0.6.6`, `solid-js` `1.9.15` at `v2.1.3`), and `@opencode/theme` at the pin, for the typecheck and
   the tests.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles `src/tui.tsx` with `Bun.build`,

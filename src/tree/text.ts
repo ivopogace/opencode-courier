@@ -292,6 +292,12 @@ function clock(at: number, from: number) {
   return iso.slice(0, 10) === new Date(from).toISOString().slice(0, 10) ? `${iso.slice(11, 16)} UTC` : `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
 }
 
+/** The line saying how long the provider asked to wait, and until when if the failure's time `at` is known. */
+function waitLine(delay: number, at: number | undefined) {
+  const until = at === undefined ? "" : `, until about ${clock(at + delay, at)}`
+  return `The provider asked to wait about ${wait(delay)} before trying again${until}.`
+}
+
 /**
  * What the parent is told when a session it started failed its turn; `at` is when the failure happened, which the provider's
  * retry time (`retryAfterMs`) counts from. Message the child before that and it fails again, so the notice says to wait.
@@ -301,9 +307,7 @@ export function failureNotice(title: string, error: ExecutionError, group?: stri
   const delay = retryDelay(error)
   return [
     `This session, "${title}", which you started with courier_spawn, failed: ${error.message} (${error.type}${status}).`,
-    ...(delay === undefined
-      ? []
-      : [`The provider asked to wait about ${wait(delay)} before trying again${at === undefined ? "" : `, until about ${clock(at + delay, at)}`}.`]),
+    ...(delay === undefined ? [] : [waitLine(delay, at)]),
     "Its turn ended without finishing, so it will not report back on its own.",
     delay === undefined
       ? "Message it with courier_send to have it try again, start a replacement, or carry on without it."

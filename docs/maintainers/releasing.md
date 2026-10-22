@@ -77,7 +77,9 @@ subject claims for repositories created after 2026-07-15
 
 1. On npmjs.com, add a trusted publisher: this repository, workflow `release.yml`, environment
    `npm`, allowed to stage only.
-2. Set `NPM_AUTH` to `oidc` and release. The job logs its OIDC claims, so a mismatch shows.
+2. Set `NPM_AUTH` to `oidc` and release. The job logs its OIDC claims, so a mismatch shows, and
+   stages with `--loglevel verbose`. A failed exchange falls back to setup-node's placeholder token
+   and fails with E401.
 3. Then revoke the token and delete `NPM_TOKEN`. To go back, set `NPM_AUTH` to `token`.
 
 ## The plugin API pin
@@ -95,7 +97,8 @@ pin:
 3. Move the version README.md names: the Quickstart, the Install section's "tested on" line and
    install command, and the terminal part's line under the table.
 4. Update the affected traps in [plugin-api-notes.md](plugin-api-notes.md).
-5. Release a patch.
+5. Release a patch, so the published package names the new version and hosts on it stop logging
+   the version line.
 
 The version tables in README.md (newest three rows, `rows=3` in the marker) and
 [reference.md](../reference.md#the-opencode-version) (every row) are generated from the release tags

@@ -137,7 +137,7 @@ place by the time the plugin sees the turn's end.
   aborted message (`endsIdle`, `wakeEnded`). A message steered in during the turn is then delivered
   at once in a turn of its own. The group seal reads `time.idle`, so a decline does not seal.
   `wakeAgain` reads the session before re-sending, in case a resumed turn's `started` came before
-  the subscription.
+  the subscription; only a transcript actually read marks it running, so a failed read re-sends.
 - `opencode run --auto` replies `once` to every request in its session, asserted ones included
   (`packages/cli/src/run/noninteractive.ts`). The scenario that holds the prompt drives the parent
   through the API.

@@ -22,7 +22,8 @@ storage helpers. Three composition roots sit on top: `index.ts` (the server plug
   it needs beyond them is process-wide, under the key `opencode-courier.memory`.
 - **The TUI bundle carries nothing of the server half**: `tui.tsx` and `rpc.ts` import modules'
   `tui.tsx` and `rpc.ts` directly. The TUI part goes through the same use cases as the tools, over
-  the RPCs `courier`, `courier-person` and `courier-memory`.
+  the RPCs `courier`, `courier-person` and `courier-memory`. The memory view is a dialog, not a
+  panel: the records are the project's, and a panel belongs to one session.
 - **Text lives next to the module that speaks it**, with one snapshot over all of it.
 
 The import rules:
@@ -83,7 +84,8 @@ Spawns under way, inbox item types and shown forms are process-wide under fixed 
 
 The hub carries `HUB_VERSION`, changed only when its shape or a field's meaning does. A copy that
 finds another version runs its own hub under its version's key and logs one line. The claim sets are
-shared across versions under keys whose meaning is fixed for good.
+shared across versions under keys whose meaning is fixed for good. A change that needs another
+meaning makes a new key and keeps claiming in the old one too.
 
 **Version skew.** A tick or event subscription runs the code of the copy loaded last, through the
 instance loaded first, which may be an older copy of the same hub version. So a tick job or event

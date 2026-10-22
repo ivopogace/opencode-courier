@@ -269,4 +269,6 @@ after.
 This is a smoke test, not a benchmark: a few runs on free models that change without notice. A
 model that passes here can still poll or forget to report on a harder task, so a `courier_later`
 check-in still pays. Which session loads the skill varies from run to run; on one-result tasks,
-models do not load it. No row reaches the five-run floor on two models.
+models do not load it. No row reaches the five-run floor on two models. Not re-run on the current
+wording: `COURIER_PERSON=other-server` and the models other than `longcat-2.5-preview-free`. Earlier
+rows, among them a native-notice wording that scored 0/6, are in this file's history.

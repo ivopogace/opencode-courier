@@ -24,8 +24,9 @@ version in its `package.json`. Every release and its version:
 | 0.1.6 | 0.0.0-beta-19271 (the beta line: `opencode2` from `@opencode-ai/cli`, and `@opencode-ai/plugin`) |
 <!-- compat-table:end -->
 
-OpenCode never checks the version. The plugin loads on any host from 2.0.4 on (2.0.0 to 2.0.3 lack
-an API it needs), but its tools may break on another version. The terminal part is tested on
+OpenCode never checks the version. The plugin loads on any host from 2.0.4 on, but its tools may
+break on another version. On 2.0.0 to 2.0.3 it fails to load with
+`TypeError: undefined is not an object (evaluating 'host.model.list')`. The terminal part is tested on
 OpenCode 2.1.3 only.
 
 On a version other than the pinned one, the plugin writes one line to the server log when it loads
@@ -133,7 +134,8 @@ A session is live while:
 
 So a child that ends its turn without reporting counts until it reports, and a session waiting for
 its own children counts too. Renaming, archiving or switching the model of a session does not make
-it live. Several spawns made at once cannot get past a limit together.
+it live. A child counts from the moment `courier_send` to it returns, so a spawn in the same step
+counts it. Several spawns made at once cannot get past a limit together.
 
 **The brief.** Each spawned session is told its depth, the limits and how to report. Below
 `maxDepth` it is told to split its task when it has two or more independent, substantial parts,
@@ -230,11 +232,16 @@ deletes it, or when the parent drops it. The group is released once the others h
 group whose members all left is dropped unsent. A member that reports after leaving, before the
 release, rejoins.
 
-**Dropping a member.** A member that will not report holds back the others. Drop it with
-`courier_cleanup { sessionID }`: with the parent's turn ended, the held reports arrive at once.
+**Dropping a member.** A member that will not report holds back the others: one that ended its turn
+silently, one whose failure the plugin missed (the server was down), or one you gave up on. Drop it
+with `courier_cleanup { sessionID }`: with the parent's turn ended, the held reports arrive at once.
+An isolated member whose worktree holds unsaved work is kept, and stays in the group, until you
+commit that work or pass `force: true`.
 
 `courier_children` shows each member's `group: { name, report }`, with `report` one of `held`,
-`out`, `failed`, `interrupted`, `deleted`, `released` or `unknown`. Held reports survive a restart.
+`out`, `failed`, `interrupted`, `deleted`, `released` (the group was delivered) or `unknown`. Held
+reports survive a restart. A group's message does not overtake the notice of a member's failed turn, unless a scheduler tick
+falls between the two.
 
 ## A child that fails
 
@@ -263,7 +270,8 @@ by a plain permission decline or a dismissed question is told.
 ## A missed wake
 
 OpenCode starts a turn when a message lands in an idle session's inbox. Rarely, it does not. So the
-plugin watches every message it delivers. One that has waited in an idle session for 30 seconds is
+plugin watches every message it sends to wake a session. Notices sent without waking, such as a
+permission request [answered elsewhere](#a-child-that-asks-for-permission), are not watched. One that has waited in an idle session for 30 seconds is
 sent again under the same id, which wakes the session without a second copy. If the session still
 has not taken it 30 seconds later, it is **stalled**: the footer counts it and the tree panel marks
 its row. Prompting the session delivers the message and ends the stall. Nothing is sent a third
@@ -295,7 +303,10 @@ A rejection always carries a message, so the child's call fails and the child ca
 
 A request answered elsewhere (in the child's session, the asks inbox, or by an `always` that covers
 it) is settled: the top session gets a short message marked `answered="<reply>"`. It waits in the
-inbox for the next turn and wakes nothing. `courier_status` lists pending requests under `pending`.
+inbox for the next turn and wakes nothing. A rejection in OpenCode rejects the session's other
+pending requests too; the message then says the child may have stopped and `courier_send` restarts
+it. A `courier_answer` after that passes nothing on, and a prompt already open in the top session
+passes nothing on when allowed. `courier_status` lists pending requests under `pending`.
 
 ## A child that shows a form
 
@@ -346,7 +357,9 @@ the `status` of its last report. Anyone can read any tree.
 4. With `cleanup: true`, their worktrees are removed by `courier_cleanup`'s rules, without `force`.
 
 The target's parent is told once, `ended="stopped"`, unless it is the caller or the target was not
-running. Sessions under the target are not told. A stopped session stays on the roster and can be messaged again.
+running. Sessions under the target are not told. A stopped session stays on the roster and can be
+messaged again. Scheduled messages and webhook subscriptions the stopped sessions made for others are
+left alone. A session started by a running turn of the subtree while the stop runs may escape it.
 
 ## Roster
 
@@ -377,7 +390,8 @@ deletes a session. Call it after the child has reported.
 ## Scheduled messages
 
 Pending `courier_later` messages are checked every 15 seconds, so one can arrive up to 15 seconds
-late. They are delivered once, queued behind a running turn, and survive a restart. After a start,
+late. They are queued behind a running turn and survive a restart. A crash between delivering a
+message and forgetting it can deliver it twice. After a start,
 OpenCode loads plugins when a project is first used, so messages that fell due meanwhile arrive
 then.
 
@@ -474,7 +488,9 @@ OpenCode's TUI or the paired app, which show its prompts. What changes:
 - **Asks are answered in OpenCode's view.** The TUI's view of the top session, and the paired app's
   request dock, show the permission requests, questions and forms of every native child under it.
   The top session's model is only told (a notice marked `shown="native"`) and told again once it is
-  settled. `courier_answer` still works.
+  settled. A native child under an isolated session shows its asks in that session's view instead,
+  and they are relayed as without the option. With a bare API client nothing shows the prompts:
+  `courier_answer` is the fallback, and `courier_status` lists them under `pending`.
 - **Deleting a session deletes its native children.**
 - **The child gets an empty ruleset**, not its parent's session rules, as without the option.
 - **Providers see a subagent.** Requests carry the parent's id for cache routing. GitHub Copilot
@@ -554,7 +570,8 @@ Waiting on you (3)
   Question: Greeting: Which greeting?         Root › Fix the bug                 depth 1
 ```
 
-The top session's own requests come first, chiefly the prompts `courier_answer once` opens. Allowing
+Each session is named by its current title, or the title it was spawned with when the terminal
+does not know it. The top session's own requests come first, chiefly the prompts `courier_answer once` opens. Allowing
 such a prompt passes `once` on to the child. The list follows the tree while open and closes when
 nothing is left. Choosing an ask opens its dialog; `esc` goes back.
 
@@ -564,7 +581,8 @@ nothing is left. Choosing an ask opens its dialog; `esc` goes back.
   page is left to its own session.
 - **A question:** each question in turn, one or several choices, or `Type your own answer…`.
 
-New asks play OpenCode's own sounds.
+New asks play OpenCode's own sounds. Asks already waiting when the TUI starts, or when it first
+reads a tree, are not announced.
 
 ### The memory view
 
@@ -668,7 +686,10 @@ curl -X POST -H "x-hub-signature-256: sha256=$sig" --data-binary "$body" http://
 | `401` | Missing or wrong signature. |
 | `413` | Body over `maxBytes`. |
 
-A generic sender posting the same text twice should add something unique, such as a timestamp.
+A delivery that reached no session because every send failed is forgotten, so GitHub's Redeliver
+retries it. A generic sender posting the same text twice should add something unique, such as a
+timestamp. A session OpenCode no longer knows loses its subscriptions at the next delivery, and
+`courier_subscribe` refuses an unknown session. GitHub has no event for a merge conflict.
 
 ## Two servers on one data directory
 
@@ -678,6 +699,7 @@ share the plugin's storage but not its memory:
 - Scheduled messages and released groups are delivered by one server. If it stops, another takes
   over within about 75 seconds.
 - A child's permission request, failure or silent end is told once, by the server running it.
+  Whether a child owes a report compares both servers' clocks, so run them on one machine.
 - `courier_answer` passes an answer on only from the server where the child waits, and
   `courier_status` lists only that server's requests.
 

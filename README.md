@@ -137,8 +137,9 @@ More: [in the terminal](docs/reference.md#in-the-terminal).
 
 - Keep `opencode service start` running, so sessions can be woken while you are away. Run one
   OpenCode server per data directory ([why](docs/reference.md#two-servers-on-one-data-directory)).
-- Allow up front what the work needs. A child's approval prompt waits for you, and the top
-  session's own prompts stall the whole tree (allow `bun run *` or `npm run *` and `git`).
+- Allow up front what the work needs, and the `question` tool if children should ask you. A
+  child's approval prompt waits for you, and the top session's own prompts stall the whole tree
+  (allow `bun run *` or `npm run *` and `git`).
 - Choose a web search provider before children search, or the first one shows you a form.
 - Use `isolate: true` when children edit files in parallel. The worktree starts from the last
   commit, so keep providers in the global config or commit `opencode.json`.

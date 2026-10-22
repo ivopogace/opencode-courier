@@ -480,7 +480,9 @@ OpenCode's TUI or the paired app, which show its prompts. What changes:
 - **Providers see a subagent.** Requests carry the parent's id for cache routing. GitHub Copilot
   meters subagents differently; not tested on Copilot.
 - **A native child leaves the TUI's session lists.** Reach it from the parent's subagent tab.
-- **`autoaccept` and `opencode run --auto`** in the top session approve native children's requests.
+- **`autoaccept` and `opencode run`** in the top session answer native children's requests:
+  `autoaccept` and `run --auto` approve them, `run` without `--auto` rejects them and cancels their
+  questions and forms.
 
 An isolated child cannot be native. A tree with isolated children shows in OpenCode as several
 trees, split at each isolated child; `courier_tree` shows the whole.

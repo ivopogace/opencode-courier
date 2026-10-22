@@ -303,12 +303,12 @@ export function failureNotice(title: string, error: ExecutionError, group?: stri
     `This session, "${title}", which you started with courier_spawn, failed: ${error.message} (${error.type}${status}).`,
     ...(delay === undefined
       ? []
-      : [`The provider limit lifts in about ${wait(delay)}${at === undefined ? "" : `, at about ${clock(at + delay, at)}`}.`]),
+      : [`The provider asked to wait about ${wait(delay)} before trying again${at === undefined ? "" : `, until about ${clock(at + delay, at)}`}.`]),
     "Its turn ended without finishing, so it will not report back on its own.",
     delay === undefined
       ? "Message it with courier_send to have it try again, start a replacement, or carry on without it."
       : "Do not message it with courier_send before then, as the turn would fail again. Message it after, start a replacement, or carry on without it; " +
-        "courier_later can remind you when the limit lifts.",
+        "courier_later can remind you when the wait is over.",
     ...(group
       ? [
           `It is a member of group "${group}", which no longer waits for it: its other members' reports reach you once they have ` +

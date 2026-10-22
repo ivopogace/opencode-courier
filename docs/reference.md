@@ -250,7 +250,7 @@ parent gets a message from that child marked `failed="<error type>"`, with the e
 parent if idle. The parent can message the child to try again, start a replacement, or carry on.
 
 When the failure is a rate or quota limit and the provider says how long to wait (OpenCode 2.1.2 and
-later send `retryAfterMs`), the message says when the limit lifts, in minutes and in UTC, and not to
+later send `retryAfterMs`), the message says when that is, in minutes and in UTC, and not to
 message the child before then, as the turn would fail again. Courier does not retry for you;
 `courier_later` can remind the parent when the time comes. The tree panel shows the child's failed
 row as `limit, resumes 14:32` (the panel's local time, with the date when it is not today) until that time

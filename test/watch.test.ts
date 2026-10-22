@@ -91,18 +91,18 @@ describe("reportFailure", () => {
     await reportFailure(ports, new Set(), { ...failed(), created: 1_000_000, data: { sessionID: "ses_child", error } })
 
     expect(sent[0].text).toBe(envelope("ses_child", failureNotice("Fix the bug", error, undefined, 1_000_000), { failed: "provider.rate-limit" }))
-    expect(sent[0].text).toContain("lifts in about 2 minutes")
+    expect(sent[0].text).toContain("asked to wait about 2 minutes")
     expect(sent[0].text).toContain("Do not message it with courier_send before then")
     expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000_000, by: "failed", resumesAt: 1_090_000 })
     expect(await reportOf(childStore(ports.storage), "ses_child")).toMatchObject({ ended: true, resumesAt: 1_090_000 })
   })
 
   test("takes no retry time for a failure without one, or with one that is not a positive number", async () => {
-    for (const retryAfterMs of [undefined, 0, -5, Number.NaN, "soon"]) {
+    for (const retryAfterMs of [undefined, 0, -5, Number.NaN, "soon", 1e16, 31 * 24 * 3_600_000]) {
       const { ports, sent, store } = fakePorts()
       await childStore(ports.storage).record(child())
       await reportFailure(ports, new Set(), { ...failed(), data: { sessionID: "ses_child", error: { ...blocked, retryAfterMs } as never } })
-      expect(sent[0].text).not.toContain("limit lifts")
+      expect(sent[0].text).not.toContain("asked to wait")
       expect(sent[0].text).toContain("Message it with courier_send to have it try again")
       expect(store.get(settledKey("ses_child"))).not.toHaveProperty("resumesAt")
     }

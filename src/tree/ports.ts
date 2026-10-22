@@ -19,7 +19,7 @@ export type Settled = "report" | "failed" | "interrupted"
 /** The notes kept of a spawned session's report state; docs/maintainers/architecture.md has each. */
 export type ReportField = "prompt" | "settled" | "progress" | "told" | "stopped"
 
-/** A report note as read: when it was made, and for `settled` how the wait ended and the report's status, as stored. */
+/** A report note as read: when it was made, and for `settled` how the wait ended, the report's status or a failure's `resumesAt`, as stored. */
 export interface ReportNote {
   readonly at: number | undefined
   readonly by: unknown
@@ -310,7 +310,7 @@ export interface ExecutionError {
   readonly type: string
   readonly message: string
   readonly status?: number
-  /** How long the provider asked to wait before trying again, counted from the event's `created`; set on rate and quota limits. */
+  /** How long the provider asked to wait before trying again, counted from the event's `created`; set by rate and quota limits and some provider errors. */
   readonly retryAfterMs?: number
 }
 

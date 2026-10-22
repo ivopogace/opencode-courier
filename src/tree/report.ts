@@ -20,8 +20,7 @@ export async function lastStatus(children: Notes, sessionID: string): Promise<St
 
 /**
  * What is known of a spawned session's report: when a prompt last reached it, and whether since then it owes one, has
- * messaged its parent without a status, or failed or was interrupted, and `resumesAt` when a failed turn was a provider
- * limit, the time it lifts. Undefined for one spawned before this was kept.
+ * messaged its parent without a status, or failed (`resumesAt`: until when) or was interrupted. Undefined before this was kept.
  */
 export async function reportOf(children: Notes, sessionID: string) {
   const { prompt, settled, progress } = await children.notes(sessionID, ["prompt", "settled", "progress"])

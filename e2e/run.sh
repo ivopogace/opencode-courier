@@ -390,8 +390,8 @@ run_reports() {
   check "the parent was woken by the failure" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
   notices=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "synthetic") | .text]')
   echo "  $notices"
-  check "the notice names the quota error and says the limit lifts in about 30 minutes" \
-    "$(jq -r 'join("") | contains("provider.quota") and contains("lifts in about 30 minutes, at about") and contains("UTC")' <<<"$notices")"
+  check "the notice names the quota error and says to wait about 30 minutes" \
+    "$(jq -r 'join("") | contains("provider.quota") and contains("asked to wait about 30 minutes before trying again, until about") and contains("UTC")' <<<"$notices")"
   check "and says not to message the child before then" "$(jq -r 'join("") | contains("Do not message it with courier_send before then")' <<<"$notices")"
   settled=$(kv get "report/$child/settled")
   echo "  $settled"

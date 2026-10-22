@@ -32,7 +32,7 @@ export function reverseKey(sessionID: string) {
 
 /**
  * Whether a spawned session has reported since its last prompt, under `report/<sessionID>/`: `prompt`, `settled` (with
- * the report's status), `progress` (a message to its parent without a status) and `told`; docs/maintainers/architecture.md has each.
+ * the report's status, or when a failed turn's wait lifts), `progress` (a message to its parent without a status) and `told`; docs/maintainers/architecture.md has each.
  */
 const REPORT_PREFIX = "report/"
 

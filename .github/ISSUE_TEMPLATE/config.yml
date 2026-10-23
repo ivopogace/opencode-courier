@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and discussion
+    url: https://github.com/ivopogace/opencode-courier/discussions
+    about: How to use courier, setups, ideas you want to talk through first.
+  - name: Reference
+    url: https://github.com/ivopogace/opencode-courier/blob/main/docs/reference.md
+    about: Every tool, option and behaviour, in full.

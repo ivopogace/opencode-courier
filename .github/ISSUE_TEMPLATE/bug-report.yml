@@ -1,0 +1,93 @@
+name: Bug report
+description: Something courier does wrong (keep it short; a giant AI-generated summary may be closed)
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The prompt or tool calls that lead to it, and which session (root or a spawned child) does what.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: false
+
+  - type: input
+    id: courier-version
+    attributes:
+      label: opencode-courier version
+      description: The version in `package.json` next to the installed plugin, or the one you installed.
+      placeholder: e.g., 0.11.1
+    validations:
+      required: true
+
+  - type: input
+    id: opencode-version
+    attributes:
+      label: OpenCode version
+      description: "`opencode --version`"
+      placeholder: e.g., 2.1.4
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model and provider
+      description: The model the sessions ran on, if the bug is about what a model did.
+      placeholder: e.g., deepseek-chat via DeepSeek
+    validations:
+      required: false
+
+  - type: input
+    id: plugins
+    attributes:
+      label: Other plugins
+      description: Other OpenCode plugins loaded alongside courier.
+    validations:
+      required: false
+
+  - type: textarea
+    id: options
+    attributes:
+      label: Courier options
+      description: The `opencode-courier` entry in `plugins` of your OpenCode config, if you set any options.
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server log
+      description: The relevant lines of `opencode serve --print-logs` or `~/.local/share/opencode/log/`.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot or recording
+      description: For the terminal part (tree panel, asks inbox, memory view).
+      placeholder: Drag and drop here
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and terminal
+      placeholder: e.g., macOS 26.0.1 with Ghostty, Windows 11 with Windows Terminal
+    validations:
+      required: false

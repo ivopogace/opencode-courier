@@ -317,15 +317,25 @@ describe("spawn", () => {
     expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ agent: "build", model })
   })
 
-  test("leaves the model to an agent that names its own", async () => {
+  test("gives it the agent's own model over the parent's", async () => {
+    const model = { id: "small", providerID: "mock" }
     const { ports, calls } = fakePorts({
       info: { model: { id: "chat", providerID: "mock" } },
-      agent: { model: { id: "small", providerID: "mock" } },
+      agent: { model },
     })
 
     await spawn(ports, "ses_parent", { task: "t", agent: "build" })
 
-    expect(calls.find((call) => call.method === "session.create")!.input).not.toHaveProperty("model")
+    expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ agent: "build", model })
+  })
+
+  test("gives it the agent's own model when the parent has none", async () => {
+    const model = { id: "small", providerID: "mock" }
+    const { ports, calls } = fakePorts({ agent: { model } })
+
+    await spawn(ports, "ses_parent", { task: "t", agent: "build" })
+
+    expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ model })
   })
 
   test("starts the child on OpenCode's default when the parent's model cannot be looked up", async () => {

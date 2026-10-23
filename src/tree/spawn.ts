@@ -20,14 +20,14 @@ function titleOf(task: string) {
 }
 
 /**
- * The model a child runs on: its parent's, so it does not fall back to OpenCode's default, which
- * the parent may have been moved off for a reason. An agent that names its own model keeps it.
+ * The model a child runs on, always passed on so no OpenCode version falls back to its default:
+ * the named agent's own, else its parent's.
  */
 async function inheritedModel(ports: CourierPorts, parentID: string, agent: string | undefined) {
   const parent = await ports.session.get({ sessionID: parentID })
-  if (!parent.model || !agent) return parent.model
+  if (!agent) return parent.model
   const named = await ports.agent.get({ agentID: agent, location: { directory: ports.directory } })
-  return named.data.model ? undefined : parent.model
+  return named.data.model ?? parent.model
 }
 
 /** Removes a worktree made for a child that was never created; one that cannot be removed stays. */

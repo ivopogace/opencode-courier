@@ -174,8 +174,8 @@ The required `Live test against OpenCode V2` job is the gate over them and passe
 skipped. Its `sonar` job scans `src/` on SonarCloud and fails when the quality gate does. Its unit job
 also runs `bun script/compat-table.ts --check`. `latest.yml`: the live suite on the `latest` OpenCode
 release, on pushes to `main` and nightly, allowed to fail, and one issue for a release newer than the
-pin. `claude.yml`: a review by Claude Code when a maintainer comments `@claude` on a pull
-request. `release-start.yml`, `release-tag.yml` and `release.yml`: the release flow,
+pin. `claude.yml`: a review by Claude Code, once on an outside contributor's pull request and
+whenever a maintainer comments `@claude` on one. `release-start.yml`, `release-tag.yml` and `release.yml`: the release flow,
 `docs/maintainers/releasing.md`.
 
 ## Commands

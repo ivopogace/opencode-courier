@@ -92,3 +92,5 @@ ready or pushes to it, and when a maintainer comments `@claude review` on one. I
 results and runs none of the pull request's code. The outside review runs on `pull_request_target`,
 with the secrets, so it checks out the base branch and its tools are only `gh pr`. It needs the repository secret `CLAUDE_CODE_OAUTH_TOKEN`, from
 `claude setup-token`, and counts against that subscription's usage limits.
+
+<!-- test of the Claude review workflow; this PR is closed unmerged -->

@@ -86,3 +86,9 @@ bug, vulnerability or unreviewed hotspot, or under 80% coverage on new code.
 
 `latest.yml` runs the live suites on the newest OpenCode release, nightly and on `main`, allowed to
 fail. It opens an issue when that release is newer than the pin ([the pin](releasing.md#the-plugin-api-pin)).
+
+`claude.yml` runs a review by Claude Code when an outside contributor opens a pull request, marks it
+ready or pushes to it, and when a maintainer comments `@claude review` on one. It reads the diff and CI's
+results and runs none of the pull request's code. The outside review runs on `pull_request_target`,
+with the secrets, so it checks out the base branch and its tools are only `gh pr`. It needs the repository secret `CLAUDE_CODE_OAUTH_TOKEN`, from
+`claude setup-token`, and counts against that subscription's usage limits.

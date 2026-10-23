@@ -1,8 +1,8 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.1.3` and OpenCode 2.1.3. A pin bump re-checks each trap. OpenCode's source is on
-the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.1.3`); paths
+`@opencode/plugin@2.1.4` and OpenCode 2.1.4. A pin bump re-checks each trap. OpenCode's source is on
+the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.1.4`); paths
 below are in it.
 
 ## Tools
@@ -290,8 +290,8 @@ What `nativeChildren` rests on:
   `@opencode/theme`) must not be imported at runtime. OpenCode patches its `solid-js`; unit tests
   run the unpatched one.
 - **No peers for them.** An exact optional peer `@opentui/core` broke `opencode plugin add` with
-  ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.6.6`,
-  `solid-js` `1.9.15` at `v2.1.3`), and `@opencode/theme` at the pin.
+  ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.6.8`,
+  `solid-js` `1.9.15` at `v2.1.4`), and `@opencode/theme` at the pin.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles with `createSolidTransformPlugin()` and
   `packages: "external"`. `@arethetypeswrong/cli` flags an export without types, hence

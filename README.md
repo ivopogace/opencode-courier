@@ -18,7 +18,7 @@ A narrated tour of the terminal UI: the tree panel, the asks inbox, failing chil
 ## Quickstart
 
 ```bash
-npm install -g @opencode/cli@2.1.3   # OpenCode V2, the version courier is tested on
+npm install -g @opencode/cli@2.1.4   # OpenCode V2, the version courier is tested on
 opencode plugin add opencode-courier
 opencode
 ```
@@ -60,10 +60,10 @@ split a task and how to check and merge the parts. Every detail: [the reference]
 ## Install
 
 Requires OpenCode V2: the `opencode` command from `@opencode/cli`. Each release is tested against
-one OpenCode version; this one is tested on **OpenCode 2.1.3** (check with `opencode --version`).
+one OpenCode version; this one is tested on **OpenCode 2.1.4** (check with `opencode --version`).
 
 ```bash
-npm install -g @opencode/cli@2.1.3
+npm install -g @opencode/cli@2.1.4
 opencode plugin add opencode-courier
 ```
 
@@ -82,7 +82,7 @@ name, without a version: OpenCode offers updates only for an entry without an ex
 <!-- compat-table:end -->
 
 Every release: [the full table](docs/reference.md#the-opencode-version). The server part loads on
-any V2 host from 2.0.4 on. The terminal part is tested on OpenCode 2.1.3 only.
+any V2 host from 2.0.4 on. The terminal part is tested on OpenCode 2.1.4 only.
 
 ## Options
 

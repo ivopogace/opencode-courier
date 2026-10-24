@@ -40,12 +40,17 @@ export const SKILL_CONTENT = [
     "reports what it found, before you plan;",
   "   - the implementers, isolate: true where two edit at once, each with its checks and what to report;",
   "   - its e2e scenario, its documentation, sometimes a second test file;",
-  "   - a reviewer with fresh context, isolate: false, which edits nothing: it reads the committed diff against the task " +
-    "and the repository's rules and reports its findings, which you act on. It does not replace step 6: running the " +
-    "checks stays yours. Start it after the merge when it is to see the whole, and go through steps 3 to 6 once more " +
-    "for it: a reviewer after 2 or more parts is one " +
-    "part of the task, like a staged core, not the whole. A reviewer alone, after work you did yourself, is the one " +
-    "session the rule above forbids: review that yourself.",
+  "   - a review stage, after the merge, when the changes are done and it is to see the whole: one review session with " +
+    "fresh context, isolate: false, which edits nothing itself. It may hand the reading to 2 or more reviewers (one " +
+    "group, isolate: false, each reads the committed diff from one angle and reports its findings), then starts one " +
+    "verifier with their reports: a fresh session that checks each finding against the diff, drops what does not hold, " +
+    "and starts one implementor for what holds (isolate: false while nothing else edits, isolate: true each when there are " +
+    "2 or more), which fixes what it should and refuses, with the reason, what it should not. Each reports to the one " +
+    "that started it; the review session reports to you what was found, what held, what was fixed (the commits) and " +
+    "what was refused and why. It does not replace step 6: running the checks on the fixed tree stays yours, and so " +
+    "does settling a refusal you disagree with. Go through steps 3 to 6 once more for the stage. One session for one " +
+    "stage, after a stage of 2 or more parts or one you did yourself, is a part of the task, like a staged core, not " +
+    "the whole; a reviewer alone with nothing before it is not a stage.",
   "   When the core is coupled: an implementation task with one tightly coupled core usually still has parts from that " +
     "list; weigh each of them. When the other parts depend on names and texts the core fixes, split in stages: the core " +
     "first, yourself when it is small or by one session when it is big, merged and committed before the rest start; then, " +
@@ -75,9 +80,11 @@ export const SKILL_CONTENT = [
   "5. Read each report by its status and its artifacts (branch, commits, files, checks). done: verify it. partial: what is " +
     "left and why; have the session finish it with a courier_send, or do it yourself. blocked: make the decision it asks for " +
     "and send it with courier_send; if only the person can make it, ask them with your question tool and pass the answer on. " +
-    "failed: read the error; message the session to try again, start a replacement, or carry on without it.",
-  "6. Verify first-hand: open the files, run the checks. Never hand the checking to another session: a review session's " +
-    "findings are a report to act on, and running the checks is still yours. Run checks through " +
+    "failed: read the error; message the session to try again, start a replacement, or carry on without it. A review " +
+    "stage's report lists what was found, held, fixed and refused: read the refusals, fix or settle yourself any you " +
+    "disagree with, and run the checks on the fixed tree.",
+  "6. Verify first-hand: open the files, run the checks. Never hand the checking to another session: a review stage " +
+    "verifies and fixes below you, and running the checks on what it changed is still yours. Run checks through " +
     "the project's scripts (bun run <script>, npm run <script>), not ./node_modules/.bin/<tool>, so that one permission " +
     "rule covers them: your own permission prompts are relayed nowhere, and each one stalls the whole tree.",
   "7. Integrate: merge each reported branch into your own checkout (git merge courier/<session>), resolve conflicts " +

@@ -38,7 +38,7 @@
 #   COURIER_PROMPT, COURIER_EXPECT   the parent's prompt and the values the reports must hold.
 #   COURIER_FILES                    recursive(-fault, -staged, -finding): the files, relative to the project, that must hold
 #                                     them; with recursive-staged the first is the core's.
-#   COURIER_MAX_DEPTH                recursive(-fault, -staged, -finding): the maxDepth the checker holds the tree to (default 3).
+#   COURIER_MAX_DEPTH                recursive(-fault, -staged, -finding): the maxDepth the checker holds the tree to (default 5).
 #   COURIER_SKILL                    deny adds a skill permission rule denying courier-orchestrate to
 #                                     opencode.json, so no session is offered it or can load it; any scenario.
 #   COURIER_TIMEOUT                  seconds to wait for the parent's turn and then for the

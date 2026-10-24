@@ -29,7 +29,7 @@ const SUFFIX = " checked"
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
 const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
-const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 3)
+const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 5)
 // Calls that look at other sessions; right after spawning, or more than once a turn, that is polling.
 const LOOKS = new Set(["courier_status", "courier_children", "courier_tree"])
 // courier_recall counts as a look too, with one allowance: the one call the skill asks of the root, before its split, in its first turn.
@@ -258,7 +258,14 @@ const pollers = orchestrators.filter(([id, entry]) => polledIn(id, entry.list)).
 // With --staged the batch may follow a turn that started the core's session.
 const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length
 const batchIn = (list) => (staged ? turnsOf(list) : turnsOf(list).slice(0, 1)).some((turn) => spawnsIn(turn) >= 2)
-const notOneInAll = (list) => spawnsOf(list).length !== 1
+// A session that started exactly one session in all is a hop, unless it did work of its own first (a stage, as the skill
+// allows a verifier that starts one implementor): any tool call before that spawn that is not the plugin's or the skill tool's.
+const own = (part) => !part.name.startsWith("courier_") && part.name !== "skill"
+const notOneInAll = (list) => {
+  const tools = toolsOf(list)
+  const spawns = tools.flatMap((part, index) => (childOf(part) ? [index] : []))
+  return spawns.length !== 1 || tools.slice(0, spawns[0]).some(own)
+}
 const finalText = textOf(root.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
 // A session's report, as its parent got it; the first one, since the brief asks for exactly one.
 const reportOf = (id) => deliveriesFrom(tree.get(tree.get(id).parentID).list, id)[0]
@@ -376,7 +383,7 @@ const checks = [
   ["the root ended its first turn after spawning, with no reports in it", ended(first.at(-1)) && !failed(first.at(-1)) && !first.some((message) => reportersOf(message).some((from) => tree.has(from)))],
   ["no orchestrator polled (courier_status, courier_children, courier_tree, sleep)", pollers.length === 0],
   [
-    "at least one child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all",
+    "at least one child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all without work of its own first",
     subOrchestrators.some(([, entry]) => batchIn(entry.list)) && subOrchestrators.every(([, entry]) => notOneInAll(entry.list)),
   ],
   [`no session went past maxDepth ${maxDepth}`, [...tree.values()].every((entry) => entry.depth <= maxDepth)],

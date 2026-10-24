@@ -300,7 +300,7 @@ function stagedRun(staging: Staging): Run {
 const S1 = "no half started before numbers/seed.txt existed, nor, when the core had a session of its own, before that session's report reached the session that staged"
 const S2 = "the session that staged started at least two halves together in one turn, after any session for the core: one session for the core is not one for the whole task"
 const S3 = "the session that staged reported upward once, with status done"
-const BATCH = "at least one child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all"
+const BATCH = "at least one child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all without work of its own first"
 
 describe("the recursive checker with --staged", () => {
   test("the core done by the numbers session itself, then both halves in one turn, passes every check", () => {

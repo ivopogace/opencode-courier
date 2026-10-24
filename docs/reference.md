@@ -68,7 +68,7 @@ directory.
 
 | Option | Default | |
 |---|---|---|
-| `maxDepth` | `3` | The deepest a spawned session may be. Your session is depth 0. |
+| `maxDepth` | `5` | The deepest a spawned session may be. Your session is depth 0. |
 | `maxChildren` | `5` | Live children one session may have. |
 | `maxTotal` | `20` | Live spawned sessions in one tree; the top is not counted. |
 | `memory` | `true` | `false` turns [memory](#memory) off. |
@@ -142,7 +142,8 @@ counts it. Several spawns made at once cannot get past a limit together.
 **The brief.** Each spawned session is told its depth, the limits and how to report. Below
 `maxDepth` it is told to split its task when it has two or more independent, substantial parts,
 one session per part, and to do it itself otherwise. It never starts exactly one session for the
-whole task. It says which in one line: `split: no, because …; considered: …` or
+whole task; one stage after another, a staged core, a review of the merged parts or the fixing of
+what a review found, is a part. It says which in one line: `split: no, because …; considered: …` or
 `split: <n> parts: …`. A session that splits starts the parts in one join group, ends its turn
 without polling, checks each part and sends one combined report. At `maxDepth` it is told to do the
 task itself. Any spawned session is told to send its parent a finding the other parts need (an
@@ -171,9 +172,11 @@ It says, in order:
 2. Decide whether to split, by the brief's rule. Keep the deciding, checking and integrating; hand
    off the long reading and writing. Only the root may start one session for a whole heavy task.
    The parts a task can have besides its edits: a scout that reads and reports, the implementers,
-   tests and documentation, and a reviewer with fresh context, whose findings the parent acts on
-   while running the checks stays its own; a reviewer alone after self-done work is the one session
-   the rule forbids.
+   tests and documentation, and a review stage after the merge: one review session that may hand
+   the reading to reviewers, then starts one verifier with their findings, which drops what does
+   not hold and starts one implementor for what holds; the review session reports what was found,
+   held, fixed and refused, and running the checks on the fixed tree stays the parent's. One
+   session for one stage is a part, not the whole.
 3. When one core is tightly coupled, stage it: do the core first, then the parts that depend on it.
 4. Plan the parts so that no two edit the same files.
 5. Start them in one join group, `isolate: true` where they edit files in parallel, and end the
@@ -184,7 +187,8 @@ It says, in order:
    ([steering a running tree](#steering-a-running-tree)). Propose `once` or `reject` with
    `courier_answer` for a permission request from below; ask the person a question from below with
    its own question tool, never answering for them.
-6. Read each report by its status, and verify first-hand. Run checks through the project's scripts
+6. Read each report by its status, and verify first-hand; on a review stage's report, settle the
+   refusals it disagrees with itself. Run checks through the project's scripts
    (`bun run <script>`), so one permission rule covers them.
 7. Merge each reported branch, then `courier_cleanup`.
 8. Report upward with one status, or at the top, write the tree's lesson with `courier_note`.

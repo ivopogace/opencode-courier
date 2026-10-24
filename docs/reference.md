@@ -376,6 +376,21 @@ running. Sessions under the target are not told. A stopped session stays on the 
 messaged again. Scheduled messages and webhook subscriptions the stopped sessions made for others are
 left alone. A session started by a running turn of the subtree while the stop runs may escape it.
 
+## Steering a running tree
+
+The person steers a running tree by talking to any session in it:
+
+- In the `/courier tree` panel ([In the terminal](#in-the-terminal)), `enter` opens any session, and what
+  the person types goes to it like in any chat. A running session takes it into its current turn.
+- To reach the rest of the tree, the person asks that session to tell its parent, or messages the
+  parent directly.
+- `courier_send` without a `status` is an ordinary message, not a report. It is delivered as `steer`
+  (or after the current turn with `queue: true`) and wakes the target if it is idle. It has no target
+  restriction, so a parent that got a finding can pass it on to its other children, which steers their
+  running turns.
+
+Nothing tells the models to pass a finding on unprompted, so ask for each step you want taken.
+
 ## Roster
 
 `courier_spawn` records each child under its parent, so `courier_children` finds them after a

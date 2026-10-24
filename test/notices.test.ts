@@ -86,11 +86,12 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")
     // Step 2 has the parent name the person's own skills in each task: the skill names none, since it cannot know them.
     expect(skill.SKILL_CONTENT).toContain("Name the skills it should load for its part, from those listed to you")
-    // Several whole jobs in one prompt: the shape repeats per job, the root counts live sessions per job, and delivers none itself.
+    // Several whole jobs in one prompt: the shape repeats per job, the root counts live sessions per part, waits for the first
+    // group before the next, gives the review stage its diff, and reports done once every part is integrated or delivered.
     expect(skill.SKILL_CONTENT).toContain("so the tree below you repeats its shape once per job")
-    expect(skill.SKILL_CONTENT).toContain("count 5 to 8 live sessions per part against maxTotal")
-    expect(skill.SKILL_CONTENT).toContain("in a group of their own, once the first group has reported")
-    expect(skill.SKILL_CONTENT).toContain("Put in its task the branch and the base to diff")
+    expect(skill.SKILL_CONTENT).toContain("count 6 live sessions per part against maxTotal")
+    expect(skill.SKILL_CONTENT).toContain("in a group of their own once the first group has reported")
+    expect(skill.SKILL_CONTENT).toContain("Put in its task the diff to read")
     expect(skill.SKILL_CONTENT).toContain("or verified and delivered")
     expect(skill.SKILL_CONTENT).toContain("verify each delivery and merge nothing of it into your checkout")
     // Step 1 and the root's pointer ask the root for one courier_recall before the decision, which the recursive checker

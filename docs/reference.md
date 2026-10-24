@@ -176,7 +176,7 @@ It says, in order:
    Several whole jobs in one prompt are that many parts, each running the playbook for its job.
    The parts a task can have besides its edits: a scout that reads and reports, the implementers,
    tests and documentation, and a review stage after the merge: one review session, given the
-   branch and the base to diff, that may hand the reading to reviewers, then starts one verifier
+   diff to read, that may hand the reading to reviewers, then starts one verifier
    with their findings, which drops what does not hold and starts one implementor for what holds
    (2 or more, isolated, when the fixes are independent); the review session reports what was
    found, held, fixed and refused, and running the checks on the fixed tree stays the parent's.
@@ -184,13 +184,15 @@ It says, in order:
    too, each worktree from the one above, and each merges the branch reported to it before it
    reports. One session for one stage is a part by the brief's rule above.
 3. When one core is tightly coupled, stage it: do the core first, then the parts that depend on it.
-4. Plan the parts so that no two edit the same files, and name in each task the skills the session
-   should load for it, from those the parent sees listed.
+4. Plan the parts so that no two edit the same files, name in each task the skills the session
+   should load for it, from those the parent sees listed, and say when a part is a whole job that
+   delivers itself.
 5. Start them in one join group, `isolate: true` where they edit files in parallel, and end the
-   turn without polling; count 5 to 8 live sessions per part that runs a review stage against
-   `maxTotal`, start the parts beyond that in a group of their own once the first group has
-   reported, and start a job that depends on another after that one is done, with its branch
-   named in the task when it was delivered rather than merged. Pass a message that changes what
+   turn without polling; count 6 live sessions per part that runs a review stage against
+   `maxTotal`, start the parts that fit in one group and the rest in a group of their own once the
+   first group has reported, and start a job that depends on another after that one is done,
+   isolated and told the delivering session's branch to merge first when that one was delivered
+   rather than merged. Pass a message that changes what
    other parts need (a child's finding without a status, one from the person or from its own
    parent) on to the children it affects, and only to them, before they go further; stop or
    re-brief the parts it breaks, and send it up too when the parent's other parts need it.

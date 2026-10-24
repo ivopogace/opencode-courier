@@ -42,8 +42,9 @@ export const SKILL_CONTENT = [
   "   - the implementers, isolate: true where two edit at once, each with its checks and what to report;",
   "   - its e2e scenario, its documentation, sometimes a second test file;",
   "   - a review stage, after the merge, when the changes are done and it is to see the whole: one review session with " +
-    "fresh context, which makes no fixes of its own. Put in its task the branch and the base to diff: your own " +
-    "courier/<session> branch, committed first, when you are isolated, else the base you started from. It may hand the " +
+    "fresh context, which makes no fixes of its own. Put in its task the diff to read: when you are isolated, your own " +
+    "courier/<session> branch, committed first, against the commit your worktree started from; else your checkout's HEAD, " +
+    "with the merges committed, against the commit you started from, which you note before your first spawn. It may hand the " +
     "reading to 2 or more reviewers (one group, each reads that diff from one angle and reports its findings), then " +
     "starts one verifier with their reports: a fresh session that checks each finding against the diff, drops what " +
     "does not hold, and starts one implementor for what holds, or 2 or more when the fixes are independent, isolate: " +
@@ -68,14 +69,16 @@ export const SKILL_CONTENT = [
     "produce and where, how to check it, what to report. Say if it may split its part further, and to run its checks " +
     "through the project's scripts (step 6): each permission request of a session below you wakes you and waits on the person. " +
     "Name the skills it should load for its part, from those listed to you: it sees the same list, not your choice; one " +
-    "permission rule for skill covers their loads, as one covers the checks.",
+    "permission rule for skill covers their loads, as one covers the checks. Say in the task when the part is a whole job " +
+    "that delivers itself (step 7), since an isolated session's brief otherwise says its branch is for you to merge.",
   "3. Start them: one courier_spawn per part that runs at once, all with the same group name, so you are woken once with every report; " +
     "isolate: true for each part that edits files in parallel with another (commit your own work first if you are isolated " +
-    "yourself). When each part runs a review stage of its own, count 5 to 8 live sessions per part against maxTotal, and " +
-    "start the parts beyond that in a group of their own, once the first group has reported; a job that depends on " +
-    "another starts after that one is done, as a stage: merged into your checkout, or, when it was delivered instead " +
-    "(step 7), with its branch named in the task, to merge into its own worktree first. For long work, courier_later a " +
-    "check-in for yourself, and courier_cancel it when the reports arrive.",
+    "yourself). When each part runs a review stage of its own, count 6 live sessions per part against maxTotal (a part, " +
+    "its review session and its reviewers are live together at the peak): start the parts that fit in one group, and the " +
+    "rest in a group of their own once the first group has reported. A job that depends on another starts after that one " +
+    "is done, as a stage: merged into your checkout, or, when it was delivered instead (step 7), started with isolate: " +
+    "true and told the delivering session's courier/<session> branch, from its report, to merge into its worktree first. " +
+    "For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.",
   "4. End your turn: reply without calling more tools. Do not poll with courier_status, courier_children, courier_tree or " +
     "sleep. The group's reports, a blocked report, a question, a permission request, a failed turn or a silent end each start " +
     "a new turn for you. So does a session's message without a status, and one from the person or from the session that " +
@@ -102,9 +105,9 @@ export const SKILL_CONTENT = [
     "rule covers them: your own permission prompts are relayed nowhere, and each one stalls the whole tree.",
   "7. Integrate: merge each reported branch into your own checkout (git merge courier/<session>), resolve conflicts " +
     "yourself, run the checks once more, then courier_cleanup the isolated sessions you are done with. When the parts are " +
-    "whole jobs with a deliverable each (a ticket with its own branch or pull request), say so in each task, since the " +
-    "brief tells the session its branch is for you to merge: the session delivers it and reports the link, and you " +
-    "verify each delivery and merge nothing of it into your checkout.",
+    "whole jobs with a deliverable each (a ticket with its own branch or pull request), the session delivers it and " +
+    "reports the link in its message, still naming its courier/<session> branch when it is isolated; you verify each " +
+    "delivery and merge nothing of it into your checkout.",
   "8. Report upward if a session started you: one courier_send to it, with one status for the whole (done only when every " +
     "part is verified and integrated, or verified and delivered; partial, blocked or failed otherwise) and the artifacts. At the top, before you reply " +
     "to the person: if there is something the next tree in this project should know about running a tree like this one (how " +

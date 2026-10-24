@@ -375,7 +375,7 @@ test("without --staged the recursive checks keep their rules on a staged tree: a
 // What e2e/real-model-recursive.mjs --finding tells the "count" session as the person.
 const PERSON_NOTE =
   "A change from the person for the whole job, not only for your part: every file this job writes must hold its number " +
-  "followed by a space and the word checked, such as 42 checked. Write yours that way."
+  "followed by a space and the word checked, such as 7 checked. Write yours that way."
 const FINDING = "Every file of the job must hold its number followed by the word checked."
 type Finding = "passed" | "not-down" | "in-report"
 

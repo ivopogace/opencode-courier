@@ -24,7 +24,7 @@ const finding = flags.includes("--finding") || (saved && savedFlag("finding"))
 // What --finding's person tells the "count" session mid-run, which every file of the job then holds after its number.
 const PERSON_NOTE =
   "A change from the person for the whole job, not only for your part: every file this job writes must hold its number " +
-  "followed by a space and the word checked, such as 42 checked. Write yours that way."
+  "followed by a space and the word checked, such as 7 checked. Write yours that way."
 const SUFFIX = " checked"
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)

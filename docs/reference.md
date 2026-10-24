@@ -174,7 +174,7 @@ It says, in order:
    turn without polling.
 6. Pass a message that changes what other parts need, a child's finding without a status, one from
    the person or one from its own parent, on to the children it affects, and only to them, before
-   they go further. Stop or re-brief the parts it breaks, and send it up too when the parent's
+   they go further ([steering a running tree](#steering-a-running-tree)). Stop or re-brief the parts it breaks, and send it up too when the parent's
    other parts need it. Progress goes to no one.
 7. Read each report by its status, and verify first-hand. Run checks through the project's scripts
    (`bun run <script>`), so one permission rule covers them.
@@ -389,7 +389,10 @@ The person steers a running tree by talking to any session in it:
   restriction, so a parent that got a finding can pass it on to its other children, which steers their
   running turns.
 
-Nothing tells the models to pass a finding on unprompted, so ask for each step you want taken.
+A child that finds something the other parts need, or is told it, sends it to its parent without a
+status ([the brief](#session-trees-and-their-limits)), and the skill has a parent pass such a message
+on to the children it affects ([the skill](#the-courier-orchestrate-skill)). Without the skill, ask
+the parent to pass it on.
 
 ## Roster
 

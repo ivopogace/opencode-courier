@@ -80,7 +80,7 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("then starts one verifier with their reports")
     expect(skill.SKILL_CONTENT).toContain("starts one implementor for what holds")
     expect(skill.SKILL_CONTENT).toContain("One session for one stage, after a stage of 2 or more parts or one you did yourself, is a part of the task")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("One session alone, with neither a stage before it nor 2 or more parts after it, is the whole task.")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.")
     // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")
@@ -88,7 +88,10 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("Name the skills it should load for its part, from those listed to you")
     // Several whole jobs in one prompt: the shape repeats per job, the root counts live sessions per job, and delivers none itself.
     expect(skill.SKILL_CONTENT).toContain("so the tree below you repeats its shape once per job")
-    expect(skill.SKILL_CONTENT).toContain("count about 5 live sessions per part against maxTotal")
+    expect(skill.SKILL_CONTENT).toContain("count 5 to 8 live sessions per part against maxTotal")
+    expect(skill.SKILL_CONTENT).toContain("in a group of their own, once the first group has reported")
+    expect(skill.SKILL_CONTENT).toContain("Put in its task the branch and the base to diff")
+    expect(skill.SKILL_CONTENT).toContain("or verified and delivered")
     expect(skill.SKILL_CONTENT).toContain("verify each delivery, and merge nothing of it into your checkout")
     // Step 1 and the root's pointer ask the root for one courier_recall before the decision, which the recursive checker
     // allows; a session below it reads none, since the root weighed the records before it split.

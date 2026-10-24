@@ -144,9 +144,9 @@ counts it. Several spawns made at once cannot get past a limit together.
 one session per part, and to do it itself otherwise. It never starts exactly one session for the
 whole task; one session for one stage is a part: a staged core when 2 or more parts follow it, a
 review of the merged parts, the fixing of what a review found once verified. One session alone,
-with neither a stage before it nor 2 or more parts after it, is the whole task. It says which in
-one line: `split: no, because …; considered: …` or
-`split: <n> parts: …`. A session that splits starts the parts in one join group, ends its turn
+with nothing of the task done before it by the session or by 2 or more parts, and fewer than 2
+parts after it, is the whole task. It says which in one line: `split: no, because …; considered: …`
+or `split: <n> parts: …`. A session that splits starts the parts in one join group, ends its turn
 without polling, checks each part and sends one combined report. At `maxDepth` it is told to do the
 task itself. Any spawned session is told to send its parent a finding the other parts need (an
 assumption of the split that is wrong, a shared file or API that behaves otherwise, something the
@@ -175,32 +175,36 @@ It says, in order:
    off the long reading and writing. Only the root may start one session for a whole heavy task.
    Several whole jobs in one prompt are that many parts, each running the playbook for its job.
    The parts a task can have besides its edits: a scout that reads and reports, the implementers,
-   tests and documentation, and a review stage after the merge: one review session that may hand
-   the reading to reviewers, then starts one verifier with their findings, which drops what does
-   not hold and starts one implementor for what holds; the review session reports what was found,
-   held, fixed and refused, and running the checks on the fixed tree stays the parent's. Under an
-   isolated session the review session, the verifier and the implementor are isolated too, each
-   worktree from the one above, and each merges the branch reported to it before it reports. One
-   session for one stage, after a stage of 2 or more parts or one done oneself, is a part, not the
-   whole.
+   tests and documentation, and a review stage after the merge: one review session, given the
+   branch and the base to diff, that may hand the reading to reviewers, then starts one verifier
+   with their findings, which drops what does not hold and starts one implementor for what holds
+   (2 or more, isolated, when the fixes are independent); the review session reports what was
+   found, held, fixed and refused, and running the checks on the fixed tree stays the parent's.
+   Under an isolated session the review session, the verifier and the implementor are isolated
+   too, each worktree from the one above, and each merges the branch reported to it before it
+   reports. One session for one stage is a part by the brief's rule above.
 3. When one core is tightly coupled, stage it: do the core first, then the parts that depend on it.
 4. Plan the parts so that no two edit the same files, and name in each task the skills the session
    should load for it, from those the parent sees listed.
 5. Start them in one join group, `isolate: true` where they edit files in parallel, and end the
-   turn without polling; count about 5 live sessions per job that runs a review stage against
-   `maxTotal`, and start a job that depends on another after that one is merged. Pass a message that changes what other parts need (a child's finding
-   without a status, one from the person or from its own parent) on to the children it affects,
-   and only to them, before they go further; stop or re-brief the parts it breaks, and send it up
-   too when the parent's other parts need it. Progress goes to no one
-   ([steering a running tree](#steering-a-running-tree)). Propose `once` or `reject` with
-   `courier_answer` for a permission request from below; ask the person a question from below with
-   its own question tool, never answering for them.
+   turn without polling; count 5 to 8 live sessions per part that runs a review stage against
+   `maxTotal`, start the parts beyond that in a group of their own once the first group has
+   reported, and start a job that depends on another after that one is done, with its branch
+   named in the task when it was delivered rather than merged. Pass a message that changes what
+   other parts need (a child's finding without a status, one from the person or from its own
+   parent) on to the children it affects, and only to them, before they go further; stop or
+   re-brief the parts it breaks, and send it up too when the parent's other parts need it.
+   Progress goes to no one ([steering a running tree](#steering-a-running-tree)). Propose `once`
+   or `reject` with `courier_answer` for a permission request from below; ask the person a
+   question from below with its own question tool, never answering for them.
 6. Read each report by its status, and verify first-hand; on a review stage's report, settle the
    refusals it disagrees with itself. Run checks through the project's scripts
    (`bun run <script>`), so one permission rule covers them.
 7. Merge each reported branch, then `courier_cleanup`; a job with a deliverable of its own, such
-   as a ticket with its pull request, is delivered by its session and verified, not merged.
-8. Report upward with one status, or at the top, write the tree's lesson with `courier_note`.
+   as a ticket with its pull request, is delivered by its session, told so in its task, and
+   verified, not merged.
+8. Report upward with one status, `done` once every part is verified and integrated or delivered,
+   or at the top, write the tree's lesson with `courier_note`.
 
 It also says what to do when a part fails or goes quiet, when a spawn is refused (never retry in a
 loop), after losing track (one `courier_tree`) and to abandon a subtree (`courier_stop`).

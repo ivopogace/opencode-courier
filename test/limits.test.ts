@@ -354,7 +354,7 @@ describe("turnEnd and endedAt", () => {
 
 describe("admit", () => {
   test("maxDepth: a session one level above it may spawn, its child at maxDepth", async () => {
-    const { ports, child } = limitPorts()
+    const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxDepth: 3 })
     const parent = await chainTo(child, 2)
 
     const admitted = await admit(ports, parent)

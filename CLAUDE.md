@@ -155,7 +155,7 @@ behaviour gets a scenario there. `tui.sh`, a CI job next to `run.sh`: the TUI pa
 `two-servers.sh`, not in CI: two servers on one data directory. `real-model.sh` (with `real-model.mjs`,
 `real-model-permission.mjs`, `real-model-question.mjs` and `real-model-recursive.mjs` for
 `COURIER_SCENARIO=permission`, `question` and `recursive`, the last also for `recursive-fault` with
-`--fault` and `recursive-staged` with `--staged`; `COURIER_SKILL=deny` denies `courier-orchestrate` in
+`--fault`, `recursive-staged` with `--staged` and `recursive-finding` with `--finding`; `COURIER_SKILL=deny` denies `courier-orchestrate` in
 any of them): smoke test with a real model, not in CI.
 Re-run it after any change to `src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or a tool
 description (in a `src/**/tools.ts`), which is every model-facing string; `docs/maintainers/real-model.md`

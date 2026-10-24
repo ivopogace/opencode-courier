@@ -28,7 +28,7 @@ from your own machine.
 | `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `longcat-2.5-preview-free` | The model, as OpenCode names it. |
 | `COURIER_BASE_URL` | Zen's endpoint | Declares the provider as an OpenAI-compatible endpoint. Empty uses OpenCode's catalog, with the provider's usual key variable. |
 | `COURIER_API_KEY_ENV` | | For a declared provider, the variable holding its key (written as `{env:NAME}`, never to a file). |
-| `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault` or `recursive-staged`. |
+| `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault`, `recursive-staged` or `recursive-finding`. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the reply must hold. |
 | `COURIER_FILES` | per scenario | Recursive scenarios: the files that must hold those values, in order; for `recursive-staged` the first is the core's. |
 | `COURIER_MAX_DEPTH` | `3` | Recursive scenarios: the `maxDepth` the checker holds the tree to. |
@@ -222,6 +222,31 @@ bun script/real-model-table.ts $(for n in 1 2 3 4 5; do echo skill=$HOME/courier
 |---|---|---|
 | `deepseek-v4.1-flash-free`, catalog, 1dbebb3, skill listed | 2.1.2 | 4 of 5 passed. Every "numbers" session wrote the seed itself, then started both halves in one group. The lost point was one `courier_children` call. |
 | `deepseek-v4.1-flash-free`, catalog, 1dbebb3, `COURIER_SKILL=deny` | 2.1.2 | 5 of 5 passed. Every run staged; staging does not depend on the skill. |
+
+## A finding passed on
+
+`COURIER_SCENARIO=recursive-finding`: the recursive job with halves of `sleep 150`. The checker,
+run with `--finding`, plays the person: once the "count" session's turn runs, it prompts that
+session that every file of the job must hold its number followed by ` checked`. Neither the prompt
+nor the person's message says to pass it on; the brief and the skill do.
+
+The checks: the nine, with each file holding `<number> checked`, then four. The person's message
+reached the "count" session; that session sent it to the root with a `courier_send` without a
+status, before its report; the root passed it on, without a status, to the other part; that part's
+session passed it on to each of its halves. Notes quote what was sent up, and say when the root also
+messaged the "count" session.
+
+```bash
+run() {  # run <name> [VAR=value ...]
+  local name=$1; shift
+  env COURIER_SCENARIO=recursive-finding COURIER_BASE_URL= E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
+  echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
+}
+for n in 1 2 3; do run finding-skill-$n; run finding-noskill-$n COURIER_SKILL=deny; done
+bun script/real-model-table.ts $(for n in 1 2 3; do echo skill=$HOME/courier-runs/finding-skill-$n noskill=$HOME/courier-runs/finding-noskill-$n; done)
+```
+
+No run yet: from a shared cloud address the free tier refused the first request.
 
 ## Seeding a record
 

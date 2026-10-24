@@ -69,12 +69,19 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("Never hand the checking to another session")
     // A leaf has no courier_spawn or courier_recall, so the skill sends it straight to its report.
     expect(skill.SKILL_CONTENT).toContain("If courier_spawn is not among your tools, you are at the deepest level")
-    expect(skill.SKILL_CONTENT).toContain("pass the answer on with courier_answer")
+    // Step 4: a permission request is proposed, a question asked of the person; the skill never answers for them.
+    expect(skill.SKILL_CONTENT).toContain("propose once (or reject, with the reason) with courier_answer")
+    expect(skill.SKILL_CONTENT).toContain("ask the person with your question tool, as the notice says")
+    expect(skill.SKILL_CONTENT).toContain("Never answer for them")
+    // The kinds of part are listed for every split, not only a coupled core, and a reviewer never takes over step 6.
+    expect(skill.SKILL_CONTENT).toContain("Parts a task can have, besides its edits")
+    expect(skill.SKILL_CONTENT).toContain("It does not replace step 6: running the checks stays yours")
     // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")
-    // Step 1 and the root's pointer name one courier_recall before the decision, which the recursive checker allows.
-    expect(skill.SKILL_CONTENT).toContain(`First call ${memory.RECALL_TOOL} once`)
+    // Step 1 and the root's pointer ask the root for one courier_recall before the decision, which the recursive checker
+    // allows; a session below it reads none, since its parent weighed the records before writing its brief.
+    expect(skill.SKILL_CONTENT).toContain(`At the root, first call ${memory.RECALL_TOOL} once`)
     // Step 8 asks the top for one courier_note, none when there is nothing, naming the job it comes from; the brief never
     // mentions it: children write no lesson. The tool, the skill and the input ask for the lesson's scope, not only splitting.
     expect(skill.SKILL_CONTENT).toContain(`one ${memory.NOTE_TOOL} with that one line; none when there is nothing`)

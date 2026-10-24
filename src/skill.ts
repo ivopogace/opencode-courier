@@ -16,11 +16,13 @@ export const SKILL_DESCRIPTION =
 export const SKILL_CONTENT = [
   "How to split a task across OpenCode sessions with opencode-courier, and bring the results back up. Your brief, or the " +
     "opencode-courier role line in your system prompt, names your depth in the session tree and its limits. If " +
-    "courier_spawn is not among your tools, you are at the deepest level: do your task yourself and report upward (step 8).",
+    "courier_spawn is not among your tools, you are at the deepest level: do your task yourself and report upward, as " +
+    "your brief says.",
   "",
   "1. Decide: split or do.",
-  "   - First call courier_recall once: it lists how earlier trees in this project were split and how each part went, so " +
-    "weigh that; one call, before you decide, never in a loop.",
+  "   - At the root, first call courier_recall once: it lists how earlier trees in this project were split and how each " +
+    "part went, so weigh that; one call, before you decide, never in a loop. Below the root, the session that wrote your " +
+    "brief has weighed it already.",
   "   - Split when the task has 2 or more independent, substantial parts touching separate files or areas; do it yourself " +
     "when it is small, sequential or tightly coupled. A part that is itself big and divisible is split again by the " +
     "session that gets it.",
@@ -28,22 +30,26 @@ export const SKILL_CONTENT = [
     "integrating, and hand off the long reading and writing.",
   "   - Only the root, the session nobody started, may start exactly one session for the whole task, and only when the " +
     "task is heavy (long reading, many edits, long runs) and its own context is worth keeping. It still verifies and " +
-    "integrates that session's report itself (steps 5 to 7), and a small task it does itself.",
+    "integrates that session's report itself (steps 5 to 7), and does a small task itself.",
   "   - Every other session never starts exactly one session for the whole task: it only adds a hop, and a chain of single " +
     "hops uses up the tree's depth.",
   "   - Say which in one line of your reply, before you start, so that a reasoned decision to do it yourself can be told " +
     `from one never made: ${SPLIT_LINE}; the root has a third form, ${ONE_PART_LINE}.`,
-  "   When the core is coupled: an implementation task with one tightly coupled core usually still has independent parts; " +
-    "weigh each of them:",
-  "   - finding out what the change needs: a session with isolate: false reads the code, or a library's or a host's " +
-    "source, tries things and reports what it found;",
+  "   Parts a task can have, besides its edits, each one session where it is worth a context of its own:",
+  "   - a scout: a session with isolate: false reads the code, or a library's or a host's source, tries things and " +
+    "reports what it found, before you plan;",
+  "   - the implementers, isolate: true where two edit at once, each with its checks and what to report;",
   "   - its e2e scenario, its documentation, sometimes a second test file;",
-  "   - a review of the core by a session with fresh context, which reads the committed diff against the task and the " +
-    "repository's rules and reports its findings (isolate: false, it edits nothing).",
-  "   When the other parts depend on names and texts the core fixes, split in stages: the core first, yourself when it is " +
-    "small or by one session when it is big, merged and committed before the rest start; then, if 2 or more parts remain, " +
-    "one session per remaining part, in one group. A staged core is one part of the task, not the whole task, so the rule " +
-    "against starting exactly one session for the whole task does not apply to it when 2 or more parts follow it.",
+  "   - a reviewer with fresh context, isolate: false, which edits nothing: it reads the committed diff against the task " +
+    "and the repository's rules and reports its findings, which you act on. It does not replace step 6: running the " +
+    "checks stays yours. Start it after the merge when it is to see the whole; like a staged core, one reviewer after " +
+    "the parts is one part of the task, not the whole.",
+  "   When the core is coupled: an implementation task with one tightly coupled core usually still has parts from that " +
+    "list; weigh each of them. When the other parts depend on names and texts the core fixes, split in stages: the core " +
+    "first, yourself when it is small or by one session when it is big, merged and committed before the rest start; then, " +
+    "if 2 or more parts remain, one session per remaining part, in one group. A staged core is one part of the task, not " +
+    "the whole task, so the rule against starting exactly one session for the whole task does not apply to it when 2 or " +
+    "more parts follow it.",
   "2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to " +
     "produce and where, how to check it, what to report. Say if it may split its part further, and to run its checks " +
     "through the project's scripts (step 6): each permission request of a session below you wakes you and waits on the person.",
@@ -54,6 +60,10 @@ export const SKILL_CONTENT = [
     "sleep. The group's reports, a blocked report, a question, a permission request, a failed turn or a silent end each start " +
     "a new turn for you. So does a session's message without a status, and one from the person or from the session that " +
     "started you.",
+  "   Answering from below: for a permission request, propose once (or reject, with the reason) with courier_answer; the " +
+    "person decides, in OpenCode's prompt in your session. For a question, ask the person with your question tool, as the " +
+    "notice says; their answer goes on by itself. Never answer for them; when the notice says OpenCode already shows it to " +
+    "the person, nothing is yours to call.",
   "   Passing a message on: when it changes what other parts need (an assumption of the split that is wrong, a shared file " +
     "or API that behaves otherwise, a decision of the person's), pass it on at once with courier_send, only to the sessions " +
     "it affects, before they go further, then end your turn again; if it breaks the split, courier_stop the parts it breaks " +
@@ -82,8 +92,6 @@ export const SKILL_CONTENT = [
   "- A failed turn (failed=\"...\") or a silent end (ended=\"without-report\", quoting the session's last reply): message " +
     "the session with courier_send to carry on, to report, or to try again; or start a replacement. Until it reports, it " +
     "counts toward the limits.",
-  "- A permission request or a question from a session below you: pass the answer on with courier_answer, as its notice " +
-    "and the tool say; never answer a question for the person.",
   "- A refusal from courier_spawn naming maxDepth, maxChildren or maxTotal: do that part yourself, or end your turn and " +
     "start it once a report has arrived. Do not retry it in a loop.",
   "- Lost track, after a compaction or a restart: one courier_tree shows every session under you with its depth, its " +

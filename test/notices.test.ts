@@ -92,7 +92,7 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("in a group of their own, once the first group has reported")
     expect(skill.SKILL_CONTENT).toContain("Put in its task the branch and the base to diff")
     expect(skill.SKILL_CONTENT).toContain("or verified and delivered")
-    expect(skill.SKILL_CONTENT).toContain("verify each delivery, and merge nothing of it into your checkout")
+    expect(skill.SKILL_CONTENT).toContain("verify each delivery and merge nothing of it into your checkout")
     // Step 1 and the root's pointer ask the root for one courier_recall before the decision, which the recursive checker
     // allows; a session below it reads none, since the root weighed the records before it split.
     expect(skill.SKILL_CONTENT).toContain(`At the root, first call ${memory.RECALL_TOOL} once`)

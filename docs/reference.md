@@ -183,7 +183,8 @@ It says, in order:
    session for one stage, after a stage of 2 or more parts or one done oneself, is a part, not the
    whole.
 3. When one core is tightly coupled, stage it: do the core first, then the parts that depend on it.
-4. Plan the parts so that no two edit the same files.
+4. Plan the parts so that no two edit the same files, and name in each task the skills the session
+   should load for it, from those the parent sees listed.
 5. Start them in one join group, `isolate: true` where they edit files in parallel, and end the
    turn without polling. Pass a message that changes what other parts need (a child's finding
    without a status, one from the person or from its own parent) on to the children it affects,

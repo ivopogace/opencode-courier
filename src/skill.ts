@@ -63,7 +63,9 @@ export const SKILL_CONTENT = [
     "more parts follow it.",
   "2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to " +
     "produce and where, how to check it, what to report. Say if it may split its part further, and to run its checks " +
-    "through the project's scripts (step 6): each permission request of a session below you wakes you and waits on the person.",
+    "through the project's scripts (step 6): each permission request of a session below you wakes you and waits on the person. " +
+    "Name the skills it should load for its part, from those listed to you: it sees the same list, not your choice; one " +
+    "permission rule for skill covers their loads, as one covers the checks.",
   "3. Start them: one courier_spawn per part that runs at once, all with the same group name, so you are woken once with every report; " +
     "isolate: true for each part that edits files in parallel with another (commit your own work first if you are isolated " +
     "yourself). For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.",

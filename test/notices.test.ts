@@ -84,6 +84,8 @@ describe("envelope and child brief", () => {
     // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")
+    // Step 2 has the parent name the person's own skills in each task: the skill names none, since it cannot know them.
+    expect(skill.SKILL_CONTENT).toContain("Name the skills it should load for its part, from those listed to you")
     // Step 1 and the root's pointer ask the root for one courier_recall before the decision, which the recursive checker
     // allows; a session below it reads none, since the root weighed the records before it split.
     expect(skill.SKILL_CONTENT).toContain(`At the root, first call ${memory.RECALL_TOOL} once`)

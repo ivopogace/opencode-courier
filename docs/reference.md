@@ -173,6 +173,7 @@ It says, in order:
    the records describe whole trees, which the root weighed before it split.
 2. Decide whether to split, by the brief's rule. Keep the deciding, checking and integrating; hand
    off the long reading and writing. Only the root may start one session for a whole heavy task.
+   Several whole jobs in one prompt are that many parts, each running the playbook for its job.
    The parts a task can have besides its edits: a scout that reads and reports, the implementers,
    tests and documentation, and a review stage after the merge: one review session that may hand
    the reading to reviewers, then starts one verifier with their findings, which drops what does
@@ -186,7 +187,8 @@ It says, in order:
 4. Plan the parts so that no two edit the same files, and name in each task the skills the session
    should load for it, from those the parent sees listed.
 5. Start them in one join group, `isolate: true` where they edit files in parallel, and end the
-   turn without polling. Pass a message that changes what other parts need (a child's finding
+   turn without polling; count about 5 live sessions per job that runs a review stage against
+   `maxTotal`, and start a job that depends on another after that one is merged. Pass a message that changes what other parts need (a child's finding
    without a status, one from the person or from its own parent) on to the children it affects,
    and only to them, before they go further; stop or re-brief the parts it breaks, and send it up
    too when the parent's other parts need it. Progress goes to no one
@@ -196,7 +198,8 @@ It says, in order:
 6. Read each report by its status, and verify first-hand; on a review stage's report, settle the
    refusals it disagrees with itself. Run checks through the project's scripts
    (`bun run <script>`), so one permission rule covers them.
-7. Merge each reported branch, then `courier_cleanup`.
+7. Merge each reported branch, then `courier_cleanup`; a job with a deliverable of its own, such
+   as a ticket with its pull request, is delivered by its session and verified, not merged.
 8. Report upward with one status, or at the top, write the tree's lesson with `courier_note`.
 
 It also says what to do when a part fails or goes quiet, when a spawn is refused (never retry in a

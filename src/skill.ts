@@ -25,7 +25,8 @@ export const SKILL_CONTENT = [
     "describe whole trees, and the root weighed them before it split.",
   "   - Split when the task has 2 or more independent, substantial parts touching separate files or areas; do it yourself " +
     "when it is small, sequential or tightly coupled. A part that is itself big and divisible is split again by the " +
-    "session that gets it.",
+    "session that gets it. Several whole jobs in one prompt, such as 4 tickets, are that many parts: each session runs " +
+    "this playbook for its job, stages, review and all, so the tree below you repeats its shape once per job.",
   "   - What you read and write yourself stays in your context for every later turn, so keep the deciding, checking and " +
     "integrating, and hand off the long reading and writing.",
   "   - Only the root, the session nobody started, may start exactly one session for the whole task, and only when the " +
@@ -68,7 +69,9 @@ export const SKILL_CONTENT = [
     "permission rule for skill covers their loads, as one covers the checks.",
   "3. Start them: one courier_spawn per part that runs at once, all with the same group name, so you are woken once with every report; " +
     "isolate: true for each part that edits files in parallel with another (commit your own work first if you are isolated " +
-    "yourself). For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.",
+    "yourself). When each part runs a review stage of its own, count about 5 live sessions per part against maxTotal, and " +
+    "start the parts beyond that once one has reported; a job that depends on another starts after that one is merged, as " +
+    "a stage. For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.",
   "4. End your turn: reply without calling more tools. Do not poll with courier_status, courier_children, courier_tree or " +
     "sleep. The group's reports, a blocked report, a question, a permission request, a failed turn or a silent end each start " +
     "a new turn for you. So does a session's message without a status, and one from the person or from the session that " +
@@ -94,7 +97,9 @@ export const SKILL_CONTENT = [
     "the project's scripts (bun run <script>, npm run <script>), not ./node_modules/.bin/<tool>, so that one permission " +
     "rule covers them: your own permission prompts are relayed nowhere, and each one stalls the whole tree.",
   "7. Integrate: merge each reported branch into your own checkout (git merge courier/<session>), resolve conflicts " +
-    "yourself, run the checks once more, then courier_cleanup the isolated sessions you are done with.",
+    "yourself, run the checks once more, then courier_cleanup the isolated sessions you are done with. When the parts are " +
+    "whole jobs with a deliverable each (a ticket with its own branch or pull request), the session delivers it and " +
+    "reports the link: verify each delivery, and merge nothing of it into your checkout.",
   "8. Report upward if a session started you: one courier_send to it, with one status for the whole (done only when every " +
     "part is verified and integrated; partial, blocked or failed otherwise) and the artifacts. At the top, before you reply " +
     "to the person: if there is something the next tree in this project should know about running a tree like this one (how " +

@@ -70,12 +70,14 @@ describe("envelope and child brief", () => {
     // A leaf has no courier_spawn or courier_recall, so the skill sends it straight to its report.
     expect(skill.SKILL_CONTENT).toContain("If courier_spawn is not among your tools, you are at the deepest level")
     // Step 4: a permission request is proposed, a question asked of the person; the skill never answers for them.
-    expect(skill.SKILL_CONTENT).toContain("propose once (or reject, with the reason) with courier_answer")
-    expect(skill.SKILL_CONTENT).toContain("ask the person with your question tool, as the notice says")
+    expect(skill.SKILL_CONTENT).toContain("propose once with courier_answer, or reject with the reason when")
+    expect(skill.SKILL_CONTENT).toContain("ask the person with your question tool, with the questions the notice gives")
     expect(skill.SKILL_CONTENT).toContain("Never answer for them")
     // The kinds of part are listed for every split, not only a coupled core, and a reviewer never takes over step 6.
     expect(skill.SKILL_CONTENT).toContain("Parts a task can have, besides its edits")
     expect(skill.SKILL_CONTENT).toContain("It does not replace step 6: running the checks stays yours")
+    // A lone reviewer after self-done work is the one session the brief's rule forbids; after 2 or more parts it is a part.
+    expect(skill.SKILL_CONTENT).toContain("A reviewer alone, after work you did yourself, is the one session the rule above forbids")
     // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")

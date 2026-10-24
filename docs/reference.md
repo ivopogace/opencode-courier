@@ -167,12 +167,13 @@ deny it in `permissions`:
 It says, in order:
 
 1. At the root, call `courier_recall` once, before deciding; a session below it reads none, since
-   its parent weighed the records before writing its brief.
+   the records describe whole trees, which the root weighed before it split.
 2. Decide whether to split, by the brief's rule. Keep the deciding, checking and integrating; hand
    off the long reading and writing. Only the root may start one session for a whole heavy task.
    The parts a task can have besides its edits: a scout that reads and reports, the implementers,
    tests and documentation, and a reviewer with fresh context, whose findings the parent acts on
-   while running the checks stays its own.
+   while running the checks stays its own; a reviewer alone after self-done work is the one session
+   the rule forbids.
 3. When one core is tightly coupled, stage it: do the core first, then the parts that depend on it.
 4. Plan the parts so that no two edit the same files.
 5. Start them in one join group, `isolate: true` where they edit files in parallel, and end the

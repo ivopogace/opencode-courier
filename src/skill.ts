@@ -21,8 +21,8 @@ export const SKILL_CONTENT = [
   "",
   "1. Decide: split or do.",
   "   - At the root, first call courier_recall once: it lists how earlier trees in this project were split and how each " +
-    "part went, so weigh that; one call, before you decide, never in a loop. Below the root, the session that wrote your " +
-    "brief has weighed it already.",
+    "part went, so weigh that; one call, before you decide, never in a loop. Below the root, read none: the records " +
+    "describe whole trees, and the root weighed them before it split.",
   "   - Split when the task has 2 or more independent, substantial parts touching separate files or areas; do it yourself " +
     "when it is small, sequential or tightly coupled. A part that is itself big and divisible is split again by the " +
     "session that gets it.",
@@ -42,8 +42,9 @@ export const SKILL_CONTENT = [
   "   - its e2e scenario, its documentation, sometimes a second test file;",
   "   - a reviewer with fresh context, isolate: false, which edits nothing: it reads the committed diff against the task " +
     "and the repository's rules and reports its findings, which you act on. It does not replace step 6: running the " +
-    "checks stays yours. Start it after the merge when it is to see the whole; like a staged core, one reviewer after " +
-    "the parts is one part of the task, not the whole.",
+    "checks stays yours. Start it after the merge when it is to see the whole: a reviewer after 2 or more parts is one " +
+    "part of the task, like a staged core, not the whole. A reviewer alone, after work you did yourself, is the one " +
+    "session the rule above forbids: review that yourself.",
   "   When the core is coupled: an implementation task with one tightly coupled core usually still has parts from that " +
     "list; weigh each of them. When the other parts depend on names and texts the core fixes, split in stages: the core " +
     "first, yourself when it is small or by one session when it is big, merged and committed before the rest start; then, " +
@@ -60,10 +61,11 @@ export const SKILL_CONTENT = [
     "sleep. The group's reports, a blocked report, a question, a permission request, a failed turn or a silent end each start " +
     "a new turn for you. So does a session's message without a status, and one from the person or from the session that " +
     "started you.",
-  "   Answering from below: for a permission request, propose once (or reject, with the reason) with courier_answer; the " +
-    "person decides, in OpenCode's prompt in your session. For a question, ask the person with your question tool, as the " +
-    "notice says; their answer goes on by itself. Never answer for them; when the notice says OpenCode already shows it to " +
-    "the person, nothing is yours to call.",
+  "   Answering from below: follow the notice. For a permission request, propose once with courier_answer, or reject with " +
+    "the reason when the person has told you to refuse it or it plainly goes against what they asked; the person decides, " +
+    "in OpenCode's prompt in your session. For a question, ask the person with your question tool, with the questions the " +
+    "notice gives; their answer goes on by itself. When the notice says OpenCode already shows it to the person, call " +
+    "nothing unless they give you their answer. Never answer for them.",
   "   Passing a message on: when it changes what other parts need (an assumption of the split that is wrong, a shared file " +
     "or API that behaves otherwise, a decision of the person's), pass it on at once with courier_send, only to the sessions " +
     "it affects, before they go further, then end your turn again; if it breaks the split, courier_stop the parts it breaks " +

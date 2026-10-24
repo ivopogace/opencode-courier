@@ -143,6 +143,9 @@ More: [in the terminal](docs/reference.md#in-the-terminal).
 - Choose a web search provider before children search, or the first one shows you a form.
 - Use `isolate: true` when children edit files in parallel. The worktree starts from the last
   commit, so keep providers in the global config or commit `opencode.json`.
+- To steer a running tree, open a child from the `/courier tree` panel, tell it what you found and ask
+  it to pass that to its parent, or message the parent directly
+  ([details](docs/reference.md#steering-a-running-tree)).
 - For a long-running child, schedule a `courier_later` check-in, in case the server stops.
 
 ## Contributing

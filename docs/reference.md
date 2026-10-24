@@ -171,15 +171,15 @@ It says, in order:
 3. When one core is tightly coupled, stage it: do the core first, then the parts that depend on it.
 4. Plan the parts so that no two edit the same files.
 5. Start them in one join group, `isolate: true` where they edit files in parallel, and end the
-   turn without polling.
-6. Pass a message that changes what other parts need, a child's finding without a status, one from
-   the person or one from its own parent, on to the children it affects, and only to them, before
-   they go further ([steering a running tree](#steering-a-running-tree)). Stop or re-brief the parts it breaks, and send it up too when the parent's
-   other parts need it. Progress goes to no one.
-7. Read each report by its status, and verify first-hand. Run checks through the project's scripts
+   turn without polling. Pass a message that changes what other parts need (a child's finding
+   without a status, one from the person or from its own parent) on to the children it affects,
+   and only to them, before they go further; stop or re-brief the parts it breaks, and send it up
+   too when the parent's other parts need it. Progress goes to no one
+   ([steering a running tree](#steering-a-running-tree)).
+6. Read each report by its status, and verify first-hand. Run checks through the project's scripts
    (`bun run <script>`), so one permission rule covers them.
-8. Merge each reported branch, then `courier_cleanup`.
-9. Report upward with one status, or at the top, write the tree's lesson with `courier_note`.
+7. Merge each reported branch, then `courier_cleanup`.
+8. Report upward with one status, or at the top, write the tree's lesson with `courier_note`.
 
 It also says what to do when a part fails or goes quiet, when a spawn is refused (never retry in a
 loop), after losing track (one `courier_tree`) and to abandon a subtree (`courier_stop`).

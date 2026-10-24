@@ -67,11 +67,37 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("When the core is coupled:")
     expect(skill.SKILL_CONTENT).toContain("A staged core is one part of the task, not the whole task")
     expect(skill.SKILL_CONTENT).toContain("Never hand the checking to another session")
+    // A session without courier_spawn, a leaf or a root that cannot spawn, is sent to do the task itself.
+    expect(skill.SKILL_CONTENT).toContain("If courier_spawn is not among your tools, you cannot split")
+    // Step 4: a permission request is proposed, a question asked of the person; the skill never answers for them.
+    expect(skill.SKILL_CONTENT).toContain("propose once with courier_answer, or reject with the reason when")
+    expect(skill.SKILL_CONTENT).toContain("ask the person with your question tool, with the questions the notice gives")
+    expect(skill.SKILL_CONTENT).toContain("Never answer for them")
+    // The kinds of part are listed for every split, not only a coupled core, and a reviewer never takes over step 6.
+    expect(skill.SKILL_CONTENT).toContain("Parts a task can have, besides its edits")
+    expect(skill.SKILL_CONTENT).toContain("It does not replace step 6: running the checks on the fixed tree stays yours")
+    // The review stage: reviewers, then one verifier, then one implementor; one session per stage is a part, not the whole.
+    expect(skill.SKILL_CONTENT).toContain("then starts one verifier with their reports")
+    expect(skill.SKILL_CONTENT).toContain("starts one implementor for what holds")
+    expect(skill.SKILL_CONTENT).toContain("One session for one stage, after a stage of 2 or more parts or one you did yourself, is a part of the task")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.")
     // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")
-    // Step 1 and the root's pointer name one courier_recall before the decision, which the recursive checker allows.
-    expect(skill.SKILL_CONTENT).toContain(`First call ${memory.RECALL_TOOL} once`)
+    // Step 2 has the parent name the person's own skills in each task: the skill names none, since it cannot know them.
+    expect(skill.SKILL_CONTENT).toContain("Name the skills it should load for its part, from those listed to you")
+    // Several whole jobs in one prompt: the shape repeats per job, the root counts live sessions per part, waits for the first
+    // group before the next, gives the review stage its diff, and reports done once every part is integrated or delivered.
+    expect(skill.SKILL_CONTENT).toContain("so the tree below you repeats its shape once per job")
+    expect(skill.SKILL_CONTENT).toContain("count 6 live sessions per part against maxTotal")
+    expect(skill.SKILL_CONTENT).toContain("in a group of their own once the first group has reported")
+    expect(skill.SKILL_CONTENT).toContain("Put in its task the diff to read")
+    expect(skill.SKILL_CONTENT).toContain("or verified and delivered")
+    expect(skill.SKILL_CONTENT).toContain("verify each delivery and merge nothing of it into your checkout")
+    // Step 1 and the root's pointer ask the root for one courier_recall before the decision, which the recursive checker
+    // allows; a session below it reads none, since the root weighed the records before it split.
+    expect(skill.SKILL_CONTENT).toContain(`At the root, first call ${memory.RECALL_TOOL} once`)
+    expect(registered.find((tool) => tool.name === memory.RECALL_TOOL).description).toContain("a session another session started reads none")
     // Step 8 asks the top for one courier_note, none when there is nothing, naming the job it comes from; the brief never
     // mentions it: children write no lesson. The tool, the skill and the input ask for the lesson's scope, not only splitting.
     expect(skill.SKILL_CONTENT).toContain(`one ${memory.NOTE_TOOL} with that one line; none when there is nothing`)
@@ -90,7 +116,7 @@ describe("envelope and child brief", () => {
     expect(kernel.SPLIT_LINE).not.toContain("1 part")
     for (const depth of [1, 2, 3]) expect(tree.childBrief("ses_parent", "Fix the bug", depth, limits)).not.toContain(kernel.ONE_PART_LINE)
     for (const depth of [0, 1, 2, 3]) expect(tree.rolePart(depth, limits)).not.toContain(kernel.ONE_PART_LINE)
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task; a core you stage before the rest is one part of it, not the whole, when 2 or more parts follow it.")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it")
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("start the parts that run at once in one group, with the same group name for each, then end your turn")
     expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
     expect(tree.rolePart(1, limits)).toContain(`load the ${kernel.SKILL_ID} skill`)

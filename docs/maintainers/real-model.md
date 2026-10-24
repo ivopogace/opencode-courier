@@ -31,7 +31,7 @@ free messages"): run it from your own machine, or with a paid provider's key.
 | `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault`, `recursive-staged` or `recursive-finding`. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the reply must hold. |
 | `COURIER_FILES` | per scenario | Recursive scenarios: the files that must hold those values, in order; for `recursive-staged` the first is the core's. |
-| `COURIER_MAX_DEPTH` | `3` | Recursive scenarios: the `maxDepth` the checker holds the tree to. |
+| `COURIER_MAX_DEPTH` | `5` | Recursive scenarios: the `maxDepth` the checker holds the tree to. |
 | `COURIER_SKILL` | | `deny` denies `courier-orchestrate` in `permissions`, so no session can load it. |
 | `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
@@ -138,8 +138,11 @@ child reported it; the reply holds it. With `COURIER_NATIVE=1` the script answer
 > three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
 
 The checker (`e2e/real-model-recursive.mjs`) reads every session reached from the root and makes
-nine checks: the root spawned two or more in its first turn and ended it; no orchestrator polled; a
-child spawned two or more of its own in one turn, and no sub-orchestrator started exactly one; no
+nine checks: the root spawned two or more in its first turn and ended it; no orchestrator polled (the
+root's one `courier_recall` before its split is allowed, a sub-orchestrator's is not); a
+child spawned two or more of its own in one turn, and no sub-orchestrator started exactly one without
+a tool call of its own before it (a heuristic for a verifier that starts one implementor: the
+transcript shows work, not what it was for); no
 session went past `maxDepth`; every session reported with a status; each sub-orchestrator reported
 once, after its children; the files and the reply hold the values. Its notes say who loaded the skill
 and when, who used a group, a check-in or had a spawn refused.

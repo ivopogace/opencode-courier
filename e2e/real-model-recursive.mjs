@@ -29,10 +29,10 @@ const SUFFIX = " checked"
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
 const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
-const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 3)
+const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 5)
 // Calls that look at other sessions; right after spawning, or more than once a turn, that is polling.
 const LOOKS = new Set(["courier_status", "courier_children", "courier_tree"])
-// courier_recall counts as a look too, with one allowance: the one call the skill asks for, before the split, in the first turn.
+// courier_recall counts as a look too, with one allowance: the one call the skill asks of the root, before its split, in its first turn.
 const RECALL = "courier_recall"
 const SKILL = "courier-orchestrate"
 const loadsAnySkill = (part) => part.type === "tool" && part.name === "skill" && part.state.status === "completed"
@@ -238,25 +238,34 @@ const sleepsBeforeSpawn = (list) => {
 }
 const looksIn = (turn, exempt = new Set()) =>
   toolsOf(turn).filter((part) => LOOKS.has(part.name) || part.name === RECALL || (sleeps(part) && !exempt.has(part))).length
-// The one courier_recall call a turn may make before its first courier_spawn, which the skill's step 1 asks for; a second, or one after a spawn, is a look like any other.
-const allowedRecall = (turn) => {
+// The one courier_recall call the root's turn may make before its first courier_spawn, which the skill's step 1 asks for; a
+// second, one after a spawn, or any below the root, is a look like any other.
+const allowedRecall = (id, turn) => {
+  if (id !== rootID) return 0
   const tools = toolsOf(turn)
   const firstSpawn = tools.findIndex(childOf)
   const recalls = tools.flatMap((part, index) => (part.name === RECALL ? [index] : []))
   return recalls.length === 1 && (firstSpawn === -1 || recalls[0] < firstSpawn) ? 1 : 0
 }
-// Any look in the first turn, right after spawning, is polling, but the one recall before the split; later, more than one look a turn is a loop.
-const polledIn = (list) => {
+// Any look in the first turn, right after spawning, is polling, but the root's one recall before its split; later, more than one look a turn is a loop.
+const polledIn = (id, list) => {
   const [firstTurn = [], ...later] = turnsOf(list)
   const exempt = sleepsBeforeSpawn(list)
-  return looksIn(firstTurn, exempt) - allowedRecall(firstTurn) > 0 || later.some((turn) => looksIn(turn, exempt) > 1)
+  return looksIn(firstTurn, exempt) - allowedRecall(id, firstTurn) > 0 || later.some((turn) => looksIn(turn, exempt) > 1)
 }
-const pollers = orchestrators.filter(([, entry]) => polledIn(entry.list)).map(([id]) => id)
-// The sessions a turn started; a sub-orchestrator starts its batch in one turn, never one session alone (only the root may).
-// With --staged the batch may follow a turn that started the core's session.
+const pollers = orchestrators.filter(([id, entry]) => polledIn(id, entry.list)).map(([id]) => id)
+// The sessions a turn started; a sub-orchestrator starts its batch in one turn, and one session alone only as a stage
+// after work of its own (notOneInAll). With --staged the batch may follow a turn that started the core's session.
 const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length
 const batchIn = (list) => (staged ? turnsOf(list) : turnsOf(list).slice(0, 1)).some((turn) => spawnsIn(turn) >= 2)
-const notOneInAll = (list) => spawnsOf(list).length !== 1
+// A session that started exactly one session in all is a hop, unless it did work of its own first, as a verifier does before it
+// starts one implementor. A heuristic: the transcript shows a tool call that is not the plugin's or the skill tool's, not what it was for.
+const own = (part) => !part.name.startsWith("courier_") && part.name !== "skill"
+const notOneInAll = (list) => {
+  const tools = toolsOf(list)
+  const spawns = tools.flatMap((part, index) => (childOf(part) ? [index] : []))
+  return spawns.length !== 1 || tools.slice(0, spawns[0]).some(own)
+}
 const finalText = textOf(root.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
 // A session's report, as its parent got it; the first one, since the brief asks for exactly one.
 const reportOf = (id) => deliveriesFrom(tree.get(tree.get(id).parentID).list, id)[0]
@@ -374,7 +383,7 @@ const checks = [
   ["the root ended its first turn after spawning, with no reports in it", ended(first.at(-1)) && !failed(first.at(-1)) && !first.some((message) => reportersOf(message).some((from) => tree.has(from)))],
   ["no orchestrator polled (courier_status, courier_children, courier_tree, sleep)", pollers.length === 0],
   [
-    "at least one child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all",
+    "at least one child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all without work of its own first",
     subOrchestrators.some(([, entry]) => batchIn(entry.list)) && subOrchestrators.every(([, entry]) => notOneInAll(entry.list)),
   ],
   [`no session went past maxDepth ${maxDepth}`, [...tree.values()].every((entry) => entry.depth <= maxDepth)],

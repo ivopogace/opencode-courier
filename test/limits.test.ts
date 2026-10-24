@@ -60,8 +60,8 @@ async function chainTo(child: (parentID: string, sessionID: string) => Promise<v
 }
 
 describe("readLimits", () => {
-  test("defaults to maxDepth 3, maxChildren 5 and maxTotal 20", () => {
-    expect(readLimits(undefined)).toEqual({ limits: { maxDepth: 3, maxChildren: 5, maxTotal: 20 }, problems: [] })
+  test("defaults to maxDepth 5, maxChildren 5 and maxTotal 30", () => {
+    expect(readLimits(undefined)).toEqual({ limits: { maxDepth: 5, maxChildren: 5, maxTotal: 30 }, problems: [] })
     expect(readLimits({ webhook: true })).toEqual({ limits: DEFAULT_LIMITS, problems: [] })
   })
 
@@ -73,9 +73,9 @@ describe("readLimits", () => {
     const { limits, problems } = readLimits({ maxDepth: 0, maxChildren: "4", maxTotal: 2.5 })
     expect(limits).toEqual(DEFAULT_LIMITS)
     expect(problems).toEqual([
-      "maxDepth must be a positive integer, not 0; using 3",
+      "maxDepth must be a positive integer, not 0; using 5",
       'maxChildren must be a positive integer, not "4"; using 5',
-      "maxTotal must be a positive integer, not 2.5; using 20",
+      "maxTotal must be a positive integer, not 2.5; using 30",
     ])
   })
 })
@@ -354,7 +354,7 @@ describe("turnEnd and endedAt", () => {
 
 describe("admit", () => {
   test("maxDepth: a session one level above it may spawn, its child at maxDepth", async () => {
-    const { ports, child } = limitPorts()
+    const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxDepth: 3 })
     const parent = await chainTo(child, 2)
 
     const admitted = await admit(ports, parent)
@@ -363,7 +363,7 @@ describe("admit", () => {
   })
 
   test("maxDepth: a session at it is refused, saying so", async () => {
-    const { ports, child } = limitPorts()
+    const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxDepth: 3 })
     const parent = await chainTo(child, 3)
 
     await expect(admit(ports, parent)).rejects.toThrow(depthRefusal(3, 3))

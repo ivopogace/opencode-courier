@@ -15,18 +15,18 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
 ```
 
 It uses the same throwaway server as `run.sh`, with the local build. The default model,
-`opencode/longcat-2.5-preview-free`, is free on [OpenCode Zen](https://opencode.ai/zen) and needs no
-key. Free models are rate limited; check Zen's terms before sending anything private.
+`opencode/deepseek-v4.1-flash-free`, is free on [OpenCode Zen](https://opencode.ai/zen) and needs no
+key. Zen's free models come and go: `opencode models opencode` lists the current ones. Free models
+are rate limited; check Zen's terms before sending anything private.
 
-Zen's free tier refuses the provider `COURIER_BASE_URL` declares (403, `FreeTierError`): set
-`COURIER_BASE_URL=` (empty) to use OpenCode's own catalog entry. From a shared cloud address the
-free tier refuses by volume too, so run the recursive scenarios (15 to 25 requests in four minutes)
-from your own machine.
+The free tier counts messages per public address, per day. A cloud session reaches it through a
+proxy address shared with other sessions, so even its first request is refused ("You've used today's
+free messages"): run it from your own machine, or with a paid provider's key.
 
 | Variable | Default | |
 |---|---|---|
-| `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `longcat-2.5-preview-free` | The model, as OpenCode names it. |
-| `COURIER_BASE_URL` | Zen's endpoint | Declares the provider as an OpenAI-compatible endpoint. Empty uses OpenCode's catalog, with the provider's usual key variable. |
+| `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `deepseek-v4.1-flash-free` | The model, as OpenCode names it in its catalog, with the provider's usual key variable. |
+| `COURIER_BASE_URL` | | Declares the provider as an OpenAI-compatible endpoint, for a model not in the catalog. Zen's free tier refuses its own endpoint declared so (403, `FreeTierError`). |
 | `COURIER_API_KEY_ENV` | | For a declared provider, the variable holding its key (written as `{env:NAME}`, never to a file). |
 | `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault`, `recursive-staged` or `recursive-finding`. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the reply must hold. |
@@ -211,7 +211,7 @@ Run it with the skill and without, several runs each, and table them:
 ```bash
 run() {  # run <name> [VAR=value ...]
   local name=$1; shift
-  env COURIER_SCENARIO=recursive-staged COURIER_BASE_URL= E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
+  env COURIER_SCENARIO=recursive-staged E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
   echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
 }
 for n in 1 2 3 4 5; do run staged-skill-$n; run staged-noskill-$n COURIER_SKILL=deny; done
@@ -239,7 +239,7 @@ messaged the "count" session.
 ```bash
 run() {  # run <name> [VAR=value ...]
   local name=$1; shift
-  env COURIER_SCENARIO=recursive-finding COURIER_BASE_URL= E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
+  env COURIER_SCENARIO=recursive-finding E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
   echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
 }
 for n in 1 2 3; do run finding-skill-$n; run finding-noskill-$n COURIER_SKILL=deny; done
@@ -263,7 +263,7 @@ several times:
 ```bash
 run() {  # run <name> [VAR=value ...]: work directory and log under ~/courier-runs/<name>
   local name=$1; shift
-  env COURIER_SCENARIO=recursive COURIER_BASE_URL= E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
+  env COURIER_SCENARIO=recursive E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
   echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
 }
 run mem-seeded-1 COURIER_SEED=$PWD/e2e/real-model-seed.json

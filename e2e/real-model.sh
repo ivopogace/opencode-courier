@@ -24,16 +24,15 @@
 # checker, run with --finding, as the person telling the "count" session mid-run that every file must hold its number
 # followed by " checked": whether that session sends it up, and its parents pass it on down to the halves, is the test.
 #
-# The default model is a free one on OpenCode Zen, which needs no key. To pick another:
+# The default model is a free one on OpenCode Zen, from OpenCode's catalog (models.dev), which needs
+# no key. To pick another:
 #
 #   COURIER_PROVIDER, COURIER_MODEL  the model, as OpenCode names it (default opencode,
-#                                     longcat-2.5-preview-free).
+#                                     deepseek-v4.1-flash-free), with the provider's usual key
+#                                     variable, such as ANTHROPIC_API_KEY.
 #   COURIER_BASE_URL                 declare the provider in opencode.json as an OpenAI-compatible
-#                                     endpoint with this URL and the model. Default for the opencode
-#                                     provider: https://opencode.ai/zen/v1, so no model catalog is
-#                                     needed. Set it empty to use OpenCode's catalog (models.dev)
-#                                     instead, with the provider's usual key variable, such as
-#                                     ANTHROPIC_API_KEY.
+#                                     endpoint with this URL and the model, for one not in the
+#                                     catalog. Zen's free tier refuses its own endpoint declared so.
 #   COURIER_API_KEY_ENV              for a declared provider, the variable holding its key. The
 #                                     config refers to it as {env:NAME}; the key is never written.
 #   COURIER_PROMPT, COURIER_EXPECT   the parent's prompt and the values the reports must hold.
@@ -65,12 +64,8 @@ SERVER_PORT=${SERVER_PORT:-4610}
 OTHER_PORT=${OTHER_PORT:-4611}
 OTHER_PID=
 PROVIDER=${COURIER_PROVIDER:-opencode}
-MODEL=${COURIER_MODEL:-longcat-2.5-preview-free}
-if [ -z "${COURIER_BASE_URL+set}" ] && [ "$PROVIDER" = opencode ]; then
-  BASE_URL=https://opencode.ai/zen/v1
-else
-  BASE_URL=${COURIER_BASE_URL:-}
-fi
+MODEL=${COURIER_MODEL:-deepseek-v4.1-flash-free}
+BASE_URL=${COURIER_BASE_URL:-}
 KEY_ENV=${COURIER_API_KEY_ENV:-}
 export COURIER_TIMEOUT=${COURIER_TIMEOUT:-300}
 SCENARIO=${COURIER_SCENARIO:-fanout}

@@ -42,6 +42,8 @@ function decide(body) {
   const lastAssistant = messages.findLastIndex((message) => message.role === "assistant")
   const last = messages.at(-1)
   const prompt = textOf(messages.findLast((message) => message.role === "user")?.content)
+  const finding = passFinding(messages, lastAssistant)
+  if (finding) return finding
   if (last?.role === "tool") {
     const call = messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)
     const result = textOf(last.content)
@@ -355,6 +357,43 @@ function decide(body) {
   const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)
   if (spawn) return spawnChild(spawn[1] === "isolate")
   return { text: "ok" }
+}
+
+// COURIER-FINDING starts two children in one group. CHILD-FINDS sends its parent a finding without a status, carries on and
+// reports; the parent passes the finding on to CHILD-HEARS, whose turn runs on, two seconds a step, until it is steered in.
+function passFinding(messages, lastAssistant) {
+  const first = textOf(messages.find((message) => message.role === "user")?.content)
+  const sent = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_send")
+  const briefedBy = first.match(/You were started by session (ses_\w+)/)
+  if (briefedBy && first.includes("CHILD-FINDS")) {
+    if (sent.length === 0) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "FINDING: the shared API returns cents, not euros" } }
+    if (sent.length === 1) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "FINDER DONE", status: "done" } }
+    return { text: "FINDER REPORTED" }
+  }
+  if (briefedBy && first.includes("CHILD-HEARS")) {
+    if (sent.length) return { text: "HEARER REPORTED" }
+    const heard = messages.map((message) => textOf(message.content)).join("\n").match(/FINDING:[^\n<]*/)
+    const waited = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "shell").length
+    if (!heard && waited < 30) return { tool: "shell", args: { command: "sleep 2" }, quick: true }
+    return { tool: "courier_send", args: { sessionID: briefedBy[1], message: heard ? `HEARD ${heard[0]}` : "HEARD NOTHING", status: "done" }, quick: true }
+  }
+  if (!first.includes("COURIER-FINDING")) return undefined
+  const last = messages.at(-1)
+  if (last?.role === "tool") {
+    const call = messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)
+    return { text: call?.function?.name === "courier_send" ? "PARENT PASSED ON" : "PARENT SPAWNED" }
+  }
+  if (lastAssistant === -1)
+    return { calls: ["CHILD-FINDS", "CHILD-HEARS"].map((task) => ({ tool: "courier_spawn", args: { task, group: "finding" } })) }
+  const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
+  const found = recent.match(/<courier from="(ses_\w+)">\n(FINDING:[^\n]*)/)
+  if (found) {
+    const started = messages.flatMap((message) => (message.role === "tool" ? [...textOf(message.content).matchAll(/Started session (ses_\w+)/g)] : []))
+    const sibling = started.map((match) => match[1]).find((id) => id !== found[1])
+    return { tool: "courier_send", args: { sessionID: sibling, message: `Passed on from ${found[1]}: ${found[2]}` } }
+  }
+  if (recent.includes(' group="')) return { text: "PARENT GOT GROUP" }
+  return { text: "PARENT WOKE" }
 }
 
 // What a child reports as artifacts: one of each kind, so the test sees the whole layout.

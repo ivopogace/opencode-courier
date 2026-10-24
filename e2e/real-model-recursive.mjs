@@ -1,5 +1,6 @@
 // Waits for a real model's recursive split to settle, saves every session's transcript to WORK and checks the tree
-// (node e2e/real-model-recursive.mjs <rootSessionID> [--saved to re-read WORK] [--fault for recursive-fault] [--staged for recursive-staged]).
+// (node e2e/real-model-recursive.mjs <rootSessionID> [--saved to re-read WORK] [--fault for recursive-fault] [--staged for recursive-staged]
+// [--finding for recursive-finding, which also plays the person telling the "count" session something mid-run]).
 // Exit 2 means inconclusive.
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -9,7 +10,7 @@ const saved = flags.includes("--saved")
 const server = process.env.SERVER
 const auth = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD}`).toString("base64")}`
 const work = process.env.WORK
-// A re-read keeps the checks the run was made with: summary.json records --fault and --staged.
+// A re-read keeps the checks the run was made with: summary.json records --fault, --staged and --finding.
 const savedFlag = (name) => {
   try {
     return JSON.parse(readFileSync(join(work, "summary.json"), "utf8"))[name] === true
@@ -19,6 +20,12 @@ const savedFlag = (name) => {
 }
 const fault = flags.includes("--fault") || (saved && savedFlag("fault"))
 const staged = flags.includes("--staged") || (saved && savedFlag("staged"))
+const finding = flags.includes("--finding") || (saved && savedFlag("finding"))
+// What --finding's person tells the "count" session mid-run, which every file of the job then holds after its number.
+const PERSON_NOTE =
+  "A change from the person for the whole job, not only for your part: every file this job writes must hold its number " +
+  "followed by a space and the word checked, such as 7 checked. Write yours that way."
+const SUFFIX = " checked"
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
 const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
@@ -59,6 +66,8 @@ const ended = (message) =>
   message?.type === "idle" ||
   (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
 const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
+// The "count" part's session, found by its command or its file, since the root briefs it in its own words.
+const isCount = (list) => /99 - 57|count\/total\.txt/.test(textOf(list.find((message) => message.type === "user" || message.type === "synthetic") ?? {}))
 const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
@@ -144,10 +153,23 @@ const GRACE_MS = 30_000
 const started = Date.now()
 let quietSince
 let tree = new Map()
+let told = false
 for (;;) {
   let done = false
   try {
     tree = await readTree()
+    // --finding: the person tells the "count" session, once its turn runs, something the whole job needs.
+    const count = finding && !saved && !told ? [...tree].find(([, entry]) => entry.depth === 1 && isCount(entry.list) && entry.list.some((message) => message.type === "assistant") && !settled(entry.list)) : undefined
+    if (count) {
+      const response = await fetch(`${server}/api/session/${count[0]}/prompt`, {
+        method: "POST",
+        headers: { authorization: auth, "content-type": "application/json" },
+        body: JSON.stringify({ text: PERSON_NOTE }),
+      })
+      if (!response.ok) throw new Error(`the person's message to ${count[0]}: HTTP ${response.status}`)
+      told = true
+      console.log(`  (told ${count[0]}, the "count" session, as the person: ${PERSON_NOTE})`)
+    }
     const spawned = [...tree].filter(([id]) => id !== rootID)
     const reported = spawned.filter(([id, entry]) => deliveriesFrom(tree.get(entry.parentID).list, id).length > 0)
     const quiet = [...tree.values()].every((entry) => settled(entry.list))
@@ -252,6 +274,7 @@ const fileText = (file) => {
   }
 }
 const fileTexts = files.map(fileText)
+const fileExpected = expected.map((value) => (finding ? `${value}${SUFFIX}` : value))
 // The fault --fault checks for: one leaf told to report partial first and to finish only once its parent messages it, found
 // by its first report, not by its task, which the root and the sub-orchestrator pass on in their own words.
 const deliveriesOf = (id) => deliveriesFrom(tree.get(tree.get(id).parentID).list, id).map((delivery) => ({ ...delivery, status: statusOf(delivery.message, id) }))
@@ -319,6 +342,33 @@ const stagedChecks = [
   ["the session that staged reported upward once, with status done", stagerUpward.length === 1 && stagerUpward[0].status === "done"],
 ]
 
+// The finding --finding checks for: the person's message in the "count" session, that session's message up without a
+// status before its report, the root's message on to the other part, and that part's on to each of its own sessions.
+const delivered = (list, from, after = -1) => list.findIndex((message, index) => index > after && sendersOf(message).includes(from) && !groupOf(message) && !statusOf(message, from))
+const plainAfter = (list, to, after) => sendsTo(list, to).find((send) => send.index > after && !send.status)
+const [countID, countEntry] = [...tree].find(([, entry]) => entry.depth === 1 && isCount(entry.list)) ?? []
+const noteAt = countEntry ? countEntry.list.findIndex((message) => message.type === "user" && message.text?.includes(PERSON_NOTE)) : -1
+const up = countEntry && noteAt !== -1 ? plainAfter(countEntry.list, rootID, noteAt) : undefined
+const countReport = countEntry ? reportsTo(countEntry.list, rootID)[0] : undefined
+const atRoot = countID ? delivered(root, countID) : -1
+const others = [...tree].filter(([id, entry]) => entry.depth === 1 && id !== countID)
+const onward = others.map(([id, entry]) => {
+  const sent = atRoot === -1 ? undefined : plainAfter(root, id, atRoot)
+  const reached = sent ? delivered(entry.list, rootID) : -1
+  const below = spawnsOf(entry.list).filter((child) => tree.has(child))
+  const down = below.map((child) => ({ child, sent: reached === -1 ? undefined : plainAfter(entry.list, child, reached) }))
+  return { id, sent, reached, below, down }
+})
+const findingChecks = [
+  ['the person\'s message reached the "count" session', noteAt !== -1],
+  [
+    "that session sent it up to the root with courier_send, without a status, before its report",
+    up !== undefined && (countReport === undefined || sentBefore(up, countReport)),
+  ],
+  ["the root passed it on to the other part, without a status, once it arrived", atRoot !== -1 && onward.length > 0 && onward.every((one) => one.sent && one.reached !== -1)],
+  ["that part's session passed it on to each of its own sessions, once it arrived", onward.length > 0 && onward.every((one) => one.below.length > 0 && one.down.every((down) => down.sent))],
+]
+
 const checks = [
   ["the root spawned at least two children with courier_spawn in its first turn", spawnsIn(first) >= 2],
   ["the root ended its first turn after spawning, with no reports in it", ended(first.at(-1)) && !failed(first.at(-1)) && !first.some((message) => reportersOf(message).some((from) => tree.has(from)))],
@@ -330,10 +380,11 @@ const checks = [
   [`no session went past maxDepth ${maxDepth}`, [...tree.values()].every((entry) => entry.depth <= maxDepth)],
   ["every spawned session reported to its parent, with a status", spawned.length > 0 && spawned.every(([id]) => reportOf(id) !== undefined)],
   ["each sub-orchestrator reported upward once, after its own children had reported to it", subOrchestrators.length >= 1 && subOrchestrators.every(reportedAfterChildren)],
-  ["the files hold the expected values", files.length > 0 && files.length === expected.length && fileTexts.every((text, index) => text === expected[index])],
+  ["the files hold the expected values", files.length > 0 && files.length === expected.length && fileTexts.every((text, index) => text === fileExpected[index])],
   ["the root's final reply holds every expected result", expected.length > 0 && expected.every((value) => finalText.includes(value))],
   ...(fault ? faultChecks : []),
   ...(staged ? stagedChecks : []),
+  ...(finding ? findingChecks : []),
 ]
 
 const notes = []
@@ -391,6 +442,11 @@ if (fault)
     )
     if (one.upward.length) notes.push(`fault: its parent reported upward ${one.upward.map((report) => report.status).join(", then ")}`)
   }
+if (finding) {
+  if (up) notes.push(`finding: the "count" session sent up: ${short(up.message ?? "", 200)}`)
+  else if (countReport) notes.push(`finding: the "count" session sent nothing up without a status; its report: ${short(countReport.message ?? "", 200)}`)
+  if (countID && plainAfter(root, countID, atRoot)) notes.push(`finding: the root also messaged the "count" session after the finding arrived`)
+}
 if (fault && !faulty.length) notes.push("fault: every session below a sub-orchestrator first reported done; the fault did not reach a leaf")
 if (staged) {
   const who = (id) => (id === rootID ? "the root" : `session ${id} (depth ${tree.get(id).depth})`)
@@ -474,7 +530,7 @@ console.log(`result: ${verdict}${verdict === "inconclusive" ? " (checks failed, 
 writeFileSync(
   join(work, "summary.json"),
   JSON.stringify(
-    { verdict, rootID, fault, staged, sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, usage, finalText },
+    { verdict, rootID, fault, staged, finding, sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, usage, finalText },
     null,
     2,
   ),

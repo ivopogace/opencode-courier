@@ -145,7 +145,9 @@ one session per part, and to do it itself otherwise. It never starts exactly one
 whole task. It says which in one line: `split: no, because …; considered: …` or
 `split: <n> parts: …`. A session that splits starts the parts in one join group, ends its turn
 without polling, checks each part and sends one combined report. At `maxDepth` it is told to do the
-task itself.
+task itself. Any spawned session is told to send its parent a finding the other parts need (an
+assumption of the split that is wrong, a shared file or API that behaves otherwise, something the
+person said) at once, without a status, and carry on; progress alone is not worth a message.
 
 **The role.** On each model request the plugin adds one system part, `opencode-courier role: …`. A
 session below `maxDepth` is a `sub-orchestrator`. One at `maxDepth` is a `leaf`, and its requests go
@@ -169,7 +171,11 @@ It says, in order:
 3. When one core is tightly coupled, stage it: do the core first, then the parts that depend on it.
 4. Plan the parts so that no two edit the same files.
 5. Start them in one join group, `isolate: true` where they edit files in parallel, and end the
-   turn without polling.
+   turn without polling. Pass a message that changes what other parts need (a child's finding
+   without a status, one from the person or from its own parent) on to the children it affects,
+   and only to them, before they go further; stop or re-brief the parts it breaks, and send it up
+   too when the parent's other parts need it. Progress goes to no one
+   ([steering a running tree](#steering-a-running-tree)).
 6. Read each report by its status, and verify first-hand. Run checks through the project's scripts
    (`bun run <script>`), so one permission rule covers them.
 7. Merge each reported branch, then `courier_cleanup`.
@@ -179,8 +185,8 @@ It also says what to do when a part fails or goes quiet, when a spawn is refused
 loop), after losing track (one `courier_tree`) and to abandon a subtree (`courier_stop`).
 
 Without the skill, the brief and the role part still carry the split rule, the one group, no
-polling, the limits and how to report. The skill alone adds staging, planning the files, isolation,
-check-ins, merging, cleanup and the lesson.
+polling, the limits, how to report and to send a finding up. The skill alone adds staging, planning
+the files, isolation, check-ins, passing findings on, merging, cleanup and the lesson.
 
 ## A child's report
 
@@ -383,7 +389,10 @@ The person steers a running tree by talking to any session in it:
   restriction, so a parent that got a finding can pass it on to its other children, which steers their
   running turns.
 
-Nothing tells the models to pass a finding on unprompted, so ask for each step you want taken.
+A child that finds something the other parts need, or is told it, sends it to its parent without a
+status ([the brief](#session-trees-and-their-limits)), and the skill has a parent pass such a message
+on to the children it affects ([the skill](#the-courier-orchestrate-skill)). Without the skill, ask
+the parent to pass it on.
 
 ## Roster
 

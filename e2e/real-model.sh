@@ -20,7 +20,9 @@
 # one leaf told to report partial first and to finish only once its parent messages it, checked by the
 # same script with --fault. COURIER_SCENARIO=recursive-staged gives the "numbers" part a core both
 # halves need, a seed in numbers/seed.txt, checked by the same script with --staged for whether the
-# halves started only after it.
+# halves started only after it. COURIER_SCENARIO=recursive-finding is the recursive job with longer halves, and the
+# checker, run with --finding, as the person telling the "count" session mid-run that every file must hold its number
+# followed by " checked": whether that session sends it up, and its parents pass it on down to the halves, is the test.
 #
 # The default model is a free one on OpenCode Zen, which needs no key. To pick another:
 #
@@ -35,9 +37,9 @@
 #   COURIER_API_KEY_ENV              for a declared provider, the variable holding its key. The
 #                                     config refers to it as {env:NAME}; the key is never written.
 #   COURIER_PROMPT, COURIER_EXPECT   the parent's prompt and the values the reports must hold.
-#   COURIER_FILES                    recursive(-fault, -staged): the files, relative to the project, that must hold
+#   COURIER_FILES                    recursive(-fault, -staged, -finding): the files, relative to the project, that must hold
 #                                     them; with recursive-staged the first is the core's.
-#   COURIER_MAX_DEPTH                recursive(-fault, -staged): the maxDepth the checker holds the tree to (default 3).
+#   COURIER_MAX_DEPTH                recursive(-fault, -staged, -finding): the maxDepth the checker holds the tree to (default 3).
 #   COURIER_SKILL                    deny adds a skill permission rule denying courier-orchestrate to
 #                                     opencode.json, so no session is offered it or can load it; any scenario.
 #   COURIER_TIMEOUT                  seconds to wait for the parent's turn and then for the
@@ -121,7 +123,16 @@ case $SCENARIO in
     CHECKER=real-model-recursive.mjs
     CHECKER_FLAGS=--staged
     ;;
-  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, recursive-staged, permission or question"; exit 1 ;;
+  recursive-finding)
+    # The recursive job, with halves long enough for what the person tells the "count" session mid-run to reach them;
+    # the checker plays the person, so the prompt says nothing of it.
+    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `sleep 150; echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `sleep 150; echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `sleep 20; echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
+    export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
+    export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
+    CHECKER=real-model-recursive.mjs
+    CHECKER_FLAGS=--finding
+    ;;
+  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, recursive-staged, recursive-finding, permission or question"; exit 1 ;;
 esac
 case ${COURIER_SKILL:-} in
   "") ;;
@@ -204,7 +215,7 @@ fi
 echo "parent prompt: $PROMPT"
 
 post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
-if [ "$SCENARIO" != fanout ] && [ "$SCENARIO" != recursive ] && [ "$SCENARIO" != recursive-fault ] && [ "$SCENARIO" != recursive-staged ]; then
+if [ "$SCENARIO" != fanout ] && [ "$SCENARIO" != recursive ] && [ "$SCENARIO" != recursive-fault ] && [ "$SCENARIO" != recursive-staged ] && [ "$SCENARIO" != recursive-finding ]; then
   # Started through the API, as a session in the TUI would be, not with opencode run: run cancels
   # any question form opened in its session while it is attached, and the child's request can wake
   # the parent before run has let go. The checker waits for the turns.

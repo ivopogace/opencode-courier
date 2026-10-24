@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 finding:11 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -599,6 +599,28 @@ run_reports_groups() {
   check "the child's first turn, which ended waiting, was not told" "$(turn_ended "$child"; notices_with "$parent" ended | jq -r 'length == 0')"
   check "the child scheduled the message in its first turn" \
     "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_later")] | length == 1')"
+}
+
+run_finding() {
+  scenario "a child's finding without a status reaches its parent, which passes it on into a sibling's running turn"
+  out=$(prompt "COURIER-FINDING")
+  turn_ended=$(now_ms)
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  finder=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-FINDS") | .metadata.metadata.sessionID')
+  hearer=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-HEARS") | .metadata.metadata.sessionID')
+  check "two children were started in one group" "$([ -n "$finder" ] && [ -n "$hearer" ] && echo true || echo false)"
+  passed=$(reply_time "$parent" "PARENT PASSED ON" 45)
+  check "the finding started a new turn after the parent's had ended" "$([ -n "$passed" ] && [ "$passed" -gt "$turn_ended" ] && echo true || echo false)"
+  plain=$(api "session/$parent/message" | jq -r --arg finder "$finder" '[.data[] | select(.type == "synthetic") | .text |
+    select(startswith("<courier from=\"" + $finder + "\">") and contains("FINDING: the shared API returns cents"))] | length == 1')
+  check "it came without a status, and was noted as the finder's progress" \
+    "$([ "$plain" = true ] && [ "$(kv get "report/$finder/progress" | jq -r '.at | type == "number"')" = true ] && echo true || echo false)"
+  check "the parent passed it on to the sibling only" \
+    "$([ "$(has_text "$hearer" "<courier from=\"$parent\">" 30)" = true ] && ! texts "$finder" | grep -qF "Passed on from" && echo true || echo false)"
+  check "the sibling heard it in the turn it was running, and reported it" \
+    "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r 'length == 1 and (.[0] |
+      contains("reports=\"2\"") and contains("HEARD FINDING: the shared API returns cents") and contains("FINDER DONE"))')"
+  check "neither child was told as one that ended without a report" "$(notices_with "$parent" ended | jq -r 'length == 0')"
 }
 
 run_permission() {

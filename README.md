@@ -38,7 +38,8 @@ prompt again.
 OpenCode's own [`subagent` tool](https://opencode.ai/v2/docs/agents) hands back a child's final
 answer. Use it when one result is all you need. Use courier for more:
 
-- **Messages mid-run.** A child reports progress or asks its parent at any time.
+- **Messages mid-run.** A child reports progress or asks its parent at any time, and its parent
+  passes a finding that changes the other parts on to the children it affects.
 - **Waking an idle session.** A message, a schedule or a GitHub webhook starts a new turn.
 - **Parallel edits.** `isolate: true` gives a child its own git worktree and branch to merge.
 - **Asks reach you.** A child's permission requests and questions come to you through the top

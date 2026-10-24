@@ -4,7 +4,8 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
 // e2e/real-model-recursive.mjs on fixture transcripts, read back with --saved: the recursive tree, the fault in it
-// (COURIER_SCENARIO=recursive-fault), handled or not, and the staged core (COURIER_SCENARIO=recursive-staged).
+// (COURIER_SCENARIO=recursive-fault), handled or not, the staged core (COURIER_SCENARIO=recursive-staged) and the
+// finding passed on (COURIER_SCENARIO=recursive-finding).
 const CHECKER = join(import.meta.dir, "..", "e2e", "real-model-recursive.mjs")
 const FILES = { "numbers/a.txt": "391", "numbers/b.txt": "1024", "count/total.txt": "42" }
 
@@ -69,11 +70,11 @@ function transcripts(variant: Variant): Record<string, Message[]> {
   return { ses_root: root, ses_num: num, ses_a: a, ses_b: b, ses_count: count }
 }
 
-type Run = { tree: Record<string, Message[]>; files: Record<string, string>; config?: unknown }
+type Run = { tree: Record<string, Message[]>; files: Record<string, string>; config?: unknown; expect?: string }
 
 /** Runs the checker with --saved on a run directory holding `variant`'s transcripts and files, once per list of flags; the last run's exit code and summary. */
 function check(variant: Variant | Run, ...runs: string[][]) {
-  const { tree, files, config } = typeof variant === "string" ? { tree: transcripts(variant), files: FILES, config: undefined } : variant
+  const { tree, files, config, expect: expected } = typeof variant === "string" ? { tree: transcripts(variant), files: FILES, config: undefined, expect: undefined } : variant
   const work = mkdtempSync(join(tmpdir(), "rmr-"))
   // The checker reads COURIER_* from its environment: none of the caller's, such as an exported COURIER_MAX_DEPTH.
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("COURIER_")))
@@ -87,12 +88,12 @@ function check(variant: Variant | Run, ...runs: string[][]) {
     let exitCode: number | null = null
     for (const flags of runs.length ? runs : [[]]) {
       const run = Bun.spawnSync([process.execPath, CHECKER, "ses_root", "--saved", ...flags], {
-        env: { ...env, WORK: work, COURIER_EXPECT: Object.values(files).join(" "), COURIER_FILES: Object.keys(files).join(" ") },
+        env: { ...env, WORK: work, COURIER_EXPECT: expected ?? Object.values(files).join(" "), COURIER_FILES: Object.keys(files).join(" ") },
       })
       if (run.exitCode !== 0 && run.exitCode !== 1) throw new Error(`the checker exited ${run.exitCode}: ${run.stderr.toString()}`)
       exitCode = run.exitCode
     }
-    const summary = JSON.parse(readFileSync(join(work, "summary.json"), "utf8")) as { verdict: string; fault: boolean; staged: boolean; checks: Record<string, boolean>; notes: string[] }
+    const summary = JSON.parse(readFileSync(join(work, "summary.json"), "utf8")) as { verdict: string; fault: boolean; staged: boolean; finding: boolean; checks: Record<string, boolean>; notes: string[] }
     return { exitCode, ...summary, failed: Object.entries(summary.checks).flatMap(([name, ok]) => (ok ? [] : [name])) }
   } finally {
     rmSync(work, { recursive: true, force: true })
@@ -369,4 +370,77 @@ test("without --staged the recursive checks keep their rules on a staged tree: a
   expect(denied.failed).toEqual([BATCH])
   expect(denied.notes).toContain("the project's permissions deny the skill courier-orchestrate")
   expect(denied.notes.some((note) => note.startsWith("staged:"))).toBe(false)
+})
+
+// What e2e/real-model-recursive.mjs --finding tells the "count" session as the person.
+const PERSON_NOTE =
+  "A change from the person for the whole job, not only for your part: every file this job writes must hold its number " +
+  "followed by a space and the word checked, such as 7 checked. Write yours that way."
+const FINDING = "Every file of the job must hold its number followed by the word checked."
+type Finding = "passed" | "not-down" | "in-report"
+
+/** The recursive tree with --finding's person telling "count" mid-run; `not-down` skips half b, `in-report` sends it up only in the report. */
+function findingRun(variant: Finding): Run {
+  const plain = variant !== "in-report"
+  const count = [
+    user("count: run `sleep 20; echo $((99 - 57))`, write it to count/total.txt"),
+    step("tool-calls", tool("shell", { command: "sleep 20; echo $((99 - 57))" })),
+    user(PERSON_NOTE),
+    step("tool-calls", write("count/total.txt"), ...(plain ? [send("ses_root", FINDING)] : []), send("ses_root", plain ? "42 checked" : `42 checked. ${FINDING}`, "done")),
+    step("stop", say("Reported.")),
+    idle(),
+  ]
+  const half = (id: string, value: string, told: boolean) => [
+    user(`half ${id}`),
+    step("tool-calls", tool("shell", { command: `sleep 150; echo ${value}` })),
+    ...(told ? [synthetic(`<courier from="ses_num">\n${FINDING}\n</courier>`)] : []),
+    step("tool-calls", write(`numbers/${id}.txt`), send("ses_num", `${value} checked`, "done")),
+    step("stop", say("Reported.")),
+    idle(),
+  ]
+  const num = [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves")), step("stop", say("split: 2 halves")), idle()]
+  if (plain)
+    num.push(
+      synthetic(`<courier from="ses_root">\n${FINDING}\n</courier>`),
+      step("tool-calls", send("ses_a", FINDING), ...(variant === "not-down" ? [] : [send("ses_b", FINDING)])),
+      step("stop", say("Passed on.")),
+      idle(),
+    )
+  num.push(released("halves", [["ses_a", "done"], ["ses_b", "done"]]), step("tool-calls", send("ses_root", "391 checked and 1024 checked", "done")), step("stop", say("Reported.")), idle())
+  const root = [user("the job"), step("tool-calls", loadSkill(), spawn("ses_num", "parts"), spawn("ses_count", "parts")), step("stop", say("split: 2 parts | numbers, count")), idle()]
+  if (plain) root.push(synthetic(`<courier from="ses_count">\n${FINDING}\n</courier>`), step("tool-calls", send("ses_num", FINDING)), step("stop", say("Passed on.")), idle())
+  root.push(released("parts", [["ses_num", "done"], ["ses_count", "done"]]), step("tool-calls", tool("read", { path: "numbers/a.txt" })), step("stop", say("RESULTS 391 1024 42")), idle())
+  const told = variant === "passed" || variant === "not-down"
+  const files = Object.fromEntries(Object.entries(FILES).map(([file, value]) => [file, `${value} checked`]))
+  return { tree: { ses_root: root, ses_num: num, ses_a: half("a", "391", told), ses_b: half("b", "1024", variant === "passed"), ses_count: count }, files, expect: Object.values(FILES).join(" ") }
+}
+
+const F2 = "that session sent it up to the root with courier_send, without a status, before its report"
+const F3 = "the root passed it on to the other part, without a status, once it arrived"
+const F4 = "that part's session passed it on to each of its own sessions, once it arrived"
+
+describe("the recursive checker with --finding", () => {
+  test("a finding sent up without a status and passed on down to every half passes every check", () => {
+    const run = check(findingRun("passed"), ["--finding"])
+    expect(run.failed).toEqual([])
+    expect(Object.keys(run.checks)).toHaveLength(13)
+    expect(run.exitCode).toBe(0)
+    expect(run.notes).toContain(`finding: the "count" session sent up: ${FINDING}`)
+  })
+
+  test("a part's session that passes it on to one half of two fails only that check", () => {
+    expect(check(findingRun("not-down"), ["--finding"]).failed).toEqual([F4])
+  })
+
+  test("a finding sent up only inside the report reaches no one in time: the last three checks fail", () => {
+    const run = check(findingRun("in-report"), ["--finding"])
+    expect(run.failed).toEqual([F2, F3, F4])
+    expect(run.notes.some((note) => note.startsWith('finding: the "count" session sent nothing up without a status'))).toBe(true)
+  })
+
+  test("the files must hold each number with the suffix, and a re-read with --saved keeps the finding checks", () => {
+    const run = check({ ...findingRun("passed"), files: FILES }, ["--finding"], [])
+    expect(run.finding).toBe(true)
+    expect(run.failed).toEqual(["the files hold the expected values"])
+  })
 })

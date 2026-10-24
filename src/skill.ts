@@ -47,7 +47,12 @@ export const SKILL_CONTENT = [
     "yourself). For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.",
   "4. End your turn: reply without calling more tools. Do not poll with courier_status, courier_children, courier_tree or " +
     "sleep. The group's reports, a blocked report, a question, a permission request, a failed turn or a silent end each start " +
-    "a new turn for you.",
+    "a new turn for you. So does a session's message without a status, and one from the person or from the session that " +
+    "started you: when it changes what other parts need (an assumption of the split that is wrong, a shared file or API that " +
+    "behaves otherwise, a decision of the person's), pass it on at once with courier_send, only to the sessions it affects, " +
+    "before they go further, then end your turn again; if it breaks the split, courier_stop the parts it breaks and plan " +
+    "them again, or send them a corrected task. If a session started you and its other parts need it too, send it up to " +
+    "that session as well, without a status. Progress that changes nothing for the others goes to no one.",
   "5. Read each report by its status and its artifacts (branch, commits, files, checks). done: verify it. partial: what is " +
     "left and why; have the session finish it with a courier_send, or do it yourself. blocked: make the decision it asks for " +
     "and send it with courier_send; if only the person can make it, ask them with your question tool and pass the answer on. " +

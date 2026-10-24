@@ -67,6 +67,9 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("When the core is coupled:")
     expect(skill.SKILL_CONTENT).toContain("A staged core is one part of the task, not the whole task")
     expect(skill.SKILL_CONTENT).toContain("Never hand the checking to another session")
+    // A leaf has no courier_spawn or courier_recall, so the skill sends it straight to its report.
+    expect(skill.SKILL_CONTENT).toContain("If courier_spawn is not among your tools, you are at the deepest level")
+    expect(skill.SKILL_CONTENT).toContain("pass the answer on with courier_answer")
     // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")

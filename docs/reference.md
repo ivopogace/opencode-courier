@@ -158,7 +158,8 @@ keep its own context: `split: 1 part: <the task>, to keep my context`.
 ## The courier-orchestrate skill
 
 The plugin registers one OpenCode skill, `courier-orchestrate`, in every location. Models load it
-at the start of an implementation task that may have independent parts. In the TUI, `/skills`
+at the start of an implementation task that may have independent parts, and spawned sessions that
+can still start sessions load it too; one at the deepest level is told to do its task itself. In the TUI, `/skills`
 attaches it to your prompt. Loading it asks the `skill` permission like any skill. To hide it,
 deny it in `permissions`:
 `{ "action": "skill", "resource": "courier-orchestrate", "effect": "deny" }`.
@@ -181,7 +182,8 @@ It says, in order:
 7. Merge each reported branch, then `courier_cleanup`.
 8. Report upward with one status, or at the top, write the tree's lesson with `courier_note`.
 
-It also says what to do when a part fails or goes quiet, when a spawn is refused (never retry in a
+It also says what to do when a part fails or goes quiet, when it asks for a permission or a
+question (`courier_answer`, never answering for the person), when a spawn is refused (never retry in a
 loop), after losing track (one `courier_tree`) and to abandon a subtree (`courier_stop`).
 
 Without the skill, the brief and the role part still carry the split rule, the one group, no

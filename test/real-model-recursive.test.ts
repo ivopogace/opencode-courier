@@ -444,3 +444,54 @@ describe("the recursive checker with --finding", () => {
     expect(run.failed).toEqual(["the files hold the expected values"])
   })
 })
+
+const POLL = "no orchestrator polled (courier_status, courier_children, courier_tree, sleep)"
+
+/** The no-fault tree with the count session handing its one part to a session of its own, after `before` in the same turn. */
+function loneSpawnRun(before: unknown[]): Run {
+  const tree = transcripts("no-fault")
+  const c1 = [user("the count"), step("tool-calls", tool("shell", { command: "echo 42" }), write("count/total.txt"), send("ses_count", "42", "done")), step("stop", say("Reported.")), idle()]
+  const count = [
+    user("count"),
+    step("tool-calls", ...before, spawn("ses_c1", "stage")),
+    step("stop", say("split: 1 stage")),
+    idle(),
+    released("stage", [["ses_c1", "done"]]),
+    step("tool-calls", send("ses_root", "42", "done")),
+    step("stop", say("Reported.")),
+    idle(),
+  ]
+  return { tree: { ...tree, ses_count: count, ses_c1: c1 }, files: FILES }
+}
+
+/** The no-fault tree with a courier_recall call added to a first turn's tools, before its spawns, the times kept. */
+function recallRun(where: "root" | "sub" | "root-twice"): Run {
+  const tree = transcripts("no-fault")
+  const recall = tool("courier_recall", {})
+  const content = (tree[where === "sub" ? "ses_num" : "ses_root"]![1] as { content: unknown[] }).content
+  content.splice(where === "sub" ? 0 : 1, 0, recall, ...(where === "root-twice" ? [recall] : []))
+  return { tree, files: FILES }
+}
+
+describe("the recursive checker on lone spawns and recalls", () => {
+  test("a sub-orchestrator that starts exactly one session with no work of its own first is a hop", () => {
+    expect(check(loneSpawnRun([])).failed).toEqual([BATCH])
+  })
+  test("one that did work of its own first started a stage, which passes", () => {
+    const run = check(loneSpawnRun([tool("read", { path: "count/plan.md" })]))
+    expect(run.failed).toEqual([])
+    expect(run.notes).toContain("session ses_count (depth 1) started 1 session(s) in group(s) stage")
+  })
+  test("a skill load is not work of its own", () => {
+    expect(check(loneSpawnRun([loadSkill()])).failed).toEqual([BATCH])
+  })
+  test("the root's one courier_recall before its split is allowed, and noted", () => {
+    const run = check(recallRun("root"))
+    expect(run.failed).toEqual([])
+    expect(run.notes).toContain("the root called courier_recall 1 time(s), the first in its first turn, before its split")
+  })
+  test("a second recall at the root, or one in a sub-orchestrator, is a look", () => {
+    expect(check(recallRun("root-twice")).failed).toEqual([POLL])
+    expect(check(recallRun("sub")).failed).toEqual([POLL])
+  })
+})

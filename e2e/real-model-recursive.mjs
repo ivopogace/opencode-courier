@@ -254,12 +254,12 @@ const polledIn = (id, list) => {
   return looksIn(firstTurn, exempt) - allowedRecall(id, firstTurn) > 0 || later.some((turn) => looksIn(turn, exempt) > 1)
 }
 const pollers = orchestrators.filter(([id, entry]) => polledIn(id, entry.list)).map(([id]) => id)
-// The sessions a turn started; a sub-orchestrator starts its batch in one turn, never one session alone (only the root may).
-// With --staged the batch may follow a turn that started the core's session.
+// The sessions a turn started; a sub-orchestrator starts its batch in one turn, and one session alone only as a stage
+// after work of its own (notOneInAll). With --staged the batch may follow a turn that started the core's session.
 const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length
 const batchIn = (list) => (staged ? turnsOf(list) : turnsOf(list).slice(0, 1)).some((turn) => spawnsIn(turn) >= 2)
-// A session that started exactly one session in all is a hop, unless it did work of its own first (a stage, as the skill
-// allows a verifier that starts one implementor): any tool call before that spawn that is not the plugin's or the skill tool's.
+// A session that started exactly one session in all is a hop, unless it did work of its own first, as a verifier does before it
+// starts one implementor. A heuristic: the transcript shows a tool call that is not the plugin's or the skill tool's, not what it was for.
 const own = (part) => !part.name.startsWith("courier_") && part.name !== "skill"
 const notOneInAll = (list) => {
   const tools = toolsOf(list)

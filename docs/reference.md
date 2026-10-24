@@ -142,8 +142,10 @@ counts it. Several spawns made at once cannot get past a limit together.
 **The brief.** Each spawned session is told its depth, the limits and how to report. Below
 `maxDepth` it is told to split its task when it has two or more independent, substantial parts,
 one session per part, and to do it itself otherwise. It never starts exactly one session for the
-whole task; one stage after another, a staged core, a review of the merged parts or the fixing of
-what a review found, is a part. It says which in one line: `split: no, because …; considered: …` or
+whole task; one session for one stage is a part: a staged core when 2 or more parts follow it, a
+review of the merged parts, the fixing of what a review found once verified. One session alone,
+with neither a stage before it nor 2 or more parts after it, is the whole task. It says which in
+one line: `split: no, because …; considered: …` or
 `split: <n> parts: …`. A session that splits starts the parts in one join group, ends its turn
 without polling, checks each part and sends one combined report. At `maxDepth` it is told to do the
 task itself. Any spawned session is told to send its parent a finding the other parts need (an
@@ -175,8 +177,11 @@ It says, in order:
    tests and documentation, and a review stage after the merge: one review session that may hand
    the reading to reviewers, then starts one verifier with their findings, which drops what does
    not hold and starts one implementor for what holds; the review session reports what was found,
-   held, fixed and refused, and running the checks on the fixed tree stays the parent's. One
-   session for one stage is a part, not the whole.
+   held, fixed and refused, and running the checks on the fixed tree stays the parent's. Under an
+   isolated session the review session, the verifier and the implementor are isolated too, each
+   worktree from the one above, and each merges the branch reported to it before it reports. One
+   session for one stage, after a stage of 2 or more parts or one done oneself, is a part, not the
+   whole.
 3. When one core is tightly coupled, stage it: do the core first, then the parts that depend on it.
 4. Plan the parts so that no two edit the same files.
 5. Start them in one join group, `isolate: true` where they edit files in parallel, and end the

@@ -5,7 +5,7 @@ import { ONE_PART_LINE, SKILL_ID, SPLIT_LINE } from "./kernel/protocol.js"
 
 /** Why a model loads the skill, listed with every session's available skills. */
 export const SKILL_DESCRIPTION =
-  "Load at the start of any implementation task that may have independent parts, or when a session started you and " +
+  "Load at the start of any implementation task that may have independent parts, or when a session started you, if " +
   "courier_spawn is among your tools: how to decide whether to split it across OpenCode sessions and state the decision, " +
   "plan and start the parts, end your turn, verify and integrate the reports, report upward, and handle a part gone wrong."
 
@@ -41,16 +41,20 @@ export const SKILL_CONTENT = [
   "   - the implementers, isolate: true where two edit at once, each with its checks and what to report;",
   "   - its e2e scenario, its documentation, sometimes a second test file;",
   "   - a review stage, after the merge, when the changes are done and it is to see the whole: one review session with " +
-    "fresh context, isolate: false, which edits nothing itself. It may hand the reading to 2 or more reviewers (one " +
-    "group, isolate: false, each reads the committed diff from one angle and reports its findings), then starts one " +
-    "verifier with their reports: a fresh session that checks each finding against the diff, drops what does not hold, " +
-    "and starts one implementor for what holds (isolate: false while nothing else edits, isolate: true each when there are " +
-    "2 or more), which fixes what it should and refuses, with the reason, what it should not. Each reports to the one " +
-    "that started it; the review session reports to you what was found, what held, what was fixed (the commits) and " +
-    "what was refused and why. It does not replace step 6: running the checks on the fixed tree stays yours, and so " +
-    "does settling a refusal you disagree with. Go through steps 3 to 6 once more for the stage. One session for one " +
-    "stage, after a stage of 2 or more parts or one you did yourself, is a part of the task, like a staged core, not " +
-    "the whole; a reviewer alone with nothing before it is not a stage.",
+    "fresh context, which edits nothing itself. It may hand the reading to 2 or more reviewers (one group, each reads " +
+    "the committed diff from one angle, given the branch and the base to diff, and reports its findings), then starts " +
+    "one verifier with their reports: a fresh session that checks each finding against the diff, drops what does not " +
+    "hold, and starts one implementor for what holds (2 or more, isolate: true each, only when the fixes are " +
+    "independent), which fixes what it should and refuses, with the reason, what it should not. Where the code is: " +
+    "when you work in the project's checkout, the review session, the verifier and the implementor go without isolate " +
+    "and the implementor commits in place; when you are isolated, start each of them with isolate: true, so that each " +
+    "worktree starts from the one above, and each merges the branch reported to it before it reports (step 7); " +
+    "reviewers only read and need no worktree. Each reports to the one that started it; the review session reports to " +
+    "you what was found, what held, what was fixed (the commits) and what was refused and why. It does not replace " +
+    "step 6: running the checks on the fixed tree stays yours, and so does settling a refusal you disagree with. Go " +
+    "through steps 3 to 7 once more for the stage, and do its work yourself when the levels below you are too few for " +
+    "it. One session for one stage, after a stage of 2 or more parts or one you did yourself, is a part of the task, " +
+    "like a staged core, not the whole; a reviewer alone with nothing before it is not a stage.",
   "   When the core is coupled: an implementation task with one tightly coupled core usually still has parts from that " +
     "list; weigh each of them. When the other parts depend on names and texts the core fixes, split in stages: the core " +
     "first, yourself when it is small or by one session when it is big, merged and committed before the rest start; then, " +

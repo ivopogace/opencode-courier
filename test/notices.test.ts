@@ -80,12 +80,12 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("then starts one verifier with their reports")
     expect(skill.SKILL_CONTENT).toContain("starts one implementor for what holds")
     expect(skill.SKILL_CONTENT).toContain("One session for one stage, after a stage of 2 or more parts or one you did yourself, is a part of the task")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("and so is one stage after another, such as a review of the merged parts")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("One session alone, with neither a stage before it nor 2 or more parts after it, is the whole task.")
     // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")
     // Step 1 and the root's pointer ask the root for one courier_recall before the decision, which the recursive checker
-    // allows; a session below it reads none, since its parent weighed the records before writing its brief.
+    // allows; a session below it reads none, since the root weighed the records before it split.
     expect(skill.SKILL_CONTENT).toContain(`At the root, first call ${memory.RECALL_TOOL} once`)
     expect(registered.find((tool) => tool.name === memory.RECALL_TOOL).description).toContain("a session another session started reads none")
     // Step 8 asks the top for one courier_note, none when there is nothing, naming the job it comes from; the brief never
@@ -106,7 +106,7 @@ describe("envelope and child brief", () => {
     expect(kernel.SPLIT_LINE).not.toContain("1 part")
     for (const depth of [1, 2, 3]) expect(tree.childBrief("ses_parent", "Fix the bug", depth, limits)).not.toContain(kernel.ONE_PART_LINE)
     for (const depth of [0, 1, 2, 3]) expect(tree.rolePart(depth, limits)).not.toContain(kernel.ONE_PART_LINE)
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task; a core you stage before the rest is one part of it, not the whole, when 2 or more parts follow it, and so is one stage after another")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it")
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("start the parts that run at once in one group, with the same group name for each, then end your turn")
     expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
     expect(tree.rolePart(1, limits)).toContain(`load the ${kernel.SKILL_ID} skill`)

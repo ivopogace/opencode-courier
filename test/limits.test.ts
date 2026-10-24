@@ -60,8 +60,8 @@ async function chainTo(child: (parentID: string, sessionID: string) => Promise<v
 }
 
 describe("readLimits", () => {
-  test("defaults to maxDepth 5, maxChildren 5 and maxTotal 20", () => {
-    expect(readLimits(undefined)).toEqual({ limits: { maxDepth: 5, maxChildren: 5, maxTotal: 20 }, problems: [] })
+  test("defaults to maxDepth 5, maxChildren 5 and maxTotal 30", () => {
+    expect(readLimits(undefined)).toEqual({ limits: { maxDepth: 5, maxChildren: 5, maxTotal: 30 }, problems: [] })
     expect(readLimits({ webhook: true })).toEqual({ limits: DEFAULT_LIMITS, problems: [] })
   })
 
@@ -75,7 +75,7 @@ describe("readLimits", () => {
     expect(problems).toEqual([
       "maxDepth must be a positive integer, not 0; using 5",
       'maxChildren must be a positive integer, not "4"; using 5',
-      "maxTotal must be a positive integer, not 2.5; using 20",
+      "maxTotal must be a positive integer, not 2.5; using 30",
     ])
   })
 })

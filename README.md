@@ -100,7 +100,7 @@ Set the server options on the plugin's entry in the **global** config,
 |---|---|---|
 | `maxDepth` | `5` | How deep a tree goes. Your session is depth 0. A session at `maxDepth` cannot start sessions. |
 | `maxChildren` | `5` | Live children one session may have. |
-| `maxTotal` | `20` | Live spawned sessions in one tree. |
+| `maxTotal` | `30` | Live spawned sessions in one tree. |
 | `memory` | `true` | Keep a record of each session tree for later orchestrators ([memory](docs/reference.md#memory)). |
 | `nativeChildren` | `false` | Create non-isolated children as OpenCode subagents ([native children](docs/reference.md#native-child-sessions)). |
 | `webhook` | off | Start the webhook receiver ([webhooks](docs/reference.md#webhooks)). |

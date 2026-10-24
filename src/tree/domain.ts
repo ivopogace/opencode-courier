@@ -15,7 +15,7 @@ export interface Limits {
   readonly maxTotal: number
 }
 
-export const DEFAULT_LIMITS: Limits = { maxDepth: 5, maxChildren: 5, maxTotal: 20 }
+export const DEFAULT_LIMITS: Limits = { maxDepth: 5, maxChildren: 5, maxTotal: 30 }
 
 /** The limits in the plugin's options; one that is not a positive integer keeps its default and is named in `problems`. */
 export function readLimits(options: unknown) {

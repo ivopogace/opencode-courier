@@ -70,7 +70,7 @@ directory.
 |---|---|---|
 | `maxDepth` | `5` | The deepest a spawned session may be. Your session is depth 0. |
 | `maxChildren` | `5` | Live children one session may have. |
-| `maxTotal` | `20` | Live spawned sessions in one tree; the top is not counted. |
+| `maxTotal` | `30` | Live spawned sessions in one tree; the top is not counted. |
 | `memory` | `true` | `false` turns [memory](#memory) off. |
 | `nativeChildren` | `false` | `true` creates non-isolated children as OpenCode subagents ([native child sessions](#native-child-sessions)). |
 | `webhook` | off | An object, or `true` for every default, starts the [webhook receiver](#webhooks). |

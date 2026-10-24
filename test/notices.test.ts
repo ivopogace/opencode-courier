@@ -67,8 +67,8 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("When the core is coupled:")
     expect(skill.SKILL_CONTENT).toContain("A staged core is one part of the task, not the whole task")
     expect(skill.SKILL_CONTENT).toContain("Never hand the checking to another session")
-    // A leaf has no courier_spawn or courier_recall, so the skill sends it straight to its report.
-    expect(skill.SKILL_CONTENT).toContain("If courier_spawn is not among your tools, you are at the deepest level")
+    // A session without courier_spawn, a leaf or a root that cannot spawn, is sent to do the task itself.
+    expect(skill.SKILL_CONTENT).toContain("If courier_spawn is not among your tools, you cannot split")
     // Step 4: a permission request is proposed, a question asked of the person; the skill never answers for them.
     expect(skill.SKILL_CONTENT).toContain("propose once with courier_answer, or reject with the reason when")
     expect(skill.SKILL_CONTENT).toContain("ask the person with your question tool, with the questions the notice gives")
@@ -84,6 +84,7 @@ describe("envelope and child brief", () => {
     // Step 1 and the root's pointer ask the root for one courier_recall before the decision, which the recursive checker
     // allows; a session below it reads none, since its parent weighed the records before writing its brief.
     expect(skill.SKILL_CONTENT).toContain(`At the root, first call ${memory.RECALL_TOOL} once`)
+    expect(registered.find((tool) => tool.name === memory.RECALL_TOOL).description).toContain("a session another session started reads none")
     // Step 8 asks the top for one courier_note, none when there is nothing, naming the job it comes from; the brief never
     // mentions it: children write no lesson. The tool, the skill and the input ask for the lesson's scope, not only splitting.
     expect(skill.SKILL_CONTENT).toContain(`one ${memory.NOTE_TOOL} with that one line; none when there is nothing`)

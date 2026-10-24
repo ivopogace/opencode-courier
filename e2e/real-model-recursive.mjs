@@ -32,7 +32,7 @@ const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
 const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 3)
 // Calls that look at other sessions; right after spawning, or more than once a turn, that is polling.
 const LOOKS = new Set(["courier_status", "courier_children", "courier_tree"])
-// courier_recall counts as a look too, with one allowance: the one call the skill asks for, before the split, in the first turn.
+// courier_recall counts as a look too, with one allowance: the one call the skill asks of the root, before its split, in its first turn.
 const RECALL = "courier_recall"
 const SKILL = "courier-orchestrate"
 const loadsAnySkill = (part) => part.type === "tool" && part.name === "skill" && part.state.status === "completed"
@@ -238,20 +238,22 @@ const sleepsBeforeSpawn = (list) => {
 }
 const looksIn = (turn, exempt = new Set()) =>
   toolsOf(turn).filter((part) => LOOKS.has(part.name) || part.name === RECALL || (sleeps(part) && !exempt.has(part))).length
-// The one courier_recall call a turn may make before its first courier_spawn, which the skill's step 1 asks for; a second, or one after a spawn, is a look like any other.
-const allowedRecall = (turn) => {
+// The one courier_recall call the root's turn may make before its first courier_spawn, which the skill's step 1 asks for; a
+// second, one after a spawn, or any below the root, is a look like any other.
+const allowedRecall = (id, turn) => {
+  if (id !== rootID) return 0
   const tools = toolsOf(turn)
   const firstSpawn = tools.findIndex(childOf)
   const recalls = tools.flatMap((part, index) => (part.name === RECALL ? [index] : []))
   return recalls.length === 1 && (firstSpawn === -1 || recalls[0] < firstSpawn) ? 1 : 0
 }
-// Any look in the first turn, right after spawning, is polling, but the one recall before the split; later, more than one look a turn is a loop.
-const polledIn = (list) => {
+// Any look in the first turn, right after spawning, is polling, but the root's one recall before its split; later, more than one look a turn is a loop.
+const polledIn = (id, list) => {
   const [firstTurn = [], ...later] = turnsOf(list)
   const exempt = sleepsBeforeSpawn(list)
-  return looksIn(firstTurn, exempt) - allowedRecall(firstTurn) > 0 || later.some((turn) => looksIn(turn, exempt) > 1)
+  return looksIn(firstTurn, exempt) - allowedRecall(id, firstTurn) > 0 || later.some((turn) => looksIn(turn, exempt) > 1)
 }
-const pollers = orchestrators.filter(([, entry]) => polledIn(entry.list)).map(([id]) => id)
+const pollers = orchestrators.filter(([id, entry]) => polledIn(id, entry.list)).map(([id]) => id)
 // The sessions a turn started; a sub-orchestrator starts its batch in one turn, never one session alone (only the root may).
 // With --staged the batch may follow a turn that started the core's session.
 const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length

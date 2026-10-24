@@ -452,7 +452,7 @@ It never holds a report's body, artifacts or replies. A part's status is a repor
 `interrupted`, `stopped`, `stalled`, `out` (owes a report), or `gone` (deleted before it settled).
 
 **`courier_recall { sessionID? }`** lists the project's records, pinned first, then newest first,
-one line each:
+one line each; its description asks the root for the one call and a spawned session for none:
 
 ```
 - ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 2 done, 1 partial, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 5 days ago · $1.28 · finished · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."

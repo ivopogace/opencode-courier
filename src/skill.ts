@@ -11,13 +11,13 @@ export const SKILL_DESCRIPTION =
 
 /**
  * The skill's text; it names no limits, which the role part and the brief give for the session's own tree.
- * Steps 3, 4 and 6 repeat the brief's split rule on purpose: the root has no brief, so only the skill gives it.
+ * Steps 1, 3, 4 and 6 repeat the brief's split rule on purpose: the root has no brief, so only the skill gives it.
  */
 export const SKILL_CONTENT = [
   "How to split a task across OpenCode sessions with opencode-courier, and bring the results back up. Your brief, or the " +
     "opencode-courier role line in your system prompt, names your depth in the session tree and its limits. If " +
-    "courier_spawn is not among your tools, you are at the deepest level: do your task yourself and report upward, as " +
-    "your brief says.",
+    "courier_spawn is not among your tools, you cannot split: do the task yourself, and report upward as your brief says " +
+    "if a session started you.",
   "",
   "1. Decide: split or do.",
   "   - At the root, first call courier_recall once: it lists how earlier trees in this project were split and how each " +
@@ -42,7 +42,8 @@ export const SKILL_CONTENT = [
   "   - its e2e scenario, its documentation, sometimes a second test file;",
   "   - a reviewer with fresh context, isolate: false, which edits nothing: it reads the committed diff against the task " +
     "and the repository's rules and reports its findings, which you act on. It does not replace step 6: running the " +
-    "checks stays yours. Start it after the merge when it is to see the whole: a reviewer after 2 or more parts is one " +
+    "checks stays yours. Start it after the merge when it is to see the whole, and go through steps 3 to 6 once more " +
+    "for it: a reviewer after 2 or more parts is one " +
     "part of the task, like a staged core, not the whole. A reviewer alone, after work you did yourself, is the one " +
     "session the rule above forbids: review that yourself.",
   "   When the core is coupled: an implementation task with one tightly coupled core usually still has parts from that " +

@@ -138,7 +138,8 @@ child reported it; the reply holds it. With `COURIER_NATIVE=1` the script answer
 > three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
 
 The checker (`e2e/real-model-recursive.mjs`) reads every session reached from the root and makes
-nine checks: the root spawned two or more in its first turn and ended it; no orchestrator polled; a
+nine checks: the root spawned two or more in its first turn and ended it; no orchestrator polled (the
+root's one `courier_recall` before its split is allowed, a sub-orchestrator's is not); a
 child spawned two or more of its own in one turn, and no sub-orchestrator started exactly one; no
 session went past `maxDepth`; every session reported with a status; each sub-orchestrator reported
 once, after its children; the files and the reply hold the values. Its notes say who loaded the skill

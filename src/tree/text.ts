@@ -24,6 +24,9 @@ export function childBrief(parentID: string, task: string, depth: number, limits
       "concrete ask, then end your turn and wait for its answer; never end quietly.",
     "A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. " +
       "A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.",
+    "If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API " +
+      "that behaves otherwise, something the person told you), send it to the parent at once with courier_send without a " +
+      "status, then carry on: it passes it on to the sessions it affects. Progress alone is not worth a message.",
     "If you need the person to decide something, use your question tool; it reaches them through the session that started you.",
     "",
     ...(branch ? [...isolationRule(branch, depth < limits.maxDepth), ""] : []),

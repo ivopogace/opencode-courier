@@ -103,7 +103,7 @@ for a git elsewhere.
 
 | Tool | Parameters | Does |
 |---|---|---|
-| `courier_spawn` | `task`, `title?`, `agent?`, `isolate?`, `group?` | Creates a session, sends it the task and a brief, and returns at once. `isolate: true` gives it its own [worktree](#worktrees). With a `group`, its report is held with the [group's](#join-groups). Refused past the [limits](#session-trees-and-their-limits). |
+| `courier_spawn` | `task`, `title?`, `agent?`, `model?`, `variant?`, `isolate?`, `group?` | Creates a session, sends it the task and a brief, and returns at once. `model` and `variant` choose [what it runs on](#the-model-a-child-runs-on). `isolate: true` gives it its own [worktree](#worktrees). With a `group`, its report is held with the [group's](#join-groups). Refused past the [limits](#session-trees-and-their-limits). |
 | `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `queue?` | Delivers a message, signed with the sender's id, waking the session if idle. It steers into a running turn, or waits for its end with `queue: true`. From a child to its parent, a `status` makes it the child's [report](#a-childs-report). |
 | `courier_status` | `sessionID` | One look at a session: its last turn's outcome, how long it has been idle, when it was archived, its last reply, and the requests and questions it waits on (`pending`). For check-ins, not for waiting. |
 | `courier_children` | `sessionID?` | The sessions this one (or `sessionID`) started, each with what `courier_status` shows, its directory, whether it is isolated, when it started and its [group](#join-groups). |
@@ -118,9 +118,26 @@ for a git elsewhere.
 | `courier_recall` | `sessionID?` | Lists the project's [tree records](#memory), or gives one in full. |
 | `courier_note` | `text` | Writes the [lesson](#the-lesson) of the caller's tree. |
 
-## Session trees and their limits
+## The model a child runs on
 
-A child runs on its parent's model, unless its `agent` names a model of its own.
+A child runs on its parent's model, unless its `agent` names a model of its own, or `courier_spawn`'s
+`model` names one, as `provider/model` the way OpenCode names them (`opencode/gpt-5-nano`): the
+argument goes first, then the agent's model, then the parent's. `variant`, OpenCode's name for a
+model's reasoning effort (`low`, `medium`, `high`, or whatever the model has; `default` is the
+provider's own), replaces the variant of whichever model was chosen. A parent whose session names
+no model runs on OpenCode's default, and a `variant` alone applies to that. A `model` without a
+`variant` runs at that model's default, not at the parent's variant, since variants are a model's
+own.
+
+Both are checked against the models OpenCode lists for the location: a model it does not list, or
+a variant the model has not, is refused with a tool error naming what is listed, and nothing is
+started. When the listing cannot be read, the choice goes through unchecked, and OpenCode fails the
+child's first turn, which is [reported](#a-child-that-fails). A child on another model than its
+parent's is named with it, as `provider/model#variant`, in the spawn's result, in `courier_children`
+and in the [tree panel](#the-tree-panel)'s row. The `courier-orchestrate` skill says to leave both
+unset unless the part plainly calls for a cheaper or a stronger model.
+
+## Session trees and their limits
 
 Any spawned session can call `courier_spawn` too, so sessions form a tree. The session nobody
 spawned is its top, at depth 0. `courier_spawn` refuses a spawn, naming the limit and what to do
@@ -187,7 +204,9 @@ It says, in order:
 4. Plan the parts so that no two edit the same files, name in each task the skills the session
    should load for it, from those the parent sees listed, and say when a part is a whole job that
    delivers itself.
-5. Start them in one join group, `isolate: true` where they edit files in parallel, and end the
+5. Start them in one join group, `isolate: true` where they edit files in parallel, `model` and
+   `variant` unset unless a part plainly calls for a cheaper or a stronger
+   [model](#the-model-a-child-runs-on), and end the
    turn without polling; count 6 live sessions per part that runs a review stage against
    `maxTotal`, start the parts that fit in one group and the rest in a group of their own once the
    first group has reported, and start a job that depends on another after that one is done,
@@ -598,7 +617,8 @@ the tree under it. It is fullscreen under 108 columns.
 ```
 
 Each row has a mark (`✓` reported, a spinner while running, `●` waiting on you, `!` stalled, `✗`
-failed or interrupted), the title, what it does, its report, its group's standing and `isolated`.
+failed or interrupted), the title, what it does, its report, its group's standing, `isolated` and
+its [model](#the-model-a-child-runs-on) when that is not its parent's.
 Under it: a progress bar for an orchestrator, each ask for a session waiting on you, and for a leaf
 how long it ran, its last tool call, its context use and its cost. Digby, the courier's mole, digs
 in the header and follows the tree's state.

@@ -249,6 +249,22 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
 - **Activating:** the TUI's `/skills` attaches `skills: [{ id }]` to the prompt, and the text goes
   first in that message. A compaction keeps it (`messageToText`, `session/recent-text.ts`).
 
+## Models and variants
+
+- `session.create` takes `model: { providerID, id, variant? }` (`Model.Ref`) from 2.0.4 on. A session that
+  names a model runs on it at its own `variant`; the agent's `model.variant` counts only for a session
+  with no model (`session/runner/model.ts`), so the plugin passes the agent's variant with its model.
+- A model OpenCode does not have, or a variant the model has not, fails the session's first turn
+  (`ModelUnavailableError`, `VariantUnavailableError` in `model-resolver.ts`), so `courier_spawn`
+  checks a choice against `model.list()` first: `models.available()`, the enabled models, each with its
+  `variants`. `"default"` is no variant (`withVariant`), and `session.get` fills `variant: "default"`.
+- A configured model given neither `capabilities.reasoning` nor `variants` gets its package's default
+  ones (`variant.ts`): `low`, `medium` and `high` for an OpenAI-compatible one, each the setting
+  `reasoningEffort`, which reaches the provider as `reasoning_effort`. So the live suite's `mock/chat`
+  and `mock/other` have them.
+- A session `opencode run` without `--model`, or the API, creates has no `model`: the runner takes
+  `model.default()`. A `variant` alone then applies to that default.
+
 ## Native `parentID`
 
 What `nativeChildren` rests on:

@@ -9,11 +9,8 @@ export interface ModelChoice {
 }
 
 /**
- * The model a child runs on, always passed on so no OpenCode version falls back to its default: the `model` named,
- * else the named agent's own, else its parent's; a `variant` named replaces the chosen model's, and applies to
- * OpenCode's default model when the parent's session names none, as the parent runs on it then. A named model or
- * variant is checked against the models OpenCode lists, and refused when it is not there. `parent` is the parent's
- * own model, for the roster to tell a child on another one; `undefined` when it could not be read.
+ * The model a child runs on: the `model` named, else the agent's, else the parent's (OpenCode's default for a `variant`
+ * alone when the parent's session names none), with the `variant` named; `parent` is the parent's own, for the roster.
  */
 export async function chooseModel(ports: CourierPorts, parentID: string, choice: ModelChoice, agent: string | undefined) {
   // Some models send null, or an empty string, for an optional field they leave out.
@@ -29,7 +26,8 @@ export async function chooseModel(ports: CourierPorts, parentID: string, choice:
     if (variant !== undefined) throw new Error(variantWithoutModelRefusal(variant))
     return { model: undefined, parent }
   }
-  const model: ModelRef = { providerID: base.providerID, id: base.id, ...(variant !== undefined ? { variant } : base.variant !== undefined ? { variant: base.variant } : {}) }
+  const chosen = variant ?? base.variant
+  const model: ModelRef = { providerID: base.providerID, id: base.id, ...(chosen !== undefined ? { variant: chosen } : {}) }
   if (own || variant !== undefined) await check(ports, model, own !== undefined)
   return { model, parent }
 }

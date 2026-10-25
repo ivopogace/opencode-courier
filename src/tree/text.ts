@@ -136,19 +136,21 @@ export function unknownModelRefusal(model: ModelRef, known: ReadonlyArray<Pick<M
   const name = `${model.providerID}/${model.id}`
   const ids = known.filter((item) => item.providerID === model.providerID).map((item) => item.id)
   const providers = [...new Set(known.map((item) => item.providerID))]
-  const hint = ids.length
-    ? `The models of ${model.providerID} here are ${some(ids)}.`
-    : providers.length
-      ? `The providers here are ${some(providers)}.`
-      : "No model is listed here at all."
+  let hint = "No model is listed here at all."
+  if (ids.length) hint = `The models of ${model.providerID} here are ${some(ids)}.`
+  else if (providers.length) hint = `The providers here are ${some(providers)}.`
   return named
     ? `Not started: OpenCode lists no model ${name} here. ${hint} Leave model unset to run the session on your own model.`
     : `Not started: the variant cannot be checked, since OpenCode lists no model ${name} here, the one the session would run on. ${hint}`
 }
 
-export const unknownVariantRefusal = (model: ModelRef, variants: ReadonlyArray<string>) =>
-  `Not started: the model ${model.providerID}/${model.id} has no variant ${JSON.stringify(model.variant)}. ` +
-  `Its variants are ${variants.length ? `${variants.join(", ")} and default` : "default alone"}; leave variant unset for the model's default.`
+export function unknownVariantRefusal(model: ModelRef, variants: ReadonlyArray<string>) {
+  const listed = variants.length ? `${variants.join(", ")} and default` : "default alone"
+  return (
+    `Not started: the model ${model.providerID}/${model.id} has no variant ${JSON.stringify(model.variant)}. ` +
+    `Its variants are ${listed}; leave variant unset for the model's default.`
+  )
+}
 
 export const variantWithoutModelRefusal = (variant: string) =>
   `Not started: variant ${JSON.stringify(variant)} needs a model to apply to, and neither your own model nor OpenCode's default could be read. ` +
@@ -204,8 +206,9 @@ export function spawnText(child: {
       "turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a question " +
       "or a failed turn still reaches you at once."
     : "It will report back with courier_send, which starts a new turn for you."
+  const on = child.model ? `, on ${child.model}` : ""
   return (
-    `Started session ${child.sessionID} in ${child.directory}${child.model ? `, on ${child.model}` : ""}. ${reports} Once you have started every session you need, ` +
+    `Started session ${child.sessionID} in ${child.directory}${on}. ${reports} Once you have started every session you need, ` +
     `end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive.${warning}`
   )
 }

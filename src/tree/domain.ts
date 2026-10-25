@@ -147,7 +147,10 @@ export function parseModelName(text: string): Pick<ModelRef, "providerID" | "id"
 }
 
 /** A model as the roster, the panel and the results name it: `provider/model`, with `#variant` for a variant that is not the default. */
-export const modelName = (model: ModelRef) => `${model.providerID}/${model.id}${model.variant && model.variant !== "default" ? `#${model.variant}` : ""}`
+export function modelName(model: ModelRef) {
+  const variant = model.variant && model.variant !== "default" ? `#${model.variant}` : ""
+  return `${model.providerID}/${model.id}${variant}`
+}
 
 /** `lineage` over roster entries already read. */
 export function lineageIn(entries: ReadonlyArray<RosterEntry>, sessionID: string) {

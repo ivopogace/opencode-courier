@@ -677,6 +677,7 @@ describe("spawn", () => {
       pending: async () => [],
       forms: async () => [],
       agent: { get: async () => ({ data: {} }) },
+      defaultModel: async () => undefined,
       worktree: {},
       session: {
         ...ports.session,

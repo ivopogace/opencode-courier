@@ -5,16 +5,23 @@ import { listChildren, status } from "../src/tree/status.js"
 import type { CourierPorts } from "../src/tree/ports.js"
 import { DEFAULT_LIMITS } from "../src/tree/domain.js"
 import { describeFailure, envelope } from "../src/kernel/protocol.js"
-import { childBrief, reportBody } from "../src/tree/text.js"
+import { childBrief, modelFormatRefusal, reportBody, spawnText, variantWithoutModelRefusal } from "../src/tree/text.js"
 import { joinGroup } from "../src/tree/group.js"
 import { childStore, groupStore, memberKey, progressKey, rosterKey, settledKey } from "../src/tree/store.js"
 
 type Call = { method: string; input: any }
 
 /** What spawn did after looking up the model to give the child. */
-const afterLookups = (calls: Call[]) => calls.filter((call) => call.method !== "session.get" && call.method !== "agent.get")
+const afterLookups = (calls: Call[]) => calls.filter((call) => call.method !== "session.get" && call.method !== "agent.get" && call.method !== "model.list")
 
-function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unknown>; agent?: Record<string, unknown> } = {}) {
+type Known = { providerID: string; id: string; variants: string[] }
+/** The models the fake OpenCode lists: the parent's usual one, with the effort variants, and a smaller one with none. */
+const KNOWN: Known[] = [
+  { providerID: "mock", id: "chat", variants: ["low", "medium", "high"] },
+  { providerID: "mock", id: "small", variants: [] },
+]
+
+function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unknown>; agent?: Record<string, unknown>; models?: Known[] | Error } = {}) {
   const calls: Call[] = []
   const store = new Map<string, unknown>()
   const nudges: number[] = []
@@ -50,6 +57,11 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
       context: record("session.context", overrides.messages ?? []),
     },
     agent: { get: record("agent.get", { data: { id: "build", ...overrides.agent } }) },
+    models: async () => {
+      calls.push({ method: "model.list", input: undefined })
+      if (overrides.models instanceof Error) throw overrides.models
+      return (overrides.models ?? KNOWN).map((model) => ({ ...model, context: 1000 }))
+    },
     worktree: {
       create: record("worktree.create", { directory: "/repo/.worktrees/ses" }),
       remove: record("worktree.remove", undefined),
@@ -348,6 +360,148 @@ describe("spawn", () => {
 
     expect(child.sessionID).toBe("ses_child")
     expect(calls[0]!.input).not.toHaveProperty("model")
+  })
+
+  describe("with a model or variant of the caller's choosing", () => {
+    const parent = { id: "chat", providerID: "mock", variant: "default" }
+
+    test("runs the child on the named model, checked against the models OpenCode lists, at that model's default variant", async () => {
+      const { ports, calls, store } = fakePorts({ info: { model: parent } })
+
+      const child = await spawn(ports, "ses_parent", { task: "t", model: "mock/small" })
+
+      expect(calls.map((call) => call.method)).toEqual(["session.get", "model.list", "session.create", "session.prompt"])
+      expect(calls[2]!.input).toMatchObject({ model: { providerID: "mock", id: "small" } })
+      expect(calls[2]!.input.model).not.toHaveProperty("variant")
+      expect(child).toEqual({ sessionID: "ses_child", directory: "/repo", model: "mock/small" })
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({ model: "mock/small" })
+      expect(spawnText(child)).toContain("Started session ses_child in /repo, on mock/small.")
+    })
+
+    test("the named model goes before the agent's own and the parent's; the agent is not even looked up", async () => {
+      const { ports, calls } = fakePorts({ info: { model: parent }, agent: { model: { id: "chat", providerID: "mock", variant: "high" } } })
+
+      await spawn(ports, "ses_parent", { task: "t", agent: "build", model: "mock/small" })
+
+      expect(calls.map((call) => call.method)).not.toContain("agent.get")
+      expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ agent: "build", model: { providerID: "mock", id: "small" } })
+    })
+
+    test("a variant alone applies to the inherited model, the parent's", async () => {
+      const { ports, calls, store } = fakePorts({ info: { model: parent } })
+
+      const child = await spawn(ports, "ses_parent", { task: "t", variant: "high" })
+
+      expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ model: { providerID: "mock", id: "chat", variant: "high" } })
+      expect(child).toMatchObject({ model: "mock/chat#high" })
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({ model: "mock/chat#high" })
+    })
+
+    test("a variant alone applies to the agent's model, replacing the agent's own variant", async () => {
+      const { ports, calls } = fakePorts({ info: { model: parent }, agent: { model: { id: "chat", providerID: "mock", variant: "high" } } })
+
+      await spawn(ports, "ses_parent", { task: "t", agent: "build", variant: "low" })
+
+      expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ model: { providerID: "mock", id: "chat", variant: "low" } })
+    })
+
+    test("a model and a variant together", async () => {
+      const { ports, calls, store } = fakePorts({ info: { model: parent } })
+
+      await spawn(ports, "ses_parent", { task: "t", model: "mock/chat", variant: "medium" })
+
+      expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ model: { providerID: "mock", id: "chat", variant: "medium" } })
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({ model: "mock/chat#medium" })
+    })
+
+    test("the caller's own model named again is not recorded as another one, nor said in the result", async () => {
+      const { ports, store } = fakePorts({ info: { model: parent } })
+
+      const child = await spawn(ports, "ses_parent", { task: "t", model: "mock/chat", variant: "default" })
+
+      expect(child).toEqual({ sessionID: "ses_child", directory: "/repo" })
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("model")
+    })
+
+    test("the agent's model, differing from the parent's, is recorded without a choice made", async () => {
+      const { ports, store } = fakePorts({ info: { model: parent }, agent: { model: { id: "small", providerID: "mock" } } })
+
+      const child = await spawn(ports, "ses_parent", { task: "t", agent: "build" })
+
+      expect(child).toMatchObject({ model: "mock/small" })
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({ model: "mock/small" })
+    })
+
+    test("null and blank, as some models send an optional field, are left out", async () => {
+      const { ports, calls } = fakePorts({ info: { model: parent } })
+
+      await spawn(ports, "ses_parent", { task: "t", model: null as any, variant: " " })
+
+      expect(calls.map((call) => call.method)).toEqual(["session.get", "session.create", "session.prompt"])
+      expect(calls[1]!.input).toMatchObject({ model: parent })
+    })
+
+    test("refuses a model not named provider/model, before anything is looked up", async () => {
+      const { ports, calls } = fakePorts({ info: { model: parent } })
+
+      await expect(spawn(ports, "ses_parent", { task: "t", model: "small" })).rejects.toThrow(modelFormatRefusal("small"))
+      await expect(spawn(ports, "ses_parent", { task: "t", model: "mock/" })).rejects.toThrow("Not started: model must be provider/model")
+      expect(calls).toEqual([])
+    })
+
+    test("refuses a model OpenCode does not list, naming the provider's models, or the providers for an unknown provider", async () => {
+      const { ports, calls, store } = fakePorts({ info: { model: parent } })
+
+      await expect(spawn(ports, "ses_parent", { task: "t", model: "mock/huge" })).rejects.toThrow(
+        "Not started: OpenCode lists no model mock/huge here. The models of mock here are chat, small. Leave model unset",
+      )
+      await expect(spawn(ports, "ses_parent", { task: "t", model: "other/huge" })).rejects.toThrow("The providers here are mock.")
+      expect(calls.map((call) => call.method)).toEqual(["session.get", "model.list", "session.get", "model.list"])
+      expect(store.size).toBe(0)
+    })
+
+    test("refuses a variant the model has not, naming its variants", async () => {
+      const { ports, calls } = fakePorts({ info: { model: parent } })
+
+      await expect(spawn(ports, "ses_parent", { task: "t", variant: "max" })).rejects.toThrow(
+        'Not started: the model mock/chat has no variant "max". Its variants are low, medium, high and default',
+      )
+      await expect(spawn(ports, "ses_parent", { task: "t", model: "mock/small", variant: "high" })).rejects.toThrow("Its variants are default alone")
+      expect(calls.map((call) => call.method)).not.toContain("session.create")
+    })
+
+    test("refuses a variant on an inherited model OpenCode does not list", async () => {
+      const { ports } = fakePorts({ info: { model: { id: "gone", providerID: "mock" } } })
+
+      await expect(spawn(ports, "ses_parent", { task: "t", variant: "high" })).rejects.toThrow(
+        "Not started: the variant cannot be checked, since OpenCode lists no model mock/gone here, the one the session would run on.",
+      )
+    })
+
+    test("refuses a variant when the caller's model cannot be read", async () => {
+      const { ports } = fakePorts()
+      ;(ports.session as any).get = async () => {
+        throw new Error("lookup failed")
+      }
+
+      await expect(spawn(ports, "ses_parent", { task: "t", variant: "high" })).rejects.toThrow(variantWithoutModelRefusal("high"))
+    })
+
+    test("passes a choice through unchecked, logging why, when the models cannot be listed", async () => {
+      const { ports, calls, logs } = fakePorts({ info: { model: parent }, models: new Error("no catalog") })
+
+      await spawn(ports, "ses_parent", { task: "t", model: "mock/huge", variant: "max" })
+
+      expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ model: { providerID: "mock", id: "huge", variant: "max" } })
+      expect(logs).toEqual(["courier_spawn: cannot list the models to check mock/huge#max against: Error: no catalog"])
+    })
+
+    test("refuses the lot before any worktree is made", async () => {
+      const { ports, calls } = fakePorts({ info: { model: parent } })
+
+      await expect(spawn(ports, "ses_parent", { task: "t", isolate: true, model: "mock/huge" })).rejects.toThrow("Not started")
+      expect(calls.map((call) => call.method)).not.toContain("worktree.create")
+    })
   })
 })
 describe("spawn, into a group", () => {

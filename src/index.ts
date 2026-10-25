@@ -145,7 +145,13 @@ export const courier = () => Plugin.define({
       directory: ctx.location.directory,
       projectID: ctx.location.project.id,
       now: Date.now,
-      windows: async () => (await ctx.model.list()).data.map((model) => ({ providerID: model.providerID, id: model.id, context: model.limit.context })),
+      models: async () =>
+        (await ctx.model.list()).data.map((model) => ({
+          providerID: model.providerID,
+          id: model.id,
+          context: model.limit.context,
+          variants: model.variants.map((variant) => variant.id),
+        })),
       head: headOf,
       dirty: dirtyOf,
       pending: async (sessionID) => {
@@ -197,8 +203,8 @@ export const courier = () => Plugin.define({
     const swept = sweepRecords(ctx.storage, Date.now()).catch((error: unknown) => log(`courier memory sweep: ${String(error)}`))
     // The windows the memory reads each part's context use by; a tree whose top runs in a location with memory off is not recorded.
     const windowed = ports
-      .windows()
-      .then((windows) => windows.forEach((window) => memoryState.windows.set(`${window.providerID}/${window.id}`, window)))
+      .models()
+      .then((models) => models.forEach(({ providerID, id, context }) => memoryState.windows.set(`${providerID}/${id}`, { providerID, id, context })))
       .catch((error: unknown) => log(`courier memory: cannot list the models' context windows: ${String(error)}`))
     if (!memory) memoryState.off.add(ctx.location.directory)
     const leaveRelay = joinRelay(questionPorts)

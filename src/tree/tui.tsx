@@ -307,6 +307,7 @@ export function statusParts(row: Row, now = Date.now()) {
     { text: reportWords(row.report, row.stopped), kind: "report" },
     { text: row.group ? `group ${row.group.name} ${row.group.standing}` : "", kind: "plain" },
     { text: row.isolated ? "isolated" : "", kind: "plain" },
+    { text: row.model ?? "", kind: "plain" },
   ]
   return parts.filter((part) => part.text)
 }

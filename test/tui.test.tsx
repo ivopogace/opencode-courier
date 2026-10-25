@@ -427,6 +427,7 @@ describe("the tree panel's lines", () => {
       "idle · reported done · group pair held",
     )
     expect(statusLine(row("ses_a", { state: "waiting", isolated: true }))).toBe("waiting on you · owes a report · isolated")
+    expect(statusLine(row("ses_a", { state: "waiting", isolated: true, model: "mock/small#high" }))).toBe("waiting on you · owes a report · isolated · mock/small#high")
     expect(statusLine(row("ses_a", { outcome: "failed", report: { state: "ended", progressed: false } }))).toBe("failed · ended without a report")
     const pad = (value: number) => String(value).padStart(2, "0")
     const lifts = new Date(NOW + 25 * 60_000)

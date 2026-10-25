@@ -19,6 +19,21 @@ export const SpawnInput = Schema.Struct({
   task: Schema.String.annotate({ description: "What the new session should do. It is told who started it and how to report back." }),
   title: Schema.optional(Schema.String.annotate({ description: "Session title; defaults to the task's first line." })),
   agent: Schema.optional(Schema.String.annotate({ description: "Agent to run the session with; defaults to the default agent." })),
+  model: Schema.optional(
+    Schema.String.annotate({
+      description:
+        "The model to run the session on, as provider/model (opencode/gpt-5-nano). Leave it unset for your own model, or the " +
+        "agent's own if it names one. Refused when OpenCode does not list it here.",
+    }),
+  ),
+  variant: Schema.optional(
+    Schema.String.annotate({
+      description:
+        "The model's variant, its reasoning effort as OpenCode names it (low, medium, high, or another the model has). Leave " +
+        "it unset for the chosen model's own; with a model of your own choosing, that is the model's default. Refused when " +
+        "the model has no such variant.",
+    }),
+  ),
   isolate: Schema.optional(
     Schema.Boolean.annotate({ description:
         "Run the session in its own git worktree so parallel sessions don't share files. From a session that is itself " +
@@ -114,7 +129,8 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
     name: "courier_spawn",
     options: { codemode: false },
     description:
-      "Start a new OpenCode session on a task and return immediately. It runs on your model. The session reports " +
+      "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a " +
+      "variant (reasoning effort) fit for the task. The session reports " +
       "back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report " +
       "instead, it waits for a permission or it asks a question. Give a batch of parallel sessions one group name to " +
       "be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_status in a " +

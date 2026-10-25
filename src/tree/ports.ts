@@ -182,8 +182,8 @@ export interface CourierPorts {
   readonly pending: (sessionID: string) => Promise<ReadonlyArray<Pending>>
   /** The forms a session shows, which only the person can answer: web search's, a plugin's; not the question tool's. */
   readonly forms: (sessionID: string) => Promise<ReadonlyArray<ShownForm>>
-  /** The context windows of the models available, by provider and model id, as the panel reads a session's context use. */
-  readonly windows: () => Promise<ReadonlyArray<ModelWindow>>
+  /** The models available, each with its context window and variants, as courier_spawn checks a choice and the panel reads a session's context use. */
+  readonly models: () => Promise<ReadonlyArray<KnownModel>>
   readonly limits: Limits
   /** The `nativeChildren` option: a child started without isolate is created with OpenCode's own `parentID`. */
   readonly nativeChildren?: boolean
@@ -195,11 +195,16 @@ export interface CourierPorts {
   readonly log: (message: string) => void
 }
 
-/** A model's context window in tokens, as `CourierPorts.windows` lists it. */
+/** A model's context window in tokens, as the panel and the memory read a session's context use by. */
 export interface ModelWindow {
   readonly providerID: string
   readonly id: string
   readonly context: number
+}
+
+/** A model OpenCode lists, as `CourierPorts.models` gives it: its window, and the ids of its variants. */
+export interface KnownModel extends ModelWindow {
+  readonly variants: ReadonlyArray<string>
 }
 
 /** A form a session shows, as `CourierPorts.forms` lists it; `person/` keeps them. */

@@ -1,0 +1,61 @@
+import { modelName, parseModelName, type ModelRef } from "./domain.js"
+import type { CourierPorts, KnownModel } from "./ports.js"
+import { modelFormatRefusal, unknownModelRefusal, unknownVariantRefusal, variantWithoutModelRefusal } from "./text.js"
+
+/** What courier_spawn says of the model: `provider/model`, and the variant of whichever model is chosen. */
+export interface ModelChoice {
+  readonly model?: string
+  readonly variant?: string
+}
+
+/**
+ * The model a child runs on, always passed on so no OpenCode version falls back to its default: the `model` named,
+ * else the named agent's own, else its parent's; a `variant` named replaces the chosen model's. A named model or
+ * variant is checked against the models OpenCode lists, and refused when it is not there. `parent` is the parent's
+ * own model, for the roster to tell a child on another one; `undefined` when it could not be read.
+ */
+export async function chooseModel(ports: CourierPorts, parentID: string, choice: ModelChoice, agent: string | undefined) {
+  // Some models send null, or an empty string, for an optional field they leave out.
+  const named = trimmed(choice.model)
+  const variant = trimmed(choice.variant)
+  const own = named === undefined ? undefined : parseModelName(named)
+  if (named !== undefined && !own) throw new Error(modelFormatRefusal(named))
+  // A failed lookup must not keep a child on no particular model from starting; it then runs on OpenCode's default.
+  const parent = await ports.session.get({ sessionID: parentID }).then((session) => session.model, () => undefined)
+  const inherited = own ? undefined : await inheritedModel(ports, parent, agent).catch(() => undefined)
+  const base: ModelRef | undefined = own ?? inherited
+  if (!base) {
+    if (variant !== undefined) throw new Error(variantWithoutModelRefusal(variant))
+    return { model: undefined, parent }
+  }
+  const model: ModelRef = { providerID: base.providerID, id: base.id, ...(variant !== undefined ? { variant } : base.variant !== undefined ? { variant: base.variant } : {}) }
+  if (own || variant !== undefined) await check(ports, model, own !== undefined)
+  return { model, parent }
+}
+
+/** The named agent's model, if it names one; else the parent's. */
+async function inheritedModel(ports: CourierPorts, parent: ModelRef | undefined, agent: string | undefined) {
+  if (!agent) return parent
+  const named = await ports.agent.get({ agentID: agent, location: { directory: ports.directory } })
+  return named.data.model ?? parent
+}
+
+/**
+ * Refuses a model OpenCode does not list, or a variant its model has not; `"default"` is every model's. A listing that
+ * cannot be read checks nothing: OpenCode refuses what it does not know at the child's first turn, which is reported.
+ */
+async function check(ports: CourierPorts, model: ModelRef, named: boolean) {
+  let known: ReadonlyArray<KnownModel>
+  try {
+    known = await ports.models()
+  } catch (error) {
+    ports.log(`courier_spawn: cannot list the models to check ${modelName(model)} against: ${String(error)}`)
+    return
+  }
+  const found = known.find((item) => item.providerID === model.providerID && item.id === model.id)
+  if (!found) throw new Error(unknownModelRefusal(model, known, named))
+  if (model.variant !== undefined && model.variant !== "default" && !found.variants.includes(model.variant))
+    throw new Error(unknownVariantRefusal(model, found.variants))
+}
+
+const trimmed = (value: string | undefined) => (typeof value === "string" ? value.trim() || undefined : (value ?? undefined))

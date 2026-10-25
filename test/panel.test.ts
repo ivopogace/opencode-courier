@@ -10,7 +10,7 @@ import { treeRpc } from "../src/tree/rpc.js"
 import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 
 type Session = { updated: number; idle?: number; archived?: number; outcome?: string; cost?: number; title?: string; messages?: unknown[] }
-type Window = { providerID: string; id: string; context: number }
+type Window = { providerID: string; id: string; context: number; variants?: string[] }
 
 /** Ports over an in-memory store, with each session as given; one not given is gone. */
 function fakePorts(
@@ -58,7 +58,7 @@ function fakePorts(
     },
     pending: async (sessionID: string) => pending[sessionID] ?? [],
     forms: async (sessionID: string) => forms[sessionID] ?? [],
-    windows: async () => windows,
+    models: async () => windows.map((window) => ({ variants: [], ...window })),
     limits: { ...DEFAULT_LIMITS, maxTotal },
   } as unknown as CourierPorts
   return { ports, store, calls }
@@ -161,7 +161,7 @@ describe("panel", () => {
     )
     const children = childStore(ports.storage)
     await children.record(entry("ses_mid", "ses_root"))
-    await children.record(entry("ses_ask", "ses_root", { isolated: true }))
+    await children.record(entry("ses_ask", "ses_root", { isolated: true, model: "mock/small#high" }))
     await children.record(entry("ses_leaf", "ses_mid"))
     await children.prompted("ses_mid", 900)
     await children.prompted("ses_leaf", 900)
@@ -202,6 +202,7 @@ describe("panel", () => {
           depth: 1,
           state: "waiting",
           isolated: true,
+          model: "mock/small#high",
           created: 1,
           idle: 5,
           cost: 0,

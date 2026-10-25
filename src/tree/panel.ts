@@ -1,5 +1,5 @@
 import type { Status } from "../kernel/protocol.js"
-import type { CourierPorts, ModelWindow, Pending, ShownForm } from "./ports.js"
+import type { CourierPorts, KnownModel, ModelWindow, Pending, ShownForm } from "./ports.js"
 import { lastStatus, stoppedSincePrompt } from "./report.js"
 import type { Row, Tree, Wait } from "./rpc.js"
 import { standingIn } from "./status.js"
@@ -84,6 +84,7 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
     ...reportRow(report, status),
     ...(entry.group && standing ? { group: { name: entry.group, standing } } : {}),
     isolated: entry.isolated,
+    ...(entry.model ? { model: entry.model } : {}),
     created: info?.time.created ?? entry.createdAt,
     ...(info && !running && endedAt !== undefined ? { idle: endedAt } : {}),
     ...(info ? { cost: info.cost } : {}),
@@ -100,7 +101,7 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
 export async function panel(ports: CourierPorts, rootID: string): Promise<Tree> {
   const { kept, leftOut } = await readTree(ports, rootID)
   const stalled = await stalledAmong(ports, [rootID, ...kept.map((node) => node.entry.sessionID)])
-  const windows = await ports.windows().catch((): ModelWindow[] => [])
+  const windows = await ports.models().catch((): KnownModel[] => [])
   const rows = await Promise.all(kept.map((node) => row(ports, windows, node, stalled.get(node.entry.sessionID))))
   const own = stalled.get(rootID)
   return { rows, ...(leftOut ? { truncated: leftOut } : {}), ...(own !== undefined ? { stalled: own } : {}) }

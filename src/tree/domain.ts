@@ -128,7 +128,26 @@ export interface RosterEntry {
   readonly group?: string
   /** Created with OpenCode's own `parentID` (the `nativeChildren` option), so OpenCode shows its asks in its parent's view. */
   readonly native?: true
+  /** The model it was started on, as `modelName` writes it, when that is not the model its parent was on. */
+  readonly model?: string
 }
+
+/** A model as a session names it: its provider, its id, and its variant, which `"default"` and none both leave to the provider. */
+export interface ModelRef {
+  readonly providerID: string
+  readonly id: string
+  readonly variant?: string
+}
+
+/** `provider/model` as `courier_spawn` takes it: one slash, nothing empty on either side. */
+export function parseModelName(text: string): Pick<ModelRef, "providerID" | "id"> | undefined {
+  const slash = text.indexOf("/")
+  if (slash <= 0 || slash === text.length - 1) return undefined
+  return { providerID: text.slice(0, slash), id: text.slice(slash + 1) }
+}
+
+/** A model as the roster, the panel and the results name it: `provider/model`, with `#variant` for a variant that is not the default. */
+export const modelName = (model: ModelRef) => `${model.providerID}/${model.id}${model.variant && model.variant !== "default" ? `#${model.variant}` : ""}`
 
 /** `lineage` over roster entries already read. */
 export function lineageIn(entries: ReadonlyArray<RosterEntry>, sessionID: string) {

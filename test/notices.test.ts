@@ -84,6 +84,8 @@ describe("envelope and child brief", () => {
     // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).toContain("bun run <script>")
+    // Step 3 names when a part gets another model or variant, once, so a weak model does not override on every spawn.
+    expect(skill.SKILL_CONTENT).toContain("Leave model and variant unset, so a part runs on your own model, unless the part plainly calls for another")
     // Step 2 has the parent name the person's own skills in each task: the skill names none, since it cannot know them.
     expect(skill.SKILL_CONTENT).toContain("Name the skills it should load for its part, from those listed to you")
     // Several whole jobs in one prompt: the shape repeats per job, the root counts live sessions per part, waits for the first
@@ -130,6 +132,20 @@ describe("envelope and child brief", () => {
     expect(tree.childrenRefusal(1, 1)).toMatchSnapshot()
     expect(tree.totalRefusal(20, 20)).toMatchSnapshot()
   })
+
+  test("refusals of a model or variant", () => {
+    const known = [{ providerID: "mock", id: "chat" }, { providerID: "mock", id: "small" }, { providerID: "other", id: "big" }]
+    expect(tree.modelFormatRefusal("small")).toMatchSnapshot()
+    expect(tree.unknownModelRefusal({ providerID: "mock", id: "huge" }, known, true)).toMatchSnapshot()
+    expect(tree.unknownModelRefusal({ providerID: "none", id: "huge" }, known, true)).toMatchSnapshot()
+    expect(tree.unknownModelRefusal({ providerID: "none", id: "huge" }, [], true)).toMatchSnapshot()
+    expect(tree.unknownModelRefusal({ providerID: "mock", id: "gone", variant: "high" }, known, false)).toMatchSnapshot()
+    const many = Array.from({ length: 15 }, (_, index) => ({ providerID: "mock", id: `m${index + 1}` }))
+    expect(tree.unknownModelRefusal({ providerID: "mock", id: "huge" }, many, true)).toMatchSnapshot()
+    expect(tree.unknownVariantRefusal({ providerID: "mock", id: "chat", variant: "max" }, ["low", "medium", "high"])).toMatchSnapshot()
+    expect(tree.unknownVariantRefusal({ providerID: "mock", id: "small", variant: "high" }, [])).toMatchSnapshot()
+    expect(tree.variantWithoutModelRefusal("high")).toMatchSnapshot()
+  })
   test("envelope", () => {
     expect(kernel.envelope("ses_child", "done")).toMatchSnapshot()
     expect(kernel.envelope("ses_child", "failed", { failed: "provider.auth", request: "per_1" })).toMatchSnapshot()
@@ -164,6 +180,7 @@ describe("tool results", () => {
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/wt", rosterError: "roster failed: disk full" })).toMatchSnapshot()
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", group: "reviews" })).toMatchSnapshot()
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", groupError: "group failed: disk full" })).toMatchSnapshot()
+    expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", model: "mock/small#high" })).toMatchSnapshot()
   })
   test("spawnText for a child started from its parent's HEAD", () => {
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/wt", fromParent: true })).toMatchSnapshot()

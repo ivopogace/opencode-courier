@@ -43,6 +43,7 @@ test("the stores write a child's roster entry, reverse key, report state and gro
     createdAt: 1,
     reports: "status",
     group: "pair",
+    model: "mock/small#high",
   })
   await joinGroup(groups, "ses_parent", "pair", "ses_child", "Child", 5)
   await children.prompted("ses_child", 10)
@@ -54,7 +55,7 @@ test("the stores write a child's roster entry, reverse key, report state and gro
   await holdReport(groups, (await membershipOf(groups, "ses_parent", "pair", "ses_child"))!, { at: 30, status: "done", message: "all done" })
 
   expect(writes).toEqual([
-    'set roster/ses_parent/ses_child {"sessionID":"ses_child","parentID":"ses_parent","title":"Child","directory":"/repo","isolated":false,"createdAt":1,"reports":"status","group":"pair"}',
+    'set roster/ses_parent/ses_child {"sessionID":"ses_child","parentID":"ses_parent","title":"Child","directory":"/repo","isolated":false,"createdAt":1,"reports":"status","group":"pair","model":"mock/small#high"}',
     'set roster-by-child/ses_child {"ancestors":["ses_parent"]}',
     'set group/ses_parent/pair/ses_child {"title":"Child","joinedAt":5}',
     'set report/ses_child/prompt {"at":10}',

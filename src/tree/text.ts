@@ -1,7 +1,7 @@
 /** The tree's model-facing texts: the child brief, the role part, refusals, reports, notices and tool results. */
 import { obj, str } from "../platform/json.js"
 import { clipText, defuse, END_TURN, ROOT_SPLIT_LINE, SKILL_ID, SPLIT_LINE, STATUSES } from "../kernel/protocol.js"
-import { retryDelay } from "./domain.js"
+import { retryDelay, type ModelRef } from "./domain.js"
 import type { Artifacts, CleanupResult, ExecutionError, HeldReport, LeftMember, Limits, Sent } from "./ports.js"
 
 // The envelope and the child brief.
@@ -120,6 +120,44 @@ export const totalRefusal = (running: number, maxTotal: number) =>
   `Not started: ${count(running, "session")} in this session tree ${live(running)}, the most allowed at once ` +
   `(maxTotal ${maxTotal}). Do this part yourself, or end your turn and try again once a report has arrived.`
 
+// courier_spawn's refusals of a model or a variant OpenCode does not list.
+
+/** How many models, or providers, a refusal names before it counts the rest. */
+const NAMED = 12
+
+const some = (items: ReadonlyArray<string>) => (items.length > NAMED ? `${items.slice(0, NAMED).join(", ")} and ${items.length - NAMED} more` : items.join(", "))
+
+export const modelFormatRefusal = (given: string) =>
+  `Not started: model must be provider/model, as OpenCode names them (opencode/gpt-5-nano, anthropic/claude-sonnet-4-5), not ${JSON.stringify(given)}. ` +
+  "Leave it unset to run the session on your own model."
+
+/** The model is not among those OpenCode lists; `named` says the caller named it, rather than inherited it and named a variant. */
+export function unknownModelRefusal(model: ModelRef, known: ReadonlyArray<Pick<ModelRef, "providerID" | "id">>, named: boolean) {
+  const name = `${model.providerID}/${model.id}`
+  const ids = known.filter((item) => item.providerID === model.providerID).map((item) => item.id)
+  const providers = [...new Set(known.map((item) => item.providerID))]
+  let hint = "No model is listed here at all."
+  if (ids.length) hint = `The models of ${model.providerID} here are ${some(ids)}.`
+  else if (providers.length) hint = `The providers here are ${some(providers)}.`
+  return named
+    ? `Not started: OpenCode lists no model ${name} here. ${hint} Leave model unset to run the session on your own model.`
+    : `Not started: the variant cannot be checked, since OpenCode lists no model ${name} here, the one the session would run on. ${hint}`
+}
+
+export function unknownVariantRefusal(model: ModelRef, variants: ReadonlyArray<string>) {
+  const listed = variants.length ? `${variants.join(", ")} and default` : "default alone"
+  return (
+    `Not started: the model ${model.providerID}/${model.id} has no variant ${JSON.stringify(model.variant)}. ` +
+    `Its variants are ${listed}; leave variant unset for the model's default.`
+  )
+}
+
+/** A variant was named, but the model it would apply to could not be read: the named agent's, else the caller's own or OpenCode's default. */
+export function variantWithoutModelRefusal(variant: string, agent?: string) {
+  const why = agent ? `the agent ${agent} could not be looked up` : "neither your own model nor OpenCode's default could be read"
+  return `Not started: variant ${JSON.stringify(variant)} needs a model to apply to, and ${why}. Name a model as provider/model, or leave variant unset.`
+}
+
 /** The strings of a list given as artifacts, whatever else the model put in it. */
 const strings = (value: unknown) => (Array.isArray(value) ? value.flatMap((item) => (typeof item === "string" ? [item.trim()] : [])) : []).filter(Boolean)
 
@@ -155,6 +193,8 @@ export function spawnText(child: {
   readonly groupError?: string
   readonly fromParent?: boolean
   readonly uncommitted?: boolean
+  /** The model it runs on, when that is not the caller's own. */
+  readonly model?: string
 }) {
   const warning =
     (child.fromParent ? " Its worktree starts from the commit your own worktree is on." : "") +
@@ -168,8 +208,9 @@ export function spawnText(child: {
       "turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a question " +
       "or a failed turn still reaches you at once."
     : "It will report back with courier_send, which starts a new turn for you."
+  const on = child.model ? `, on ${child.model}` : ""
   return (
-    `Started session ${child.sessionID} in ${child.directory}. ${reports} Once you have started every session you need, ` +
+    `Started session ${child.sessionID} in ${child.directory}${on}. ${reports} Once you have started every session you need, ` +
     `end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive.${warning}`
   )
 }

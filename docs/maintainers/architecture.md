@@ -49,7 +49,7 @@ the tree's and the memory's keys.
 
 | Key | Holds |
 |---|---|
-| `roster/<parentID>/<sessionID>` | A child's entry: title, directory, `isolated` (with `source`, `project` and `base` commit), `createdAt`, `reports: "status"`, `group`, `native`. |
+| `roster/<parentID>/<sessionID>` | A child's entry: title, directory, `isolated` (with `source`, `project` and `base` commit), `createdAt`, `reports: "status"`, `group`, `native`, `model` (`provider/model#variant`, when not its parent's). |
 | `roster-by-child/<sessionID>` | `{ ancestors }`, parent first, top last. Only an index: `roster/` confirms a hit. |
 | `report/<sessionID>/prompt` | `{ at }`: when a prompt last reached the session. |
 | `report/<sessionID>/settled` | `{ at, by, status, resumesAt }`: when it last reported, failed or was interrupted; `resumesAt` only for a failed turn whose provider limit gave a retry time, the event's `created` plus `retryAfterMs`. |

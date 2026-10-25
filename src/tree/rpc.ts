@@ -59,6 +59,8 @@ const Row = Schema.Struct({
   /** Its join group, and its standing there: `held`, `out`, how it left, or `released`. */
   group: Schema.optionalKey(Schema.Struct({ name: Schema.String, standing: Schema.String })),
   isolated: Schema.Boolean,
+  /** The model it was started on, `provider/model` with `#variant` when one is set, when that is not its parent's. */
+  model: Schema.optionalKey(Schema.String),
   created: Schema.Number,
   /** When its last turn ended, if it is not running. */
   idle: Schema.optionalKey(Schema.Number),

@@ -1,7 +1,8 @@
 import { describeFailure } from "../kernel/protocol.js"
-import { isGroupName } from "./domain.js"
+import { isGroupName, modelName } from "./domain.js"
 import { joinGroup, leaveGroup } from "./group.js"
 import { admit } from "./limits.js"
+import { chooseModel } from "./model.js"
 import type { CourierPorts, RosterEntry } from "./ports.js"
 import { childStore, groupStore } from "./store.js"
 import { childBrief, childBranch } from "./text.js"
@@ -12,22 +13,15 @@ export interface SpawnInput {
   readonly agent?: string
   readonly isolate?: boolean
   readonly group?: string
+  /** `provider/model` to run on; left out, the agent's own model, else the caller's. */
+  readonly model?: string
+  /** The variant of that model, its reasoning effort; left out, the chosen model's own. */
+  readonly variant?: string
 }
 
 function titleOf(task: string) {
   const line = task.trim().split("\n")[0] ?? ""
   return line.length > 60 ? `${line.slice(0, 57)}...` : line
-}
-
-/**
- * The model a child runs on, always passed on so no OpenCode version falls back to its default:
- * the named agent's own, else its parent's.
- */
-async function inheritedModel(ports: CourierPorts, parentID: string, agent: string | undefined) {
-  const parent = await ports.session.get({ sessionID: parentID })
-  if (!agent) return parent.model
-  const named = await ports.agent.get({ agentID: agent, location: { directory: ports.directory } })
-  return named.data.model ?? parent.model
 }
 
 /** Removes a worktree made for a child that was never created; one that cannot be removed stays. */
@@ -57,7 +51,7 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
 }
 
 async function start(ports: CourierPorts, parentID: string, input: SpawnInput, admitted: Awaited<ReturnType<typeof admit>>, group: string | undefined) {
-  const { worktree, handedDown, ...child } = await create(ports, parentID, input)
+  const { worktree, handedDown, model, ...child } = await create(ports, parentID, input)
   admitted.reservation.sessionID = child.sessionID
   const entry: RosterEntry = {
     ...child,
@@ -67,6 +61,7 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     reports: "status",
     ...(worktree ? { source: ports.directory, project: ports.projectID } : {}),
     ...(group ? { group } : {}),
+    ...(model ? { model } : {}),
   }
   const { rosterError, groupError } = await enrol(ports, entry, group)
   ports.roles.delete(parentID)
@@ -79,13 +74,16 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     ...(groupError ? { groupError } : {}),
     ...(handedDown ? { fromParent: true } : {}),
     ...(handedDown?.uncommitted ? { uncommitted: true } : {}),
+    ...(model ? { model } : {}),
   }
 }
 
-/** Creates the child's session, in a worktree of its own if asked, which goes again if the session cannot be created. */
+/**
+ * Creates the child's session, in a worktree of its own if asked, which goes again if the session cannot be created.
+ * `model` names the child's model when it is not its parent's, for the roster and the result.
+ */
 async function create(ports: CourierPorts, parentID: string, input: SpawnInput) {
-  // A failed lookup must not keep the child from starting; it then runs on OpenCode's default.
-  const model = await inheritedModel(ports, parentID, input.agent).catch(() => undefined)
+  const { model, parent } = await chooseModel(ports, parentID, input, input.agent)
   const handedDown = input.isolate ? await parentWork(ports, parentID) : undefined
   const worktree = input.isolate
     ? (await ports.worktree.create({ projectID: ports.projectID, ...(handedDown ? { from: handedDown.directory, branch: handedDown.head } : {}) })).directory
@@ -117,6 +115,7 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
     handedDown,
     ...(base ? { base } : {}),
     ...(native ? { native: true as const } : {}),
+    ...(model && (!parent || modelName(model) !== modelName(parent)) ? { model: modelName(model) } : {}),
   }
 }
 

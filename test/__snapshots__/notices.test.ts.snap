@@ -91,7 +91,7 @@ exports[`tools are the fourteen courier tools, each a direct tool 1`] = `
 
 exports[`tools courier_spawn 1`] = `
 {
-  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, it waits for a permission or it asks a question. Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_status in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
+  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, it waits for a permission or it asks a question. Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_status in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -128,6 +128,17 @@ exports[`tools courier_spawn 1`] = `
           },
         ],
       },
+      "model": {
+        "anyOf": [
+          {
+            "description": "The model to run the session on, as provider/model (opencode/gpt-5-nano). Leave it unset for your own model, or the agent's own if it names one. Refused when OpenCode does not list it here.",
+            "type": "string",
+          },
+          {
+            "type": "null",
+          },
+        ],
+      },
       "task": {
         "description": "What the new session should do. It is told who started it and how to report back.",
         "type": "string",
@@ -136,6 +147,17 @@ exports[`tools courier_spawn 1`] = `
         "anyOf": [
           {
             "description": "Session title; defaults to the task's first line.",
+            "type": "string",
+          },
+          {
+            "type": "null",
+          },
+        ],
+      },
+      "variant": {
+        "anyOf": [
+          {
+            "description": "The model's variant, its reasoning effort as OpenCode names it (low, medium, high, or another the model has). Leave it unset for the chosen model's own; with a model of your own choosing, that is the model's default. Refused when the model has no such variant.",
             "type": "string",
           },
           {
@@ -787,7 +809,7 @@ exports[`envelope and child brief the courier-orchestrate skill 2`] = `
    - a review stage, after the merge, when the changes are done and it is to see the whole: one review session with fresh context, which makes no fixes of its own. Put in its task the diff to read: when you are isolated, your own courier/<session> branch, committed first, against the commit your worktree started from; else your checkout's HEAD, with the merges committed, against the commit you started from, which you note before your first spawn. It may hand the reading to 2 or more reviewers (one group, each reads that diff from one angle and reports its findings), then starts one verifier with their reports: a fresh session that checks each finding against the diff, drops what does not hold, and starts one implementor for what holds, or 2 or more when the fixes are independent, isolate: true each then, merging their branches after (step 7); an implementor fixes what it should and refuses, with the reason, what it should not. Where the code is: when you work in the project's checkout, the review session, the verifier and a lone implementor go without isolate, and it commits in place; when you are isolated, start each of them with isolate: true, so that each worktree starts from the one above, and each merges the branch reported to it before it reports (step 7); reviewers only read and need no worktree. Each reports to the one that started it; the review session reports to you what was found, what held, what was fixed (the commits) and what was refused and why. It does not replace step 6: running the checks on the fixed tree stays yours, and so does settling a refusal you disagree with. Go through steps 3 to 7 once more for the stage, and do its work yourself when the levels below you are too few for it. One session for one stage, after a stage of 2 or more parts or one you did yourself, is a part of the task, like a staged core, not the whole; a reviewer alone with nothing before it is not a stage.
    When the core is coupled: an implementation task with one tightly coupled core usually still has parts from that list; weigh each of them. When the other parts depend on names and texts the core fixes, split in stages: the core first, yourself when it is small or by one session when it is big, merged and committed before the rest start; then, if 2 or more parts remain, one session per remaining part, in one group. A staged core is one part of the task, not the whole task, so the rule against starting exactly one session for the whole task does not apply to it when 2 or more parts follow it.
 2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to produce and where, how to check it, what to report. Say if it may split its part further, and to run its checks through the project's scripts (step 6): each permission request of a session below you wakes you and waits on the person. Name the skills it should load for its part, from those listed to you: it sees the same list, not your choice; one permission rule for skill covers their loads, as one covers the checks. Say in the task when the part is a whole job that delivers itself (step 7), since an isolated session's brief otherwise says its branch is for you to merge.
-3. Start them: one courier_spawn per part that runs at once, all with the same group name, so you are woken once with every report; isolate: true for each part that edits files in parallel with another (commit your own work first if you are isolated yourself). When each part runs a review stage of its own, count 6 live sessions per part against maxTotal (a part, its review session and its reviewers are live together at the peak): start the parts that fit in one group, and the rest in a group of their own once the first group has reported. A job that depends on another starts after that one is done, as a stage: merged into your checkout, or, when it was delivered instead (step 7), started with isolate: true and told the delivering session's courier/<session> branch, from its report, to merge into its worktree first. For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.
+3. Start them: one courier_spawn per part that runs at once, all with the same group name, so you are woken once with every report; isolate: true for each part that edits files in parallel with another (commit your own work first if you are isolated yourself). When each part runs a review stage of its own, count 6 live sessions per part against maxTotal (a part, its review session and its reviewers are live together at the peak): start the parts that fit in one group, and the rest in a group of their own once the first group has reported. A job that depends on another starts after that one is done, as a stage: merged into your checkout, or, when it was delivered instead (step 7), started with isolate: true and told the delivering session's courier/<session> branch, from its report, to merge into its worktree first. Leave model and variant unset, so a part runs on your own model, unless the part plainly calls for another: a cheaper model or a lower variant for a small, well-specified part (a rename, a lookup), a stronger model or a higher variant for a design question or a hard bug. For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.
 4. End your turn: reply without calling more tools. Do not poll with courier_status, courier_children, courier_tree or sleep. The group's reports, a blocked report, a question, a permission request, a failed turn or a silent end each start a new turn for you. So does a session's message without a status, and one from the person or from the session that started you.
    Answering from below: follow the notice. For a permission request, propose once with courier_answer, or reject with the reason when the person has told you to refuse it or it plainly goes against what they asked; the person decides, in OpenCode's prompt in your session. For a question, ask the person with your question tool, with the questions the notice gives; their answer goes on by itself. When the notice says OpenCode already shows it to the person, call nothing unless they give you their answer. Never answer for them.
    Passing a message on: when it changes what other parts need (an assumption of the split that is wrong, a shared file or API that behaves otherwise, a decision of the person's), pass it on at once with courier_send, only to the sessions it affects, before they go further, then end your turn again; if it breaks the split, courier_stop the parts it breaks and plan them again, or send them a corrected task. If a session started you and its other parts need it too, send it up to that session as well, without a status. Progress that changes nothing for the others goes to no one.
@@ -810,6 +832,26 @@ exports[`envelope and child brief refusals 2`] = `"Not started: 5 sessions you s
 exports[`envelope and child brief refusals 3`] = `"Not started: 1 session you started is running or has not reported yet, the most allowed at once (maxChildren 1). Do this part yourself, or end your turn and start it once one of them has reported."`;
 
 exports[`envelope and child brief refusals 4`] = `"Not started: 20 sessions in this session tree are running or have not reported yet, the most allowed at once (maxTotal 20). Do this part yourself, or end your turn and try again once a report has arrived."`;
+
+exports[`envelope and child brief refusals of a model or variant 1`] = `"Not started: model must be provider/model, as OpenCode names them (opencode/gpt-5-nano, anthropic/claude-sonnet-4-5), not "small". Leave it unset to run the session on your own model."`;
+
+exports[`envelope and child brief refusals of a model or variant 2`] = `"Not started: OpenCode lists no model mock/huge here. The models of mock here are chat, small. Leave model unset to run the session on your own model."`;
+
+exports[`envelope and child brief refusals of a model or variant 3`] = `"Not started: OpenCode lists no model none/huge here. The providers here are mock, other. Leave model unset to run the session on your own model."`;
+
+exports[`envelope and child brief refusals of a model or variant 4`] = `"Not started: OpenCode lists no model none/huge here. No model is listed here at all. Leave model unset to run the session on your own model."`;
+
+exports[`envelope and child brief refusals of a model or variant 5`] = `"Not started: the variant cannot be checked, since OpenCode lists no model mock/gone here, the one the session would run on. The models of mock here are chat, small."`;
+
+exports[`envelope and child brief refusals of a model or variant 6`] = `"Not started: OpenCode lists no model mock/huge here. The models of mock here are m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12 and 3 more. Leave model unset to run the session on your own model."`;
+
+exports[`envelope and child brief refusals of a model or variant 7`] = `"Not started: the model mock/chat has no variant "max". Its variants are low, medium, high and default; leave variant unset for the model's default."`;
+
+exports[`envelope and child brief refusals of a model or variant 8`] = `"Not started: the model mock/small has no variant "high". Its variants are default alone; leave variant unset for the model's default."`;
+
+exports[`envelope and child brief refusals of a model or variant 9`] = `"Not started: variant "high" needs a model to apply to, and neither your own model nor OpenCode's default could be read. Name a model as provider/model, or leave variant unset."`;
+
+exports[`envelope and child brief refusals of a model or variant 10`] = `"Not started: variant "high" needs a model to apply to, and the agent build could not be looked up. Name a model as provider/model, or leave variant unset."`;
 
 exports[`envelope and child brief envelope 1`] = `
 "<courier from="ses_child">
@@ -855,6 +897,8 @@ exports[`tool results spawnText 2`] = `"Started session ses_child in /wt. It wil
 exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a question or a failed turn still reaches you at once. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
 exports[`tool results spawnText 4`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is in no group, so its report comes on its own: group failed: disk full"`;
+
+exports[`tool results spawnText 5`] = `"Started session ses_child in /repo, on mock/small#high. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
 exports[`tool results spawnText for a child started from its parent's HEAD 1`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. Its worktree starts from the commit your own worktree is on."`;
 

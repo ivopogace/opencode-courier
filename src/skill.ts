@@ -78,6 +78,9 @@ export const SKILL_CONTENT = [
     "rest in a group of their own once the first group has reported. A job that depends on another starts after that one " +
     "is done, as a stage: merged into your checkout, or, when it was delivered instead (step 7), started with isolate: " +
     "true and told the delivering session's courier/<session> branch, from its report, to merge into its worktree first. " +
+    "Leave model and variant unset, so a part runs on your own model, unless the part plainly calls for another: a " +
+    "cheaper model or a lower variant for a small, well-specified part (a rename, a lookup), a stronger model or a higher " +
+    "variant for a design question or a hard bug. " +
     "For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.",
   "4. End your turn: reply without calling more tools. Do not poll with courier_status, courier_children, courier_tree or " +
     "sleep. The group's reports, a blocked report, a question, a permission request, a failed turn or a silent end each start " +

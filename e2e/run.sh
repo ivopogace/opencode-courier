@@ -715,7 +715,7 @@ run_spawn_model() {
     "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .model] | length > 0 and all(.id == "other" and .variant == "high")')"
   check "and every request of the child asked the provider for that model with the variant's reasoning effort" \
     "$(jq -sr --arg child "$child" '[.[] | select(.session == $child)] | length > 0 and all(.options.model == "other" and .options.reasoning_effort == "high")' "$WORK/model.log")"
-  check "the roster names the model, which courier_children and the tree panel show" "$(kv get "roster/$parent/$child" | jq -r '.model == "mock/other#high"')"
+  check "the roster names the model, which the tree panel's row shows" "$(kv get "roster/$parent/$child" | jq -r '.model == "mock/other#high"')"
   check "courier_children lists it with the model" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
     jq -r --arg child "$child" '.status == "completed" and any(.metadata.metadata.children[]; .sessionID == $child and .model == "mock/other#high")')"
 

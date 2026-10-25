@@ -411,6 +411,18 @@ describe("spawn", () => {
       expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ model: { providerID: "mock", id: "chat", variant: "low" } })
     })
 
+    test("an agent that cannot be looked up leaves the child on the parent's model, with the variant", async () => {
+      const { ports, calls } = fakePorts({ info: { model: parent } })
+      ;(ports.agent as any).get = async () => {
+        throw new Error("no such agent")
+      }
+
+      await spawn(ports, "ses_parent", { task: "t", agent: "build", variant: "high" })
+
+      expect(calls.map((call) => call.method)).not.toContain("model.default")
+      expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ agent: "build", model: { providerID: "mock", id: "chat", variant: "high" } })
+    })
+
     test("a model and a variant together", async () => {
       const { ports, calls, store } = fakePorts({ info: { model: parent } })
 
@@ -495,22 +507,38 @@ describe("spawn", () => {
       expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({ model: "mock/chat#high" })
     })
 
-    test("without a variant, a parent whose session names no model leaves the child to OpenCode's default, unasked", async () => {
+    test("a parent whose session names no model runs on OpenCode's default, which its child gets as its own, not as another model", async () => {
+      const { ports, calls, store } = fakePorts({ defaultModel: KNOWN[0] })
+
+      const child = await spawn(ports, "ses_parent", { task: "t", model: "mock/chat" })
+
+      expect(calls.map((call) => call.method)).toEqual(["session.get", "model.default", "model.list", "session.create", "session.prompt"])
+      expect(calls[3]!.input).toMatchObject({ model: { providerID: "mock", id: "chat" } })
+      expect(child).toEqual({ sessionID: "ses_child", directory: "/repo" })
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("model")
+    })
+
+    test("with neither a model nor a variant, that default is passed on all the same, so no host falls back on its own", async () => {
       const { ports, calls } = fakePorts({ defaultModel: KNOWN[0] })
 
       await spawn(ports, "ses_parent", { task: "t" })
 
-      expect(calls.map((call) => call.method)).toEqual(["session.get", "session.create", "session.prompt"])
-      expect(calls[1]!.input).not.toHaveProperty("model")
+      expect(calls.map((call) => call.method)).toEqual(["session.get", "model.default", "session.create", "session.prompt"])
+      expect(calls[2]!.input).toMatchObject({ model: { providerID: "mock", id: "chat" } })
     })
 
-    test("refuses a variant when neither the caller's model nor the default can be read", async () => {
+    test("refuses a variant when the caller cannot be read, and when its session names no model and the default cannot be read", async () => {
       const { ports } = fakePorts()
       ;(ports.session as any).get = async () => {
         throw new Error("lookup failed")
       }
-
       await expect(spawn(ports, "ses_parent", { task: "t", variant: "high" })).rejects.toThrow(variantWithoutModelRefusal("high"))
+
+      const none = fakePorts()
+      ;(none.ports as any).defaultModel = async () => {
+        throw new Error("no default")
+      }
+      await expect(spawn(none.ports, "ses_parent", { task: "t", variant: "high" })).rejects.toThrow(variantWithoutModelRefusal("high"))
     })
 
     test("passes a choice through unchecked, logging why, when the models cannot be listed", async () => {

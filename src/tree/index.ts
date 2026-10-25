@@ -9,7 +9,6 @@ export { contextOf } from "./panel.js"
 export type {
   CleanupPorts,
   CourierPorts,
-  KnownModel,
   ModelWindow,
   Pending,
   PendingPrompt,

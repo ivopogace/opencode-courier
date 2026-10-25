@@ -106,7 +106,7 @@ for a git elsewhere.
 | `courier_spawn` | `task`, `title?`, `agent?`, `model?`, `variant?`, `isolate?`, `group?` | Creates a session, sends it the task and a brief, and returns at once. `model` and `variant` choose [what it runs on](#the-model-a-child-runs-on). `isolate: true` gives it its own [worktree](#worktrees). With a `group`, its report is held with the [group's](#join-groups). Refused past the [limits](#session-trees-and-their-limits). |
 | `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `queue?` | Delivers a message, signed with the sender's id, waking the session if idle. It steers into a running turn, or waits for its end with `queue: true`. From a child to its parent, a `status` makes it the child's [report](#a-childs-report). |
 | `courier_status` | `sessionID` | One look at a session: its last turn's outcome, how long it has been idle, when it was archived, its last reply, and the requests and questions it waits on (`pending`). For check-ins, not for waiting. |
-| `courier_children` | `sessionID?` | The sessions this one (or `sessionID`) started, each with what `courier_status` shows, its directory, whether it is isolated, when it started and its [group](#join-groups). |
+| `courier_children` | `sessionID?` | The sessions this one (or `sessionID`) started, each with what `courier_status` shows, its directory, whether it is isolated, when it started, its [group](#join-groups) and its [model](#the-model-a-child-runs-on) when that is not the parent's. |
 | `courier_tree` | `sessionID?` | The [whole tree](#seeing-and-stopping-a-subtree) under a session. |
 | `courier_stop` | `sessionID`, `cleanup?` | [Stops](#seeing-and-stopping-a-subtree) a session below this one and everything under it. |
 | `courier_cleanup` | `sessionID`, `force?` | Removes an isolated child's [worktree](#worktrees) and forgets the child. |
@@ -125,7 +125,7 @@ A child runs on its parent's model, unless its `agent` names a model of its own,
 argument goes first, then the agent's model, then the parent's. `variant`, OpenCode's name for a
 model's reasoning effort (`low`, `medium`, `high`, or whatever the model has; `default` is the
 provider's own), replaces the variant of whichever model was chosen. A parent whose session names
-no model runs on OpenCode's default, and a `variant` alone applies to that. A `model` without a
+no model runs on OpenCode's default, which counts as its model. A `model` without a
 `variant` runs at that model's default, not at the parent's variant, since variants are a model's
 own.
 

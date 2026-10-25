@@ -9,8 +9,8 @@ export interface ModelChoice {
 }
 
 /**
- * The model a child runs on: the `model` named, else the agent's, else the parent's (OpenCode's default for a `variant`
- * alone when the parent's session names none), with the `variant` named; `parent` is the parent's own, for the roster.
+ * The model a child runs on: the `model` named, else the agent's, else the one its parent runs on, with the `variant`
+ * named; `parent` is the parent's own, for the roster to tell a child on another one.
  */
 export async function chooseModel(ports: CourierPorts, parentID: string, choice: ModelChoice, agent: string | undefined) {
   // Some models send null, or an empty string, for an optional field they leave out.
@@ -18,10 +18,9 @@ export async function chooseModel(ports: CourierPorts, parentID: string, choice:
   const variant = trimmed(choice.variant)
   const own = named === undefined ? undefined : parseModelName(named)
   if (named !== undefined && !own) throw new Error(modelFormatRefusal(named))
-  // A failed lookup must not keep a child on no particular model from starting; it then runs on OpenCode's default.
-  const parent = await ports.session.get({ sessionID: parentID }).then((session) => session.model, () => undefined)
-  const inherited = own ? undefined : await inheritedModel(ports, parent, agent).catch(() => undefined)
-  const base: ModelRef | undefined = own ?? inherited ?? (variant !== undefined ? await ports.defaultModel().catch(() => undefined) : undefined)
+  const parent = await parentModel(ports, parentID)
+  const inherited = own ? undefined : await inheritedModel(ports, parent, agent).catch(() => parent)
+  const base: ModelRef | undefined = own ?? inherited
   if (!base) {
     if (variant !== undefined) throw new Error(variantWithoutModelRefusal(variant))
     return { model: undefined, parent }
@@ -30,6 +29,16 @@ export async function chooseModel(ports: CourierPorts, parentID: string, choice:
   const model: ModelRef = { providerID: base.providerID, id: base.id, ...(chosen !== undefined ? { variant: chosen } : {}) }
   if (own || variant !== undefined) await check(ports, model, own !== undefined)
   return { model, parent }
+}
+
+/**
+ * The model the parent runs on: its session's, else OpenCode's default. A failed lookup must not keep a child on no
+ * particular model from starting, so it reads as none, and the child then runs on OpenCode's default.
+ */
+async function parentModel(ports: CourierPorts, parentID: string): Promise<ModelRef | undefined> {
+  const session = await ports.session.get({ sessionID: parentID }).catch(() => undefined)
+  if (!session) return undefined
+  return session.model ?? (await ports.defaultModel().catch(() => undefined))
 }
 
 /** The named agent's model, if it names one; else the parent's. */

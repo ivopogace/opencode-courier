@@ -64,7 +64,7 @@ async function setUp(
     event: { subscribe: events.subscribe },
     agent: { get: record("agent.get", { data: { id: "build" } }) },
     location: { directory: "/repo", project: { id: "proj_1" } },
-    model: { list: async () => ({ data: [] }) },
+    model: { list: async () => ({ data: [] }), default: async () => ({ data: null }) },
     session: {
       create: record("session.create", { id: "ses_child", location: { directory: "/repo" } }),
       prompt: record("session.prompt", { id: "msg_1" }),

@@ -849,7 +849,7 @@ exports[`envelope and child brief refusals of a model or variant 7`] = `"Not sta
 
 exports[`envelope and child brief refusals of a model or variant 8`] = `"Not started: the model mock/small has no variant "high". Its variants are default alone; leave variant unset for the model's default."`;
 
-exports[`envelope and child brief refusals of a model or variant 9`] = `"Not started: variant "high" needs a model to apply to, and your own model could not be read. Name a model as provider/model, or leave variant unset."`;
+exports[`envelope and child brief refusals of a model or variant 9`] = `"Not started: variant "high" needs a model to apply to, and neither your own model nor OpenCode's default could be read. Name a model as provider/model, or leave variant unset."`;
 
 exports[`envelope and child brief envelope 1`] = `
 "<courier from="ses_child">

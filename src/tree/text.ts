@@ -151,7 +151,7 @@ export const unknownVariantRefusal = (model: ModelRef, variants: ReadonlyArray<s
   `Its variants are ${variants.length ? `${variants.join(", ")} and default` : "default alone"}; leave variant unset for the model's default.`
 
 export const variantWithoutModelRefusal = (variant: string) =>
-  `Not started: variant ${JSON.stringify(variant)} needs a model to apply to, and your own model could not be read. ` +
+  `Not started: variant ${JSON.stringify(variant)} needs a model to apply to, and neither your own model nor OpenCode's default could be read. ` +
   "Name a model as provider/model, or leave variant unset."
 
 /** The strings of a list given as artifacts, whatever else the model put in it. */

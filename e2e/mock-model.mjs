@@ -354,6 +354,13 @@ function decide(body) {
   if (recent.includes("COURIER-SEARCH")) return { tool: "courier_spawn", args: { task: "CHILD-SEARCHES" } }
   const ask = recent.match(/COURIER-ASK(?: (isolate))?/)
   if (ask) return { tool: "courier_spawn", args: { task: "CHILD-ASKS", isolate: ask[1] === "isolate" } }
+  // COURIER-MODEL <provider/model|-> <variant|->: a spawn on the model and variant given, `-` for one left unset.
+  const chosen = recent.match(/COURIER-MODEL ([\w./-]+) ([\w-]+)/)
+  if (chosen)
+    return {
+      tool: "courier_spawn",
+      args: { task: "Report back to your parent.", ...(chosen[1] === "-" ? {} : { model: chosen[1] }), ...(chosen[2] === "-" ? {} : { variant: chosen[2] }) },
+    }
   const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)
   if (spawn) return spawnChild(spawn[1] === "isolate")
   return { text: "ok" }
@@ -434,7 +441,9 @@ createServer((request, response) => {
     const system = (body.messages ?? []).filter((message) => message.role === "system").map((message) => textOf(message.content)).join("\n")
     const role = system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/)?.[1] ?? null
     const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])
-    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, skills, tools: (body.tools ?? []).map((tool) => tool.function?.name), reply })}\n`)
+    // The request's own fields besides the conversation: the model asked for, and what a variant adds (reasoning_effort).
+    const options = Object.fromEntries(Object.entries(body).filter(([key]) => !["messages", "tools", "stream", "stream_options", "tool_choice"].includes(key)))
+    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, skills, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
     if (reply.status) {
       response.writeHead(reply.status, { "content-type": "application/json", ...reply.headers })
       response.end(JSON.stringify({ error: { message: reply.error, type: "forbidden" } }))

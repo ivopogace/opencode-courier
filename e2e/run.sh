@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 finding:11 permission:35 depth:4 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 finding:11 permission:35 depth:4 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -698,6 +698,52 @@ run_depth() {
     "$([ -n "$(kv get "report/$leaf/settled")" ] &&
       [[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$middle") == 20* ]] &&
       for _ in $(seq 1 20); do [ -z "$(kv get "report/$leaf/prompt")$(kv get "report/$leaf/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+}
+
+run_spawn_model() {
+  scenario "a child runs on the model and variant its parent names, and the roster says so (#359)"
+  child_delay 1000
+  out=$(prompt "COURIER-MODEL mock/other high")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "courier_spawn completed, naming the model and variant in its result" \
+    "$(tool_state courier_spawn <<<"$out" | jq -r '.status == "completed" and (.output | contains(", on mock/other#high."))')"
+  check "the session was created on that model and variant" \
+    "$(session_info "$child" | jq -r '.model.providerID == "mock" and .model.id == "other" and .model.variant == "high"')"
+  check "the child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
+  check "every reply of the child came from that model at that variant" \
+    "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .model] | length > 0 and all(.id == "other" and .variant == "high")')"
+  check "and every request of the child asked the provider for that model with the variant's reasoning effort" \
+    "$(jq -sr --arg child "$child" '[.[] | select(.session == $child)] | length > 0 and all(.options.model == "other" and .options.reasoning_effort == "high")' "$WORK/model.log")"
+  check "the roster names the model, which courier_children and the tree panel show" "$(kv get "roster/$parent/$child" | jq -r '.model == "mock/other#high"')"
+  check "courier_children lists it with the model" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
+    jq -r --arg child "$child" '.status == "completed" and any(.metadata.metadata.children[]; .sessionID == $child and .model == "mock/other#high")')"
+
+  scenario "a variant alone applies to the parent's own model"
+  child_delay 1000
+  out=$(prompt "COURIER-MODEL - low")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the session was created on the parent's model at the variant" \
+    "$(session_info "$child" | jq -r '.model.providerID == "mock" and .model.id == "chat" and .model.variant == "low"')"
+  check "the child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
+  check "its requests carried the variant's reasoning effort" \
+    "$(jq -sr --arg child "$child" '[.[] | select(.session == $child)] | length > 0 and all(.options.model == "chat" and .options.reasoning_effort == "low")' "$WORK/model.log")"
+  check "the roster names the parent's model with the variant" "$(kv get "roster/$parent/$child" | jq -r '.model == "mock/chat#low"')"
+  check "a child on its parent's model and variant records none" \
+    "$(prompt "COURIER-TEST" | tool_state courier_spawn | jq -r '.status == "completed" and (.output | contains(", on ") | not) and (.metadata.metadata | has("model") | not)')"
+
+  scenario "a model OpenCode does not list, a variant the model has not, or a name that is not provider/model is refused, and nothing is started"
+  child_delay 1000
+  out=$(prompt "COURIER-MODEL mock/nope high")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  check "an unknown model is refused, naming the provider's models" \
+    "$(tool_state courier_spawn <<<"$out" | jq -r '.status == "error" and (.error | contains("lists no model mock/nope here") and contains("The models of mock here are chat, other"))')"
+  check "an unknown variant is refused, naming the model's variants" \
+    "$(prompt "COURIER-MODEL mock/other huge" | tool_state courier_spawn | jq -r '.status == "error" and (.error | contains("mock/other has no variant \"huge\"") and contains("Its variants are low, medium, high and default"))')"
+  check "a name without a provider is refused, saying the form" \
+    "$(prompt "COURIER-MODEL other -" | tool_state courier_spawn | jq -r '.status == "error" and (.error | contains("model must be provider/model"))')"
+  check "no session was started under the parent" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
 }
 
 run_answer() {

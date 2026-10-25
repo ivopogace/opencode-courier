@@ -12,7 +12,7 @@ import { childStore, groupStore, memberKey, progressKey, rosterKey, settledKey }
 type Call = { method: string; input: any }
 
 /** What spawn did after looking up the model to give the child. */
-const afterLookups = (calls: Call[]) => calls.filter((call) => call.method !== "session.get" && call.method !== "agent.get" && call.method !== "model.list")
+const afterLookups = (calls: Call[]) => calls.filter((call) => !["session.get", "agent.get", "model.list", "model.default"].includes(call.method))
 
 type Known = { providerID: string; id: string; variants: string[] }
 /** The models the fake OpenCode lists: the parent's usual one, with the effort variants, and a smaller one with none. */
@@ -21,7 +21,9 @@ const KNOWN: Known[] = [
   { providerID: "mock", id: "small", variants: [] },
 ]
 
-function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unknown>; agent?: Record<string, unknown>; models?: Known[] | Error } = {}) {
+function fakePorts(
+  overrides: { messages?: unknown[]; info?: Record<string, unknown>; agent?: Record<string, unknown>; models?: Known[] | Error; defaultModel?: Known } = {},
+) {
   const calls: Call[] = []
   const store = new Map<string, unknown>()
   const nudges: number[] = []
@@ -57,6 +59,10 @@ function fakePorts(overrides: { messages?: unknown[]; info?: Record<string, unkn
       context: record("session.context", overrides.messages ?? []),
     },
     agent: { get: record("agent.get", { data: { id: "build", ...overrides.agent } }) },
+    defaultModel: async () => {
+      calls.push({ method: "model.default", input: undefined })
+      return overrides.defaultModel && { providerID: overrides.defaultModel.providerID, id: overrides.defaultModel.id }
+    },
     models: async () => {
       calls.push({ method: "model.list", input: undefined })
       if (overrides.models instanceof Error) throw overrides.models
@@ -478,7 +484,27 @@ describe("spawn", () => {
       )
     })
 
-    test("refuses a variant when the caller's model cannot be read", async () => {
+    test("a variant alone, with a parent whose session names no model, applies to OpenCode's default model, which the parent runs on", async () => {
+      const { ports, calls, store } = fakePorts({ defaultModel: KNOWN[0] })
+
+      const child = await spawn(ports, "ses_parent", { task: "t", variant: "high" })
+
+      expect(calls.map((call) => call.method)).toEqual(["session.get", "model.default", "model.list", "session.create", "session.prompt"])
+      expect(calls[3]!.input).toMatchObject({ model: { providerID: "mock", id: "chat", variant: "high" } })
+      expect(child).toMatchObject({ model: "mock/chat#high" })
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({ model: "mock/chat#high" })
+    })
+
+    test("without a variant, a parent whose session names no model leaves the child to OpenCode's default, unasked", async () => {
+      const { ports, calls } = fakePorts({ defaultModel: KNOWN[0] })
+
+      await spawn(ports, "ses_parent", { task: "t" })
+
+      expect(calls.map((call) => call.method)).toEqual(["session.get", "session.create", "session.prompt"])
+      expect(calls[1]!.input).not.toHaveProperty("model")
+    })
+
+    test("refuses a variant when neither the caller's model nor the default can be read", async () => {
       const { ports } = fakePorts()
       ;(ports.session as any).get = async () => {
         throw new Error("lookup failed")

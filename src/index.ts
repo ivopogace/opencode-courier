@@ -152,6 +152,10 @@ export const courier = () => Plugin.define({
           context: model.limit.context,
           variants: model.variants.map((variant) => variant.id),
         })),
+      defaultModel: async () => {
+        const { data } = await ctx.model.default()
+        return data ? { providerID: data.providerID, id: data.id } : undefined
+      },
       head: headOf,
       dirty: dirtyOf,
       pending: async (sessionID) => {

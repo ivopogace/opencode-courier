@@ -5,9 +5,9 @@
 import type { Plugin } from "@opencode/plugin"
 import type { Status } from "../kernel/protocol.js"
 import type { Storage } from "../platform/storage.js"
-import type { Limits, Member, RosterEntry } from "./domain.js"
+import type { Limits, Member, ModelRef, RosterEntry } from "./domain.js"
 
-export type { Artifacts, HeldReport, LeftMember, Limits, Member, RosterEntry, Standing } from "./domain.js"
+export type { Artifacts, HeldReport, LeftMember, Limits, Member, ModelRef, RosterEntry, Standing } from "./domain.js"
 
 type Context = Plugin.Context
 
@@ -184,6 +184,8 @@ export interface CourierPorts {
   readonly forms: (sessionID: string) => Promise<ReadonlyArray<ShownForm>>
   /** The models available, each with its context window and variants, as courier_spawn checks a choice and the panel reads a session's context use. */
   readonly models: () => Promise<ReadonlyArray<KnownModel>>
+  /** OpenCode's default model here, which a session with no model of its own runs on; undefined when there is none. */
+  readonly defaultModel: () => Promise<ModelRef | undefined>
   readonly limits: Limits
   /** The `nativeChildren` option: a child started without isolate is created with OpenCode's own `parentID`. */
   readonly nativeChildren?: boolean

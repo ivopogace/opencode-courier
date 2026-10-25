@@ -152,8 +152,9 @@ export function unknownVariantRefusal(model: ModelRef, variants: ReadonlyArray<s
   )
 }
 
-export const variantWithoutModelRefusal = (variant: string) =>
-  `Not started: variant ${JSON.stringify(variant)} needs a model to apply to, and neither your own model nor OpenCode's default could be read. ` +
+/** A variant was named, but the model it would apply to could not be read: the named agent's, else the caller's own or OpenCode's default. */
+export const variantWithoutModelRefusal = (variant: string, agent?: string) =>
+  `Not started: variant ${JSON.stringify(variant)} needs a model to apply to, and ${agent ? `the agent ${agent} could not be looked up` : "neither your own model nor OpenCode's default could be read"}. ` +
   "Name a model as provider/model, or leave variant unset."
 
 /** The strings of a list given as artifacts, whatever else the model put in it. */

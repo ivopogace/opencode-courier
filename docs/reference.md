@@ -125,7 +125,8 @@ A child runs on its parent's model, unless its `agent` names a model of its own,
 argument goes first, then the agent's model, then the parent's. `variant`, OpenCode's name for a
 model's reasoning effort (`low`, `medium`, `high`, or whatever the model has; `default` is the
 provider's own), replaces the variant of whichever model was chosen. A parent whose session names
-no model runs on OpenCode's default, which counts as its model. A `model` without a
+no model runs on OpenCode's default, which counts as its model: its children are started on it, and
+stay on it if the default changes later. A `model` without a
 `variant` runs at that model's default, not at the parent's variant, since variants are a model's
 own.
 

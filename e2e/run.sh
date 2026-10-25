@@ -730,8 +730,12 @@ run_spawn_model() {
   check "its requests carried the variant's reasoning effort" \
     "$(jq -sr --arg child "$child" '[.[] | select(.session == $child)] | length > 0 and all(.options.model == "chat" and .options.reasoning_effort == "low")' "$WORK/model.log")"
   check "the roster names the parent's model with the variant" "$(kv get "roster/$parent/$child" | jq -r '.model == "mock/chat#low"')"
+  out=$(prompt "COURIER-TEST")
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "a child on its parent's model and variant records none" \
-    "$(prompt "COURIER-TEST" | tool_state courier_spawn | jq -r '.status == "completed" and (.output | contains(", on ") | not) and (.metadata.metadata | has("model") | not)')"
+    "$(tool_state courier_spawn <<<"$out" | jq -r '.status == "completed" and (.output | contains(", on ") | not) and (.metadata.metadata | has("model") | not)')"
+  check "and is started on OpenCode's default, which its parent, started with no model of its own, runs on" \
+    "$(session_info "$child" | jq -r '.model.providerID == "mock" and .model.id == "chat"')"
 
   scenario "a model OpenCode does not list, a variant the model has not, or a name that is not provider/model is refused, and nothing is started"
   child_delay 1000

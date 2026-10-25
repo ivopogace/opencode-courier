@@ -19,10 +19,11 @@ export async function chooseModel(ports: CourierPorts, parentID: string, choice:
   const own = named === undefined ? undefined : parseModelName(named)
   if (named !== undefined && !own) throw new Error(modelFormatRefusal(named))
   const parent = await parentModel(ports, parentID)
-  const inherited = own ? undefined : await inheritedModel(ports, parent, agent).catch(() => parent)
+  // An agent that cannot be looked up may name a model of its own, which OpenCode applies when none is passed.
+  const inherited = own ? undefined : await inheritedModel(ports, parent, agent).catch(() => undefined)
   const base: ModelRef | undefined = own ?? inherited
   if (!base) {
-    if (variant !== undefined) throw new Error(variantWithoutModelRefusal(variant))
+    if (variant !== undefined) throw new Error(variantWithoutModelRefusal(variant, agent))
     return { model: undefined, parent }
   }
   const chosen = variant ?? base.variant

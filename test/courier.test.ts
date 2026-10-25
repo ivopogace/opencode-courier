@@ -411,16 +411,30 @@ describe("spawn", () => {
       expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ model: { providerID: "mock", id: "chat", variant: "low" } })
     })
 
-    test("an agent that cannot be looked up leaves the child on the parent's model, with the variant", async () => {
+    test("an agent that cannot be looked up leaves the child without a model, since the agent may name one, and refuses a variant", async () => {
       const { ports, calls } = fakePorts({ info: { model: parent } })
       ;(ports.agent as any).get = async () => {
-        throw new Error("no such agent")
+        throw new Error("lookup failed")
       }
 
-      await spawn(ports, "ses_parent", { task: "t", agent: "build", variant: "high" })
+      await spawn(ports, "ses_parent", { task: "t", agent: "build" })
+      expect(calls.find((call) => call.method === "session.create")!.input).not.toHaveProperty("model")
 
-      expect(calls.map((call) => call.method)).not.toContain("model.default")
-      expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ agent: "build", model: { providerID: "mock", id: "chat", variant: "high" } })
+      await expect(spawn(ports, "ses_parent", { task: "t", agent: "build", variant: "high" })).rejects.toThrow(variantWithoutModelRefusal("high", "build"))
+    })
+
+    test("a model-less parent's default goes to a child with an agent that names no model, and goes unread when it cannot be read", async () => {
+      const { ports, calls } = fakePorts({ defaultModel: KNOWN[0] })
+      await spawn(ports, "ses_parent", { task: "t", agent: "build" })
+      expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ agent: "build", model: { providerID: "mock", id: "chat" } })
+
+      const none = fakePorts()
+      ;(none.ports as any).defaultModel = async () => {
+        throw new Error("no default")
+      }
+      const child = await spawn(none.ports, "ses_parent", { task: "t" })
+      expect(child).toEqual({ sessionID: "ses_child", directory: "/repo" })
+      expect(none.calls.find((call) => call.method === "session.create")!.input).not.toHaveProperty("model")
     })
 
     test("a model and a variant together", async () => {

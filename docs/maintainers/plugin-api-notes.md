@@ -263,7 +263,10 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
   `reasoningEffort`, which reaches the provider as `reasoning_effort`. So the live suite's `mock/chat`
   and `mock/other` have them.
 - A session `opencode run` without `--model`, or the API, creates has no `model`: the runner takes
-  `model.default()`. A `variant` alone then applies to that default.
+  `model.default()`. The plugin reads that default itself (`ctx.model.default()`, the plugin's own
+  location) and passes it to `session.create` as such a parent's model, so a `variant` alone has a
+  model to apply to and the child is pinned to it; with the agent's lookup failed it passes none,
+  since OpenCode then applies the agent's own model.
 
 ## Native `parentID`
 

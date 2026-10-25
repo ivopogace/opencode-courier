@@ -145,6 +145,7 @@ describe("envelope and child brief", () => {
     expect(tree.unknownVariantRefusal({ providerID: "mock", id: "chat", variant: "max" }, ["low", "medium", "high"])).toMatchSnapshot()
     expect(tree.unknownVariantRefusal({ providerID: "mock", id: "small", variant: "high" }, [])).toMatchSnapshot()
     expect(tree.variantWithoutModelRefusal("high")).toMatchSnapshot()
+    expect(tree.variantWithoutModelRefusal("high", "build")).toMatchSnapshot()
   })
   test("envelope", () => {
     expect(kernel.envelope("ses_child", "done")).toMatchSnapshot()

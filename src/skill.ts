@@ -10,8 +10,8 @@ export const SKILL_DESCRIPTION =
   "plan and start the parts, end your turn, verify and integrate the reports, report upward, and handle a part gone wrong."
 
 /**
- * The skill's text; it names no limits and says nothing else the brief says (reporting, a finding sent up, an isolated
- * session's branch), except the split rule, which steps 1, 3, 4 and 6 repeat on purpose: the root has no brief.
+ * The skill's text; it names no limits, which the role part and the brief give for the session's own tree.
+ * Steps 1, 3, 4 and 6 repeat the brief's split rule on purpose: the root has no brief, so only the skill gives it.
  */
 export const SKILL_CONTENT = [
   "How to split a task across OpenCode sessions with opencode-courier, and bring the results back up. Your brief, or the " +

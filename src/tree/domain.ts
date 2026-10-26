@@ -132,6 +132,11 @@ export interface RosterEntry {
   readonly model?: string
 }
 
+/** How a child was started, as courier_children and the panel show it: isolated, native when it is, and its model when not its parent's. */
+export function startedAs(entry: RosterEntry) {
+  return { isolated: entry.isolated, ...(entry.native ? { native: true as const } : {}), ...(entry.model ? { model: entry.model } : {}) }
+}
+
 /** A model as a session names it: its provider, its id, and its variant, which `"default"` and none both leave to the provider. */
 export interface ModelRef {
   readonly providerID: string

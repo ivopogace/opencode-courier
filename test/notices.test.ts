@@ -147,6 +147,10 @@ describe("envelope and child brief", () => {
     expect(tree.variantWithoutModelRefusal("high")).toMatchSnapshot()
     expect(tree.variantWithoutModelRefusal("high", "build")).toMatchSnapshot()
   })
+
+  test("refusal of native with isolate", () => {
+    expect(tree.nativeIsolateRefusal()).toMatchSnapshot()
+  })
   test("envelope", () => {
     expect(kernel.envelope("ses_child", "done")).toMatchSnapshot()
     expect(kernel.envelope("ses_child", "failed", { failed: "provider.auth", request: "per_1" })).toMatchSnapshot()

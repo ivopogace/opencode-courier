@@ -612,6 +612,25 @@ describe("attention", () => {
     expect(fake.notified.map((options) => options.message)).toEqual(["Permission: bash bun test", expect.stringContaining("Greeting")])
   })
 
+  test("in a mixed tree, the native sibling's ask gets the courier's notification and the standalone sibling's none; the inbox lists both", async () => {
+    // ses_b, with the permission request, is native; ses_a, with the question, is a standalone session.
+    const fake = fakeContext(empty)
+    fake.native.add("ses_b")
+    const inbox = addAsksInbox(fake.context, FOLLOWS)
+    await settle()
+
+    fake.state.asks = { ...empty, permissions: [bash], questions: [greeting] }
+    fake.emit("permission.asked")
+    await settle()
+    expect(fake.notified).toEqual([
+      { title: "Root › Fix the bug › Write tests", message: "Permission: bash bun test", notification: { when: "blurred" }, sound: false },
+    ])
+
+    fake.answers.push(() => undefined)
+    await inbox.open()
+    expect((fake.dialogs[0]!.options as any).options.map((option: any) => option.description)).toEqual(["Root › Fix the bug", "Root › Fix the bug › Write tests"])
+  })
+
   test("a child that is not native gets none of the courier's: OpenCode sounds and notifies it", async () => {
     const fake = fakeContext(empty)
     addAsksInbox(fake.context, FOLLOWS)

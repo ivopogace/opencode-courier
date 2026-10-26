@@ -84,6 +84,7 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
     ...reportRow(report, status),
     ...(entry.group && standing ? { group: { name: entry.group, standing } } : {}),
     isolated: entry.isolated,
+    ...(entry.native ? { native: true } : {}),
     ...(entry.model ? { model: entry.model } : {}),
     created: info?.time.created ?? entry.createdAt,
     ...(info && !running && endedAt !== undefined ? { idle: endedAt } : {}),

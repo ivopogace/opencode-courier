@@ -32,7 +32,7 @@ export function readLimits(options: unknown) {
   return { limits, problems }
 }
 
-/** The `nativeChildren` option: whether a child started without isolate gets OpenCode's own `parentID`; off unless `true`. */
+/** The `nativeChildren` option: whether a child started without isolate or `native` gets OpenCode's own `parentID`; off unless `true`. */
 export function readNativeChildren(options: unknown) {
   const value: unknown = obj(options).nativeChildren
   if (value === undefined || typeof value === "boolean") return { nativeChildren: value === true, problems: [] }
@@ -126,7 +126,7 @@ export interface RosterEntry {
   readonly reports?: "status"
   /** The join group courier_spawn put it in, whose release holds its report; absent for a child in none. */
   readonly group?: string
-  /** Created with OpenCode's own `parentID` (the `nativeChildren` option), so OpenCode shows its asks in its parent's view. */
+  /** Created with OpenCode's own `parentID` (courier_spawn's `native`, else the `nativeChildren` option), so OpenCode shows its asks in its parent's view. */
   readonly native?: true
   /** The model it was started on, as `modelName` writes it, when that is not the model its parent was on. */
   readonly model?: string

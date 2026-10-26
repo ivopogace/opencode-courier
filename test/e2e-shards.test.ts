@@ -35,9 +35,11 @@ describe("e2e/run.sh shards", () => {
       expect(restarts).toHaveLength(1)
       expect(restarts[0]).toContain("restart-question")
       expect(restarts[0]).toContain("roster")
-      // `native` leaves nativeChildren on, and plugin-add swaps the plugin: both come last in their shard, in this order.
+      // `native` leaves nativeChildren on, and plugin-add swaps the plugin: both come last in their shard, in this order;
+      // `spawn-native` needs the option off, so it runs before `native` wherever they share a shard.
       for (const shard of shards) {
         if (shard.includes("native") && shard.includes("plugin-add")) expect(shard.indexOf("native")).toBeLessThan(shard.indexOf("plugin-add"))
+        if (shard.includes("spawn-native") && shard.includes("native")) expect(shard.indexOf("spawn-native")).toBeLessThan(shard.indexOf("native"))
         if (shard.includes("plugin-add")) expect(shard.at(-1)).toBe("plugin-add")
       }
     })

@@ -5,7 +5,7 @@ import { listChildren, status } from "../src/tree/status.js"
 import type { CourierPorts } from "../src/tree/ports.js"
 import { DEFAULT_LIMITS } from "../src/tree/domain.js"
 import { describeFailure, envelope } from "../src/kernel/protocol.js"
-import { childBrief, modelFormatRefusal, reportBody, spawnText, variantWithoutModelRefusal } from "../src/tree/text.js"
+import { childBrief, modelFormatRefusal, nativeIsolateRefusal, reportBody, spawnText, variantWithoutModelRefusal } from "../src/tree/text.js"
 import { joinGroup } from "../src/tree/group.js"
 import { childStore, groupStore, memberKey, progressKey, rosterKey, settledKey } from "../src/tree/store.js"
 
@@ -98,40 +98,91 @@ describe("spawn", () => {
     expect(calls[1]!.input).toEqual({ sessionID: "ses_child", text: childBrief("ses_parent", "Fix the bug\nin checkout", 1, DEFAULT_LIMITS) })
   })
 
-  describe("with the nativeChildren option", () => {
-    test("creates a child without isolate with OpenCode's parentID and an empty ruleset, and records it as native", async () => {
+  describe("a native child, OpenCode's subagent of its parent", () => {
+    const AS_SUBAGENT = { title: "Fix the bug", parentID: "ses_parent", permissions: [], metadata: { courier: { parentID: "ses_parent" } } }
+    const STANDALONE = { title: "Fix the bug", metadata: { courier: { parentID: "ses_parent" } } }
+    const created = (calls: Call[]) => calls.find((call) => call.method === "session.create")!.input
+
+    test("with the nativeChildren option, a child without isolate or native gets OpenCode's parentID and an empty ruleset, and is recorded and reported as native", async () => {
       const { ports, calls, store } = fakePorts()
       ;(ports as any).nativeChildren = true
 
-      await spawn(ports, "ses_parent", { task: "Fix the bug" })
+      const child = await spawn(ports, "ses_parent", { task: "Fix the bug" })
 
-      expect(calls.find((call) => call.method === "session.create")!.input).toEqual({
-        title: "Fix the bug",
-        parentID: "ses_parent",
-        permissions: [],
-        metadata: { courier: { parentID: "ses_parent" } },
-      })
+      expect(created(calls)).toEqual(AS_SUBAGENT)
+      expect(child).toEqual({ sessionID: "ses_child", directory: "/repo", native: true })
       expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({ isolated: false, native: true })
     })
 
-    test("leaves an isolated child as before: its worktree's location, no parentID", async () => {
+    test("without the option, a child without native is standalone: no parentID, nothing recorded", async () => {
       const { ports, calls, store } = fakePorts()
-      ;(ports as any).nativeChildren = true
 
-      await spawn(ports, "ses_parent", { task: "t", isolate: true })
+      const child = await spawn(ports, "ses_parent", { task: "Fix the bug" })
 
-      const input = calls.find((call) => call.method === "session.create")!.input
-      expect(input).toEqual({ title: "t", location: { directory: "/repo/.worktrees/ses" }, metadata: { courier: { parentID: "ses_parent" } } })
+      expect(created(calls)).toEqual(STANDALONE)
+      expect(child).toEqual({ sessionID: "ses_child", directory: "/repo" })
       expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("native")
     })
 
-    test("is off by default: no parentID, nothing recorded", async () => {
+    test("native: true makes the child a subagent whatever the option says", async () => {
       const { ports, calls, store } = fakePorts()
 
-      await spawn(ports, "ses_parent", { task: "t" })
+      const child = await spawn(ports, "ses_parent", { task: "Fix the bug", native: true })
 
-      expect(calls.find((call) => call.method === "session.create")!.input).not.toHaveProperty("parentID")
+      expect(created(calls)).toEqual(AS_SUBAGENT)
+      expect(child).toEqual({ sessionID: "ses_child", directory: "/repo", native: true })
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({ isolated: false, native: true })
+    })
+
+    test("native: false keeps the child standalone whatever the option says", async () => {
+      const { ports, calls, store } = fakePorts()
+      ;(ports as any).nativeChildren = true
+
+      const child = await spawn(ports, "ses_parent", { task: "Fix the bug", native: false })
+
+      expect(created(calls)).toEqual(STANDALONE)
+      expect(child).toEqual({ sessionID: "ses_child", directory: "/repo" })
       expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("native")
+    })
+
+    test("a null native, as some models send an optional field left out, leaves it to the option", async () => {
+      const on = fakePorts()
+      ;(on.ports as any).nativeChildren = true
+      await spawn(on.ports, "ses_parent", { task: "Fix the bug", native: null as unknown as undefined })
+      expect(created(on.calls)).toEqual(AS_SUBAGENT)
+
+      const off = fakePorts()
+      await spawn(off.ports, "ses_parent", { task: "Fix the bug", native: null as unknown as undefined })
+      expect(created(off.calls)).toEqual(STANDALONE)
+    })
+
+    test("with the option on, an isolated child is created as before: its worktree's location, no parentID", async () => {
+      const { ports, calls, store } = fakePorts()
+      ;(ports as any).nativeChildren = true
+
+      const child = await spawn(ports, "ses_parent", { task: "t", isolate: true })
+
+      expect(created(calls)).toEqual({ title: "t", location: { directory: "/repo/.worktrees/ses" }, metadata: { courier: { parentID: "ses_parent" } } })
+      expect(child).not.toHaveProperty("native")
+      expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("native")
+    })
+
+    test("native: true with isolate: true is refused before anything is started, naming both", async () => {
+      const { ports, calls, store } = fakePorts()
+
+      await expect(spawn(ports, "ses_parent", { task: "t", native: true, isolate: true })).rejects.toThrow(nativeIsolateRefusal())
+
+      expect(calls).toEqual([])
+      expect(store.size).toBe(0)
+      expect(ports.gate.reserved.size).toBe(0)
+    })
+
+    test("native: false with isolate: true is an isolated child as any other", async () => {
+      const { ports, calls } = fakePorts()
+
+      await spawn(ports, "ses_parent", { task: "t", native: false, isolate: true })
+
+      expect(created(calls)).toEqual({ title: "t", location: { directory: "/repo/.worktrees/ses" }, metadata: { courier: { parentID: "ses_parent" } } })
     })
   })
 

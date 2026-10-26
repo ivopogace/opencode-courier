@@ -94,7 +94,7 @@ const groupOf = (message) => message.text?.match(/^<courier from="[^"]*" group="
 // report's own line names it.
 const statusOf = (message, from) =>
   groupOf(message)
-    ? message.text.match(new RegExp(`^\\[\\d+/\\d+\\] ${from} "[^"]*": (\\w+)$`, "m"))?.[1]
+    ? message.text.match(new RegExp(`^\\[\\d+/\\d+\\] ${from} ".*": (\\w+)$`, "m"))?.[1]
     : message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ?? "")
 // Who sent a report with courier_send; a courier_later check-in, from whoever, is not a report.

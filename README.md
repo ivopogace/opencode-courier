@@ -102,7 +102,7 @@ Set the server options on the plugin's entry in the **global** config,
 | `maxChildren` | `5` | Live children one session may have. |
 | `maxTotal` | `30` | Live spawned sessions in one tree. |
 | `memory` | `true` | Keep a record of each session tree for later orchestrators ([memory](docs/reference.md#memory)). |
-| `nativeChildren` | `false` | Create non-isolated children as OpenCode subagents ([native children](docs/reference.md#native-child-sessions)). |
+| `nativeChildren` | `false` | The default for a spawn that does not set `native`: `true` creates non-isolated children as OpenCode subagents ([native children](docs/reference.md#native-child-sessions)). |
 | `webhook` | off | Start the webhook receiver ([webhooks](docs/reference.md#webhooks)). |
 
 The terminal part reads its options only from `~/.config/opencode/cli.json`, in the same entry
@@ -112,7 +112,7 @@ form. Its one option, `"animations": false`, keeps the tree panel still.
 
 | Tool | Does |
 |---|---|
-| `courier_spawn` | Starts a child session with a task and returns at once. `isolate`, `group`, `agent`, `model`, `variant`, `title`. |
+| `courier_spawn` | Starts a child session with a task and returns at once. `isolate`, `group`, `agent`, `model`, `variant`, `native`, `title`. |
 | `courier_send` | Messages a session, waking it if idle. With a `status`, it is a child's report. |
 | `courier_status` / `courier_children` / `courier_tree` | One look at a session, at the sessions it started, or at its whole tree. |
 | `courier_stop` | Stops a session below you and everything under it. |

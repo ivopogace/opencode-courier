@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 finding:11 permission:35 depth:4 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 spawn-native:40 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 finding:11 permission:35 depth:4 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 spawn-native:20 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1783,7 +1783,7 @@ run_spawn_native() {
     "$([ "$(kv get "roster/$parent/$mixed_native" | jq -r '.native == true and .isolated == false and .group == "pair"')" = true ] &&
       [ "$(kv get "roster/$parent/$mixed_plain" | jq -r '(has("native") | not) and .isolated == false and .group == "pair"')" = true ] && echo true || echo false)"
   check "courier_spawn's result says which is the subagent" \
-    "$(api "session/$parent/message" | jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_spawn") | .state.metadata.metadata] |
+    "$(api "session/$parent/message" | jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_spawn") | .state.metadata] |
       (map(select(.sessionID == $native)) | .[0].native == true) and (map(select(.sessionID == $plain)) | .[0] | has("native") | not)')"
   check "the parent was told of both requests: the subagent's as shown by OpenCode, the standalone child's to answer" \
     "$(for _ in $(seq 1 45); do [ "$(notices_with "$parent" asks | jq length)" = 2 ] && break; sleep 1; done
@@ -1793,14 +1793,18 @@ run_spawn_native() {
   check "and asked the person nothing itself" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
   check "courier_children shows the subagent as native, and its sibling not" \
     "$(api_prompt "$parent" "COURIER-CHILDREN $parent"; for _ in $(seq 1 30); do listing=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_children") | .state] | last // empty'); [ -n "$listing" ] && [ "$(jq -r '.status' <<<"$listing")" = completed ] && break; sleep 1; done
-      jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '.status == "completed" and (.metadata.metadata.children | (map(select(.sessionID == $native)) | .[0].native == true) and (map(select(.sessionID == $plain)) | .[0] | has("native") | not))' <<<"$listing")"
+      jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '.status == "completed" and (.metadata.children | (map(select(.sessionID == $native)) | .[0].native == true) and (map(select(.sessionID == $plain)) | .[0] | has("native") | not))' <<<"$listing")"
   request=$(api "session/$mixed_native/permission" | jq -r '.data[0].id // empty')
   check "the person answers the subagent's request in OpenCode's own prompt, as the TUI's view of the parent does" \
     "$([ -n "$request" ] && [ "$(person "session/$mixed_native/permission/$request/reply" '{"decision":"once"}')" = 204 ] && echo true || echo false)"
-  # Through opencode run --auto, which approves the once courier_answer proposes in the parent's own session, as run_permission does.
-  answered=$(prompt_in "$parent" "COURIER-ANSWER once" | tool_state courier_answer)
-  check "the parent answered the standalone child's with courier_answer, as before" \
-    "$(jq -r --arg plain "$mixed_plain" '.status == "completed" and .metadata.metadata.answered == true and .input.sessionID == $plain' <<<"$answered")"
+  # The parent proposes once for the standalone child's request; OpenCode asks the person in the parent's session (#164), as run_answer.
+  plain_request=$(api "session/$mixed_plain/permission" | jq -r '.data[0].id // empty')
+  api_prompt "$parent" "COURIER-ANSWER once"
+  own=$(own_request "$parent" "$plain_request" 30)
+  check "the parent proposed once for the standalone child's request with courier_answer, which OpenCode asks the person about in the parent's session, as before" \
+    "$([ -n "$plain_request" ] && [ -n "$own" ] && [ "$(person "session/$parent/permission/$own/reply" '{"decision":"once"}')" = 204 ] && echo true || echo false)"
+  check "courier_answer passed it on to the standalone child" \
+    "$(for _ in $(seq 1 30); do s=$(answer_state "$parent"); [ "$(jq -r '.status == "completed"' <<<"$s")" = true ] && { jq -r --arg plain "$mixed_plain" '.metadata.answered == true and .input.sessionID == $plain' <<<"$s"; exit; }; sleep 1; done; echo false)"
   check "the group delivered one message with both reports, the subagent's and its sibling's" \
     "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" 'length == 1 and (.[0] |
       contains("reports=\"2\"") and (split("CHILD DONE shell") | length == 3) and contains($native) and contains($plain))')"

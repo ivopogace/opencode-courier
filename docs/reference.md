@@ -199,8 +199,8 @@ It says, in order:
    (2 or more, isolated, when the fixes are independent); the review session reports what was
    found, held, fixed and refused, and running the checks on the fixed tree stays the parent's.
    Under an isolated session the review session, the verifier and the implementor are isolated
-   too, each worktree from the one above, and each merges the branch reported to it before it
-   reports. One session for one stage is a part by the brief's rule above.
+   too, each worktree from the one above. One session for one stage is a part by the brief's rule
+   above.
 3. When one core is tightly coupled, stage it: do the core first, then the parts that depend on it.
 4. Plan the parts so that no two edit the same files, name in each task the skills the session
    should load for it, from those the parent sees listed, and say when a part is a whole job that

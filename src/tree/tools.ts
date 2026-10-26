@@ -45,9 +45,10 @@ export const SpawnInput = Schema.Struct({
     Schema.Boolean.annotate({
       description:
         "true starts the session as your OpenCode subagent: it leaves OpenCode's session lists for your subagent tab, the " +
-        "person answers its permission requests and questions in the view of the top session, and deleting your session " +
-        "deletes it. false starts a standalone session, whatever the plugin's nativeChildren option says; unset, that option " +
-        "decides. Refused with isolate: true, as a subagent runs in its parent's directory.",
+        "person answers its permission requests and questions in the view of the nearest session above it that is not a " +
+        "subagent, usually the top one, and deleting your session deletes it. false starts a standalone session, whatever the " +
+        "plugin's nativeChildren option says; unset, that option decides. Refused with isolate: true, as a subagent runs in " +
+        "its parent's directory.",
     }),
   ),
   group: Schema.optional(

@@ -85,8 +85,7 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
 
 /**
  * Creates the child's session, in a worktree of its own if asked, which goes again if the session cannot be created.
- * `model` names the child's model when it is not its parent's, for the roster and the result. `native` set decides whether
- * the child is a native one, else the `nativeChildren` option does; `spawn` has refused it with a worktree.
+ * `model` names the child's model when it is not its parent's, for the roster and the result.
  */
 async function create(ports: CourierPorts, parentID: string, input: SpawnInput) {
   const { model, parent } = await chooseModel(ports, parentID, input, input.agent)

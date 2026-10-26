@@ -35,7 +35,7 @@ free messages"): run it from your own machine, or with a paid provider's key.
 | `COURIER_SKILL` | | `deny` denies `courier-orchestrate` in `permissions`, so no session can load it. |
 | `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
-| `COURIER_NATIVE` | | `1` turns `nativeChildren` on. |
+| `COURIER_NATIVE` | | `1` turns `nativeChildren` on, so every child is native unless the spawn says `native: false`. |
 | `COURIER_SEED` | | A JSON file of storage keys to set before the prompt ([seeding a record](#seeding-a-record)). |
 | `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, then for the children. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |

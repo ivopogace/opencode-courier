@@ -72,7 +72,7 @@ directory.
 | `maxChildren` | `5` | Live children one session may have. |
 | `maxTotal` | `30` | Live spawned sessions in one tree; the top is not counted. |
 | `memory` | `true` | `false` turns [memory](#memory) off. |
-| `nativeChildren` | `false` | `true` creates non-isolated children as OpenCode subagents ([native child sessions](#native-child-sessions)). |
+| `nativeChildren` | `false` | The default for a child started without `native`: `true` creates non-isolated children as OpenCode subagents ([native child sessions](#native-child-sessions)). |
 | `webhook` | off | An object, or `true` for every default, starts the [webhook receiver](#webhooks). |
 
 The limits are positive integers. A value that is not valid keeps the default, and the server log
@@ -103,10 +103,10 @@ for a git elsewhere.
 
 | Tool | Parameters | Does |
 |---|---|---|
-| `courier_spawn` | `task`, `title?`, `agent?`, `model?`, `variant?`, `isolate?`, `group?` | Creates a session, sends it the task and a brief, and returns at once. `model` and `variant` choose [what it runs on](#the-model-a-child-runs-on). `isolate: true` gives it its own [worktree](#worktrees). With a `group`, its report is held with the [group's](#join-groups). Refused past the [limits](#session-trees-and-their-limits). |
+| `courier_spawn` | `task`, `title?`, `agent?`, `model?`, `variant?`, `isolate?`, `native?`, `group?` | Creates a session, sends it the task and a brief, and returns at once. `model` and `variant` choose [what it runs on](#the-model-a-child-runs-on). `isolate: true` gives it its own [worktree](#worktrees). `native` says whether it is an OpenCode subagent ([native child sessions](#native-child-sessions)). With a `group`, its report is held with the [group's](#join-groups). Refused past the [limits](#session-trees-and-their-limits). |
 | `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `queue?` | Delivers a message, signed with the sender's id, waking the session if idle. It steers into a running turn, or waits for its end with `queue: true`. From a child to its parent, a `status` makes it the child's [report](#a-childs-report). |
 | `courier_status` | `sessionID` | One look at a session: its last turn's outcome, how long it has been idle, when it was archived, its last reply, and the requests and questions it waits on (`pending`). For check-ins, not for waiting. |
-| `courier_children` | `sessionID?` | The sessions this one (or `sessionID`) started, each with what `courier_status` shows, its directory, whether it is isolated, when it started, its [group](#join-groups) and its [model](#the-model-a-child-runs-on) when that is not the parent's. |
+| `courier_children` | `sessionID?` | The sessions this one (or `sessionID`) started, each with what `courier_status` shows, its directory, whether it is isolated, `native: true` when it is a [subagent](#native-child-sessions), when it started, its [group](#join-groups) and its [model](#the-model-a-child-runs-on) when that is not the parent's. |
 | `courier_tree` | `sessionID?` | The [whole tree](#seeing-and-stopping-a-subtree) under a session. |
 | `courier_stop` | `sessionID`, `cleanup?` | [Stops](#seeing-and-stopping-a-subtree) a session below this one and everything under it. |
 | `courier_cleanup` | `sessionID`, `force?` | Removes an isolated child's [worktree](#worktrees) and forgets the child. |
@@ -561,9 +561,15 @@ refused.
 
 ## Native child sessions
 
-Off by default. With `"nativeChildren": true`, a child started without `isolate` is created with
-OpenCode's own `parentID`, so OpenCode treats it as the parent's subagent. Turn it on only with
-OpenCode's TUI or the paired app, which show its prompts. What changes:
+A native child is created with OpenCode's own `parentID`, so OpenCode treats it as the parent's
+subagent. The parent chooses per spawn with `courier_spawn`'s `native`: `true` makes that child a
+subagent, `false` keeps it a standalone session, and unset leaves it to the `nativeChildren` option,
+which is off by default and, with `"nativeChildren": true`, makes every child started without
+`isolate` a subagent. A tree may mix both kinds, in one group too; the skill has a parent make a
+part native when nobody needs to open it on its own (it reads, checks or looks something up, reports
+once and is done), and leave it off for a part the person may want to open or that should outlive
+the parent. Use native children only with OpenCode's TUI or the paired app, which show their prompts.
+What changes for a native child:
 
 - **Asks are answered in OpenCode's view.** The TUI's view of the top session, and the paired app's
   request dock, show the permission requests, questions and forms of every native child under it.
@@ -579,9 +585,12 @@ OpenCode's TUI or the paired app, which show its prompts. What changes:
 - **`autoaccept` and `opencode run`** in the top session answer native children's requests:
   `autoaccept` and `run --auto` approve them, `run` without `--auto` rejects them and cancels their
   questions and forms.
+- **The roster, `courier_children`, `courier_tree` and the [tree panel](#the-tree-panel)** mark it:
+  `native: true` in the listings, `native` in the panel's row.
 
-An isolated child cannot be native. A tree with isolated children shows in OpenCode as several
-trees, split at each isolated child; `courier_tree` shows the whole.
+An isolated child cannot be native: `native: true` with `isolate: true` is refused, and nothing is
+started; with the option on, an isolated child is a standalone session. A tree with isolated children
+shows in OpenCode as several trees, split at each isolated child; `courier_tree` shows the whole.
 
 ## In the terminal
 
@@ -618,8 +627,9 @@ the tree under it. It is fullscreen under 108 columns.
 ```
 
 Each row has a mark (`✓` reported, a spinner while running, `●` waiting on you, `!` stalled, `✗`
-failed or interrupted), the title, what it does, its report, its group's standing, `isolated` and
-its [model](#the-model-a-child-runs-on) when that is not its parent's.
+failed or interrupted), the title, what it does, its report, its group's standing, `isolated`,
+`native` for a [subagent](#native-child-sessions) and its [model](#the-model-a-child-runs-on) when
+that is not its parent's.
 Under it: a progress bar for an orchestrator, each ask for a session waiting on you, and for a leaf
 how long it ran, its last tool call, its context use and its cost. Digby, the courier's mole, digs
 in the header and follows the tree's state.

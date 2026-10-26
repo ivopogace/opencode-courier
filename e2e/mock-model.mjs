@@ -255,6 +255,13 @@ function decide(body) {
   // Told that its child shows a form only the person can answer, it ends its turn, as if it had told them.
   const form = recent.match(/<courier from="ses_\w+" asks="form" form="([^"]+)"/)
   if (form) return { text: `PARENT TOLD FORM ${form[1]}` }
+  // COURIER-ANSWER answers the last relayed permission request; first, as a settled notice that waited for a turn may land with it.
+  const answer = recent.match(/COURIER-ANSWER (once|always|reject)(?: (.+))?/)
+  if (answer) {
+    const notices = messages.flatMap((message) => [...textOf(message.content).matchAll(/<courier from="(ses_\w+)" asks="permission" request="([^"]+)">/g)])
+    const [, sessionID, requestID] = notices.at(-1) ?? []
+    return { tool: "courier_answer", args: { sessionID, requestID, reply: answer[1], ...(answer[2] ? { message: answer[2] } : {}) } }
+  }
   // A permission request's settled notice is sent without a wake and may wait for a report's turn: that turn is the report's.
   if (/<courier from="ses_\w+" (answered|settled)=/.test(recent) && !/<courier from="ses_\w+" status="/.test(recent)) return { text: "PARENT SETTLED" }
   if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
@@ -270,12 +277,6 @@ function decide(body) {
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
   const nudge = recent.match(/COURIER-NUDGE(-PLAIN)? (ses_\w+)/)
   if (nudge) return { tool: "courier_send", args: { sessionID: nudge[2], message: nudge[1] ? "CHILD-REPORT-PLAIN" : "CHILD-REPORT-NOW" } }
-  const answer = recent.match(/COURIER-ANSWER (once|always|reject)(?: (.+))?/)
-  if (answer) {
-    const notices = messages.flatMap((message) => [...textOf(message.content).matchAll(/<courier from="(ses_\w+)" asks="permission" request="([^"]+)">/g)])
-    const [, sessionID, requestID] = notices.at(-1) ?? []
-    return { tool: "courier_answer", args: { sessionID, requestID, reply: answer[1], ...(answer[2] ? { message: answer[2] } : {}) } }
-  }
   // COURIER-LATER-STRING sends the delay as a string, as some models do.
   const later = recent.match(/COURIER-LATER(-CANCEL|-STRING)? ([\d.]+)/)
   if (later)
@@ -317,6 +318,16 @@ function decide(body) {
         { tool: "courier_spawn", args: { task: "CHILD-SILENT", group: "pair" } },
       ],
     }
+  // COURIER-MIXED starts two children at once in one group, nativeChildren off: one as its subagent, one standalone; each asks for a permission.
+  if (recent.includes("COURIER-MIXED"))
+    return {
+      calls: [
+        { tool: "courier_spawn", args: { task: "CHILD-ASKS", group: "pair", native: true } },
+        { tool: "courier_spawn", args: { task: "CHILD-ASKS", group: "pair", native: false } },
+      ],
+    }
+  // COURIER-NATIVE-ISOLATE asks for a subagent in a worktree of its own, which courier_spawn refuses.
+  if (recent.includes("COURIER-NATIVE-ISOLATE")) return { tool: "courier_spawn", args: { task: "Report back to your parent.", native: true, isolate: true } }
   // COURIER-TUI (e2e/tui.sh) starts two children at once in one group: one reports, the other asks for a permission first.
   if (recent.includes("COURIER-TUI"))
     return {

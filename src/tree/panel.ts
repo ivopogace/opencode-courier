@@ -1,4 +1,5 @@
 import type { Status } from "../kernel/protocol.js"
+import { startedAs } from "./domain.js"
 import type { CourierPorts, KnownModel, ModelWindow, Pending, ShownForm } from "./ports.js"
 import { lastStatus, stoppedSincePrompt } from "./report.js"
 import type { Row, Tree, Wait } from "./rpc.js"
@@ -83,8 +84,7 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
     ...(stopped ? { stopped } : {}),
     ...reportRow(report, status),
     ...(entry.group && standing ? { group: { name: entry.group, standing } } : {}),
-    isolated: entry.isolated,
-    ...(entry.model ? { model: entry.model } : {}),
+    ...startedAs(entry),
     created: info?.time.created ?? entry.createdAt,
     ...(info && !running && endedAt !== undefined ? { idle: endedAt } : {}),
     ...(info ? { cost: info.cost } : {}),

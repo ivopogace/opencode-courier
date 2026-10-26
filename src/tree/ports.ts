@@ -187,7 +187,7 @@ export interface CourierPorts {
   /** OpenCode's default model here, which a session with no model of its own runs on; undefined when there is none. */
   readonly defaultModel: () => Promise<ModelRef | undefined>
   readonly limits: Limits
-  /** The `nativeChildren` option: a child started without isolate is created with OpenCode's own `parentID`. */
+  /** The `nativeChildren` option: a child started without isolate and without `native` is created with OpenCode's own `parentID`. */
   readonly nativeChildren?: boolean
   readonly gate: SpawnGate
   /** The depths the `context` hook remembers; a parent's is dropped when it starts a child. */

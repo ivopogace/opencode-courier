@@ -5,7 +5,7 @@ import { admit } from "./limits.js"
 import { chooseModel } from "./model.js"
 import type { CourierPorts, RosterEntry } from "./ports.js"
 import { childStore, groupStore } from "./store.js"
-import { childBrief, childBranch } from "./text.js"
+import { childBrief, childBranch, nativeIsolateRefusal } from "./text.js"
 
 export interface SpawnInput {
   readonly task: string
@@ -17,6 +17,8 @@ export interface SpawnInput {
   readonly model?: string
   /** The variant of that model, its reasoning effort; left out, the chosen model's own. */
   readonly variant?: string
+  /** Whether the child is OpenCode's subagent of the caller; left out, the `nativeChildren` option decides. */
+  readonly native?: boolean
 }
 
 function titleOf(task: string) {
@@ -42,9 +44,11 @@ export async function spawn(ports: CourierPorts, parentID: string, input: SpawnI
   const group = typeof input.group === "string" ? input.group.trim() || undefined : (input.group ?? undefined)
   if (group !== undefined && !isGroupName(group))
     throw new Error(`group must be a name of 1 to 60 letters, digits, dots, dashes or underscores, not ${JSON.stringify(group)}.`)
+  const native = typeof input.native === "boolean" ? input.native : undefined
+  if (native && input.isolate) throw new Error(nativeIsolateRefusal())
   const admitted = await admit(ports, parentID)
   try {
-    return await start(ports, parentID, input, admitted, group)
+    return await start(ports, parentID, { ...input, native }, admitted, group)
   } finally {
     admitted.release()
   }
@@ -75,6 +79,7 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     ...(handedDown ? { fromParent: true } : {}),
     ...(handedDown?.uncommitted ? { uncommitted: true } : {}),
     ...(model ? { model } : {}),
+    ...(entry.native ? { native: true } : {}),
   }
 }
 
@@ -91,7 +96,7 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
   const base = worktree ? await ports.head(worktree) : undefined
   const title = input.title ?? titleOf(input.task)
   // OpenCode takes a location or a parentID, never both, so an isolated child cannot be a native one.
-  const native = ports.nativeChildren === true && !worktree
+  const native = (input.native ?? ports.nativeChildren === true) && !worktree
   const child = await ports.session
     .create({
       title,

@@ -59,6 +59,8 @@ const Row = Schema.Struct({
   /** Its join group, and its standing there: `held`, `out`, how it left, or `released`. */
   group: Schema.optionalKey(Schema.Struct({ name: Schema.String, standing: Schema.String })),
   isolated: Schema.Boolean,
+  /** Set when it is OpenCode's subagent of its parent (a native child), which OpenCode's session lists leave out. */
+  native: Schema.optionalKey(Schema.Boolean),
   /** The model it was started on, `provider/model` with `#variant` when one is set, when that is not its parent's. */
   model: Schema.optionalKey(Schema.String),
   created: Schema.Number,

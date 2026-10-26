@@ -185,6 +185,11 @@ export function reportBody(message: string, artifacts: Artifacts | undefined) {
 
 // Tool results.
 
+/** courier_spawn's refusal of `native: true` with `isolate: true`: OpenCode gives a session a worktree or a parent, never both. */
+export const nativeIsolateRefusal = () =>
+  "Not started: native: true and isolate: true cannot go together. OpenCode runs a session in a worktree of its own or as a " +
+  "subagent of its parent, never both. Start it with isolate: true alone for a worktree of its own, or with native: true alone for a subagent in your directory."
+
 export function spawnText(child: {
   readonly sessionID: string
   readonly directory: string

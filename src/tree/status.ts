@@ -1,6 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
 import { describeFailure } from "../kernel/protocol.js"
-import { standingOf } from "./domain.js"
+import { standingOf, startedAs } from "./domain.js"
 import type { CourierPorts, RosterEntry } from "./ports.js"
 import { current } from "./roster.js"
 import { groupStore } from "./store.js"
@@ -56,7 +56,7 @@ export async function listChildren(ports: CourierPorts, parentID: string) {
 /** One roster entry as courier_children shows it: what courier_status reports with its directory and group standing, or the error it gave. */
 export async function described(ports: CourierPorts, entry: RosterEntry) {
   const group = entry.group ? { group: { name: entry.group, report: await standingIn(ports, entry, entry.group) } } : {}
-  const roster = { directory: entry.directory, isolated: entry.isolated, created: entry.createdAt, ...(entry.model ? { model: entry.model } : {}), ...group }
+  const roster = { directory: entry.directory, ...startedAs(entry), created: entry.createdAt, ...group }
   try {
     return { ...(await status(ports, { sessionID: entry.sessionID })), ...roster }
   } catch (error) {

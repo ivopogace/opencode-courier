@@ -317,12 +317,27 @@ test("logs a nativeChildren option it cannot use, and keeps it off", async () =>
   }
 })
 
-test("with nativeChildren in the options, courier_spawn gives a child OpenCode's parentID", async () => {
+test("with nativeChildren in the options, courier_spawn gives a child OpenCode's parentID, unless the spawn says native: false", async () => {
   const { tools, calls } = await setUp({}, { nativeChildren: true })
 
   await tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_parent" })
-
   expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ parentID: "ses_parent", permissions: [] })
+
+  await tools.get("courier_spawn").execute({ task: "t", native: false }, { sessionID: "ses_parent" })
+  expect(calls.findLast((call) => call.method === "session.create")!.input).not.toHaveProperty("parentID")
+})
+
+test("without the option, courier_spawn with native: true gives a child OpenCode's parentID, and refuses it with isolate", async () => {
+  const { tools, calls } = await setUp()
+
+  const result = await tools.get("courier_spawn").execute({ task: "t", native: true }, { sessionID: "ses_parent" })
+  expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ parentID: "ses_parent", permissions: [] })
+  expect(result.metadata).toMatchObject({ native: true })
+
+  await expect(tools.get("courier_spawn").execute({ task: "t", native: true, isolate: true }, { sessionID: "ses_parent" })).rejects.toThrow(
+    "courier_spawn failed: Not started: native: true and isolate: true cannot go together.",
+  )
+  expect(calls.filter((call) => call.method === "worktree.create")).toEqual([])
 })
 
 test("tool inputs decode with their schemas", async () => {
@@ -331,6 +346,9 @@ test("tool inputs decode with their schemas", async () => {
   const decode = (name: string, value: unknown) => Schema.decodeUnknownSync(tools.get(name).input)(value)
   expect(decode("courier_spawn", { task: "t", isolate: true })).toEqual({ task: "t", isolate: true })
   expect(decode("courier_spawn", { task: "t", group: "reviews" })).toEqual({ task: "t", group: "reviews" })
+  expect(decode("courier_spawn", { task: "t", native: true })).toEqual({ task: "t", native: true })
+  expect(decode("courier_spawn", { task: "t", native: false, isolate: true })).toEqual({ task: "t", native: false, isolate: true })
+  expect(() => decode("courier_spawn", { task: "t", native: "yes" })).toThrow()
   expect(decode("courier_send", { sessionID: "s", message: "m" })).toEqual({ sessionID: "s", message: "m" })
   expect(() => decode("courier_send", { sessionID: "s" })).toThrow()
   const report = { sessionID: "s", message: "m", status: "done", artifacts: { branch: "b", commits: ["c"], files: ["f"], checks: [{ command: "bun test", result: "ok" }] } }

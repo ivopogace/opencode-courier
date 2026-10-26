@@ -428,6 +428,8 @@ describe("the tree panel's lines", () => {
     )
     expect(statusLine(row("ses_a", { state: "waiting", isolated: true }))).toBe("waiting on you · owes a report · isolated")
     expect(statusLine(row("ses_a", { state: "waiting", isolated: true, model: "mock/small#high" }))).toBe("waiting on you · owes a report · isolated · mock/small#high")
+    expect(statusLine(row("ses_a", { state: "running", native: true }))).toBe("running · owes a report · native")
+    expect(statusLine(row("ses_a", { native: true, model: "mock/small" }))).toBe("idle · owes a report · native · mock/small")
     expect(statusLine(row("ses_a", { outcome: "failed", report: { state: "ended", progressed: false } }))).toBe("failed · ended without a report")
     const pad = (value: number) => String(value).padStart(2, "0")
     const lifts = new Date(NOW + 25 * 60_000)
@@ -579,6 +581,23 @@ describe("the tree panel", () => {
     await app.waitForFrame((frame) => frame.includes("2/2 reported"))
     expect(fake.calls).toHaveLength(asked + 1)
     expect(app.captureCharFrame()).toContain("✓ CHILD-ASKS  idle · reported done · group pair held")
+  })
+
+  test("a mixed tree marks the subagent's row native and its standalone sibling's not", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async () => ({
+      rows: [
+        row("ses_reader", { title: "Read the diff", native: true, group: { name: "pair", standing: "out" } }),
+        row("ses_writer", { title: "Write the fix", group: { name: "pair", standing: "out" } }),
+      ],
+    })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+
+    await app.waitForFrame((frame) => frame.includes("Write the fix"))
+    const frame = app.captureCharFrame()
+    expect(frame).toContain("Read the diff  idle · owes a report · group pair out · native")
+    expect(frame).toMatch(/Write the fix  idle · owes a report · group pair out\s*\n/)
   })
 
   test("shows a session's context use muted, and in the warning colour past 80%", async () => {

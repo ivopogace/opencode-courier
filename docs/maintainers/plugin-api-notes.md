@@ -270,7 +270,7 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
 
 ## Native `parentID`
 
-What `nativeChildren` rests on:
+What a native child (`courier_spawn`'s `native`, else the `nativeChildren` option) rests on:
 
 - **`Session.create` takes a `location` or a `parentID`**, never both. With a parent the child takes
   its location, so an isolated child cannot have one.

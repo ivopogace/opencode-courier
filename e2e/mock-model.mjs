@@ -317,6 +317,16 @@ function decide(body) {
         { tool: "courier_spawn", args: { task: "CHILD-SILENT", group: "pair" } },
       ],
     }
+  // COURIER-MIXED starts two children at once in one group, nativeChildren off: one as its subagent, one standalone; each asks for a permission.
+  if (recent.includes("COURIER-MIXED"))
+    return {
+      calls: [
+        { tool: "courier_spawn", args: { task: "CHILD-ASKS", group: "pair", native: true } },
+        { tool: "courier_spawn", args: { task: "CHILD-ASKS", group: "pair", native: false } },
+      ],
+    }
+  // COURIER-NATIVE-ISOLATE asks for a subagent in a worktree of its own, which courier_spawn refuses.
+  if (recent.includes("COURIER-NATIVE-ISOLATE")) return { tool: "courier_spawn", args: { task: "Report back to your parent.", native: true, isolate: true } }
   // COURIER-TUI (e2e/tui.sh) starts two children at once in one group: one reports, the other asks for a permission first.
   if (recent.includes("COURIER-TUI"))
     return {

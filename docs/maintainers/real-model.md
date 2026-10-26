@@ -78,6 +78,8 @@ answer; the reply holds both. The README's Quickstart prompt is a shorter wordin
 | `longcat-2.5-preview-free` | 2.0.28 | 8/8 in 9 requests, both children in one group it named itself, `RESULTS 391 1024`. |
 | `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 8/8 in 11 requests; both children native, with an empty ruleset. |
 | `longcat-2.5-preview-free`, two isolated helpers that commit | 2.0.26 | Pass: each committed on `courier/<its session ID>` and named it in its report. |
+| `deepseek-v4.1-flash-free`, catalog, 646112c, skill listed and `COURIER_SKILL=deny` | 2.1.4 | 3 of 3 passed under each, 8/8 in 10 requests; both helpers in one join group every time. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 646112c, skill listed and `COURIER_SKILL=deny` | 2.1.4 | 3 of 3 passed under each, 8/8 in 10 to 12 requests; one join group every time. |
 
 ## The permission relay
 
@@ -161,6 +163,10 @@ with a seeded record can.
 | `glm-5.3-flash-free`, catalog, 315587a, memory off / on and empty / seeded | 2.0.32 | 8–9 of 9 in every condition; every lost point was polling. With memory on, the root recalled before its split in all six trees and cited the seeded record in all three. |
 | `glm-5.3-flash-free`, catalog, the open prompt, empty / seeded / lesson | 2.0.32 | Empty and seeded roots handed off all three parts flat. Every root with the lesson did "count" itself, as the lesson said (1 to 3 sessions, against 4). |
 | `glm-5.3-flash-free`, catalog, the open prompt, model-written lessons | 2.0.32 | The top wrote a lesson in 4 of 9 trees, and in 1 of 3 on the current wording. Each lesson, seeded into a fresh tree, steered it. |
+| `deepseek-v4.1-flash-free`, catalog, 646112c, skill listed | 2.1.4 | 3 of 3 passed, 9/9 in 25 to 41 requests; every root loaded the skill and recalled once before its split; no polling. The fourth and fifth runs, and their skill-denied pairs, were refused by the free tier's daily limit: in one, the "numbers" session retried its halves, then reported `blocked` rather than ending quietly. |
+| `deepseek-v4.1-flash-free`, catalog, 646112c, `COURIER_SKILL=deny` | 2.1.4 | 3 of 3 passed, 9/9 in 23 to 32 requests; two of three roots still stated their split line. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 646112c, skill listed | 2.1.4 | 5 of 5 passed, 9/9, mean 30 requests; every root loaded the skill, recalled once and used two join groups; no polling. Six of these ten runs first lost "every spawned session reported" to a child's title with quotes in it, a checker misread fixed in #378; re-read with `--saved`. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 646112c, `COURIER_SKILL=deny` | 2.1.4 | 5 of 5 passed, 9/9, mean 35 requests. |
 
 ## A part that goes wrong
 
@@ -249,7 +255,14 @@ for n in 1 2 3; do run finding-skill-$n; run finding-noskill-$n COURIER_SKILL=de
 bun script/real-model-table.ts $(for n in 1 2 3; do echo skill=$HOME/courier-runs/finding-skill-$n noskill=$HOME/courier-runs/finding-noskill-$n; done)
 ```
 
-No run yet: from a shared cloud address the free tier refused the first request.
+A slow model needs `COURIER_TIMEOUT=600`: the halves sleep 150 s, and with steps of 20 s or more
+the default wait gives up while a sub-orchestrator's wake turn still runs.
+
+| Model | OpenCode | Result |
+|---|---|---|
+| a self-hosted model behind an OpenAI-compatible endpoint, 646112c, skill listed | 2.1.4 | 0 of 6 passed (3 with the default wait, 3 with `COURIER_TIMEOUT=600`), 9/13 in four. In every run the "count" session applied the change to its own file and reported it inside its `done`, sending nothing up without a status; the root then judged the change bogus, since it had not come through the root, and told the leaf to revert it with a `courier_send` carrying `status: blocked`, which the leaf did. One root wrote a lesson to treat such changes as bogus; one did not revert but flagged the "stray checked" to the person, in a run where it had also sent every part to a working directory it made up. The other lost points: a default wait that gave up during the "numbers" session's wake turn (6/13), and one `courier_children` look after a spawn (8/13). |
+| a self-hosted model behind an OpenAI-compatible endpoint, 646112c, `COURIER_SKILL=deny` | 2.1.4 | 0 of 6 passed, 9/13 in five, the same miss word for word; the sixth lost two more points to a default wait that gave up. The rule the leaf misses is the brief's, which both conditions share, so the skill is not the lever here. |
+| `deepseek-v4.1-flash-free`, catalog, 646112c | 2.1.4 | No run: the free tier's daily limit was reached by the recursive runs before it. |
 
 ## Seeding a record
 
@@ -297,6 +310,8 @@ after.
 This is a smoke test, not a benchmark: a few runs on free models that change without notice. A
 model that passes here can still poll or forget to report on a harder task, so a `courier_later`
 check-in still pays. Which session loads the skill varies from run to run; on one-result tasks,
-models do not load it. No row reaches the five-run floor on two models. Not re-run on the current
-wording: `COURIER_PERSON=other-server` and the models other than `longcat-2.5-preview-free`. Earlier
-rows, among them a native-notice wording that scored 0/6, are in this file's history.
+models do not load it. The recursive rows at 646112c reach the five-run floor on one model, the
+self-hosted one; no row reaches it on two. Not re-run on the current wording: `permission`
+(`COURIER_PERSON=other-server` included), `question`, `recursive-fault`, `recursive-staged`, and
+the models other than those in the 646112c rows. Earlier rows, among them a native-notice wording
+that scored 0/6, are in this file's history.

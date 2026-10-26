@@ -157,6 +157,16 @@ test("without --fault the recursive checker makes its nine checks only", () => {
   }
 })
 
+test("a report in a group notice counts whatever quotes the child's title holds", () => {
+  // A title is the task's first line, such as `Part "count". Do exactly this:`, so the notice's line carries quotes inside the quoted title.
+  const tree = transcripts("no-fault")
+  const quoted = (text: string) => text.replace('"ses_num"', '"Part "numbers". Your part is two halves"').replace('"ses_count"', '"Part "count". Do exactly this:"')
+  tree.ses_root = tree.ses_root!.map((message) => (message.type === "synthetic" && /group="parts"/.test(String(message.text)) ? synthetic(quoted(String(message.text))) : message))
+  const run = check({ tree, files: FILES })
+  expect(run.failed).toEqual([])
+  expect(run.checks["every spawned session reported to its parent, with a status"]).toBe(true)
+})
+
 test("a re-read with --saved keeps the fault checks of a run made with --fault, which summary.json records", () => {
   const run = check("does-it-itself", ["--fault"], [])
   expect(run.fault).toBe(true)

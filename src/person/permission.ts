@@ -217,7 +217,7 @@ export async function ownRequests(permissions: Iterable<Permissions>, sessionID:
   return [...found.values()].map((request) => ({ request, passesOn: passedOn(request.metadata) }))
 }
 
-/** The requests a session waits on, in whichever location holds them, for courier_status. */
+/** The requests a session waits on, in whichever location holds them, for courier_children. */
 export async function pendingOf(permissions: Iterable<Permissions>, sessionID: string) {
   const found = new Map<string, Pending>()
   for (const { requests } of await listEverywhere(permissions, sessionID))

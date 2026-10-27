@@ -294,8 +294,6 @@ function decide(body) {
   // COURIER-RECALL reads the project's tree records, or one in full.
   const recallOf = recent.match(/COURIER-RECALL(?: (ses_\w+))?/)
   if (recallOf) return { tool: "courier_recall", args: recallOf[1] ? { sessionID: recallOf[1] } : {} }
-  const look = recent.match(/COURIER-STATUS (ses_\w+)/)
-  if (look) return { tool: "courier_status", args: { sessionID: look[1] } }
   const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)
   if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
   if (recent.includes("COURIER-SUBTREE-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-MID" } }

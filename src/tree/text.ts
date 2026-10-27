@@ -63,7 +63,7 @@ function splitRule(parentID: string, depth: number, limits: Limits) {
       "One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.",
     `- Say which in one line of your reply: ${SPLIT_LINE}.`,
     "- If you split, you orchestrate: start the parts that run at once in one group, with the same group name for each, " +
-      "then end your turn while they work. Do not poll with courier_status, courier_children, courier_tree or sleep: the group's " +
+      "then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: the group's " +
       "reports wake you. Check and integrate each part yourself when it reports (never hand that checking to another " +
       `session), then send ${parentID} one combined report.`,
   ]
@@ -238,9 +238,6 @@ export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"
     return `Delivered to ${sessionID}. Without a status it is progress, not your report: when you finish, send one with status ${STATUS_LIST}.`
   return `Delivered to ${sessionID}.`
 }
-
-/** courier_status's result: the session's state, as JSON. */
-export const statusText = (status: unknown) => JSON.stringify(status, null, 2)
 
 export const childrenText = (listed: ReadonlyArray<unknown>) =>
   listed.length ? JSON.stringify(listed, null, 2) : "No sessions started with courier_spawn."

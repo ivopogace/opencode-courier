@@ -31,7 +31,7 @@ const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
 const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
 const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 5)
 // Calls that look at other sessions; right after spawning, or more than once a turn, that is polling.
-const LOOKS = new Set(["courier_status", "courier_children", "courier_tree"])
+const LOOKS = new Set(["courier_children", "courier_tree"])
 // courier_recall counts as a look too, with one allowance: the one call the skill asks of the root, before its split, in its first turn.
 const RECALL = "courier_recall"
 const SKILL = "courier-orchestrate"
@@ -381,7 +381,7 @@ const findingChecks = [
 const checks = [
   ["the root spawned at least two children with courier_spawn in its first turn", spawnsIn(first) >= 2],
   ["the root ended its first turn after spawning, with no reports in it", ended(first.at(-1)) && !failed(first.at(-1)) && !first.some((message) => reportersOf(message).some((from) => tree.has(from)))],
-  ["no orchestrator polled (courier_status, courier_children, courier_tree, sleep)", pollers.length === 0],
+  ["no orchestrator polled (courier_children, courier_tree, sleep)", pollers.length === 0],
   [
     "at least one child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all without work of its own first",
     subOrchestrators.some(([, entry]) => batchIn(entry.list)) && subOrchestrators.every(([, entry]) => notOneInAll(entry.list)),

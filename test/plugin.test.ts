@@ -183,7 +183,7 @@ test("on the pinned OpenCode, loading logs nothing about the version", async () 
   const logged = spyOn(console, "error").mockImplementation(() => {})
   try {
     const { tools } = await setUp()
-    await tools.get("courier_status").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })
+    await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
 
     expect(logged.mock.calls.map(([line]) => line).filter((line) => String(line).includes("built and tested against"))).toEqual([])
   } finally {
@@ -195,7 +195,7 @@ test("on another OpenCode, loading logs one line naming both versions, and tool 
   const logged = spyOn(console, "error").mockImplementation(() => {})
   try {
     const { tools } = await setUp({}, undefined, [], { name: "opencode", version: "2.0.33", channel: "beta" })
-    await tools.get("courier_status").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })
+    await tools.get("courier_tree").execute({}, { sessionID: "ses_parent" })
     const result = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
 
     const { plugin, opencode } = builtVersions()
@@ -216,7 +216,6 @@ test("registers the courier tools", async () => {
   expect([...tools.keys()]).toEqual([
     "courier_spawn",
     "courier_send",
-    "courier_status",
     "courier_children",
     "courier_tree",
     "courier_stop",
@@ -247,7 +246,7 @@ test("loads all the same when the host cannot register the RPC, and logs it", as
   try {
     const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { rpc: undefined })
 
-    expect(tools.size).toBe(14)
+    expect(tools.size).toBe(13)
     expect(hooks.has("context")).toBe(true)
     expect(logged.filter((line) => line.startsWith("courier rpc: not registered"))).toHaveLength(1)
   } finally {
@@ -384,8 +383,8 @@ test("a spawned child's question shows under pending, and courier_answer passes 
   const questions = [{ question: "Which greeting?", header: "Greeting", options: [{ label: "Hi", description: "" }] }]
   store.set("question/question_p1", { requestID: "question_p1", sessionID: "ses_child", top: "ses_parent", title: "Fix the bug", questions, askedAt: Date.now() })
 
-  const status = await tools.get("courier_status").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })
-  expect(status.metadata.pending).toEqual([{ type: "question", requestID: "question_p1", questions, stopped: true }])
+  const listed = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
+  expect(listed.metadata.children[0].pending).toEqual([{ type: "question", requestID: "question_p1", questions, stopped: true }])
 
   const answered = await tools
     .get("courier_answer")
@@ -487,8 +486,8 @@ test("a spawned child's permission request reaches its parent, and courier_answe
   const notice = calls.find((call) => call.method === "session.synthetic")!.input
   expect(notice.sessionID).toBe("ses_parent")
   expect(notice.text).toContain('<courier from="ses_child" asks="permission" request="per_1">')
-  const status = await tools.get("courier_status").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })
-  expect(status.metadata.pending).toEqual([{ type: "permission", requestID: "per_1", action: "shell", resources: ["git push"] }])
+  const listed = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
+  expect(listed.metadata.children[0].pending).toEqual([{ type: "permission", requestID: "per_1", action: "shell", resources: ["git push"] }])
 
   // The person's plain rejection of the caller's own prompt ends its step: the error goes back as it is, and the child waits on.
   const declines = Object.assign(new Error(""), { _tag: "Permission.DeclinedError" })

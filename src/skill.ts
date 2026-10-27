@@ -79,7 +79,7 @@ export const SKILL_CONTENT = [
     "native: true for a part nobody needs to open on its own: it reads, checks or looks something up, reports once and is " +
     "done; leave it off for a part the person may want to open, or that should outlive you. " +
     "For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.",
-  "4. End your turn: reply without calling more tools, and do not poll with courier_status, courier_children, courier_tree " +
+  "4. End your turn: reply without calling more tools, and do not poll with courier_children, courier_tree " +
     "or sleep. The group's reports, a blocked report, a message without a status, a question, a permission request, a " +
     "failed turn or a silent end each start a new turn for you; so does a message from the person or from the session " +
     "that started you.",

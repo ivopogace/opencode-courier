@@ -114,7 +114,7 @@ form. Its one option, `"animations": false`, keeps the tree panel still.
 |---|---|
 | `courier_spawn` | Starts a child session with a task and returns at once. `isolate`, `group`, `agent`, `model`, `variant`, `native`, `title`. |
 | `courier_send` | Messages a session, waking it if idle. With a `status`, it is a child's report. |
-| `courier_status` / `courier_children` / `courier_tree` | One look at a session, at the sessions it started, or at its whole tree. |
+| `courier_children` / `courier_tree` | One look at the sessions a session started, or at its whole tree. |
 | `courier_stop` | Stops a session below you and everything under it. |
 | `courier_cleanup` | Removes an isolated child's worktree and forgets the child. |
 | `courier_answer` | Proposes an answer to a child's permission request, or passes on your answer to its question. |

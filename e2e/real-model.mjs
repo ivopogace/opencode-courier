@@ -11,7 +11,7 @@ const work = process.env.WORK
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
 // Calls that look at children; right after spawning, or more than once a turn, that is polling.
-const LOOKS = new Set(["courier_status", "courier_children"])
+const LOOKS = new Set(["courier_children", "courier_tree"])
 
 // A session's whole transcript, oldest first, a page at a time.
 async function messages(sessionID) {
@@ -184,7 +184,7 @@ const looksIn = (turn) =>
     (part) => LOOKS.has(part.name) || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))),
   ).length
 // Any look in the first turn, right after spawning, is polling; later, a single look per turn is
-// the one-off check courier_status is for, and more is a loop.
+// the one-off check courier_children is for, and more is a loop.
 const polled = looksIn(first) > 0 || turns.slice(1).some((turn) => looksIn(turn) > 1)
 const laterLooks = turns.slice(1).reduce((sum, turn) => sum + looksIn(turn), 0)
 const sends = new Map(
@@ -216,7 +216,7 @@ const checks = [
     "the parent ended its first turn after spawning, with no reports in it",
     ended(first.at(-1)) && !failed(first.at(-1)) && !first.some(reporterOf),
   ],
-  ["the parent did not poll its children (courier_status, courier_children, sleep)", !polled],
+  ["the parent did not poll its children (courier_children, courier_tree, sleep)", !polled],
   ["both children called courier_send to the parent", spawned.length >= 2 && spawned.every((id) => sends.get(id).length > 0)],
   ["both reports woke the parent: each arrived after its first turn and got a reply", spawned.length >= 2 && spawned.every((id) => reportOf(id)?.turn > 1 && reportOf(id)?.answered)],
   ["each report carries a status, as the brief asks", spawned.length >= 2 && spawned.every((id) => reportOf(id)?.status !== undefined)],

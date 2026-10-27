@@ -1068,7 +1068,7 @@ describe("listChildren", () => {
         directory: "/wt",
         isolated: true,
         created: 950,
-        error: "courier_status failed: Session.NotFoundError ses_gone",
+        error: "reading the session failed: Session.NotFoundError ses_gone",
       },
     ])
   })
@@ -1121,6 +1121,6 @@ describe("describeFailure", () => {
   test("falls back to the tag and session of an OpenCode error with an empty message", () => {
     const error = Object.assign(new Error(""), { _tag: "Session.NotFoundError", sessionID: "ses_x" })
 
-    expect(describeFailure("courier_status", error).message).toBe("courier_status failed: Session.NotFoundError ses_x")
+    expect(describeFailure("courier_children", error).message).toBe("courier_children failed: Session.NotFoundError ses_x")
   })
 })

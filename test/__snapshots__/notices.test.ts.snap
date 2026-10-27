@@ -1,6 +1,6 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`tools are the fourteen courier tools, each a direct tool 1`] = `
+exports[`tools are the thirteen courier tools, each a direct tool 1`] = `
 [
   [
     "courier_spawn",
@@ -10,12 +10,6 @@ exports[`tools are the fourteen courier tools, each a direct tool 1`] = `
   ],
   [
     "courier_send",
-    {
-      "codemode": false,
-    },
-  ],
-  [
-    "courier_status",
     {
       "codemode": false,
     },
@@ -91,7 +85,7 @@ exports[`tools are the fourteen courier tools, each a direct tool 1`] = `
 
 exports[`tools courier_spawn 1`] = `
 {
-  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, it waits for a permission or it asks a question. Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_status in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
+  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, it waits for a permission or it asks a question. Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_children in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -319,28 +313,9 @@ exports[`tools courier_send 1`] = `
 }
 `;
 
-exports[`tools courier_status 1`] = `
-{
-  "description": "Look once at a session's state and its last reply, e.g. on a scheduled check-in. Not for waiting: sessions you started report back on their own.",
-  "input": {
-    "additionalProperties": false,
-    "properties": {
-      "sessionID": {
-        "description": "The session to look at.",
-        "type": "string",
-      },
-    },
-    "required": [
-      "sessionID",
-    ],
-    "type": "object",
-  },
-}
-`;
-
 exports[`tools courier_children 1`] = `
 {
-  "description": "List the sessions this one started with courier_spawn, with each one's state and last reply, and for one started in a group, its group and whether its report is held, still out, or released, e.g. after a compaction or restart. Like courier_status, for a one-off look, not for waiting.",
+  "description": "List the sessions this one started with courier_spawn, with each one's state and last reply, and for one started in a group, its group and whether its report is held, still out, or released, e.g. after a compaction or restart. For a one-off look, e.g. on a scheduled check-in, not for waiting: sessions you started report back on their own.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -729,7 +704,7 @@ You are at depth 1 of a session tree that goes at most 3 deep. Split your task o
 - Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
 - Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.
 - Say which in one line of your reply: split: no, because …; considered: <the parts you weighed> or split: <n> parts: … (one phrase per part).
-- If you split, you orchestrate: start the parts that run at once in one group, with the same group name for each, then end your turn while they work. Do not poll with courier_status, courier_children, courier_tree or sleep: the group's reports wake you. Check and integrate each part yourself when it reports (never hand that checking to another session), then send ses_parent one combined report.
+- If you split, you orchestrate: start the parts that run at once in one group, with the same group name for each, then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: the group's reports wake you. Check and integrate each part yourself when it reports (never hand that checking to another session), then send ses_parent one combined report.
 
 Task:
 Fix the bug
@@ -768,7 +743,7 @@ You are at depth 1 of a session tree that goes at most 3 deep. Split your task o
 - Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
 - Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.
 - Say which in one line of your reply: split: no, because …; considered: <the parts you weighed> or split: <n> parts: … (one phrase per part).
-- If you split, you orchestrate: start the parts that run at once in one group, with the same group name for each, then end your turn while they work. Do not poll with courier_status, courier_children, courier_tree or sleep: the group's reports wake you. Check and integrate each part yourself when it reports (never hand that checking to another session), then send ses_parent one combined report.
+- If you split, you orchestrate: start the parts that run at once in one group, with the same group name for each, then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: the group's reports wake you. Check and integrate each part yourself when it reports (never hand that checking to another session), then send ses_parent one combined report.
 
 Task:
 Fix the bug"
@@ -820,7 +795,7 @@ exports[`envelope and child brief the courier-orchestrate skill 2`] = `
    When the core is coupled: a task with one tightly coupled core usually still has parts from that list; weigh each. When the rest depend on names and texts the core fixes, split in stages: the core first, yourself when it is small or by one session when it is big, merged and committed before the rest start; then, if 2 or more parts remain, one session per part, in one group. A staged core is one part of the task, not the whole task, when 2 or more parts follow it.
 2. Plan the parts so that no two edit the same files. Write each task so the session can do it without you: what to produce and where, how to check it, what to report. Say if it may split its part further, and to run its checks through the project's scripts (step 6), since each permission request below you wakes you and waits on the person. Name the skills it should load for its part, from those listed to you: it sees the same list, not your choice; one permission rule for skill covers their loads, as one covers the checks. Say in the task when the part is a whole job that delivers itself (step 7), since an isolated session's brief otherwise says its branch is for you to merge.
 3. Start them: one courier_spawn per part that runs at once, all with the same group name, so that you are woken once with every report, and isolate: true for each part that edits files in parallel with another. When each part runs a review stage of its own, count 6 live sessions per part against maxTotal (a part, its review session and its reviewers are live together at the peak): start the parts that fit in one group, and the rest in a group of their own once the first group has reported. A job that depends on another starts after that one is done, as a stage: merged into your checkout, or, when it was delivered instead (step 7), started with isolate: true and told the delivering session's courier/<session> branch, from its report, to merge first. Leave model and variant unset, so a part runs on your own model, unless the part plainly calls for another: a cheaper model or a lower variant for a small, well-specified part (a rename, a lookup), a stronger model or a higher variant for a design question or a hard bug. native: true for a part nobody needs to open on its own: it reads, checks or looks something up, reports once and is done; leave it off for a part the person may want to open, or that should outlive you. For long work, courier_later a check-in for yourself, and courier_cancel it when the reports arrive.
-4. End your turn: reply without calling more tools, and do not poll with courier_status, courier_children, courier_tree or sleep. The group's reports, a blocked report, a message without a status, a question, a permission request, a failed turn or a silent end each start a new turn for you; so does a message from the person or from the session that started you.
+4. End your turn: reply without calling more tools, and do not poll with courier_children, courier_tree or sleep. The group's reports, a blocked report, a message without a status, a question, a permission request, a failed turn or a silent end each start a new turn for you; so does a message from the person or from the session that started you.
    Answering from below: follow the notice. For a permission request, propose once with courier_answer, or reject with the reason when the person has told you to refuse it or it plainly goes against what they asked; the person decides, in OpenCode's prompt in your session. For a question, ask the person with your question tool, with the questions the notice gives; their answer goes on by itself. When the notice says OpenCode already shows it to the person, call nothing unless they give you their answer. Never answer for them.
    Passing a message on: when it changes what other parts need (an assumption of the split that is wrong, a shared file or API that behaves otherwise, a decision of the person's), pass it on at once with courier_send, only to the sessions it affects, before they go further, then end your turn again; if it breaks the split, courier_stop the parts it breaks and plan them again, or send them a corrected task. Send it up too, without a status, when the other parts of the session that started you need it. Progress that changes nothing for the others goes to no one.
 5. Read each report by its status and its artifacts (branch, commits, files, checks). done: verify it. partial: what is left and why; have the session finish it with a courier_send, or do it yourself. blocked: make the decision it asks for and send it with courier_send; if only the person can make it, ask them with your question tool and pass the answer on. failed: read the error; message the session to try again, start a replacement, or carry on without it. A review stage's report lists what was found, held, fixed and refused: read the refusals, fix or settle yourself any you disagree with, and run the checks on the fixed tree.
@@ -931,14 +906,6 @@ exports[`tool results sendText 6`] = `"Recorded as your report, status done. It 
 exports[`tool results sendText 7`] = `"Recorded as your report, status failed. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once ses_parent's turn has ended, yours being the last. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`tool results sendText 8`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported. Nothing more is needed from you for it. If nothing else is left to do now, end your turn by replying without calling more tools."`;
-
-exports[`tool results statusText 1`] = `
-"{
-  "sessionID": "ses_child",
-  "title": "Fix",
-  "idle": 3
-}"
-`;
 
 exports[`tool results childrenText 1`] = `"No sessions started with courier_spawn."`;
 

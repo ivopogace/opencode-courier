@@ -374,7 +374,7 @@ describe("the recursive checker with --staged", () => {
 })
 
 test("without --staged the recursive checks keep their rules on a staged tree: a sleep before the split is a look, a first turn of one spawn no batch", () => {
-  expect(check(stagedRun("itself")).failed).toEqual(["no orchestrator polled (courier_status, courier_children, courier_tree, sleep)"])
+  expect(check(stagedRun("itself")).failed).toEqual(["no orchestrator polled (courier_children, courier_tree, sleep)"])
   const denied = check(stagedRun("skill-denied"))
   expect(Object.keys(denied.checks)).toHaveLength(9)
   expect(denied.failed).toEqual([BATCH])
@@ -455,7 +455,7 @@ describe("the recursive checker with --finding", () => {
   })
 })
 
-const POLL = "no orchestrator polled (courier_status, courier_children, courier_tree, sleep)"
+const POLL = "no orchestrator polled (courier_children, courier_tree, sleep)"
 
 /** The no-fault tree with the count session handing its one part to a session of its own, after `before` in the same turn. */
 function loneSpawnRun(before: unknown[]): Run {

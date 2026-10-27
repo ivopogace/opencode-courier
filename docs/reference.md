@@ -105,8 +105,7 @@ for a git elsewhere.
 |---|---|---|
 | `courier_spawn` | `task`, `title?`, `agent?`, `model?`, `variant?`, `isolate?`, `native?`, `group?` | Creates a session, sends it the task and a brief, and returns at once. `model` and `variant` choose [what it runs on](#the-model-a-child-runs-on). `isolate: true` gives it its own [worktree](#worktrees). `native` says whether it is an OpenCode subagent ([native child sessions](#native-child-sessions)). With a `group`, its report is held with the [group's](#join-groups). Refused past the [limits](#session-trees-and-their-limits). |
 | `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `queue?` | Delivers a message, signed with the sender's id, waking the session if idle. It steers into a running turn, or waits for its end with `queue: true`. From a child to its parent, a `status` makes it the child's [report](#a-childs-report). |
-| `courier_status` | `sessionID` | One look at a session: its last turn's outcome, how long it has been idle, when it was archived, its last reply, and the requests and questions it waits on (`pending`). For check-ins, not for waiting. |
-| `courier_children` | `sessionID?` | The sessions this one (or `sessionID`) started, each with what `courier_status` shows, its directory, whether it is isolated, `native: true` when it is a [subagent](#native-child-sessions), when it started, its [group](#join-groups) and its [model](#the-model-a-child-runs-on) when that is not the parent's. |
+| `courier_children` | `sessionID?` | One look at the sessions this one (or `sessionID`) started, each with its last turn's outcome, how long it has been idle, when it was archived, its last reply, the requests and questions it waits on (`pending`), its directory, whether it is isolated, `native: true` when it is a [subagent](#native-child-sessions), when it started, its [group](#join-groups) and its [model](#the-model-a-child-runs-on) when that is not the parent's. |
 | `courier_tree` | `sessionID?` | The [whole tree](#seeing-and-stopping-a-subtree) under a session. |
 | `courier_stop` | `sessionID`, `cleanup?` | [Stops](#seeing-and-stopping-a-subtree) a session below this one and everything under it. |
 | `courier_cleanup` | `sessionID`, `force?` | Removes an isolated child's [worktree](#worktrees) and forgets the child. |
@@ -368,7 +367,7 @@ it) is settled: the top session gets a short message marked `answered="<reply>"`
 inbox for the next turn and wakes nothing. A rejection in OpenCode rejects the session's other
 pending requests too; the message then says the child may have stopped and `courier_send` restarts
 it. A `courier_answer` after that passes nothing on, and a prompt already open in the top session
-passes nothing on when allowed. `courier_status` lists pending requests under `pending`.
+passes nothing on when allowed. `courier_children` lists pending requests under `pending`.
 
 ## A child that shows a form
 
@@ -576,7 +575,7 @@ What changes for a native child:
   The top session's model is only told (a notice marked `shown="native"`) and told again once it is
   settled. A native child under an isolated session shows its asks in that session's view instead,
   and they are relayed as without the option. With a bare API client nothing shows the prompts:
-  `courier_answer` is the fallback, and `courier_status` lists them under `pending`.
+  `courier_answer` is the fallback, and `courier_children` lists them under `pending`.
 - **Deleting a session deletes its native children.**
 - **The child gets an empty ruleset**, not its parent's session rules, as without the option.
 - **Providers see a subagent.** Requests carry the parent's id for cache routing. GitHub Copilot
@@ -793,7 +792,7 @@ share the plugin's storage but not its memory:
 - A child's permission request, failure or silent end is told once, by the server running it.
   Whether a child owes a report compares both servers' clocks, so run them on one machine.
 - `courier_answer` passes an answer on only from the server where the child waits, and
-  `courier_status` lists only that server's requests.
+  `courier_children` lists only that server's requests.
 
 Where you can, run one server per data directory, or point a second one at another
 (`XDG_DATA_HOME`).

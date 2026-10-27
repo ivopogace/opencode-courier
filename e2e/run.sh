@@ -359,7 +359,7 @@ run_reports() {
 
   scenario "courier_children reports each child's state and last reply"
   check "with the child's last turn and its reply" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -r --arg child "$child" '.status == "completed" and
-    (.metadata.metadata.children[] | select(.sessionID == $child) | .outcome == "succeeded" and (.lastText | type == "string") and (.idle | type == "number"))')"
+    (.metadata.metadata.children[] | select(.sessionID == $child) | .outcome == "succeeded" and (.lastText | contains("TOOL DONE courier_send")) and (.idle | type == "number"))')"
   check "and lists none for an unknown session" "$(prompt "COURIER-CHILDREN ses_missing" | tool_state courier_children | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
 
   scenario "a child runs on its parent's model, not the default one"

@@ -69,7 +69,7 @@ The default. The parent is asked:
 
 Eight checks: two children spawned; the first turn ended after spawning; no polling (a
 `courier_children`, `courier_tree` or `sleep` right after spawning, or more than one in a later
-turn); both children reported to the parent; both reports woke it; each carries a status and its
+turn; runs before `courier_status` was removed did not count `courier_tree`); both children reported to the parent; both reports woke it; each carries a status and its
 answer; the reply holds both. The README's Quickstart prompt is a shorter wording: set
 `COURIER_PROMPT` to it. To check a join group, add *both in one join group named "pair"*.
 

@@ -167,6 +167,10 @@ with a seeded record can.
 | `deepseek-v4.1-flash-free`, catalog, 646112c, `COURIER_SKILL=deny` | 2.1.4 | 3 of 3 passed, 9/9 in 23 to 32 requests; two of three roots still stated their split line. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 646112c, skill listed | 2.1.4 | 5 of 5 passed, 9/9, mean 30 requests; every root loaded the skill, recalled once and used two join groups; no polling. Six of these ten runs first lost "every spawned session reported" to a child's title with quotes in it, a checker misread fixed in #378; re-read with `--saved`. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 646112c, `COURIER_SKILL=deny` | 2.1.4 | 5 of 5 passed, 9/9, mean 35 requests. |
+| `deepseek-v4.1-flash-free`, catalog, b8839dc, the role part pushed by the `context` hook | 2.2.0 | 2 of 3 passed, 9/9 twice and 8/9 once (one poll); mean 29 requests, 9922 cache reads per request. The "before" of #387, run alternating with the row below on one day, each tree built from its commit on the same host. |
+| `deepseek-v4.1-flash-free`, catalog, b6099f9, the role part in a `role` session instruction entry (#387) | 2.2.0 | 3 of 3 passed, 9/9; mean 38 requests (one tree of 51), 10813 cache reads per request against 9922 before, and the uncached input per request no higher. The cached prefix is no worse with the entry, so it stays. One root passed without loading the skill. |
+| a self-hosted model behind an OpenAI-compatible endpoint, b8839dc, the role part pushed by the `context` hook | 2.2.0 | 2 of 3 passed, 9/9 twice and 7/9 once (one poll, and a sub-orchestrator that reported before its halves had); mean 31 requests. The endpoint reports no cache usage, so the column reads 0 and this pair is a behaviour check only, run alternating with the row below on one day. |
+| a self-hosted model behind an OpenAI-compatible endpoint, b6099f9, the role part in a `role` session instruction entry (#387) | 2.2.0 | 3 of 3 passed, 9/9, mean 30 requests, no polling. Sessions below the root loaded the skill more often than before (two leaves did in two of the three runs), which cost no check. |
 
 ## A part that goes wrong
 

@@ -456,6 +456,8 @@ function statusDown(messages, lastAssistant) {
 function roleEntry(messages, lastAssistant) {
   const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
   if (recent.includes("CHILD-ROLE-AGAIN")) return { text: "LEAF AGAIN" }
+  // The root of the entries scenario is told to note a lesson: the general script's courier_note call.
+  if (recent.includes("COURIER-NOTE ")) return undefined
   const first = textOf(messages.find((message) => message.role === "user")?.content)
   const last = messages.at(-1)
   const briefedBy = first.match(/You were started by session (ses_\w+)/)

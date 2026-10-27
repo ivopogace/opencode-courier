@@ -56,6 +56,8 @@ function decide(body) {
   if (finding) return finding
   const role = roleEntry(messages, lastAssistant)
   if (role) return role
+  const down = statusDown(messages, lastAssistant)
+  if (down) return down
   if (last?.role === "tool") {
     const call = messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)
     const result = textOf(last.content)
@@ -421,6 +423,31 @@ function passFinding(messages, lastAssistant) {
     return { tool: "courier_send", args: { sessionID: sibling, message: `Passed on from ${found[1]}: ${found[2]}` } }
   }
   if (recent.includes(' group="')) return { text: "PARENT GOT GROUP" }
+  return { text: "PARENT WOKE" }
+}
+
+// COURIER-STATUS-DOWN starts CHILD-STATUS-DOWN and steers it with a message carrying status blocked, which the plugin drops;
+// the child's turn runs on, two seconds a step, until the message is steered in, then reports its tag and first line.
+function statusDown(messages, lastAssistant) {
+  const first = textOf(messages.find((message) => message.role === "user")?.content)
+  const last = messages.at(-1)
+  const called = last?.role === "tool" ? messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)?.function?.name : undefined
+  const briefedBy = first.match(/You were started by session (ses_\w+)/)
+  if (briefedBy && first.includes("CHILD-STATUS-DOWN")) {
+    if (called === "courier_send") return { text: "CHILD REPORTED" }
+    const heard = messages.map((message) => textOf(message.content)).join("\n").match(/<courier from="ses_\w+"[^>]*>\nSTEER[^\n]*/)
+    const waited = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "shell").length
+    if (!heard && waited < 30) return { tool: "shell", args: { command: "sleep 2" }, quick: true }
+    const said = heard ? `HEARD ${heard[0].replace("\n", " ")}` : "HEARD NOTHING"
+    return { tool: "courier_send", args: { sessionID: briefedBy[1], message: said, status: "done" }, quick: true }
+  }
+  if (!first.includes("COURIER-STATUS-DOWN")) return undefined
+  if (called === "courier_spawn") {
+    const started = textOf(last.content).match(/Started session (ses_\w+)/)
+    return { tool: "courier_send", args: { sessionID: started?.[1], message: "STEER: undo it", status: "blocked" } }
+  }
+  if (called === "courier_send") return { text: "PARENT STEERED" }
+  if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-STATUS-DOWN" } }
   return { text: "PARENT WOKE" }
 }
 

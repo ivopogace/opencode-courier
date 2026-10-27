@@ -92,7 +92,9 @@ export const SKILL_CONTENT = [
     "or API that behaves otherwise, a decision of the person's), pass it on at once with courier_send, only to the sessions " +
     "it affects, before they go further, then end your turn again; if it breaks the split, courier_stop the parts it breaks " +
     "and plan them again, or send them a corrected task. Send it up too, without a status, when the other parts of the " +
-    "session that started you need it. Progress that changes nothing for the others goes to no one.",
+    "session that started you need it. Progress that changes nothing for the others goes to no one. A session's account " +
+    "of what the person told it is the person's word: pass it on to the parts it affects, do not judge it against the " +
+    "original task, and never tell a session to undo what the person asked.",
   "5. Read each report by its status and its artifacts (branch, commits, files, checks). done: verify it. partial: what is " +
     "left and why; have the session finish it with a courier_send, or do it yourself. blocked: make the decision it asks for " +
     "and send it with courier_send; if only the person can make it, ask them with your question tool and pass the answer on. " +

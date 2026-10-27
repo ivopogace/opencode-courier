@@ -52,6 +52,8 @@ export interface ChildStore {
   entriesOf(sessionID: string): Promise<RosterEntry[]>
   /** The session that started a session, by the reverse index alone, without scanning the roster. */
   indexedParent(sessionID: string): Promise<string | undefined>
+  /** The sessions above a session, its parent first, by the reverse index alone: empty when it does not name the session. */
+  indexedAncestors(sessionID: string): Promise<ReadonlyArray<string>>
   /** A session's roster entry, by the reverse index alone, without scanning the roster. */
   indexedEntry(sessionID: string): Promise<RosterEntry | undefined>
   /**
@@ -162,6 +164,8 @@ export interface Sent {
   readonly status?: Status
   readonly report?: boolean
   readonly held?: Held
+  /** The status it was sent with to a session below the sender, where a status means nothing. */
+  readonly dropped?: Status
 }
 
 /**

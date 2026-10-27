@@ -157,7 +157,8 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
       "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. " +
       "Use it to report back to the session that started you, with a status (done, partial, blocked or failed) and " +
       "the artifacts you produced, or to steer a session you started. The status is carried as an attribute of the " +
-      "message; without one, a message to the session that started you is progress, not your report. If you were " +
+      "message; without one, a message to the session that started you is progress, not your report. A message to a " +
+      "session you started carries no status: one given is dropped. If you were " +
       "started in a group, a report with status done, partial or failed is held and delivered with the group's other " +
       "reports; the result says so, and nothing more is needed from you.",
     input: SendInput,

@@ -166,8 +166,10 @@ parts after it, is the whole task. It says which in one line: `split: no, becaus
 or `split: <n> parts: …`. A session that splits starts the parts in one join group, ends its turn
 without polling, checks each part and sends one combined report. At `maxDepth` it is told to do the
 task itself. Any spawned session is told to send its parent a finding the other parts need (an
-assumption of the split that is wrong, a shared file or API that behaves otherwise, something the
-person said) at once, without a status, and carry on; progress alone is not worth a message.
+assumption of the split that is wrong, a shared file or API that behaves otherwise) at once, without
+a status, and carry on; progress alone is not worth a message. A message the person writes in its
+session, outside a `<courier>` envelope, is for the whole job: it sends it to its parent at once,
+without a status and quoted as the person's, before it acts on it, then carries on.
 
 **The role.** Every spawned session carries one line in its system prompt, `opencode-courier role: …`,
 in the `role` entry of its session instructions (OpenCode 2.2.0's `<context key="role">` block),
@@ -217,7 +219,9 @@ It says, in order:
    rather than merged. Pass a message that changes what
    other parts need (a child's finding without a status, one from the person or from its own
    parent) on to the children it affects, and only to them, before they go further; stop or
-   re-brief the parts it breaks, and send it up too when the parent's other parts need it.
+   re-brief the parts it breaks, and send it up too when the parent's other parts need it. A
+   child's account of what the person told it is the person's word: pass it on, do not judge it
+   against the original task, and never tell a session to undo what the person asked.
    Progress goes to no one ([steering a running tree](#steering-a-running-tree)). Propose `once`
    or `reject` with `courier_answer` for a permission request from below; ask the person a
    question from below with its own question tool, never answering for them.
@@ -436,7 +440,8 @@ The person steers a running tree by talking to any session in it:
 - `courier_send` without a `status` is an ordinary message, not a report. It is delivered as `steer`
   (or after the current turn with `queue: true`) and wakes the target if it is idle. It has no target
   restriction, so a parent that got a finding can pass it on to its other children, which steers their
-  running turns.
+  running turns. A `status` belongs on a report upward: on a message to a session below the sender
+  it is dropped, the message goes without it, and the result says so.
 
 A child that finds something the other parts need, or is told it, sends it to its parent without a
 status ([the brief](#session-trees-and-their-limits)), and the skill has a parent pass such a message

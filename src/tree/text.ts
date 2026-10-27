@@ -25,8 +25,10 @@ export function childBrief(parentID: string, task: string, depth: number, limits
     "A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. " +
       "A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.",
     "If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API " +
-      "that behaves otherwise, something the person told you), send it to the parent at once with courier_send without a " +
-      "status, then carry on: it passes it on to the sessions it affects. Progress alone is not worth a message.",
+      "that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes " +
+      "it on to the sessions it affects. Progress alone is not worth a message.",
+    "A message the person writes in your session, outside a <courier> envelope, is for the whole job: before you act on it, " +
+      "send it to the parent at once with courier_send without a status, quoting it as the person's, then carry on.",
     "If you need the person to decide something, use your question tool; it reaches them through the session that started you.",
     "",
     ...(branch ? [...isolationRule(branch, depth < limits.maxDepth), ""] : []),
@@ -223,8 +225,13 @@ export function spawnText(child: {
   )
 }
 
-/** courier_send's result: for a message to the session that started the sender, whether it was its report. */
-export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report" | "held"> = {}) {
+/** courier_send's result: for a message to the session that started the sender, whether it was its report; below it, the status dropped. */
+export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report" | "held" | "dropped"> = {}) {
+  if (sent.dropped)
+    return (
+      `Delivered to ${sessionID}, without the status ${sent.dropped}: a status belongs on a report to the session that ` +
+      "started you, and means nothing on a message to a session you started."
+    )
   const status = sent.status ? `, status ${sent.status}` : ""
   if (sent.held) {
     const { group, reported, members } = sent.held

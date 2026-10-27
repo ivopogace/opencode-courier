@@ -81,7 +81,7 @@ export function typesOf(modules: readonly EventModule<never>[]): EventType[] | u
     if (!module.types) return undefined
     for (const type of module.types) types.add(type)
   }
-  return [...types].sort()
+  return [...types].sort((a, b) => Number(a > b) - Number(a < b))
 }
 
 /** One event through the `handle` phase, then, however that ended, the `after` phase. */

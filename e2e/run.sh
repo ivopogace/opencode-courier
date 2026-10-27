@@ -1027,15 +1027,15 @@ run_probe() {
 
   # The courier subscribes with the types its modules declare. A subscription filtered on the same
   # types, the probe's second one, gets the child's events of those types and none of its streamed
-  # text or tool events, which the probe's unfiltered subscription gets in the same instances.
+  # step or tool events, which the probe's unfiltered subscription gets in the same instances.
   scenario "the courier's instances follow only the event types its modules handle"
   check "the courier subscribes with its modules' types through every hub subscription" \
     "$(grep -qF "courier watch: following $(jq -r 'join(", ")' <<<"$COURIER_TYPES") through " "$WORK/server.log" &&
       ! grep -qF "courier watch: following every event" "$WORK/server.log" && echo true || echo false)"
   probed=$(jq -sc --arg child "$child" '(map(select(.sessionID == $child)) | first | .pid) as $pid | map(select(.pid == $pid and .sessionID == $child))' "$WORK/probe.log")
   echo "  unfiltered, the child's event types: $(jq -c 'map(select(.id != null and (.type | startswith("probe.") | not)) | .type) | unique' <<<"$probed")"
-  check "the unfiltered subscription got the child's streamed text and tool events" \
-    "$(jq -r 'map(.type) | any(startswith("session.text.")) and any(startswith("session.tool."))' <<<"$probed")"
+  check "the unfiltered subscription got the child's streamed step and tool events" \
+    "$(jq -r 'map(.type) | any(startswith("session.step.")) and any(startswith("session.tool."))' <<<"$probed")"
   check "the filtered one got none of them, only the courier's types" \
     "$(jq -r --argjson types "$COURIER_TYPES" 'map(select(.type == "probe.filtered") | .event) | length > 0 and all(IN($types[]))' <<<"$probed")"
   check "and every event of those types the unfiltered one got, in the same location" \

@@ -15,7 +15,7 @@ export interface ChildrenInput {
   readonly sessionID?: string
 }
 
-/** A one-off look at a session, for check-ins; not meant to be called in a loop. */
+/** One session's state and last reply, as courier_children shows each child. */
 export async function status(ports: CourierPorts, input: StatusInput) {
   const [info, messages, pending] = await Promise.all([
     ports.session.get({ sessionID: input.sessionID }),
@@ -45,7 +45,7 @@ export function lastReply(messages: Awaited<ReturnType<Context["session"]["conte
 }
 
 /**
- * The sessions a parent started, each with what courier_status reports, or the error it gave; a child in a
+ * The sessions a parent started, each with its state and last reply, or the error it gave; a child in a
  * group with the group's name and its standing there: `held`, `out`, how it left, `released` or `unknown`.
  */
 export async function listChildren(ports: CourierPorts, parentID: string) {
@@ -53,7 +53,7 @@ export async function listChildren(ports: CourierPorts, parentID: string) {
   return Promise.all(entries.map((entry) => described(ports, entry)))
 }
 
-/** One roster entry as courier_children shows it: what courier_status reports with its directory and group standing, or the error it gave. */
+/** One roster entry as courier_children shows it: the session's state with its directory and group standing, or the error it gave. */
 export async function described(ports: CourierPorts, entry: RosterEntry) {
   const group = entry.group ? { group: { name: entry.group, report: await standingIn(ports, entry, entry.group) } } : {}
   const roster = { directory: entry.directory, ...startedAs(entry), created: entry.createdAt, ...group }
@@ -64,7 +64,7 @@ export async function described(ports: CourierPorts, entry: RosterEntry) {
       sessionID: entry.sessionID,
       title: entry.title,
       ...roster,
-      error: describeFailure("courier_status", error).message,
+      error: describeFailure("reading the session", error).message,
     }
   }
 }

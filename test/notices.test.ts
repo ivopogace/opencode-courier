@@ -29,7 +29,7 @@ addWebhookTools(editor, {} as never)
 addMemoryTools(editor, {} as never)
 
 describe("tools", () => {
-  test("are the fourteen courier tools, each a direct tool", () => {
+  test("are the thirteen courier tools, each a direct tool", () => {
     expect(registered.map((tool) => [tool.name, tool.options])).toMatchSnapshot()
   })
 
@@ -123,7 +123,7 @@ describe("envelope and child brief", () => {
     expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
     expect(tree.rolePart(1, limits)).toContain(`load the ${kernel.SKILL_ID} skill`)
     expect(tree.rolePart(3, limits)).not.toContain(kernel.SKILL_ID)
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Do not poll with courier_status, courier_children, courier_tree or sleep")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Do not poll with courier_children, courier_tree or sleep")
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("poll")
   })
   test("refusals", () => {
@@ -201,7 +201,6 @@ describe("tool results", () => {
     expect(tree.sendText("ses_parent", { report: true, status: "failed", held: { group: "reviews", reported: 3, members: 3 } })).toMatchSnapshot()
     expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews" } })).toMatchSnapshot()
   })
-  test("statusText", () => expect(tree.statusText({ sessionID: "ses_child", title: "Fix", idle: 3 })).toMatchSnapshot())
   test("childrenText", () => {
     expect(tree.childrenText([])).toMatchSnapshot()
     expect(tree.childrenText([{ sessionID: "ses_child", isolated: false }])).toMatchSnapshot()

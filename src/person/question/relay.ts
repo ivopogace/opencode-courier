@@ -56,7 +56,7 @@ async function relay(ports: QuestionPorts, question: Question) {
     else await tell(ports, question, questionNotice(question), { asks: "question", request: question.requestID })
     return true
   } catch (error) {
-    // The question stays registered and the call waits on: courier_status lists it, and an answer
+    // The question stays registered and the call waits on: courier_children lists it, and an answer
     // that comes anyway, through a link or courier_answer, still reaches the call.
     ports.log(`courier question: could not tell ${question.top} about ${question.requestID}: ${String(error)}`)
     return false

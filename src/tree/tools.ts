@@ -5,10 +5,10 @@ import { cleanup } from "./cleanup.js"
 import type { CleanupPorts, CourierPorts, StopPorts } from "./ports.js"
 import { send } from "./send.js"
 import { spawn } from "./spawn.js"
-import { listChildren, status } from "./status.js"
+import { listChildren } from "./status.js"
 import { stop } from "./stop.js"
 import { tree } from "./subtree.js"
-import { childrenText, cleanupText, sendText, spawnText, statusText, stopText, treeText } from "./text.js"
+import { childrenText, cleanupText, sendText, spawnText, stopText, treeText } from "./text.js"
 
 /**
  * The tree's courier tools: their input schemas, descriptions, and what each returns. The descriptions are
@@ -92,10 +92,6 @@ export const SendInput = Schema.Struct({
   ),
 })
 
-export const StatusInput = Schema.Struct({
-  sessionID: Schema.String.annotate({ description: "The session to look at." }),
-})
-
 export const ChildrenInput = Schema.Struct({
   sessionID: Schema.optional(
     Schema.String.annotate({ description: "The session whose children to list; defaults to this one." }),
@@ -143,7 +139,7 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
       "variant (reasoning effort) fit for the task. The session reports " +
       "back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report " +
       "instead, it waits for a permission or it asks a question. Give a batch of parallel sessions one group name to " +
-      "be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_status in a " +
+      "be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_children in a " +
       "loop: once you have started the sessions you need, end your turn by replying without calling more tools; each " +
       "report, or each group's reports, starts a new turn in which you carry on. For long tasks, also courier_later a " +
       "check-in for yourself in case it never reports, and courier_cancel it when it does.",
@@ -172,25 +168,12 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
   })
 
   tools.add({
-    name: "courier_status",
-    options: { codemode: false },
-    description:
-      "Look once at a session's state and its last reply, e.g. on a scheduled check-in. Not for waiting: " +
-      "sessions you started report back on their own.",
-    input: StatusInput,
-    execute: async (input) => {
-      const result = await status(ports.courier, input).catch(rethrow("courier_status"))
-      return { content: statusText(result), metadata: result }
-    },
-  })
-
-  tools.add({
     name: "courier_children",
     options: { codemode: false },
     description:
       "List the sessions this one started with courier_spawn, with each one's state and last reply, and for one " +
       "started in a group, its group and whether its report is held, still out, or released, e.g. after a " +
-      "compaction or restart. Like courier_status, for a one-off look, not for waiting.",
+      "compaction or restart. For a one-off look, e.g. on a scheduled check-in, not for waiting: sessions you started report back on their own.",
     input: ChildrenInput,
     execute: async (input, context) => {
       const listed = await listChildren(ports.courier, input.sessionID || context.sessionID).catch(rethrow("courier_children"))

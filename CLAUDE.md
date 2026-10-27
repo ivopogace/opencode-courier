@@ -48,8 +48,8 @@ import rules and the reasons for them.
   is the one cleanup service (`forgetChild`, which drops the child's group membership too, best
   effort, `forgetDropped`, expired entries, `forgetDeleted`, `forgetReports`); taking back a write
   just made (`send.ts`, `spawn.ts`) and dropping a delivered group (`group.ts`) stay with their use
-  case. One file per use case: `spawn.ts`, `send.ts`, `status.ts` (`courier_status`,
-  `courier_children`), `subtree.ts` (`courier_tree`), `stop.ts` (`courier_stop`), `cleanup.ts`.
+  case. One file per use case: `spawn.ts`, `send.ts`, `status.ts`
+  (`courier_children`), `subtree.ts` (`courier_tree`), `stop.ts` (`courier_stop`), `cleanup.ts`.
   `limits.ts` the limits `spawn()` checks; `model.ts` the model a child runs on (`chooseModel`: the `model` named, else
   the agent's, else the parent's, with the `variant` named, checked against the models OpenCode lists); `running.ts` whether a session runs (`turnOf`, `turnIn` for messages the caller read, `runs`: its
   times, and its transcript once anything stamped them since its last turn ended, and when that turn ended); `report.ts` whether
@@ -57,7 +57,7 @@ import rules and the reasons for them.
   `group.ts` join groups (joining, holding, leaving, standing, `deliverReleased`); `roster.ts` the
   retention of each parent's children (`current`, `pruneExpired`) and the lineage queries `person/` and
   `memory/` read (`lineage`, `allEntries`, `answeringTop`, `indexedLineage`, `childrenOf`,
-  `reportState`). `tools.ts` the seven tree tools (`addTreeTools`); `rpc.ts` the tree's RPC contract
+  `reportState`). `tools.ts` the six tree tools (`addTreeTools`); `rpc.ts` the tree's RPC contract
   (`treeRpc`), importing only `@opencode/plugin/rpc` and `effect`; `rpc-handlers.ts` its server side
   (`registerTreeRpc`, called from `src/index.ts` after the tools): `summary` from `summary.ts`, `tree`
   from `panel.ts` (the tree panel's rows), `stop` from `stop.ts`, `cleanup` from `cleanup.ts`, run as
@@ -145,7 +145,7 @@ their key prefixes; `store.test.ts` pins the exact keys and values the stores wr
 and `.claude/**`. `tui.test.tsx`, `inbox.test.tsx` and `memory-view.test.tsx` render the TUI parts
 against a fake TUI context with OpenTUI's `testRender` (`bunfig.toml` preloads its Solid transform);
 `person-rpc.test.ts` and `memory-rpc.test.ts` their RPCs. `notices.test.ts` snapshots every `text.ts`,
-the skill and the fourteen tools' descriptions and schemas, so a wording change shows up as a diff in
+the skill and the thirteen tools' descriptions and schemas, so a wording change shows up as a diff in
 `test/__snapshots__/`; update it with `bun test --update-snapshots`.
 
 `e2e/`: `run.sh` is the live test against a real OpenCode V2 server, in groups of scenarios that

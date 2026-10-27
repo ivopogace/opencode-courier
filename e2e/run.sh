@@ -357,11 +357,10 @@ run_reports() {
       "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains(" ended="))] | length == 0')"
   done
 
-  scenario "courier_status"
-  out=$(prompt "COURIER-STATUS $parent")
-  check "reports the parent's last reply" "$(jq -r 'select(.type == "tool_use") | .part.state | .status == "completed" and (.output | contains("PARENT WOKE"))' <<<"$out")"
-  out=$(prompt "COURIER-STATUS ses_missing")
-  check "names the error for an unknown session" "$(jq -r 'select(.type == "tool_use") | .part.state.error | contains("NotFoundError")' <<<"$out")"
+  scenario "courier_children reports each child's state and last reply"
+  check "with the child's last turn and its reply" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -r --arg child "$child" '.status == "completed" and
+    (.metadata.metadata.children[] | select(.sessionID == $child) | .outcome == "succeeded" and (.lastText | contains("TOOL DONE courier_send")) and (.idle | type == "number"))')"
+  check "and lists none for an unknown session" "$(prompt "COURIER-CHILDREN ses_missing" | tool_state courier_children | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
 
   scenario "a child runs on its parent's model, not the default one"
   out=$(cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --model mock/other "COURIER-TEST" </dev/null)
@@ -630,8 +629,8 @@ run_permission() {
     check "with what it asks for and the choices" "$(jq -r --arg child "$child" '.[0] // "" |
       contains("<courier from=\"" + $child + "\" asks=\"permission\"") and contains("It asks for: shell") and
       contains("echo courier-asks") and contains("- once:") and contains("- reject:") and contains("You cannot decide this") and (contains("- always") | not)' <<<"$notice")"
-    check "courier_status shows the child waiting on it" \
-      "$(prompt "COURIER-STATUS $child" | tool_state courier_status | jq -r --arg request "$request" '.status == "completed" and (.output | contains($request))')"
+    check "courier_children shows the child waiting on it" \
+      "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -r --arg request "$request" '.status == "completed" and (.output | contains($request))')"
     choice=$([ "$mode" = isolate ] && echo reject || echo once)
     answered=$(prompt_in "$parent" "COURIER-ANSWER $choice" | tool_state courier_answer)
     check "courier_answer passed on $choice" "$(jq -r '.status == "completed" and .metadata.metadata.answered == true' <<<"$answered")"
@@ -837,7 +836,7 @@ run_questions() {
     contains("{\"questions\":[{\"question\":\"Which greeting?\",\"header\":\"Greeting\"") and contains("Do not answer it yourself"))' <<<"$notice")"
   check "the parent asks exactly what the child asks" "$([ "$(fields_of "$parent")" = "$(fields_of "$child")" ] && echo true || echo false)"
   request=$(jq -r '.[0] | capture("request=\"(?<id>[^\"]+)\"").id' <<<"$notice")
-  check "courier_status shows the child waiting on it" "$(prompt "COURIER-STATUS $child" | tool_state courier_status |
+  check "courier_children shows the child waiting on it" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
     jq -r --arg request "$request" '.status == "completed" and (.output | contains($request) and contains("\"type\": \"question\""))')"
   check "the person answers in the parent's session" "$(answer_form "$parent" "$parent_form" '"Hi"')"
   check "the parent's question passed the answer on, without courier_answer" "$(has_text "$parent" "do not call courier_answer")"
@@ -1941,8 +1940,8 @@ run_plugin_add() {
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
   log_start=$(($(wc -l <"$WORK/server.log") + 1))
   start_server
-  out=$(prompt "COURIER-STATUS ses_missing")
-  check "its courier_status tool runs" "$(tool_state courier_status <<<"$out" | jq -r '.error // "" | contains("NotFoundError")')"
+  out=$(prompt "COURIER-CHILDREN ses_missing")
+  check "its courier_children tool runs" "$(tool_state courier_children <<<"$out" | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
   entrypoint=$(tail -n +"$log_start" "$WORK/server.log" |
     sed -n 's|.*msg="loading plugin" id=opencode-courier entrypoint=file://\([^ ]*/node_modules/opencode-courier/dist/index\.js\).*|\1|p' | head -1 || true)
   check "loaded from the installed package" "$([ -n "$entrypoint" ] && echo true || echo false)"

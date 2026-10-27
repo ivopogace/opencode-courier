@@ -1,6 +1,7 @@
 import { envelope, isStatus, STATUSES, type Status } from "../kernel/protocol.js"
 import { groupStanding, holdReport, membershipFor, unholdForBlocked } from "./group.js"
 import type { Artifacts, CourierPorts, Held, HeldReport, Membership, RosterEntry, Sent } from "./ports.js"
+import { syncStanding } from "./standing.js"
 import { childStore, groupStore } from "./store.js"
 import { reportBody } from "./text.js"
 import { noteSent } from "./wake.js"
@@ -23,25 +24,35 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
   try {
     const held = noted?.member && status && status !== "blocked" ? await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) }) : undefined
+    // The parent's standing before the delivery, which may wake it: its first step then shows the report or progress noted.
+    if (noted) await syncStanding(ports, input.sessionID)
     if (held) return { status, report: true, held }
-    const text = envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {})
-    const description = `Message from ${from}`
-    const delivered = await ports.session.synthetic({
-      sessionID: input.sessionID,
-      text,
-      description,
-      metadata: { source: "courier", from, ...(status ? { status } : {}) },
-      delivery: input.queue ? "queue" : "steer",
-    })
-    // Watched now, not when OpenCode's enqueued event is handled: a spawn in the same step must count the child it wakes.
-    await noteSent(ports, { sessionID: input.sessionID, inboxID: delivered.id, text, description }).catch(() => undefined)
-    // A blocked report, once delivered, is the member's latest word: an earlier report held for it would be stale.
-    if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)
-    return { messageID: delivered.id, ...(status ? { status } : {}), ...(noted ? { report: noted.report } : {}), ...(dropped ? { dropped } : {}) }
+    const delivered = await deliver(ports, from, input, status, noted)
+    return { ...delivered, ...(noted ? { report: noted.report } : {}), ...(dropped ? { dropped } : {}) }
   } catch (error) {
     await noted?.undo().catch(() => undefined)
+    // The standing as before the note, once the note is taken back.
+    if (noted) await syncStanding(ports, input.sessionID)
     throw error
   }
+}
+
+/** Delivers the message, watches it, and takes a held report back after a blocked one; the message id and status delivered. */
+async function deliver(ports: CourierPorts, from: string, input: SendInput, status: Status | undefined, noted: Awaited<ReturnType<typeof noteReport>>): Promise<Sent> {
+  const text = envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {})
+  const description = `Message from ${from}`
+  const delivered = await ports.session.synthetic({
+    sessionID: input.sessionID,
+    text,
+    description,
+    metadata: { source: "courier", from, ...(status ? { status } : {}) },
+    delivery: input.queue ? "queue" : "steer",
+  })
+  // Watched now, not when OpenCode's enqueued event is handled: a spawn in the same step must count the child it wakes.
+  await noteSent(ports, { sessionID: input.sessionID, inboxID: delivered.id, text, description }).catch(() => undefined)
+  // A blocked report, once delivered, is the member's latest word: an earlier report held for it would be stale.
+  if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)
+  return { messageID: delivered.id, ...(status ? { status } : {}) }
 }
 
 /**

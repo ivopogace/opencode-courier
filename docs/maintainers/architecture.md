@@ -89,7 +89,10 @@ meaning makes a new key and keeps claiming in the old one too.
 
 **Version skew.** A tick or event subscription runs the code of the copy loaded last, through the
 instance loaded first, which may be an older copy of the same hub version. So a tick job or event
-module may use only ports every hub-v2 member has; needing a new one changes the version. The hub
+module may use only ports every hub-v2 member has; needing a new one changes the version. A port
+that may be missing is optional and skipped: the keyed session instructions (`instructions` on a
+member's watch session), which the `standing` entry needs, are left alone on a host before 2.2.0;
+every copy's watch session is the host's `ctx.session`, so an older member's ports carry them too. The hub
 types only what it owns; feature ports and state are typed by their owners through `sharedState`.
 Each event module declares the event types it handles (`types`), and both hub subscriptions ask
 `event.subscribe` for their union; one module without a declaration leaves them unfiltered.

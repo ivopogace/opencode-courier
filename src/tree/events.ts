@@ -6,6 +6,7 @@ import { forgetChild, forgetDeleted } from "./forget.js"
 import { hasCompleteGroup, leave, outIn } from "./group.js"
 import type { ExecutionError, Waits, WatchPorts, WatchState } from "./ports.js"
 import { awaited, reportOf, stoppedSincePrompt } from "./report.js"
+import { syncStanding } from "./standing.js"
 import { childStore, groupStore } from "./store.js"
 import { lastReply } from "./status.js"
 import { failureNotice, silentNotice } from "./text.js"
@@ -66,6 +67,7 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
     )
   } finally {
     if (completed.includes(true)) ports.nudge()
+    await Promise.all(entries.map((entry) => syncStanding(ports, entry.parentID)))
   }
   return entries.map((entry) => entry.parentID)
 }
@@ -99,8 +101,10 @@ export async function notePrompt(
   // Kept, not deleted: the hub's other subscription looks it up for the same delivery.
   if (inboxID !== undefined && UNOWED.has(inbox?.get(inboxID) ?? "")) return false
   const children = childStore(ports.storage)
-  if ((await children.indexedParent(sessionID)) === undefined) return false
+  const parentID = await children.indexedParent(sessionID)
+  if (parentID === undefined) return false
   await children.prompted(sessionID, event.created ?? ports.now())
+  await syncStanding(ports, parentID)
   return true
 }
 
@@ -118,6 +122,7 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
   await children.settled(sessionID, "interrupted", at)
   const member = await outIn(ports, entry)
   if (member && (await leave(ports, member, "interrupted", at))) ports.nudge()
+  await syncStanding(ports, entry.parentID)
   return true
 }
 
@@ -134,6 +139,7 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const member = entry && (await outIn(ports, entry))
   await forgetDeleted(ports, sessionID, forgotten, member, event.created)
   if (parentID !== undefined && entry && !entry.isolated && started.length === 0) await forgetChild(ports.storage, parentID, sessionID)
+  if (parentID !== undefined) await syncStanding(ports, parentID)
   return forgotten
 }
 
@@ -198,6 +204,7 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
     await children.untold(sessionID, toldAt).catch(() => undefined)
     throw error
   }
+  await syncStanding(ports, entry.parentID)
   return [entry.parentID]
 }
 

@@ -108,6 +108,22 @@ export function cut<T extends Cuttable>(nodes: ReadonlyArray<T>, max: number) {
   return { kept: nodes.filter((node) => kept.has(node.sessionID)), leftOut: nodes.length - kept.size }
 }
 
+/**
+ * Entries older than this are dropped when their parent's roster is read, and on plugin setup,
+ * except isolated children whose worktree is still there: those stay until courier_cleanup.
+ */
+export const RETENTION_MS = 14 * 24 * 60 * 60_000
+
+/** Whether a directory still exists; tests pass a fake. */
+export type Exists = (directory: string) => boolean
+
+/**
+ * Whether an entry is past retention at `now`: recorded more than `RETENTION_MS` before, unless it is an isolated
+ * child whose worktree exists, which is kept so it can still be cleaned up.
+ */
+export const isExpired = (entry: RosterEntry, now: number, exists: Exists) =>
+  now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory))
+
 /** A session started with courier_spawn, recorded under the session that started it. */
 export interface RosterEntry {
   readonly sessionID: string

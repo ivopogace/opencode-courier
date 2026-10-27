@@ -54,8 +54,9 @@ The message lands in the parent's inbox and starts a new turn if the parent is i
 
 Children started with the same `group` report together, in one message. A child that fails (a
 rate or quota limit with when it lifts), or ends its turn without reporting, is reported to its
-parent. A message that does not wake its session is sent once more, then shown as `stalled`. Children, held reports and scheduled messages
-survive a restart. The `courier-orchestrate` skill, listed in every session, tells a model when to
+parent. A message that does not wake its session is sent once more, then shown as `stalled`. On
+OpenCode 2.2.0 a parent's system prompt carries one line per child with its state, kept current,
+so it need not look. Children, held reports and scheduled messages survive a restart. The `courier-orchestrate` skill, listed in every session, tells a model when to
 split a task and how to check and merge the parts. Every detail: [the reference](docs/reference.md).
 
 ## Install

@@ -1,8 +1,8 @@
 /** The tree's model-facing texts: the child brief, the role part, refusals, reports, notices and tool results. */
 import { obj, str } from "../platform/json.js"
-import { clipText, defuse, END_TURN, ROOT_SPLIT_LINE, SKILL_ID, SPLIT_LINE, STATUSES } from "../kernel/protocol.js"
+import { clipText, defuse, defuseBlock, END_TURN, ROOT_SPLIT_LINE, SKILL_ID, SPLIT_LINE, STATUSES } from "../kernel/protocol.js"
 import { retryDelay, type ModelRef } from "./domain.js"
-import type { Artifacts, CleanupResult, ExecutionError, HeldReport, LeftMember, Limits, Sent } from "./ports.js"
+import type { Artifacts, CleanupResult, ExecutionError, HeldReport, LeftMember, Limits, Sent, Standing } from "./ports.js"
 
 // The envelope and the child brief.
 
@@ -106,6 +106,89 @@ export function rolePart(depth: number | null, limits: Limits) {
     `${ROLE_PREFIX} leaf, at depth ${depth}, the deepest the session tree goes. You cannot start sessions: do your ` +
     "task yourself and report with courier_send to the session that started you."
   )
+}
+
+// The standing entry: what a parent's system prompt says of the sessions it started.
+
+/** The key of the session instruction entry on a parent listing the sessions it started, `<context key="standing">`. */
+export const STANDING_KEY = "standing"
+
+/** How every standing entry begins. */
+export const STANDING_PREFIX = "opencode-courier standing:"
+
+/** How many children the entry lists; older ones past that are counted. */
+export const STANDING_MAX = 10
+
+/** The most characters of a child's title the entry shows. */
+const TITLE_MAX = 40
+
+/** What a child is doing, as its parent's standing entry says it; `reported` carries the status. */
+export type ChildState =
+  | { readonly kind: "started" | "working" | "ended" | "failed" | "interrupted" | "stopped"; readonly progressed?: boolean }
+  | { readonly kind: "reported"; readonly status: string; readonly progressed?: boolean }
+
+/** One child as the standing entry lists it. */
+export interface StandingRow {
+  readonly sessionID: string
+  readonly title: string
+  readonly state: ChildState
+  /** Its join group and its standing there, `unknown` when that could not be read. */
+  readonly group?: { readonly name: string; readonly standing: Standing | "unknown" }
+}
+
+function stateWords(state: ChildState) {
+  const progressed = state.progressed ? ", sent progress" : ""
+  switch (state.kind) {
+    case "started":
+      return "started"
+    case "working":
+      return `working${progressed}`
+    case "ended":
+      return `ended its turn without a report${progressed}`
+    case "failed":
+      return "its turn failed"
+    case "interrupted":
+      return "its turn was interrupted"
+    case "stopped":
+      return "stopped"
+    case "reported":
+      return `reported ${state.status}`
+  }
+}
+
+function groupWords(name: string, standing: Standing | "unknown") {
+  const group = `group "${name}"`
+  switch (standing) {
+    case "held":
+      return `its report is held with ${group}`
+    case "out":
+      return `${group} waits for it`
+    case "released":
+      return `${group} was delivered`
+    case "unknown":
+      return `in ${group}`
+    default:
+      return `out of ${group} (${LEFT_HOW[standing]})`
+  }
+}
+
+/**
+ * The standing entry: one line per session the parent started, oldest first, with its state and its place in its join group,
+ * in the same words for the same state, so an unchanged standing is not put again.
+ */
+export function standingEntry(rows: ReadonlyArray<StandingRow>) {
+  const shown = rows.slice(-STANDING_MAX)
+  const older = rows.length - shown.length
+  return [
+    `${STANDING_PREFIX} the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need ` +
+      "not look with courier_children or courier_tree; a report, a group's reports or a notice still reach you as a message.",
+    ...shown.map((row) => {
+      const title = defuseBlock(row.title.replace(/\s+/g, " ").trim())
+      const group = row.group ? `; ${groupWords(row.group.name, row.group.standing)}` : ""
+      return `- ${row.sessionID} "${clipText(title, TITLE_MAX)}": ${stateWords(row.state)}${group}`
+    }),
+    ...(older ? [`${count(older, "older session")} not listed; courier_children lists them.`] : []),
+  ].join("\n")
 }
 
 // courier_spawn's refusals, one per limit.

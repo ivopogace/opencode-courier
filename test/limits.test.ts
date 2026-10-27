@@ -8,7 +8,7 @@ import { busy, DEFAULT_LIMITS, endedAt, endsIdle, nativeRootOf, readLimits, read
 import { runs, turnOf } from "../src/tree/running.js"
 import type { ContextPorts, CourierPorts, LimitPorts, Role, SpawnGate } from "../src/tree/ports.js"
 import { ROOT_SPLIT_LINE, SKILL_ID } from "../src/kernel/protocol.js"
-import { childBrief, depthRefusal, childrenRefusal, ROLE_KEY, ROLE_PREFIX, rolePart, totalRefusal } from "../src/tree/text.js"
+import { childBrief, depthRefusal, childrenRefusal, ROLE_KEY, ROLE_PREFIX, rolePart, STANDING_KEY, standingEntry, totalRefusal } from "../src/tree/text.js"
 import { reportOf } from "../src/tree/report.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
 
@@ -43,10 +43,19 @@ function fakeInstructions(entries: Map<string, Map<string, unknown>>, calls: str
         calls.push(`list ${sessionID}`)
         return [...(entries.get(sessionID) ?? [])].map(([key, value]) => ({ key, value }))
       },
-      remove: async () => {},
+      remove: async ({ sessionID, key }: { sessionID: string; key: string }) => {
+        calls.push(`remove ${sessionID} ${key}`)
+        entries.get(sessionID)?.delete(key)
+      },
     },
   }
 }
+
+/** The calls a spawn ends with: the parent's standing entry, read and put with its children `working`. */
+const standingCalls = (parentID: string, ...children: Array<[string, string]>) => [
+  `list ${parentID}`,
+  `put ${parentID} ${STANDING_KEY}: ${standingEntry(children.map(([sessionID, title]) => ({ sessionID, title, state: { kind: "working" } })))}`,
+]
 
 /** Limit ports over a roster and the sessions' times, all running, by their transcripts too, unless `times` says otherwise; `turns` run on in theirs. */
 function limitPorts(limits = DEFAULT_LIMITS, times: Record<string, object> = {}, turns: ReadonlyArray<string> = []) {
@@ -745,12 +754,18 @@ describe("spawn", () => {
       `put ses_new1 ${ROLE_KEY}: ${rolePart(1, DEFAULT_LIMITS)}`,
       `put ses_root ${ROLE_KEY}: ${rolePart(0, DEFAULT_LIMITS)}`,
       childBrief("ses_root", "t", 1, DEFAULT_LIMITS),
+      ...standingCalls("ses_root", ["ses_new1", "t"]),
     ])
     expect(entries.get("ses_new1")?.get(ROLE_KEY)).toStartWith(ROLE_PREFIX)
     expect(roles.get("ses_root")).toEqual({ depth: 0, entry: true })
     calls.length = 0
     await spawn(courier, "ses_root", { task: "u" })
-    expect(calls).toEqual(["session.create", `put ses_new2 ${ROLE_KEY}: ${rolePart(1, DEFAULT_LIMITS)}`, childBrief("ses_root", "u", 1, DEFAULT_LIMITS)])
+    expect(calls).toEqual([
+      "session.create",
+      `put ses_new2 ${ROLE_KEY}: ${rolePart(1, DEFAULT_LIMITS)}`,
+      childBrief("ses_root", "u", 1, DEFAULT_LIMITS),
+      ...standingCalls("ses_root", ["ses_new1", "t"], ["ses_new2", "u"]),
+    ])
     expect(roles.get("ses_root")).toEqual({ depth: 0, entry: true })
   })
 
@@ -762,7 +777,7 @@ describe("spawn", () => {
 
     await spawn(courier, "ses_a", { task: "t" })
 
-    expect(calls).toEqual(["session.create", `put ses_new1 ${ROLE_KEY}: ${rolePart(2, DEFAULT_LIMITS)}`, childBrief("ses_a", "t", 2, DEFAULT_LIMITS)])
+    expect(calls).toEqual(["session.create", `put ses_new1 ${ROLE_KEY}: ${rolePart(2, DEFAULT_LIMITS)}`, childBrief("ses_a", "t", 2, DEFAULT_LIMITS), ...standingCalls("ses_a", ["ses_new1", "t"])])
     expect(roles.has("ses_a")).toBe(false)
   })
 
@@ -782,12 +797,79 @@ describe("spawn", () => {
 
     await spawn(courier, "ses_root", { task: "t" })
 
-    expect(calls).toEqual(["session.create", childBrief("ses_root", "t", 1, DEFAULT_LIMITS)])
+    expect(calls).toEqual(["session.create", childBrief("ses_root", "t", 1, DEFAULT_LIMITS), "list ses_root"])
     expect(logged).toEqual([
       "courier_spawn: the role entry of ses_new1 could not be written, so its role goes in a system part: Error: no such route",
       "courier_spawn: the role entry of ses_root could not be written, so its role goes in a system part: Error: no such route",
+      "courier: the standing entry of ses_root could not be written, so it may be behind courier_children: Error: no such route",
     ])
     expect(roles.has("ses_root")).toBe(false)
+  })
+
+  test("writes the entries the other modules supply after the role, to a child below maxDepth and to the root at its first spawn", async () => {
+    const limits = { ...DEFAULT_LIMITS, maxDepth: 2 }
+    const entries = new Map<string, Map<string, unknown>>()
+    const { courier, calls, child } = spawnPorts(limits, entries)
+    let lessons = "opencode-courier lessons: one"
+    ;(courier as any).entries = async () => [{ key: "lessons", value: lessons }]
+
+    await spawn(courier, "ses_root", { task: "t" })
+
+    expect(calls).toEqual([
+      "session.create",
+      `put ses_new1 ${ROLE_KEY}: ${rolePart(1, limits)}`,
+      "put ses_new1 lessons: opencode-courier lessons: one",
+      `put ses_root ${ROLE_KEY}: ${rolePart(0, limits)}`,
+      "put ses_root lessons: opencode-courier lessons: one",
+      childBrief("ses_root", "t", 1, limits),
+      ...standingCalls("ses_root", ["ses_new1", "t"]),
+    ])
+    // The root's entries go once; a lesson written since reaches it through courier_note, not a later spawn.
+    calls.length = 0
+    lessons = "opencode-courier lessons: two"
+    await spawn(courier, "ses_root", { task: "u" })
+    expect(calls.filter((call) => call.includes("lessons"))).toEqual(["put ses_new2 lessons: opencode-courier lessons: two"])
+    // A leaf gets none: it cannot split, and courier_recall is hidden from it.
+    calls.length = 0
+    await child("ses_root", "ses_a")
+    await spawn(courier, "ses_a", { task: "v" })
+    expect(calls.filter((call) => call.includes("lessons"))).toEqual([])
+    expect(calls[1]).toBe(`put ses_new3 ${ROLE_KEY}: ${rolePart(2, limits)}`)
+  })
+
+  test("a supplier that fails leaves the session with its role alone, logged; without keyed instructions it is not asked", async () => {
+    const entries = new Map<string, Map<string, unknown>>()
+    const { courier, calls, logged } = spawnPorts(DEFAULT_LIMITS, entries)
+    ;(courier as any).entries = async () => Promise.reject(new Error("db locked"))
+
+    await spawn(courier, "ses_root", { task: "t" })
+
+    expect(calls.filter((call) => call.startsWith("put"))).toEqual([
+      `put ses_new1 ${ROLE_KEY}: ${rolePart(1, DEFAULT_LIMITS)}`,
+      `put ses_root ${ROLE_KEY}: ${rolePart(0, DEFAULT_LIMITS)}`,
+      standingCalls("ses_root", ["ses_new1", "t"])[1]!,
+    ])
+    expect(logged).toEqual(["courier_spawn: the entries of the other modules could not be read, so the session starts without them: Error: db locked"])
+    const asked: number[] = []
+    const { courier: older, calls: olderCalls } = spawnPorts()
+    ;(older as any).entries = async () => (asked.push(1), [{ key: "lessons", value: "x" }])
+    await spawn(older, "ses_root", { task: "t" })
+    expect(asked).toEqual([])
+    expect(olderCalls).toEqual(["session.create", childBrief("ses_root", "t", 1, DEFAULT_LIMITS)])
+  })
+
+  test("the standing is not put again when the entry already holds it", async () => {
+    const entries = new Map<string, Map<string, unknown>>()
+    const { courier, calls, logged } = spawnPorts(DEFAULT_LIMITS, entries)
+    await spawn(courier, "ses_root", { task: "t" })
+    expect(entries.get("ses_root")?.get(STANDING_KEY)).toStartWith("opencode-courier standing:")
+    calls.length = 0
+    entries.get("ses_root")!.set(STANDING_KEY, standingEntry([{ sessionID: "ses_new1", title: "t", state: { kind: "working" } }, { sessionID: "ses_new2", title: "u", state: { kind: "working" } }]))
+
+    await spawn(courier, "ses_root", { task: "u" })
+
+    expect(calls.filter((call) => call.includes(STANDING_KEY))).toEqual([])
+    expect(logged).toEqual([])
   })
 
   test("notes the child as owing a report before it is prompted", async () => {

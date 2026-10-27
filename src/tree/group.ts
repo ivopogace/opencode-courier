@@ -2,6 +2,7 @@ import { isNotFound, millis } from "../platform/json.js"
 import { envelope } from "../kernel/protocol.js"
 import { complete, standingOf, type HeldReport, type LeftMember, type Member, type RosterEntry } from "./domain.js"
 import type { GroupPorts, GroupStore, Membership, WatchPorts } from "./ports.js"
+import { syncStanding } from "./standing.js"
 import { groupStore } from "./store.js"
 import { groupNotice } from "./text.js"
 
@@ -187,6 +188,8 @@ async function release(ports: GroupPorts, parentID: string, group: string) {
     }
   }
   await drop(ports, parentID, group, members)
+  // Delivered: the members read as released in the parent's standing, which its next step shows.
+  await syncStanding(ports, parentID)
 }
 
 /** Drops a group's members once delivered, or unsent, saying why. */

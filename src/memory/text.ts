@@ -1,5 +1,5 @@
 /** The memory's model-facing texts: what courier_recall and courier_note say. */
-import { clipText, clipWords } from "../kernel/protocol.js"
+import { clipText, clipWords, defuseBlock } from "../kernel/protocol.js"
 import { type Lesson, LESSON_MAX, oneLine, PART_STATUSES, type PartRecord, splitProse, type StoredRecord } from "./domain.js"
 
 /** The tool's name, which the skill and the role part name too. */
@@ -139,3 +139,28 @@ export const noteLongRefusal = (length: number) =>
 export const noteUnrecordedRefusal = (top: string) =>
   `Not noted: the tree under ${top} has no record in this project to write a lesson on. A record is written by a ${RECALL_TOOL} call ` +
   "and as each turn in the tree ends, so call it once first, or note once a session you started has reported."
+
+// The lessons entry: what a spawned session's system prompt says of the project's earlier trees.
+
+/** The key of the session instruction entry carrying the project's lessons, `<context key="lessons">`. */
+export const LESSONS_KEY = "lessons"
+
+/** How every lessons entry begins. */
+export const LESSONS_PREFIX = "opencode-courier lessons:"
+
+/** How many lessons the entry carries: the records' order, pinned first, then newest first. */
+export const LESSONS_MAX = 5
+
+/**
+ * The lessons entry: the lessons of the project's records as courier_recall lists them, pinned first and then newest first,
+ * at most `LESSONS_MAX`, each with its tree's title; undefined while no record holds one.
+ */
+export function lessonsEntry(records: ReadonlyArray<StoredRecord>) {
+  const lessons = records.filter((record) => record.lesson).slice(0, LESSONS_MAX)
+  if (!lessons.length) return undefined
+  return [
+    `${LESSONS_PREFIX} what the orchestrators of earlier session trees in this project concluded, each with its tree's title; ` +
+      `${RECALL_TOOL} has the records with the facts behind them.`,
+    ...lessons.map((record) => `- ${record.sessionID} "${clipText(defuseBlock(oneLine(record.title)), 60)}": ${defuseBlock(lessonLine(record.lesson!))}`),
+  ].join("\n")
+}

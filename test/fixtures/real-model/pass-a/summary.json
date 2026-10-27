@@ -14,5 +14,5 @@
     "the root started 2 session(s) in group(s) parts",
     "session ses_num (depth 1) started 2 session(s) in group(s) numbers-halves"
   ],
-  "usage": { "requests": 26, "cacheRead": 2600 }
+  "usage": { "requests": 26, "input": 1300, "cacheRead": 2600 }
 }

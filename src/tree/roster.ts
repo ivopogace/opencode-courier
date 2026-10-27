@@ -1,15 +1,12 @@
 import { existsSync } from "node:fs"
 import { isStatus, type Status } from "../kernel/protocol.js"
+import { isExpired as expiredBy, type Exists } from "./domain.js"
 import { forgetChild, forgetReports } from "./forget.js"
 import type { ReportKeys, RosterEntry, RosterStorage } from "./ports.js"
 import { stoppedSincePrompt } from "./report.js"
 import { childStore } from "./store.js"
 
-/**
- * Entries older than this are dropped when their parent's roster is read, and on plugin setup,
- * except isolated children whose worktree is still there: those stay until courier_cleanup.
- */
-export const RETENTION_MS = 14 * 24 * 60 * 60_000
+export { RETENTION_MS, type Exists } from "./domain.js"
 
 /** Every parent's children. */
 export async function allEntries(storage: RosterStorage) {
@@ -76,15 +73,8 @@ export async function answeringTop(storage: RosterStorage, sessionID: string, ca
   return top
 }
 
-/** Whether a directory still exists; tests pass a fake. */
-export type Exists = (directory: string) => boolean
-
-/**
- * Whether an entry is past retention at `now`: recorded more than `RETENTION_MS` before, unless it is an isolated
- * child whose worktree exists, which is kept so it can still be cleaned up.
- */
-export const isExpired = (entry: RosterEntry, now: number, exists: Exists = existsSync) =>
-  now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory))
+/** `domain.ts`'s `isExpired`, asking the file system whether an isolated child's worktree is still there unless a test passes a fake. */
+export const isExpired = (entry: RosterEntry, now: number, exists: Exists = existsSync) => expiredBy(entry, now, exists)
 
 /** Forgets the given entries that are expired at `now`, and returns the rest. */
 async function dropExpired(storage: RosterStorage, entries: RosterEntry[], now: number, exists: Exists) {

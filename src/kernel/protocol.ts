@@ -53,6 +53,11 @@ export function defuse(text: string) {
   return text.replace(/<(\/?)(courier)/gi, "&lt;$1$2")
 }
 
+/** Defuses `<context` and `</context>` in text put in a session instruction entry, so it cannot close the entry's block or open another. */
+export function defuseBlock(text: string) {
+  return text.replace(/<(\/?)(context)/gi, "&lt;$1$2")
+}
+
 /** A readable message for a failed courier call; OpenCode's own errors can carry an empty message. */
 export function describeFailure(tool: string, error: unknown) {
   const tagged = error as { message?: unknown; _tag?: unknown; sessionID?: unknown }

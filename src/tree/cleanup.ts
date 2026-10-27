@@ -3,6 +3,7 @@ import { existsSync } from "node:fs"
 import { isAbsolute } from "node:path"
 import { forgetDropped } from "./forget.js"
 import type { CleanupPorts, CleanupResult, WorktreeState } from "./ports.js"
+import { syncStanding } from "./standing.js"
 import { childStore } from "./store.js"
 import { keepReason } from "./text.js"
 
@@ -25,6 +26,7 @@ export async function cleanup(ports: CleanupPorts, parentID: string, input: Clea
   // A member still out is dropped from its group, so the group is released without it; the result names that group.
   const forget = async () => {
     const group = await forgetDropped(ports, entry)
+    await syncStanding(ports, parentID)
     return group ? { group } : {}
   }
   if (!entry.isolated) return { sessionID: input.sessionID, directory, outcome: "forgotten", ...(await forget()) }

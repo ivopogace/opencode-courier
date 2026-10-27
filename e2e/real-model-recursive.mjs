@@ -85,6 +85,9 @@ function turnsOf(list) {
   let busy = false
   let last
   for (const message of list) {
+    // An instruction update (a session entry put since the last step, "Instructions updated: api/…") is OpenCode's, stored at
+    // the next step's start: in a turn a courier message opens, before that message. It is no step and opens no turn.
+    if (message.type === "system") continue
     const incoming = message.type === "user" || message.type === "synthetic"
     if (incoming && !busy && (!last || last.type === "idle" || (last.time.completed ?? Infinity) <= message.time.created)) {
       turns.push([])

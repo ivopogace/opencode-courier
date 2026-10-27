@@ -561,3 +561,41 @@ describe("memory", () => {
   test("noteLongRefusal", () => expect(memory.noteLongRefusal(312)).toMatchSnapshot())
   test("noteUnrecordedRefusal", () => expect(memory.noteUnrecordedRefusal("ses_top")).toMatchSnapshot())
 })
+
+describe("the session instruction entries (#384)", () => {
+  const record = (sessionID: string) => ({
+    projectID: "proj_1",
+    sessionID,
+    startedAt: Date.UTC(2026, 9, 3, 9),
+    movedAt: Date.UTC(2026, 9, 3, 9, 42),
+    title: "Add memory to courier",
+    split: "split: 3 parts: core, e2e, docs",
+    finished: true,
+    parts: [],
+  })
+  test("standingEntry", () => {
+    expect(tree.STANDING_KEY).toBe("standing")
+    expect(
+      tree.standingEntry([
+        { sessionID: "ses_core", title: "Core: the memory record", state: { kind: "reported", status: "done" }, group: { name: "wave", standing: "held" } },
+        { sessionID: "ses_e2e", title: "E2E scenario", state: { kind: "working", progressed: true }, group: { name: "wave", standing: "out" } },
+        { sessionID: "ses_docs", title: "Docs", state: { kind: "ended" } },
+        { sessionID: "ses_rev", title: "Review", state: { kind: "failed" }, group: { name: "wave", standing: "failed" } },
+        { sessionID: "ses_old", title: "An earlier part", state: { kind: "stopped" }, group: { name: "first", standing: "released" } },
+      ]),
+    ).toMatchSnapshot()
+    expect(tree.standingEntry([{ sessionID: "ses_one", title: "One", state: { kind: "started" } }])).toMatchSnapshot()
+  })
+  test("lessonsEntry", () => {
+    expect(memory.LESSONS_KEY).toBe("lessons")
+    const at = Date.UTC(2026, 9, 3, 9, 40)
+    expect(
+      memory.lessonsEntry([
+        { ...record("ses_pinned"), pinned: { at }, lesson: { text: "The docs part was ten lines; next time do it yourself.", at } },
+        { ...record("ses_old"), title: "Split the lexer from the parser", lesson: { text: "The lexer and the parser collided in one file; give them to one session.", at, depth: 1 } },
+        record("ses_none"),
+      ]),
+    ).toMatchSnapshot()
+    expect(memory.lessonsEntry([record("ses_none")])).toBeUndefined()
+  })
+})

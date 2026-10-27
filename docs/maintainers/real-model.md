@@ -171,6 +171,10 @@ with a seeded record can.
 | `deepseek-v4.1-flash-free`, catalog, b6099f9, the role part in a `role` session instruction entry (#387) | 2.2.0 | 3 of 3 passed, 9/9; mean 38 requests (one tree of 51), 10813 cache reads per request against 9922 before, and the uncached input per request no higher. The cached prefix is no worse with the entry, so it stays. One root passed without loading the skill. |
 | a self-hosted model behind an OpenAI-compatible endpoint, b8839dc, the role part pushed by the `context` hook | 2.2.0 | 2 of 3 passed, 9/9 twice and 7/9 once (one poll, and a sub-orchestrator that reported before its halves had); mean 31 requests. The endpoint reports no cache usage, so the column reads 0 and this pair is a behaviour check only, run alternating with the row below on one day. |
 | a self-hosted model behind an OpenAI-compatible endpoint, b6099f9, the role part in a `role` session instruction entry (#387) | 2.2.0 | 3 of 3 passed, 9/9, mean 30 requests, no polling. Sessions below the root loaded the skill more often than before (two leaves did in two of the three runs), which cost no check. |
+| a self-hosted model behind an OpenAI-compatible endpoint, b1ae192, the merge-base of #384's two entries, seeded with `e2e/real-model-seed-lesson-halves.json`, every sleep 10 s | 2.2.0 | 2 of 3 passed, 9/9 twice and 8/9 once (one root poll); mean 31 requests, 13534 input tokens per request. The "before" of the `lessons` entry, run alternating with the row below on one day, each tree built from its commit on the same host; the "numbers" session handed its halves off in all three, as the prompt orders. The sleeps are 10 s here and below, so these rows are not comparable with the sleep-20 rows above. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 89c635f, the `lessons` entry, the same seed, every sleep 10 s | 2.2.0 | 2 of 3 passed, 9/9 twice and 8/9 once (one root poll; a fourth run lost the "numbers" session's turn to a refused request mid-tree and was redone). Mean 32 requests, 13784 input tokens per request. The "numbers" session handed its halves off in all three, once saying it was told to and once that its brief forbade doing a half itself: the prompt and the root's brief both order that split, so the lesson had to beat an explicit instruction, which it did not. No worse on the checks and the requests; the behaviour the entry is for is not shown by this seed. The entry's reaching the session is the live suite's `entries` group, not this row. |
+| a self-hosted model behind an OpenAI-compatible endpoint, b1ae192, the merge-base of #384's two entries, plain, every sleep 10 s | 2.2.0 | 2 of 3 passed, 9/9 twice and 8/9 once (a "numbers" session that reported upward before its halves had, in a tree of 46 requests); no polls; mean 34 requests, 13824 input tokens per request. The "before" of the `standing` entry, alternating with the row below. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 89c635f, the `standing` entry, plain, every sleep 10 s | 2.2.0 | 2 of 3 passed, 9/9 twice and 8/9 once (one root looked twice, `courier_children` then `courier_tree`, in a restless first turn of nine steps, with the standing in its prompt); mean 31 requests, 14245 input tokens per request. Fewer requests, one more polling root than before: no worse on the checks, the behaviour the entry is for not shown in three runs. The endpoint reports no cache usage, so the cache column stays empty for both entries. Every "after" tree first lost the first-turn check to the checker reading the standing's update at a wake's start as the turn's tail, fixed in the same PR; the scores are after a re-read with `--saved`. |
 
 ## A part that goes wrong
 
@@ -274,9 +278,12 @@ the default wait gives up while a sub-orchestrator's wake turn still runs.
 
 `COURIER_SEED` names a JSON file of storage keys, `{ "<key>": <value> }`, set with `e2e/kv.ts`
 before the parent's prompt. `<project>` in a key or value stands for the project's id. The log shows
-`seeded memory/<id>/…` before `parent prompt:`. Two seeds are checked in:
-`e2e/real-model-seed.json`, an earlier tree's record, and `e2e/real-model-seed-lesson.json`, the
-same with the lesson "the count part is small; do it yourself".
+`seeded memory/<id>/…` before `parent prompt:`. Three seeds are checked in:
+`e2e/real-model-seed.json`, an earlier tree's record; `e2e/real-model-seed-lesson.json`, the
+same with the lesson "the count part is small; do it yourself"; and
+`e2e/real-model-seed-lesson-halves.json`, the same with "halves of a list are too small to spawn;
+do them yourself", a lesson only the "numbers" session of the recursive scenario can act on, which
+reaches it through the `lessons` entry alone, as a spawned session calls no `courier_recall`.
 
 A run is **finished** when it exits 0 or 1 and has a `summary.json`. Repeat a run that exits 2, or
 whose first turn did not end, under a new name. To compare conditions, keep one model and run each
@@ -304,7 +311,8 @@ bun script/real-model-table.ts $HOME/courier-runs/*   # no label: each directory
 A label before `=` names the condition; several directories may share one. A path that is no run is
 skipped with a line on stderr. Each row has the verdict, the score, skill loads per depth, recalls,
 join groups, polled sessions, requests, the cache read tokens per request (the provider's prompt
-cache hits over the whole tree, `-` for a summary written before they were kept), the duration and
+cache hits over the whole tree, `-` for a summary written before they were kept), the uncached input
+tokens per request (what the provider read anew), the duration and
 the `split:` lines. A line under each table gives the means over its finished runs. The cache
 column is what a change to the role part is judged by: compare it before and after, on one model.
 

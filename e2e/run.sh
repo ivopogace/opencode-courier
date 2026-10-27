@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 finding:11 person-message:9 permission:35 depth:4 role-entry:8 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 spawn-native:14 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 spawn-native:14 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -718,14 +718,19 @@ run_depth() {
       for _ in $(seq 1 20); do [ -z "$(kv get "report/$leaf/prompt")$(kv get "report/$leaf/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
 }
 
+# The value of session $1's instruction entry $2, empty without one.
+entry_of() {
+  api "experimental/session/$1/instructions/entries" | jq -r --arg key "$2" '(.data // .) | .[]? | select(.key == $key) | .value'
+}
 # The value of session $1's `role` instruction entry, empty without one; the whole listing goes to stderr then.
 role_entry_of() {
-  local listing value
-  listing=$(api "experimental/session/$1/instructions/entries")
-  value=$(jq -r '(.data // .) | .[]? | select(.key == "role") | .value' <<<"$listing")
-  [ -n "$value" ] || echo "role_entry_of $1: no role entry in: $listing" >&2
+  local value
+  value=$(entry_of "$1" role)
+  [ -n "$value" ] || echo "role_entry_of $1: no role entry in: $(api "experimental/session/$1/instructions/entries")" >&2
   printf '%s' "$value"
 }
+# The descriptions of the system messages in session $1's transcript that announce its instruction entries, in order.
+instruction_updates() { api "session/$1/message" | jq -c '[.data[] | select(.type == "system" and (.description | startswith("Instructions updated: "))) | .description]'; }
 run_role_entry() {
   # With maxDepth 2: the root starts a child, which starts a leaf. Each spawned session's role rides in its `role`
   # entry from its first request on; the root gets its own entry at its first spawn, as an update in its transcript.
@@ -751,8 +756,9 @@ run_role_entry() {
   check "the root was pointed to the skill in a part of the hook's until it had started a child, then named root orchestrator by its entry alone" \
     "$(jq -sr --arg root "$role_root" '[.[] | select(.session == $root and (.tools | length > 0))] | (map(.role) | index("root orchestrator")) as $i
       | $i > 0 and (.[:$i] | all(.role == "root" and .rolePart and (.roleEntry | not))) and (.[$i:] | all(.role == "root orchestrator" and .roleEntry and (.rolePart | not)))' "$WORK/model.log")"
-  check "the root's transcript shows the entry's arrival once, as a system message: Instructions updated: api/role" \
-    "$(api "session/$role_root/message" | jq -r '[.data[] | select(.type == "system" and .description == "Instructions updated: api/role")] | length == 1')"
+  echo "  instruction updates in the root's transcript: $(instruction_updates "$role_root")"
+  check "the root's transcript shows its entries' arrival as system messages, Instructions updated: api/…, one naming the role" \
+    "$(instruction_updates "$role_root" | jq -r 'length >= 1 and any(contains("api/role"))')"
   # A compaction replaces the leaf's brief; the person then prompts it: its role is in the baseline, with no part of the hook's.
   turn_ended "$role_leaf"
   api_post "session/$role_leaf/compact" '{}' >/dev/null
@@ -762,6 +768,72 @@ run_role_entry() {
   check "after the compaction the leaf still has its entry, and its request named it a leaf through the block, without courier_spawn" \
     "$([[ $(role_entry_of "$role_leaf") == "opencode-courier role: leaf"* ]] && jq -sr --arg leaf "$role_leaf" '[.[] | select(.session == $leaf and (.tools | length > 0))]
       | last | .role == "leaf" and .roleEntry and (.rolePart | not) and (.tools | index("courier_spawn") | not) and (.reply.text == "LEAF AGAIN")' "$WORK/model.log")"
+}
+
+# The other two session instruction entries (#384): the project's lessons on each orchestrator, and a parent's standing.
+run_entries() {
+  # The lessons entry: the project's lessons, as courier_recall lists them, in the system prompt of each session that can
+  # split, from its first request; the root gets its own at its first spawn, beside its role and its standing.
+  scenario "the root and a sub-orchestrator carry the project's lessons in a lessons entry from their first request, which courier_note renews (#384)"
+  child_delay 1000
+  out=$(prompt "COURIER-RECALL")
+  seeder=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  project=$(session_info "$seeder" | jq -r '.projectID')
+  seeded='{"startedAt":1760000000000,"movedAt":1760000900000,"title":"Numbers and count through helpers","split":"split: 2 parts: numbers, count","finished":true,"lesson":{"text":"halves of a list are too small to spawn; do them yourself","at":1760000890000},"parts":[{"sessionID":"ses_seed_numbers","title":"Numbers","depth":1,"isolated":false,"status":"done"}]}'
+  kv set "memory/$project/ses_seed_lesson" "$seeded" "memory/$project/$seeder"
+  seeded_line='- ses_seed_lesson "Numbers and count through helpers": lesson (2025-10-09): "halves of a list are too small to spawn; do them yourself"'
+  out=$(prompt "COURIER-ROLE")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the middle session's report woke the root" "$(has_text "$root" "ROOT WOKE" 90)"
+  leaf=$(texts "$middle" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
+  check "the middle session started a leaf" "$([ -n "$leaf" ] && echo true || echo false)"
+  check "the root and the middle session carry the seeded lesson in their lessons entry, under its line, and the leaf, which cannot split, has none" \
+    "$([[ $(entry_of "$root" lessons) == "opencode-courier lessons: "*"$seeded_line"* && $(entry_of "$middle" lessons) == "opencode-courier lessons: "*"$seeded_line"* && -z $(entry_of "$leaf" lessons) ]] && echo true || echo false)"
+  check "every request of the middle session carried the lessons block with its role's, and none of the leaf's did" \
+    "$(jq -sr --arg mid "$middle" --arg leaf "$leaf" '([.[] | select(.session == $mid and (.tools | length > 0))] | length > 0 and all(.lessonsEntry and .roleEntry)) and
+      ([.[] | select(.session == $leaf and (.tools | length > 0))] | length > 0 and all(.lessonsEntry | not))' "$WORK/model.log")"
+  echo "  instruction updates in the root's transcript: $(instruction_updates "$root")"
+  check "the root's transcript shows its entries' arrival as system messages naming the lessons, the role and the standing, all before its reply" \
+    "$(instruction_updates "$root" | jq -r 'length >= 1 and (join(" ") | contains("api/lessons") and contains("api/role") and contains("api/standing"))')"
+  line="numbers was one line; do it yourself next time"
+  noted=$(prompt_in "$root" "COURIER-NOTE $line" | tool_state courier_note)
+  check "courier_note from the root wrote the lesson" "$(jq -r '.status == "completed"' <<<"$noted")"
+  check "which renewed the lessons entry of the root and of the middle session, this tree's lesson first and the seeded one after it, and gave the leaf none" \
+    "$(for id in "$root" "$middle"; do [[ $(entry_of "$id" lessons) == "opencode-courier lessons: "*"- $root \""*"\": lesson ($(date -u +%F)): \"$line\""*"$seeded_line"* ]] || { echo false; exit; }; done; [ -z "$(entry_of "$leaf" lessons)" ] && echo true || echo false)"
+  # A compaction replaces the middle session's brief; prompted after it, its request still carries the lessons in the baseline.
+  turn_ended "$middle"
+  api_post "session/$middle/compact" '{}' >/dev/null
+  check "the middle session's compaction completed" \
+    "$(for _ in $(seq 1 60); do [ "$(api "session/$middle/message" | jq -r '[.data[] | select(.type == "compaction" and .status == "completed")] | length > 0')" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+  prompt_in "$middle" "CHILD-ROLE-AGAIN" >/dev/null
+  check "after the compaction the middle session's request carried the renewed lessons and its role in their blocks" \
+    "$([[ $(entry_of "$middle" lessons) == *"\"$line\""* ]] && jq -sr --arg mid "$middle" '[.[] | select(.session == $mid and (.tools | length > 0))] | last | .lessonsEntry and .roleEntry and (.reply.text == "LEAF AGAIN")' "$WORK/model.log")"
+
+  # The standing entry: what courier_children shows, one line per child, on the parent, kept current as the children move.
+  scenario "a parent carries the standing of the sessions it started in a standing entry, kept current, removed with its last child (#384)"
+  child_delay 6000
+  out=$(prompt "COURIER-GROUP")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
+  first=$(head -1 <<<"$members")
+  second=$(tail -1 <<<"$members")
+  standing=$(entry_of "$parent" standing)
+  check "once the spawns were done, the parent's standing listed both members working, their group waiting for them" \
+    "$([[ $standing == "opencode-courier standing: "* && $standing == *"- $first \"Report back to your parent.\": working; group \"pair\" waits for it"* && $standing == *"- $second \"Report back to your parent.\": working; group \"pair\" waits for it"* ]] && echo true || echo false)"
+  check "the parent's reply after the spawns was asked with the standing in an update, no look needed" \
+    "$(jq -sr --arg parent "$parent" '[.[] | select(.session == $parent and (.tools | length > 0))] | length >= 2 and (.[1] | .standingEntry) and (.[0] | .standingEntry | not)' "$WORK/model.log")"
+  check "the group's reports woke the parent" "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && echo true || echo false)"
+  check "then the standing read both as reported done, their group delivered" \
+    "$(for _ in $(seq 1 15); do standing=$(entry_of "$parent" standing); [[ $standing == *"- $first \"Report back to your parent.\": reported done; group \"pair\" was delivered"* && $standing == *"- $second \"Report back to your parent.\": reported done; group \"pair\" was delivered"* ]] && { echo true; exit; }; sleep 1; done; echo false)"
+  check "every announcement in the parent's transcript named the standing, and the woken request carried it" \
+    "$(instruction_updates "$parent" | jq -r 'length >= 2 and all(contains("api/standing"))' | grep -qx true && jq -sr --arg parent "$parent" '[.[] | select(.session == $parent and (.tools | length > 0))] | last | .standingEntry' "$WORK/model.log")"
+  cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $first" | tool_state courier_cleanup)
+  check "courier_cleanup dropped the first member, and the standing lists the second alone" \
+    "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "forgotten"' <<<"$cleaned" | grep -qx true && standing=$(entry_of "$parent" standing) && [[ $standing == *"- $second "* && $standing != *"- $first "* ]] && echo true || echo false)"
+  prompt_in "$parent" "COURIER-CLEANUP $second" >/dev/null
+  check "dropping the last one removed the standing entry" "$([ -z "$(entry_of "$parent" standing)" ] && [[ $(entry_of "$parent" role) == "opencode-courier role: root orchestrator"* ]] && echo true || echo false)"
+  child_delay 0
 }
 
 run_spawn_model() {

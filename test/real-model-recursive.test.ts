@@ -100,6 +100,19 @@ function check(variant: Variant | Run, ...runs: string[][]) {
   }
 }
 
+describe("the recursive checker and the instruction updates", () => {
+  test("a system message OpenCode stores at a wake's start, before the message that opens the turn, is no step and ends no turn (#384)", () => {
+    const tree = transcripts("no-fault")
+    const root = tree.ses_root!
+    // The root's first turn ends; at its wake, the standing entry's update lands before the group's message.
+    const idleAt = root.findIndex((message) => message.type === "idle")
+    root.splice(idleAt + 1, 0, { type: "system", description: "Instructions updated: api/standing", time: { created: tick() } })
+    const run = check({ tree, files: FILES })
+    expect(run.failed).toEqual([])
+    expect(run.exitCode).toBe(0)
+  })
+})
+
 describe("the recursive checker with --fault", () => {
   test("a fault handled by a message to the leaf, then one done report upward, passes every check", () => {
     const run = check("handled", ["--fault"])

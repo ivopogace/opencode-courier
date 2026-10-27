@@ -1,7 +1,7 @@
 /** The memory's ports: what refreshing a record and courier_recall need of the plugin context, and what the process shares. */
 import type { Plugin } from "@opencode/plugin"
 import type { Storage } from "../platform/storage.js"
-import type { ModelWindow } from "../tree/index.js"
+import type { Instructions, ModelWindow } from "../tree/index.js"
 import type { Pinned, ReadKind, Reads, StoredRecord, TreeRecord } from "./domain.js"
 
 export type { Lesson, PartRecord, PartStatus, Pinned, ReadKind, Reads, Recalled, Revision, StoredRecord, TreeRecord } from "./domain.js"
@@ -18,6 +18,8 @@ export interface RefreshPorts {
 
 /** What courier_recall and courier_note run on: one instance's ports. */
 export interface MemoryPorts extends RefreshPorts {
+  /** With `instructions`, the keyed session entries, which courier_note puts the lessons entry through; missing on a host before 2.2.0. */
+  readonly session: RefreshPorts["session"] & Instructions
   /** The project of the plugin's location, whose records the tools read and write. */
   readonly projectID: string
   /** The `memory` option: off, and the tools write and list nothing. */

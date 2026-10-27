@@ -271,14 +271,20 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
 `.remove({ sessionID, key })`, since `@opencode/plugin@2.2.0` (anomalyco/opencode#56550); over HTTP
 `GET /api/experimental/session/:id/instructions/entries` and `PUT` or `DELETE …/entries/:key`
 (`packages/protocol/src/groups/session.ts`; the plugin API's path has no `experimental`). The courier
-writes a spawned session's role part to the `role` entry (`spawn.ts`). Read in
+writes three entries: a spawned session's role part to `role` and the project's lessons to `lessons`
+(`spawn.ts`, before the prompt; `memory/lessons.ts` supplies the text and `courier_note` renews it),
+and a parent's children to `standing` (`tree/standing.ts`, from the tools and events that move a
+child, put only when the text changed, removed with the last child). Each value stays well under
+3 KiB. Read in
 `packages/core/src/session/instruction-entry.ts`, `instructions/index.ts`, `instruction-state.ts`,
 `context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.0`:
 
 - **Rendering.** An entry is one block, `<context key="<key>">`, the value, `</context>`: a string
   as it is, any other JSON pretty-printed. The key matches `^[a-z0-9][a-z0-9._-]*$` (stored as
   `api/<key>`), and the value's JSON is at most 256 KiB (`InstructionEntryValueTooLargeError`, 413).
-  A `put` of the value already stored changes nothing and announces nothing.
+  A `put` of the value already stored changes nothing and announces nothing; the courier still
+  `list`s and compares before a put that may be the same (`standing`, `lessons`), so an unchanged
+  value costs one read and no write.
 - **Where it lands.** The entries are the last of OpenCode's instruction sources, after the code
   mode catalog, MCP instructions, references, the skill listing, AGENTS.md and the built-ins, all
   rendered into one *baseline*: the second system part, after the agent's system prompt and before
@@ -292,8 +298,10 @@ writes a spawned session's role part to the `role` entry (`spawn.ts`). Read in
   `session.instructions.updated` event whose `text` is the block (for a new key), "The context under
   "<key>" changed and supersedes the previous value:" with the block (a changed one) or "The context
   under "<key>" no longer applies. Disregard it." (a removal); `message-updater.ts` stores it as a
-  `system` message (`description` `Instructions updated: api/<key>`, the keys as stored, visible in
-  the TUI), which goes to the model at its place in the transcript, after the tool result that put
+  `system` message (`description` `Instructions updated: api/<key>`, the keys as stored, every key
+  changed since the last step in one message, sorted: `api/lessons, api/role, api/standing` at a
+  root's first spawn; in a turn a courier message starts, the message comes before that message),
+  which goes to the model at its place in the transcript, after the tool result that put
   the entry, as a **user** message: `<system-update>`, the text with `&`, `<` and `>` escaped,
   `</system-update>` (`wrapSystemUpdate`, `packages/ai/src/protocols/shared.ts`; AI SDK routes do
   not all allow the system role after history). So the block arrives as `&lt;context

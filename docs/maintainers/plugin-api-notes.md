@@ -298,8 +298,10 @@ child, put only when the text changed, removed with the last child). Each value 
   `session.instructions.updated` event whose `text` is the block (for a new key), "The context under
   "<key>" changed and supersedes the previous value:" with the block (a changed one) or "The context
   under "<key>" no longer applies. Disregard it." (a removal); `message-updater.ts` stores it as a
-  `system` message (`description` `Instructions updated: api/<key>`, the keys as stored, visible in
-  the TUI), which goes to the model at its place in the transcript, after the tool result that put
+  `system` message (`description` `Instructions updated: api/<key>`, the keys as stored, every key
+  changed since the last step in one message, sorted: `api/lessons, api/role, api/standing` at a
+  root's first spawn; in a turn a courier message starts, the message comes before that message),
+  which goes to the model at its place in the transcript, after the tool result that put
   the entry, as a **user** message: `<system-update>`, the text with `&`, `<` and `>` escaped,
   `</system-update>` (`wrapSystemUpdate`, `packages/ai/src/protocols/shared.ts`; AI SDK routes do
   not all allow the system role after history). So the block arrives as `&lt;context

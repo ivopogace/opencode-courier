@@ -44,6 +44,8 @@ function decide(body) {
   const prompt = textOf(messages.findLast((message) => message.role === "user")?.content)
   const finding = passFinding(messages, lastAssistant)
   if (finding) return finding
+  const role = roleEntry(messages, lastAssistant)
+  if (role) return role
   if (last?.role === "tool") {
     const call = messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)
     const result = textOf(last.content)
@@ -412,6 +414,34 @@ function passFinding(messages, lastAssistant) {
   return { text: "PARENT WOKE" }
 }
 
+// COURIER-ROLE: the root starts CHILD-ROLE-MID, which starts CHILD-ROLE-LEAF, a leaf at maxDepth 2; each ends its turn after
+// spawning, the leaf reports at once, the middle session reports once the leaf has. Prompted CHILD-ROLE-AGAIN by the person,
+// after a compaction has replaced its brief, the leaf answers with a line.
+function roleEntry(messages, lastAssistant) {
+  const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
+  if (recent.includes("CHILD-ROLE-AGAIN")) return { text: "LEAF AGAIN" }
+  const first = textOf(messages.find((message) => message.role === "user")?.content)
+  const last = messages.at(-1)
+  const briefedBy = first.match(/You were started by session (ses_\w+)/)
+  const called = last?.role === "tool" ? messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)?.function?.name : undefined
+  if (first.includes("COURIER-ROLE")) {
+    if (called) return { text: "ROOT SPAWNED" }
+    if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-ROLE-MID" } }
+    return { text: "ROOT WOKE" }
+  }
+  if (briefedBy && first.includes("CHILD-ROLE-MID")) {
+    if (called === "courier_send") return { text: "MID REPORTED" }
+    if (called) return { text: "MID SPAWNED" }
+    if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-ROLE-LEAF" } }
+    return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "MID DONE", status: "done" } }
+  }
+  if (briefedBy && first.includes("CHILD-ROLE-LEAF")) {
+    if (called) return { text: "LEAF REPORTED" }
+    return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "LEAF DONE", status: "done" } }
+  }
+  return undefined
+}
+
 // What a child reports as artifacts: one of each kind, so the test sees the whole layout.
 const ARTIFACTS = {
   branch: "child/work",
@@ -449,10 +479,13 @@ createServer((request, response) => {
     const session = request.headers["x-opencode-session-id"]
     const system = (body.messages ?? []).filter((message) => message.role === "system").map((message) => textOf(message.content)).join("\n")
     const role = system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/)?.[1] ?? null
+    // Where the role came from: the `role` instruction entry's block, or a system part of the courier's context hook.
+    const roleEntry = /<context key="role">\n\s*opencode-courier role:/.test(system)
+    const rolePart = (system.match(/^opencode-courier role:/gm) ?? []).length > (system.match(/<context key="role">\n\s*opencode-courier role:/g) ?? []).length
     const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])
     // The request's own fields besides the conversation: the model asked for, and what a variant adds (reasoning_effort).
     const options = Object.fromEntries(Object.entries(body).filter(([key]) => !["messages", "tools", "stream", "stream_options", "tool_choice"].includes(key)))
-    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, skills, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
+    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, roleEntry, rolePart, skills, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
     if (reply.status) {
       response.writeHead(reply.status, { "content-type": "application/json", ...reply.headers })
       response.end(JSON.stringify({ error: { message: reply.error, type: "forbidden" } }))

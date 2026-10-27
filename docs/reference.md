@@ -169,11 +169,14 @@ task itself. Any spawned session is told to send its parent a finding the other 
 assumption of the split that is wrong, a shared file or API that behaves otherwise, something the
 person said) at once, without a status, and carry on; progress alone is not worth a message.
 
-**The role.** On each model request the plugin adds one system part, `opencode-courier role: …`. A
-session below `maxDepth` is a `sub-orchestrator`. One at `maxDepth` is a `leaf`, and its requests go
-without `courier_spawn`, `courier_recall` and `courier_note`. A top session that has started no
-session yet is pointed to the skill. The root may also hand a heavy task whole to one session, to
-keep its own context: `split: 1 part: <the task>, to keep my context`.
+**The role.** Every spawned session carries one line in its system prompt, `opencode-courier role: …`,
+in the `role` entry of its session instructions (OpenCode 2.2.0's `<context key="role">` block),
+written as it is started; a root gets its own at its first spawn, which its transcript shows once as
+"Instructions updated: role". On an older OpenCode the plugin adds the line as a system part on each
+model request instead. A session below `maxDepth` is a `sub-orchestrator`. One at `maxDepth` is a
+`leaf`, and its requests go without `courier_spawn`, `courier_recall` and `courier_note`. A top
+session that has started no session yet is pointed to the skill. The root may also hand a heavy task
+whole to one session, to keep its own context: `split: 1 part: <the task>, to keep my context`.
 
 ## The courier-orchestrate skill
 

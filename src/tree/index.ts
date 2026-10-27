@@ -12,6 +12,7 @@ export type {
   ModelWindow,
   Pending,
   PendingPrompt,
+  Role,
   RosterEntry,
   RosterStorage,
   ShownForm,

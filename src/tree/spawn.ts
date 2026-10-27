@@ -5,7 +5,7 @@ import { admit } from "./limits.js"
 import { chooseModel } from "./model.js"
 import type { CourierPorts, RosterEntry } from "./ports.js"
 import { childStore, groupStore } from "./store.js"
-import { childBrief, childBranch, nativeIsolateRefusal } from "./text.js"
+import { childBrief, childBranch, nativeIsolateRefusal, ROLE_KEY, rolePart } from "./text.js"
 
 export interface SpawnInput {
   readonly task: string
@@ -68,7 +68,11 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     ...(model ? { model } : {}),
   }
   const { rosterError, groupError } = await enrol(ports, entry, group)
-  ports.roles.delete(parentID)
+  // The child's role entry before its prompt, so its first request carries it; a root's own at its first spawn.
+  await nameRole(ports, entry.sessionID, admitted.depth)
+  const named = admitted.depth === 1 && (ports.roles.get(parentID)?.entry || (await nameRole(ports, parentID, 0)))
+  if (named) ports.roles.set(parentID, { depth: 0, entry: true })
+  else ports.roles.delete(parentID)
   await handOver(ports, entry, admitted.depth, input.task, !rosterError, !rosterError && !groupError)
   return {
     sessionID: entry.sessionID,
@@ -191,5 +195,21 @@ async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
       groups.remove(entry.parentID, group, entry.sessionID).catch(() => undefined),
     ])
     return describeFailure("group", error).message
+  }
+}
+
+/**
+ * Writes a session's role part to its `role` entry, which OpenCode keeps in its system prompt from its next step on;
+ * false on a host without entries, or when the put failed, which is logged: the `context` hook then adds the part.
+ */
+async function nameRole(ports: CourierPorts, sessionID: string, depth: number) {
+  const entries = ports.session.instructions?.entry
+  if (!entries) return false
+  try {
+    await entries.put({ sessionID, key: ROLE_KEY, value: rolePart(depth, ports.limits) })
+    return true
+  } catch (error) {
+    ports.log(`courier_spawn: the role entry of ${sessionID} could not be written, so its role goes in a system part: ${String(error)}`)
+    return false
   }
 }

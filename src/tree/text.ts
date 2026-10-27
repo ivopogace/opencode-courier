@@ -69,8 +69,11 @@ function splitRule(parentID: string, depth: number, limits: Limits) {
   ]
 }
 
-/** How every part the context hook adds begins, so a second copy of the plugin does not add its own. */
+/** How every role part begins, in the role entry and in the part the context hook adds without one, so no second copy is added. */
 export const ROLE_PREFIX = "opencode-courier role:"
+
+/** The key of the session instruction entry carrying a spawned session's role part, `<context key="role">` in its system prompt. */
+export const ROLE_KEY = "role"
 
 /**
  * The system part naming a session's place in its tree: `depth` 0 for a session nobody spawned that

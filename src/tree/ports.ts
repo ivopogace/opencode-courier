@@ -164,9 +164,19 @@ export interface Sent {
   readonly held?: Held
 }
 
+/**
+ * What the `context` hook remembers of a session: its depth, null for one nobody spawned that has started none, and
+ * whether it carries the role entry (`ROLE_KEY`), which then names its role in place of the hook's system part.
+ */
+export interface Role {
+  readonly depth: number | null
+  readonly entry: boolean
+}
+
 /** The slice of the plugin context the courier tools use; tests pass a fake. */
 export interface CourierPorts {
-  readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context" | "interrupt">
+  /** `instructions`, the keyed session entries, is missing on a host before 2.2.0: the role then goes in a system part. */
+  readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context" | "interrupt"> & Partial<Pick<Context["session"], "instructions">>
   readonly agent: Pick<Context["agent"], "get">
   readonly worktree: Pick<Context["worktree"], "create" | "remove">
   /** The project of the plugin's location; an isolated child's worktree is made in it, and removed from it. */
@@ -190,8 +200,8 @@ export interface CourierPorts {
   /** The `nativeChildren` option: a child started without isolate and without `native` is created with OpenCode's own `parentID`. */
   readonly nativeChildren?: boolean
   readonly gate: SpawnGate
-  /** The depths the `context` hook remembers; a parent's is dropped when it starts a child. */
-  readonly roles: Map<string, number | null>
+  /** The roles the `context` hook remembers; a parent's is dropped when it starts a child. */
+  readonly roles: Map<string, Role>
   /** Has the scheduler deliver what is due now rather than at its next tick: a group a report has just completed. */
   readonly nudge: () => void
   readonly log: (message: string) => void
@@ -354,8 +364,10 @@ export type Waits = (ports: Pick<WatchPorts, "storage" | "permissions">, session
 export interface ContextPorts {
   readonly storage: RosterStorage
   readonly limits: Limits
-  /** Each session's depth once looked up: null for one nobody spawned that has started none, until it starts one. */
-  readonly roles: Map<string, number | null>
+  /** Each session's role once looked up; a session nobody spawned reads as depth null until it starts one. */
+  readonly roles: Map<string, Role>
+  /** The keyed session entries, read once per session for its role entry; missing on a host before 2.2.0, which gets the system part. */
+  readonly instructions?: Context["session"]["instructions"]
   /** Tools of other modules hidden from a leaf alongside courier_spawn; `src/index.ts` names courier_recall and courier_note. */
   readonly hiddenFromLeaf?: ReadonlyArray<string>
   readonly log: (message: string) => void

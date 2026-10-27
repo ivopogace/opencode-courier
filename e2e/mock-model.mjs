@@ -37,14 +37,19 @@ const GIT = "git -c user.name=courier -c user.email=courier@example.invalid"
 const branchIn = (messages) => textOf(messages.find((message) => message.role === "user")?.content).match(/branch (courier\/ses_\w+)/)?.[1]
 
 // An instruction update OpenCode appends when a session's keyed instructions change mid-conversation (the courier's `role`
-// entry on a root): a message of its own after the tool result, which the scripts below do not count as the last message.
-const isInstructionUpdate = (message) => /^(<context key="|The context under ")/.test(textOf(message.content))
+// entry on a root): a user message of its own after the tool result, `<system-update>` around the block with its tags
+// escaped, which the scripts below do not count as the last message.
+const isInstructionUpdate = (message) => /^<system-update>\n/.test(textOf(message.content))
+
+// A compaction's summary must carry one of the template's headings, else OpenCode nudges once and gives up.
+const SUMMARY = "## Objective\n- Courier test"
 
 function decide(body) {
   const messages = (body.messages ?? []).filter((message) => !isInstructionUpdate(message))
-  if (!body.tools?.length) return { text: "Courier test" }
-  // A compaction request carries the tools and asks for a summary in its last user message: the summary, no tool call.
-  if (textOf(messages.findLast((message) => message.role === "user")?.content).includes("Summarize only what the user and the assistant said")) return { text: "Courier test" }
+  if (!body.tools?.length) return { text: SUMMARY }
+  // A compaction request carries the tools and asks for a summary in its last user message, or nudges for one: the summary, no tool call.
+  const asked = textOf(messages.findLast((message) => message.role === "user")?.content)
+  if (asked.includes("Summarize only what the user and the assistant said") || asked.includes("did not fill in the required summary template")) return { text: SUMMARY }
   const lastAssistant = messages.findLastIndex((message) => message.role === "assistant")
   const last = messages.at(-1)
   const prompt = textOf(messages.findLast((message) => message.role === "user")?.content)
@@ -489,7 +494,7 @@ createServer((request, response) => {
     const role = (system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/) ?? everything.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/))?.[1] ?? null
     // Where it came from: the `role` instruction entry's block (`roleEntry`), or a system part of the courier's context hook
     // (`rolePart`); `updateRole` is the role OpenCode sends an instruction update as, when the request holds one.
-    const roleEntry = /<context key="role">\n\s*opencode-courier role:/.test(everything)
+    const roleEntry = /(<|&lt;)context key="role"(>|&gt;)\n\s*opencode-courier role:/.test(everything)
     const rolePart = (system.match(/^opencode-courier role:/gm) ?? []).length > (system.match(/<context key="role">\n\s*opencode-courier role:/g) ?? []).length
     const updateRole = (body.messages ?? []).find(isInstructionUpdate)?.role ?? null
     const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])

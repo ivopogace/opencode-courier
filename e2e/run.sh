@@ -705,7 +705,7 @@ run_depth() {
 # The value of session $1's `role` instruction entry, empty without one; the whole listing goes to stderr then.
 role_entry_of() {
   local listing value
-  listing=$(api "session/$1/instructions/entries")
+  listing=$(api "experimental/session/$1/instructions/entries")
   value=$(jq -r '(.data // .) | .[]? | select(.key == "role") | .value' <<<"$listing")
   [ -n "$value" ] || echo "role_entry_of $1: no role entry in: $listing" >&2
   printf '%s' "$value"

@@ -269,7 +269,8 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
 
 `ctx.session.instructions.entry.put({ sessionID, key, value })`, `.list({ sessionID })` and
 `.remove({ sessionID, key })`, since `@opencode/plugin@2.2.0` (anomalyco/opencode#56550); over HTTP
-`GET /api/session/:id/instructions/entries` and `PUT` or `DELETE …/entries/:key`. The courier
+`GET /api/experimental/session/:id/instructions/entries` and `PUT` or `DELETE …/entries/:key`
+(`packages/protocol/src/groups/session.ts`; the plugin API's path has no `experimental`). The courier
 writes a spawned session's role part to the `role` entry (`spawn.ts`). Read in
 `packages/core/src/session/instruction-entry.ts`, `instructions/index.ts`, `instruction-state.ts`,
 `context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.0`:
@@ -292,17 +293,23 @@ writes a spawned session's role part to the `role` entry (`spawn.ts`). Read in
   "<key>" changed and supersedes the previous value:" with the block (a changed one) or "The context
   under "<key>" no longer applies. Disregard it." (a removal); `message-updater.ts` stores it as a
   `system` message (`description` `Instructions updated: api/<key>`, the keys as stored, visible in
-  the TUI), which goes to the model as a message of its own at its place in the transcript, after
-  the tool result that put the entry: a mock that keys on "the last message is a tool result" must
-  skip it (`e2e/mock-model.mjs` does, and logs the role it arrives as, `updateRole`). The baseline
-  stays, so the prefix before the update holds. The plugin API's event carries that `text` and the
-  keys' hashes (`delta`), never the value; the first sync after the first step has no text.
+  the TUI), which goes to the model at its place in the transcript, after the tool result that put
+  the entry, as a **user** message: `<system-update>`, the text with `&`, `<` and `>` escaped,
+  `</system-update>` (`wrapSystemUpdate`, `packages/ai/src/protocols/shared.ts`; AI SDK routes do
+  not all allow the system role after history). So the block arrives as `&lt;context
+  key="role"&gt;`, and a mock keyed on "the last message is a tool result" must skip the update
+  (`e2e/mock-model.mjs` does, and logs the role it arrives as, `updateRole`). The baseline stays,
+  so the prefix before the update holds. The plugin API's event carries that `text` and the keys'
+  hashes (`delta`), never the value; the first sync after the first step has no text.
 - **A compaction keeps it.** After a compaction the entry's current value is in the baseline, and
   the transcript replays from the compaction message, so the update message is no longer sent. A
   compaction's own model request carries the baseline too, so its model sees the block; it also
   carries the session's whole tool list and runs the `compaction` hook, not `context`, so a leaf's
-  compaction model sees `courier_spawn` (its prompt says to call no tool). A model that answers it
-  with a tool call ends the compaction with no `session.compaction.ended`.
+  compaction model sees `courier_spawn` (its prompt says to call no tool). The summary must hold a
+  line equal to one of the template's headings (`## Objective`, …): a reply without one is nudged
+  once ("did not fill in the required summary template"), then the compaction fails
+  (`session.compaction.failed`, no `ended`), as `e2e/mock-model.mjs` found before it answered with
+  a heading.
 - **What inherits it.** `session.fork` copies the parent's entries and baseline; a native child
   (`parentID`) and `session.create` do not. `courier_cleanup` and a forgotten child leave entries
   alone: they belong to the session and go with it.

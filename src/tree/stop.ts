@@ -2,6 +2,7 @@ import { isNotFound } from "../platform/json.js"
 import { describeFailure, envelope } from "../kernel/protocol.js"
 import { cleanup } from "./cleanup.js"
 import type { CleanupResult, StopPorts } from "./ports.js"
+import { syncStanding } from "./standing.js"
 import { childStore } from "./store.js"
 import { subtree, type Below } from "./subtree.js"
 import { stoppedNotice } from "./text.js"
@@ -66,6 +67,8 @@ export async function stop(ports: StopPorts, callerID: string, input: StopInput)
     return round(meanwhile, left - 1)
   }
   await round([{ entry: target, depth: 0 }, ...(await subtree(storage, sessionID)).nodes], ROUNDS)
+  // Each parent among them reads its stopped children at its next step; the caller's own entry, when it is the target's parent, too.
+  for (const parentID of new Set(nodes.map((node) => node.entry.parentID))) await syncStanding(ports.courier, parentID)
 
   const told =
     target.parentID !== callerID && results.find((one) => one.sessionID === sessionID)?.outcome === "interrupted"

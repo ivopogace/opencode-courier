@@ -26,7 +26,7 @@ import {
   type PersonState,
   type QuestionPorts,
 } from "./person/index.js"
-import { addMemoryTools, memoryEvents, NOTE_TOOL, readMemory, RECALL_TOOL, registerMemoryRpc, sweepRecords, type MemoryPorts, type MemoryState } from "./memory/index.js"
+import { addMemoryTools, lessonsOf, memoryEvents, NOTE_TOOL, readMemory, RECALL_TOOL, registerMemoryRpc, sweepRecords, type MemoryPorts, type MemoryState } from "./memory/index.js"
 import { addSkill } from "./skill.js"
 import {
   addTreeTools,
@@ -132,6 +132,7 @@ export const courier = () => Plugin.define({
     const { memory, problems: memoryProblems } = readMemory(ctx.options)
     for (const problem of [...problems, ...nativeProblems, ...memoryProblems]) log(`courier: ${problem}`)
     const roles = new Map<string, Role>()
+    const memoryPorts: MemoryPorts = { storage: ctx.storage, session: ctx.session, now: Date.now, log, projectID: ctx.location.project.id, memory, maxDepth: limits.maxDepth }
     const ports: CourierPorts = {
       limits,
       nativeChildren,
@@ -139,6 +140,8 @@ export const courier = () => Plugin.define({
       roles,
       nudge,
       log,
+      // What a spawned session gets besides its role: the memory's lessons entry, as the `Waits` port is composed below.
+      entries: () => lessonsOf(memoryPorts),
       session: ctx.session,
       agent: ctx.agent,
       worktree: ctx.worktree,
@@ -186,7 +189,6 @@ export const courier = () => Plugin.define({
     }
 
     const stopPorts = { courier: ports, cancelScheduled: (sessionID: string) => cancelScheduled(later, sessionID), cleanup: cleanupPorts }
-    const memoryPorts: MemoryPorts = { storage: ctx.storage, session: ctx.session, now: Date.now, log, projectID: ctx.location.project.id, memory, maxDepth: limits.maxDepth }
     // The tools in a fixed order: the tree's, then the person's, the scheduled messages', the webhooks' and the memory's.
     await ctx.tool.transform((tools) => {
       addTreeTools(tools, { courier: ports, cleanup: cleanupPorts, stop: stopPorts })

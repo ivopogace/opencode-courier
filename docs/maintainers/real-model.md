@@ -274,9 +274,12 @@ the default wait gives up while a sub-orchestrator's wake turn still runs.
 
 `COURIER_SEED` names a JSON file of storage keys, `{ "<key>": <value> }`, set with `e2e/kv.ts`
 before the parent's prompt. `<project>` in a key or value stands for the project's id. The log shows
-`seeded memory/<id>/…` before `parent prompt:`. Two seeds are checked in:
-`e2e/real-model-seed.json`, an earlier tree's record, and `e2e/real-model-seed-lesson.json`, the
-same with the lesson "the count part is small; do it yourself".
+`seeded memory/<id>/…` before `parent prompt:`. Three seeds are checked in:
+`e2e/real-model-seed.json`, an earlier tree's record; `e2e/real-model-seed-lesson.json`, the
+same with the lesson "the count part is small; do it yourself"; and
+`e2e/real-model-seed-lesson-halves.json`, the same with "halves of a list are too small to spawn;
+do them yourself", a lesson only the "numbers" session of the recursive scenario can act on, which
+reaches it through the `lessons` entry alone, as a spawned session calls no `courier_recall`.
 
 A run is **finished** when it exits 0 or 1 and has a `summary.json`. Repeat a run that exits 2, or
 whose first turn did not end, under a new name. To compare conditions, keep one model and run each

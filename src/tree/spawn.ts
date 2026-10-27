@@ -3,7 +3,8 @@ import { isGroupName, modelName } from "./domain.js"
 import { joinGroup, leaveGroup } from "./group.js"
 import { admit } from "./limits.js"
 import { chooseModel } from "./model.js"
-import type { CourierPorts, RosterEntry } from "./ports.js"
+import type { CourierPorts, Entry, RosterEntry } from "./ports.js"
+import { putEntries, syncStanding } from "./standing.js"
 import { childStore, groupStore } from "./store.js"
 import { childBrief, childBranch, nativeIsolateRefusal, ROLE_KEY, rolePart } from "./text.js"
 
@@ -68,12 +69,21 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     ...(model ? { model } : {}),
   }
   const { rosterError, groupError } = await enrol(ports, entry, group)
-  // The child's role entry before its prompt, so its first request carries it; a root's own at its first spawn.
+  // The child's role and the other modules' entries before its prompt, so its first request carries them; a root's own at its first spawn.
+  const extra = await extraEntries(ports)
   await nameRole(ports, entry.sessionID, admitted.depth)
-  const named = admitted.depth === 1 && (ports.roles.get(parentID)?.entry || (await nameRole(ports, parentID, 0)))
+  if (admitted.depth < ports.limits.maxDepth) await putEntries(ports, entry.sessionID, extra)
+  const rootNamed = ports.roles.get(parentID)?.entry === true
+  const named = admitted.depth === 1 && (rootNamed || (await nameRole(ports, parentID, 0)))
+  if (named && !rootNamed) await putEntries(ports, parentID, extra)
   if (named) ports.roles.set(parentID, { depth: 0, entry: true })
   else ports.roles.delete(parentID)
-  await handOver(ports, entry, admitted.depth, input.task, !rosterError, !rosterError && !groupError)
+  try {
+    await handOver(ports, entry, admitted.depth, input.task, !rosterError, !rosterError && !groupError)
+  } finally {
+    // The parent's standing with the child on it, prompted or failed, announced at its next step.
+    await syncStanding(ports, parentID)
+  }
   return {
     sessionID: entry.sessionID,
     directory: entry.directory,
@@ -195,6 +205,17 @@ async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
       groups.remove(entry.parentID, group, entry.sessionID).catch(() => undefined),
     ])
     return describeFailure("group", error).message
+  }
+}
+
+/** The entries the other modules give a spawned session, the memory's lessons; none when they cannot be read, logged. */
+async function extraEntries(ports: CourierPorts): Promise<ReadonlyArray<Entry>> {
+  if (!ports.entries || !ports.session.instructions) return []
+  try {
+    return await ports.entries()
+  } catch (error) {
+    ports.log(`courier_spawn: the entries of the other modules could not be read, so the session starts without them: ${String(error)}`)
+    return []
   }
 }
 

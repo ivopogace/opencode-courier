@@ -1,6 +1,7 @@
 import { envelope, isStatus, STATUSES, type Status } from "../kernel/protocol.js"
 import { groupStanding, holdReport, membershipFor, unholdForBlocked } from "./group.js"
 import type { Artifacts, CourierPorts, Held, HeldReport, Membership, RosterEntry, Sent } from "./ports.js"
+import { syncStanding } from "./standing.js"
 import { childStore, groupStore } from "./store.js"
 import { reportBody } from "./text.js"
 import { noteSent } from "./wake.js"
@@ -23,7 +24,10 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
   try {
     const held = noted?.member && status && status !== "blocked" ? await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) }) : undefined
-    if (held) return { status, report: true, held }
+    if (held) {
+      await syncStanding(ports, input.sessionID)
+      return { status, report: true, held }
+    }
     const text = envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {})
     const description = `Message from ${from}`
     const delivered = await ports.session.synthetic({
@@ -37,6 +41,8 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
     await noteSent(ports, { sessionID: input.sessionID, inboxID: delivered.id, text, description }).catch(() => undefined)
     // A blocked report, once delivered, is the member's latest word: an earlier report held for it would be stale.
     if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)
+    // The parent's standing moves with a report or progress of its child; the message itself wakes it.
+    if (noted) await syncStanding(ports, input.sessionID)
     return { messageID: delivered.id, ...(status ? { status } : {}), ...(noted ? { report: noted.report } : {}), ...(dropped ? { dropped } : {}) }
   } catch (error) {
     await noted?.undo().catch(() => undefined)

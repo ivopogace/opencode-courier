@@ -48,7 +48,9 @@ import rules and the reasons for them.
   is the one cleanup service (`forgetChild`, which drops the child's group membership too, best
   effort, `forgetDropped`, expired entries, `forgetDeleted`, `forgetReports`); taking back a write
   just made (`send.ts`, `spawn.ts`) and dropping a delivered group (`group.ts`) stay with their use
-  case. One file per use case: `spawn.ts`, `send.ts`, `status.ts`
+  case. One file per use case: `spawn.ts` (which also writes the child's `role` entry, the entries
+  `CourierPorts.entries` supplies from `memory/`, the `lessons`, and the root's own at its first
+  spawn), `send.ts`, `status.ts`
   (`courier_children`), `subtree.ts` (`courier_tree`), `stop.ts` (`courier_stop`), `cleanup.ts`.
   `limits.ts` the limits `spawn()` checks; `model.ts` the model a child runs on (`chooseModel`: the `model` named, else
   the agent's, else the parent's, with the `variant` named, checked against the models OpenCode lists); `running.ts` whether a session runs (`turnOf`, `turnIn` for messages the caller read, `runs`: its
@@ -68,8 +70,13 @@ import rules and the reasons for them.
   `mascot.ts`. `mascot.ts` Digby, the panel's mole: his frames as pixel tokens, pure and importing
   nothing, snapshotted in `test/__snapshots__/tui.test.tsx.snap`; his muted pixels never touch the
   mound's, as `background.raised.max` is close to `text.muted`. `wake.ts` the missed wake
-  (`watchWake`, `wakeMissed`, `stalledAmong`, `waitsInInbox`); `events.ts` `treeEvents`, with `waitsOn` and `together`
-  to compose the `Waits` port; `context.ts` the `context` hook hiding `courier_spawn` and the tools
+  (`watchWake`, `wakeMissed`, `stalledAmong`, `waitsInInbox`); `standing.ts` the parent's `standing`
+  entry (`syncStanding`: computes it from the roster, the report notes and the groups, lists the
+  parent's entries and puts it only when its text changed, removes it with the last child; skipped
+  without `instructions` on the ports; `putEntries` for the extra entries), called by `spawn.ts`,
+  `send.ts`, `group.ts`'s release, `stop.ts`, `cleanup.ts` and `events.ts`; `events.ts` `treeEvents`,
+  which also moves the parent's standing on a child's prompt, failure, silent end, interruption and
+  deletion, with `waitsOn` and `together` to compose the `Waits` port; `context.ts` the `context` hook hiding `courier_spawn` and the tools
   `hiddenFromLeaf` names from a leaf, and naming a session's role in a system part when its `role`
   instruction entry (`ROLE_KEY`, written by `spawn.ts`) does not: a host before 2.2.0, or a put that failed.
 - `person/`: what a spawned session needs the person for. `permission.ts` passes a permission answer
@@ -112,7 +119,9 @@ import rules and the reasons for them.
   first); `ports.ts` `RefreshPorts` (what
   every hub-v2 member's watch ports have), `MemoryPorts` and `MemoryState` (process-wide); `store.ts`
   the only file that knows the keys and layout, reading a hand-written record leniently; `record.ts` the
-  refresh (`refresh`);
+  refresh (`refresh`); `lessons.ts` the `lessons` session instruction entry (`lessonsOf`, the supplier
+  `src/index.ts` hands `spawn.ts` as `CourierPorts.entries`, and `relesson`, which `note.ts` calls to
+  put it again on the writer's top, the top's children and the writer where it changed);
   `events.ts` `memoryEvents`, which refreshes a tree's record in the `after` phase of each turn end in
   it; `recall.ts` `courier_recall`'s logic, which counts the listing or the read on each other tree's
   record, best effort; `note.ts` `courier_note`'s; `forget.ts` the memory view's

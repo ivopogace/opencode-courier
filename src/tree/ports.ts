@@ -177,10 +177,35 @@ export interface Role {
   readonly entry: boolean
 }
 
+/** The keyed session entries, missing on a host before 2.2.0 and on the ports of a copy before them: an entry is then skipped. */
+export type Instructions = Partial<Pick<Context["session"], "instructions">>
+
+/** A keyed session instruction entry: its key, `^[a-z0-9][a-z0-9._-]*$`, and its text. */
+export interface Entry {
+  readonly key: string
+  readonly value: string
+}
+
+/**
+ * Supplies the entries other modules write to a spawned session below `maxDepth` before its prompt, and to a root at its
+ * first spawn beside its role; `src/index.ts` composes it from the modules' suppliers, as it does the `Waits` port.
+ */
+export type Entries = () => Promise<ReadonlyArray<Entry>>
+
+/** What writing a parent's `standing` entry needs: the tools', the watcher's and the scheduler's ports all have these. */
+export interface StandingPorts {
+  readonly storage: RosterStorage
+  readonly now: () => number
+  readonly session?: Instructions
+  readonly log?: (message: string) => void
+}
+
 /** The slice of the plugin context the courier tools use; tests pass a fake. */
 export interface CourierPorts {
   /** `instructions`, the keyed session entries, is missing on a host before 2.2.0: the role then goes in a system part. */
-  readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context" | "interrupt"> & Partial<Pick<Context["session"], "instructions">>
+  readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context" | "interrupt"> & Instructions
+  /** The entries of other modules a spawned session gets before its prompt, the memory's lessons; none when not given. */
+  readonly entries?: Entries
   readonly agent: Pick<Context["agent"], "get">
   readonly worktree: Pick<Context["worktree"], "create" | "remove">
   /** The project of the plugin's location; an isolated child's worktree is made in it, and removed from it. */
@@ -311,6 +336,9 @@ export interface CleanupPorts {
   readonly now: () => number
   /** Has the scheduler deliver what is due now: a group the forgotten child may have been the last member out of. */
   readonly nudge: () => void
+  /** For the parent's `standing` entry once the child is forgotten; without them it is left as it was. */
+  readonly session?: Instructions
+  readonly log?: (message: string) => void
 }
 
 export interface StopPorts {
@@ -322,7 +350,8 @@ export interface StopPorts {
 
 export interface GroupPorts {
   readonly storage: Storage
-  readonly session: Pick<Context["session"], "synthetic" | "get">
+  readonly session: Pick<Context["session"], "synthetic" | "get"> & Instructions
+  readonly now: () => number
   readonly log: (message: string) => void
 }
 
@@ -338,7 +367,7 @@ export interface ExecutionError {
 export interface WatchPorts {
   readonly storage: RosterStorage
   /** `context` reads the last reply of a session that ended its turn without reporting; `get` is what every member joins with too. */
-  readonly session: Pick<Context["session"], "synthetic" | "context" | "get">
+  readonly session: Pick<Context["session"], "synthetic" | "context" | "get"> & Instructions
   readonly event: Pick<Context["event"], "subscribe">
   /** The permission domains of every loaded location, which the `Waits` suppliers ask; an isolated child's are in its worktree's. */
   readonly permissions: () => Iterable<Pick<Context["permission"], "list">>

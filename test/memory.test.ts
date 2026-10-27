@@ -35,13 +35,14 @@ import {
   type TreeRecord,
 } from "../src/memory/domain.js"
 import { memoryEvents, noteTurnEnd, topOf } from "../src/memory/events.js"
+import { lessonsOf } from "../src/memory/lessons.js"
 import { note } from "../src/memory/note.js"
 import type { MemoryPorts, MemoryState, RefreshPorts } from "../src/memory/ports.js"
 import { recall } from "../src/memory/recall.js"
 import { refresh } from "../src/memory/record.js"
 import { memoryStore, pinKey, readRecord, readsKey, recordKey } from "../src/memory/store.js"
 import { sweepRecords } from "../src/memory/sweep.js"
-import { age, duration, lessonLine, recallListText, recordLine } from "../src/memory/text.js"
+import { age, duration, lessonLine, LESSONS_KEY, LESSONS_PREFIX, recallListText, recordLine } from "../src/memory/text.js"
 import { addMemoryTools } from "../src/memory/tools.js"
 import type { RosterEntry } from "../src/tree/domain.js"
 import { turnOf } from "../src/tree/index.js"
@@ -1713,5 +1714,117 @@ describe("courier_recall", () => {
     // A listing without a pinned record among the others says nothing of pins.
     await store.delete(pinKey("proj_1", "ses_old"))
     expect((await tool(ports, state).execute({}, { sessionID: "ses_root" })).content).not.toContain("pinned")
+  })
+})
+
+describe("the lessons entry (#384)", () => {
+  /** A host's keyed session instructions over `entries` (session id to key to value); each call is recorded in `calls`. */
+  function fakeInstructions(entries = new Map<string, Map<string, unknown>>(), calls: string[] = []) {
+    return {
+      entries,
+      calls,
+      instructions: {
+        entry: {
+          put: async ({ sessionID, key, value }: { sessionID: string; key: string; value: unknown }) => {
+            calls.push(`put ${sessionID} ${key}`)
+            entries.set(sessionID, new Map(entries.get(sessionID)).set(key, value))
+          },
+          list: async ({ sessionID }: { sessionID: string }) => {
+            calls.push(`list ${sessionID}`)
+            return [...(entries.get(sessionID) ?? [])].map(([key, value]) => ({ key, value }))
+          },
+          remove: async () => {},
+        },
+      },
+    }
+  }
+  const lesson = (text: string, at = NOW - 10_000) => ({ text, at })
+  /** The project's records as `lessonsOf` reads them: one record per entry of `given`, in key order. */
+  async function project(ports: MemoryPorts, given: Record<string, Partial<StoredRecord>>) {
+    const store = memoryStore(ports.storage)
+    for (const [sessionID, more] of Object.entries(given)) {
+      const { pinned, ...record } = more
+      await store.put("proj_1", sessionID, { startedAt: 1, movedAt: 2, title: `Tree ${sessionID}`, split: "not stated", finished: true, parts: [], ...record })
+      if (pinned) await store.pin("proj_1", sessionID, pinned)
+    }
+  }
+
+  test("is none with memory off or while no record holds a lesson, else the lessons as courier_recall lists them, pinned first, then newest, at most LESSONS_MAX", async () => {
+    const { ports } = fakePorts({})
+    expect(await lessonsOf(ports)).toEqual([])
+    await project(ports, { ses_a: { movedAt: 5 } })
+    expect(await lessonsOf(ports)).toEqual([])
+    await project(ports, {
+      ses_b: { movedAt: 9, lesson: lesson("Newest, b") },
+      ses_c: { movedAt: 8, title: "A title that runs on and on and on, past sixty characters, which the entry clips", lesson: lesson("Older, c") },
+      ses_d: { movedAt: 7, lesson: lesson("Pinned, d"), pinned: { at: 1 } },
+      ses_e: { movedAt: 6, lesson: { text: "From depth 1, e", at: NOW - 10_000, depth: 1 } },
+      ses_f: { movedAt: 4, lesson: lesson("f") },
+      ses_g: { movedAt: 3, lesson: lesson("g") },
+      ses_h: { movedAt: 1, lesson: lesson("h, past the cap") },
+    })
+
+    const [entry, ...rest] = await lessonsOf(ports)
+    expect(rest).toEqual([])
+    expect(entry!.key).toBe(LESSONS_KEY)
+    expect(entry!.value).toStartWith(LESSONS_PREFIX)
+    expect(entry!.value.split("\n").slice(1)).toEqual([
+      `- ses_d "Tree ses_d": ${lessonLine(lesson("Pinned, d"))}`,
+      `- ses_b "Tree ses_b": ${lessonLine(lesson("Newest, b"))}`,
+      `- ses_c "A title that runs on and on and on, past sixty characters, w… [20 more characters]": ${lessonLine(lesson("Older, c"))}`,
+      `- ses_e "Tree ses_e": ${lessonLine({ text: "From depth 1, e", at: NOW - 10_000, depth: 1 })}`,
+      `- ses_f "Tree ses_f": ${lessonLine(lesson("f"))}`,
+    ])
+    expect(entry!.value).not.toContain("ses_g")
+    expect(entry!.value.length).toBeLessThan(3000)
+    ;(ports as any).memory = false
+    expect(await lessonsOf(ports)).toEqual([])
+  })
+
+  /** A recorded tree at maxDepth 3, the top having started ses_mid, which started ses_leaf, on a host with keyed instructions. */
+  async function recordedWithEntries(maxDepth = 3) {
+    const made = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_mid: { updated: 1, idle: 1 }, ses_leaf: { updated: 1, idle: 1 } })
+    const host = fakeInstructions()
+    ;(made.ports.session as any).instructions = host.instructions
+    ;(made.ports as any).maxDepth = maxDepth
+    const children = childStore(made.ports.storage)
+    await children.record(entry("ses_mid", "ses_top"))
+    await children.record(entry("ses_leaf", "ses_mid"))
+    await refresh(made.ports, made.state, "ses_top", NOW - 5000)
+    return { ...made, ...host }
+  }
+
+  test("courier_note puts the entry again on the writer's top, the top's current children below maxDepth and the writer, where it differs", async () => {
+    const { ports, calls, entries } = await recordedWithEntries()
+    entries.set("ses_mid", new Map([[LESSONS_KEY, "opencode-courier lessons: stale"]]))
+
+    expect(await note(ports, "ses_leaf", { text: "Seen from depth 2." })).toMatchObject({ kind: "noted" })
+
+    const [current] = await lessonsOf(ports)
+    expect(current!.value).toContain(`lesson (${DAY}, from depth 2): "Seen from depth 2."`)
+    expect(calls).toEqual(["list ses_top", `put ses_top ${LESSONS_KEY}`, "list ses_mid", `put ses_mid ${LESSONS_KEY}`, "list ses_leaf", `put ses_leaf ${LESSONS_KEY}`])
+    for (const sessionID of ["ses_top", "ses_mid", "ses_leaf"]) expect(entries.get(sessionID)?.get(LESSONS_KEY)).toBe(current!.value)
+    // The same lesson again: every entry holds it, so nothing is put.
+    calls.length = 0
+    await note(ports, "ses_leaf", { text: "Seen from depth 2." })
+    expect(calls).toEqual(["list ses_top", "list ses_mid", "list ses_leaf"])
+  })
+
+  test("with maxDepth 1 the top's children are leaves and get none; a failed put is logged and the note stands", async () => {
+    const { ports, calls, logged, instructions } = await recordedWithEntries(1)
+
+    expect(await note(ports, "ses_top", { text: "Only the top." })).toMatchObject({ kind: "noted" })
+    expect(calls).toEqual(["list ses_top", `put ses_top ${LESSONS_KEY}`])
+
+    instructions.entry.put = async () => Promise.reject(new Error("no such route"))
+    expect(await note(ports, "ses_top", { text: "Again." })).toMatchObject({ kind: "noted", lesson: { text: "Again." } })
+    expect(logged).toEqual(["courier_note: the lessons entry of ses_top could not be written: Error: no such route"])
+  })
+
+  test("without keyed instructions courier_note writes the record alone", async () => {
+    const made = fakePorts({ ses_top: { updated: 1, idle: 1 } })
+    await refresh(made.ports, made.state, "ses_top", NOW - 5000)
+    expect(await note(made.ports, "ses_top", { text: "Older host." })).toMatchObject({ kind: "noted" })
+    expect(made.logged).toEqual([])
   })
 })

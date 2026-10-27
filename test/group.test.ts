@@ -48,6 +48,7 @@ function fakePorts(options: { pageSize?: number; store?: Map<string, unknown> } 
       }) as any,
       get: (async () => ({ time: { idle: parent.idle } })) as any,
     },
+    now: () => 1_000,
     log: (message) => logs.push(message),
   }
   return { ports, store, delivered, logs, parent }

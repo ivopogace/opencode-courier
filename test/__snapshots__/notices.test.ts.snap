@@ -1772,3 +1772,23 @@ exports[`memory NOTE_EMPTY 1`] = `"Not noted: text is empty. Write one line, wha
 exports[`memory noteLongRefusal 1`] = `"Not noted: the lesson is 312 characters, at most 300; write it shorter. Nothing was written, and the earlier lesson, if there was one, stays. Keep one line, what the next orchestrator in this project should know about running a tree like this one, with the job it comes from and the reason, and leave out what the record's facts already say."`;
 
 exports[`memory noteUnrecordedRefusal 1`] = `"Not noted: the tree under ses_top has no record in this project to write a lesson on. A record is written by a courier_recall call and as each turn in the tree ends, so call it once first, or note once a session you started has reported."`;
+
+exports[`the session instruction entries (#384) standingEntry 1`] = `
+"opencode-courier standing: the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need not look with courier_children or courier_tree; a report, a group's reports or a notice still reach you as a message.
+- ses_core "Core: the memory record": reported done; its report is held with group "wave"
+- ses_e2e "E2E scenario": working, sent progress; group "wave" waits for it
+- ses_docs "Docs": ended its turn without a report
+- ses_rev "Review": its turn failed; out of group "wave" (its turn failed)
+- ses_old "An earlier part": stopped; group "first" was delivered"
+`;
+
+exports[`the session instruction entries (#384) standingEntry 2`] = `
+"opencode-courier standing: the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need not look with courier_children or courier_tree; a report, a group's reports or a notice still reach you as a message.
+- ses_one "One": started"
+`;
+
+exports[`the session instruction entries (#384) lessonsEntry 1`] = `
+"opencode-courier lessons: what the orchestrators of earlier session trees in this project concluded, each with its tree's title; courier_recall has the records with the facts behind them.
+- ses_pinned "Add memory to courier": lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
+- ses_old "Split the lexer from the parser": lesson (2026-10-03, from depth 1): "The lexer and the parser collided in one file; give them to one session.""
+`;

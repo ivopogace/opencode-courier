@@ -180,6 +180,31 @@ model request instead. A session below `maxDepth` is a `sub-orchestrator`. One a
 session that has started no session yet is pointed to the skill. The root may also hand a heavy task
 whole to one session, to keep its own context: `split: 1 part: <the task>, to keep my context`.
 
+**The lessons.** Beside its role, every spawned session below `maxDepth` gets the project's lessons
+in a `lessons` entry, written as it is started: the [lessons](#the-lesson) of the project's tree
+records as `courier_recall` lists them, pinned first and then newest first, at most 5, each with its
+tree's title, under one line saying that `courier_recall` has the records. A root gets its own at its
+first spawn, beside its role. When `courier_note` writes a lesson, the entry is written again on the
+writer's tree's top, the top's current children below `maxDepth` and the writer, where it changed.
+A leaf gets none, as it cannot split. Nothing is written with the memory option off, or while no
+record of the project holds a lesson.
+
+**The standing.** A parent carries what `courier_children` shows in a `standing` entry: one line per
+session it started, oldest first, with its state (`started`, `working`, `sent progress`, `reported
+done`, `ended its turn without a report`, `its turn failed`, `its turn was interrupted`, `stopped`)
+and, for a [group](#join-groups) member, its group's standing (its report held with the group, the
+group waiting for it, the member out of it and why, or the group delivered). The plugin writes it
+when a child is started, reports or sends progress, is held with or released from its group, fails,
+ends its turn silently, is interrupted, deleted, stopped or forgotten, only when its text changed,
+and removes it once the parent has no children left; so each change is at most one update message at
+the parent's next step, and the parent needs no `courier_children` call to see where its children
+stand. It lists at most 10 children and counts older ones. A held report's body is not in it: the
+group's release delivers the reports as one message, and the entry carries state, not content.
+
+On an older OpenCode, or through the ports of an older copy of the plugin loaded in the same
+process, neither entry is written; the lessons are still in `courier_recall` and the standing in
+`courier_children`.
+
 ## The courier-orchestrate skill
 
 The plugin registers one OpenCode skill, `courier-orchestrate`, in every location. Models load it
@@ -300,7 +325,8 @@ An isolated member whose worktree holds unsaved work is kept, and stays in the g
 commit that work or pass `force: true`.
 
 `courier_children` shows each member's `group: { name, report }`, with `report` one of `held`,
-`out`, `failed`, `interrupted`, `deleted`, `released` (the group was delivered) or `unknown`. Held
+`out`, `failed`, `interrupted`, `deleted`, `released` (the group was delivered) or `unknown`; the
+parent's [`standing` entry](#session-trees-and-their-limits) says the same in words. Held
 reports survive a restart. A group's message does not overtake the notice of a member's failed turn, unless a scheduler tick
 falls between the two.
 
@@ -558,6 +584,8 @@ naming the job and the reason. A longer one is refused, not cut. A second note r
 so write it last, once the work is verified. The top session or a sub-orchestrator may write it; a
 sub-orchestrator's is marked with its depth. A leaf may not. A lesson is not a rule: a rule belongs
 in AGENTS.md. It is read by every later session in the project, so it holds no code or secrets.
+Besides the listing, the project's lessons reach every session that can split in its system prompt,
+through the [`lessons` entry](#session-trees-and-their-limits).
 
 **Retention.** A record you pin in the [memory view](#the-memory-view) is never dropped. Of the
 rest, each project keeps 30, those with a lesson first, and none older than 90 days. The others are

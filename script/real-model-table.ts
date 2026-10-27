@@ -7,7 +7,7 @@ type Summary = {
   verdict: string
   checks: Record<string, boolean>
   notes: string[]
-  usage: { requests: number; cacheRead?: number }
+  usage: { requests: number; input?: number; cacheRead?: number }
 }
 
 export type Run = {
@@ -22,6 +22,8 @@ export type Run = {
   requests: number
   /** Cache read tokens per model request, over the whole tree; undefined for a summary written before they were kept. */
   cacheReads?: number
+  /** Uncached input tokens per model request, what the provider had to read anew; undefined for a summary written before they were kept. */
+  uncached?: number
   seconds?: number
   rootSplit?: string
   subSplits: string[]
@@ -90,6 +92,7 @@ export function parseRun(dir: string): Run {
     polled,
     requests: summary.usage.requests,
     ...(summary.usage.cacheRead !== undefined && summary.usage.requests > 0 ? { cacheReads: summary.usage.cacheRead / summary.usage.requests } : {}),
+    ...(summary.usage.input !== undefined && summary.usage.requests > 0 ? { uncached: summary.usage.input / summary.usage.requests } : {}),
     seconds: existsSync(timeline) ? secondsOf(readFileSync(timeline, "utf8")) : undefined,
     rootSplit,
     subSplits,
@@ -114,6 +117,7 @@ export function conditionTable(condition: string, runs: readonly Run[]): string 
       String(run.polled),
       String(run.requests),
       run.cacheReads === undefined ? "-" : String(Math.round(run.cacheReads)),
+      run.uncached === undefined ? "-" : String(Math.round(run.uncached)),
       run.seconds === undefined ? "-" : `${Math.round(run.seconds)} s`,
       run.rootSplit ? cell(run.rootSplit) : "-",
       run.subSplits.length ? run.subSplits.map(cell).join("<br>") : "-",
@@ -123,13 +127,14 @@ export function conditionTable(condition: string, runs: readonly Run[]): string 
   return [
     `### ${condition}`,
     "",
-    "| Run | Verdict | Score | Skill loads | Recalls | Groups | Polled | Requests | Cache reads/request | Duration | Root split | Sub-orchestrator splits |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| Run | Verdict | Score | Skill loads | Recalls | Groups | Polled | Requests | Cache reads/request | Uncached input/request | Duration | Root split | Sub-orchestrator splits |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ...rows.map((row) => `| ${row} |`),
     "",
     `${runs.length} run(s), ${finished.length} finished, ${finished.filter((run) => run.verdict === "pass").length} pass; mean score ${mean(finished.map((run) => run.passed))}/${mean(finished.map((run) => run.total))}, ` +
       `${mean(finished.map((run) => run.polled))} polled session(s), ${mean(finished.map((run) => run.requests))} requests, ` +
-      `${mean(finished.flatMap((run) => (run.cacheReads === undefined ? [] : [run.cacheReads])))} cache reads/request.`,
+      `${mean(finished.flatMap((run) => (run.cacheReads === undefined ? [] : [run.cacheReads])))} cache reads/request, ` +
+      `${mean(finished.flatMap((run) => (run.uncached === undefined ? [] : [run.uncached])))} uncached input tokens/request.`,
   ].join("\n")
 }
 

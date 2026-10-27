@@ -1,6 +1,5 @@
 // Live-test probe: logs each event per instance (location, pid) to its `log` option's file, and, after the
 // courier's context hook, each request's tools and role; puts courier_spawn and courier_note back for a CHILD-FORCES task.
-// Given `types`, it logs each event of a subscription filtered on them too, as `probe.filtered`.
 import { appendFileSync, realpathSync } from "node:fs"
 
 // The session an event concerns, where the watcher looks for it: `data.sessionID`, or a form's.

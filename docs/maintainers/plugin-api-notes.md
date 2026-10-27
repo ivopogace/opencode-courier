@@ -43,7 +43,8 @@ below are in it.
   courier's instances never see a turn's streamed `session.text.*`, `session.reasoning.*` and
   `session.tool.*` events. `types` cannot name `server.connected`: a plugin never receives it.
   The courier still drops an event outside its types itself, for a host that ignores the filter.
-  `onActivity` reports each keepalive too, so the first-event hooks need no event to pass the filter.
+  The plugin adapter forwards only `types` and `signal`, never `onActivity`, so a plugin cannot tell
+  when its stream connects: the `followed` hooks run at the first event or `CONNECTED_MS` after subscribing.
 - `session.execution.started`, `.succeeded`, `.failed` and `.interrupted` frame a busy period, one
   terminal event however many prompts were steered in. `.interrupted` has `reason` `user`,
   `shutdown` (resumed on the next start; also what a plain permission decline reports) or

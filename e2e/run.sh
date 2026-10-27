@@ -1025,9 +1025,8 @@ run_probe() {
       "$(jq -r --arg type "$type" --argjson instances "$instances" '(.[$type] // []) | length > 0 and all(. == $instances)' <<<"$delivery")"
   done
 
-  # The courier subscribes with the types its modules declare. A subscription filtered on the same
-  # types, the probe's second one, gets the child's events of those types and none of its streamed
-  # step or tool events, which the probe's unfiltered subscription gets in the same instances.
+  # The probe's second subscription is filtered on the courier's types, as the courier's is: it gets
+  # the child's events of those types, and none of the step and tool events its first one gets.
   scenario "the courier's instances follow only the event types its modules handle"
   check "the courier subscribes with its modules' types through every hub subscription" \
     "$(grep -qF "courier watch: following $(jq -r 'join(", ")' <<<"$COURIER_TYPES") through " "$WORK/server.log" &&

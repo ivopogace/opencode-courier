@@ -26,7 +26,7 @@ export function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["d
   const logged: string[] = []
   const scanned: string[] = []
   const nudges: number[] = []
-  const options: { types?: readonly string[]; onActivity?: () => void }[] = []
+  const options: { types?: readonly string[] }[] = []
   let subscriptions = 0
   const ports = {
     storage: {

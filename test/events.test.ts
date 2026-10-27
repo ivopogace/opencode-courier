@@ -10,7 +10,7 @@ import { fakePorts, fresh } from "./fixtures/events.js"
 /** Ports whose subscriptions yield `streams` one after another; the last one aborts `stop` once it has yielded its events. */
 function ports(streams: HostEvent[][], stop: AbortController) {
   const logged: string[] = []
-  const options: { types?: readonly string[]; onActivity?: () => void }[] = []
+  const options: { types?: readonly string[] }[] = []
   let subscriptions = 0
   const eventPorts = {
     event: {
@@ -105,7 +105,7 @@ describe("follow", () => {
     expect(seen).toEqual(["second"])
   })
 
-  test("subscribes again after the stream ends: followed, subscribed and left each time, first only at a first event", async () => {
+  test("subscribes again after the stream ends: followed, subscribed and left each time, first only once connected", async () => {
     const stop = new AbortController()
     const { ports: eventPorts, subscriptions } = ports([[event("one")], []], stop)
     const seen: string[] = []
@@ -180,15 +180,25 @@ describe("the event types a subscription asks for", () => {
     ])
   })
 
-  test("a module's first-event hook runs at the stream's first activity, before the first event let through", async () => {
+  test("a module's connected hook runs at the first event, even one outside the union", async () => {
+    const stop = new AbortController()
+    const { ports: eventPorts } = ports([[event("session.text.delta"), event("form.created")]], stop)
+    const seen: string[] = []
+
+    await follow(eventPorts, [declaring("a", seen, ["form.created"])], stop.signal, 1, 60_000)
+
+    expect(seen).toEqual(["a followed", "a subscribed", "a first", "a handle form.created", "a after form.created", "a left"])
+  })
+
+  test("a module's connected hook runs, once, a while after subscribing on a stream that sends nothing, as a plugin's reports no connection", async () => {
     const stop = new AbortController()
     const seen: string[] = []
     const eventPorts = {
       event: {
-        subscribe: async function* (given: { onActivity: () => void }) {
-          await Bun.sleep(1)
-          seen.push("keepalive")
-          given.onActivity()
+        // As the plugin adapter does, ignoring every option but `types` and `signal`.
+        subscribe: async function* () {
+          await Bun.sleep(30)
+          seen.push("event")
           yield event("form.created")
           stop.abort()
         },
@@ -196,9 +206,20 @@ describe("the event types a subscription asks for", () => {
       log: () => {},
     } as unknown as EventPorts
 
-    await follow(eventPorts, [declaring("a", seen, ["form.created"])], stop.signal, 1)
+    await follow(eventPorts, [declaring("a", seen, ["form.created"])], stop.signal, 1, 5)
 
-    expect(seen).toEqual(["a followed", "a subscribed", "keepalive", "a first", "a handle form.created", "a after form.created", "a left"])
+    expect(seen).toEqual(["a followed", "a subscribed", "a first", "event", "a handle form.created", "a after form.created", "a left"])
+  })
+
+  test("a module's connected hook does not run once its subscription has ended", async () => {
+    const stop = new AbortController()
+    const { ports: eventPorts } = ports([[]], stop)
+    const seen: string[] = []
+
+    await follow(eventPorts, [declaring("a", seen, ["form.created"])], stop.signal, 1, 5)
+    await Bun.sleep(20)
+
+    expect(seen).toEqual(["a followed", "a subscribed", "a left"])
   })
 
   test("the plugin's modules ask for what they dispatch on, the turn's start and its inbox for the missed wake included", async () => {

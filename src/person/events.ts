@@ -109,7 +109,7 @@ export function personEvents(state: PersonState): EventModule<PersonPorts> {
     types: PERSON_TYPES,
     handle: (ports, event) => routePerson(ports, state, event),
     // Question forms shown while no instance followed the events were not seen: released now,
-    // and again at the stream's first activity, by when it is surely connected.
+    // and again once the stream is surely connected.
     followed: () => (eventsFollowed() ? formsMayHaveBeenMissed : undefined),
     // Alongside the new subscription; a request both relays see is relayed once.
     subscribed: (ports) => relayPending(ports, state).catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`)),

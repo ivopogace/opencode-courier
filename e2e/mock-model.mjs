@@ -36,14 +36,26 @@ const answersIn = (text) => [...text.matchAll(/"[^"]*"="([^"]*)"/g)].map((match)
 const GIT = "git -c user.name=courier -c user.email=courier@example.invalid"
 const branchIn = (messages) => textOf(messages.find((message) => message.role === "user")?.content).match(/branch (courier\/ses_\w+)/)?.[1]
 
+// An instruction update OpenCode appends when a session's keyed instructions change mid-conversation (a root's `role` entry):
+// a user message of its own after the tool result, `<system-update>` around the escaped block, which no script counts as the last message.
+const isInstructionUpdate = (message) => /^<system-update>\n/.test(textOf(message.content))
+
+// A compaction's summary must carry one of the template's headings, else OpenCode nudges once and gives up.
+const SUMMARY = "## Objective\n- Courier test"
+
 function decide(body) {
-  const messages = body.messages ?? []
-  if (!body.tools?.length) return { text: "Courier test" }
+  const messages = (body.messages ?? []).filter((message) => !isInstructionUpdate(message))
+  if (!body.tools?.length) return { text: SUMMARY }
+  // A compaction request carries the tools and asks for a summary in its last user message, or nudges for one: the summary, no tool call.
+  const asked = textOf(messages.findLast((message) => message.role === "user")?.content)
+  if (asked.includes("Summarize only what the user and the assistant said") || asked.includes("did not fill in the required summary template")) return { text: SUMMARY }
   const lastAssistant = messages.findLastIndex((message) => message.role === "assistant")
   const last = messages.at(-1)
   const prompt = textOf(messages.findLast((message) => message.role === "user")?.content)
   const finding = passFinding(messages, lastAssistant)
   if (finding) return finding
+  const role = roleEntry(messages, lastAssistant)
+  if (role) return role
   if (last?.role === "tool") {
     const call = messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)
     const result = textOf(last.content)
@@ -412,6 +424,33 @@ function passFinding(messages, lastAssistant) {
   return { text: "PARENT WOKE" }
 }
 
+// COURIER-ROLE: the root starts CHILD-ROLE-MID, which starts CHILD-ROLE-LEAF, a leaf at maxDepth 2; each ends its turn after
+// spawning, the leaf reports at once, the middle session once the leaf has; prompted CHILD-ROLE-AGAIN, the leaf answers with a line.
+function roleEntry(messages, lastAssistant) {
+  const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
+  if (recent.includes("CHILD-ROLE-AGAIN")) return { text: "LEAF AGAIN" }
+  const first = textOf(messages.find((message) => message.role === "user")?.content)
+  const last = messages.at(-1)
+  const briefedBy = first.match(/You were started by session (ses_\w+)/)
+  const called = last?.role === "tool" ? messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)?.function?.name : undefined
+  if (first.includes("COURIER-ROLE")) {
+    if (called) return { text: "ROOT SPAWNED" }
+    if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-ROLE-MID" } }
+    return { text: "ROOT WOKE" }
+  }
+  if (briefedBy && first.includes("CHILD-ROLE-MID")) {
+    if (called === "courier_send") return { text: "MID REPORTED" }
+    if (called) return { text: "MID SPAWNED" }
+    if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-ROLE-LEAF" } }
+    return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "MID DONE", status: "done" } }
+  }
+  if (briefedBy && first.includes("CHILD-ROLE-LEAF")) {
+    if (called) return { text: "LEAF REPORTED" }
+    return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "LEAF DONE", status: "done" } }
+  }
+  return undefined
+}
+
 // What a child reports as artifacts: one of each kind, so the test sees the whole layout.
 const ARTIFACTS = {
   branch: "child/work",
@@ -445,14 +484,21 @@ createServer((request, response) => {
     const delay = currentDelay()
     if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status || reply.delayed) && !reply.quick && delay)
       await new Promise((resolve) => setTimeout(resolve, delay))
-    // The session, and the courier role its system prompt names (`root` is the pointer to the skill), for the recursion scenario.
+    // The session, and the courier role its system prompt or an instruction update names (`root` is the pointer to the skill).
     const session = request.headers["x-opencode-session-id"]
     const system = (body.messages ?? []).filter((message) => message.role === "system").map((message) => textOf(message.content)).join("\n")
-    const role = system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/)?.[1] ?? null
+    // The role: in the system prompt, else in the instruction update a root gets at its first spawn, wherever that lands.
+    const everything = (body.messages ?? []).map((message) => textOf(message.content)).join("\n")
+    const role = (system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/) ?? everything.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/))?.[1] ?? null
+    // Where it came from: the `role` instruction entry's block (`roleEntry`), or a system part of the courier's context hook
+    // (`rolePart`); `updateRole` is the role OpenCode sends an instruction update as, when the request holds one.
+    const roleEntry = /(<|&lt;)context key="role"(>|&gt;)\n\s*opencode-courier role:/.test(everything)
+    const rolePart = (system.match(/^opencode-courier role:/gm) ?? []).length > (system.match(/<context key="role">\n\s*opencode-courier role:/g) ?? []).length
+    const updateRole = (body.messages ?? []).find(isInstructionUpdate)?.role ?? null
     const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])
     // The request's own fields besides the conversation: the model asked for, and what a variant adds (reasoning_effort).
     const options = Object.fromEntries(Object.entries(body).filter(([key]) => !["messages", "tools", "stream", "stream_options", "tool_choice"].includes(key)))
-    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, skills, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
+    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, roleEntry, rolePart, updateRole, skills, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
     if (reply.status) {
       response.writeHead(reply.status, { "content-type": "application/json", ...reply.headers })
       response.end(JSON.stringify({ error: { message: reply.error, type: "forbidden" } }))

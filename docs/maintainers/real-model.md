@@ -297,8 +297,10 @@ bun script/real-model-table.ts $HOME/courier-runs/*   # no label: each directory
 
 A label before `=` names the condition; several directories may share one. A path that is no run is
 skipped with a line on stderr. Each row has the verdict, the score, skill loads per depth, recalls,
-join groups, polled sessions, requests, the duration and the `split:` lines. A line under each
-table gives the means over its finished runs.
+join groups, polled sessions, requests, the cache read tokens per request (the provider's prompt
+cache hits over the whole tree, `-` for a summary written before they were kept), the duration and
+the `split:` lines. A line under each table gives the means over its finished runs. The cache
+column is what a change to the role part is judged by: compare it before and after, on one model.
 
 **How many runs a claim needs.** A claim such as "the polling went away" is about a rate. Five
 finished runs per condition on each of two models is the floor; with fewer, call the result an

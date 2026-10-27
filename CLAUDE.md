@@ -69,8 +69,9 @@ import rules and the reasons for them.
   nothing, snapshotted in `test/__snapshots__/tui.test.tsx.snap`; his muted pixels never touch the
   mound's, as `background.raised.max` is close to `text.muted`. `wake.ts` the missed wake
   (`watchWake`, `wakeMissed`, `stalledAmong`, `waitsInInbox`); `events.ts` `treeEvents`, with `waitsOn` and `together`
-  to compose the `Waits` port; `context.ts` the `context` hook naming each spawned session's role and
-  hiding `courier_spawn` and the tools `hiddenFromLeaf` names from a leaf.
+  to compose the `Waits` port; `context.ts` the `context` hook hiding `courier_spawn` and the tools
+  `hiddenFromLeaf` names from a leaf, and naming a session's role in a system part when its `role`
+  instruction entry (`ROLE_KEY`, written by `spawn.ts`) does not: a host before 2.2.0, or a put that failed.
 - `person/`: what a spawned session needs the person for. `permission.ts` passes a permission answer
   back (`answer`: a proposed `once` first goes through OpenCode's `permission.assert` in the caller's
   session; `isDeclined` tells the plain rejection the tool rethrows), lists pending requests
@@ -221,10 +222,13 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   `docs/reference.md`. README.md keeps the pitch, the install, a short how-it-works, the options, the
   tools table and the demo video, at about 150 lines; every other behaviour goes in
   `docs/reference.md`, stated once. The maintainer docs keep only what the code and CI do not show.
-- Model-facing design constraints: the role part `context.ts` adds is the same on every request of a
-  session, so the provider's prompt cache holds; so `courier_spawn` does not gate on the skill being
-  loaded (the role part could not say it, `/skills` attaches the text without the `skill` tool, and a
-  weak model retries without the text). The skill's steps repeat the brief's split rule on purpose,
+- Model-facing design constraints: the role part is written once, to a spawned session's `role`
+  instruction entry before its first prompt, so it is in the system prompt's baseline from the first
+  request and the provider's prompt cache holds (a root's arrives as one update message at its first
+  spawn); where `context.ts` adds it as a system part instead, the part is the same on every request
+  of a session, for the same reason; so `courier_spawn` does not gate on the skill being loaded (the
+  role part could not say it, `/skills` attaches the text without the `skill` tool, and a weak model
+  retries without the text). The skill's steps repeat the brief's split rule on purpose,
   since the root has no brief. `courier_recall`'s listing leaves out a record's reads: they are for
   the person pruning, not for the model deciding a split.
 - Feature work goes on a branch and through a PR with green CI; `Closes #N` in the body.

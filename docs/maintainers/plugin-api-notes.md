@@ -265,6 +265,59 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
 - **Activating:** the TUI's `/skills` attaches `skills: [{ id }]` to the prompt, and the text goes
   first in that message. A compaction keeps it (`messageToText`, `session/recent-text.ts`).
 
+## Keyed session instructions
+
+`ctx.session.instructions.entry.put({ sessionID, key, value })`, `.list({ sessionID })` and
+`.remove({ sessionID, key })`, since `@opencode/plugin@2.2.0` (anomalyco/opencode#56550); over HTTP
+`GET /api/experimental/session/:id/instructions/entries` and `PUT` or `DELETE …/entries/:key`
+(`packages/protocol/src/groups/session.ts`; the plugin API's path has no `experimental`). The courier
+writes a spawned session's role part to the `role` entry (`spawn.ts`). Read in
+`packages/core/src/session/instruction-entry.ts`, `instructions/index.ts`, `instruction-state.ts`,
+`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.0`:
+
+- **Rendering.** An entry is one block, `<context key="<key>">`, the value, `</context>`: a string
+  as it is, any other JSON pretty-printed. The key matches `^[a-z0-9][a-z0-9._-]*$` (stored as
+  `api/<key>`), and the value's JSON is at most 256 KiB (`InstructionEntryValueTooLargeError`, 413).
+  A `put` of the value already stored changes nothing and announces nothing.
+- **Where it lands.** The entries are the last of OpenCode's instruction sources, after the code
+  mode catalog, MCP instructions, references, the skill listing, AGENTS.md and the built-ins, all
+  rendered into one *baseline*: the second system part, after the agent's system prompt and before
+  anything a `context` hook pushes. The hook's `event.system` is that pair, so a part the courier
+  adds comes after the block.
+- **The baseline is fixed at the session's first step** (`InstructionState.prepare`, run at every
+  step boundary) and moved only by a compaction (`advanceEpoch` on `session.compaction.ended`) or
+  a revert past the epoch (`rewind`). So an entry put between `session.create` and the first prompt
+  is in the system prompt from the first request, and the first `put` after spawn moves no cached
+  prefix. An entry put after the first step is announced at the next step boundary as a
+  `session.instructions.updated` event whose `text` is the block (for a new key), "The context under
+  "<key>" changed and supersedes the previous value:" with the block (a changed one) or "The context
+  under "<key>" no longer applies. Disregard it." (a removal); `message-updater.ts` stores it as a
+  `system` message (`description` `Instructions updated: api/<key>`, the keys as stored, visible in
+  the TUI), which goes to the model at its place in the transcript, after the tool result that put
+  the entry, as a **user** message: `<system-update>`, the text with `&`, `<` and `>` escaped,
+  `</system-update>` (`wrapSystemUpdate`, `packages/ai/src/protocols/shared.ts`; AI SDK routes do
+  not all allow the system role after history). So the block arrives as `&lt;context
+  key="role"&gt;`, and a mock keyed on "the last message is a tool result" must skip the update
+  (`e2e/mock-model.mjs` does, and logs the role it arrives as, `updateRole`). The baseline stays,
+  so the prefix before the update holds. The plugin API's event carries that `text` and the keys'
+  hashes (`delta`), never the value; the first sync after the first step has no text.
+- **A compaction keeps it.** After a compaction the entry's current value is in the baseline, and
+  the transcript replays from the compaction message, so the update message is no longer sent. A
+  compaction's own model request carries the baseline too, so its model sees the block; it also
+  carries the session's whole tool list and runs the `compaction` hook, not `context`, so a leaf's
+  compaction model sees `courier_spawn` (its prompt says to call no tool). The summary must hold a
+  line equal to one of the template's headings (`## Objective`, …): a reply without one is nudged
+  once ("did not fill in the required summary template"), then the compaction fails
+  (`session.compaction.failed`, no `ended`), as `e2e/mock-model.mjs` found before it answered with
+  a heading.
+- **What inherits it.** `session.fork` copies the parent's entries and baseline; a native child
+  (`parentID`) and `session.create` do not. `courier_cleanup` and a forgotten child leave entries
+  alone: they belong to the session and go with it.
+- **Reading it.** `put`, `list` and `remove` need the session to exist (`Session.NotFoundError`) but
+  boot no location (anomalyco/opencode#58997). The `context` hook reads nothing of the value: the
+  courier lists a session's entries once per instance and session, and the text itself only shows
+  in the model's request (`e2e/mock-model.mjs` logs `roleEntry` and `rolePart`).
+
 ## Models and variants
 
 - `session.create` takes `model: { providerID, id, variant? }` (`Model.Ref`) from 2.0.4 on. A session that

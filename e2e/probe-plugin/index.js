@@ -25,7 +25,8 @@ export default {
     }
     write({ type: "probe.loaded" })
     await ctx.session.hook("context", (event) => {
-      const role = event.system.map((part) => part.text.match(/^opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/)?.[1]).find(Boolean)
+      // The role line heads the courier's own part, or follows `<context key="role">` in OpenCode's instruction baseline.
+      const role = event.system.map((part) => part.text.match(/^opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/m)?.[1]).find(Boolean)
       write({ type: "probe.context", sessionID: event.sessionID, tools: Object.keys(event.tools), role: role ?? null })
       if (JSON.stringify(event.messages).includes("CHILD-FORCES")) {
         if (!event.tools.courier_spawn)

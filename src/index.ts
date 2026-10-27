@@ -45,6 +45,7 @@ import {
   waitsOn,
   type CleanupPorts,
   type CourierPorts,
+  type Role,
   type SpawnGate,
   type WatchPorts,
   type WatchState,
@@ -130,7 +131,7 @@ export const courier = () => Plugin.define({
     const { nativeChildren, problems: nativeProblems } = readNativeChildren(ctx.options)
     const { memory, problems: memoryProblems } = readMemory(ctx.options)
     for (const problem of [...problems, ...nativeProblems, ...memoryProblems]) log(`courier: ${problem}`)
-    const roles = new Map<string, number | null>()
+    const roles = new Map<string, Role>()
     const ports: CourierPorts = {
       limits,
       nativeChildren,
@@ -201,7 +202,9 @@ export const courier = () => Plugin.define({
       .then(() => registerPersonRpc(ctx.rpc, { questions: questionPorts, permissions }))
       .then(() => registerMemoryRpc(ctx.rpc, memoryPorts))
       .catch((error: unknown) => log(`courier rpc: not registered, the TUI part shows nothing and cannot stop: ${String(error)}`))
-    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, hiddenFromLeaf: [RECALL_TOOL, NOTE_TOOL], log }, event))
+    // `instructions` is read off the context as is: a host before 2.2.0 has none, and the hook then adds the role part.
+    const instructions = (ctx.session as Partial<typeof ctx.session>).instructions
+    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, instructions, hiddenFromLeaf: [RECALL_TOOL, NOTE_TOOL], log }, event))
 
     const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
     const swept = sweepRecords(ctx.storage, Date.now()).catch((error: unknown) => log(`courier memory sweep: ${String(error)}`))

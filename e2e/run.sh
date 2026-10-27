@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 finding:11 permission:35 depth:4 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 spawn-native:14 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 finding:11 permission:35 depth:4 role-entry:8 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 spawn-native:14 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -700,6 +700,52 @@ run_depth() {
     "$([ -n "$(kv get "report/$leaf/settled")" ] &&
       [[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$middle") == 20* ]] &&
       for _ in $(seq 1 20); do [ -z "$(kv get "report/$leaf/prompt")$(kv get "report/$leaf/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+}
+
+# The value of session $1's `role` instruction entry, empty without one; the whole listing goes to stderr then.
+role_entry_of() {
+  local listing value
+  listing=$(api "experimental/session/$1/instructions/entries")
+  value=$(jq -r '(.data // .) | .[]? | select(.key == "role") | .value' <<<"$listing")
+  [ -n "$value" ] || echo "role_entry_of $1: no role entry in: $listing" >&2
+  printf '%s' "$value"
+}
+run_role_entry() {
+  # With maxDepth 2: the root starts a child, which starts a leaf. Each spawned session's role rides in its `role`
+  # entry from its first request on; the root gets its own entry at its first spawn, as an update in its transcript.
+  scenario "the role part rides in each spawned session's role entry, which a compaction keeps, and a root gets its own (#384)"
+  child_delay 1000
+  out=$(prompt "COURIER-ROLE")
+  role_root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  role_mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the middle session's report woke the root" "$(has_text "$role_root" "ROOT WOKE" 90)"
+  role_leaf=$(texts "$role_mid" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
+  check "the middle session started a leaf" "$([ -n "$role_leaf" ] && echo true || echo false)"
+  check "each session's role entry names its role: root orchestrator, sub-orchestrator at depth 1, leaf at depth 2" \
+    "$([[ $(role_entry_of "$role_root") == "opencode-courier role: root orchestrator"* &&
+      $(role_entry_of "$role_mid") == "opencode-courier role: sub-orchestrator, at depth 1 of at most 2"* &&
+      $(role_entry_of "$role_leaf") == "opencode-courier role: leaf, at depth 2"* ]] && echo true || echo false)"
+  check "every request of the middle session and the leaf carried the role in the entry's block, none in a part of the hook's" \
+    "$(jq -sr --arg mid "$role_mid" --arg leaf "$role_leaf" '[.[] | select((.session == $mid or .session == $leaf) and (.tools | length > 0))]
+      | length >= 3 and all(.roleEntry and (.rolePart | not))' "$WORK/model.log")"
+  check "every request of the leaf named it a leaf, without courier_spawn, courier_recall or courier_note, and the hook saw the role too" \
+    "$(jq -sr --arg leaf "$role_leaf" '[.[] | select(.session == $leaf and (.tools | length > 0))]
+      | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_recall") | not) and (.tools | index("courier_note") | not) and (.tools | index("courier_send")))' "$WORK/model.log" |
+      grep -qx true && jq -sr --arg leaf "$role_leaf" '[.[] | select(.type == "probe.context" and .sessionID == $leaf)] | length > 0 and all(.role == "leaf")' "$WORK/probe.log" | grep -qx true && echo true || echo false)"
+  check "the root was pointed to the skill in a part of the hook's until it had started a child, then named root orchestrator by its entry alone" \
+    "$(jq -sr --arg root "$role_root" '[.[] | select(.session == $root and (.tools | length > 0))] | (map(.role) | index("root orchestrator")) as $i
+      | $i > 0 and (.[:$i] | all(.role == "root" and .rolePart and (.roleEntry | not))) and (.[$i:] | all(.role == "root orchestrator" and .roleEntry and (.rolePart | not)))' "$WORK/model.log")"
+  check "the root's transcript shows the entry's arrival once, as a system message: Instructions updated: api/role" \
+    "$(api "session/$role_root/message" | jq -r '[.data[] | select(.type == "system" and .description == "Instructions updated: api/role")] | length == 1')"
+  # A compaction replaces the leaf's brief; the person then prompts it: its role is in the baseline, with no part of the hook's.
+  turn_ended "$role_leaf"
+  api_post "session/$role_leaf/compact" '{}' >/dev/null
+  check "the leaf's compaction completed" \
+    "$(for _ in $(seq 1 60); do [ "$(api "session/$role_leaf/message" | jq -r '[.data[] | select(.type == "compaction" and .status == "completed")] | length > 0')" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+  prompt_in "$role_leaf" "CHILD-ROLE-AGAIN" >/dev/null
+  check "after the compaction the leaf still has its entry, and its request named it a leaf through the block, without courier_spawn" \
+    "$([[ $(role_entry_of "$role_leaf") == "opencode-courier role: leaf"* ]] && jq -sr --arg leaf "$role_leaf" '[.[] | select(.session == $leaf and (.tools | length > 0))]
+      | last | .role == "leaf" and .roleEntry and (.rolePart | not) and (.tools | index("courier_spawn") | not) and (.reply.text == "LEAF AGAIN")' "$WORK/model.log")"
 }
 
 run_spawn_model() {

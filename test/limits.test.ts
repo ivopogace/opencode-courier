@@ -6,9 +6,9 @@ import { admit } from "../src/tree/limits.js"
 import { shapeContext } from "../src/tree/context.js"
 import { busy, DEFAULT_LIMITS, endedAt, endsIdle, nativeRootOf, readLimits, readNativeChildren, turnEnd, type RosterEntry } from "../src/tree/domain.js"
 import { runs, turnOf } from "../src/tree/running.js"
-import type { ContextPorts, CourierPorts, LimitPorts, SpawnGate } from "../src/tree/ports.js"
+import type { ContextPorts, CourierPorts, LimitPorts, Role, SpawnGate } from "../src/tree/ports.js"
 import { ROOT_SPLIT_LINE, SKILL_ID } from "../src/kernel/protocol.js"
-import { childBrief, depthRefusal, childrenRefusal, ROLE_PREFIX, rolePart, totalRefusal } from "../src/tree/text.js"
+import { childBrief, depthRefusal, childrenRefusal, ROLE_KEY, ROLE_PREFIX, rolePart, totalRefusal } from "../src/tree/text.js"
 import { reportOf } from "../src/tree/report.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
 
@@ -30,6 +30,23 @@ function fakeStorage() {
 
 const RUNNING = { created: 1, updated: 5 }
 const FINISHED = { created: 1, updated: 5, idle: 5 }
+
+/** A host's keyed session instructions over `entries` (session id to key to value); each call is recorded in `calls`. */
+function fakeInstructions(entries: Map<string, Map<string, unknown>>, calls: string[]) {
+  return {
+    entry: {
+      put: async ({ sessionID, key, value }: { sessionID: string; key: string; value: unknown }) => {
+        calls.push(`put ${sessionID} ${key}: ${String(value)}`)
+        entries.set(sessionID, new Map(entries.get(sessionID)).set(key, value))
+      },
+      list: async ({ sessionID }: { sessionID: string }) => {
+        calls.push(`list ${sessionID}`)
+        return [...(entries.get(sessionID) ?? [])].map(([key, value]) => ({ key, value }))
+      },
+      remove: async () => {},
+    },
+  }
+}
 
 /** Limit ports over a roster and the sessions' times, all running, by their transcripts too, unless `times` says otherwise; `turns` run on in theirs. */
 function limitPorts(limits = DEFAULT_LIMITS, times: Record<string, object> = {}, turns: ReadonlyArray<string> = []) {
@@ -662,10 +679,12 @@ describe("admit, with sessions waiting on their own children", () => {
 })
 
 describe("spawn", () => {
-  function spawnPorts(limits = DEFAULT_LIMITS) {
+  /** Spawn ports; with `entries`, a host with keyed session instructions, each put recorded in `calls` and kept in `entries`. */
+  function spawnPorts(limits = DEFAULT_LIMITS, entries?: Map<string, Map<string, unknown>>) {
     const { ports, storage, gate, child } = limitPorts(limits)
     const calls: string[] = []
-    const roles = new Map<string, number | null>([["ses_root", null]])
+    const logged: string[] = []
+    const roles = new Map<string, Role>([["ses_root", { depth: null, entry: false }]])
     let next = 0
     const courier = {
       ...ports,
@@ -679,6 +698,7 @@ describe("spawn", () => {
       agent: { get: async () => ({ data: {} }) },
       defaultModel: async () => undefined,
       worktree: {},
+      log: (message: string) => void logged.push(message),
       session: {
         ...ports.session,
         create: async () => {
@@ -686,9 +706,10 @@ describe("spawn", () => {
           return { id: `ses_new${++next}`, location: { directory: "/repo" } }
         },
         prompt: async (input: { text: string }) => void calls.push(input.text),
+        ...(entries ? { instructions: fakeInstructions(entries, calls) } : {}),
       },
     } as unknown as CourierPorts
-    return { courier, storage, gate, roles, calls, child }
+    return { courier, storage, gate, roles, calls, logged, child }
   }
 
   test("a refused spawn creates nothing", async () => {
@@ -710,6 +731,62 @@ describe("spawn", () => {
     expect(calls).toEqual(["session.create", childBrief("ses_a", "t", 2, DEFAULT_LIMITS)])
     expect(gate.reserved.size).toBe(0)
     await spawn(courier, "ses_root", { task: "t" })
+    expect(roles.has("ses_root")).toBe(false)
+  })
+
+  test("writes the child's role entry before its prompt, and the root's own at its first spawn, once", async () => {
+    const entries = new Map<string, Map<string, unknown>>()
+    const { courier, calls, roles } = spawnPorts(DEFAULT_LIMITS, entries)
+
+    await spawn(courier, "ses_root", { task: "t" })
+
+    expect(calls).toEqual([
+      "session.create",
+      `put ses_new1 ${ROLE_KEY}: ${rolePart(1, DEFAULT_LIMITS)}`,
+      `put ses_root ${ROLE_KEY}: ${rolePart(0, DEFAULT_LIMITS)}`,
+      childBrief("ses_root", "t", 1, DEFAULT_LIMITS),
+    ])
+    expect(entries.get("ses_new1")?.get(ROLE_KEY)).toStartWith(ROLE_PREFIX)
+    expect(roles.get("ses_root")).toEqual({ depth: 0, entry: true })
+    calls.length = 0
+    await spawn(courier, "ses_root", { task: "u" })
+    expect(calls).toEqual(["session.create", `put ses_new2 ${ROLE_KEY}: ${rolePart(1, DEFAULT_LIMITS)}`, childBrief("ses_root", "u", 1, DEFAULT_LIMITS)])
+    expect(roles.get("ses_root")).toEqual({ depth: 0, entry: true })
+  })
+
+  test("a sub-orchestrator's spawn writes only the child's entry, and forgets the parent's role", async () => {
+    const entries = new Map<string, Map<string, unknown>>()
+    const { courier, calls, roles, child } = spawnPorts(DEFAULT_LIMITS, entries)
+    await child("ses_root", "ses_a")
+    roles.set("ses_a", { depth: 1, entry: true })
+
+    await spawn(courier, "ses_a", { task: "t" })
+
+    expect(calls).toEqual(["session.create", `put ses_new1 ${ROLE_KEY}: ${rolePart(2, DEFAULT_LIMITS)}`, childBrief("ses_a", "t", 2, DEFAULT_LIMITS)])
+    expect(roles.has("ses_a")).toBe(false)
+  })
+
+  test("on a host without keyed instructions writes no entry: the context hook adds the part", async () => {
+    const { courier, calls, roles } = spawnPorts()
+
+    await spawn(courier, "ses_root", { task: "t" })
+
+    expect(calls).toEqual(["session.create", childBrief("ses_root", "t", 1, DEFAULT_LIMITS)])
+    expect(roles.has("ses_root")).toBe(false)
+  })
+
+  test("a failed put is logged, the child still gets its task, and the root's role is forgotten rather than marked", async () => {
+    const entries = new Map<string, Map<string, unknown>>()
+    const { courier, calls, roles, logged } = spawnPorts(DEFAULT_LIMITS, entries)
+    ;(courier.session as any).instructions.entry.put = async () => Promise.reject(new Error("no such route"))
+
+    await spawn(courier, "ses_root", { task: "t" })
+
+    expect(calls).toEqual(["session.create", childBrief("ses_root", "t", 1, DEFAULT_LIMITS)])
+    expect(logged).toEqual([
+      "courier_spawn: the role entry of ses_new1 could not be written, so its role goes in a system part: Error: no such route",
+      "courier_spawn: the role entry of ses_root could not be written, so its role goes in a system part: Error: no such route",
+    ])
     expect(roles.has("ses_root")).toBe(false)
   })
 
@@ -746,17 +823,87 @@ describe("spawn", () => {
 describe("the context hook", () => {
   const tools = () => ({ courier_spawn: {}, courier_send: {}, read: {} })
 
-  function contextPorts(limits = DEFAULT_LIMITS) {
+  /** Context ports; with `entries`, a host with keyed session instructions, each read recorded in `calls`. */
+  function contextPorts(limits = DEFAULT_LIMITS, entries?: Map<string, Map<string, unknown>>) {
     const { storage, child } = limitPorts(limits)
     const logged: string[] = []
-    const ports: ContextPorts = { storage, limits, roles: new Map(), log: (message) => void logged.push(message) }
-    const shape = async (sessionID: string) => {
-      const event = { sessionID, tools: tools() as Record<string, unknown>, system: [{ type: "text" as const, text: "base" }] }
+    const calls: string[] = []
+    const ports: ContextPorts = {
+      storage,
+      limits,
+      roles: new Map(),
+      ...(entries ? { instructions: fakeInstructions(entries, calls) as unknown as ContextPorts["instructions"] } : {}),
+      log: (message) => void logged.push(message),
+    }
+    const shape = async (sessionID: string, base = "base") => {
+      const event = { sessionID, tools: tools() as Record<string, unknown>, system: [{ type: "text" as const, text: base }] }
       await shapeContext(ports, event)
       return event
     }
-    return { ports, storage, child, shape, logged }
+    return { ports, storage, child, shape, logged, calls }
   }
+
+  /** The role entry's block as OpenCode renders it at the tail of the instruction baseline. */
+  const baseline = (depth: number) => `AGENTS.md says so.\n\n<context key="${ROLE_KEY}">\n${rolePart(depth, DEFAULT_LIMITS)}\n</context>`
+
+  test("adds no part for a session whose role entry is listed, reading the entries once per session", async () => {
+    const entries = new Map([["ses_d1", new Map([[ROLE_KEY, rolePart(1, DEFAULT_LIMITS)]])]])
+    const { shape, child, calls, ports } = contextPorts(DEFAULT_LIMITS, entries)
+    await chainTo(child, 1)
+
+    expect((await shape("ses_d1")).system).toEqual([{ type: "text", text: "base" }])
+    expect((await shape("ses_d1", baseline(1))).system).toEqual([{ type: "text", text: baseline(1) }])
+    expect(calls).toEqual(["list ses_d1"])
+    expect(ports.roles.get("ses_d1")).toEqual({ depth: 1, entry: true })
+  })
+
+  test("adds the part, the same on every request, when the entries hold no role, and reads them once", async () => {
+    const entries = new Map([["ses_d1", new Map([["other", "x"]])]])
+    const { shape, child, calls } = contextPorts(DEFAULT_LIMITS, entries)
+    await chainTo(child, 1)
+
+    for (const _ of [1, 2]) expect((await shape("ses_d1")).system).toEqual([{ type: "text", text: "base" }, { type: "text", text: rolePart(1, DEFAULT_LIMITS) }])
+    expect(calls).toEqual(["list ses_d1"])
+  })
+
+  test("reads no entries for a session nobody spawned that has started none, and points it to the skill", async () => {
+    const { shape, calls } = contextPorts(DEFAULT_LIMITS, new Map())
+
+    expect((await shape("ses_alone")).system.at(-1)).toEqual({ type: "text", text: rolePart(null, DEFAULT_LIMITS) })
+    expect(calls).toEqual([])
+  })
+
+  test("adds no second part when the baseline already carries the entry's block, with or without the entries to read", async () => {
+    const { shape, child } = contextPorts()
+    await chainTo(child, 1)
+    const listed = contextPorts(DEFAULT_LIMITS, new Map())
+    await chainTo(listed.child, 1)
+
+    expect((await shape("ses_d1", baseline(1))).system).toEqual([{ type: "text", text: baseline(1) }])
+    expect((await listed.shape("ses_d1", baseline(1))).system).toEqual([{ type: "text", text: baseline(1) }])
+  })
+
+  test("hides the tools from a leaf whose entry names it, as from one without", async () => {
+    const entries = new Map([["ses_d2", new Map([[ROLE_KEY, rolePart(2, DEFAULT_LIMITS)]])]])
+    const { ports, child } = contextPorts({ ...DEFAULT_LIMITS, maxDepth: 2 }, entries)
+    ports.roles.set("ses_d2", { depth: 2, entry: true })
+    await chainTo(child, 2)
+    const event = { sessionID: "ses_d2", tools: { ...tools(), courier_recall: {}, courier_note: {} }, system: [{ type: "text" as const, text: baseline(2) }] }
+
+    await shapeContext({ ...ports, hiddenFromLeaf: ["courier_recall", "courier_note"] }, event)
+
+    expect(Object.keys(event.tools)).toEqual(["courier_send", "read"])
+    expect(event.system).toEqual([{ type: "text", text: baseline(2) }])
+  })
+
+  test("a failed entry read is logged, and the part added as on a host without entries", async () => {
+    const { ports, shape, child, logged } = contextPorts(DEFAULT_LIMITS, new Map())
+    await chainTo(child, 1)
+    ;(ports.instructions as any).entry.list = async () => Promise.reject(new Error("db locked"))
+
+    expect((await shape("ses_d1")).system).toEqual([{ type: "text", text: "base" }, { type: "text", text: rolePart(1, DEFAULT_LIMITS) }])
+    expect(logged).toEqual(["courier: cannot read the instruction entries of session ses_d1, so its role goes in a system part: Error: db locked"])
+  })
 
   test("points a session nobody spawned that has started none to the skill, with its tools as they are", async () => {
     const { shape } = contextPorts()

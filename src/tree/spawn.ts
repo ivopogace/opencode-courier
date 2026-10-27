@@ -199,8 +199,8 @@ async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
 }
 
 /**
- * Writes a session's role part to its `role` entry, which OpenCode keeps in its system prompt from its next step on;
- * false on a host without entries, or when the put failed, which is logged: the `context` hook then adds the part.
+ * Writes a session's role part to its `role` entry: a child's system prompt carries it from its first request, a root's
+ * transcript as an update. False on a host without entries, or when the put failed, logged: the `context` hook adds the part.
  */
 async function nameRole(ports: CourierPorts, sessionID: string, depth: number) {
   const entries = ports.session.instructions?.entry

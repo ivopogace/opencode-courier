@@ -36,9 +36,8 @@ const answersIn = (text) => [...text.matchAll(/"[^"]*"="([^"]*)"/g)].map((match)
 const GIT = "git -c user.name=courier -c user.email=courier@example.invalid"
 const branchIn = (messages) => textOf(messages.find((message) => message.role === "user")?.content).match(/branch (courier\/ses_\w+)/)?.[1]
 
-// An instruction update OpenCode appends when a session's keyed instructions change mid-conversation (the courier's `role`
-// entry on a root): a user message of its own after the tool result, `<system-update>` around the block with its tags
-// escaped, which the scripts below do not count as the last message.
+// An instruction update OpenCode appends when a session's keyed instructions change mid-conversation (a root's `role` entry):
+// a user message of its own after the tool result, `<system-update>` around the escaped block, which no script counts as the last message.
 const isInstructionUpdate = (message) => /^<system-update>\n/.test(textOf(message.content))
 
 // A compaction's summary must carry one of the template's headings, else OpenCode nudges once and gives up.
@@ -426,8 +425,7 @@ function passFinding(messages, lastAssistant) {
 }
 
 // COURIER-ROLE: the root starts CHILD-ROLE-MID, which starts CHILD-ROLE-LEAF, a leaf at maxDepth 2; each ends its turn after
-// spawning, the leaf reports at once, the middle session reports once the leaf has. Prompted CHILD-ROLE-AGAIN by the person,
-// after a compaction has replaced its brief, the leaf answers with a line.
+// spawning, the leaf reports at once, the middle session once the leaf has; prompted CHILD-ROLE-AGAIN, the leaf answers with a line.
 function roleEntry(messages, lastAssistant) {
   const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
   if (recent.includes("CHILD-ROLE-AGAIN")) return { text: "LEAF AGAIN" }
@@ -486,7 +484,7 @@ createServer((request, response) => {
     const delay = currentDelay()
     if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status || reply.delayed) && !reply.quick && delay)
       await new Promise((resolve) => setTimeout(resolve, delay))
-    // The session, and the courier role its system prompt names (`root` is the pointer to the skill), for the recursion scenario.
+    // The session, and the courier role its system prompt or an instruction update names (`root` is the pointer to the skill).
     const session = request.headers["x-opencode-session-id"]
     const system = (body.messages ?? []).filter((message) => message.role === "system").map((message) => textOf(message.content)).join("\n")
     // The role: in the system prompt, else in the instruction update a root gets at its first spawn, wherever that lands.

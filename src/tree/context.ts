@@ -17,9 +17,8 @@ export interface Shaped {
 }
 
 /**
- * The `context` hook: hides courier_spawn, and the tools named `hiddenFromLeaf`, from a session at `maxDepth`, and
- * names a session's role in its tree in a system part unless its `role` entry does (`spawn.ts` writes it; a host
- * without entries gets the part). A session nobody spawned that has started none is pointed to the skill, if it could spawn.
+ * The `context` hook: hides courier_spawn and the tools named `hiddenFromLeaf` from a session at `maxDepth`, and names a
+ * session's role in a system part unless its `role` entry does; a session nobody spawned that has started none is pointed to the skill.
  */
 export async function shapeContext(ports: ContextPorts, event: Shaped) {
   try {
@@ -45,7 +44,7 @@ async function roleOf(ports: ContextPorts, sessionID: string): Promise<Role> {
   return role
 }
 
-/** Whether the session carries the role entry, read once per session and instance; one that cannot be read gets the part. */
+/** Whether the session carries the role entry, listed when its role is looked up; one that cannot be read gets the part. */
 async function hasEntry(ports: ContextPorts, sessionID: string) {
   if (!ports.instructions) return false
   try {

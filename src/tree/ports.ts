@@ -200,7 +200,7 @@ export interface CourierPorts {
   /** The `nativeChildren` option: a child started without isolate and without `native` is created with OpenCode's own `parentID`. */
   readonly nativeChildren?: boolean
   readonly gate: SpawnGate
-  /** The roles the `context` hook remembers; a parent's is dropped when it starts a child. */
+  /** The roles the `context` hook remembers; a parent's is dropped when it starts a child, a root's kept once its entry is written. */
   readonly roles: Map<string, Role>
   /** Has the scheduler deliver what is due now rather than at its next tick: a group a report has just completed. */
   readonly nudge: () => void
@@ -366,7 +366,7 @@ export interface ContextPorts {
   readonly limits: Limits
   /** Each session's role once looked up; a session nobody spawned reads as depth null until it starts one. */
   readonly roles: Map<string, Role>
-  /** The keyed session entries, read once per session for its role entry; missing on a host before 2.2.0, which gets the system part. */
+  /** The keyed session entries, listed when a session's role is looked up; missing on a host before 2.2.0, which gets the system part. */
   readonly instructions?: Context["session"]["instructions"]
   /** Tools of other modules hidden from a leaf alongside courier_spawn; `src/index.ts` names courier_recall and courier_note. */
   readonly hiddenFromLeaf?: ReadonlyArray<string>

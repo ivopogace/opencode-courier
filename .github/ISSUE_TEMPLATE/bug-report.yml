@@ -36,7 +36,7 @@ body:
     attributes:
       label: OpenCode version
       description: "`opencode --version`"
-      placeholder: e.g., 2.1.4
+      placeholder: e.g., 2.2.0
     validations:
       required: true
 

@@ -67,7 +67,7 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
     )
   } finally {
     if (completed.includes(true)) ports.nudge()
-    for (const entry of entries) await syncStanding(ports, entry.parentID)
+    await Promise.all(entries.map((entry) => syncStanding(ports, entry.parentID)))
   }
   return entries.map((entry) => entry.parentID)
 }

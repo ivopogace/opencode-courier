@@ -69,15 +69,7 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     ...(model ? { model } : {}),
   }
   const { rosterError, groupError } = await enrol(ports, entry, group)
-  // The child's role and the other modules' entries before its prompt, so its first request carries them; a root's own at its first spawn.
-  const extra = await extraEntries(ports)
-  await nameRole(ports, entry.sessionID, admitted.depth)
-  if (admitted.depth < ports.limits.maxDepth) await putEntries(ports, entry.sessionID, extra)
-  const rootNamed = ports.roles.get(parentID)?.entry === true
-  const named = admitted.depth === 1 && (rootNamed || (await nameRole(ports, parentID, 0)))
-  if (named && !rootNamed) await putEntries(ports, parentID, extra)
-  if (named) ports.roles.set(parentID, { depth: 0, entry: true })
-  else ports.roles.delete(parentID)
+  await nameBoth(ports, parentID, entry.sessionID, admitted.depth)
   try {
     await handOver(ports, entry, admitted.depth, input.task, !rosterError, !rosterError && !groupError)
   } finally {
@@ -206,6 +198,21 @@ async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
     ])
     return describeFailure("group", error).message
   }
+}
+
+/**
+ * The child's role and the other modules' entries before its prompt, so its first request carries them, and a root's own at
+ * its first spawn, remembered for the `context` hook; a parent that is no root is forgotten there, as its depth may have changed.
+ */
+async function nameBoth(ports: CourierPorts, parentID: string, childID: string, depth: number) {
+  const extra = await extraEntries(ports)
+  await nameRole(ports, childID, depth)
+  if (depth < ports.limits.maxDepth) await putEntries(ports, childID, extra)
+  const rootNamed = ports.roles.get(parentID)?.entry === true
+  const named = depth === 1 && (rootNamed || (await nameRole(ports, parentID, 0)))
+  if (named && !rootNamed) await putEntries(ports, parentID, extra)
+  if (named) ports.roles.set(parentID, { depth: 0, entry: true })
+  else ports.roles.delete(parentID)
 }
 
 /** The entries the other modules give a spawned session, the memory's lessons; none when they cannot be read, logged. */

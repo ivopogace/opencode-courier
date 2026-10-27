@@ -202,9 +202,8 @@ the parent's next step, and the parent needs no `courier_children` call to see w
 stand. It lists at most 10 children and counts older ones. A held report's body is not in it: the
 group's release delivers the reports as one message, and the entry carries state, not content.
 
-On an older OpenCode, or through the ports of an older copy of the plugin loaded in the same
-process, neither entry is written; the lessons are still in `courier_recall` and the standing in
-`courier_children`.
+On an older OpenCode neither entry is written, nor where a put fails (logged); the lessons are
+still in `courier_recall` and the standing in `courier_children`.
 
 ## The courier-orchestrate skill
 

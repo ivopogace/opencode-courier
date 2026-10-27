@@ -30,7 +30,7 @@ import rules and the reasons for them.
   files out and `tsconfig.tui.json` writes `dist/tui.d.ts`. `rpc.ts`: the `rpc` entrypoint, the
   modules' RPC contracts (`treeRpc`, `personRpc`, `memoryRpc`). Neither is imported by the server half.
 - `kernel/protocol.ts`: what the models see of the protocol in every module: `envelope`, `END_TURN`,
-  `clipText`, `clipWords`, `defuse`, `describeFailure`, `Status`, `SPLIT_LINE` and `SKILL_ID`. It
+  `clipText`, `clipWords`, `defuse`, `defuseBlock`, `describeFailure`, `Status`, `SPLIT_LINE` and `SKILL_ID`. It
   imports only `kernel/**` and `platform/json.ts`. `kernel/tool.ts`: `ToolEditor` and `rethrow` for
   the `tools.ts` files.
 - The modules, `tree/`, `person/`, `scheduling/`, `webhook/` and `memory/`, each a folder imported from

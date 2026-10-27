@@ -177,7 +177,7 @@ export interface Role {
   readonly entry: boolean
 }
 
-/** The keyed session entries, missing on a host before 2.2.0 and on the ports of a copy before them: an entry is then skipped. */
+/** The keyed session entries, missing on a host before 2.2.0 (every copy's ports carry the host's `session`): an entry is then skipped. */
 export type Instructions = Partial<Pick<Context["session"], "instructions">>
 
 /** A keyed session instruction entry: its key, `^[a-z0-9][a-z0-9._-]*$`, and its text. */

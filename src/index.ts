@@ -140,7 +140,7 @@ export const courier = () => Plugin.define({
       roles,
       nudge,
       log,
-      // What a spawned session gets besides its role: the memory's lessons entry, as the `Waits` port is composed below.
+      // What a spawned session gets besides its role: the memory's lessons entry, handed to the tree here as `outside` hands it the `Waits` suppliers.
       entries: () => lessonsOf(memoryPorts),
       session: ctx.session,
       agent: ctx.agent,

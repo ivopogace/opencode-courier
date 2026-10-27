@@ -41,7 +41,7 @@ export async function note(ports: MemoryPorts, callerID: string, input: NoteInpu
   if (!record) return { kind: "unrecorded", top }
   const lesson: Lesson = { text, at: ports.now(), ...(depth ? { depth } : {}) }
   await store.put(projectID, top, { ...record, lesson })
-  // The lessons entry of the tree's orchestrators moves with it; the next tree's sessions get it at their spawn.
+  // The lessons entry of the top, its children and the writer moves with it; the next tree's sessions get it at their spawn.
   await relesson(ports, callerID, top)
   return { kind: "noted", projectID, top, lesson, ...(record.lesson ? { replaced: record.lesson } : {}) }
 }

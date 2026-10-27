@@ -1,6 +1,6 @@
 /** The tree's model-facing texts: the child brief, the role part, refusals, reports, notices and tool results. */
 import { obj, str } from "../platform/json.js"
-import { clipText, defuse, END_TURN, ROOT_SPLIT_LINE, SKILL_ID, SPLIT_LINE, STATUSES } from "../kernel/protocol.js"
+import { clipText, defuse, defuseBlock, END_TURN, ROOT_SPLIT_LINE, SKILL_ID, SPLIT_LINE, STATUSES } from "../kernel/protocol.js"
 import { retryDelay, type ModelRef } from "./domain.js"
 import type { Artifacts, CleanupResult, ExecutionError, HeldReport, LeftMember, Limits, Sent, Standing } from "./ports.js"
 
@@ -173,9 +173,8 @@ function groupWords(name: string, standing: Standing | "unknown") {
 }
 
 /**
- * The standing entry: one line per session the parent started, oldest first, with its state and its place in its join group.
- * Kept current by the plugin, so the parent needs no courier_children call to see it. The same words for the same state, so an
- * unchanged standing is not put again.
+ * The standing entry: one line per session the parent started, oldest first, with its state and its place in its join group,
+ * in the same words for the same state, so an unchanged standing is not put again.
  */
 export function standingEntry(rows: ReadonlyArray<StandingRow>) {
   const shown = rows.slice(-STANDING_MAX)
@@ -184,7 +183,7 @@ export function standingEntry(rows: ReadonlyArray<StandingRow>) {
     `${STANDING_PREFIX} the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need ` +
       "not look with courier_children or courier_tree; a report, a group's reports or a notice still reach you as a message.",
     ...shown.map((row) => {
-      const title = row.title.replace(/\s+/g, " ").trim()
+      const title = defuseBlock(row.title.replace(/\s+/g, " ").trim())
       const group = row.group ? `; ${groupWords(row.group.name, row.group.standing)}` : ""
       return `- ${row.sessionID} "${clipText(title, TITLE_MAX)}": ${stateWords(row.state)}${group}`
     }),

@@ -28,6 +28,8 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
       await syncStanding(ports, input.sessionID)
       return { status, report: true, held }
     }
+    // The parent's standing before the delivery, which may wake it: its first step then shows the report or progress noted.
+    if (noted) await syncStanding(ports, input.sessionID)
     const text = envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {})
     const description = `Message from ${from}`
     const delivered = await ports.session.synthetic({
@@ -41,11 +43,11 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
     await noteSent(ports, { sessionID: input.sessionID, inboxID: delivered.id, text, description }).catch(() => undefined)
     // A blocked report, once delivered, is the member's latest word: an earlier report held for it would be stale.
     if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)
-    // The parent's standing moves with a report or progress of its child; the message itself wakes it.
-    if (noted) await syncStanding(ports, input.sessionID)
     return { messageID: delivered.id, ...(status ? { status } : {}), ...(noted ? { report: noted.report } : {}), ...(dropped ? { dropped } : {}) }
   } catch (error) {
     await noted?.undo().catch(() => undefined)
+    // The standing as before the note, once the note is taken back.
+    if (noted) await syncStanding(ports, input.sessionID)
     throw error
   }
 }

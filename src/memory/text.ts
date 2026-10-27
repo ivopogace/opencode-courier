@@ -1,5 +1,5 @@
 /** The memory's model-facing texts: what courier_recall and courier_note say. */
-import { clipText, clipWords } from "../kernel/protocol.js"
+import { clipText, clipWords, defuseBlock } from "../kernel/protocol.js"
 import { type Lesson, LESSON_MAX, oneLine, PART_STATUSES, type PartRecord, splitProse, type StoredRecord } from "./domain.js"
 
 /** The tool's name, which the skill and the role part name too. */
@@ -161,6 +161,6 @@ export function lessonsEntry(records: ReadonlyArray<StoredRecord>) {
   return [
     `${LESSONS_PREFIX} what the orchestrators of earlier session trees in this project concluded, each with its tree's title; ` +
       `${RECALL_TOOL} has the records with the facts behind them.`,
-    ...lessons.map((record) => `- ${record.sessionID} "${clipText(oneLine(record.title), 60)}": ${lessonLine(record.lesson!)}`),
+    ...lessons.map((record) => `- ${record.sessionID} "${clipText(defuseBlock(oneLine(record.title)), 60)}": ${defuseBlock(lessonLine(record.lesson!))}`),
   ].join("\n")
 }

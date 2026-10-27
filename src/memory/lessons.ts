@@ -1,3 +1,4 @@
+import { isNotFound } from "../platform/json.js"
 import { childrenOf, type Entry } from "../tree/index.js"
 import { pinnedFirst } from "./domain.js"
 import type { MemoryPorts } from "./ports.js"
@@ -16,29 +17,35 @@ export async function lessonsOf(ports: MemoryPorts): Promise<ReadonlyArray<Entry
 
 /**
  * Puts the project's lessons entry again, once a lesson was written, on the writer's tree's top, the top's current children
- * when they are below `maxDepth`, and the writer itself, each only where it differs from the entry stored (a put of the value
- * stored would change nothing, but costs a call). Best effort: a failure is logged. Returns the sessions put.
+ * below `maxDepth` and the writer, each only where it differs from the entry stored; a failure is logged. Returns the sessions put.
  */
 export async function relesson(ports: MemoryPorts, writerID: string, top: string) {
   const entries = ports.session.instructions?.entry
   if (!entries) return []
-  const put: string[] = []
+  let sessions: string[] = []
+  let entry: Entry | undefined
   try {
-    const [entry] = await lessonsOf(ports)
-    if (!entry) return put
+    ;[entry] = await lessonsOf(ports)
+    if (!entry) return []
     const children = ports.maxDepth > 1 ? await childrenOf(ports.storage, top) : []
-    for (const sessionID of new Set([top, ...children.map((child) => child.sessionID), writerID])) {
-      try {
-        const stored = (await entries.list({ sessionID })).find((one) => one.key === entry.key)
-        if (stored?.value === entry.value) continue
-        await entries.put({ sessionID, key: entry.key, value: entry.value })
-        put.push(sessionID)
-      } catch (error) {
-        ports.log(`courier_note: the lessons entry of ${sessionID} could not be written: ${String(error)}`)
-      }
-    }
+    sessions = [...new Set([top, ...children.map((child) => child.sessionID), writerID])]
   } catch (error) {
     ports.log(`courier_note: the lessons entry could not be read again: ${String(error)}`)
+    return []
   }
-  return put
+  const value = entry
+  const renew = async (sessionID: string) => {
+    try {
+      const stored = (await entries.list({ sessionID })).find((one) => one.key === value.key)
+      if (stored?.value === value.value) return false
+      await entries.put({ sessionID, key: value.key, value: value.value })
+      return true
+    } catch (error) {
+      // A child on the roster that OpenCode no longer knows is a normal path, not one to log.
+      if (!isNotFound(error)) ports.log(`courier_note: the lessons entry of ${sessionID} could not be written: ${String(error)}`)
+      return false
+    }
+  }
+  const put = await Promise.all(sessions.map(renew))
+  return sessions.filter((_, index) => put[index])
 }

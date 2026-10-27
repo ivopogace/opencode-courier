@@ -68,7 +68,7 @@ export async function stop(ports: StopPorts, callerID: string, input: StopInput)
   }
   await round([{ entry: target, depth: 0 }, ...(await subtree(storage, sessionID)).nodes], ROUNDS)
   // Each parent among them reads its stopped children at its next step; the caller's own entry, when it is the target's parent, too.
-  for (const parentID of new Set(nodes.map((node) => node.entry.parentID))) await syncStanding(ports.courier, parentID)
+  await Promise.all([...new Set(nodes.map((node) => node.entry.parentID))].map((parentID) => syncStanding(ports.courier, parentID)))
 
   const told =
     target.parentID !== callerID && results.find((one) => one.sessionID === sessionID)?.outcome === "interrupted"

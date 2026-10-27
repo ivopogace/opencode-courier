@@ -225,7 +225,7 @@ export function spawnText(child: {
   )
 }
 
-/** courier_send's result: for a message to the session that started the sender, whether it was its report. */
+/** courier_send's result: for a message to the session that started the sender, whether it was its report; below it, the status dropped. */
 export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report" | "held" | "dropped"> = {}) {
   if (sent.dropped)
     return (

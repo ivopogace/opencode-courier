@@ -94,10 +94,11 @@ export function childStore(storage: Storage): ChildStore {
 
   const all = () => scanAll<RosterEntry>(storage, PREFIX)
 
-  const indexedParent = async (sessionID: string) => {
+  const indexedAncestors = async (sessionID: string) => {
     const indexed = await storage.get(reverseKey(sessionID))
-    return isReverse(indexed) ? indexed.ancestors[0] : undefined
+    return isReverse(indexed) ? indexed.ancestors : []
   }
+  const indexedParent = async (sessionID: string) => (await indexedAncestors(sessionID))[0]
 
   const walkIndex = async (sessionID: string, first: ReverseEntry) => {
     let indexed: ReverseEntry = first
@@ -173,6 +174,7 @@ export function childStore(storage: Storage): ChildStore {
       return found === undefined ? [] : [found as unknown as RosterEntry]
     },
     indexedParent,
+    indexedAncestors,
     async indexedEntry(sessionID) {
       const parentID = await indexedParent(sessionID)
       return parentID === undefined ? undefined : entry(parentID, sessionID)

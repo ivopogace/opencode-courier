@@ -759,6 +759,15 @@ describe("send", () => {
     expect(await send(ports, "ses_other", { sessionID: "ses_grand", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done" })
   })
 
+  test("drops it to a grandchild whose parent's roster entry has expired, by the reverse index's ancestors", async () => {
+    const { ports, store } = fakePorts()
+    await childStore(ports.storage).record(spawned)
+    await childStore(ports.storage).record({ ...spawned, sessionID: "ses_grand", parentID: "ses_child" })
+    store.delete(rosterKey("ses_parent", "ses_child"))
+
+    expect(await send(ports, "ses_parent", { sessionID: "ses_grand", message: "m", status: "blocked" })).toEqual({ messageID: "msg_2", dropped: "blocked" })
+  })
+
   test("keeps the status when the roster cannot be read, as the session may be the sender's parent", async () => {
     const { ports } = fakePorts()
     await childStore(ports.storage).record(spawned)

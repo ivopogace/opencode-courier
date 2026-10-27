@@ -52,6 +52,8 @@ export interface ChildStore {
   entriesOf(sessionID: string): Promise<RosterEntry[]>
   /** The session that started a session, by the reverse index alone, without scanning the roster. */
   indexedParent(sessionID: string): Promise<string | undefined>
+  /** The sessions above a session, its parent first, by the reverse index alone: empty when it does not name the session. */
+  indexedAncestors(sessionID: string): Promise<ReadonlyArray<string>>
   /** A session's roster entry, by the reverse index alone, without scanning the roster. */
   indexedEntry(sessionID: string): Promise<RosterEntry | undefined>
   /**
@@ -155,14 +157,14 @@ export interface Held {
 
 /**
  * What courier_send did; `report` says whether the message was noted as the sender's report to the session
- * that started it, `held` that it was held with the sender's group rather than delivered, with no `messageID`, and
- * `dropped` the status it was sent with to a session below the sender, where a status means nothing.
+ * that started it, and `held` that it was held with the sender's group rather than delivered, with no `messageID`.
  */
 export interface Sent {
   readonly messageID?: string
   readonly status?: Status
   readonly report?: boolean
   readonly held?: Held
+  /** The status it was sent with to a session below the sender, where a status means nothing. */
   readonly dropped?: Status
 }
 

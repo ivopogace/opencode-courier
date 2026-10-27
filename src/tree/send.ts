@@ -56,10 +56,10 @@ async function statusFor(ports: CourierPorts, from: string, input: SendInput): P
   return (await isBelow(ports, from, input.sessionID)) ? { dropped: given } : { status: given }
 }
 
-/** Whether `from` started `to`, directly or through others, by the reverse index; false when it cannot be read. */
+/** Whether `from` started `to`, directly or through others, by the reverse index; false when the index does not name `to` or cannot be read. */
 async function isBelow(ports: CourierPorts, from: string, to: string) {
-  const chain = await childStore(ports.storage).indexedLineage(to).catch(() => [])
-  return chain.some((entry) => entry.parentID === from)
+  const above = await childStore(ports.storage).indexedAncestors(to).catch((): ReadonlyArray<string> => [])
+  return above.includes(from)
 }
 
 /**

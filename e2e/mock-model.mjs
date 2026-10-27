@@ -427,7 +427,7 @@ function passFinding(messages, lastAssistant) {
 }
 
 // COURIER-STATUS-DOWN starts CHILD-STATUS-DOWN and steers it with a message carrying status blocked, which the plugin drops;
-// the child's turn runs on, two seconds a step, until the message is steered in, then reports the envelope's first line.
+// the child's turn runs on, two seconds a step, until the message is steered in, then reports its tag and first line.
 function statusDown(messages, lastAssistant) {
   const first = textOf(messages.find((message) => message.role === "user")?.content)
   const last = messages.at(-1)

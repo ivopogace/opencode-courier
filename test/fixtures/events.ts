@@ -26,6 +26,7 @@ export function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["d
   const logged: string[] = []
   const scanned: string[] = []
   const nudges: number[] = []
+  const options: { types?: readonly string[]; onActivity?: () => void }[] = []
   let subscriptions = 0
   const ports = {
     storage: {
@@ -48,7 +49,8 @@ export function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["d
       ],
     },
     event: {
-      subscribe: async function* () {
+      subscribe: async function* (given: (typeof options)[number]) {
+        options.push(given)
         const events = streams[subscriptions++]
         if (!events) throw new Error("stream closed")
         yield* events
@@ -61,7 +63,7 @@ export function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["d
     log: (message: string) => void logged.push(message),
     nudge: () => void nudges.push(sent.length),
   } as unknown as WatchPorts
-  return { ports, sent, logged, store, scanned, nudges, subscriptions: () => subscriptions }
+  return { ports, sent, logged, store, scanned, nudges, subscriptions: () => subscriptions, options }
 }
 
 export const child = (parentID = "ses_parent") => ({

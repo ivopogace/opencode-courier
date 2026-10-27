@@ -1,6 +1,6 @@
 import { envelope } from "../kernel/protocol.js"
 import { claim } from "../platform/bounded.js"
-import type { EventModule, HostEvent } from "../platform/events.js"
+import type { EventModule, EventType, HostEvent } from "../platform/events.js"
 import { allEntries, lineage, nativeRootOf } from "../tree/index.js"
 import { reportForm, reportFormSettled, type FormCreated, type FormSettled } from "./form.js"
 import { listEverywhere, type PermissionAsked, type PermissionReplied } from "./permission.js"
@@ -76,6 +76,9 @@ export async function relayPending(ports: PersonPorts, state: PersonState) {
   await Promise.all([...sessions].map(relay))
 }
 
+/** What `routePerson` dispatches on. */
+const PERSON_TYPES = ["permission.asked", "permission.replied", "form.created", "form.replied", "form.cancelled", "location.shutdown"] as const satisfies readonly EventType[]
+
 /** The events of what a spawned session asks the person: permission requests, forms, and locations closing on them. */
 function routePerson(ports: PersonPorts, state: PersonState, event: HostEvent) {
   if (event.type === "permission.asked") return reportAsked(ports, state, event as unknown as PermissionAsked)
@@ -103,9 +106,10 @@ function routePerson(ports: PersonPorts, state: PersonState, event: HostEvent) {
  */
 export function personEvents(state: PersonState): EventModule<PersonPorts> {
   return {
+    types: PERSON_TYPES,
     handle: (ports, event) => routePerson(ports, state, event),
     // Question forms shown while no instance followed the events were not seen: released now,
-    // and again on the first event, by when the stream is surely connected.
+    // and again at the stream's first activity, by when it is surely connected.
     followed: () => (eventsFollowed() ? formsMayHaveBeenMissed : undefined),
     // Alongside the new subscription; a request both relays see is relayed once.
     subscribed: (ports) => relayPending(ports, state).catch((error: unknown) => ports.log(`courier watch: could not relay pending requests: ${String(error)}`)),

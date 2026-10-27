@@ -39,6 +39,11 @@ below are in it.
   `event.subscribe()`, with the same event id, whatever the event's location (seen with
   `e2e/probe-plugin`). An instance gets only events published while it is subscribed: the hub keeps a
   standby subscription for hand-over, and relays pending requests on every (re)subscribe.
+- `event.subscribe({ types })` (since `@opencode/plugin@2.2.0`) yields only those types, so the
+  courier's instances never see a turn's streamed `session.text.*`, `session.reasoning.*` and
+  `session.tool.*` events. `types` cannot name `server.connected`: a plugin never receives it.
+  The courier still drops an event outside its types itself, for a host that ignores the filter.
+  `onActivity` reports each keepalive too, so the first-event hooks need no event to pass the filter.
 - `session.execution.started`, `.succeeded`, `.failed` and `.interrupted` frame a busy period, one
   terminal event however many prompts were steered in. `.interrupted` has `reason` `user`,
   `shutdown` (resumed on the next start; also what a plain permission decline reports) or

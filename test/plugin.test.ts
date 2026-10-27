@@ -199,7 +199,7 @@ test("on another OpenCode, loading logs one line naming both versions, and tool 
     const result = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
 
     const { plugin, opencode } = builtVersions()
-    expect(logged.mock.calls.map(([line]) => line)).toEqual([
+    expect(logged.mock.calls.map(([line]) => line).filter((line) => !String(line).startsWith("courier watch: following "))).toEqual([
       `opencode-courier ${plugin} was built and tested against OpenCode ${opencode}; this server is 2.0.33 (channel beta). ` +
         "Its tools may fail: see every release and the OpenCode it is pinned to, " +
         "https://github.com/ivopogace/opencode-courier/blob/main/docs/reference.md#the-opencode-version",

@@ -13,13 +13,18 @@ export interface EventPorts {
   readonly log: (message: string) => void
 }
 
+/** An event type `event.subscribe` can filter on: any of OpenCode's but `server.connected`, which a plugin never receives. */
+export type EventType = NonNullable<NonNullable<Parameters<EventPorts["event"]["subscribe"]>[0]>["types"]>[number]
+
 /** What a module does with OpenCode's events, by phase; each phase runs the modules in list order. */
 export interface EventModule<P extends EventPorts> {
+  /** The event types it handles; without them, every event, so the subscription is not filtered. */
+  readonly types?: readonly EventType[]
   /** For each event; the first to throw ends the phase. */
   readonly handle?: (ports: P, event: HostEvent) => Promise<unknown> | undefined
   /** For each event, once the `handle` phase has ended, however it did; the first to throw ends this one too. */
   readonly after?: (ports: P, event: HostEvent) => Promise<void> | undefined
-  /** As a subscription starts; returns what to run at its first event, if anything. */
+  /** As a subscription starts; returns what to run at its first activity, a keepalive or an event, if anything. */
   readonly followed?: () => (() => void) | undefined
   /** Alongside each (re)subscription; the watcher's end waits for it. */
   readonly subscribed?: (ports: P) => Promise<void>
@@ -69,6 +74,16 @@ const until = <T>(events: AsyncIterator<T>, signal: AbortSignal): AsyncIterable<
   }),
 })
 
+/** The types `modules` declare, sorted; undefined, every type, once one of them declares none. */
+export function typesOf(modules: readonly EventModule<never>[]): EventType[] | undefined {
+  const types = new Set<EventType>()
+  for (const module of modules) {
+    if (!module.types) return undefined
+    for (const type of module.types) types.add(type)
+  }
+  return [...types].sort()
+}
+
 /** One event through the `handle` phase, then, however that ended, the `after` phase. */
 async function handle<P extends EventPorts>(ports: P, modules: readonly EventModule<P>[], event: HostEvent) {
   try {
@@ -109,19 +124,28 @@ function subscribed<P extends EventPorts>(ports: P, modules: readonly EventModul
 async function subscription<P extends EventPorts>(ports: P, modules: readonly EventModule<P>[], signal: AbortSignal, alongside: Set<Promise<void>>) {
   let following = false
   let events: AsyncIterator<HostEvent> | undefined
+  let first: (() => void)[] = []
+  // The stream is surely connected at its first activity, a keepalive or an event, whichever comes first.
+  const connected = () => {
+    for (const run of first.splice(0)) run()
+  }
+  const types = typesOf(modules)
+  const wanted = types && new Set<string>(types)
   try {
-    events = ports.event.subscribe({ signal })[Symbol.asyncIterator]()
-    let first = modules.flatMap((module) => module.followed?.() ?? [])
+    events = ports.event.subscribe({ signal, onActivity: connected, ...(types && { types }) })[Symbol.asyncIterator]()
+    first = modules.flatMap((module) => module.followed?.() ?? [])
     following = true
     subscribed(ports, modules, alongside)
     for await (const event of until(events, signal)) {
-      for (const run of first) run()
-      first = []
+      connected()
+      // A host that ignores `types` sends every event; none outside them reaches a module.
+      if (wanted && !wanted.has(event.type)) continue
       await handleLogged(ports, modules, event)
     }
   } catch (error) {
     if (!signal.aborted) ports.log(`courier watch: event stream broke: ${String(error)}`)
   } finally {
+    first = []
     if (following) for (const module of modules) module.left?.()
     // Closed without waiting: closing the adapter's stream waits on OpenCode, which may not answer
     // while a location closes, and the leave waiting for this watcher must not wait for that too.
@@ -144,8 +168,10 @@ export async function follow<P extends EventPorts>(ports: P, modules: readonly E
  * last; `join` starts them. The second is a standby, connected before the first's member leaves.
  */
 export function watchFromHub<P extends EventPorts>(hub: Pick<Hub, "subscribe">, modules: readonly EventModule<P>[], retryMs = RESUBSCRIBE_MS) {
+  const types = typesOf(modules)
   hub.subscribe = (member: Member) => {
     const stop = new AbortController()
+    member.log(`courier watch: following ${types ? types.join(", ") : "every event"} through ${member.directory}`)
     // A member of any copy runs them: every hub-v2 member's `watch` ports are the same shape.
     return { member, stop, done: follow(member.watch as P, modules, stop.signal, retryMs) }
   }

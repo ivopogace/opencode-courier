@@ -124,8 +124,8 @@ import rules and the reasons for them.
   versioned hub, which instances join with their ports and location and leave on unload, and the
   scheduler's loop, run once per hub and by one server per data directory (the owner key
   `scheduler/owner`). It types only what it owns: a member's feature ports and state are opaque to it,
-  typed by their owners through `sharedState`. `events.ts`: following OpenCode's events (subscribing,
-  resubscribing after `RESUBSCRIBE_MS`, the hub's two watchers through `watchFromHub`), running each
+  typed by their owners through `sharedState`. `events.ts`: following OpenCode's events (subscribing
+  to the union of the modules' declared `types`, resubscribing after `RESUBSCRIBE_MS`, the hub's two watchers through `watchFromHub`), running each
   event through the event modules by phase: `handle` in list order, then `after` in a `finally`;
   `followed` and `left` around each subscription, `subscribed` alongside it. Tick jobs
   (`open(registry, jobs)`) and event modules (`watchFromHub(hub, modules)`) are registered by

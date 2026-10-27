@@ -302,12 +302,15 @@ WEBHOOK_SECRET=courier-e2e-webhook-secret
 printf '%s\n' "$WEBHOOK_SECRET" >"$WORK/webhook-secret"
 build_plugin
 
+# The event types the courier's modules declare, sorted as it asks for them; the probe follows them too.
+COURIER_TYPES='["form.cancelled","form.created","form.replied","location.shutdown","permission.asked","permission.replied","session.deleted","session.execution.failed","session.execution.interrupted","session.execution.started","session.execution.succeeded","session.inbox.cancelled","session.inbox.delivered","session.inbox.enqueued"]'
+
 cat >"$WORK/project/opencode.json" <<EOF
 {
   "plugins": [
     { "package": "$ROOT/dist", "options": { "maxDepth": 2, "webhook": { "port": $WEBHOOK_PORT, "secretFile": "$WORK/webhook-secret" } } },
     "$ROOT/e2e/search-plugin",
-    { "package": "$ROOT/e2e/probe-plugin", "options": { "log": "$WORK/probe.log" } }
+    { "package": "$ROOT/e2e/probe-plugin", "options": { "log": "$WORK/probe.log", "types": $COURIER_TYPES } }
   ],
   "providers": {
     "mock": {
@@ -1021,6 +1024,24 @@ run_probe() {
     check "every instance saw each of the child's $type events once" \
       "$(jq -r --arg type "$type" --argjson instances "$instances" '(.[$type] // []) | length > 0 and all(. == $instances)' <<<"$delivery")"
   done
+
+  # The courier subscribes with the types its modules declare. A subscription filtered on the same
+  # types, the probe's second one, gets the child's events of those types and none of its streamed
+  # text or tool events, which the probe's unfiltered subscription gets in the same instances.
+  scenario "the courier's instances follow only the event types its modules handle"
+  check "the courier subscribes with its modules' types through every hub subscription" \
+    "$(grep -qF "courier watch: following $(jq -r 'join(", ")' <<<"$COURIER_TYPES") through " "$WORK/server.log" &&
+      ! grep -qF "courier watch: following every event" "$WORK/server.log" && echo true || echo false)"
+  probed=$(jq -sc --arg child "$child" '(map(select(.sessionID == $child)) | first | .pid) as $pid | map(select(.pid == $pid and .sessionID == $child))' "$WORK/probe.log")
+  echo "  unfiltered, the child's event types: $(jq -c 'map(select(.id != null and (.type | startswith("probe.") | not)) | .type) | unique' <<<"$probed")"
+  check "the unfiltered subscription got the child's streamed text and tool events" \
+    "$(jq -r 'map(.type) | any(startswith("session.text.")) and any(startswith("session.tool."))' <<<"$probed")"
+  check "the filtered one got none of them, only the courier's types" \
+    "$(jq -r --argjson types "$COURIER_TYPES" 'map(select(.type == "probe.filtered") | .event) | length > 0 and all(IN($types[]))' <<<"$probed")"
+  check "and every event of those types the unfiltered one got, in the same location" \
+    "$(jq -r --argjson types "$COURIER_TYPES" '
+      (map(select(.type == "probe.filtered") | [.location, .id]) | unique) as $filtered
+      | map(select(.type as $type | $types | index($type)) | [.location, .id]) | unique | all(IN($filtered[]))' <<<"$probed")"
 
   # The hub follows OpenCode's events through two locations' instances, one subscription and a
   # standby. Reloading shuts every location down and builds it again, so each instance unloads and a

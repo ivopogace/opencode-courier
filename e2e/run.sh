@@ -702,8 +702,14 @@ run_depth() {
       for _ in $(seq 1 20); do [ -z "$(kv get "report/$leaf/prompt")$(kv get "report/$leaf/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
 }
 
-# The value of session $1's `role` instruction entry, empty without one.
-role_entry_of() { api "session/$1/instructions/entries" | jq -r '.data[] | select(.key == "role") | .value'; }
+# The value of session $1's `role` instruction entry, empty without one; the whole listing goes to stderr then.
+role_entry_of() {
+  local listing value
+  listing=$(api "session/$1/instructions/entries")
+  value=$(jq -r '(.data // .) | .[]? | select(.key == "role") | .value' <<<"$listing")
+  [ -n "$value" ] || echo "role_entry_of $1: no role entry in: $listing" >&2
+  printf '%s' "$value"
+}
 run_role_entry() {
   # With maxDepth 2: the root starts a child, which starts a leaf. Each spawned session's role rides in its `role`
   # entry from its first request on; the root gets its own entry at its first spawn, as an update in its transcript.
@@ -729,8 +735,8 @@ run_role_entry() {
   check "the root was pointed to the skill in a part of the hook's until it had started a child, then named root orchestrator by its entry alone" \
     "$(jq -sr --arg root "$role_root" '[.[] | select(.session == $root and (.tools | length > 0))] | (map(.role) | index("root orchestrator")) as $i
       | $i > 0 and (.[:$i] | all(.role == "root" and .rolePart and (.roleEntry | not))) and (.[$i:] | all(.role == "root orchestrator" and .roleEntry and (.rolePart | not)))' "$WORK/model.log")"
-  check "the root's transcript shows the entry's arrival once, as a system message: Instructions updated: role" \
-    "$(api "session/$role_root/message" | jq -r '[.data[] | select(.type == "system" and .description == "Instructions updated: role")] | length == 1')"
+  check "the root's transcript shows the entry's arrival once, as a system message: Instructions updated: api/role" \
+    "$(api "session/$role_root/message" | jq -r '[.data[] | select(.type == "system" and .description == "Instructions updated: api/role")] | length == 1')"
   # A compaction replaces the leaf's brief; the person then prompts it: its role is in the baseline, with no part of the hook's.
   turn_ended "$role_leaf"
   api_post "session/$role_leaf/compact" '{}' >/dev/null

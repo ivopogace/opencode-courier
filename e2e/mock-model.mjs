@@ -36,9 +36,15 @@ const answersIn = (text) => [...text.matchAll(/"[^"]*"="([^"]*)"/g)].map((match)
 const GIT = "git -c user.name=courier -c user.email=courier@example.invalid"
 const branchIn = (messages) => textOf(messages.find((message) => message.role === "user")?.content).match(/branch (courier\/ses_\w+)/)?.[1]
 
+// An instruction update OpenCode appends when a session's keyed instructions change mid-conversation (the courier's `role`
+// entry on a root): a message of its own after the tool result, which the scripts below do not count as the last message.
+const isInstructionUpdate = (message) => /^(<context key="|The context under ")/.test(textOf(message.content))
+
 function decide(body) {
-  const messages = body.messages ?? []
+  const messages = (body.messages ?? []).filter((message) => !isInstructionUpdate(message))
   if (!body.tools?.length) return { text: "Courier test" }
+  // A compaction request carries the tools and asks for a summary in its last user message: the summary, no tool call.
+  if (textOf(messages.findLast((message) => message.role === "user")?.content).includes("Summarize only what the user and the assistant said")) return { text: "Courier test" }
   const lastAssistant = messages.findLastIndex((message) => message.role === "assistant")
   const last = messages.at(-1)
   const prompt = textOf(messages.findLast((message) => message.role === "user")?.content)
@@ -478,14 +484,18 @@ createServer((request, response) => {
     // The session, and the courier role its system prompt names (`root` is the pointer to the skill), for the recursion scenario.
     const session = request.headers["x-opencode-session-id"]
     const system = (body.messages ?? []).filter((message) => message.role === "system").map((message) => textOf(message.content)).join("\n")
-    const role = system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/)?.[1] ?? null
-    // Where the role came from: the `role` instruction entry's block, or a system part of the courier's context hook.
-    const roleEntry = /<context key="role">\n\s*opencode-courier role:/.test(system)
+    // The role: in the system prompt, else in the instruction update a root gets at its first spawn, wherever that lands.
+    const everything = (body.messages ?? []).map((message) => textOf(message.content)).join("\n")
+    const role = (system.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/) ?? everything.match(/opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/))?.[1] ?? null
+    // Where it came from: the `role` instruction entry's block (`roleEntry`), or a system part of the courier's context hook
+    // (`rolePart`); `updateRole` is the role OpenCode sends an instruction update as, when the request holds one.
+    const roleEntry = /<context key="role">\n\s*opencode-courier role:/.test(everything)
     const rolePart = (system.match(/^opencode-courier role:/gm) ?? []).length > (system.match(/<context key="role">\n\s*opencode-courier role:/g) ?? []).length
+    const updateRole = (body.messages ?? []).find(isInstructionUpdate)?.role ?? null
     const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])
     // The request's own fields besides the conversation: the model asked for, and what a variant adds (reasoning_effort).
     const options = Object.fromEntries(Object.entries(body).filter(([key]) => !["messages", "tools", "stream", "stream_options", "tool_choice"].includes(key)))
-    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, roleEntry, rolePart, skills, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
+    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, roleEntry, rolePart, updateRole, skills, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
     if (reply.status) {
       response.writeHead(reply.status, { "content-type": "application/json", ...reply.headers })
       response.end(JSON.stringify({ error: { message: reply.error, type: "forbidden" } }))

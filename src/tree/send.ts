@@ -19,8 +19,11 @@ export interface SendInput {
  */
 export async function send(ports: CourierPorts, from: string, input: SendInput): Promise<Sent> {
   // Some models send null for an optional field they leave out.
-  const status = input.status ?? undefined
-  if (status !== undefined && !isStatus(status)) throw new Error(`status must be one of ${STATUSES.join(", ")}, not ${JSON.stringify(status)}.`)
+  const given = input.status ?? undefined
+  if (given !== undefined && !isStatus(given)) throw new Error(`status must be one of ${STATUSES.join(", ")}, not ${JSON.stringify(given)}.`)
+  // A status is a report's: on a message to a session below the sender it means nothing, so it is dropped and the result says so.
+  const dropped = given !== undefined && (await isBelow(ports, from, input.sessionID)) ? given : undefined
+  const status = dropped ? undefined : given
   // Noted first: the delivery may wake the parent, whose turn may end before a later note.
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
   try {
@@ -39,11 +42,17 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
     await noteSent(ports, { sessionID: input.sessionID, inboxID: delivered.id, text, description }).catch(() => undefined)
     // A blocked report, once delivered, is the member's latest word: an earlier report held for it would be stale.
     if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)
-    return { messageID: delivered.id, ...(status ? { status } : {}), ...(noted ? { report: noted.report } : {}) }
+    return { messageID: delivered.id, ...(status ? { status } : {}), ...(noted ? { report: noted.report } : {}), ...(dropped ? { dropped } : {}) }
   } catch (error) {
     await noted?.undo().catch(() => undefined)
     throw error
   }
+}
+
+/** Whether `from` started `to`, directly or through others, by the reverse index; false when it cannot be read. */
+async function isBelow(ports: CourierPorts, from: string, to: string) {
+  const chain = await childStore(ports.storage).indexedLineage(to).catch(() => [])
+  return chain.some((entry) => entry.parentID === from)
 }
 
 /**

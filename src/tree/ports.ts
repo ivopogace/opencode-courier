@@ -155,13 +155,15 @@ export interface Held {
 
 /**
  * What courier_send did; `report` says whether the message was noted as the sender's report to the session
- * that started it, and `held` that it was held with the sender's group rather than delivered, with no `messageID`.
+ * that started it, `held` that it was held with the sender's group rather than delivered, with no `messageID`, and
+ * `dropped` the status it was sent with to a session below the sender, where a status means nothing.
  */
 export interface Sent {
   readonly messageID?: string
   readonly status?: Status
   readonly report?: boolean
   readonly held?: Held
+  readonly dropped?: Status
 }
 
 /**

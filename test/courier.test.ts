@@ -745,6 +745,28 @@ describe("send", () => {
     expect(calls[0]!.input.text).toStartWith('<courier from="ses_child" status="done">\nFixed it.\n\nArtifacts:\n- branch: fix/checkout\n')
   })
 
+  test("drops a status on a message to a session below the sender, where it means nothing, and says so", async () => {
+    const { ports, calls } = fakePorts()
+    await childStore(ports.storage).record(spawned)
+    await childStore(ports.storage).record({ ...spawned, sessionID: "ses_grand", parentID: "ses_child" })
+
+    expect(await send(ports, "ses_parent", { sessionID: "ses_grand", message: "Undo it.", status: "blocked" })).toEqual({ messageID: "msg_2", dropped: "blocked" })
+    expect(calls[0]!.input).toMatchObject({ text: envelope("ses_parent", "Undo it."), metadata: { source: "courier", from: "ses_parent" } })
+    expect(await send(ports, "ses_child", { sessionID: "ses_grand", message: "m", status: "done" })).toEqual({ messageID: "msg_2", dropped: "done" })
+    // Upward and sideways, the status stays.
+    expect(await send(ports, "ses_grand", { sessionID: "ses_child", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done", report: true })
+    expect(await send(ports, "ses_grand", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done" })
+    expect(await send(ports, "ses_other", { sessionID: "ses_grand", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done" })
+  })
+
+  test("keeps the status when the roster cannot be read, as the session may be the sender's parent", async () => {
+    const { ports } = fakePorts()
+    await childStore(ports.storage).record(spawned)
+    ;(ports.storage as any).get = async () => Promise.reject(new Error("disk gone"))
+
+    expect(await send(ports, "ses_parent", { sessionID: "ses_child", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done" })
+  })
+
   test("refuses a status that is none of the four, since OpenCode does not check the schema", async () => {
     const { ports, calls } = fakePorts()
 

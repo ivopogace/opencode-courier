@@ -18,12 +18,7 @@ export interface SendInput {
  * to the one that started it, it is its report or its progress (`noteReport`); a group member's final report is held (`hold`).
  */
 export async function send(ports: CourierPorts, from: string, input: SendInput): Promise<Sent> {
-  // Some models send null for an optional field they leave out.
-  const given = input.status ?? undefined
-  if (given !== undefined && !isStatus(given)) throw new Error(`status must be one of ${STATUSES.join(", ")}, not ${JSON.stringify(given)}.`)
-  // A status is a report's: on a message to a session below the sender it means nothing, so it is dropped and the result says so.
-  const dropped = given !== undefined && (await isBelow(ports, from, input.sessionID)) ? given : undefined
-  const status = dropped ? undefined : given
+  const { status, dropped } = await statusFor(ports, from, input)
   // Noted first: the delivery may wake the parent, whose turn may end before a later note.
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
   try {
@@ -47,6 +42,18 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
     await noted?.undo().catch(() => undefined)
     throw error
   }
+}
+
+/**
+ * The message's status, checked, as OpenCode does not check the schema. A status is a report's: on a message to a
+ * session below the sender it means nothing, so it is `dropped`, and the result says so.
+ */
+async function statusFor(ports: CourierPorts, from: string, input: SendInput): Promise<{ status?: Status; dropped?: Status }> {
+  // Some models send null for an optional field they leave out.
+  const given = input.status ?? undefined
+  if (given === undefined) return {}
+  if (!isStatus(given)) throw new Error(`status must be one of ${STATUSES.join(", ")}, not ${JSON.stringify(given)}.`)
+  return (await isBelow(ports, from, input.sessionID)) ? { dropped: given } : { status: given }
 }
 
 /** Whether `from` started `to`, directly or through others, by the reverse index; false when it cannot be read. */

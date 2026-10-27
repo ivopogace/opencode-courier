@@ -1,8 +1,8 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.1.4` and OpenCode 2.1.4. A pin bump re-checks each trap. OpenCode's source is on
-the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.1.4`); paths
+`@opencode/plugin@2.2.0` and OpenCode 2.2.0. A pin bump re-checks each trap. OpenCode's source is on
+the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.0`); paths
 below are in it.
 
 ## Tools
@@ -19,6 +19,9 @@ below are in it.
   schemas and validate values themselves; a unit test keeps it so.
 - `Schema.Number` advertises `"Infinity"`, `"-Infinity"` and `"NaN"`, and some models send numbers
   as strings, so `courier_later` takes `delayMinutes` as either.
+- Tool schemas are converted once and shared across steps, so a `context` hook may delete tools from
+  the map but must never edit a tool's schema in place. The runner waits for plugin reloads before
+  each step.
 - OpenCode renders every tool's schema closed (`onExcessProperty: "error"` in
   `packages/core/src/tool/runtime.ts`). `test/notices.test.ts` renders them the same way.
 - An undeclared key never reaches a tool: `tool-input-repair` (`packages/core/src/plugin/`) deletes
@@ -37,9 +40,10 @@ below are in it.
   `e2e/probe-plugin`). An instance gets only events published while it is subscribed: the hub keeps a
   standby subscription for hand-over, and relays pending requests on every (re)subscribe.
 - `session.execution.started`, `.succeeded`, `.failed` and `.interrupted` frame a busy period, one
-  terminal event however many prompts were steered in. `.interrupted` has `reason` `user` or
-  `shutdown` (resumed on the next start; also what a plain permission decline reports). The schema's
-  `superseded` and `inactivity` are published by nothing. A steered message interrupts nothing:
+  terminal event however many prompts were steered in. `.interrupted` has `reason` `user`,
+  `shutdown` (resumed on the next start; also what a plain permission decline reports) or
+  `inactivity` (the location was evicted, see below). The schema's `superseded` is published by
+  nothing. A steered message interrupts nothing:
   `inbox.enqueued` (`delivery: "steer"`), then `inbox.delivered` at the next step, then one
   `.succeeded`. An interrupt with `resume` while a steer waits publishes `.interrupted` (`user`), then
   `.started` and the steer's `inbox.delivered`.
@@ -93,16 +97,20 @@ below are in it.
 - `session.context()` returns stored messages, not what the `context` hook sees. A turn's end is
   recorded as an `idle` message with `outcome: "succeeded" | "failed" | "interrupted"`.
 - OpenCode evicts a location after 60 minutes without a stored session event
-  (`experimental.location_idle_timeout`), but not while a turn or background job runs. A tool call
-  has no timeout.
+  (`experimental.location_idle_timeout`) when no session in it is executing. A location with a running
+  session is held for up to 24 hours without a durable event; then its sessions are interrupted with
+  `reason: "inactivity"` and it is evicted. A tool call has no timeout.
 - A graceful shutdown closes locations one by one. A closing location first withdraws its forms, so
   a question call dies with `QuestionTool.CancelledError` as if dismissed; about 40 ms later
   `location.shutdown` arrives, then the plugin unloads. The question relay holds a dismissal 2
   seconds to tell the two apart.
 - `GET /api/plugin?directory=<worktree>` does not boot that location; a session there does. A
-  session whose location's directory is gone answers 404 `LocationNotFoundError` on some routes,
+  session whose location's directory is gone answers 404 `LocationNotFoundError` on some routes
+  (not the instruction-entry, interrupt, rename and archive ones, which no longer boot the location),
   which the webhook's test for a deleted session (an error tag with `NotFound`) would match too. The
   health route is `/api/info`.
+- Directories that differ by a trailing slash or `..` are one location, and `session.create` stores
+  the canonical directory, so compare directories after resolving them.
 
 ## When a session's turn ended
 
@@ -147,7 +155,8 @@ place by the time the plugin sees the turn's end.
   `permission.list` gives `metadata` and `source` back, so the asks inbox reads which child the top's
   prompt is for.
 - `worktree.create`, `.remove` and `.list` take `projectID` (`location.project.id`); `agent.get`
-  takes `location`.
+  takes `location`. `agent.list` and `provider.list` wait for plugin activation, and `agent.list`
+  declares a 503 `ServiceUnavailableError` while it has not finished.
 
 ## The question tool and forms
 
@@ -169,7 +178,8 @@ place by the time the plugin sees the turn's end.
   `title`, `description`, `options`), `form.replied` (`answer`) and `form.cancelled`. Forms come from
   the question tool (`kind: "question"`), web search and MCP elicitation (`kind: "mcp-elicitation"`,
   session id `global`). `GET /api/form` lists them; `DELETE /api/session/:id/form/:form` dismisses
-  one.
+  one. `session.form.list` on a session whose location is idle answers an empty list without booting
+  it.
 
 ## Web search's form
 
@@ -309,8 +319,8 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   `@opencode/theme`) must not be imported at runtime. OpenCode patches its `solid-js`; unit tests
   run the unpatched one.
 - **No peers for them.** An exact optional peer `@opentui/core` broke `opencode plugin add` with
-  ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.6.8`,
-  `solid-js` `1.9.15` at `v2.1.4`), and `@opencode/theme` at the pin.
+  ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.7.0`,
+  `solid-js` `1.9.15` at `v2.2.0`), and `@opencode/theme` at the pin.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles with `createSolidTransformPlugin()` and
   `packages: "external"`. `@arethetypeswrong/cli` flags an export without types, hence
@@ -328,6 +338,8 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   `data.session.permission` has no `reply`, so the inbox uses `client.permission.reply`. Forms go
   through `data.session.form.reply` and `client.session.form.list`. OpenCode sounds `permission` and
   `question` for every request and form itself.
+- **A slot that renders bare text** shows a crash toast, no longer taking the TUI down; a slot still
+  renders only elements.
 - **A dialog replaces the one open** (`createDialogApi`, `packages/tui/src/plugin/api.tsx`): the open
   `select` resolves `undefined`, as on `esc`. `select` takes no starting query, so a changed list
   means a new `select` with an empty search. `current` matches by deep equality

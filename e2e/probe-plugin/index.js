@@ -42,11 +42,10 @@ export default {
     })
     const following = new AbortController()
     // Subscribes again when the stream ends or breaks, as the courier's watcher does.
-    void (async () => {
+    const follow = (options, line) => (async () => {
       while (!following.signal.aborted) {
         try {
-          for await (const event of ctx.event.subscribe({ signal: following.signal }))
-            write({ type: event.type, id: event.id, sessionID: sessionOf(event.data) })
+          for await (const event of ctx.event.subscribe({ ...options, signal: following.signal })) write(line(event))
           if (!following.signal.aborted) write({ type: "probe.ended" })
         } catch (error) {
           if (!following.signal.aborted) write({ type: "probe.broke", error: String(error) })
@@ -54,6 +53,10 @@ export default {
         if (!following.signal.aborted) await new Promise((resolve) => setTimeout(resolve, 1_000))
       }
     })()
+    void follow({}, (event) => ({ type: event.type, id: event.id, sessionID: sessionOf(event.data) }))
+    // With a `types` option, also what a subscription filtered on them gets, as the courier's is.
+    if (ctx.options.types)
+      void follow({ types: ctx.options.types }, (event) => ({ type: "probe.filtered", event: event.type, id: event.id, sessionID: sessionOf(event.data) }))
     return () => {
       following.abort()
       write({ type: "probe.unloaded" })

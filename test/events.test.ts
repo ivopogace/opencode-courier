@@ -1,20 +1,28 @@
 import { describe, expect, test } from "bun:test"
-import { follow, type EventModule, type EventPorts, type HostEvent } from "../src/platform/events.js"
+import { memoryEvents } from "../src/memory/events.js"
+import type { MemoryState } from "../src/memory/ports.js"
+import { personEvents } from "../src/person/events.js"
+import { follow, typesOf, watchFromHub, type EventModule, type EventPorts, type EventType, type HostEvent } from "../src/platform/events.js"
+import type { Hub, Member } from "../src/platform/hub.js"
+import { treeEvents, waitsOn } from "../src/tree/events.js"
+import { fakePorts, fresh } from "./fixtures/events.js"
 
 /** Ports whose subscriptions yield `streams` one after another; the last one aborts `stop` once it has yielded its events. */
 function ports(streams: HostEvent[][], stop: AbortController) {
   const logged: string[] = []
+  const options: { types?: readonly string[] }[] = []
   let subscriptions = 0
   const eventPorts = {
     event: {
-      subscribe: async function* () {
+      subscribe: async function* (given: (typeof options)[number]) {
+        options.push(given)
         yield* streams[subscriptions++] ?? []
         if (subscriptions >= streams.length) stop.abort()
       },
     },
     log: (message: string) => void logged.push(message),
   } as unknown as EventPorts
-  return { ports: eventPorts, logged, subscriptions: () => subscriptions }
+  return { ports: eventPorts, logged, options, subscriptions: () => subscriptions }
 }
 
 const event = (type: string, sessionID = "ses_a"): HostEvent => ({ type, data: { sessionID } })
@@ -97,7 +105,7 @@ describe("follow", () => {
     expect(seen).toEqual(["second"])
   })
 
-  test("subscribes again after the stream ends: followed, subscribed and left each time, first only at a first event", async () => {
+  test("subscribes again after the stream ends: followed, subscribed and left each time, first only once connected", async () => {
     const stop = new AbortController()
     const { ports: eventPorts, subscriptions } = ports([[event("one")], []], stop)
     const seen: string[] = []
@@ -127,5 +135,158 @@ describe("follow", () => {
     await done
 
     expect(logged).toEqual(["courier watch: Error: list gone"])
+  })
+})
+
+describe("the event types a subscription asks for", () => {
+  const declaring = (name: string, seen: string[], types: readonly EventType[]) => recording(name, seen, { types })
+
+  test("is the union of the modules' declared types, sorted, each once, on every subscription", async () => {
+    const stop = new AbortController()
+    const { ports: eventPorts, options } = ports([[], []], stop)
+    const modules = [declaring("a", [], ["session.inbox.enqueued", "form.created"]), declaring("b", [], ["form.created", "session.deleted"])]
+
+    await follow(eventPorts, modules, stop.signal, 1)
+
+    expect(options.map((given) => given.types)).toEqual([
+      ["form.created", "session.deleted", "session.inbox.enqueued"],
+      ["form.created", "session.deleted", "session.inbox.enqueued"],
+    ])
+    expect(typesOf([...modules].reverse())).toEqual(typesOf(modules))
+  })
+
+  test("is every event once one module declares none, as one of another copy may not", async () => {
+    const stop = new AbortController()
+    const { ports: eventPorts, options } = ports([[]], stop)
+
+    await follow(eventPorts, [declaring("a", [], ["form.created"]), recording("b", [])], stop.signal, 1)
+
+    expect(options).toHaveLength(1)
+    expect(options[0]).not.toHaveProperty("types")
+  })
+
+  test("an event outside the union reaches no module, from a host that sends it anyway", async () => {
+    const stop = new AbortController()
+    const { ports: eventPorts } = ports([[event("session.text.delta"), event("form.created"), event("session.tool.called")]], stop)
+    const seen: string[] = []
+
+    await follow(eventPorts, [declaring("a", seen, ["form.created"]), declaring("b", seen, ["session.deleted"])], stop.signal, 1)
+
+    expect(seen.filter((line) => line.includes("handle") || line.includes("after"))).toEqual([
+      "a handle form.created",
+      "b handle form.created",
+      "a after form.created",
+      "b after form.created",
+    ])
+  })
+
+  test("a module's connected hook runs at the first event, even one outside the union", async () => {
+    const stop = new AbortController()
+    const { ports: eventPorts } = ports([[event("session.text.delta"), event("form.created")]], stop)
+    const seen: string[] = []
+
+    await follow(eventPorts, [declaring("a", seen, ["form.created"])], stop.signal, 1, 60_000)
+
+    expect(seen).toEqual(["a followed", "a subscribed", "a first", "a handle form.created", "a after form.created", "a left"])
+  })
+
+  test("a module's connected hook runs, once, a while after subscribing on a stream that sends nothing, as a plugin's reports no connection", async () => {
+    const stop = new AbortController()
+    const seen: string[] = []
+    const eventPorts = {
+      event: {
+        // As the plugin adapter does, ignoring every option but `types` and `signal`.
+        subscribe: async function* () {
+          await Bun.sleep(30)
+          seen.push("event")
+          yield event("form.created")
+          stop.abort()
+        },
+      },
+      log: () => {},
+    } as unknown as EventPorts
+
+    await follow(eventPorts, [declaring("a", seen, ["form.created"])], stop.signal, 1, 5)
+
+    expect(seen).toEqual(["a followed", "a subscribed", "a first", "event", "a handle form.created", "a after form.created", "a left"])
+  })
+
+  test("a module's connected hook does not run once its subscription has ended", async () => {
+    const stop = new AbortController()
+    const { ports: eventPorts } = ports([[]], stop)
+    const seen: string[] = []
+
+    await follow(eventPorts, [declaring("a", seen, ["form.created"])], stop.signal, 1, 5)
+    await Bun.sleep(20)
+
+    expect(seen).toEqual(["a followed", "a subscribed", "a left"])
+  })
+
+  test("the plugin's modules ask for what they dispatch on, the turn's start and its inbox for the missed wake included", async () => {
+    const stopping = new AbortController()
+    const { ports: watchPorts, options } = fakePorts([[]])
+    ;(watchPorts as any).log = () => stopping.abort()
+    const state = fresh()
+    const modules = [treeEvents(state, waitsOn()), personEvents(state as never), memoryEvents({} as MemoryState)]
+
+    await follow(watchPorts, modules as EventModule<typeof watchPorts>[], stopping.signal, 1)
+
+    expect(options[0]?.types).toEqual([
+      "form.cancelled",
+      "form.created",
+      "form.replied",
+      "location.shutdown",
+      "permission.asked",
+      "permission.replied",
+      "session.deleted",
+      "session.execution.failed",
+      "session.execution.interrupted",
+      "session.execution.started",
+      "session.execution.succeeded",
+      "session.inbox.cancelled",
+      "session.inbox.delivered",
+      "session.inbox.enqueued",
+    ])
+    // The live suite's probe follows the same types, and checks the courier asks for them.
+    const live = (await Bun.file(new URL("../e2e/run.sh", import.meta.url)).text()).match(/^COURIER_TYPES='(.*)'$/m)?.[1]
+    expect(JSON.parse(live ?? "null")).toEqual(options[0]?.types)
+  })
+
+  test("the hub's subscription and its standby ask for the same types, and log them with their location", async () => {
+    const hub = {} as Pick<Hub, "subscribe">
+    const logged: string[] = []
+    const subscribedWith: unknown[] = []
+    const member = (directory: string) =>
+      ({
+        directory,
+        log: (line: string) => void logged.push(line),
+        watch: {
+          event: {
+            subscribe: async function* (given: { types?: readonly string[] }) {
+              subscribedWith.push(given.types)
+            },
+          },
+          log: () => {},
+        },
+      }) as unknown as Member
+
+    watchFromHub(hub, [declaring("a", [], ["session.deleted", "form.created"])], 1)
+    const watchers = [hub.subscribe!(member("/a")), hub.subscribe!(member("/b"))]
+    for (const watcher of watchers) watcher.stop.abort()
+    await Promise.all(watchers.map((watcher) => watcher.done))
+
+    expect(subscribedWith).toEqual([
+      ["form.created", "session.deleted"],
+      ["form.created", "session.deleted"],
+    ])
+    expect(logged).toEqual(["courier watch: following form.created, session.deleted through /a", "courier watch: following form.created, session.deleted through /b"])
+  })
+
+  test("a type OpenCode does not publish, or server.connected, does not compile", () => {
+    // @ts-expect-error: not one of OpenCode's event types
+    const typo: readonly EventType[] = ["session.text.deltas"]
+    // @ts-expect-error: a plugin never receives it, so it cannot be asked for
+    const connected: readonly EventType[] = ["server.connected"]
+    expect([typo, connected]).toHaveLength(2)
   })
 })

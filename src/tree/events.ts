@@ -1,6 +1,6 @@
 import { envelope } from "../kernel/protocol.js"
 import { claim, SEEN_MAX, setBounded } from "../platform/bounded.js"
-import type { EventModule, HostEvent } from "../platform/events.js"
+import type { EventModule, EventType, HostEvent } from "../platform/events.js"
 import { endsIdle, retryDelay } from "./domain.js"
 import { forgetChild, forgetDeleted } from "./forget.js"
 import { hasCompleteGroup, leave, outIn } from "./group.js"
@@ -213,6 +213,18 @@ export async function reportDeclined(ports: WatchPorts, seen: Set<string>, event
 
 const TURN_ENDS = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
 
+/** What `route` and `after` dispatch on; the wake watch needs `inbox.enqueued` and `execution.started` both. */
+const TREE_TYPES = [
+  "session.execution.started",
+  "session.execution.succeeded",
+  "session.execution.failed",
+  "session.execution.interrupted",
+  "session.inbox.enqueued",
+  "session.inbox.delivered",
+  "session.inbox.cancelled",
+  "session.deleted",
+] as const satisfies readonly EventType[]
+
 /** A session's turn ended, sealing its groups: one that is complete has the scheduler deliver it now; not a shutdown's, which stamps no idle time. */
 async function sealGroups(ports: WatchPorts, event: SessionEvent) {
   if (event.data.reason === "shutdown") return
@@ -263,6 +275,7 @@ async function route(ports: WatchPorts, state: WatchState, outside: Waits, event
  */
 export function treeEvents(state: WatchState, outside: Waits): EventModule<WatchPorts> {
   return {
+    types: TREE_TYPES,
     handle: (ports, event) => route(ports, state, outside, event),
     // After: a silent end is judged while the group the nudge may deliver is still there to wait on.
     after: (ports, event) => (TURN_ENDS.has(event.type) ? sealGroups(ports, event as unknown as SessionEvent) : undefined),

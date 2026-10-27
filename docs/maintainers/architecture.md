@@ -91,6 +91,8 @@ meaning makes a new key and keeps claiming in the old one too.
 instance loaded first, which may be an older copy of the same hub version. So a tick job or event
 module may use only ports every hub-v2 member has; needing a new one changes the version. The hub
 types only what it owns; feature ports and state are typed by their owners through `sharedState`.
+Each event module declares the event types it handles (`types`), and both hub subscriptions ask
+`event.subscribe` for their union; one module without a declaration leaves them unfiltered.
 
 On unload OpenCode waits up to 2 seconds for work the instance leaves behind.
 

@@ -84,7 +84,7 @@ export function formsMayHaveBeenMissed() {
 
 /**
  * Called when an instance starts following OpenCode's events: a shown form is missed only while none
- * follows, so waiting calls are released; true tells the caller to release again on its first event.
+ * follows, so waiting calls are released; true tells the caller to release again once connected.
  */
 export function eventsFollowed() {
   const missed = shared.following === 0 && shared.followed

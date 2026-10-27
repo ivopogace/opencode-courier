@@ -1,5 +1,5 @@
 import { claim } from "../platform/bounded.js"
-import type { EventModule, EventPorts, HostEvent } from "../platform/events.js"
+import type { EventModule, EventPorts, EventType, HostEvent } from "../platform/events.js"
 import { childrenOf, endsIdle, indexedLineage } from "../tree/index.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { refresh } from "./record.js"
@@ -11,7 +11,8 @@ interface Execution {
   readonly data: { readonly sessionID: string; readonly reason?: string }
 }
 
-const TURN_ENDS = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
+const TURN_END_TYPES = ["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"] as const satisfies readonly EventType[]
+const TURN_ENDS = new Set<string>(TURN_END_TYPES)
 
 /** The ports the event module runs on: the watcher's, which every hub-v2 member joins with. */
 export type MemoryEventPorts = RefreshPorts & EventPorts
@@ -51,6 +52,7 @@ export async function noteTurnEnd(ports: RefreshPorts, state: MemoryState, event
  */
 export function memoryEvents(state: MemoryState): EventModule<MemoryEventPorts> {
   return {
+    types: TURN_END_TYPES,
     after: (ports, event: HostEvent) =>
       TURN_ENDS.has(event.type)
         ? noteTurnEnd(ports, state, event as unknown as Execution).then(

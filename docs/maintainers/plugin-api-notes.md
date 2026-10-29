@@ -273,7 +273,8 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
 (`packages/protocol/src/groups/session.ts`; the plugin API's path has no `experimental`). Since 2.2.1
 its type is the client's `ExperimentalSessionApi` (anomalyco/opencode#59072), and the SDK's
 `client.session.instructions` is a deprecated alias of `client.experimental.session.instructions`,
-removed in the next minor; the plugin context's path may move with it, so a pin bump checks. The courier
+removed in the next minor; the plugin context's path may move with it, so a pin bump checks. It is
+the one experimental API the courier uses, an exception kept on purpose. The courier
 writes three entries: a spawned session's role part to `role` and the project's lessons to `lessons`
 (`spawn.ts`, before the prompt; `memory/lessons.ts` supplies the text and `courier_note` renews it),
 and a parent's children to `standing` (`tree/standing.ts`, from the tools and events that move a

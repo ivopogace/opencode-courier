@@ -223,6 +223,9 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   `@opentui/*` and `solid-js`, and moves the devDependencies `@opentui/core`, `@opentui/solid`,
   `solid-js` and `@opencode/theme` to its versions; they are never peers (the host provides them to the
   TUI part, and a peer broke `opencode plugin add`; a unit test checks).
+- No experimental OpenCode API: no `experimental.*` hook, config key or client path, and no tool or
+  command OpenCode marks experimental. The one exception, kept on purpose, is the keyed session
+  instructions (`ctx.session.instructions`, `docs/maintainers/plugin-api-notes.md`).
 - Every tool is registered with `options: { codemode: false }`, returns metadata without
   `undefined` values, and rethrows failures through `describeFailure`, except the plain permission
   decline `courier_answer` rethrows as it is, which ends the step as OpenCode's own tools do (the

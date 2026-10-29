@@ -914,6 +914,10 @@ run_answer() {
     "$([ -n "$own" ] && [ "$(person "session/$parent/permission/$own/reply" '{"decision":"reject","message":"Not here"}')" = 204 ] && echo true || echo false)"
   check "courier_answer failed with the reason, and the parent carried on" \
     "$(has_text "$parent" "TOOL DONE courier_answer" 45 >/dev/null; answer_state "$parent" | jq -r '.status == "error" and (.error.message | contains("not allowed in your session (Not here)") and contains("passed on with that reason"))')"
+  # The mock model echoes each tool result it reads (#401): the reason reached the model, not only the part's state.
+  check "and the parent's model read the reason in courier_answer's result" \
+    "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | .text? // empty |
+      select(startswith("TOOL DONE courier_answer"))] | any(contains("not allowed in your session (Not here)"))')"
   check "the child's call was refused with it, and the child carried on and reported back" \
     "$(has_text "$parent" "CHILD DONE shell" 45 >/dev/null; report=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD DONE shell"))] | join("")');
       [[ $report == *'"error"'* && $report != *"exited with code"* ]] && echo true || echo false)"

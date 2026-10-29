@@ -157,9 +157,14 @@ place by the time the plugin sees the turn's end.
   `once` or `always` come only from the events. With `save`, `always` saves a project-wide rule and
   answers every other pending request it covers, so `courier_answer` asserts without `save`.
   It rejects with a `Tool.Error` wrapping `Permission.BlockedError` (deny rule),
-  `Permission.CorrectedError` (rejection with feedback; since 2.2.2 its `message` is the feedback,
-  empty before) or `Session.NotFoundError`. A plain rejection rejects with `Permission.DeclinedError`
-  itself, which ends the step only if the tool rethrows it untouched, not through `describeFailure`.
+  `Permission.CorrectedError` (rejection with feedback) or `Session.NotFoundError`, with the cause as
+  its `error`. The host builds the `Tool.Error`'s `message` from the cause (`packages/core/src/plugin/host.ts`):
+  the deny rule's message, the rejection's `feedback`, or "Session not found: <id>". So `refusalOf`
+  (`src/person/permission.ts`) reads the feedback from the wrapping error's `message`, and the
+  person's reason reaches `courier_answer`'s result; `e2e/run.sh`'s `run_answer` pins it. That
+  `CorrectedError.message` itself is the feedback since 2.2.2 (empty before) changes nothing here.
+  A plain rejection rejects with `Permission.DeclinedError` itself, which ends the step only if the
+  tool rethrows it untouched, not through `describeFailure`.
   `Permission.Unattended` (2.2.2) is a core-internal reference that settles an `ask` when nobody is
   present to answer; only the experimental schedule route provides it, and the plugin API does not
   expose it.

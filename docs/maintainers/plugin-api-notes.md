@@ -167,8 +167,9 @@ place by the time the plugin sees the turn's end.
   `interrupted` with `reason: "shutdown"` (`terminal` in `session/execution.ts`), keeping its claim,
   so the next boot resumes the turn ("The server restarted while you were working",
   `execution/restart.ts`), and the resumed execution stamps `time.busy` again. The plugin tells it
-  from a real shutdown by the transcript ending on the aborted message (`endsIdle`, `wakeEnded`). A message steered in during the turn is then delivered
-  at once in a turn of its own. The group seal reads `time.idle`, so a decline does not seal.
+  from a real shutdown by the transcript ending on the aborted message (`endsIdle`, `wakeEnded`). A
+  message steered in during the turn is then delivered at once in a turn of its own. The group seal
+  reads `time.idle`, so a decline does not seal.
   `wakeAgain` reads the session before re-sending, in case a resumed turn's `started` came before
   the subscription; only a transcript actually read marks it running, so a failed read re-sends.
 - `opencode run --auto` replies `once` to every request in its session, asserted ones included
@@ -441,8 +442,8 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   option is left out.
 - **Theme:** 2.2.2 retires `text.faint` from the new designs (its dialogs use `text.muted` where
   they used `faint`) and adds the `dialog.footer` surface (`useTheme().surface("dialog.footer")`,
-  layered on `dialog`; a theme's `@dialog` may carry `@footer`). The plugin's TUI parts use
-  `text.muted` and `text.base` only, and no surface.
+  layered on `dialog`; a theme's `@dialog` may carry `@footer`). No TUI part of the plugin uses
+  `text.faint` or a surface.
 - **The panel belongs to one session.** `ui.panel.open` targets the route's session, and the app
   closes it on any route change (`app.tsx`). A new panel takes the keyboard. So the tree panel
   reopens itself after a route change, and hands the keyboard back with

@@ -158,6 +158,15 @@ its own children counts too. Renaming, archiving or switching the model of a ses
 it live. A child counts from the moment `courier_send` to it returns, so a spawn in the same step
 counts it. Several spawns made at once cannot get past a limit together.
 
+Whether a session's turn runs is read from its times: on OpenCode 2.2.2 and later, from when its
+latest execution started (`time.busy`), which a rename, an archive, a switch or a message waiting
+in its inbox does not move, so a session at rest is told so without reading its transcript. Only
+when that start is later than its last turn's end is the transcript read, which tells a running
+turn from one ended by a plain permission decline, which records no end. On an older OpenCode, or
+for a session that has not run since the upgrade, the transcript is read whenever anything changed
+the session after its last turn's end. The same reading serves `courier_tree`, the tree panel, the
+footer, the memory's record and the [missed-wake](#a-missed-wake) check.
+
 **The brief.** Each spawned session is told its depth, the limits and how to report. Below
 `maxDepth` it is told to split its task when it has two or more independent, substantial parts,
 one session per part, and to do it itself otherwise. It never starts exactly one session for the
@@ -371,7 +380,10 @@ permission request [answered elsewhere](#a-child-that-asks-for-permission), are 
 sent again under the same id, which wakes the session without a second copy. If the session still
 has not taken it 30 seconds later, it is **stalled**: the footer counts it and the tree panel marks
 its row. Prompting the session delivers the message and ends the stall. Nothing is sent a third
-time. The check runs every 15 seconds, so each step can take up to 15 seconds longer.
+time. The check runs every 15 seconds, so each step can take up to 15 seconds longer. Before sending
+again, the check reads the session: on OpenCode 2.2.2 and later, a turn started since the message was
+left waiting (`time.busy`) is the one that takes it, even when the plugin missed the event, and the
+message is not sent again; on an older OpenCode the session's transcript tells.
 
 ## A child that asks for permission
 

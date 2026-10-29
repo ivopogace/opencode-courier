@@ -77,7 +77,11 @@ below are in it.
   the wake with no error or log. Neither reproduces on demand, so the missed-wake watch keys on that
   signature. `delivered` without `started` means this instance missed an event. Since 2.2.2 the
   session records every `started` itself (`time.busy`, below): after `enqueued`, a `session.get`
-  showing `busy` later than the wake's `at` means an execution started, event seen or not.
+  showing `busy` at or after the wake's `at` means an execution started, event seen or not. The
+  missed-wake check (`wakeAgain`, `src/tree/wake.ts`) reads it before re-sending: a `busy` at or
+  after the message was last left waiting (enqueued, seen waiting as a turn ended, or sent again)
+  marks the message as a running turn's to take; an earlier one re-sends, with no transcript read.
+  Without `busy` it reads the times and the transcript as before.
 - A waiting inbox item bumps `time.updated` (to the item's `time.created`, `idle` unchanged) and is
   not in the transcript until delivered, so the session reads at rest. The wake store holds courier
   messages waiting, which the limits and the memory's `finished` count (`waitsInInbox`).
@@ -98,7 +102,12 @@ below are in it.
   or one at rest after an interruption with reason `shutdown`, which stamps no `idle` and is what a
   plain permission decline reports (below), so `busy > idle` holds at rest after a decline; the
   resumed execution stamps `busy` again. Only the transcript tells the two apart, so there it still
-  decides. The plugin reads it (`runs`, `src/tree/running.ts`):
+  decides. The plugin reads `busy` first (`busy`, `src/tree/domain.ts`; `runs`, `src/tree/running.ts`):
+  `busy` not later than `idle` is rest at `idle`, with no transcript read and none of the caching
+  below, whatever a rename, an archive, a switch or a waiting inbox item stamped on `updated`;
+  `busy` later than `idle`, or set with no `idle`, goes by the transcript; `busy` absent goes by
+  `updated > idle` and then the transcript, as before. A new `busy` is a new stamp for the cache.
+  The transcript's reading:
   - a turn's end is an `idle` message, and one ending on it is at rest, past the `agent-switched`,
     `model-switched` and `location-switched` messages and a person's `shell` message, which are no
     turn;
@@ -171,7 +180,8 @@ place by the time the plugin sees the turn's end.
   message steered in during the turn is then delivered at once in a turn of its own. The group seal
   reads `time.idle`, so a decline does not seal.
   `wakeAgain` reads the session before re-sending, in case a resumed turn's `started` came before
-  the subscription; only a transcript actually read marks it running, so a failed read re-sends.
+  the subscription: since 2.2.2 by `time.busy` (Events, above), which records that start; without
+  it, only a transcript actually read marks it running, so a failed read re-sends.
 - `opencode run --auto` replies `once` to every request in its session, asserted ones included
   (`packages/cli/src/run/noninteractive.ts`). The scenario that holds the prompt drives the parent
   through the API.

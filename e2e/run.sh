@@ -166,10 +166,10 @@ ask_question() {
   check "the child asks, and the parent asks the person in its own session" \
     "$([ -n "$child_form" ] && [ -n "$parent_form" ] && echo true || echo false)"
 }
-# As the plugin reads a session (#324, #326): at rest when its last turn ended after its last stamp, or else when its transcript
-# ends, past the asides, on a turn's end or a step a decline interrupted.
+# As the plugin reads a session (#324, #326, #400): at rest when its last turn ended after its latest execution started (`busy`,
+# since 2.2.2; its last stamp without that), or else when its transcript ends, past the asides, on a turn's end or an interrupted step.
 finished() {
-  [ "$(api "session/$1" | jq -r '(.data // .) | .time.idle != null and .time.updated <= .time.idle')" = true ] && { echo true; return; }
+  [ "$(api "session/$1" | jq -r '(.data // .) | .time.idle != null and (.time.busy // .time.updated) <= .time.idle')" = true ] && { echo true; return; }
   [ "$(api "session/$1/context" | jq -r '[.data[] | select(.type | IN("agent-switched", "model-switched", "location-switched", "shell") | not)] | last |
     .type == "idle" or (.type == "assistant" and .error.type == "aborted")')" = true ] && echo true || echo false
 }
@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 spawn-native:14 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1920,6 +1920,119 @@ run_memory() {
   # The sweep runs as the plugin loads, after the server answers, so the unpinned record's removal is waited for.
   check "the sweep at load kept the pinned record, a year old, with its pin, and dropped the unpinned one as old (#285)" \
     "$(for _ in $(seq 1 20); do [ -z "$(kv get "memory/$project/ses_unpinned")" ] && break; sleep 1; done; [ -n "$(kv get "memory/$project/ses_seeded")" ] && [ -n "$(kv get "memory/$project/ses_seeded/pin")" ] && [ -z "$(kv get "memory/$project/ses_unpinned")" ] && echo true || echo false)"
+}
+
+# Since OpenCode 2.2.2 `time.busy` is when a session's latest execution started (#400): not later than `idle` it is at rest, read so
+# without its transcript; later, as a plain decline leaves it, the transcript tells; a start since a wake, not ended, takes the message.
+run_busy() {
+  scenario "a reported child the person renames at rest reads idle: its busy time, when its latest execution started, is not past its idle time (#400)"
+  out=$(prompt "COURIER-TEST")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the child reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  turn_ended "$child"
+  turn_ended "$parent"
+  times=$(session_info "$child" | jq -c '.time')
+  echo "  $times"
+  check "the host stamped when the child's execution started, after it was created and before its turn's end" \
+    "$(jq -r '.busy != null and .busy >= .created and .busy <= .idle' <<<"$times")"
+  check "the person renames it" "$(patch_session "$child" '{"title":"Renamed at rest"}')"
+  for _ in $(seq 1 10); do [ "$(session_info "$child" | jq -r '.title')" = "Renamed at rest" ] && break; sleep 1; done
+  times=$(session_info "$child" | jq -c '.time')
+  echo "  $times"
+  check "the rename stamped its updated time past its last turn's end, and left its busy time where it was" \
+    "$(jq -r '.updated > .idle and .busy <= .idle' <<<"$times")"
+  check "which reads as finished by its times" "$(finished "$child")"
+  directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")
+  row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" |
+    jq -c --arg id "$child" '.output.rows[] | select(.sessionID == $id) | {title, state, idle, report}')
+  echo "  $row"
+  check "the panel's row reads it idle since that end, reported, by its new title" \
+    "$(jq -r --argjson idle "$(jq '.idle' <<<"$times")" '.title == "Renamed at rest" and .state == "idle" and .idle == $idle and .report.state == "reported"' <<<"$row")"
+  summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -c '.output')
+  echo "  $summary"
+  check "and the footer counts it idle, not running" "$(jq -r '.running == 0 and .idle == 1' <<<"$summary")"
+  listed=$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -c --arg child "$child" '.metadata.metadata.children[] | select(.sessionID == $child)')
+  echo "  $listed"
+  check "courier_children lists it by its new title, its last turn having succeeded before the rename" \
+    "$(jq -r '.title == "Renamed at rest" and .outcome == "succeeded" and .updated > .idle' <<<"$listed")"
+
+  scenario "a child at rest after a plain decline, its busy time past its idle time, still reads idle by its transcript (#400)"
+  ask_permission ""
+  times=$(session_info "$child" | jq -c '.time')
+  echo "  $times"
+  check "while its request waits, its first execution has started and no turn has ended: a busy time, no idle time" \
+    "$(jq -r '.busy != null and .idle == null' <<<"$times")"
+  check "the person declines the child's request in its own session, without a reason" \
+    "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"reject"}')" = 204 ] && echo true || echo false)"
+  for _ in $(seq 1 30); do [ "$(api "session/$child/context" | jq -r '.data | last | .error.type == "aborted"')" = true ] && break; sleep 1; done
+  check "its transcript ends on the interrupted step, and it still has a busy time and no idle time" \
+    "$([ "$(api "session/$child/context" | jq -r '.data | last | .type == "assistant" and .error.type == "aborted"')" = true ] &&
+      [ "$(session_info "$child" | jq -r --argjson busy "$(jq '.busy' <<<"$times")" '.time.busy == $busy and .time.idle == null')" = true ] && echo true || echo false)"
+  check "which reads as finished by its transcript" "$(finished "$child")"
+  row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" |
+    jq -c --arg id "$child" '.output.rows[] | select(.sessionID == $id) | {state, report, waits, idle}')
+  echo "  $row"
+  check "the panel's row reads it idle since that step ended, waiting on nothing, its report still owed" \
+    "$(jq -r '.state == "idle" and (.idle | type == "number") and .waits == [] and .report.state == "owed"' <<<"$row")"
+  summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -c '.output')
+  echo "  $summary"
+  check "and the footer counts it idle" "$(jq -r '.running == 0 and .waiting == 0 and .idle == 1' <<<"$summary")"
+  # OpenCode keeps a declined turn's execution claim and resumes it at the next boot: delete it before a later group restarts.
+  check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
+
+  scenario "a courier message whose wake was lost is sent again once the child's busy time shows no execution started since; one started since marks it taken (#400)"
+  out=$(prompt "COURIER-TEST")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the child reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  turn_ended "$child"
+  turn_ended "$parent"
+  # The person prompts it again, a turn the stand-in model holds open: an execution started and not ended.
+  api_prompt "$child" "COURIER-HOLD"
+  for _ in $(seq 1 30); do [ "$(session_info "$child" | jq -r '.time.busy > .time.idle')" = true ] && break; sleep 1; done
+  times=$(session_info "$child" | jq -c '.time')
+  echo "  $times"
+  check "the prompt started an execution, stamped past the child's last turn's end" "$(jq -r '.busy > .idle' <<<"$times")"
+  busy=$(jq -r '.busy' <<<"$times")
+  wake_row() { kv get "wake/$1/$2" | jq -r "${@:3}"; }
+  # A row as the watch keeps a message enqueued a minute before that start and never seen taken: that execution takes it, and the
+  # scheduler finds the row missed at its next tick, up to 15 s later.
+  stale=msg_courier_e2e_stale
+  kv set "wake/$child/$stale" "$(jq -nc --arg from "$parent" --argjson at "$((busy - 60000))" \
+    '{at: $at, text: ("<courier from=\"" + $from + "\">STALE</courier>"), running: false, idleAt: $at}')" "report/$child/prompt"
+  check "the scheduler marked it as the running execution's to take, and sent nothing" \
+    "$(for _ in $(seq 1 20); do [ "$(wake_row "$child" "$stale" '.running')" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+  check "it logged no wake again for it" "$(grep -qF "$stale" "$WORK/server.log" && echo false || echo true)"
+  check "and the child's transcript got no message of it" "$(api "session/$child/message" | jq -r --arg id "$stale" 'any(.data[]; .id == $id) | not')"
+  kv remove "wake/$child/$stale"
+  check "the person interrupts the held turn" "$([[ $(person "session/$child/interrupt") == 20* ]] && echo true || echo false)"
+  turn_ended "$child"
+  busy=$(session_info "$child" | jq -r '.time.busy // empty')
+  check "the child is at rest, its execution ended after it started ($busy)" \
+    "$([ -n "$busy" ] && [ "$(session_info "$child" | jq -r '.time.idle >= .time.busy')" = true ] && echo true || echo false)"
+  # A real message, enqueued without a wake as a lost one is left (resume: false), its row as the watch writes it.
+  taken() { api "session/$1/message" | jq -r --arg id "$inbox" 'any(.data[]; .id == $id)'; }
+  at=$(now_ms)
+  text="<courier from=\"$parent\">CHILD-REPORT-NOW</courier>"
+  inbox=$(api_post "session/$child/synthetic" "$(jq -nc --arg text "$text" --arg from "$parent" \
+    '{text: $text, description: ("Message from " + $from), metadata: {source: "courier", from: $from}, delivery: "steer", resume: false}')" | jq -r '.data.id // empty')
+  check "a courier message waits in the idle child's inbox ($inbox)" \
+    "$([ -n "$inbox" ] && api "session/$child/inbox" | jq -e --arg id "$inbox" 'any(.data[]; .id == $id)' >/dev/null && echo true || echo false)"
+  kv set "wake/$child/$inbox" "$(jq -nc --arg text "$text" --arg from "$parent" --argjson at "$at" \
+    '{at: $at, text: $text, description: ("Message from " + $from), running: false, idleAt: $at}')" "report/$child/prompt"
+  check "the child's busy time is before the message was enqueued: no execution has started for it" \
+    "$(session_info "$child" | jq -r --argjson at "$at" '.time.busy < $at')"
+  # Missed after WAKE_MS (30 s) from the row's idle time, found at the scheduler's next tick, up to 15 s later.
+  for _ in $(seq 1 75); do [ "$(taken "$child")" = true ] && break; sleep 1; done
+  check "the scheduler woke the child again, which took the message" "$(taken "$child")"
+  check "the server log says it was woken again" "$(grep -qF "courier wake: $child left message $inbox waiting while idle; woken again" "$WORK/server.log" && echo true || echo false)"
+  check "and the wake again started an execution, stamped at or after the message was enqueued" \
+    "$(session_info "$child" | jq -r --argjson at "$at" '.time.busy >= $at')"
+  check "the child reported again, waking the parent" "$(has_text "$parent" "CHILD DONE AFTER NUDGE" 45)"
+  check "and the watch is over" "$(for _ in $(seq 1 10); do [ -z "$(kv get "wake/$child/$inbox")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+  turn_ended "$child"
+  turn_ended "$parent"
 }
 
 run_spawn_native() {

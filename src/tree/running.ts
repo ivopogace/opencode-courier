@@ -49,7 +49,7 @@ function resolve(session: Session, sessionID: string, time: BusyTimes, now: numb
   if (!busy(time)) return Promise.resolve(rest(millis(time.idle)))
   const known = answers.get(session) ?? new Map<string, Answer>()
   answers.set(session, known)
-  const stamp = `${millis(time.updated)} ${millis(time.idle)}`
+  const stamp = [time.updated, time.idle, time.busy].map(millis).join(" ")
   const found = known.get(sessionID)
   if (cached && found?.stamp === stamp && now < found.until) return found.turn
   // Only its own answer: a newer read of the session may have taken its place meanwhile.

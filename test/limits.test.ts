@@ -339,6 +339,60 @@ describe("runs", () => {
     expect(await runs(counted, "ses_a", stamped, 900_000)).toBe(true)
     expect(reads).toBe(2)
   })
+
+  // #400: since OpenCode 2.2.2 `time.busy` is when the latest execution started, stamped with `updated` left alone.
+  describe("with the latest execution's start stamped (time.busy, OpenCode 2.2.2)", () => {
+    const unread = session(new Error("not read"))
+    const running = [...ended, { type: "user" }, { type: "assistant" }]
+    const declined = [...ended, { type: "user" }, { type: "assistant", error: { type: "aborted" } }]
+
+    test("at rest from the times alone, no transcript read, when it is not later than the last turn's end, whatever stamped updated since", async () => {
+      // A rename, an archive, a switch or a waiting inbox item: updated past idle, busy not.
+      expect(await runs(unread, "ses_a", { updated: 9, idle: 5, busy: 3 } as any)).toBe(false)
+      expect(await runs(unread, "ses_a", { updated: 9, idle: 5, busy: 5 } as any)).toBe(false)
+      expect(await runs(unread, "ses_a", { updated: 9, idle: 5, busy: 3, archived: 9 } as any)).toBe(false)
+      expect(await turnOf(unread, "ses_a", { updated: 9, idle: 5, busy: 3 } as any)).toEqual({ running: false, endedAt: 5 })
+    })
+
+    test("and none of the caching: a read of rest is not kept, so a start stamped next is seen at once", async () => {
+      let reads = 0
+      const counted = { context: async () => (reads++, running) } as any
+      expect(await runs(counted, "ses_a", { updated: 9, idle: 5, busy: 3 } as any, 100_000)).toBe(false)
+      expect(await runs(counted, "ses_a", { updated: 9, idle: 5, busy: 9 } as any, 100_001)).toBe(true)
+      expect(reads).toBe(1)
+    })
+
+    test("by the transcript when it is later: a plain decline leaves it so at rest, as it stamps no idle, and a turn runs on it", async () => {
+      expect(await runs(session(declined), "ses_a", { updated: 9, idle: 5, busy: 7 } as any)).toBe(false)
+      expect(await runs(session(running), "ses_a", { updated: 9, idle: 5, busy: 7 } as any)).toBe(true)
+      // An execution started with no step yet stamps busy alone: the transcript tells, where the times once said rest.
+      expect(await runs(session([...ended, { type: "synthetic" }]), "ses_a", { updated: 5, idle: 5, busy: 7 } as any)).toBe(true)
+      expect(await runs(session(ended), "ses_a", { updated: 5, idle: 5, busy: 7 } as any)).toBe(false)
+    })
+
+    test("in a first turn too, which no idle time marks, as a decline ends it", async () => {
+      expect(await runs(session([{ type: "user" }, { type: "assistant" }]), "ses_a", { updated: 9, busy: 7 } as any)).toBe(true)
+      expect(await runs(session([{ type: "user" }, { type: "assistant", error: { type: "aborted" } }] as any), "ses_a", { updated: 9, busy: 7 } as any)).toBe(false)
+    })
+
+    test("a new start is a new stamp: the transcript is read again for it, the other times unchanged", async () => {
+      let reads = 0
+      let messages = declined
+      const counted = { context: async () => (reads++, messages) } as any
+      expect(await runs(counted, "ses_a", { updated: 9, idle: 5, busy: 7 } as any, 100_000)).toBe(false)
+      expect(await runs(counted, "ses_a", { updated: 9, idle: 5, busy: 7 } as any, 100_001)).toBe(false)
+      expect(reads).toBe(1)
+      messages = [...declined, { type: "synthetic" }]
+      expect(await runs(counted, "ses_a", { updated: 9, idle: 5, busy: 12 } as any, 100_002)).toBe(true)
+      expect(reads).toBe(2)
+    })
+
+    test("without it, a host before 2.2.2 or a session with no execution since the upgrade, the times and the transcript tell as before", async () => {
+      expect(await runs(unread, "ses_a", { updated: 5, idle: 5 } as any)).toBe(false)
+      expect(await runs(session(ended), "ses_a", stamped)).toBe(false)
+      expect(await runs(session(running), "ses_a", stamped)).toBe(true)
+    })
+  })
 })
 
 describe("turnOf", () => {

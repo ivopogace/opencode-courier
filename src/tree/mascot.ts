@@ -16,8 +16,8 @@ export const MASCOT_EVERY = 5
 /** He blinks on every this-many-th of his frames where his eyes are open. */
 export const BLINK_EVERY = 11
 
-/** How Digby runs: `shipped`, the two frames as released; `still`, up and awake, glancing; `digging`, clods on arcs. */
-export type RunningStyle = "shipped" | "still" | "digging"
+/** How Digby runs: `shipped`, the two frames as released; `still`, up and awake, glancing; `digging`, clods on arcs; `paced`, still with a dig now and then. */
+export type RunningStyle = "shipped" | "still" | "digging" | "paced"
 export const RUNNING_STYLE: RunningStyle = "shipped"
 
 /** The 8×4 running frames by style: the still one blinks only, the digging one's clods stay off the mound's rim. */
@@ -32,6 +32,9 @@ export const GLYPH_RUNNING: Readonly<Record<RunningStyle, ReadonlyArray<Readonly
     [".mbbbbm.", ".bkbbkb.", "gbbaabbg", "gggggggg"],
     ["..bbbb..", ".bkbbkb.", "gbbaabbg", "gggggggg"],
   ],
+  get paced() {
+    return [...Array.from({ length: 18 }, () => this.still[0]!), ...this.digging, ...this.digging]
+  },
 }
 
 /**
@@ -62,7 +65,7 @@ export const GLYPH: Readonly<Record<MascotState, ReadonlyArray<ReadonlyArray<str
 }
 
 /** Whether each running style shows his eyes, so he blinks while running. */
-const EYES_RUNNING: Readonly<Record<RunningStyle, boolean>> = { shipped: false, still: true, digging: true }
+const EYES_RUNNING: Readonly<Record<RunningStyle, boolean>> = { shipped: false, still: true, digging: true, paced: true }
 
 /** The states in which his eyes are open, so he blinks. */
 const OPEN_EYES: ReadonlySet<MascotState> = new Set(["waiting", "report", ...(EYES_RUNNING[RUNNING_STYLE] ? ["running" as const] : [])])
@@ -190,6 +193,10 @@ export const ART_RUNNING: Readonly<Record<RunningStyle, ReadonlyArray<(open: boo
   ],
   still: [0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 1, 1].map((shift) => awake(0.6, shift)),
   digging: Array.from({ length: CLOD_LEFT.length }, (_, at) => digging(at)),
+  /** Still for 18 frames, about 8 s, then one dig cycle. */
+  get paced() {
+    return [...this.still, ...this.still.slice(0, 6), ...this.digging]
+  },
 }
 
 /** A child's head peeking out of a side mound at columns `column`–`column + 2`, `up` or half sunk. */

@@ -382,8 +382,8 @@ has not taken it 30 seconds later, it is **stalled**: the footer counts it and t
 its row. Prompting the session delivers the message and ends the stall. Nothing is sent a third
 time. The check runs every 15 seconds, so each step can take up to 15 seconds longer. Before sending
 again, the check reads the session: on OpenCode 2.2.2 and later, a turn started since the message was
-left waiting (`time.busy`) is the one that takes it, even when the plugin missed the event, and the
-message is not sent again; on an older OpenCode the session's transcript tells.
+left waiting and still running (`time.busy`) is the one that takes it, even when the plugin missed the
+event, and the message is not sent again; on an older OpenCode the session's transcript tells.
 
 ## A child that asks for permission
 

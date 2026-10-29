@@ -344,6 +344,16 @@ describe("waking a session whose wake was missed", () => {
     expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: true })
   })
 
+  test("but one started since and ended, its end missed, is at rest: the message is woken again, not left to a turn that is over", async () => {
+    const { ports, sent, at, times } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    times.ses_parent = { created: 0, updated: 101_000, idle: 102_000, busy: 100_500 }
+    at(100_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toHaveLength(1)
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: false, rewoken: 100_000 + WAKE_MS })
+  })
+
   test("but a start before the session was last seen idle with it waiting is the turn that ended then: it is woken again", async () => {
     const { ports, sent, at, messages, times } = fakePorts({ ses_parent: [assistant()] })
     await handle(ports, enqueued())

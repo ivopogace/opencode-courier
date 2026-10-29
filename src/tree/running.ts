@@ -33,9 +33,8 @@ const answers = new WeakMap<Session, Map<string, Answer>>()
 type Messages = Awaited<ReturnType<Session["context"]>>
 
 /**
- * Whether a session runs and, at rest, when its last turn ended: by its times when they show rest (`busy`, since 2.2.2, not
- * later than `idle`; without `busy`, `updated` not later), else by its transcript (#324, #326), kept until the next stamp, a
- * rest for `REST_MS` and not within `FRESH_MS` of it; one unread or empty runs.
+ * Whether a session runs and, at rest, when its last turn ended: by its times when they show rest, else by its transcript
+ * (#324, #326), kept until the next stamp, a rest for `REST_MS` and not within `FRESH_MS` of it; one unread or empty runs.
  */
 export function turnOf(session: Session, sessionID: string, time: BusyTimes, now = Date.now()): Promise<Turn> {
   return resolve(session, sessionID, time, now, () => session.context({ sessionID }), true)

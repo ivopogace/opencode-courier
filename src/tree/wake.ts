@@ -165,15 +165,14 @@ async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, 
 }
 
 /**
- * Whether a session shows a turn running that takes the message: an execution started since it was last left waiting (`time.busy`,
- * since 2.2.2, which records a start this instance missed), else, without `busy`, by its times and its transcript read now; one that
- * cannot be read does not, and is woken again.
+ * Whether a session shows a turn running that takes the message: by `time.busy` (2.2.2), an execution started since the message was
+ * last left waiting and not ended; without it, by its times and its transcript read now. One that cannot be read does not, and is woken again.
  */
 async function runsNow(ports: WakePorts, wake: Wake) {
   const { sessionID } = wake
   const info = await ports.session.get({ sessionID }).catch(() => undefined)
   if (!info) return false
-  if (info.time.busy !== undefined) return millis(info.time.busy) >= waitingSince(wake)
+  if (info.time.busy !== undefined) return busy(info.time) && millis(info.time.busy) >= waitingSince(wake)
   if (!busy(info.time)) return false
   const messages = await ports.session.context({ sessionID }).catch((): Messages => [])
   return messages.length > 0 && !endsIdle(messages)

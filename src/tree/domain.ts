@@ -46,10 +46,8 @@ type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 export type BusyTimes = Pick<Times, "updated" | "idle" | "busy">
 
 /**
- * Whether a session may run by its times: it has never finished a turn, or its latest execution started after the last one
- * ended (`busy`), which also holds at rest after a shutdown or a plain decline, which stamp no `idle`; on a host without `busy`,
- * `updated` was stamped after that end, as a step does, and as much that is no activity does (a rename, an archive, a waiting
- * inbox item). Either way only its transcript then tells.
+ * Whether a session may run by its times: it has never finished a turn, or its latest execution started after the last one ended
+ * (`busy`; without it `updated`, which a rename, an archive or a waiting inbox item also stamp); only its transcript then tells.
  */
 export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.busy ?? time.updated) > millis(time.idle)
 

@@ -80,7 +80,8 @@ below are in it.
   showing `busy` at or after the wake's `at` means an execution started, event seen or not. The
   missed-wake check (`wakeAgain`, `src/tree/wake.ts`) reads it before re-sending: a `busy` at or
   after the message was last left waiting (enqueued, seen waiting as a turn ended, or sent again)
-  marks the message as a running turn's to take; an earlier one re-sends, with no transcript read.
+  and later than `idle` marks the message as a running turn's to take; an earlier one, or one
+  `idle` has passed (that execution ended, its event missed), re-sends, with no transcript read.
   Without `busy` it reads the times and the transcript as before.
 - A waiting inbox item bumps `time.updated` (to the item's `time.created`, `idle` unchanged) and is
   not in the transcript until delivered, so the session reads at rest. The wake store holds courier

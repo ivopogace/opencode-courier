@@ -167,8 +167,7 @@ ask_question() {
     "$([ -n "$child_form" ] && [ -n "$parent_form" ] && echo true || echo false)"
 }
 # As the plugin reads a session (#324, #326, #400): at rest when its last turn ended after its latest execution started (`busy`,
-# since OpenCode 2.2.2) or, without that, after its last stamp, or else when its transcript ends, past the asides, on a turn's
-# end or a step a decline interrupted.
+# since 2.2.2; its last stamp without that), or else when its transcript ends, past the asides, on a turn's end or an interrupted step.
 finished() {
   [ "$(api "session/$1" | jq -r '(.data // .) | .time.idle != null and (.time.busy // .time.updated) <= .time.idle')" = true ] && { echo true; return; }
   [ "$(api "session/$1/context" | jq -r '[.data[] | select(.type | IN("agent-switched", "model-switched", "location-switched", "shell") | not)] | last |
@@ -1923,9 +1922,8 @@ run_memory() {
     "$(for _ in $(seq 1 20); do [ -z "$(kv get "memory/$project/ses_unpinned")" ] && break; sleep 1; done; [ -n "$(kv get "memory/$project/ses_seeded")" ] && [ -n "$(kv get "memory/$project/ses_seeded/pin")" ] && [ -z "$(kv get "memory/$project/ses_unpinned")" ] && echo true || echo false)"
 }
 
-# Since OpenCode 2.2.2 a session's `time.busy` is when its latest execution started, stamped with `updated` left alone (#400):
-# not later than `idle`, the session is at rest, and the plugin reads it so without its transcript; later, as a plain decline
-# leaves it, the transcript still tells; and after a wake, a start at or after the message was left waiting means it was taken.
+# Since OpenCode 2.2.2 `time.busy` is when a session's latest execution started (#400): not later than `idle` it is at rest, read so
+# without its transcript; later, as a plain decline leaves it, the transcript tells; a start since a wake, not ended, takes the message.
 run_busy() {
   scenario "a reported child the person renames at rest reads idle: its busy time, when its latest execution started, is not past its idle time (#400)"
   out=$(prompt "COURIER-TEST")
@@ -1990,19 +1988,29 @@ run_busy() {
   check "the child reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
   turn_ended "$child"
   turn_ended "$parent"
-  busy=$(session_info "$child" | jq -r '.time.busy // empty')
-  check "the child is at rest, its busy time stamped ($busy)" "$([ -n "$busy" ] && [ "$(finished "$child")" = true ] && echo true || echo false)"
+  # The person prompts it again, a turn the stand-in model holds open: an execution started and not ended.
+  api_prompt "$child" "COURIER-HOLD"
+  for _ in $(seq 1 30); do [ "$(session_info "$child" | jq -r '.time.busy > .time.idle')" = true ] && break; sleep 1; done
+  times=$(session_info "$child" | jq -c '.time')
+  echo "  $times"
+  check "the prompt started an execution, stamped past the child's last turn's end" "$(jq -r '.busy > .idle' <<<"$times")"
+  busy=$(jq -r '.busy' <<<"$times")
   wake_row() { kv get "wake/$1/$2" | jq -r "${@:3}"; }
-  # A row as the watch keeps a message enqueued a minute before the child's last execution started and never seen taken: that
-  # execution took it, and the scheduler finds the row missed at its next tick, up to 15 s later.
+  # A row as the watch keeps a message enqueued a minute before that start and never seen taken: that execution takes it, and the
+  # scheduler finds the row missed at its next tick, up to 15 s later.
   stale=msg_courier_e2e_stale
   kv set "wake/$child/$stale" "$(jq -nc --arg from "$parent" --argjson at "$((busy - 60000))" \
     '{at: $at, text: ("<courier from=\"" + $from + "\">STALE</courier>"), running: false, idleAt: $at}')" "report/$child/prompt"
-  check "the scheduler marked it as taken by the execution started since, and sent nothing" \
+  check "the scheduler marked it as the running execution's to take, and sent nothing" \
     "$(for _ in $(seq 1 20); do [ "$(wake_row "$child" "$stale" '.running')" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
   check "it logged no wake again for it" "$(grep -qF "$stale" "$WORK/server.log" && echo false || echo true)"
   check "and the child's transcript got no message of it" "$(api "session/$child/message" | jq -r --arg id "$stale" 'any(.data[]; .id == $id) | not')"
   kv remove "wake/$child/$stale"
+  check "the person interrupts the held turn" "$([[ $(person "session/$child/interrupt") == 20* ]] && echo true || echo false)"
+  turn_ended "$child"
+  busy=$(session_info "$child" | jq -r '.time.busy // empty')
+  check "the child is at rest, its execution ended after it started ($busy)" \
+    "$([ -n "$busy" ] && [ "$(session_info "$child" | jq -r '.time.idle >= .time.busy')" = true ] && echo true || echo false)"
   # A real message, enqueued without a wake as a lost one is left (resume: false), its row as the watch writes it.
   taken() { api "session/$1/message" | jq -r --arg id "$inbox" 'any(.data[]; .id == $id)'; }
   at=$(now_ms)

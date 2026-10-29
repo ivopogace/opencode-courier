@@ -95,9 +95,8 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
 }
 
 /**
- * The tree panel's rows: the sessions under a session as courier_tree lists them, at most `maxTotal`, the live ones
- * first, then the newest, each as `row` reads it; `top` the session itself, `truncated` counts the older ones left out,
- * and `stalled` says the root is.
+ * The tree panel's rows: the sessions under a session as courier_tree lists them, at most `maxTotal`, live ones first,
+ * then the newest, each as `row` reads it; `top` the session itself, `truncated` the ones left out, `stalled` its stall.
  */
 export async function panel(ports: CourierPorts, rootID: string): Promise<Tree> {
   const [{ kept, leftOut }, root] = await Promise.all([readTree(ports, rootID), readTop(ports, rootID)])

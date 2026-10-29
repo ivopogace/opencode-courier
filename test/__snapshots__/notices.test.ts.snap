@@ -515,19 +515,15 @@ exports[`tools courier_later 1`] = `
           {
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "type": "number",
-                  },
-                  {
-                    "enum": [
-                      "Infinity",
-                      "-Infinity",
-                      "NaN",
-                    ],
-                    "type": "string",
-                  },
+                "type": "number",
+              },
+              {
+                "enum": [
+                  "Infinity",
+                  "-Infinity",
+                  "NaN",
                 ],
+                "type": "string",
               },
               {
                 "type": "string",

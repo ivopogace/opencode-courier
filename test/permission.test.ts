@@ -5,10 +5,13 @@ import { childStore } from "../src/tree/store.js"
 
 const request = { id: "per_1", sessionID: "ses_child", action: "shell", resources: ["git push"], save: ["git push*"] }
 
-/** What `permission.assert` rejects with through the promise API: a `Tool.Error` carrying OpenCode's error, or the decline itself. */
+/**
+ * What `permission.assert` rejects with through the promise API: a `Tool.Error` carrying OpenCode's error, or the decline itself.
+ * The host builds its message from the cause (`packages/core/src/plugin/host.ts`): a `CorrectedError`'s `feedback`.
+ */
 class ToolError extends Error {
   readonly _tag = "Tool.Error"
-  constructor(message: string, readonly error: { _tag: string }) {
+  constructor(message: string, readonly error: { _tag: string; feedback?: string }) {
     super(message)
   }
 }
@@ -16,7 +19,7 @@ class DeclinedError extends Error {
   readonly _tag = "Permission.DeclinedError"
 }
 const denied = () => new ToolError("Permission denied: shell", { _tag: "Permission.BlockedError" })
-const corrected = (feedback: string) => new ToolError(feedback, { _tag: "Permission.CorrectedError" })
+const corrected = (feedback: string) => new ToolError(feedback, { _tag: "Permission.CorrectedError", feedback })
 
 /** The caller's `permission.assert`: records what it was asked, and answers as told, or holds until `release` is called. */
 function caller(outcome: "allow" | Error | "hold" = "allow") {

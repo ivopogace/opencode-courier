@@ -400,8 +400,9 @@ The top session's model cannot approve. It proposes an answer with
   that denies it in the top session refuses it.
 - `reject`: refuses it, with a reason if given.
 
-In the prompt, *Allow once* passes it on. *Reject* with a reason refuses the child's request with
-that reason. A plain *Reject* ends the top session's step and leaves the child's request waiting.
+In the prompt, *Allow once* passes it on. *Reject* with a reason fails `courier_answer` with that
+reason, which you read in its result, and refuses the child's request with the same reason. A plain
+*Reject* ends the top session's step and leaves the child's request waiting.
 
 `always` is not offered through `courier_answer`, since it would save a rule for the parent's whole
 project. Grant a standing rule where OpenCode shows the child's own request: in the child's session,

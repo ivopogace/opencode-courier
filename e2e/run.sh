@@ -1390,6 +1390,11 @@ run_subtree() {
     "$(jq -r --arg root "$root" --arg middle "$middle" '.status == "completed" and (.metadata.metadata.sessions | map([.sessionID, .depth, .parentID]) | .[0] == [$middle, 1, $root] and .[1][1] == 2 and .[1][2] == $middle and length == 2)' <<<"$seen")"
   check "each owes its report and is not isolated" \
     "$(jq -r '.metadata.metadata.sessions | all(.report.owes == true and .isolated == false)' <<<"$seen")"
+  directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")
+  panel=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$middle\"}}" | jq -c '.output | {top: (.top | {sessionID, parentID, depth}), rows: [.rows[].sessionID]}')
+  echo "  $panel"
+  check "the panel's tree read from the middle session has it as its top row, under the root, and its leaf below (#395)" \
+    "$(jq -r --arg root "$root" --arg middle "$middle" --arg leaf "$leaf" '. == {top: {sessionID: $middle, parentID: $root, depth: 0}, rows: [$leaf]}' <<<"$panel")"
   stopped=$(prompt_in "$root" "COURIER-SUBTREE-STOP $middle" | tool_state courier_stop)
   check "courier_stop interrupted the leaf, then the middle session" \
     "$(jq -r --arg middle "$middle" --arg leaf "$leaf" '.status == "completed" and (.metadata.metadata.stopped | map([.sessionID, .outcome]) == [[$leaf, "interrupted"], [$middle, "interrupted"]])' <<<"$stopped")"

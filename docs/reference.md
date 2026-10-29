@@ -651,17 +651,24 @@ While a permission prompt or form shows, OpenCode hides the footer; use `ctrl+x 
 ### The tree panel
 
 `/courier tree` (or *Courier session tree* in the palette) opens a panel beside the session, with
-the tree under it. It is fullscreen under 108 columns.
+that session as its first row and the tree under it. It is fullscreen under 108 columns.
 
 ```
  █▀██▀██  courier tree  [█████░░░░░] 1/2 reported
 ▄▀▀▀▀▀▀▀  1 waiting on you · 1 idle
-▸ ✓ Report back to your parent.  idle · reported done · group pair held
-    ran 12s · last courier_send 3s ago · $0.00
-  ● CHILD-ASKS  waiting on you · owes a report · group pair out
-    asks permission: shell echo courier-asks
+▸   Fix the login bug (on screen)  idle
+  │ ran 4m 10s · last courier_spawn 2m 05s ago · ctx 12% · $0.03
+  ├ ✓ Report back to your parent.  idle · reported done · group pair held
+  │   ran 12s · last courier_send 3s ago · $0.00
+  └ ● CHILD-ASKS  waiting on you · owes a report · group pair out
+      asks permission: shell echo courier-asks
 ↑↓ select · enter open · s stop · r refresh · f fullscreen · q close
 ```
+
+The first row is the session the panel was opened in, selected at first, with what it does, what it
+asks and its stall; its bar is the header's, and the header's counts are of the sessions under it.
+With nothing started under it yet, the panel says so below that row. `s` and `x` leave it alone: the
+panel acts as that session. Tree guides join each session to the one that started it.
 
 Each row has a mark (`✓` reported, a spinner while running, `●` waiting on you, `!` stalled, `✗`
 failed or interrupted), the title, what it does, its report, its group's standing, `isolated`,

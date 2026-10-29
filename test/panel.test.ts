@@ -43,7 +43,7 @@ function fakePorts(
     session: {
       get: async ({ sessionID }: { sessionID: string }) => {
         const { updated, idle, archived, outcome, cost = 0, title = `title ${sessionID}` } = known(sessionID)
-        return { id: sessionID, title, cost, ...(outcome ? { outcome } : {}), time: { created: 1, updated, ...(idle !== undefined ? { idle } : {}), ...(archived !== undefined ? { archived } : {}) } }
+        return { id: sessionID, title, cost, ...(outcome ? { outcome } : {}), location: { directory: "/repo" }, time: { created: 1, updated, ...(idle !== undefined ? { idle } : {}), ...(archived !== undefined ? { archived } : {}) } }
       },
       context: async ({ sessionID }: { sessionID: string }) => known(sessionID).messages ?? [],
       interrupt: async (input: { sessionID: string }) => {
@@ -133,6 +133,31 @@ describe("contextOf", () => {
 })
 
 describe("panel", () => {
+  test("carries the panel's own session as its top row, at depth 0, made of OpenCode's info when it was not spawned", async () => {
+    const { ports } = fakePorts({ ses_root: { updated: 9, idle: 9, title: "Root", cost: 0.5 }, ses_a: { updated: 5, idle: 5 } })
+    await childStore(ports.storage).record(entry("ses_a", "ses_root"))
+
+    const { top, rows } = await panel(ports, "ses_root")
+    expect(rows.map((row) => row.sessionID)).toEqual(["ses_a"])
+    expect(top).toEqual({ sessionID: "ses_root", parentID: "", title: "Root", depth: 0, state: "idle", isolated: false, created: 1, idle: 9, cost: 0.5, waits: [] })
+  })
+
+  test("a spawned top row keeps its roster entry's parent and how it was started, and what it asks the person", async () => {
+    const asks: Pending = { type: "permission", requestID: "per_1", action: "shell", resources: ["ls"] }
+    const { ports } = fakePorts({ ses_mid: { updated: 5 }, ses_leaf: { updated: 5, idle: 5 } }, { ses_mid: [asks] })
+    await childStore(ports.storage).record(entry("ses_mid", "ses_root", { model: "mock/large" }))
+    await childStore(ports.storage).record(entry("ses_leaf", "ses_mid"))
+
+    const { top } = await panel(ports, "ses_mid")
+    expect(top).toMatchObject({ sessionID: "ses_mid", parentID: "ses_root", depth: 0, state: "waiting", model: "mock/large" })
+    expect(top?.waits).toEqual([{ type: "permission", action: "shell", resources: ["ls"] }])
+  })
+
+  test("has no top row for a session OpenCode does not know", async () => {
+    const { ports } = fakePorts({})
+    expect(await panel(ports, "ses_nowhere")).not.toHaveProperty("top")
+  })
+
   test("carries a row's context use, and leaves it out when the model's window is unknown", async () => {
     const sessions = { ses_a: { updated: 5, idle: 5, messages: [reply(usage(250))] } }
     const known = fakePorts(sessions, {}, undefined, {}, [SMALL])
@@ -329,7 +354,9 @@ describe("panel", () => {
     expect(tree.rows.map(({ state, stalled }) => ({ state, stalled }))).toEqual([{ state: "stalled", stalled: 4 }])
     expect(tree).not.toHaveProperty("stalled")
     await wakes.put({ sessionID: "ses_root", inboxID: "msg_3", at: 3, ...stalled })
-    expect((await panel(ports, "ses_root")).stalled).toBe(3)
+    const own = await panel(ports, "ses_root")
+    expect(own.stalled).toBe(3)
+    expect(own.top).toMatchObject({ sessionID: "ses_root", state: "stalled", stalled: 3 })
   })
 
   test("says a running session showing a form waits, one line per form after its requests, and not an idle one's form, whose withdrawal was missed", async () => {

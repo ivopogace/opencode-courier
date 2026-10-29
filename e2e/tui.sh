@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Live test of the TUI part: a real OpenCode V2 server loads the package's `tui` and `rpc`
 # entrypoints, its RPC answers over HTTP, and the TUI, in tmux, shows the prompt footer's entry and
-# follows a change, opens the tree panel with /courier tree, the 16×16 Digby below its rows (#245), with no background left of a pose before (#281), follows it into a child, opens a child with a click (#250), and stops a child with /courier stop;
+# follows a change, opens the tree panel with /courier tree, the parent its first row (#395), the 16×16 Digby below its rows (#245), with no background left of a pose before (#281), follows it into a child, opens a child with a click (#250), and stops a child with /courier stop;
 # a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188), and the
 # inbox opened from a child lists the top session's courier_answer prompt first and allows it (#185);
 # a child showing a form waits on the person in the footer and the panel (#183); x in the panel forgets a gone
@@ -216,6 +216,10 @@ rows=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[] | {depth,
 echo "  $rows"
 check "the RPC's tree: one child reported and held, the other waits on the person and owes its report" \
   "$(jq -r '. == [{depth: 1, state: "idle", report: "reported", group: "held"}, {depth: 1, state: "waiting", report: "owed", group: "out"}]' <<<"$rows")"
+top=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '.output.top | {sessionID, depth}')
+echo "  $top"
+check "the RPC's tree carries the parent itself as its top row, at depth 0 (#395)" \
+  "$(jq -r --arg parent "$parent" '. == {sessionID: $parent, depth: 0}' <<<"$top")"
 contexts=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[].context]')
 echo "  $contexts"
 check "the RPC's tree carries a mock-model child's context use: a fraction of the model's window" \
@@ -224,6 +228,7 @@ tmux send-keys -t "$TMUX_SESSION" "/courier tree"
 sleep 1
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "the panel opens with the bar: 1 of 2 parts reported" "$(shows "courier tree  [█████░░░░░] 1/2 reported" 30 tui-panel)"
+check "its first row is the parent, on screen and selected (#395)" "$(grep -qE '▸ . .*\(on screen\)' "$WORK/tui-panel.txt" && echo true || echo false)"
 check "it has the reported child's row" "$(grep -qF "✓ Report back to your parent.  idle · reported done · group pair held" "$WORK/tui-panel.txt" && echo true || echo false)"
 check "and the asking child's, which says what it waits on" \
   "$(grep -qF "● CHILD-ASKS  waiting on you · owes a report · group pair out" "$WORK/tui-panel.txt" && grep -qF "asks permission: shell echo courier-asks" "$WORK/tui-panel.txt" && echo true || echo false)"
@@ -249,13 +254,17 @@ check "q closes the panel" "$(hides "courier tree" 10 tui-panel-closed)"
 check "the footer follows it" "$(shows "courier 2 idle" 30 tui-released)"
 echo "  $(footer tui-released)"
 check "and the group is gone from it" "$([[ $(footer tui-released) != *"group pair"* ]] && echo true || echo false)"
-# Reopened, enter opens the selected child; the panel follows it there, with the parent's tree and the child marked (#158).
+# Reopened, down and enter open the first child; the panel follows it there, with the parent's tree and the child marked (#158).
 tmux send-keys -t "$TMUX_SESSION" "/courier tree"
 sleep 1
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "the panel opens again" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-again)"
+# The parent's own row is selected first, marked: down selects its first child.
+check "the parent's own row is selected first" "$(grep -qE '▸ +[^✓].*\(on screen\)' "$WORK/tui-panel-again.txt" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" Down
+check "down selects the first child, its branch drawn" "$(shows "▸ ├ ✓ " 30 tui-panel-down)"
 tmux send-keys -t "$TMUX_SESSION" Enter
-check "enter on a child row keeps the panel in the child's view, the child marked" "$(shows "(on screen)" 30 tui-panel-followed)"
+check "enter on a child row keeps the panel in the child's view, the child marked" "$(shows "(on screen)  idle · reported done" 30 tui-panel-followed)"
 check "with the parent's tree" "$(grep -qF "courier tree  [██████████] 2/2 reported" "$WORK/tui-panel-followed.txt" && echo true || echo false)"
 # A click on the other child's row opens it (#250): the left button down and up on its title, written to the TUI as the
 # SGR mouse report a terminal sends, at the cell tmux shows the title in (1-based, counted in characters, not bytes).
@@ -489,11 +498,14 @@ sleep 1
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "the panel shows the gone row and the x key" \
   "$([ "$(shows "x forget" 30 tui-forget-panel)" = true ] && grep -qF "Report back to your parent.  gone" "$WORK/tui-forget-panel.txt" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" Down
+check "down selects the gone child, below the parent's own row" "$(shows "▸ └   Report back to your parent.  gone" 30 tui-forget-down)"
 tmux send-keys -t "$TMUX_SESSION" x
 check "x asks to confirm, naming the child" "$(shows "Forget \"Report back to your parent.\"" 30 tui-forget-confirm)"
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "once confirmed, a toast says it was forgotten" "$(shows "Forgot \"Report back to your parent.\"" 30 tui-forgotten)"
-check "and the row is gone from the panel" "$(shows "No session started with courier_spawn under this one." 30 tui-forget-empty)"
+check "and the row is gone from the panel, the parent's own row left with the empty line under it" \
+  "$([ "$(shows "No session started with courier_spawn under this one." 30 tui-forget-empty)" = true ] && grep -qE '▸ +.*\(on screen\)' "$WORK/tui-forget-empty.txt" && echo true || echo false)"
 check "and from the roster" "$([ -z "$(gone_row)" ] && [ -z "$(kv get "roster-by-child/$forget_child")" ] && echo true || echo false)"
 check "and its worktree is removed" "$(for _ in $(seq 1 20); do [ ! -d "$forget_dir" ] && { echo true; exit; }; sleep 1; done; echo false)"
 tmux send-keys -t "$TMUX_SESSION" q

@@ -5,7 +5,7 @@ import { lastStatus, stoppedSincePrompt } from "./report.js"
 import type { Row, Tree, Wait } from "./rpc.js"
 import { standingIn } from "./status.js"
 import { childStore } from "./store.js"
-import { readTree, type Listed } from "./subtree.js"
+import { readTop, readTree, type Listed } from "./subtree.js"
 import { stalledAmong } from "./wake.js"
 
 type Messages = Awaited<ReturnType<CourierPorts["session"]["context"]>>
@@ -95,14 +95,17 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
 }
 
 /**
- * The tree panel's rows: the sessions under a session as courier_tree lists them, at most `maxTotal`, the live ones
- * first, then the newest, each as `row` reads it; `truncated` counts the older ones left out, and `stalled` says the root is.
+ * The tree panel's rows: the sessions under a session as courier_tree lists them, at most `maxTotal`, live ones first,
+ * then the newest, each as `row` reads it; `top` the session itself, `truncated` the ones left out, `stalled` its stall.
  */
 export async function panel(ports: CourierPorts, rootID: string): Promise<Tree> {
-  const { kept, leftOut } = await readTree(ports, rootID)
+  const [{ kept, leftOut }, root] = await Promise.all([readTree(ports, rootID), readTop(ports, rootID)])
   const stalled = await stalledAmong(ports, [rootID, ...kept.map((node) => node.entry.sessionID)])
   const windows = await ports.models().catch((): KnownModel[] => [])
-  const rows = await Promise.all(kept.map((node) => row(ports, windows, node, stalled.get(node.entry.sessionID))))
+  const [rows, top] = await Promise.all([
+    Promise.all(kept.map((node) => row(ports, windows, node, stalled.get(node.entry.sessionID)))),
+    root && row(ports, windows, root, stalled.get(rootID)),
+  ])
   const own = stalled.get(rootID)
-  return { rows, ...(leftOut ? { truncated: leftOut } : {}), ...(own !== undefined ? { stalled: own } : {}) }
+  return { rows, ...(top ? { top } : {}), ...(leftOut ? { truncated: leftOut } : {}), ...(own !== undefined ? { stalled: own } : {}) }
 }

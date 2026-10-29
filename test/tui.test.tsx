@@ -7,7 +7,7 @@ import { MouseButtons, type MouseButton } from "@opentui/core/testing"
 import { testRender } from "@opentui/solid"
 import { batch, createRoot, createSignal } from "solid-js"
 import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, addTreePanel, addTreeStatus, animationsOn, bar, BAR_MS, blend, restBackground, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, BELOW_ROWS, digbyColours } from "../src/tree/tui.js"
+import { activityLine, addTreePanel, guides, addTreeStatus, animationsOn, bar, BAR_MS, blend, restBackground, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, BELOW_ROWS, digbyColours } from "../src/tree/tui.js"
 import { ART, art, BLINK_EVERY, cells, digby, glyph, GLYPH, MASCOT_EVERY, type MascotState } from "../src/tree/mascot.js"
 import { MEMORY_USAGE } from "../src/memory/tui.js"
 import tui from "../src/tui.js"
@@ -553,6 +553,31 @@ const pair = (reported: number): Tree => ({
   ],
 })
 
+describe("guides", () => {
+  test("draws each row's branch, the lines through its ancestors with siblings after them, and a line down to its first child", () => {
+    const tree = [
+      row("ses_top", { parentID: "", depth: 0 }),
+      row("ses_a", { parentID: "ses_top" }),
+      row("ses_a1", { parentID: "ses_a", depth: 2 }),
+      row("ses_a2", { parentID: "ses_a", depth: 2 }),
+      row("ses_b", { parentID: "ses_top" }),
+      row("ses_b1", { parentID: "ses_b", depth: 2 }),
+    ]
+    const drawn = Object.fromEntries([...guides(tree, 0)].map(([id, guide]) => [id, [guide.row, guide.detail]]))
+    expect(drawn).toEqual({
+      ses_top: ["", "│ "],
+      ses_a: ["├ ", "│ │ "],
+      ses_a1: ["│ ├ ", "│ │   "],
+      ses_a2: ["│ └ ", "│     "],
+      ses_b: ["└ ", "  │ "],
+      ses_b1: ["  └ ", "      "],
+    })
+    // Without the top row, the sessions under the panel's session are the roots, with no branch of their own.
+    expect(guides(tree.slice(1), 1).get("ses_a1")).toEqual({ row: "├ ", detail: "│   " })
+    expect(guides(tree.slice(1), 1).get("ses_a")).toEqual({ row: "", detail: "│ " })
+  })
+})
+
 describe("the tree panel", () => {
   test("shows each session under the panel's session, with the bar of its children reported, and follows a report", async () => {
     const fake = fakeContext(async () => empty)
@@ -626,11 +651,52 @@ describe("the tree panel", () => {
     expect(frame).toContain("[░░░░░░░░░░] 0/1 reported")
     expect(frame).toContain("2 older left out")
     expect(frame).toMatch(/\n ▸ {3}ses_mid {2}idle/)
-    expect(frame).toMatch(/\n {7}ses_leaf {2}idle/)
+    expect(frame).toMatch(/\n {3}│ \[░░░░░░░░░░\] 0\/1 reported\s*\n {3}└ {3}ses_leaf {2}idle/)
 
     const other = await renderPanel(fake.claim("session.panel"), panelInput("ses_parent", "someone-else").value)
     await other.renderOnce()
     expect(other.captureCharFrame()).not.toContain("courier")
+  })
+
+  test("draws the panel's own session first, its stall on its row and no bar of its own, and opens it, but neither stops nor forgets it", async () => {
+    const fake = fakeContext(async () => empty)
+    const top: Row = { sessionID: "ses_parent", parentID: "", title: "Root", depth: 0, state: "stalled", stalled: NOW - 125_000, isolated: false, created: NOW - 300_000, waits: [] }
+    fake.state.tree = async () => ({ ...pair(1), top, stalled: NOW - 125_000 })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+
+    await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
+    const frame = app.captureCharFrame()
+    expect(frame).toMatch(/\n ▸ ! Root \(on screen\) {2}stalled\s*\n {3}│ a message waits in its inbox since 2m \d\ds, woken again in vain/)
+    expect(frame).toMatch(/\n {3}├ ✓ Report back to your parent\. {2}idle.*\n {3}│ {3}ran 2m/)
+    expect(frame).toMatch(/\n {3}└ ● CHILD-ASKS {2}waiting on you.*\n {7}asks permission/)
+    expect(frame.split("1/2 reported")).toHaveLength(2)
+    expect(frame).not.toContain("This session is stalled")
+
+    fake.command("s")!.run()
+    fake.command("x")!.run()
+    await settle()
+    expect(fake.state.confirms).toEqual([])
+    expect(fake.state.toasts.slice(-2)).toMatchObject([
+      { message: 's acts on a session under "Root", the panel\'s own.', variant: "warning" },
+      { message: 'x acts on a session under "Root", the panel\'s own.', variant: "warning" },
+    ])
+
+    fake.command("down")!.run()
+    fake.command("return")!.run()
+    expect(fake.state.navigated.at(-1)).toEqual({ type: "session", sessionID: "ses_one" })
+    fake.command("k")!.run()
+    fake.command("return")!.run()
+    expect(fake.state.navigated.at(-1)).toEqual({ type: "session", sessionID: "ses_parent" })
+  })
+
+  test("shows its own session while nothing was started under it, and says so under it", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async () => ({ rows: [], top: { sessionID: "ses_parent", parentID: "", title: "Root", depth: 0, state: "idle", isolated: false, created: NOW, waits: [] } })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+    await app.waitForFrame((frame) => frame.includes("No session started with courier_spawn under this one."))
+    expect(app.captureCharFrame()).toMatch(/\n ▸ {3}Root \(on screen\) {2}idle\s*\n {5}ran .*\n {5}No session started with courier_spawn under this one\./)
   })
 
   test("says when no session was started under it, and when the RPC fails", async () => {

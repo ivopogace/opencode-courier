@@ -71,19 +71,42 @@ export type ReadPorts = Pick<CourierPorts, "storage" | "session" | "pending" | "
 /** Every session under a session, without those past retention, each looked up, in the order a tree is drawn. */
 export async function lookUp(ports: ReadPorts, rootID: string): Promise<Looked[]> {
   const { nodes } = await subtree(ports.storage, rootID, { now: ports.now() })
-  return Promise.all(
-    nodes.map(async (node) => {
-      const [info, pending, forms] = await Promise.all([
-        ports.session.get({ sessionID: node.entry.sessionID }).catch(() => undefined),
-        ports.pending(node.entry.sessionID).catch((): ReadonlyArray<Pending> => []),
-        ports.forms(node.entry.sessionID).catch((): ReadonlyArray<ShownForm> => []),
-      ])
-      const turn = info === undefined ? undefined : await turnOf(ports.session, node.entry.sessionID, info.time)
-      const running = turn?.running ?? false
-      // A form outlives its session's turn only when its withdrawal was missed, as while no instance followed the events.
-      return { ...node, info, running, ...(turn?.endedAt !== undefined ? { endedAt: turn.endedAt } : {}), pending, forms: running ? forms : [] }
-    }),
-  )
+  return Promise.all(nodes.map((node) => look(ports, node)))
+}
+
+/** One session looked up, as `lookUp` does each; `info` when the caller already has it. */
+export async function look(ports: ReadPorts, node: Below, known?: Info): Promise<Looked> {
+  const [info, pending, forms] = await Promise.all([
+    known ?? ports.session.get({ sessionID: node.entry.sessionID }).catch(() => undefined),
+    ports.pending(node.entry.sessionID).catch((): ReadonlyArray<Pending> => []),
+    ports.forms(node.entry.sessionID).catch((): ReadonlyArray<ShownForm> => []),
+  ])
+  const turn = info === undefined ? undefined : await turnOf(ports.session, node.entry.sessionID, info.time)
+  const running = turn?.running ?? false
+  // A form outlives its session's turn only when its withdrawal was missed, as while no instance followed the events.
+  return { ...node, info, running, ...(turn?.endedAt !== undefined ? { endedAt: turn.endedAt } : {}), pending, forms: running ? forms : [] }
+}
+
+/**
+ * The session a subtree is read from, looked up and listed as its own sessions are, at depth 0: its roster entry when it
+ * was spawned, else one made of OpenCode's info of it; none when OpenCode does not know it.
+ */
+export async function readTop(ports: ReadPorts, rootID: string): Promise<Listed | undefined> {
+  const info = await ports.session.get({ sessionID: rootID }).catch(() => undefined)
+  if (!info) return undefined
+  const children = childStore(ports.storage)
+  const spawned = await children.indexedEntry(rootID).catch(() => undefined)
+  const entry: RosterEntry = spawned ?? {
+    sessionID: rootID,
+    parentID: info.parentID ?? "",
+    title: info.title ?? "",
+    directory: info.location.directory,
+    isolated: false,
+    createdAt: info.time.created,
+  }
+  const looked = await look(ports, { entry, depth: 0 }, info)
+  const report = await reportOf(children, rootID).catch(() => undefined)
+  return { ...looked, report, live: isLive(looked.running, looked.pending.length + looked.forms.length, report) }
 }
 
 /**

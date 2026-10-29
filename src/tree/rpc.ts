@@ -78,6 +78,8 @@ const Row = Schema.Struct({
 /** The sessions under a session, as courier_tree lists them, in the order a tree is drawn. */
 const Tree = Schema.Struct({
   rows: Schema.Array(Row),
+  /** The panel's own session, at depth 0; absent when OpenCode no longer knows it, and from an older server. */
+  top: Schema.optionalKey(Row),
   /** How many older sessions the listing left out, when it had more than `maxTotal`: the live ones come first, then the newest. */
   truncated: Schema.optionalKey(Count),
   /** Since when a courier message has waited in the panel's own session, when that session is stalled. */

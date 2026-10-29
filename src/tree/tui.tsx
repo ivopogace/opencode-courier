@@ -636,6 +636,12 @@ function TreePanel(props: {
   // Until the first answer, the tree last read for this root, so a panel reopened in another session is not blank.
   const latest = () => (read.state === "ready" || read.state === "refreshing" ? read.latest : view.tree && { sessionID: view.root, tree: view.tree })
   const rows = (): ReadonlyArray<Row> => latest()?.tree?.rows ?? []
+  // The rows drawn: the panel's own session first, when the server sends it and it has sessions under it, then those.
+  const top = () => (rows().length ? latest()?.tree?.top : undefined)
+  const listed = (): ReadonlyArray<Row> => {
+    const own = top()
+    return own ? [own, ...rows()] : rows()
+  }
   createEffect(() => {
     const tree = latest()?.tree
     if (tree) view.note({ tree })
@@ -656,7 +662,7 @@ function TreePanel(props: {
   const [selectedID, setSelectedID] = createSignal<string>()
   let placed = false
   createEffect(() => {
-    const found = placed ? undefined : rows().find((row) => row.sessionID === input.sessionID)
+    const found = placed ? undefined : listed().find((row) => row.sessionID === input.sessionID)
     if (!found) return
     placed = true
     setSelectedID(found.sessionID)
@@ -664,23 +670,23 @@ function TreePanel(props: {
   let at = 0
   const selected = createMemo(() => {
     const id = selectedID()
-    const found = rows().findIndex((row) => row.sessionID === id)
-    const index = found >= 0 ? found : Math.min(at, rows().length - 1)
+    const found = listed().findIndex((row) => row.sessionID === id)
+    const index = found >= 0 ? found : Math.min(at, listed().length - 1)
     at = Math.max(index, 0)
     return index
   })
   // A selected session that is gone leaves the selection at its place; take the session now there.
   createEffect(() => {
-    const row = rows()[selected()]
+    const row = listed()[selected()]
     if (row && row.sessionID !== selectedID()) setSelectedID(row.sessionID)
   })
-  const current = () => rows()[selected()]
+  const current = () => listed()[selected()]
   let scroll: ScrollBoxRenderable | undefined
   createEffect(() => {
     if (selected() >= 0) scroll?.scrollChildIntoView(`courier-row-${selected()}`)
   })
   const move = (by: number) => {
-    const next = rows()[Math.max(0, Math.min(rows().length - 1, selected() + by))]
+    const next = listed()[Math.max(0, Math.min(listed().length - 1, selected() + by))]
     if (next) setSelectedID(next.sessionID)
   }
   const openRow = (row: Row) => ctx.ui.router.navigate({ type: "session", sessionID: row.sessionID })
@@ -692,7 +698,7 @@ function TreePanel(props: {
   const [hovered, setHovered] = createSignal<string>()
   createEffect(() => {
     const id = hovered()
-    if (id !== undefined && !rows().some((row) => row.sessionID === id)) setHovered(undefined)
+    if (id !== undefined && !listed().some((row) => row.sessionID === id)) setHovered(undefined)
   })
   // The row the left button went down on, until it comes up or the pointer drags: only a click opens.
   let pressed: string | undefined
@@ -700,14 +706,20 @@ function TreePanel(props: {
     setSelectedID(row.sessionID)
     openRow(row)
   }
+  // The panel acts as its own session, which neither stops nor forgets itself.
+  const ownRow = (row: Row, key: string) => {
+    if (row.sessionID !== view.root) return false
+    ctx.ui.toast.show({ title: "courier", message: `${key} acts on a session under "${oneLine(row.title)}", the panel's own.`, variant: "warning" })
+    return true
+  }
   const stopSelected = () => {
     const row = current()
-    if (row) void confirmStop(ctx, courier, location, view.root, { sessionID: row.sessionID, title: row.title, under: reach(rows(), row.sessionID) - 1 })
+    if (row && !ownRow(row, "s")) void confirmStop(ctx, courier, location, view.root, { sessionID: row.sessionID, title: row.title, under: reach(rows(), row.sessionID) - 1 })
   }
   // Only a gone session: forgetting a live one would lose the report it owes, and could pull its worktree from under it.
   const forgetSelected = () => {
     const row = current()
-    if (!row) return
+    if (!row || ownRow(row, "x")) return
     if (row.state !== "gone")
       return ctx.ui.toast.show({ title: "courier", message: `x forgets only a gone session; "${oneLine(row.title)}" is ${row.state}.`, variant: "warning" })
     void confirmForget(ctx, courier, location, view.root, { sessionID: row.sessionID, title: row.title, isolated: row.isolated }, () => void refetch())
@@ -743,7 +755,9 @@ function TreePanel(props: {
   const artShown = () => empty() && height() >= ART_ROWS
   // The tree's lines against the list's own height, which the 16×16 below them, inside the list, does not change.
   const [listHeight, setListHeight] = createSignal(0)
-  const treeLines = () => rows().reduce((lines, row) => lines + 1 + detailLines(row, rows(), now()).length, 0)
+  // The top row's bar is the header's, so it shows none of its own.
+  const lines = (row: Row) => detailLines(row, row.depth ? rows() : [], now())
+  const treeLines = () => listed().reduce((count, row) => count + 1 + lines(row).length, 0)
   const belowShown = () => rows().length > 0 && listHeight() - treeLines() >= BELOW_ROWS
   // One Digby at a time: the header drops its glyph while the 16×16 shows.
   const headerGlyph = () => glyphShown() && !artShown() && !belowShown()
@@ -816,7 +830,7 @@ function TreePanel(props: {
       <Show when={latest()?.error}>
         <text fg={theme.text.feedback.error.base}>courier RPC failed: {latest()?.error}</text>
       </Show>
-      <Show when={latest()?.tree?.stalled}>
+      <Show when={!top() && latest()?.tree?.stalled}>
         <text fg={theme.text.feedback.error.base}>This session is stalled: {stalledLine(latest()!.tree!.stalled!, now())}</text>
       </Show>
       <Show when={latest()?.tree && !rows().length}>
@@ -834,10 +848,10 @@ function TreePanel(props: {
           setListHeight(this.height)
         }}
       >
-        <For each={rows()}>
+        <For each={listed()}>
           {(row, index) => {
             const chosen = () => index() === selected()
-            const indent = "  ".repeat(row.depth - 1)
+            const indent = "  ".repeat(top() ? row.depth : row.depth - 1)
             return (
               <box
                 id={`courier-row-${index()}`}
@@ -885,7 +899,7 @@ function TreePanel(props: {
                     )}
                   </For>
                 </box>
-                <For each={detailLines(row, rows(), now())}>
+                <For each={lines(row)}>
                   {(line) => (
                     <text fg={theme.text.muted} wrapMode="none">
                       {indent}

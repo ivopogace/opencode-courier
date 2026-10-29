@@ -633,6 +633,47 @@ describe("the tree panel", () => {
     expect(other.captureCharFrame()).not.toContain("courier")
   })
 
+  test("draws the panel's own session first, its stall on its row and no bar of its own, and opens it, but neither stops nor forgets it", async () => {
+    const fake = fakeContext(async () => empty)
+    const top: Row = { sessionID: "ses_parent", parentID: "", title: "Root", depth: 0, state: "stalled", stalled: NOW - 125_000, isolated: false, created: NOW - 300_000, waits: [] }
+    fake.state.tree = async () => ({ ...pair(1), top, stalled: NOW - 125_000 })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+
+    await app.waitForFrame((frame) => frame.includes("CHILD-ASKS"))
+    const frame = app.captureCharFrame()
+    expect(frame).toMatch(/\n ▸ ! Root \(on screen\) {2}stalled\s*\n {5}a message waits in its inbox since 2m \d\ds, woken again in vain/)
+    expect(frame).toMatch(/\n {5}✓ Report back to your parent\. {2}idle/)
+    expect(frame).toMatch(/\n {5}● CHILD-ASKS {2}waiting on you/)
+    expect(frame.split("1/2 reported")).toHaveLength(2)
+    expect(frame).not.toContain("This session is stalled")
+
+    fake.command("s")!.run()
+    fake.command("x")!.run()
+    await settle()
+    expect(fake.state.confirms).toEqual([])
+    expect(fake.state.toasts.slice(-2)).toMatchObject([
+      { message: 's acts on a session under "Root", the panel\'s own.', variant: "warning" },
+      { message: 'x acts on a session under "Root", the panel\'s own.', variant: "warning" },
+    ])
+
+    fake.command("down")!.run()
+    fake.command("return")!.run()
+    expect(fake.state.navigated.at(-1)).toEqual({ type: "session", sessionID: "ses_one" })
+    fake.command("k")!.run()
+    fake.command("return")!.run()
+    expect(fake.state.navigated.at(-1)).toEqual({ type: "session", sessionID: "ses_parent" })
+  })
+
+  test("leaves its own session out while nothing was started under it", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async () => ({ rows: [], top: { sessionID: "ses_parent", parentID: "", title: "Root", depth: 0, state: "idle", isolated: false, created: NOW, waits: [] } })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+    await app.waitForFrame((frame) => frame.includes("No session started with courier_spawn under this one."))
+    expect(app.captureCharFrame()).not.toContain("Root")
+  })
+
   test("says when no session was started under it, and when the RPC fails", async () => {
     const fake = fakeContext(async () => empty)
     await tui.setup(fake.context)

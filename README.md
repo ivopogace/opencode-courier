@@ -128,7 +128,7 @@ Parameters and behaviour: [the reference](docs/reference.md#the-tools).
 ## In the terminal
 
 - **Footer:** `courier 1 waiting on you · 2 running · group pair 1/2`.
-- **`/courier tree`:** a panel with the tree. `enter` opens a session, `s` stops it, `q` closes.
+- **`/courier tree`:** a panel with the tree, the session it was opened in as its first row. `enter` opens a session, `s` stops it, `q` closes.
 - **`/courier stop <session>`:** stops a session and everything under it.
 - **`ctrl+x k`** or **`/asks`:** every ask waiting on you in the tree, answered in a dialog.
 - **`/courier memory`:** the project's tree records. `p` pins one, `x` forgets one.

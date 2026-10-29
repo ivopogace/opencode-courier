@@ -152,8 +152,8 @@ tests share, and `fixtures/two-copies.ts` loads two copies of the platform. `imp
 the import rules above, `tree/store.ts`'s and `memory/store.ts`'s privacy and that no other file names
 their key prefixes; `store.test.ts` pins the exact keys and values the stores write;
 `e2e-shards.test.ts` checks that every live-suite group is in exactly one shard of any count;
-`links.test.ts` resolves every relative Markdown link and `#anchor` in README.md, CONTRIBUTING.md,
-CLAUDE.md, `docs/**` and `.claude/**`. `tui.test.tsx`, `inbox.test.tsx` and `memory-view.test.tsx` render the TUI parts
+`links.test.ts` resolves every relative Markdown link and `#anchor` in the root's Markdown files,
+`docs/**` and `.claude/**`. `tui.test.tsx`, `inbox.test.tsx` and `memory-view.test.tsx` render the TUI parts
 against a fake TUI context with OpenTUI's `testRender` (`bunfig.toml` preloads its Solid transform);
 `person-rpc.test.ts` and `memory-rpc.test.ts` their RPCs. `notices.test.ts` snapshots every `text.ts`,
 the skill and the thirteen tools' descriptions and schemas, so a wording change shows up as a diff in

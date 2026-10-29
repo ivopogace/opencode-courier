@@ -152,8 +152,9 @@ More: [in the terminal](docs/reference.md#in-the-terminal).
 
 ## Contributing
 
-Questions and bugs: [issues](https://github.com/ivopogace/opencode-courier/issues). Pull requests
-are welcome; start with [CONTRIBUTING.md](CONTRIBUTING.md).
+Questions go to [Discussions](https://github.com/ivopogace/opencode-courier/discussions), bugs to
+[issues](https://github.com/ivopogace/opencode-courier/issues). Pull requests are welcome; start with
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

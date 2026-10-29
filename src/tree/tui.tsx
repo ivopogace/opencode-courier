@@ -411,12 +411,13 @@ export function guides(rows: ReadonlyArray<Row>, base: number) {
     return parent ? [...above(parent), parent] : []
   }
   const line = (row: Row) => (later.has(row.sessionID) ? "│ " : "  ")
+  const branch = (row: Row) => (later.has(row.sessionID) ? "├ " : "└ ")
   return new Map(
     rows.map((row) => {
       const through = above(row).map(line).join("")
-      const own = row.depth > base ? (later.has(row.sessionID) ? "├ " : "└ ") : ""
+      const below = row.depth > base
       const down = parents.has(row.sessionID) ? "│ " : "  "
-      return [row.sessionID, { row: through + own, detail: through + (row.depth > base ? line(row) : "") + down }]
+      return [row.sessionID, { row: through + (below ? branch(row) : ""), detail: through + (below ? line(row) : "") + down }]
     }),
   )
 }

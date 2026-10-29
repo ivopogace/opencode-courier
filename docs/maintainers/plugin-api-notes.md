@@ -1,8 +1,8 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.2.0` and OpenCode 2.2.0. A pin bump re-checks each trap. OpenCode's source is on
-the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.0`); paths
+`@opencode/plugin@2.2.1` and OpenCode 2.2.1. A pin bump re-checks each trap. OpenCode's source is on
+the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.1`); paths
 below are in it.
 
 ## Tools
@@ -270,14 +270,18 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
 `ctx.session.instructions.entry.put({ sessionID, key, value })`, `.list({ sessionID })` and
 `.remove({ sessionID, key })`, since `@opencode/plugin@2.2.0` (anomalyco/opencode#56550); over HTTP
 `GET /api/experimental/session/:id/instructions/entries` and `PUT` or `DELETE …/entries/:key`
-(`packages/protocol/src/groups/session.ts`; the plugin API's path has no `experimental`). The courier
+(`packages/protocol/src/groups/session.ts`; the plugin API's path has no `experimental`). Since 2.2.1
+its type is the client's `ExperimentalSessionApi` (anomalyco/opencode#59072), and the SDK's
+`client.session.instructions` is a deprecated alias of `client.experimental.session.instructions`,
+removed in the next minor; the plugin context's path may move with it, so a pin bump checks. It is
+the one experimental API the courier uses, an exception kept on purpose. The courier
 writes three entries: a spawned session's role part to `role` and the project's lessons to `lessons`
 (`spawn.ts`, before the prompt; `memory/lessons.ts` supplies the text and `courier_note` renews it),
 and a parent's children to `standing` (`tree/standing.ts`, from the tools and events that move a
 child, put only when the text changed, removed with the last child). Each value stays well under
 3 KiB. Read in
 `packages/core/src/session/instruction-entry.ts`, `instructions/index.ts`, `instruction-state.ts`,
-`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.0`:
+`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.1`:
 
 - **Rendering.** An entry is one block, `<context key="<key>">`, the value, `</context>`: a string
   as it is, any other JSON pretty-printed. The key matches `^[a-z0-9][a-z0-9._-]*$` (stored as
@@ -387,7 +391,7 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   run the unpatched one.
 - **No peers for them.** An exact optional peer `@opentui/core` broke `opencode plugin add` with
   ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.7.0`,
-  `solid-js` `1.9.15` at `v2.2.0`), and `@opencode/theme` at the pin.
+  `solid-js` `1.9.17` at `v2.2.1`), and `@opencode/theme` at the pin.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles with `createSolidTransformPlugin()` and
   `packages: "external"`. `@arethetypeswrong/cli` flags an export without types, hence

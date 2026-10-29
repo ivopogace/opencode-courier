@@ -16,6 +16,24 @@ export const MASCOT_EVERY = 5
 /** He blinks on every this-many-th of his frames where his eyes are open. */
 export const BLINK_EVERY = 11
 
+/** How Digby runs: `shipped`, the two frames as released; `still`, up and awake, glancing; `digging`, clods on arcs. */
+export type RunningStyle = "shipped" | "still" | "digging"
+export const RUNNING_STYLE: RunningStyle = "shipped"
+
+/** The 8×4 running frames by style: the still one blinks only, the digging one's clods stay off the mound's rim. */
+const GLYPH_RUNNING: Readonly<Record<RunningStyle, ReadonlyArray<ReadonlyArray<string>>>> = {
+  shipped: [
+    ["..g..g..", "...bb...", ".gbbbbg.", "gggggggg"],
+    [".g....g.", "........", ".gbbbbg.", "gggggggg"],
+  ],
+  still: [["..bbbb..", ".bkbbkb.", "gbbaabbg", "gggggggg"]],
+  digging: [
+    ["m.bbbb.m", ".bkbbkb.", "gbbaabbg", "gggggggg"],
+    [".mbbbbm.", ".bkbbkb.", "gbbaabbg", "gggggggg"],
+    ["..bbbb..", ".bkbbkb.", "gbbaabbg", "gggggggg"],
+  ],
+}
+
 /**
  * The 8×4 glyph's frames by state, pixel rows top to bottom; a state with several cycles through them, one per mascot frame.
  * No muted pixel touches the mound, here or in the 16×16, as `text.muted` is close to `background.raised.max`.
@@ -26,10 +44,7 @@ export const GLYPH: Readonly<Record<MascotState, ReadonlyArray<ReadonlyArray<str
     ["........", "...bb...", "g.bbbb.g", "gggggggg"],
     [".g....g.", "...bb...", "ggbbbbgg", "gggggggg"],
   ],
-  running: [
-    ["..g..g..", "...bb...", ".gbbbbg.", "gggggggg"],
-    [".g....g.", "........", ".gbbbbg.", "gggggggg"],
-  ],
+  running: GLYPH_RUNNING[RUNNING_STYLE],
   waiting: [
     [".bbbbbbw", ".bkbbkbw", ".bbaabbm", "ggggggg."],
     [".bbbbbbb", ".bkbbkbb", ".bbaabbm", "ggggggg."],
@@ -46,8 +61,11 @@ export const GLYPH: Readonly<Record<MascotState, ReadonlyArray<ReadonlyArray<str
   gone: [["........", ".mmmmmm.", ".mkmmkm.", "mmmmmmmm"]],
 }
 
+/** Whether each running style shows his eyes, so he blinks while running. */
+const EYES_RUNNING: Readonly<Record<RunningStyle, boolean>> = { shipped: false, still: true, digging: true }
+
 /** The states in which his eyes are open, so he blinks. */
-const OPEN_EYES: ReadonlySet<MascotState> = new Set(["waiting", "report"])
+const OPEN_EYES: ReadonlySet<MascotState> = new Set(["waiting", "report", ...(EYES_RUNNING[RUNNING_STYLE] ? ["running" as const] : [])])
 
 /** The 8×4 glyph's pixels for `state` at mascot frame `frame`, its first frame with none: animations off. */
 export function glyph(state: MascotState, frame?: number): ReadonlyArray<string> {
@@ -143,6 +161,37 @@ const headTop = (rise: number) => Math.round(10 - 8 * rise)
 
 const running = (rise: number, shift: number, dirt: Spot[]) => paint(digby(rise, { shift }), [[headTop(rise), 7, "aa"], ...dirt])
 
+/** Up and awake at `rise`, his eyes `shift` columns over (0 straight ahead) when `open`. */
+const awake = (rise: number, shift: number) => (open: boolean) => {
+  const row = headTop(rise) + 3
+  return paint(digby(rise, { eyes: "open" }), [[row, 6, "b"], [row, 9, "b"], ...(open ? ([[row, 6 + shift, "k"], [row, 9 + shift, "k"]] as const) : [])])
+}
+
+/** Where a clod flies on each side, frame by frame: out of the hole, up, over and down, a row clear of the mound's rim. */
+const CLOD_LEFT = [[8, 3], [7, 2], [6, 1], [5, 0], [7, 0], [9, 0]] as const
+const CLOD_RIGHT = [[8, 12], [7, 13], [6, 14], [5, 15], [7, 15], [9, 15]] as const
+const CLODS = [[CLOD_LEFT, 0], [CLOD_LEFT, 3], [CLOD_RIGHT, 1], [CLOD_RIGHT, 4]] as const
+
+/** Digging at frame `at`: up with his eyes open, the mound still, four clods on their arcs, one always in the air. */
+const digging = (at: number) => (open: boolean) =>
+  paint(
+    digby(0.6, { eyes: open ? "open" : "none" }),
+    CLODS.map(([path, phase]) => {
+      const [row, column] = path[(at + phase) % path.length]!
+      return [row, column, "m"] as const
+    }),
+  )
+
+/** The 16×16 running frames by style. */
+const ART_RUNNING: Readonly<Record<RunningStyle, ReadonlyArray<(open: boolean) => ReadonlyArray<string>>>> = {
+  shipped: [
+    () => running(0.22, 0, [[5, 2, "m"], [7, 1, "m"], [4, 13, "m"], [6, 14, "m"]]),
+    () => running(0.12, 1, [[3, 1, "m"], [6, 3, "m"], [5, 12, "m"], [3, 15, "m"]]),
+  ],
+  still: [0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 1, 1].map((shift) => awake(0.6, shift)),
+  digging: Array.from({ length: CLOD_LEFT.length }, (_, at) => digging(at)),
+}
+
 /** A child's head peeking out of a side mound at columns `column`–`column + 2`, `up` or half sunk. */
 const peek = (column: number, up: boolean): Spot[] => [
   ...(up ? [[8, column, ".b."] as const, [9, column, "bkb"] as const] : [[9, column, ".b."] as const]),
@@ -176,10 +225,7 @@ export const ART: Readonly<Record<Exclude<MascotState, "idle">, ReadonlyArray<(o
     () => spawn(true, [[3, 1, "m"], [5, 3, "m"], [2, 14, "m"], [5, 12, "m"]]),
     () => spawn(false, [[1, 0, "m"], [4, 2, "m"], [3, 15, "m"], [6, 13, "m"]]),
   ],
-  running: [
-    () => running(0.22, 0, [[5, 2, "m"], [7, 1, "m"], [4, 13, "m"], [6, 14, "m"]]),
-    () => running(0.12, 1, [[3, 1, "m"], [6, 3, "m"], [5, 12, "m"], [3, 15, "m"]]),
-  ],
+  running: ART_RUNNING[RUNNING_STYLE],
   waiting: [waiting(true), waiting(false)],
   stalled: [stalled("e.e.e"), stalled("e"), stalled("e.e")],
   report: [report(1, [".s.", "sss", ".s."]), report(1.25, ["s.s", ".s.", "s.s"]), report(1.1, [".s.", "sss", ".s."])],

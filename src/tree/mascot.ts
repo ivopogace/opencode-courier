@@ -16,6 +16,9 @@ export const MASCOT_EVERY = 5
 /** He blinks on every this-many-th of his frames where his eyes are open. */
 export const BLINK_EVERY = 11
 
+/** Running, he is still and awake for this many of his frames, about 8 s, then digs for one cycle of six. */
+export const DIG_EVERY = 18
+
 /**
  * The 8×4 glyph's frames by state, pixel rows top to bottom; a state with several cycles through them, one per mascot frame.
  * No muted pixel touches the mound, here or in the 16×16, as `text.muted` is close to `background.raised.max`.
@@ -27,8 +30,8 @@ export const GLYPH: Readonly<Record<MascotState, ReadonlyArray<ReadonlyArray<str
     [".g....g.", "...bb...", "ggbbbbgg", "gggggggg"],
   ],
   running: [
-    ["..g..g..", "...bb...", ".gbbbbg.", "gggggggg"],
-    [".g....g.", "........", ".gbbbbg.", "gggggggg"],
+    ...Array.from({ length: DIG_EVERY }, () => ["..bbbb..", ".bkbbkb.", "gbbaabbg", "gggggggg"]),
+    ...["m.bbbb.m", ".mbbbbm.", "..bbbb..", "m.bbbb.m", ".mbbbbm.", "..bbbb.."].map((top) => [top, ".bkbbkb.", "gbbaabbg", "gggggggg"]),
   ],
   waiting: [
     [".bbbbbbw", ".bkbbkbw", ".bbaabbm", "ggggggg."],
@@ -47,7 +50,7 @@ export const GLYPH: Readonly<Record<MascotState, ReadonlyArray<ReadonlyArray<str
 }
 
 /** The states in which his eyes are open, so he blinks. */
-const OPEN_EYES: ReadonlySet<MascotState> = new Set(["waiting", "report"])
+const OPEN_EYES: ReadonlySet<MascotState> = new Set(["waiting", "report", "running"])
 
 /** The 8×4 glyph's pixels for `state` at mascot frame `frame`, its first frame with none: animations off. */
 export function glyph(state: MascotState, frame?: number): ReadonlyArray<string> {
@@ -138,10 +141,35 @@ export function paint(pixels: ReadonlyArray<string>, spots: ReadonlyArray<Spot>)
 const post = (row: number, column: number, length: number, pixel: string): Spot[] =>
   Array.from({ length }, (_, at) => [row + at, column, pixel] as const)
 
-/** The head's top row at `rise`, where running's snout pokes up. */
+/** The head's top row at `rise`. */
 const headTop = (rise: number) => Math.round(10 - 8 * rise)
 
-const running = (rise: number, shift: number, dirt: Spot[]) => paint(digby(rise, { shift }), [[headTop(rise), 7, "aa"], ...dirt])
+/** Up and awake at `rise`, his eyes `shift` columns over (0 straight ahead) when `open`. */
+const awake = (rise: number, shift: number) => (open: boolean) => {
+  const row = headTop(rise) + 3
+  return paint(digby(rise, { eyes: "open" }), [[row, 6, "b"], [row, 9, "b"], ...(open ? ([[row, 6 + shift, "k"], [row, 9 + shift, "k"]] as const) : [])])
+}
+
+/** Where a clod flies on each side, frame by frame: out of the hole, up, over and down, a row clear of the mound's rim. */
+const CLOD_LEFT = [[8, 3], [7, 2], [6, 1], [5, 0], [7, 0], [9, 0]] as const
+const CLOD_RIGHT = [[8, 12], [7, 13], [6, 14], [5, 15], [7, 15], [9, 15]] as const
+const CLODS = [[CLOD_LEFT, 0], [CLOD_LEFT, 3], [CLOD_RIGHT, 1], [CLOD_RIGHT, 4]] as const
+
+/** Digging at frame `at`: up with his eyes open, the mound still, four clods on their arcs, one always in the air. */
+const digging = (at: number) => (open: boolean) =>
+  paint(
+    digby(0.6, { eyes: open ? "open" : "none" }),
+    CLODS.map(([path, phase]) => {
+      const [row, column] = path[(at + phase) % path.length]!
+      return [row, column, "m"] as const
+    }),
+  )
+
+/** Running: still and awake, a glance left then right over twelve frames, then one dig cycle; the mound never moves. */
+const running = [
+  ...Array.from({ length: DIG_EVERY }, (_, at) => [0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 1, 1][at % 12]!).map((shift) => awake(0.6, shift)),
+  ...Array.from({ length: CLOD_LEFT.length }, (_, at) => digging(at)),
+]
 
 /** A child's head peeking out of a side mound at columns `column`–`column + 2`, `up` or half sunk. */
 const peek = (column: number, up: boolean): Spot[] => [
@@ -176,10 +204,7 @@ export const ART: Readonly<Record<Exclude<MascotState, "idle">, ReadonlyArray<(o
     () => spawn(true, [[3, 1, "m"], [5, 3, "m"], [2, 14, "m"], [5, 12, "m"]]),
     () => spawn(false, [[1, 0, "m"], [4, 2, "m"], [3, 15, "m"], [6, 13, "m"]]),
   ],
-  running: [
-    () => running(0.22, 0, [[5, 2, "m"], [7, 1, "m"], [4, 13, "m"], [6, 14, "m"]]),
-    () => running(0.12, 1, [[3, 1, "m"], [6, 3, "m"], [5, 12, "m"], [3, 15, "m"]]),
-  ],
+  running,
   waiting: [waiting(true), waiting(false)],
   stalled: [stalled("e.e.e"), stalled("e"), stalled("e.e")],
   report: [report(1, [".s.", "sss", ".s."]), report(1.25, ["s.s", ".s.", "s.s"]), report(1.1, [".s.", "sss", ".s."])],

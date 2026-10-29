@@ -21,7 +21,7 @@ export type RunningStyle = "shipped" | "still" | "digging"
 export const RUNNING_STYLE: RunningStyle = "shipped"
 
 /** The 8×4 running frames by style: the still one blinks only, the digging one's clods stay off the mound's rim. */
-const GLYPH_RUNNING: Readonly<Record<RunningStyle, ReadonlyArray<ReadonlyArray<string>>>> = {
+export const GLYPH_RUNNING: Readonly<Record<RunningStyle, ReadonlyArray<ReadonlyArray<string>>>> = {
   shipped: [
     ["..g..g..", "...bb...", ".gbbbbg.", "gggggggg"],
     [".g....g.", "........", ".gbbbbg.", "gggggggg"],
@@ -183,7 +183,7 @@ const digging = (at: number) => (open: boolean) =>
   )
 
 /** The 16×16 running frames by style. */
-const ART_RUNNING: Readonly<Record<RunningStyle, ReadonlyArray<(open: boolean) => ReadonlyArray<string>>>> = {
+export const ART_RUNNING: Readonly<Record<RunningStyle, ReadonlyArray<(open: boolean) => ReadonlyArray<string>>>> = {
   shipped: [
     () => running(0.22, 0, [[5, 2, "m"], [7, 1, "m"], [4, 13, "m"], [6, 14, "m"]]),
     () => running(0.12, 1, [[3, 1, "m"], [6, 3, "m"], [5, 12, "m"], [3, 15, "m"]]),

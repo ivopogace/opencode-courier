@@ -1,8 +1,8 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.2.1` and OpenCode 2.2.1. A pin bump re-checks each trap. OpenCode's source is on
-the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.1`); paths
+`@opencode/plugin@2.2.2` and OpenCode 2.2.2. A pin bump re-checks each trap. OpenCode's source is on
+the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.2`); paths
 below are in it.
 
 ## Tools
@@ -18,7 +18,14 @@ below are in it.
   transformations of the plugin's copy broke (`Schema.Finite` refused `2`). Tool inputs use plain
   schemas and validate values themselves; a unit test keeps it so.
 - `Schema.Number` advertises `"Infinity"`, `"-Infinity"` and `"NaN"`, and some models send numbers
-  as strings, so `courier_later` takes `delayMinutes` as either.
+  as strings, so `courier_later` takes `delayMinutes` as either. `effect` 4.0.6 renders that union
+  as one flat `anyOf` (the number, the sentinel enum, the string) where 4.0.1 nested the number's
+  own `anyOf` inside it; same meaning, and the host renders with its own `effect`, so a 2.2.2 host
+  shows the flat shape whatever the plugin's pin. The snapshot pins the flat one.
+- `effect` 4.0.6 bounds `Schema.Int`'s JSON Schema by the safe-integer range; the runtime's
+  `flattenAllOf` drops those `minimum` and `maximum` so the schema sent to the model, and the
+  prompt cache, stay as before. The plugin's inputs use `Schema.Number` and check the value
+  themselves either way.
 - Tool schemas are converted once and shared across steps, so a `context` hook may delete tools from
   the map but must never edit a tool's schema in place. The runner waits for plugin reloads before
   each step.
@@ -68,7 +75,9 @@ below are in it.
 - **A lost wake is silent:** `enqueued` with no `started`. The host's paths to it: `synthetic`
   skips the wake while a revert is staged, and an interrupt between the doorbell and the stop clears
   the wake with no error or log. Neither reproduces on demand, so the missed-wake watch keys on that
-  signature. `delivered` without `started` means this instance missed an event.
+  signature. `delivered` without `started` means this instance missed an event. Since 2.2.2 the
+  session records every `started` itself (`time.busy`, below): after `enqueued`, a `session.get`
+  showing `busy` later than the wake's `at` means an execution started, event seen or not.
 - A waiting inbox item bumps `time.updated` (to the item's `time.created`, `idle` unchanged) and is
   not in the transcript until delivered, so the session reads at rest. The wake store holds courier
   messages waiting, which the limits and the memory's `finished` count (`waitsInInbox`).
@@ -81,8 +90,15 @@ below are in it.
   stamps it for renames, metadata, permissions, agent and model switches, moves, archive and
   unarchive (which also set `time.archived`), reverts, `inbox.enqueued`, and as a step starts or
   ends; never on a turn's tool or text events. A turn's end sets `time_idle`, not `time_updated`. So
-  `updated > idle` holds both for an idle session renamed since and for one between two steps. The
-  plugin then reads the transcript (`runs`, `src/tree/running.ts`):
+  `updated > idle` holds both for an idle session renamed since and for one between two steps.
+  Since 2.2.2 `time.busy` is one: the start of the latest execution, stamped by the projector on
+  `session.execution.started` with `time.updated` left untouched; optional, absent until a
+  session's first execution on 2.2.2. `busy` not later than `idle` is at rest since `idle`, whatever
+  `updated` says. `busy` later than `idle` (or `idle` undefined with `busy` set) is a session running
+  or one at rest after an interruption with reason `shutdown`, which stamps no `idle` and is what a
+  plain permission decline reports (below), so `busy > idle` holds at rest after a decline; the
+  resumed execution stamps `busy` again. Only the transcript tells the two apart, so there it still
+  decides. The plugin reads it (`runs`, `src/tree/running.ts`):
   - a turn's end is an `idle` message, and one ending on it is at rest, past the `agent-switched`,
     `model-switched` and `location-switched` messages and a person's `shell` message, which are no
     turn;
@@ -141,15 +157,19 @@ place by the time the plugin sees the turn's end.
   `once` or `always` come only from the events. With `save`, `always` saves a project-wide rule and
   answers every other pending request it covers, so `courier_answer` asserts without `save`.
   It rejects with a `Tool.Error` wrapping `Permission.BlockedError` (deny rule),
-  `Permission.CorrectedError` (rejection with feedback) or `Session.NotFoundError`. A plain rejection
-  rejects with `Permission.DeclinedError` itself, which ends the step only if the tool rethrows it
-  untouched, not through `describeFailure`.
+  `Permission.CorrectedError` (rejection with feedback; since 2.2.2 its `message` is the feedback,
+  empty before) or `Session.NotFoundError`. A plain rejection rejects with `Permission.DeclinedError`
+  itself, which ends the step only if the tool rethrows it untouched, not through `describeFailure`.
+  `Permission.Unattended` (2.2.2) is a core-internal reference that settles an `ask` when nobody is
+  present to answer; only the experimental schedule route provides it, and the plugin API does not
+  expose it.
 - That plain decline sets no `time.idle` and no `idle` message. The execution ends as
   `interrupted` with `reason: "shutdown"` (`terminal` in `session/execution.ts`), keeping its claim,
   so the next boot resumes the turn ("The server restarted while you were working",
-  `execution/restart.ts`). The plugin tells it from a real shutdown by the transcript ending on the
-  aborted message (`endsIdle`, `wakeEnded`). A message steered in during the turn is then delivered
-  at once in a turn of its own. The group seal reads `time.idle`, so a decline does not seal.
+  `execution/restart.ts`), and the resumed execution stamps `time.busy` again. The plugin tells it
+  from a real shutdown by the transcript ending on the aborted message (`endsIdle`, `wakeEnded`). A
+  message steered in during the turn is then delivered at once in a turn of its own. The group seal
+  reads `time.idle`, so a decline does not seal.
   `wakeAgain` reads the session before re-sending, in case a resumed turn's `started` came before
   the subscription; only a transcript actually read marks it running, so a failed read re-sends.
 - `opencode run --auto` replies `once` to every request in its session, asserted ones included
@@ -281,7 +301,7 @@ and a parent's children to `standing` (`tree/standing.ts`, from the tools and ev
 child, put only when the text changed, removed with the last child). Each value stays well under
 3 KiB. Read in
 `packages/core/src/session/instruction-entry.ts`, `instructions/index.ts`, `instruction-state.ts`,
-`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.1`:
+`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.2`:
 
 - **Rendering.** An entry is one block, `<context key="<key>">`, the value, `</context>`: a string
   as it is, any other JSON pretty-printed. The key matches `^[a-z0-9][a-z0-9._-]*$` (stored as
@@ -391,7 +411,7 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   run the unpatched one.
 - **No peers for them.** An exact optional peer `@opentui/core` broke `opencode plugin add` with
   ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.7.0`,
-  `solid-js` `1.9.17` at `v2.2.1`), and `@opencode/theme` at the pin.
+  `solid-js` `1.9.17` at `v2.2.2`, unchanged from `v2.2.1`), and `@opencode/theme` at the pin.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles with `createSolidTransformPlugin()` and
   `packages: "external"`. `@arethetypeswrong/cli` flags an export without types, hence
@@ -417,8 +437,13 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   (`ui/dialog-select.tsx`).
 - **A select's rows** are one line: title (cut at 61), description, and a right-aligned footer that
   squeezes them. `large` is 88 columns, `xlarge` 116. Rows also take an undeclared `details: string[]`
-  of muted lines, which the memory view uses for lessons; a later host may drop it. A `disabled`
+  of muted lines, which the memory view uses for lessons; a later host may drop it (2.2.2 still
+  reads it, and colours the detail line from its new `dialog.footer` surface). A `disabled`
   option is left out.
+- **Theme:** 2.2.2 retires `text.faint` from the new designs (its dialogs use `text.muted` where
+  they used `faint`) and adds the `dialog.footer` surface (`useTheme().surface("dialog.footer")`,
+  layered on `dialog`; a theme's `@dialog` may carry `@footer`). No TUI part of the plugin uses
+  `text.faint` or a surface.
 - **The panel belongs to one session.** `ui.panel.open` targets the route's session, and the app
   closes it on any route change (`app.tsx`). A new panel takes the keyboard. So the tree panel
   reopens itself after a route change, and hands the keyboard back with

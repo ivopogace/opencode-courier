@@ -12,7 +12,7 @@ bun run typecheck
 bun test           # unit tests, with a fake plugin context
 bun run build      # dist/
 # the live suites need the CLI at the pinned plugin API version
-npm install --prefix <scratch>/oc @opencode/cli@2.2.1
+npm install --prefix <scratch>/oc @opencode/cli@2.2.2
 export OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode
 npm run test:e2e                # e2e/run.sh, every scenario, no API key
 E2E_SHARD=2/4 e2e/run.sh        # one of four shards, as CI runs it

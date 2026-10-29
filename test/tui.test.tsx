@@ -8,7 +8,7 @@ import { testRender } from "@opentui/solid"
 import { batch, createRoot, createSignal } from "solid-js"
 import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
 import { activityLine, addTreePanel, guides, addTreeStatus, animationsOn, bar, BAR_MS, blend, restBackground, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, BELOW_ROWS, digbyColours } from "../src/tree/tui.js"
-import { ART, ART_RUNNING, art, BLINK_EVERY, cells, digby, glyph, GLYPH, GLYPH_RUNNING, MASCOT_EVERY, type MascotState, type RunningStyle } from "../src/tree/mascot.js"
+import { ART, art, BLINK_EVERY, cells, digby, DIG_EVERY, glyph, GLYPH, MASCOT_EVERY, type MascotState } from "../src/tree/mascot.js"
 import { MEMORY_USAGE } from "../src/memory/tui.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
@@ -1700,7 +1700,14 @@ describe("the tree panel's motion (#224)", () => {
     expect(await seen(panel, 4)).toContainEqual(drawn("idle", 2))
     expect(timers!.count()).toBe(0)
     expect(timers!.slow()).toBe(1)
-    for (const next of ["running", "waiting", "stalled"] as const) {
+    // Running's cycle is long and his blink falls where it falls: over one cycle, he is seen still and seen digging.
+    state = "running"
+    await panel.refresh()
+    const running = await seen(panel, GLYPH.running.length)
+    expect(running).toContainEqual(drawn("running", 0))
+    const dig = GLYPH.running.slice(DIG_EVERY).map((_, at) => JSON.stringify(drawn("running", DIG_EVERY + at)))
+    expect(running.some((one) => dig.includes(JSON.stringify(one)))).toBe(true)
+    for (const next of ["waiting", "stalled"] as const) {
       state = next
       await panel.refresh()
       const shown = await seen(panel, 4)
@@ -2029,32 +2036,24 @@ describe("Digby, the tree panel's mascot (#226)", () => {
       }
   })
 
-  test("every running style keeps its muted pixels off the mound and the body's columns clear; the new ones keep the mound still and show his eyes", () => {
-    const mound = (pixels: ReadonlyArray<string>) => pixels.slice(10).join("\n")
-    for (const style of Object.keys(ART_RUNNING) as RunningStyle[]) {
-      for (const pixels of GLYPH_RUNNING[style]) {
-        expect({ style, rows: pixels.map((row) => row.length) }).toEqual({ style, rows: [8, 8, 8, 8] })
-        expect({ style, touching: touching(pixels) }).toEqual({ style, touching: [] })
-      }
-      const frames = ART_RUNNING[style].flatMap((frame) => [frame(true), frame(false)])
-      for (const pixels of frames) {
-        expect({ style, rows: pixels.map((row) => row.length) }).toEqual({ style, rows: Array(16).fill(16) })
-        expect({ style, touching: touching(pixels) }).toEqual({ style, touching: [] })
-        expect({ style, row: pixels[10]!.slice(6, 10).replace(/[bk.a]/g, "") }).toEqual({ style, row: "" })
-      }
-      if (style === "shipped") continue
-      expect(new Set(frames.map(mound)).size).toBe(1)
-      for (const frame of ART_RUNNING[style]) {
-        expect(frame(true).join("")).toContain("k")
-        expect(frame(false).join("")).not.toContain("k")
-      }
+  test("running, he is still and awake with a glance each way, then digs one cycle with the mound still, in the 8×4 and the 16×16", () => {
+    const frames = ART.running.flatMap((frame) => [frame(true), frame(false)])
+    expect(ART.running).toHaveLength(DIG_EVERY + 6)
+    expect(GLYPH.running).toHaveLength(DIG_EVERY + 6)
+    expect(new Set(frames.map((pixels) => pixels.slice(10).join("\n"))).size).toBe(1)
+    for (const frame of ART.running) {
+      expect(frame(true).join("")).toContain("k")
+      expect(frame(false).join("")).not.toContain("k")
     }
-    // Still: his eyes are two pixels apart on one row, straight ahead, then left, then right, over the cycle.
-    const eyes = ART_RUNNING.still.map((frame) => frame(true).findIndex((row) => row.includes("k"))).map((row, at) => [...ART_RUNNING.still[at]!(true)[row]!].flatMap((pixel, column) => (pixel === "k" ? [column] : [])))
+    // His eyes: two pixels, three apart on one row, straight ahead, then left, then right, over the still frames.
+    const eyes = ART.running.slice(0, DIG_EVERY).map((frame) => frame(true).find((row) => row.includes("k"))!).map((row) => [...row].flatMap((pixel, column) => (pixel === "k" ? [column] : [])))
     expect(new Set(eyes.map((pair) => pair[1]! - pair[0]!))).toEqual(new Set([3]))
     expect(new Set(eyes.map((pair) => pair[0]))).toEqual(new Set([5, 6, 7]))
-    // Digging: a clod is in the air, above the mound's rim, in every frame.
-    for (const frame of ART_RUNNING.digging) expect(frame(true).slice(0, 10).join("")).toContain("m")
+    // The dig: a clod is in the air, above the mound's rim, in every frame of the cycle and in none before it.
+    for (const frame of ART.running.slice(DIG_EVERY)) expect(frame(true).slice(0, 10).join("")).toContain("m")
+    for (const frame of ART.running.slice(0, DIG_EVERY)) expect(frame(true).join("")).not.toContain("m")
+    expect(GLYPH.running.slice(DIG_EVERY).some((pixels) => pixels[0]!.includes("m"))).toBe(true)
+    expect(GLYPH.running.slice(0, DIG_EVERY).some((pixels) => pixels.join("").includes("m"))).toBe(false)
   })
 
   test("no 16×16 frame covers the body's columns 6 to 9 on the mound's top row with mound (#286)", () => {

@@ -690,7 +690,8 @@ failed or interrupted), the title, what it does, its report, its group's standin
 that is not its parent's.
 Under it: a progress bar for an orchestrator, each ask for a session waiting on you, and for a leaf
 how long it ran, its last tool call, its context use and its cost. Digby, the courier's mole, digs
-in the header and follows the tree's state.
+in the header and follows the tree's state: while the tree runs he sits up, glancing, with a short
+dig every ten seconds or so, and only a spawn, a report, an ask or a stall moves more than that.
 
 Keys: `↑`/`k` and `↓`/`j` move, `enter` or a click opens the session, `s` stops it, `x` forgets a
 `gone` one, `r` refreshes, `f` toggles fullscreen and `q` closes. `<leader>left` and

@@ -12,7 +12,8 @@ const markdownUnder = (dir: string): string[] =>
     return entry.name.endsWith(".md") ? [path] : []
   })
 
-const files = ["README.md", "CLAUDE.md", ...markdownUnder("docs"), ...markdownUnder(".claude")]
+const atRoot = readdirSync(root).filter((name) => name.endsWith(".md"))
+const files = [...atRoot, ...markdownUnder("docs"), ...markdownUnder(".claude")]
 
 // Fenced blocks and code spans hold examples, not links.
 const unfenced = (text: string) => text.replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, "")

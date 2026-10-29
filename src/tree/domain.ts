@@ -42,14 +42,16 @@ export function readNativeChildren(options: unknown) {
 /** A session's times, as `session.get` gives them. */
 type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
-/** A session's times as `busy` reads them. */
-export type BusyTimes = Pick<Times, "updated" | "idle">
+/** A session's times as `busy` reads them; `busy`, when its latest execution started, is stamped since OpenCode 2.2.2. */
+export type BusyTimes = Pick<Times, "updated" | "idle" | "busy">
 
 /**
- * Whether a session may run by its times: it has never finished a turn, or `updated` was stamped after the last one ended, as
- * a step does, and as much that is no activity does (a rename, an archive, a waiting inbox item), so only its transcript tells.
+ * Whether a session may run by its times: it has never finished a turn, or its latest execution started after the last one
+ * ended (`busy`), which also holds at rest after a shutdown or a plain decline, which stamp no `idle`; on a host without `busy`,
+ * `updated` was stamped after that end, as a step does, and as much that is no activity does (a rename, an archive, a waiting
+ * inbox item). Either way only its transcript then tells.
  */
-export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.updated) > millis(time.idle)
+export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.busy ?? time.updated) > millis(time.idle)
 
 /** The messages the person's switch of agent or model, move or shell command appends, at rest or mid-turn alike. */
 const ASIDES = new Set(["agent-switched", "model-switched", "location-switched", "shell"])

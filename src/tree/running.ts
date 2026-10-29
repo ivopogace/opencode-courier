@@ -33,8 +33,9 @@ const answers = new WeakMap<Session, Map<string, Answer>>()
 type Messages = Awaited<ReturnType<Session["context"]>>
 
 /**
- * Whether a session runs and, at rest, when its last turn ended: by its times when they show rest, else by its transcript
- * (#324, #326), kept until the next stamp, a rest for `REST_MS` and not within `FRESH_MS` of it; one unread or empty runs.
+ * Whether a session runs and, at rest, when its last turn ended: by its times when they show rest (`busy`, since 2.2.2, not
+ * later than `idle`; without `busy`, `updated` not later), else by its transcript (#324, #326), kept until the next stamp, a
+ * rest for `REST_MS` and not within `FRESH_MS` of it; one unread or empty runs.
  */
 export function turnOf(session: Session, sessionID: string, time: BusyTimes, now = Date.now()): Promise<Turn> {
   return resolve(session, sessionID, time, now, () => session.context({ sessionID }), true)
@@ -49,7 +50,7 @@ function resolve(session: Session, sessionID: string, time: BusyTimes, now: numb
   if (!busy(time)) return Promise.resolve(rest(millis(time.idle)))
   const known = answers.get(session) ?? new Map<string, Answer>()
   answers.set(session, known)
-  const stamp = `${millis(time.updated)} ${millis(time.idle)}`
+  const stamp = [time.updated, time.idle, time.busy].map(millis).join(" ")
   const found = known.get(sessionID)
   if (cached && found?.stamp === stamp && now < found.until) return found.turn
   // Only its own answer: a newer read of the session may have taken its place meanwhile.

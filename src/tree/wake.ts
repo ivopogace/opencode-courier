@@ -1,3 +1,4 @@
+import { millis } from "../platform/json.js"
 import { busy, endsIdle } from "./domain.js"
 import type { GroupPorts, Wake, WatchPorts } from "./ports.js"
 import { wakeStore } from "./store.js"
@@ -121,11 +122,13 @@ export async function wakeMissed(ports: WakePorts, claimed: Set<string>) {
 
 const claimOf = (wake: Wake) => `wake ${wake.sessionID} ${wake.inboxID}`
 
+/** Since when a message has waited in an idle session: it was enqueued, seen waiting as the turn ended, or sent again, whichever is last. */
+const waitingSince = (wake: Wake) => Math.max(wake.idleAt ?? wake.at, wake.rewoken ?? 0)
+
 /** Whether a message has waited in an idle session past `WAKE_MS`, and since a wake again, if one was sent; a stalled one is done. */
 export function missed(wake: Wake, now: number) {
   if (wake.running || wake.stalled !== undefined) return false
-  const since = Math.max(wake.idleAt ?? wake.at, wake.rewoken ?? 0)
-  return now - since >= WAKE_MS
+  return now - waitingSince(wake) >= WAKE_MS
 }
 
 async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, wake: Wake, now: number) {
@@ -134,7 +137,7 @@ async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, 
     const current = (await store.of(wake.sessionID)).find((one) => one.inboxID === wake.inboxID)
     if (!current || !missed(current, now)) return
     // A shutdown during a step reads as an end, and the turn the next boot resumes may start unseen: that turn takes the message.
-    if (await runsNow(ports, wake.sessionID)) {
+    if (await runsNow(ports, current)) {
       const { idleAt: _, ...running } = current
       return await store.put({ ...running, running: true })
     }
@@ -161,10 +164,17 @@ async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, 
   }
 }
 
-/** Whether a session shows a turn running, by its times and its transcript read now; one that cannot be read does not, and is woken again. */
-async function runsNow(ports: WakePorts, sessionID: string) {
+/**
+ * Whether a session shows a turn running that takes the message: an execution started since it was last left waiting (`time.busy`,
+ * since 2.2.2, which records a start this instance missed), else, without `busy`, by its times and its transcript read now; one that
+ * cannot be read does not, and is woken again.
+ */
+async function runsNow(ports: WakePorts, wake: Wake) {
+  const { sessionID } = wake
   const info = await ports.session.get({ sessionID }).catch(() => undefined)
-  if (!info || !busy(info.time)) return false
+  if (!info) return false
+  if (info.time.busy !== undefined) return millis(info.time.busy) >= waitingSince(wake)
+  if (!busy(info.time)) return false
   const messages = await ports.session.context({ sessionID }).catch((): Messages => [])
   return messages.length > 0 && !endsIdle(messages)
 }

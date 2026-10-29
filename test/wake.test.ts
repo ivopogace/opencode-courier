@@ -8,7 +8,7 @@ type Message = { id: string; type: string }
 
 /** Ports over an in-memory store, each session's stored messages as given, its times at rest unless set, the clock as set. */
 function fakePorts(messages: Record<string, Message[]> = {}) {
-  const times: Record<string, { created: number; updated: number; idle?: number }> = {}
+  const times: Record<string, { created: number; updated: number; idle?: number; busy?: number }> = {}
   const store = new Map<string, unknown>()
   const sent: any[] = []
   const logged: string[] = []
@@ -311,6 +311,50 @@ describe("waking a session whose wake was missed", () => {
     await wakeMissed(ports, new Set())
     expect(sent).toHaveLength(1)
     expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: false, rewoken: 100_000 + WAKE_MS })
+  })
+
+  // #400: since OpenCode 2.2.2 `time.busy` is when the session's latest execution started, event seen by this instance or not.
+  test("on 2.2.2, one whose session shows no execution started since it was left waiting is woken again by its busy time alone, its transcript unread", async () => {
+    const { ports, sent, at, messages, times } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    // Stamped before the message arrived, which stamped updated; the transcript would read running, which the busy time overrules.
+    times.ses_parent = { created: 0, updated: 100_000, idle: 99_000, busy: 98_000 }
+    messages.ses_parent = [idle(), assistant("msg_busy")]
+    at(100_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toHaveLength(1)
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: false, rewoken: 100_000 + WAKE_MS })
+    // The wake again rang: an execution started at or after it, which takes the message, however the transcript reads.
+    times.ses_parent = { created: 0, updated: 100_000, idle: 99_000, busy: 100_000 + WAKE_MS }
+    messages.ses_parent = [idle()]
+    at(100_000 + 2 * WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toHaveLength(1)
+    expect(await stalledAmong(ports, ["ses_parent"])).toEqual(new Map())
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: true, rewoken: 100_000 + WAKE_MS })
+  })
+
+  test("and one whose session shows an execution started since it arrived, the start this instance missed, is marked running, not woken again", async () => {
+    const { ports, sent, at, times } = fakePorts({ ses_parent: [idle()] })
+    await handle(ports, enqueued())
+    times.ses_parent = { created: 0, updated: 99_000, idle: 99_000, busy: 100_000 }
+    at(100_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toEqual([])
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: true })
+  })
+
+  test("but a start before the session was last seen idle with it waiting is the turn that ended then: it is woken again", async () => {
+    const { ports, sent, at, messages, times } = fakePorts({ ses_parent: [assistant()] })
+    await handle(ports, enqueued())
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: true })
+    messages.ses_parent = [assistant(), idle()]
+    await handle(ports, event("session.execution.succeeded", "ses_parent", 150_000))
+    times.ses_parent = { created: 0, updated: 150_000, idle: 150_000, busy: 120_000 }
+    at(150_000 + WAKE_MS)
+    await wakeMissed(ports, new Set())
+    expect(sent).toHaveLength(1)
+    expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: false, idleAt: 150_000, rewoken: 150_000 + WAKE_MS })
   })
 
   test("and drops the watch on a message that declined turn took", async () => {

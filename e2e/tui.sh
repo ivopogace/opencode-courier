@@ -262,7 +262,7 @@ check "the panel opens again" "$(shows "courier tree  [████████�
 # The parent's own row is selected first, marked: down selects its first child.
 check "the parent's own row is selected first" "$(grep -qE '▸ +[^✓].*\(on screen\)' "$WORK/tui-panel-again.txt" && echo true || echo false)"
 tmux send-keys -t "$TMUX_SESSION" Down
-check "down selects the first child" "$(shows "▸ ✓ " 30 tui-panel-down)"
+check "down selects the first child, its branch drawn" "$(shows "▸ ├ ✓ " 30 tui-panel-down)"
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "enter on a child row keeps the panel in the child's view, the child marked" "$(shows "(on screen)  idle · reported done" 30 tui-panel-followed)"
 check "with the parent's tree" "$(grep -qF "courier tree  [██████████] 2/2 reported" "$WORK/tui-panel-followed.txt" && echo true || echo false)"
@@ -499,12 +499,13 @@ tmux send-keys -t "$TMUX_SESSION" Enter
 check "the panel shows the gone row and the x key" \
   "$([ "$(shows "x forget" 30 tui-forget-panel)" = true ] && grep -qF "Report back to your parent.  gone" "$WORK/tui-forget-panel.txt" && echo true || echo false)"
 tmux send-keys -t "$TMUX_SESSION" Down
-check "down selects the gone child, below the parent's own row" "$(shows "▸   Report back to your parent.  gone" 30 tui-forget-down)"
+check "down selects the gone child, below the parent's own row" "$(shows "▸ └   Report back to your parent.  gone" 30 tui-forget-down)"
 tmux send-keys -t "$TMUX_SESSION" x
 check "x asks to confirm, naming the child" "$(shows "Forget \"Report back to your parent.\"" 30 tui-forget-confirm)"
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "once confirmed, a toast says it was forgotten" "$(shows "Forgot \"Report back to your parent.\"" 30 tui-forgotten)"
-check "and the row is gone from the panel" "$(shows "No session started with courier_spawn under this one." 30 tui-forget-empty)"
+check "and the row is gone from the panel, the parent's own row left with the empty line under it" \
+  "$([ "$(shows "No session started with courier_spawn under this one." 30 tui-forget-empty)" = true ] && grep -qE '▸ +.*\(on screen\)' "$WORK/tui-forget-empty.txt" && echo true || echo false)"
 check "and from the roster" "$([ -z "$(gone_row)" ] && [ -z "$(kv get "roster-by-child/$forget_child")" ] && echo true || echo false)"
 check "and its worktree is removed" "$(for _ in $(seq 1 20); do [ ! -d "$forget_dir" ] && { echo true; exit; }; sleep 1; done; echo false)"
 tmux send-keys -t "$TMUX_SESSION" q

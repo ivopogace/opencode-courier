@@ -394,6 +394,33 @@ export function detailLines(row: Row, rows: ReadonlyArray<Row>, now: number) {
   return row.state === "gone" ? [] : [activityLine(row, now)]
 }
 
+/**
+ * Each row's tree guides, by session, for rows in the order a tree is drawn, below depth `base`: before its mark ("│ ├ "),
+ * and before its detail lines, which carry a line down to its first child ("│ │ ").
+ */
+export function guides(rows: ReadonlyArray<Row>, base: number) {
+  const byID = new Map(rows.map((row) => [row.sessionID, row]))
+  const later = new Set<string>()
+  const parents = new Set<string>()
+  rows.forEach((row, index) => {
+    if (rows.slice(index + 1).some((next) => next.parentID === row.parentID)) later.add(row.sessionID)
+    parents.add(row.parentID)
+  })
+  const above = (row: Row): Row[] => {
+    const parent = row.depth > base + 1 ? byID.get(row.parentID) : undefined
+    return parent ? [...above(parent), parent] : []
+  }
+  const line = (row: Row) => (later.has(row.sessionID) ? "│ " : "  ")
+  return new Map(
+    rows.map((row) => {
+      const through = above(row).map(line).join("")
+      const own = row.depth > base ? (later.has(row.sessionID) ? "├ " : "└ ") : ""
+      const down = parents.has(row.sessionID) ? "│ " : "  "
+      return [row.sessionID, { row: through + own, detail: through + (row.depth > base ? line(row) : "") + down }]
+    }),
+  )
+}
+
 /** The RPC client and where to ask it about a session: where it runs, which has the plugin loaded. */
 function courierOf(ctx: Context) {
   const courier = ctx.client.rpc(treeRpc)
@@ -636,8 +663,8 @@ function TreePanel(props: {
   // Until the first answer, the tree last read for this root, so a panel reopened in another session is not blank.
   const latest = () => (read.state === "ready" || read.state === "refreshing" ? read.latest : view.tree && { sessionID: view.root, tree: view.tree })
   const rows = (): ReadonlyArray<Row> => latest()?.tree?.rows ?? []
-  // The rows drawn: the panel's own session first, when the server sends it and it has sessions under it, then those.
-  const top = () => (rows().length ? latest()?.tree?.top : undefined)
+  // The rows drawn: the panel's own session first, when the server sends it, then the sessions under it.
+  const top = () => latest()?.tree?.top
   const listed = (): ReadonlyArray<Row> => {
     const own = top()
     return own ? [own, ...rows()] : rows()
@@ -757,6 +784,7 @@ function TreePanel(props: {
   const [listHeight, setListHeight] = createSignal(0)
   // The top row's bar is the header's, so it shows none of its own.
   const lines = (row: Row) => detailLines(row, row.depth ? rows() : [], now())
+  const guided = createMemo(() => guides(listed(), top() ? 0 : 1))
   const treeLines = () => listed().reduce((count, row) => count + 1 + lines(row).length, 0)
   const belowShown = () => rows().length > 0 && listHeight() - treeLines() >= BELOW_ROWS
   // One Digby at a time: the header drops its glyph while the 16×16 shows.
@@ -833,14 +861,6 @@ function TreePanel(props: {
       <Show when={!top() && latest()?.tree?.stalled}>
         <text fg={theme.text.feedback.error.base}>This session is stalled: {stalledLine(latest()!.tree!.stalled!, now())}</text>
       </Show>
-      <Show when={latest()?.tree && !rows().length}>
-        <text fg={theme.text.muted}>No session started with courier_spawn under this one.</text>
-        <Show when={artShown()}>
-          <box flexDirection="column" flexShrink={0} paddingTop={1}>
-            <Index each={art()}>{(line) => drawn(line)}</Index>
-          </box>
-        </Show>
-      </Show>
       <scrollbox
         ref={(value: ScrollBoxRenderable) => (scroll = value)}
         flexGrow={1}
@@ -851,7 +871,6 @@ function TreePanel(props: {
         <For each={listed()}>
           {(row, index) => {
             const chosen = () => index() === selected()
-            const indent = "  ".repeat(top() ? row.depth : row.depth - 1)
             return (
               <box
                 id={`courier-row-${index()}`}
@@ -871,9 +890,15 @@ function TreePanel(props: {
               >
                 <box flexDirection="row" flexShrink={0}>
                   <text fg={rowColor(row)} wrapMode="none" flexShrink={0}>
-                    {indent}
                     {chosen() ? "▸ " : "  "}
                   </text>
+                  <Show when={guided().get(row.sessionID)?.row}>
+                    {(guide: Accessor<string>) => (
+                      <text fg={theme.text.muted} wrapMode="none" flexShrink={0}>
+                        {guide()}
+                      </text>
+                    )}
+                  </Show>
                   <text fg={rowMark(row, theme).color} wrapMode="none" flexShrink={0}>
                     {rowMark(row, theme, frame()).mark}{" "}
                   </text>
@@ -902,8 +927,8 @@ function TreePanel(props: {
                 <For each={lines(row)}>
                   {(line) => (
                     <text fg={theme.text.muted} wrapMode="none">
-                      {indent}
-                      {"    "}
+                      {"  "}
+                      {guided().get(row.sessionID)?.detail ?? "  "}
                       <Show when={row.context !== undefined && Math.round(row.context * 100) > CONTEXT_WARN * 100} fallback={line}>
                         <For each={line.split(" · ")}>
                           {(part, at) => (
@@ -921,6 +946,16 @@ function TreePanel(props: {
             )
           }}
         </For>
+        <Show when={latest()?.tree && !rows().length}>
+          <text fg={theme.text.muted}>
+            {top() ? "    " : ""}No session started with courier_spawn under this one.
+          </text>
+          <Show when={artShown()}>
+            <box flexDirection="column" flexShrink={0} paddingTop={1}>
+              <Index each={art()}>{(line) => drawn(line)}</Index>
+            </box>
+          </Show>
+        </Show>
         <Show when={belowShown()}>
           <box flexDirection="column" flexShrink={0} paddingTop={1}>
             <Index each={art()}>{(line) => drawn(line)}</Index>

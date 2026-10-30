@@ -45,7 +45,8 @@ const SUMMARY = "## Objective\n- Courier test"
 
 function decide(body) {
   const messages = (body.messages ?? []).filter((message) => !isInstructionUpdate(message))
-  if (!body.tools?.length) return { text: SUMMARY }
+  // A request without tools is the session's title, or a compaction's summary on an older host.
+  if (!body.tools?.length) return { text: messages.some((message) => textOf(message.content).includes(DEMO_PROMPT)) ? "Fix #12 and #15" : SUMMARY }
   // A compaction request carries the tools and asks for a summary in its last user message, or nudges for one: the summary, no tool call.
   const asked = textOf(messages.findLast((message) => message.role === "user")?.content)
   if (asked.includes("Summarize only what the user and the assistant said") || asked.includes("did not fill in the required summary template")) return { text: SUMMARY }
@@ -54,6 +55,8 @@ function decide(body) {
   const prompt = textOf(messages.findLast((message) => message.role === "user")?.content)
   const finding = passFinding(messages, lastAssistant)
   if (finding) return finding
+  const demo = demoTree(messages, lastAssistant)
+  if (demo) return demo
   const role = roleEntry(messages, lastAssistant)
   if (role) return role
   const down = statusDown(messages, lastAssistant)
@@ -428,6 +431,56 @@ function passFinding(messages, lastAssistant) {
   return { text: "PARENT WOKE" }
 }
 
+// The README's GIF (script/record-gif.sh): two issues in parallel, a lead per issue, each with two workers in its own group; a
+// worker reports after a multiple of the delay, a lead once its group has, and the orchestrator on the leads'.
+const DEMO_PROMPT = "Fix issues #12 and #15 in parallel"
+const DEMO_LEADS = [
+  {
+    title: "Issue #12",
+    task: "Fix issue #12, the login that times out after 30 s: find the cause and a failing test in parallel, then fix it.",
+    group: "issue-12",
+    report: "#12 fixed: the session token is refreshed before the timeout, and the new test passes.",
+    workers: [
+      { title: "Cause of #12", task: "Find why the login times out after 30 s (issue #12), then report back.", after: 2, report: "Cause: the token is refreshed only after the 30 s timeout." },
+      { title: "Test for #12", task: "Write a test that fails on issue #12, the login timeout, then report back.", after: 5, report: "test/login.test.ts fails on main, as issue #12 says." },
+    ],
+  },
+  {
+    title: "Issue #15",
+    task: "Fix issue #15, the CSV export that drops rows: find the cause and a failing test in parallel, then fix it.",
+    group: "issue-15",
+    report: "#15 fixed: the export pages through every row, and the new test passes.",
+    workers: [
+      { title: "Cause of #15", task: "Find why the CSV export drops rows (issue #15), then report back.", after: 3, report: "Cause: the export reads only the first page of 500 rows." },
+      { title: "Test for #15", task: "Write a test that fails on issue #15, the CSV export, then report back.", after: 4, report: "test/export.test.ts fails on main with 501 rows." },
+    ],
+  },
+]
+
+function demoTree(messages, lastAssistant) {
+  const first = textOf(messages.find((message) => message.role === "user")?.content)
+  const last = messages.at(-1)
+  const called = last?.role === "tool" ? messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id)?.function?.name : undefined
+  const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
+  const briefedBy = first.match(/You were started by session (ses_\w+)/)
+  const lead = briefedBy && DEMO_LEADS.find((one) => first.includes(one.task))
+  const worker = briefedBy && DEMO_LEADS.flatMap((one) => one.workers).find((one) => first.includes(one.task))
+  if (worker) {
+    if (called) return { text: "Reported to my lead." }
+    return { tool: "courier_send", args: { sessionID: briefedBy[1], message: worker.report, status: "done" }, slower: worker.after }
+  }
+  if (lead) {
+    if (called === "courier_send") return { text: "Reported to the orchestrator." }
+    if (called) return { text: "Two workers started, on the cause and on a failing test. I end my turn; their reports will wake me." }
+    if (recent.includes(' group="')) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: lead.report, status: "done" }, quick: true }
+    return { calls: lead.workers.map(({ title, task }) => ({ tool: "courier_spawn", args: { title, task, group: lead.group } })) }
+  }
+  if (briefedBy || !first.includes(DEMO_PROMPT)) return undefined
+  if (called) return { text: "Two leads started, one per issue. I end my turn; their reports will wake me." }
+  if (recent.includes(' group="')) return { text: "Both issues fixed: #12 and #15, each with a test that failed before the fix." }
+  return { calls: DEMO_LEADS.map(({ title, task }) => ({ tool: "courier_spawn", args: { title, task, group: "issues" } })) }
+}
+
 // COURIER-STATUS-DOWN starts CHILD-STATUS-DOWN and steers it with a message carrying status blocked, which the plugin drops;
 // the child's turn runs on, two seconds a step, until the message is steered in, then reports its tag and first line.
 function statusDown(messages, lastAssistant) {
@@ -514,7 +567,7 @@ createServer((request, response) => {
     if (reply.hold) await new Promise((resolve) => setTimeout(resolve, holdMs))
     const delay = currentDelay()
     if ((reply.tool === "courier_send" || reply.tool === "shell" || reply.status || reply.delayed) && !reply.quick && delay)
-      await new Promise((resolve) => setTimeout(resolve, delay))
+      await new Promise((resolve) => setTimeout(resolve, delay * (reply.slower ?? 1)))
     // The session, and the courier role its system prompt or an instruction update names (`root` is the pointer to the skill).
     const session = request.headers["x-opencode-session-id"]
     const system = (body.messages ?? []).filter((message) => message.role === "system").map((message) => textOf(message.content)).join("\n")

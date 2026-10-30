@@ -11,6 +11,11 @@ polling.
 [![License: MIT](https://img.shields.io/npm/l/opencode-courier)](LICENSE)
 [![Supported OpenCode V2 version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fivopogace%2Fopencode-courier%2Fmain%2Fpackage.json&query=%24.peerDependencies%5B%27%40opencode%2Fplugin%27%5D&label=opencode&color=blue)](#supported-opencode-version)
 
+![An orchestrator fixes two issues in parallel: a lead per issue, each with two workers, switched between in the tree panel as the reports come back up](https://raw.githubusercontent.com/ivopogace/opencode-courier/main/docs/demo.gif)
+
+The main case, step by step: two issues fixed in parallel, a lead per issue and two workers under
+each, switched between in the `/courier tree` panel as the reports come back up.
+
 https://github.com/user-attachments/assets/d7cf74f8-15b3-4cc1-866e-b75ba0ac3f8a
 
 A narrated tour of the terminal UI: the tree panel, the asks inbox, failing children and memory.

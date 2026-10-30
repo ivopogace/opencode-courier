@@ -22,7 +22,8 @@ if (command === "cast") {
   writeFileSync(output, [header, ...moved.map((event) => JSON.stringify(event))].join("\n") + "\n")
 
   const end = moved.at(-1)[0]
-  const markers = moved.filter(([, kind]) => kind === "m")
+  // The GIF's own markers, a click's in the video too, mean nothing here.
+  const markers = moved.filter(([, kind, label]) => kind === "m" && !/^(caption|key|click) /.test(label))
   const scenes = markers.filter(([, , label]) => !label.startsWith("focus "))
   const named = Object.keys(read(narrationPath).scenes)
   const expected = ["", ...scenes.map(([, , label]) => label)]

@@ -22,7 +22,7 @@ from PIL import Image, ImageDraw, ImageFont
 FONT_SIZE = int(os.environ.get("FONT_SIZE", 14))
 FPS = int(os.environ.get("FPS", 10))
 IDLE = float(os.environ.get("IDLE", 2.5))
-TITLE = os.environ.get("TITLE", "opencode-courier: an orchestrator, its leads and their workers")
+TITLE = os.environ.get("TITLE", "opencode-courier: fixing two issues in parallel")
 AMBER = (245, 167, 66)
 BAR = (17, 17, 17)
 SHADE = 150

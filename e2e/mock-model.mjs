@@ -46,7 +46,7 @@ const SUMMARY = "## Objective\n- Courier test"
 function decide(body) {
   const messages = (body.messages ?? []).filter((message) => !isInstructionUpdate(message))
   // A request without tools is the session's title, or a compaction's summary on an older host.
-  if (!body.tools?.length) return { text: messages.some((message) => textOf(message.content).includes(DEMO_PROMPT)) ? "Ship the /v2 API" : SUMMARY }
+  if (!body.tools?.length) return { text: messages.some((message) => textOf(message.content).includes(DEMO_PROMPT)) ? "Fix #12 and #15" : SUMMARY }
   // A compaction request carries the tools and asks for a summary in its last user message, or nudges for one: the summary, no tool call.
   const asked = textOf(messages.findLast((message) => message.role === "user")?.content)
   if (asked.includes("Summarize only what the user and the assistant said") || asked.includes("did not fill in the required summary template")) return { text: SUMMARY }
@@ -431,28 +431,29 @@ function passFinding(messages, lastAssistant) {
   return { text: "PARENT WOKE" }
 }
 
-// The README's GIF (script/record-gif.sh): an orchestrator starts two leads in one group, each lead two workers in a group of
-// its own; each worker reports after a multiple of the delay, each lead once its group has, and the orchestrator ends on the leads'.
-const DEMO_PROMPT = "with a backend lead and a docs lead"
+// The README's GIF (script/record-gif.sh): an orchestrator fixes two issues in parallel, a lead per issue in one group, each lead
+// two workers in a group of its own; each worker reports after a multiple of the delay, each lead once its group has, and the
+// orchestrator ends on the leads'.
+const DEMO_PROMPT = "Fix issues #12 and #15 in parallel"
 const DEMO_LEADS = [
   {
-    title: "Backend lead",
-    task: "Lead the backend: split the endpoints and their tests between two workers.",
-    group: "api",
-    report: "Backend done: the /v2 endpoints and their tests are in.",
+    title: "Issue #12",
+    task: "Fix issue #12, the login that times out after 30 s: find the cause and a failing test in parallel, then fix it.",
+    group: "issue-12",
+    report: "#12 fixed: the session token is refreshed before the timeout, and the new test passes.",
     workers: [
-      { title: "Endpoints", task: "Write the /v2 endpoints, then report back.", after: 2, report: "The /v2 endpoints are written." },
-      { title: "Endpoint tests", task: "Write the tests for the /v2 endpoints, then report back.", after: 5, report: "12 endpoint tests pass." },
+      { title: "Cause of #12", task: "Find why the login times out after 30 s (issue #12), then report back.", after: 2, report: "Cause: the token is refreshed only after the 30 s timeout." },
+      { title: "Test for #12", task: "Write a test that fails on issue #12, the login timeout, then report back.", after: 5, report: "test/login.test.ts fails on main, as issue #12 says." },
     ],
   },
   {
-    title: "Docs lead",
-    task: "Lead the docs: split the guide and the migration notes between two workers.",
-    group: "docs",
-    report: "Docs done: the user guide and the migration notes cover /v2.",
+    title: "Issue #15",
+    task: "Fix issue #15, the CSV export that drops rows: find the cause and a failing test in parallel, then fix it.",
+    group: "issue-15",
+    report: "#15 fixed: the export pages through every row, and the new test passes.",
     workers: [
-      { title: "User guide", task: "Update the user guide for /v2, then report back.", after: 3, report: "The user guide covers /v2." },
-      { title: "Migration notes", task: "Write the v1 to v2 migration notes, then report back.", after: 4, report: "The migration notes are written." },
+      { title: "Cause of #15", task: "Find why the CSV export drops rows (issue #15), then report back.", after: 3, report: "Cause: the export reads only the first page of 500 rows." },
+      { title: "Test for #15", task: "Write a test that fails on issue #15, the CSV export, then report back.", after: 4, report: "test/export.test.ts fails on main with 501 rows." },
     ],
   },
 ]
@@ -471,14 +472,14 @@ function demoTree(messages, lastAssistant) {
   }
   if (lead) {
     if (called === "courier_send") return { text: "Reported to the orchestrator." }
-    if (called) return { text: "Two workers started. I end my turn; their reports will wake me." }
+    if (called) return { text: "Two workers started, on the cause and on a failing test. I end my turn; their reports will wake me." }
     if (recent.includes(' group="')) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: lead.report, status: "done" }, quick: true }
     return { calls: lead.workers.map(({ title, task }) => ({ tool: "courier_spawn", args: { title, task, group: lead.group } })) }
   }
   if (briefedBy || !first.includes(DEMO_PROMPT)) return undefined
-  if (called) return { text: "Two leads started. I end my turn; their reports will wake me." }
-  if (recent.includes(' group="')) return { text: "Both leads reported: the /v2 endpoints, their tests, the guide and the migration notes are done." }
-  return { calls: DEMO_LEADS.map(({ title, task }) => ({ tool: "courier_spawn", args: { title, task, group: "leads" } })) }
+  if (called) return { text: "Two leads started, one per issue. I end my turn; their reports will wake me." }
+  if (recent.includes(' group="')) return { text: "Both issues fixed: #12 and #15, each with a test that failed before the fix." }
+  return { calls: DEMO_LEADS.map(({ title, task }) => ({ tool: "courier_spawn", args: { title, task, group: "issues" } })) }
 }
 
 // COURIER-STATUS-DOWN starts CHILD-STATUS-DOWN and steers it with a message carrying status blocked, which the plugin drops;

@@ -76,9 +76,9 @@ A feature with something to see in the TUI gets a scene in `record-demo.sh` and 
 narration. GitHub plays a video only from its own uploads: drag the file into an issue or PR comment
 and put the URL it gives on its own line in README.md.
 
-The README's GIF, an orchestrator with two leads and their four workers walked through in the tree
-panel, is made the same way, without a voice: each step has a caption under the screen, and each key
-pressed shows beside it.
+The README's GIF, two issues fixed in parallel by an orchestrator, a lead per issue and their four
+workers, walked through in the tree panel, is made the same way, without a voice: each step has a
+caption under the screen, and each key pressed shows beside it.
 
 ```bash
 OPENCODE_BIN=... script/record-gif.sh demo-gif                 # about 2 minutes, in real time

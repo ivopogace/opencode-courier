@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Records the README's GIF, an orchestrator, its leads and their workers in the TUI, as the pane's screens and the markers
+# Records the README's GIF, an orchestrator fixing two issues in parallel through leads and their workers in the TUI, as the pane's screens and the markers
 # for script/render-gif.py:
 #   OPENCODE_BIN=/path/to/opencode script/record-gif.sh [out dir]   # settings: docs/maintainers/development.md
 set -euo pipefail
@@ -51,12 +51,12 @@ record_pane() {
 start_demo
 
 scene "The orchestrator splits the work"
-caption "Ask the top session for work it splits between two leads"
-submit "Ship the /v2 API with a backend lead and a docs lead, each splitting its part"
-look "courier_spawn [title=Backend lead" 6 70
-caption "It starts both leads with courier_spawn, in one group"
+caption "Ask the top session to fix two issues in parallel"
+submit "Fix issues #12 and #15 in parallel, one lead per issue"
+look "courier_spawn [title=Issue #12" 6 72
+caption "It starts a lead per issue with courier_spawn, both in one group"
 hold 3
-look "Two leads started" 1 62
+look "Two leads started" 1 78
 caption "and ends its turn: the leads' reports will wake it. No polling."
 hold 3.5
 
@@ -64,62 +64,62 @@ scene "The tree"
 caption "Open the session tree"
 command_line "/courier tree"
 look "courier tree  [" 2 60 "" 45
-caption "The orchestrator, its two leads, and the four workers the leads started"
+caption "The orchestrator, a lead per issue, and the four workers the leads started"
 hold 1
 look "courier tree  [" 16 80
 hold 4.5
 
 scene "A lead"
-caption "Switch sessions from the tree: ↓ to the Backend lead"
+caption "Switch sessions from the tree: ↓ to the lead of issue #12"
 hold 1.5
-select_row "Backend lead"
+select_row "Issue #12"
 hold 1
 caption "enter opens its session; the tree follows you"
 press "enter" Enter
-look "Two workers started" 1 64 "" 20
+look "Two workers started" 1 78 "" 20
 hold 1
-look "courier_spawn [title=Endpoints" 6 60
-caption "The lead split its part again, between two workers of its own"
+look "courier_spawn [title=Cause of #12" 6 72
+caption "The lead splits its issue again: one worker finds the cause, one writes a failing test"
 hold 4
 
 scene "A worker"
 caption "Down to a worker, the orchestrator's grandchild, and enter"
 hold 1
-select_row "Endpoint tests"
+select_row "Test for #12"
 hold 1
 press "enter" Enter
-look "Write the tests for the /v2 endpoints" 1 line "" 20
+look "Write a test that fails on issue #12" 1 72 "" 20
 caption "The worker runs: it was briefed by its lead, and owes it a report"
 hold 3
 wait_for "Reported to my lead" 40
 look "courier_send [" 2 72
-caption "Done, it reports to its lead with courier_send"
+caption "Its test fails on main: it reports to its lead with courier_send"
 hold 4
 
 scene "Back up"
 caption "Back up to the lead, and enter"
 hold 1
-select_row "Backend lead"
+select_row "Issue #12"
 hold 1
 press "enter" Enter
-look "Reports of group api" 1 22 last 20
-caption "Both workers' reports woke the lead together, as one message"
+look "Reports of group issue-12" 1 27 last 20
+caption "The cause and the failing test woke the lead together, as one message"
 hold 3.5
 look "courier_send [" 3 72 last
-caption "and the lead reported up to the orchestrator"
+caption "It fixed the issue and reported up to the orchestrator"
 hold 3.5
 
 scene "The top"
 caption "Up to the orchestrator, and enter"
 hold 1
-select_row "Ship the /v2 API"
+select_row "Fix #12 and #15"
 hold 1
 press "enter" Enter
-look "Both leads reported" 2 72 last 60
-caption "Once both leads have reported, the orchestrator wakes with the whole result"
+look "Both issues fixed" 2 78 last 60
+caption "Once both leads have reported, the orchestrator wakes: both issues fixed"
 hold 3
 look "courier tree  [" 16 80
-caption "Every session reported. Nothing polled."
+caption "Two issues fixed in parallel, seven sessions, and nothing polled"
 hold 5
 
 tmux kill-session -t "$TMUX_SESSION"

@@ -159,4 +159,4 @@ hold 6
 tmux kill-session -t "$TMUX_SESSION"
 for _ in $(seq 1 20); do [ -f "$OUT" ] && break; sleep 0.5; done
 [ -f "$OUT" ] || { echo "the cast was not written; see $OUT.part"; KEEP=1; exit 1; }
-echo "wrote $OUT ($(grep -c '^\[[0-9.]*, *"m", *"[^f]' "$OUT") scenes)"
+echo "wrote $OUT ($(grep -E '^\[[0-9.]*, *"m", *"' "$OUT" | grep -cvE '"m", *"(focus|click) ') scenes)"

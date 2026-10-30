@@ -94,9 +94,8 @@ jobs:
           E2E: ${{ steps.e2e.outcome }}
           TUI: ${{ steps.tui.outcome }}
         run: |
-          # A step cut off by timeout-minutes ends `cancelled` and so does the job, while no step
-          # failed: that is `timeout`, which says nothing about the release. A cancelled workflow
-          # (a newer push) skips the issue job, so `timeout` reaches it only from the time limit.
+          # Cancelled with no step failed is timeout-minutes: a cancelled workflow (a newer push)
+          # skips the issue job, so `timeout` reaches it only from the time limit.
           outcome=$STATUS
           if [ "$STATUS" = cancelled ] && [ "$E2E" != failure ] && [ "$TUI" != failure ]; then
             outcome=timeout
@@ -109,7 +108,7 @@ jobs:
             echo "::warning title=OpenCode latest::The live suite did not pass on @opencode/cli@$VERSION; the pinned leg decides"
           fi
       - name: Upload server and model logs
-        if: failure()
+        if: failure() || steps.outcome.outputs.outcome == 'timeout'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-logs-latest-${{ steps.install.outputs.version || 'unknown' }}

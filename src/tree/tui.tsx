@@ -203,7 +203,7 @@ export function createSpawns(motion: Motion, rows: Accessor<ReadonlyArray<Row> |
  * Digby's state for the tree's rows and its `top`, by `summaryLine`'s priority, unless a report or a spawn just arrived;
  * gone when every row under the top is.
  */
-export function mascotState(rows: ReadonlyArray<Row>, { top, reported = false, spawned = false }: { top?: Row | undefined; reported?: boolean; spawned?: boolean } = {}): MascotState {
+export function mascotState(rows: ReadonlyArray<Row>, { top, reported = false, spawned = false }: { top?: Row; reported?: boolean; spawned?: boolean } = {}): MascotState {
   if (reported) return "report"
   if (spawned) return "spawn"
   const live = top ? [top, ...rows] : rows

@@ -1,8 +1,8 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.2.2` and OpenCode 2.2.2. A pin bump re-checks each trap. OpenCode's source is on
-the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.2`); paths
+`@opencode/plugin@2.2.3` and OpenCode 2.2.3. A pin bump re-checks each trap. OpenCode's source is on
+the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.3`); paths
 below are in it.
 
 ## Tools
@@ -20,8 +20,8 @@ below are in it.
 - `Schema.Number` advertises `"Infinity"`, `"-Infinity"` and `"NaN"`, and some models send numbers
   as strings, so `courier_later` takes `delayMinutes` as either. `effect` 4.0.6 renders that union
   as one flat `anyOf` (the number, the sentinel enum, the string) where 4.0.1 nested the number's
-  own `anyOf` inside it; same meaning, and the host renders with its own `effect`, so a 2.2.2 host
-  shows the flat shape whatever the plugin's pin. The snapshot pins the flat one.
+  own `anyOf` inside it; same meaning, and the host renders with its own `effect`, so a host from
+  2.2.2 on shows the flat shape whatever the plugin's pin. The snapshot pins the flat one.
 - `effect` 4.0.6 bounds `Schema.Int`'s JSON Schema by the safe-integer range; the runtime's
   `flattenAllOf` drops those `minimum` and `maximum` so the schema sent to the model, and the
   prompt cache, stay as before. The plugin's inputs use `Schema.Number` and check the value
@@ -249,8 +249,11 @@ as `e2e/search-plugin` does.
 - **Update checks skip exact versions.** `plugin check`, `plugin update` and the TUI's check parse
   the entry with `npm-package-arg` and skip type `version` without asking the registry. A failed
   check reads as "no update".
-- The loader refuses a plugin the organisation's managed policy denies (`integration.use` on
-  `plugin:<name>`).
+- The loader refuses a plugin the organisation's managed policy denies: since 2.2.3 `plugin.use` on
+  the plugin's target (`packages/core/src/plugin/module.ts`), before `integration.use` on
+  `plugin:<name>`. The policy schema (`packages/schema/src/config/policy.ts`) adds `plugin.use`,
+  `skill.use`, `mcp.use` and `integration.connect`, and decodes a legacy `integration.use` whose
+  resource starts `plugin:`, `skill:` or `mcp:` into the new action, so old policies still apply.
 
 ## Two servers on one data directory
 
@@ -300,6 +303,11 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
   path's basename is `SKILL.md`.
 - **Activating:** the TUI's `/skills` attaches `skills: [{ id }]` to the prompt, and the text goes
   first in that message. A compaction keeps it (`messageToText`, `session/recent-text.ts`).
+- **Managed policy:** a `skill.use` deny (before 2.2.3 `integration.use` on `skill:<id>`, still
+  accepted) removes the skill from the registry (`packages/core/src/config/plugin/policy.ts`, a
+  `post` plugin, so after the courier's `editor.add`). A denied `courier-orchestrate` is then neither
+  listed nor loadable (`skill` fails "unable to load", `/skills` with `SkillNotFoundError`); the
+  tools and the role part work without it, as with a `skill` rule's deny (`COURIER_SKILL=deny`).
 
 ## Keyed session instructions
 
@@ -317,7 +325,7 @@ and a parent's children to `standing` (`tree/standing.ts`, from the tools and ev
 child, put only when the text changed, removed with the last child). Each value stays well under
 3 KiB. Read in
 `packages/core/src/session/instruction-entry.ts`, `instructions/index.ts`, `instruction-state.ts`,
-`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.2`:
+`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.3`:
 
 - **Rendering.** An entry is one block, `<context key="<key>">`, the value, `</context>`: a string
   as it is, any other JSON pretty-printed. The key matches `^[a-z0-9][a-z0-9._-]*$` (stored as
@@ -329,7 +337,10 @@ child, put only when the text changed, removed with the last child). Each value 
   mode catalog, MCP instructions, references, the skill listing, AGENTS.md and the built-ins, all
   rendered into one *baseline*: the second system part, after the agent's system prompt and before
   anything a `context` hook pushes. The hook's `event.system` is that pair, so a part the courier
-  adds comes after the block.
+  adds comes after the block. Since 2.2.3 that part also carries each source's text in
+  `metadata.experimental.instructions`, `{ key, text }` (`baseTranscript`, `model-request.ts`), an
+  entry under its stored key (`api/role`, not `role`), not updated when a hook edits `text`; marked
+  experimental, so `context.ts` still reads the `role` entry through `entry.list`.
 - **The baseline is fixed at the session's first step** (`InstructionState.prepare`, run at every
   step boundary) and moved only by a compaction (`advanceEpoch` on `session.compaction.ended`) or
   a revert past the epoch (`rewind`). So an entry put between `session.create` and the first prompt
@@ -426,8 +437,10 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   `@opencode/theme`) must not be imported at runtime. OpenCode patches its `solid-js`; unit tests
   run the unpatched one.
 - **No peers for them.** An exact optional peer `@opentui/core` broke `opencode plugin add` with
-  ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.7.0`,
-  `solid-js` `1.9.17` at `v2.2.2`, unchanged from `v2.2.1`), and `@opencode/theme` at the pin.
+  ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.8.0`,
+  `solid-js` `1.9.17` at `v2.2.3`), and `@opencode/theme` at the pin. `@opencode/plugin`'s own
+  optional `@opentui/core` and `@opentui/solid` peers are ranges since 2.2.3 (`>=0.8.0`); the
+  plugin's stay devDependencies.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles with `createSolidTransformPlugin()` and
   `packages: "external"`. `@arethetypeswrong/cli` flags an export without types, hence
@@ -453,8 +466,8 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   (`ui/dialog-select.tsx`).
 - **A select's rows** are one line: title (cut at 61), description, and a right-aligned footer that
   squeezes them. `large` is 88 columns, `xlarge` 116. Rows also take an undeclared `details: string[]`
-  of muted lines, which the memory view uses for lessons; a later host may drop it (2.2.2 still
-  reads it, and colours the detail line from its new `dialog.footer` surface). A `disabled`
+  of muted lines, which the memory view uses for lessons; a later host may drop it (2.2.3 still
+  reads it, and colours the detail line from the `dialog.footer` surface 2.2.2 added). A `disabled`
   option is left out.
 - **Theme:** 2.2.2 retires `text.faint` from the new designs (its dialogs use `text.muted` where
   they used `faint`) and adds the `dialog.footer` surface (`useTheme().surface("dialog.footer")`,

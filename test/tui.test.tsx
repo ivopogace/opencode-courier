@@ -1580,6 +1580,26 @@ describe("the tree panel's motion (#224)", () => {
     expect(timers!.count()).toBe(0)
   })
 
+  test("the panel's own session running spins its mark and wakes Digby, its children all idle", async () => {
+    let state: Row["state"] = "running"
+    const panel = await motion(() => ({ rows: [row("ses_a")], top: row("ses_parent", { parentID: "", depth: 0, state }) }), {}, 40)
+    const drawn = (pose: MascotState, frame: number) => art(pose, frame).map((line) => line.map((one) => one.char).join(""))
+    const digbyIn = (screen: string) => {
+      const lines = screen.split("\n")
+      const ground = lines.findLastIndex((line) => line.slice(1, 17) === "█".repeat(16))
+      return lines.slice(ground - 7, ground + 1).map((line) => line.slice(1, 17))
+    }
+    const poses = (pose: MascotState) => Array.from({ length: BLINK_EVERY * 12 }, (_, frame) => drawn(pose, frame))
+    expect(await panel.frame()).toContain("⠋ ses_parent")
+    expect(timers!.count()).toBe(1)
+    expect(await panel.advance(FRAME_MS)).toContain("⠙ ses_parent")
+    expect(poses("running")).toContainEqual(digbyIn(await panel.advance(FRAME_MS * MASCOT_EVERY)))
+    state = "idle"
+    await panel.refresh()
+    expect(timers!.count()).toBe(0)
+    expect(poses("idle")).toContainEqual(digbyIn(await panel.advance(FRAME_MS * MASCOT_EVERY)))
+  })
+
   test("no frame-rate timer runs with nothing to animate, and none once a running row goes idle: only Digby's slower one", async () => {
     let state: Row["state"] = "idle"
     const panel = await motion(() => ({ rows: [row("ses_a", { state })] }))
@@ -1988,6 +2008,18 @@ describe("Digby, the tree panel's mascot (#226)", () => {
     expect(mascotState(rows("stalled", "waiting"))).toBe("waiting")
     expect(mascotState(rows("waiting"), { spawned: true })).toBe("spawn")
     expect(mascotState(rows("waiting"), { spawned: true, reported: true })).toBe("report")
+  })
+
+  test("the panel's own session counts as the tree's, but only the rows under it make him gone", () => {
+    const rows = (...states: Row["state"][]) => states.map((state, at) => row(`ses_${at}`, { state }))
+    const top = (state: Row["state"]) => row("ses_parent", { parentID: "", depth: 0, state })
+    expect(mascotState(rows("idle", "idle"), { top: top("running") })).toBe("running")
+    expect(mascotState(rows("running"), { top: top("stalled") })).toBe("stalled")
+    expect(mascotState(rows("stalled"), { top: top("waiting") })).toBe("waiting")
+    expect(mascotState([], { top: top("running") })).toBe("running")
+    expect(mascotState(rows("gone"), { top: top("running") })).toBe("running")
+    expect(mascotState(rows("gone"), { top: top("idle") })).toBe("gone")
+    expect(mascotState(rows("idle"), { top: top("idle") })).toBe("idle")
   })
 
   test("the header's second line counts what the sessions do, live ones only", () => {

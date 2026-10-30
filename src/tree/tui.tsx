@@ -199,13 +199,17 @@ export function createSpawns(motion: Motion, rows: Accessor<ReadonlyArray<Row> |
   }
 }
 
-/** Digby's state for the tree's rows, by `summaryLine`'s priority, unless a report or a spawn just arrived. */
-export function mascotState(rows: ReadonlyArray<Row>, { reported = false, spawned = false } = {}): MascotState {
+/**
+ * Digby's state for the tree's rows and its `top`, by `summaryLine`'s priority, unless a report or a spawn just arrived;
+ * gone when every row under the top is.
+ */
+export function mascotState(rows: ReadonlyArray<Row>, { top, reported = false, spawned = false }: { top?: Row | undefined; reported?: boolean; spawned?: boolean } = {}): MascotState {
   if (reported) return "report"
   if (spawned) return "spawn"
-  if (rows.some((row) => row.state === "waiting")) return "waiting"
-  if (rows.some((row) => row.state === "stalled")) return "stalled"
-  if (rows.some((row) => row.state === "running")) return "running"
+  const live = top ? [top, ...rows] : rows
+  if (live.some((row) => row.state === "waiting")) return "waiting"
+  if (live.some((row) => row.state === "stalled")) return "stalled"
+  if (live.some((row) => row.state === "running")) return "running"
   return rows.length && rows.every((row) => row.state === "gone") ? "gone" : "idle"
 }
 
@@ -770,7 +774,7 @@ function TreePanel(props: {
   }))
   const root = () => parts(rows(), view.root)
   const motion = createMotion(props.animations)
-  motion.animates(() => rows().some((row) => row.state === "running"))
+  motion.animates(() => listed().some((row) => row.state === "running"))
   const flashes = createFlashes(motion, rows)
   const filled = createBarFill(motion, root)
   const frame = () => (motion.enabled ? motion.frame() : undefined)
@@ -790,7 +794,7 @@ function TreePanel(props: {
   const belowShown = () => rows().length > 0 && listHeight() - treeLines() >= BELOW_ROWS
   // One Digby at a time: the header drops its glyph while the 16×16 shows.
   const headerGlyph = () => glyphShown() && !artShown() && !belowShown()
-  const mascot = createMemo(() => mascotState(rows(), { reported: flashes.reported(), spawned: spawned() }))
+  const mascot = createMemo(() => mascotState(rows(), { top: top(), reported: flashes.reported(), spawned: spawned() }))
   // Digby's frames keep the timer at his own cadence while he shows, and he is still once gone.
   motion.animates(() => (glyphShown() || artShown() || belowShown()) && mascot() !== "gone", MASCOT_EVERY)
   const mascotFrame = () => (motion.enabled ? Math.floor(motion.frame() / MASCOT_EVERY) : undefined)

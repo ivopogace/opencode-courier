@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Live test of the TUI part: a real OpenCode V2 server loads the package's `tui` and `rpc`
 # entrypoints, its RPC answers over HTTP, and the TUI, in tmux, shows the prompt footer's entry and
-# follows a change, opens the tree panel with /courier tree, the parent its first row (#395), the 16×16 Digby below its rows (#245), with no background left of a pose before (#281), follows it into a child, opens a child with a click (#250), and stops a child with /courier stop;
+# follows a change, opens the tree panel with /courier tree, the parent its first row (#395), its row spinning and Digby awake while it alone runs, the 16×16 Digby below its rows (#245), with no background left of a pose before (#281), follows it into a child, opens a child with a click (#250), and stops a child with /courier stop;
 # a tree that has started more sessions than maxTotal still shows its newest child and what it asks (#188), and the
 # inbox opened from a child lists the top session's courier_answer prompt first and allows it (#185);
 # a child showing a form waits on the person in the footer and the panel (#183); x in the panel forgets a gone
@@ -139,6 +139,45 @@ under_digby() {
     console.log(column > 0 && !wrong.length)
   ' "$WORK/$1.ansi"
 }
+# Whether the panel's own row, the one on screen, shows a spinner's frame within $1 s; the screen in $WORK/$2.txt.
+SPINS='[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] .*\(on screen\)'
+spins() {
+  local shown=false
+  for _ in $(seq 1 "$1"); do
+    if tmux capture-pane -pt "$TMUX_SESSION" 2>/dev/null | LC_ALL=C.UTF-8 grep -qE -- "$SPINS"; then shown=true; break; fi
+    sleep 1
+  done
+  tmux capture-pane -pt "$TMUX_SESSION" >"$WORK/$2.txt" 2>/dev/null || true
+  echo "$shown"
+}
+# Whether the panel's own row shows no spinner within $1 s; the screen in $WORK/$2.txt.
+hides_spinner() {
+  local gone=false
+  for _ in $(seq 1 "$1"); do
+    if ! tmux capture-pane -pt "$TMUX_SESSION" 2>/dev/null | LC_ALL=C.UTF-8 grep -qE -- "$SPINS"; then gone=true; break; fi
+    sleep 1
+  done
+  tmux capture-pane -pt "$TMUX_SESSION" >"$WORK/$2.txt" 2>/dev/null || true
+  echo "$gone"
+}
+# Whether the 16×16 Digby shows no idle z on any of $1 screens half a second apart, each kept as $WORK/$2-<n>.txt;
+# asleep, a z shows in three of his four frames, about 450 ms each.
+awake() {
+  local awake=true
+  for n in $(seq 1 "$1"); do
+    tmux capture-pane -pt "$TMUX_SESSION" >"$WORK/$2-$n.txt" 2>/dev/null || true
+    node -e '
+      const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n").map((line) => [...line])
+      const groundAt = (line) => line.findIndex((_, at) => line.length >= at + 16 && line.slice(at, at + 16).every((one) => one === "█"))
+      const ground = lines.findLastIndex((line) => groundAt(line) > 0)
+      const column = ground < 7 ? -1 : groundAt(lines[ground])
+      const art = lines.slice(ground - 7, ground + 1).map((line) => line.slice(column, column + 16).join(""))
+      process.exit(column > 0 && !art.some((line) => line.includes("z")) ? 0 : 1)
+    ' "$WORK/$2-$n.txt" || awake=false
+    sleep 0.5
+  done
+  echo "$awake"
+}
 # Whether the 16×16 Digby is drawn on the panel's background alone within $1 s; the screen, trailing spaces kept (-N), in $WORK/$2.ansi.
 digby_settles() {
   local settled=false
@@ -248,6 +287,11 @@ check "the summary follows: both children idle, the group released" "$([ "$resul
 check "the panel follows the report: 2 of 2 parts reported" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-reported)"
 # Waiting, then the report, gave cells of the 16×16 a background; idle, after it, gives none, so none may stay (#281).
 check "once the report's pose ends, the 16×16 Digby keeps no background of the poses before" "$(digby_settles 15 tui-panel-settled)"
+# The parent running over its idle children: its row spins, and Digby sits up rather than sleeps, no z beside him.
+api_prompt "$parent" "PARENT-BUSY"
+check "the parent's own row spins while it runs, its children idle" "$(spins 30 tui-panel-parent-runs)"
+check "and Digby does not sleep through it" "$(awake 6 tui-panel-parent-awake)"
+check "the parent's turn ends" "$(hides_spinner 30 tui-panel-parent-done)"
 # q closes the panel, which has the keyboard while it is open; the footer is whole again.
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes the panel" "$(hides "courier tree" 10 tui-panel-closed)"

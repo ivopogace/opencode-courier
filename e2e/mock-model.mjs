@@ -348,6 +348,8 @@ function decide(body) {
         { tool: "courier_spawn", args: { task: "CHILD-ASKS", group: "pair" } },
       ],
     }
+  // PARENT-BUSY (e2e/tui.sh) keeps the parent running a while, over children that are all idle.
+  if (recent.includes("PARENT-BUSY")) return { tool: "shell", args: { command: "sleep 8" }, quick: true }
   // COURIER-GROUP starts two children at once in one group; with -BLOCKED, the second needs a decision first.
   const group = recent.match(/COURIER-GROUP(-BLOCKED)?/)
   if (group)

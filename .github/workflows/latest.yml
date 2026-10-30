@@ -26,8 +26,10 @@ jobs:
     # stays the required one. The step summary names the version that ran, and so does the log
     # artifact.
     name: Live test against OpenCode V2 latest (may fail)
+    # run.sh alone takes about 18 minutes unsharded and tui.sh about 3: the budget leaves room for both
+    # to grow before a run is cut off again.
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     continue-on-error: true
     outputs:
       version: ${{ steps.install.outputs.version }}
@@ -69,6 +71,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::notice title=OpenCode latest::The latest leg runs on @opencode/cli@$version (the plugin is built against @opencode/plugin@$pinned)"
       - name: Run the live test
+        id: e2e
         run: OPENCODE_BIN="$(command -v opencode)" e2e/run.sh
         env:
           E2E_WORK: ${{ runner.temp }}/e2e
@@ -76,6 +79,7 @@ jobs:
       - name: Install tmux
         run: sudo apt-get update -qq && sudo apt-get install -y -qq tmux
       - name: Run the live test of the TUI part
+        id: tui
         run: OPENCODE_BIN="$(command -v opencode)" e2e/tui.sh
         env:
           E2E_WORK: ${{ runner.temp }}/e2e-tui
@@ -86,11 +90,22 @@ jobs:
         env:
           # Empty when the install step itself failed.
           VERSION: ${{ steps.install.outputs.version || 'unknown' }}
-          OUTCOME: ${{ job.status }}
+          STATUS: ${{ job.status }}
+          E2E: ${{ steps.e2e.outcome }}
+          TUI: ${{ steps.tui.outcome }}
         run: |
-          echo "outcome=$OUTCOME" >> "$GITHUB_OUTPUT"
-          echo "Outcome on @opencode/cli@$VERSION: $OUTCOME" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$OUTCOME" != success ]; then
+          # A step cut off by timeout-minutes ends `cancelled` and so does the job, while no step
+          # failed: that is `timeout`, which says nothing about the release. A cancelled workflow
+          # (a newer push) skips the issue job, so `timeout` reaches it only from the time limit.
+          outcome=$STATUS
+          if [ "$STATUS" = cancelled ] && [ "$E2E" != failure ] && [ "$TUI" != failure ]; then
+            outcome=timeout
+          fi
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+          echo "Outcome on @opencode/cli@$VERSION: $outcome" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$outcome" = timeout ]; then
+            echo "::warning title=OpenCode latest::The live suites on @opencode/cli@$VERSION were cut off by the job's time limit"
+          elif [ "$outcome" != success ]; then
             echo "::warning title=OpenCode latest::The live suite did not pass on @opencode/cli@$VERSION; the pinned leg decides"
           fi
       - name: Upload server and model logs
@@ -144,6 +159,8 @@ jobs:
           fi
           if [ "$OUTCOME" = success ]; then
             verdict="passed, so the bump is likely only the pin and the versions the docs name"
+          elif [ "$OUTCOME" = timeout ]; then
+            verdict="were cut off by the job's time limit before they finished, so they say nothing about it yet: run the workflow again"
           else
             verdict="did not pass (outcome: $OUTCOME): find what changed before moving the pin"
           fi

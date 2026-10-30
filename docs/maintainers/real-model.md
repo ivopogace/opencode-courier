@@ -10,7 +10,7 @@ Re-run it after any change to a model-facing string: `src/**/text.ts`, `src/kern
 
 ```bash
 bun install
-npm install --prefix <scratch>/oc @opencode/cli@2.2.2
+npm install --prefix <scratch>/oc @opencode/cli@2.2.3
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
 ```
 

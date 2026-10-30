@@ -9,6 +9,9 @@ import { childBrief, modelFormatRefusal, nativeIsolateRefusal, reportBody, spawn
 import { joinGroup } from "../src/tree/group.js"
 import { childStore, groupStore, memberKey, progressKey, rosterKey, settledKey } from "../src/tree/store.js"
 
+/** Every spawned session's own ruleset: OpenCode's schedule tools denied. */
+const CHILD_RULES = [{ action: "opencode_schedule_*", resource: "*", effect: "deny" }]
+
 type Call = { method: string; input: any }
 
 /** What spawn did after looking up the model to give the child. */
@@ -94,16 +97,16 @@ describe("spawn", () => {
 
     expect(child).toEqual({ sessionID: "ses_child", directory: "/repo" })
     expect(calls.map((call) => call.method)).toEqual(["session.create", "session.prompt"])
-    expect(calls[0]!.input).toEqual({ title: "Fix the bug", metadata: { courier: { parentID: "ses_parent" } } })
+    expect(calls[0]!.input).toEqual({ title: "Fix the bug", permissions: CHILD_RULES, metadata: { courier: { parentID: "ses_parent" } } })
     expect(calls[1]!.input).toEqual({ sessionID: "ses_child", text: childBrief("ses_parent", "Fix the bug\nin checkout", 1, DEFAULT_LIMITS) })
   })
 
   describe("a native child, OpenCode's subagent of its parent", () => {
-    const AS_SUBAGENT = { title: "Fix the bug", parentID: "ses_parent", permissions: [], metadata: { courier: { parentID: "ses_parent" } } }
-    const STANDALONE = { title: "Fix the bug", metadata: { courier: { parentID: "ses_parent" } } }
+    const AS_SUBAGENT = { title: "Fix the bug", parentID: "ses_parent", permissions: CHILD_RULES, metadata: { courier: { parentID: "ses_parent" } } }
+    const STANDALONE = { title: "Fix the bug", permissions: CHILD_RULES, metadata: { courier: { parentID: "ses_parent" } } }
     const created = (calls: Call[]) => calls.find((call) => call.method === "session.create")!.input
 
-    test("with the nativeChildren option, a child without isolate or native gets OpenCode's parentID and an empty ruleset, and is recorded and reported as native", async () => {
+    test("with the nativeChildren option, a child without isolate or native gets OpenCode's parentID and the child rules, not its parent's, and is recorded and reported as native", async () => {
       const { ports, calls, store } = fakePorts()
       ;(ports as any).nativeChildren = true
 
@@ -162,7 +165,7 @@ describe("spawn", () => {
 
       const child = await spawn(ports, "ses_parent", { task: "t", isolate: true })
 
-      expect(created(calls)).toEqual({ title: "t", location: { directory: "/repo/.worktrees/ses" }, metadata: { courier: { parentID: "ses_parent" } } })
+      expect(created(calls)).toEqual({ title: "t", location: { directory: "/repo/.worktrees/ses" }, permissions: CHILD_RULES, metadata: { courier: { parentID: "ses_parent" } } })
       expect(child).not.toHaveProperty("native")
       expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("native")
     })
@@ -182,7 +185,7 @@ describe("spawn", () => {
 
       await spawn(ports, "ses_parent", { task: "t", native: false, isolate: true })
 
-      expect(created(calls)).toEqual({ title: "t", location: { directory: "/repo/.worktrees/ses" }, metadata: { courier: { parentID: "ses_parent" } } })
+      expect(created(calls)).toEqual({ title: "t", location: { directory: "/repo/.worktrees/ses" }, permissions: CHILD_RULES, metadata: { courier: { parentID: "ses_parent" } } })
     })
   })
 

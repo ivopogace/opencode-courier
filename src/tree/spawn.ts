@@ -22,6 +22,12 @@ export interface SpawnInput {
   readonly native?: boolean
 }
 
+/**
+ * A spawned session's own rules: OpenCode's schedule tools are hidden, as their wake-ups go round the tree, so a child
+ * that schedules one and ends its turn would read as silent. A native child would otherwise run on its parent's rules.
+ */
+const CHILD_RULES = [{ action: "opencode_schedule_*", resource: "*", effect: "deny" }] as const
+
 function titleOf(task: string) {
   const line = task.trim().split("\n")[0] ?? ""
   return line.length > 60 ? `${line.slice(0, 57)}...` : line
@@ -109,8 +115,8 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
       ...(input.agent ? { agent: input.agent } : {}),
       ...(model ? { model } : {}),
       ...(worktree ? { location: { directory: worktree } } : {}),
-      // An empty ruleset, not none: a native child would otherwise run on its parent's session rules.
-      ...(native ? { parentID, permissions: [] } : {}),
+      ...(native ? { parentID } : {}),
+      permissions: [...CHILD_RULES],
       metadata: { courier: { parentID } },
     })
     .catch(async (error: unknown) => {

@@ -1,8 +1,8 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.2.3` and OpenCode 2.2.3. A pin bump re-checks each trap. OpenCode's source is on
-the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.3`); paths
+`@opencode/plugin@2.2.4` and OpenCode 2.2.4. A pin bump re-checks each trap. OpenCode's source is on
+the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.4`); paths
 below are in it.
 
 ## Tools
@@ -274,6 +274,23 @@ and answers from each server, and fails a child's turn. It
 exits 1 on a double delivery or any other result than the above. It does not cover the webhook
 receiver or the question relay.
 
+## OpenCode's schedules
+
+With `experimental.schedules` on (off by default; added in 2.2.3, run under `opencode serve` too
+since 2.2.4, by one server per database through the `schedule:leader` row of the `kv` table), the
+`opencode_schedule_*` tools (`packages/core/src/tool/plugin/schedule.ts`) let a session prompt itself
+later. The plugin API has no schedule domain and schedules publish no events, so no `Waits` supplier
+can see one, and a child that schedules a wake and ends its turn would read as ended without a report.
+
+- So every spawned session is created with `CHILD_RULES` (`tree/spawn.ts`): `opencode_schedule_*`
+  denied on `*`. A root keeps the tools.
+- They are Code Mode tools (namespace `opencode`), in `execute`'s catalog rather than tools of their
+  own, so the `context` hook cannot drop them. `Tool.snapshot` (`packages/core/src/tool.ts`) drops a
+  tool whose action, its id (`opencode_` and the name), a rule wholly denies, from the direct tools
+  and the catalog alike; the session's rules come after the agent's (`session/context.ts`).
+- 2.2.4's `ctx.experimental.artifact` (artifact providers for `artifact_create` and the rest, behind
+  `experimental.artifacts`) is not used: the plugin stores and serves no files.
+
 ## Creating a worktree from a given commit
 
 `worktree.create` takes `projectID` and optionally `from`, `branch`, `directory` and `name`
@@ -325,7 +342,7 @@ and a parent's children to `standing` (`tree/standing.ts`, from the tools and ev
 child, put only when the text changed, removed with the last child). Each value stays well under
 3 KiB. Read in
 `packages/core/src/session/instruction-entry.ts`, `instructions/index.ts`, `instruction-state.ts`,
-`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.3`:
+`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.4`:
 
 - **Rendering.** An entry is one block, `<context key="<key>">`, the value, `</context>`: a string
   as it is, any other JSON pretty-printed. The key matches `^[a-z0-9][a-z0-9._-]*$` (stored as
@@ -403,7 +420,8 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
 - **`Session.create` takes a `location` or a `parentID`**, never both. With a parent the child takes
   its location, so an isolated child cannot have one.
 - **Inheritance:** with a `parentID` and no `permissions`, a child gets its parent's session ruleset
-  (`packages/core/src/session.ts`); `permissions: []` is kept, which the plugin passes. `metadata` is
+  (`packages/core/src/session.ts`); a ruleset passed is kept, and the plugin passes its own
+  (`CHILD_RULES`, [OpenCode's schedules](#opencodes-schedules)). `metadata` is
   inherited too; the plugin passes its own.
 - **Providers** (`session/affinity.ts`, `session/model-request.ts`): `parentID ?? fork?.sessionID ??
   id` goes out as `x-session-affinity`, `X-Session-Id`, `x-opencode-session` and `promptCacheKey`,
@@ -438,9 +456,9 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   run the unpatched one.
 - **No peers for them.** An exact optional peer `@opentui/core` broke `opencode plugin add` with
   ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.8.0`,
-  `solid-js` `1.9.17` at `v2.2.3`), and `@opencode/theme` at the pin. `@opencode/plugin`'s own
-  optional `@opentui/core` and `@opentui/solid` peers are ranges since 2.2.3 (`>=0.8.0`); the
-  plugin's stay devDependencies.
+  `solid-js` `1.9.17` at `v2.2.4`, unchanged from `v2.2.3`), and `@opencode/theme` at the pin.
+  `@opencode/plugin`'s own optional `@opentui/core` and `@opentui/solid` peers are ranges since 2.2.3
+  (`>=0.8.0`); the plugin's stay devDependencies.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles with `createSolidTransformPlugin()` and
   `packages: "external"`. `@arethetypeswrong/cli` flags an export without types, hence
@@ -466,7 +484,7 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   (`ui/dialog-select.tsx`).
 - **A select's rows** are one line: title (cut at 61), description, and a right-aligned footer that
   squeezes them. `large` is 88 columns, `xlarge` 116. Rows also take an undeclared `details: string[]`
-  of muted lines, which the memory view uses for lessons; a later host may drop it (2.2.3 still
+  of muted lines, which the memory view uses for lessons; a later host may drop it (2.2.4 still
   reads it, and colours the detail line from the `dialog.footer` surface 2.2.2 added). A `disabled`
   option is left out.
 - **Theme:** 2.2.2 retires `text.faint` from the new designs (its dialogs use `text.muted` where

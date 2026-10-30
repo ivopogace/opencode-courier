@@ -48,9 +48,9 @@ import rules and the reasons for them.
   is the one cleanup service (`forgetChild`, which drops the child's group membership too, best
   effort, `forgetDropped`, expired entries, `forgetDeleted`, `forgetReports`); taking back a write
   just made (`send.ts`, `spawn.ts`) and dropping a delivered group (`group.ts`) stay with their use
-  case. One file per use case: `spawn.ts` (which also writes the child's `role` entry, the entries
-  `CourierPorts.entries` supplies from `memory/`, the `lessons`, and the root's own at its first
-  spawn), `send.ts`, `status.ts`
+  case. One file per use case: `spawn.ts` (which creates the child with `CHILD_RULES`, OpenCode's
+  schedule tools denied, and also writes the child's `role` entry, the entries `CourierPorts.entries`
+  supplies from `memory/`, the `lessons`, and the root's own at its first spawn), `send.ts`, `status.ts`
   (`courier_children`), `subtree.ts` (`courier_tree`), `stop.ts` (`courier_stop`), `cleanup.ts`.
   `limits.ts` the limits `spawn()` checks; `model.ts` the model a child runs on (`chooseModel`: the `model` named, else
   the agent's, else the parent's, with the `variant` named, checked against the models OpenCode lists); `running.ts` whether a session runs (`turnOf`, `turnIn` for messages the caller read, `runs`: its
@@ -201,21 +201,21 @@ bun test
 bun run build      # dist/: tsc for the server half and rpc, script/build-tui.ts for tui
 bun script/compat-table.ts --check   # the version tables against the release tags (git fetch --tags)
 # live test: install the CLI once, at the version of the pinned plugin API
-npm install --prefix <scratch>/oc @opencode/cli@2.2.3
+npm install --prefix <scratch>/oc @opencode/cli@2.2.4
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # every scenario in one run, no API key; E2E_SHARD=k/n for a part
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TUI part, needs tmux
 ```
 
 ## Rules
 
-- The V2 plugin API is pinned to an exact version, `@opencode/plugin@2.2.3`, as devDependency and
+- The V2 plugin API is pinned to an exact version, `@opencode/plugin@2.2.4`, as devDependency and
   as peer dependency alike (the peer picks the copy `opencode plugin add` installs next to the
   plugin, which OpenCode 2.0.25 and later replace with their own at load, see
   `docs/maintainers/plugin-api-notes.md`; a unit test keeps the two equal; the exact `effect` peer and
   devDependency move with it, to the `effect` the new `@opencode/plugin` depends on), and the live
   test installs `@opencode/cli` at that same version. Read the API's types in `node_modules` rather than
   guessing; the OpenCode V2 source is on the `v2` branch of https://github.com/anomalyco/opencode,
-  with each release tagged (`v2.2.3`). The Supported OpenCode version tables, README.md's
+  with each release tagged (`v2.2.4`). The Supported OpenCode version tables, README.md's
   newest three rows and `docs/reference.md`'s all, are generated from the release tags by
   `script/compat-table.ts`, which Start a release runs and CI checks: never edit them by hand. A pin
   bump, asked for by the issue `latest.yml` opens for a new OpenCode release, moves the version README

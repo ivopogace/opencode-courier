@@ -91,6 +91,17 @@ shows() {
   tmux capture-pane -pt "$TMUX_SESSION" >"$WORK/$3.txt" 2>/dev/null || true
   echo "$shown"
 }
+# Whether one screen within $2 s shows the line $1 and passes the check $4 on its capture, kept in $WORK/$3.txt;
+# for a toast followed by a redraw, which a capture can land between.
+shows_with() {
+  local shown=false
+  for _ in $(seq 1 "$(($2 * 2))"); do
+    tmux capture-pane -pt "$TMUX_SESSION" >"$WORK/$3.txt" 2>/dev/null || true
+    if grep -qF -- "$1" "$WORK/$3.txt" && "$4" "$WORK/$3.txt"; then shown=true; break; fi
+    sleep 0.5
+  done
+  echo "$shown"
+}
 kv() { XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" "$@"; }
 # Whether the line $1 is gone from the TUI's screen within $2 s; the screen is kept in $WORK/$3.txt.
 hides() {
@@ -621,8 +632,9 @@ check "the view opens again, for the pin" "$(shows "Memory ($total)" 30 tui-memo
 for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done
 tmux send-keys -t "$TMUX_SESSION" p
 # The toast quotes the title after "Pinned"; the group's header does not, and heads the list above Today.
+pinned_above_today() { awk '/(^|[^A-Za-z])Pinned([^A-Za-z"]|$)/ && !/Pinned "/ { pinned = NR } /(^|[^A-Za-z])Today([^A-Za-z]|$)/ { today = NR } END { exit !(pinned && today && pinned < today) }' "$1"; }
 check "p pins the tree's record: a toast says so, and the list has it under Pinned, above Today" \
-  "$([ "$(shows "Pinned \"" 15 tui-memory-pinned)" = true ] && awk '/(^|[^A-Za-z])Pinned([^A-Za-z"]|$)/ && !/Pinned "/ { pinned = NR } /(^|[^A-Za-z])Today([^A-Za-z]|$)/ { today = NR } END { exit !(pinned && today && pinned < today) }' "$WORK/tui-memory-pinned.txt" && echo true || echo false)"
+  "$(shows_with "Pinned \"" 15 tui-memory-pinned pinned_above_today)"
 check "the pin lies beside the record, which is not written" \
   "$([ "$(kv get "memory/$project/$parent/pin" | jq -r '(.at | type) == "number"')" = true ] && [ "$(kv get "memory/$project/$parent" | jq -r 'has("pinned") | not')" = true ] && echo true || echo false)"
 check "the RPC lists it first, pinned" "$(memory_rpc records '{}' | jq -r --arg parent "$parent" '.output.records[0].sessionID == $parent and (.output.records[0].pinned.at | type) == "number"')"

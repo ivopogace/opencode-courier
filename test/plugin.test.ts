@@ -320,7 +320,7 @@ test("with nativeChildren in the options, courier_spawn gives a child OpenCode's
   const { tools, calls } = await setUp({}, { nativeChildren: true })
 
   await tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_parent" })
-  expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ parentID: "ses_parent", permissions: [] })
+  expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ parentID: "ses_parent", permissions: [{ action: "opencode_schedule_*", resource: "*", effect: "deny" }] })
 
   await tools.get("courier_spawn").execute({ task: "t", native: false }, { sessionID: "ses_parent" })
   expect(calls.findLast((call) => call.method === "session.create")!.input).not.toHaveProperty("parentID")
@@ -330,7 +330,7 @@ test("without the option, courier_spawn with native: true gives a child OpenCode
   const { tools, calls } = await setUp()
 
   const result = await tools.get("courier_spawn").execute({ task: "t", native: true }, { sessionID: "ses_parent" })
-  expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ parentID: "ses_parent", permissions: [] })
+  expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ parentID: "ses_parent", permissions: [{ action: "opencode_schedule_*", resource: "*", effect: "deny" }] })
   expect(result.metadata).toMatchObject({ native: true })
 
   await expect(tools.get("courier_spawn").execute({ task: "t", native: true, isolate: true }, { sessionID: "ses_parent" })).rejects.toThrow(

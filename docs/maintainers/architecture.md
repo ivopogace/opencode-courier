@@ -1,6 +1,6 @@
 # Architecture
 
-Why the code is shaped as it is. [CLAUDE.md](../../CLAUDE.md)'s Layout is the file-by-file map, and
+Why the code is shaped as it is. [CLAUDE.md](../../CLAUDE.md)'s Layout is the short map, and
 `test/imports.test.ts` enforces the import rules.
 
 ## Modules

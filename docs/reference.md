@@ -33,7 +33,7 @@ version in its `package.json`. Every release and its version:
 OpenCode never checks the version. The plugin loads on any host from 2.0.4 on, but its tools may
 break on another version. On 2.0.0 to 2.0.3 it fails to load with
 `TypeError: undefined is not an object (evaluating 'host.model.list')`. The terminal part is tested on
-OpenCode 2.2.3 only.
+OpenCode 2.2.4 only.
 
 On a version other than the pinned one, the plugin writes one line to the server log when it loads
 (`opencode serve --print-logs` shows it):
@@ -525,6 +525,11 @@ message and forgetting it can deliver it twice. After a start,
 OpenCode loads plugins when a project is first used, so messages that fell due meanwhile arrive
 then.
 
+A spawned session cannot use OpenCode's own schedules (`schedule_create` and the rest, with
+`experimental.schedules` on): its session's rules deny them. A wake-up of theirs goes round the tree,
+so a child that scheduled one and ended its turn would read as having ended without a report.
+`courier_later` is the way for a child to wait. A root session keeps them.
+
 ## Memory
 
 The plugin keeps **one record per session tree** in the project, under its top session. It is
@@ -630,7 +635,8 @@ What changes for a native child:
   and they are relayed as without the option. With a bare API client nothing shows the prompts:
   `courier_answer` is the fallback, and `courier_children` lists them under `pending`.
 - **Deleting a session deletes its native children.**
-- **The child gets an empty ruleset**, not its parent's session rules, as without the option.
+- **The child gets the courier's own ruleset** (OpenCode's schedule tools denied, [Scheduled
+  messages](#scheduled-messages)), not its parent's session rules, as without the option.
 - **Providers see a subagent.** Requests carry the parent's id for cache routing. GitHub Copilot
   meters subagents differently; not tested on Copilot.
 - **A native child leaves the TUI's session lists.** Reach it from the parent's subagent tab.

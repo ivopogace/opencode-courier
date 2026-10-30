@@ -56,12 +56,12 @@
     "test:e2e": "e2e/run.sh"
   },
   "peerDependencies": {
-    "@opencode/plugin": "2.2.3",
+    "@opencode/plugin": "2.2.4",
     "effect": "4.0.6"
   },
   "devDependencies": {
-    "@opencode/plugin": "2.2.3",
-    "@opencode/theme": "2.2.3",
+    "@opencode/plugin": "2.2.4",
+    "@opencode/theme": "2.2.4",
     "@opentui/core": "0.8.0",
     "@opentui/solid": "0.8.0",
     "@types/bun": "1.4.2",

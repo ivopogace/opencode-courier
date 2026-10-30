@@ -108,7 +108,7 @@ jobs:
             echo "::warning title=OpenCode latest::The live suite did not pass on @opencode/cli@$VERSION; the pinned leg decides"
           fi
       - name: Upload server and model logs
-        if: failure() || steps.outcome.outputs.outcome == 'timeout'
+        if: failure() || cancelled()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-logs-latest-${{ steps.install.outputs.version || 'unknown' }}

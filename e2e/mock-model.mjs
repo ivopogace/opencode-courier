@@ -431,9 +431,8 @@ function passFinding(messages, lastAssistant) {
   return { text: "PARENT WOKE" }
 }
 
-// The README's GIF (script/record-gif.sh): an orchestrator fixes two issues in parallel, a lead per issue in one group, each lead
-// two workers in a group of its own; each worker reports after a multiple of the delay, each lead once its group has, and the
-// orchestrator ends on the leads'.
+// The README's GIF (script/record-gif.sh): two issues in parallel, a lead per issue, each with two workers in its own group; a
+// worker reports after a multiple of the delay, a lead once its group has, and the orchestrator on the leads'.
 const DEMO_PROMPT = "Fix issues #12 and #15 in parallel"
 const DEMO_LEADS = [
   {

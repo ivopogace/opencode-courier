@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Records the README's GIF, an orchestrator fixing two issues in parallel through leads and their workers in the TUI, as the pane's screens and the markers
-# for script/render-gif.py:
+# Records the README's GIF, two issues fixed in parallel in the TUI, as the pane's screens and markers for script/render-gif.py:
 #   OPENCODE_BIN=/path/to/opencode script/record-gif.sh [out dir]   # settings: docs/maintainers/development.md
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -24,8 +23,8 @@ select_row() {
   local at row
   for _ in $(seq 1 10); do
     wait_for "courier tree  ["
-    at=$(grep -n -m1 "▸" "$SCREEN" | cut -d: -f1)
-    row=$(grep -n -m1 -E "$1( \\(on screen\\))?  [a-z]+( ·| *$)" "$SCREEN" | cut -d: -f1)
+    at=$(grep -n -m1 "▸" "$SCREEN" | cut -d: -f1 || true)
+    row=$(grep -n -m1 -E "$1( \\(on screen\\))?  [a-z]+( ·| *$)" "$SCREEN" | cut -d: -f1 || true)
     [ -n "$at" ] && [ -n "$row" ] || { echo "no row \"$1\" or no selection in the tree panel:"; cat "$SCREEN"; KEEP=1; exit 1; }
     [ "$at" = "$row" ] && return
     if [ "$at" -lt "$row" ]; then press "↓" Down; else press "↑" Up; fi

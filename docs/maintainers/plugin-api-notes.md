@@ -1,8 +1,8 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.2.4` and OpenCode 2.2.4. A pin bump re-checks each trap. OpenCode's source is on
-the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.4`); paths
+`@opencode/plugin@2.2.5` and OpenCode 2.2.5. A pin bump re-checks each trap. OpenCode's source is on
+the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.5`); paths
 below are in it.
 
 ## Tools
@@ -397,7 +397,7 @@ and a parent's children to `standing` (`tree/standing.ts`, from the tools and ev
 child, put only when the text changed, removed with the last child). Each value stays well under
 3 KiB. Read in
 `packages/core/src/session/instruction-entry.ts`, `instructions/index.ts`, `instruction-state.ts`,
-`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.4`:
+`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.5`:
 
 - **Rendering.** An entry is one block, `<context key="<key>">`, the value, `</context>`: a string
   as it is, any other JSON pretty-printed. The key matches `^[a-z0-9][a-z0-9._-]*$` (stored as
@@ -511,7 +511,7 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   run the unpatched one.
 - **No peers for them.** An exact optional peer `@opentui/core` broke `opencode plugin add` with
   ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.8.0`,
-  `solid-js` `1.9.17` at `v2.2.4`, unchanged from `v2.2.3`), and `@opencode/theme` at the pin.
+  `solid-js` `1.9.17` at `v2.2.5`, unchanged since `v2.2.3`), and `@opencode/theme` at the pin.
   `@opencode/plugin`'s own optional `@opentui/core` and `@opentui/solid` peers are ranges since 2.2.3
   (`>=0.8.0`); the plugin's stay devDependencies.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside

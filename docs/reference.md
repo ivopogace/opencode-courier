@@ -366,14 +366,22 @@ A spawned session owes its parent a report from the moment a task or message rea
 reports with a status, or its turn fails or is interrupted. What you type in the child's own session
 does not make it owe one.
 
-When its turn ends while it owes a report, the parent gets a message marked
+Before it goes idle owing a report, the child is reminded once: a message in a `<courier
+from="courier" reminder="report">` envelope, naming the session to report to. It runs in the same
+turn, on the warm prompt cache, and the parent is not woken. One reminder per prompt that reached
+the child: if it still ends its turn without a report, the parent gets a message marked
 `ended="without-report"`, with the child's last reply. The parent can tell the child to carry on or
-to report, or start a replacement.
+to report, or start a replacement. The reminder is not a prompt of its own: the child owes the same
+report, and it is not watched as a [missed wake](#a-missed-wake). It needs OpenCode 2.2.4's
+experimental `experimental.idle` hook; an older OpenCode, or one where the hook changed, skips the
+reminder and only tells the parent.
 
 The parent is not told while the child waits on something: its own children's reports, a permission
 request or question, a scheduled message, or a webhook topic it subscribed to since its last
-prompt. A turn stopped by a server shutdown resumes on the next start and is not told. A turn ended
-by a plain permission decline or a dismissed question is told.
+prompt. Nor is the child reminded then, or while background work of its own (a shell, a subagent)
+still runs, whose end wakes it. A turn stopped by a server shutdown resumes on the next start and is
+not told. A turn ended by a plain permission decline or a dismissed question is told, without a
+reminder: an interrupted turn does not reach the hook.
 
 ## A missed wake
 

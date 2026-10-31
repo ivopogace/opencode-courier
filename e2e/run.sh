@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 schedules:20 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 schedules:20 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -601,6 +601,42 @@ run_reports_groups() {
   check "the child's first turn, which ended waiting, was not told" "$(turn_ended "$child"; notices_with "$parent" ended | jq -r 'length == 0')"
   check "the child scheduled the message in its first turn" \
     "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_later")] | length == 1')"
+}
+
+run_reminder() {
+  scenario "a child about to end its turn without a report is reminded once, in the same turn, and reports"
+  out=$(prompt "COURIER-SILENT-HEEDS")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the reminded child reported to its parent" "$(has_text "$parent" "<courier from=\"$child\" status=\"done\">" 45)"
+  turn_ended "$child"
+  reminders=$(notices_with "$child" reminder)
+  check "it got one reminder, in an envelope, after its reply and before its report" "$(api "session/$child/message" | jq -r '
+    [.data[] | if .type == "synthetic" then (if (.text | contains("reminder=\"report\"")) then "reminder" else empty end)
+      elif .type == "assistant" then ([.content[]? | select(.type == "text") | .text] | join("") | if contains("CHILD SILENT REPLY") then "reply" else empty end),
+        ([.content[]? | select(.type == "tool") | .name] | if index("courier_send") then "report" else empty end)
+      else empty end] == ["reply", "reminder", "report"]')"
+  check "which names the session to report to" "$(jq -r --arg parent "$parent" 'length == 1 and (.[0] |
+    startswith("<courier from=\"courier\" reminder=\"report\">") and contains("sessionID \"" + $parent + "\""))' <<<"$reminders")"
+  nudged=$(kv get "report/$child/nudged")
+  echo "  $nudged"
+  check "the mark keeps the reminder's inbox id, and its delivery was not taken for a prompt" \
+    "$(api "session/$child/message" | jq -r --argjson nudged "$nudged" --argjson prompt "$(kv get "report/$child/prompt")" \
+      '[.data[] | select(.type == "synthetic" and (.text | contains("reminder=\"report\""))) | .id] == [$nudged.inboxID] and $prompt.at <= $nudged.at')"
+  check "its report settled what it owed" "$(kv get "report/$child/settled" | jq -r '.by == "report" and .status == "done"')"
+  check "the parent was not told of a turn without a report, and no wake was watched for the reminder" \
+    "$([ "$(notices_with "$parent" ended | jq -r 'length')" = 0 ] && [ -z "$(kv get "wake/$child/$(jq -r .inboxID <<<"$nudged")")" ] && echo true || echo false)"
+
+  scenario "a child that ignores its reminder ends its turn, and the parent is told as before"
+  out=$(prompt "COURIER-SILENT")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the parent was told the child ended without a report" "$([ -n "$(reply_time "$parent" "PARENT TOLD SILENT" 45)" ] && echo true || echo false)"
+  turn_ended "$child"
+  check "after one reminder, not two" "$(notices_with "$child" reminder | jq -r 'length == 1')"
+  check "once, with the reply it gave after the reminder" "$(notices_with "$parent" ended | jq -r --arg child "$child" 'length == 1 and (.[0] |
+    contains("<courier from=\"" + $child + "\" ended=\"without-report\">") and contains("CHILD SILENT REPLY"))')"
+  check "and the child still owes the report of its task" "$([ -z "$(kv get "report/$child/settled")" ] && echo true || echo false)"
 }
 
 run_finding() {

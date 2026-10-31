@@ -611,11 +611,12 @@ run_reminder() {
   check "the reminded child reported to its parent" "$(has_text "$parent" "<courier from=\"$child\" status=\"done\">" 45)"
   turn_ended "$child"
   reminders=$(notices_with "$child" reminder)
-  check "it got one reminder, in an envelope, after its reply and before its report" "$(api "session/$child/message" | jq -r '
-    [.data[] | if .type == "synthetic" then (if (.text | contains("reminder=\"report\"")) then "reminder" else empty end)
+  # The transcript lists the newest first; a turn's end shows as an `idle` entry.
+  check "it got one reminder, after its reply and before its report, all in one turn" "$(api "session/$child/message" | jq -r '
+    [.data[] | if .type == "idle" then "end" elif .type == "synthetic" then (if (.text | contains("reminder=\"report\"")) then "reminder" else empty end)
       elif .type == "assistant" then ([.content[]? | select(.type == "text") | .text] | join("") | if contains("CHILD SILENT REPLY") then "reply" else empty end),
         ([.content[]? | select(.type == "tool") | .name] | if index("courier_send") then "report" else empty end)
-      else empty end] == ["reply", "reminder", "report"]')"
+      else empty end] == ["end", "report", "reminder", "reply"]')"
   check "which names the session to report to" "$(jq -r --arg parent "$parent" 'length == 1 and (.[0] |
     startswith("<courier from=\"courier\" reminder=\"report\">") and contains("sessionID \"" + $parent + "\""))' <<<"$reminders")"
   nudged=$(kv get "report/$child/nudged")

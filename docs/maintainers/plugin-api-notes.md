@@ -171,9 +171,12 @@ each `background` item's `sessionID`.
 - `PluginHooks` (`packages/core/src/plugin/hooks.ts`) keys callbacks by name without checking it, so
   a host without the hook takes the registration and never runs it, and the parent is told of a
   silent end as before. `src/index.ts` still registers it after the rest and logs a refusal.
-- `trigger` runs every callback for the name in turn: each loaded instance's (the hub's claim and the
-  `nudged` note keep it to one reminder) and `/goal`'s (`packages/core/src/plugin/goal.ts`), each
-  admitting its own input.
+- `trigger` runs every callback for the name in turn, in registration order: each loaded instance's
+  (the hub's claim and the `nudged` note keep it to one reminder), after built-ins such as `/goal`'s
+  ([`/goal`'s idle reviewer](#goals-idle-reviewer)). On a child with an active goal, its
+  continuation may already be pending when the reminder is admitted: the plugin API cannot read a
+  session's inbox, and the goal's state is in its own plugin's storage. Both go in the next step;
+  the reminder says to carry on if work is left, and that prompt's one reminder is spent.
 
 ## Permission requests
 

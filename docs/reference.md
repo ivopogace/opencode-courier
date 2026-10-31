@@ -374,7 +374,8 @@ the child: if it still ends its turn without a report, the parent gets a message
 to report, or start a replacement. The reminder is not a prompt of its own: the child owes the same
 report, and it is not watched as a [missed wake](#a-missed-wake). It needs OpenCode 2.2.4's
 experimental `experimental.idle` hook; an older OpenCode, or one where the hook changed, skips the
-reminder and only tells the parent.
+reminder and only tells the parent. A child with an active [`/goal`](#goal-and-courier-children) may get the
+reminder alongside the goal's continuation; it says to carry on if work is left.
 
 The parent is not told while the child waits on something: its own children's reports, a permission
 request or question, a scheduled message, or a webhook topic it subscribed to since its last

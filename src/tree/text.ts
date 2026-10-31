@@ -463,6 +463,16 @@ export function failureNotice(title: string, error: ExecutionError, group?: stri
   ].join("\n")
 }
 
+/** The one reminder a spawned session gets as it is about to end its turn owing its parent a report; it carries on in the same turn. */
+export function reportReminder(parentID: string) {
+  return [
+    `You are about to end your turn without reporting to session ${parentID}, which started you.`,
+    `If you are finished, send your report now: call courier_send with sessionID "${parentID}", a short account of what you did and ` +
+      `status ${STATUS_LIST}. If work is left, carry on and report when you finish.`,
+    "This reminder comes once: if you end your turn without a report, the session that started you is told.",
+  ].join("\n")
+}
+
 /** Longest last reply a notice that a session ended its turn without reporting quotes. */
 const MAX_REPLY = 2000
 

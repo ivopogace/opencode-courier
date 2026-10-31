@@ -51,6 +51,8 @@ test("the stores write a child's roster entry, reverse key, report state and gro
   await children.settled("ses_child", "report", 30, "done")
   await children.told("ses_child", 40)
   await children.stopped("ses_child", 50)
+  await children.nudged("ses_child", 55)
+  await children.nudged("ses_child", 55, "msg_n")
   await children.settled("ses_child", "failed", 60, undefined, 600_060)
   await holdReport(groups, (await membershipOf(groups, "ses_parent", "pair", "ses_child"))!, { at: 30, status: "done", message: "all done" })
 
@@ -63,11 +65,14 @@ test("the stores write a child's roster entry, reverse key, report state and gro
     'set report/ses_child/settled {"at":30,"by":"report","status":"done"}',
     'set report/ses_child/told {"at":40}',
     'set report/ses_child/stopped {"at":50}',
+    'set report/ses_child/nudged {"at":55}',
+    'set report/ses_child/nudged {"at":55,"inboxID":"msg_n"}',
     'set report/ses_child/settled {"at":60,"by":"failed","resumesAt":600060}',
     'set group/ses_parent/pair/ses_child {"title":"Child","joinedAt":5,"report":{"at":30,"status":"done","message":"all done"}}',
   ])
+  expect(await children.nudgeOf("ses_child")).toEqual({ at: 55, inboxID: "msg_n" })
   expect(await children.reported()).toEqual(
-    new Map([["ses_child", ["report/ses_child/progress", "report/ses_child/prompt", "report/ses_child/settled", "report/ses_child/stopped", "report/ses_child/told"]]]),
+    new Map([["ses_child", ["report/ses_child/nudged", "report/ses_child/progress", "report/ses_child/prompt", "report/ses_child/settled", "report/ses_child/stopped", "report/ses_child/told"]]]),
   )
 
   writes.length = 0
@@ -80,6 +85,7 @@ test("the stores write a child's roster entry, reverse key, report state and gro
     "remove report/ses_child/progress",
     "remove report/ses_child/told",
     "remove report/ses_child/stopped",
+    "remove report/ses_child/nudged",
   ])
   // The held report outlives the child's entry: it still goes to the parent with its group.
   expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_child"])

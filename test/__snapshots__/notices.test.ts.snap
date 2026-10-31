@@ -1075,6 +1075,12 @@ Its turn ended without finishing, so it will not report back on its own.
 Do not message it with courier_send before then, as the turn would fail again. Message it after, start a replacement, or carry on without it; courier_later can remind you when the wait is over."
 `;
 
+exports[`turn failures reportReminder 1`] = `
+"You are about to end your turn without reporting to session ses_parent, which started you.
+If you are finished, send your report now: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial, blocked or failed. If work is left, carry on and report when you finish.
+This reminder comes once: if you end your turn without a report, the session that started you is told."
+`;
+
 exports[`turn failures silentNotice 1`] = `
 "This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
 Its last reply:

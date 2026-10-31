@@ -75,6 +75,8 @@ async function setUp(
       },
       context: record("session.context", []),
       hook: async (name: string, callback: (event: any) => Promise<void> | void) => {
+        // A host before the hook was added: `refusesHook` names the one it does not know.
+        if (overrides.refusesHook === name) throw new Error(`Unknown hook: ${name}`)
         hooks.set(name, callback)
         return { dispose: async () => {} }
       },
@@ -249,6 +251,38 @@ test("loads all the same when the host cannot register the RPC, and logs it", as
     expect(tools.size).toBe(13)
     expect(hooks.has("context")).toBe(true)
     expect(logged.filter((line) => line.startsWith("courier rpc: not registered"))).toHaveLength(1)
+  } finally {
+    error.mockRestore()
+  }
+})
+
+test("registers the experimental.idle hook, which reminds a spawned child owing a report and never throws", async () => {
+  const stored = {
+    "roster/ses_parent/ses_child": { sessionID: "ses_child", parentID: "ses_parent", title: "t", directory: "/repo", isolated: false, createdAt: Date.now(), reports: "status" },
+    "roster-by-child/ses_child": { ancestors: ["ses_parent"] },
+    "report/ses_child/prompt": { at: Date.now() },
+  }
+  const { hooks, calls } = await setUp(stored)
+
+  await hooks.get("experimental.idle")!({ sessionID: "ses_child", background: [] })
+  await hooks.get("experimental.idle")!({ sessionID: "ses_child", background: [] })
+  await hooks.get("experimental.idle")!({ sessionID: "ses_nobody", background: [] })
+
+  const reminders = calls.filter((call) => call.method === "session.synthetic")
+  expect(reminders).toHaveLength(1)
+  expect(reminders[0]!.input).toMatchObject({ sessionID: "ses_child", metadata: { reminder: "report" }, resume: false })
+})
+
+test("loads all the same on a host without the experimental.idle hook, and logs it", async () => {
+  const logged: string[] = []
+  const error = spyOn(console, "error").mockImplementation((message: unknown) => void logged.push(String(message)))
+  try {
+    const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { refusesHook: "experimental.idle" })
+
+    expect(tools.size).toBe(13)
+    expect(hooks.has("context")).toBe(true)
+    expect(hooks.has("experimental.idle")).toBe(false)
+    expect(logged.filter((line) => line.startsWith("courier idle: not registered"))).toHaveLength(1)
   } finally {
     error.mockRestore()
   }

@@ -32,7 +32,8 @@ export function reverseKey(sessionID: string) {
 
 /**
  * Whether a spawned session has reported since its last prompt, under `report/<sessionID>/`: `prompt`, `settled` (with
- * the report's status, or when a failed turn's wait lifts), `progress` (a message to its parent without a status) and `told`; docs/maintainers/architecture.md has each.
+ * the report's status, or when a failed turn's wait lifts), `progress` (a message to its parent without a status), `told` and `nudged` (the
+ * reminder to report, with its inbox id); docs/maintainers/architecture.md has each.
  */
 const REPORT_PREFIX = "report/"
 
@@ -41,6 +42,7 @@ export const settledKey = (sessionID: string) => `${REPORT_PREFIX}${sessionID}/s
 export const progressKey = (sessionID: string) => `${REPORT_PREFIX}${sessionID}/progress`
 export const toldKey = (sessionID: string) => `${REPORT_PREFIX}${sessionID}/told`
 export const stoppedKey = (sessionID: string) => `${REPORT_PREFIX}${sessionID}/stopped`
+export const nudgedKey = (sessionID: string) => `${REPORT_PREFIX}${sessionID}/nudged`
 
 const REPORT_KEYS: Readonly<Record<ReportField, (sessionID: string) => string>> = {
   prompt: promptKey,
@@ -48,6 +50,7 @@ const REPORT_KEYS: Readonly<Record<ReportField, (sessionID: string) => string>> 
   progress: progressKey,
   told: toldKey,
   stopped: stoppedKey,
+  nudged: nudgedKey,
 }
 
 /**
@@ -222,6 +225,14 @@ export function childStore(storage: Storage): ChildStore {
     },
     async stopped(sessionID, at) {
       await storage.set(stoppedKey(sessionID), { at })
+    },
+    async nudged(sessionID, at, inboxID) {
+      await storage.set(nudgedKey(sessionID), { at, ...(inboxID === undefined ? {} : { inboxID }) })
+    },
+    async nudgeOf(sessionID) {
+      const value = await storage.get(nudgedKey(sessionID))
+      const inboxID = str(obj(value).inboxID)
+      return { at: timeOf(value), ...(inboxID === undefined ? {} : { inboxID }) }
     },
     async peek(sessionID, field) {
       const value = await storage.get(REPORT_KEYS[field](sessionID))

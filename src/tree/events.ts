@@ -5,7 +5,8 @@ import { endsIdle, retryDelay } from "./domain.js"
 import { forgetChild, forgetDeleted } from "./forget.js"
 import { hasCompleteGroup, leave, outIn } from "./group.js"
 import type { ExecutionError, Waits, WatchPorts, WatchState } from "./ports.js"
-import { awaited, reportOf, stoppedSincePrompt } from "./report.js"
+import { owedUnwaited } from "./nudge.js"
+import { stoppedSincePrompt } from "./report.js"
 import { syncStanding } from "./standing.js"
 import { childStore, groupStore } from "./store.js"
 import { lastReply } from "./status.js"
@@ -103,6 +104,8 @@ export async function notePrompt(
   const children = childStore(ports.storage)
   const parentID = await children.indexedParent(sessionID)
   if (parentID === undefined) return false
+  // The reminder to report is not a prompt: it asks for the report the last one owes.
+  if (inboxID !== undefined && (await children.nudgeOf(sessionID)).inboxID === inboxID) return false
   await children.prompted(sessionID, event.created ?? ports.now())
   await syncStanding(ports, parentID)
   return true
@@ -158,19 +161,6 @@ export const together =
     (await Promise.all(suppliers.map((supplier) => supplier(ports, sessionID, since)))).includes(true)
 
 /**
- * Whether a session prompted at `prompt` waits: on an untold report of a session it started, a complete group of
- * its about to be delivered, or what `outside` says it waits on. Cheapest first.
- */
-async function waits(ports: WatchPorts, outside: Waits, sessionID: string, prompt: number) {
-  const children = childStore(ports.storage)
-  const started = await children.children(sessionID)
-  if ((await Promise.all(started.map((entry) => awaited(children, entry.sessionID)))).includes(true)) return true
-  // A group with a member still out is waited on through that member, above; one whose every out member was told of is not.
-  if (started.some((entry) => entry.group) && (await hasCompleteGroup(groupStore(ports.storage), sessionID))) return true
-  return outside(ports, sessionID, prompt)
-}
-
-/**
  * Tells the parent of a spawned session whose turn ended without reporting to it since its last
  * prompt, unless it waits; finds the session by the reverse index alone. Returns the parents told.
  */
@@ -180,9 +170,8 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   const entry = await children.indexedEntry(sessionID)
   // Claimed after the lookup, so other sessions' turns do not crowd `seen`, and before anything is told.
   if (!entry || !claim(seen, event.id)) return []
-  const report = await reportOf(children, sessionID)
-  if (!report?.owes || (await waits(ports, outside, sessionID, report.prompt))) return []
-  if (await stoppedSincePrompt(children, sessionID).catch(() => false)) return []
+  const report = await owedUnwaited(ports, children, outside, sessionID)
+  if (!report) return []
   // The notice goes out without the reply rather than not at all.
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
   const group = (await outIn(ports, entry))?.group

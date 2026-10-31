@@ -545,8 +545,8 @@ so a child that scheduled one and ended its turn would read as having ended with
 OpenCode's `/goal` (2.2.4 and later) has a reviewer check the session each time its turn ends and
 prompts it to continue unless the goal is met, blocked or paused. It holds back only for OpenCode's
 own background work in that session: subagents of the task tool, image jobs and shells. Courier
-children, native ones too, are not in that list, and a plugin cannot add to it; an upstream request
-asks OpenCode for a way to.
+children, native ones too, are not in that list, and a plugin cannot add to it; [an upstream
+request](https://github.com/anomalyco/opencode/issues/60860) asks OpenCode for a way to.
 
 So a session with an active goal that spawns children and ends its turn to wait for their reports is
 prompted to continue at once. It may poll, redo the children's work or spawn again, and after three

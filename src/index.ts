@@ -35,6 +35,7 @@ import {
   dirtyOf,
   headOf,
   inspectWorktree,
+  onIdle,
   pruneExpired,
   readLimits,
   readNativeChildren,
@@ -230,6 +231,11 @@ export const courier = () => Plugin.define({
       log: later.log,
       nudge,
     }
+    // A spawned session about to go idle owing a report is reminded once, in the same execution. The hook is
+    // experimental, and a host before 2.2.4 lacks it: the rest loads all the same, and its parents are told as before.
+    await Promise.resolve()
+      .then(() => ctx.session.hook("experimental.idle", (event) => onIdle(watchPorts, watchState.seen, outside, event).then(() => undefined)))
+      .catch((error: unknown) => log(`courier idle: not registered, a child that ends without a report is not reminded: ${String(error)}`))
     // The hub's subscriptions to OpenCode's events, one and a standby, start with this copy's modules.
     watchFromHub(hub, eventModules)
     const member: Member = {

@@ -285,6 +285,9 @@ describe("turn failures", () => {
     expect(tree.failureNotice("Fix the bug", { ...limited, retryAfterMs: 7_500_000 }, "reviews", Date.UTC(2026, 0, 5, 23, 0))).toMatchSnapshot()
     expect(tree.failureNotice("Fix the bug", limited)).toMatchSnapshot()
   })
+  test("reportReminder", () => {
+    expect(tree.reportReminder("ses_parent")).toMatchSnapshot()
+  })
   test("silentNotice", () => {
     expect(tree.silentNotice("Fix the bug", "I looked at src/a.ts; the bug is on line 4.")).toMatchSnapshot()
     expect(tree.silentNotice("Fix the bug", undefined)).toMatchSnapshot()

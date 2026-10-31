@@ -17,7 +17,7 @@ export type RosterStorage = Storage
 export type Settled = "report" | "failed" | "interrupted"
 
 /** The notes kept of a spawned session's report state; docs/maintainers/architecture.md has each. */
-export type ReportField = "prompt" | "settled" | "progress" | "told" | "stopped"
+export type ReportField = "prompt" | "settled" | "progress" | "told" | "stopped" | "nudged"
 
 /** A report note as read: when it was made, and for `settled` how the wait ended, the report's status or a failure's `resumesAt`, as stored. */
 export interface ReportNote {
@@ -82,6 +82,10 @@ export interface ChildStore {
   untold(sessionID: string, at: number): Promise<void>
   /** Notes that courier_stop stopped a spawned session at `at`. */
   stopped(sessionID: string, at: number): Promise<void>
+  /** Notes that a spawned session was reminded at `at` to report, with the reminder's inbox id once it is admitted. */
+  nudged(sessionID: string, at: number, inboxID?: string): Promise<void>
+  /** When a spawned session was last reminded to report, and the reminder's inbox id. */
+  nudgeOf(sessionID: string): Promise<{ readonly at: number | undefined; readonly inboxID?: string }>
   /** A `settled` or `progress` note as stored, for `restore` to put back. */
   peek(sessionID: string, field: "settled" | "progress"): Promise<Stored | undefined>
   /** Puts back a note `peek` read; one that was not there is removed. */

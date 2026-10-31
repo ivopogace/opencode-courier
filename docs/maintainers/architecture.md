@@ -56,6 +56,7 @@ the tree's and the memory's keys.
 | `report/<sessionID>/progress` | `{ at }`: when it last messaged its parent without a status. |
 | `report/<sessionID>/told` | `{ at }`: when its parent was last told of a silent end. |
 | `report/<sessionID>/stopped` | `{ at }`: when `courier_stop` stopped it. |
+| `report/<sessionID>/nudged` | `{ at, inboxID }`: when it was last reminded to report, and the reminder's inbox id, whose delivery is not noted as a prompt. One reminder while `nudged` is no earlier than `prompt`. |
 | `group/<parentID>/<name>/<sessionID>` | A member: title, `joinedAt`, its held report, or `left: { at, by }`. |
 | `later/<id>` | A pending `courier_later` message. |
 | `question/<requestID>` | A relayed question, until answered (the 100 newest). |

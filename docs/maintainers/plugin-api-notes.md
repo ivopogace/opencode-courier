@@ -151,6 +151,33 @@ below are in it.
 always moves forward. A join group's release compares it with when its last member joined. It is in
 place by the time the plugin sees the turn's end.
 
+## The idle hook
+
+`experimental.idle` (`SessionIdle { sessionID, background }`, added in 2.2.4 by
+anomalyco/opencode#59437) runs in `SessionRunner` (`packages/core/src/session/runner/llm.ts`) when a
+session that ran the model has no pending input and would go idle. Its name and shape may still
+change: a pin bump re-checks both, and the reminder (`tree/nudge.ts`) reads only `sessionID` and
+each `background` item's `sessionID`.
+
+- Input it admits keeps the execution going: after the hook, the runner checks the inbox for input
+  and loops. So the reminder is sent with `resume: false`, which only skips `execution.wake`, and
+  the plugin's missed-wake watch skips it too. A hook that always admits input loops forever: the
+  `nudged` note bounds it to one per prompt.
+- It does not run after an interruption (a plain decline, a dismissed question), a failure or
+  control-only work such as a manual compaction.
+- A hook that throws fails the execution, so `onIdle` logs every failure.
+- The admitted input still publishes `session.inbox.enqueued` and `delivered`, so `notePrompt`
+  matches its inbox id to the `nudged` note rather than taking it for a new prompt.
+- `PluginHooks` (`packages/core/src/plugin/hooks.ts`) keys callbacks by name without checking it, so
+  a host without the hook takes the registration and never runs it, and the parent is told of a
+  silent end as before. `src/index.ts` still registers it after the rest and logs a refusal.
+- `trigger` runs every callback for the name in turn, in registration order: each loaded instance's
+  (the hub's claim and the `nudged` note keep it to one reminder), after built-ins such as `/goal`'s
+  ([`/goal`'s idle reviewer](#goals-idle-reviewer)). On a child with an active goal, its
+  continuation may already be pending when the reminder is admitted: the plugin API cannot read a
+  session's inbox, and the goal's state is in its own plugin's storage. Both go in the next step;
+  the reminder says to carry on if work is left, and that prompt's one reminder is spent.
+
 ## Permission requests
 
 - Pending requests are kept per location, and an instance's `permission` domain answers only its

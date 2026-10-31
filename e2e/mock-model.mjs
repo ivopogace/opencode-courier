@@ -148,6 +148,14 @@ function decide(body) {
     .slice(lastAssistant + 1)
     .map((message) => textOf(message.content))
     .join("\n")
+  // A child reminded to report before its turn ends reports if its task says CHILD-HEEDS; any other repeats its last reply and ends again.
+  if (recent.includes('<courier from="courier" reminder="report">')) {
+    const first = textOf(messages.find((message) => message.role === "user")?.content)
+    const reportTo = first.match(/You were started by session (ses_\w+)/)
+    if (reportTo && first.includes("CHILD-HEEDS"))
+      return { tool: "courier_send", args: { sessionID: reportTo[1], message: "CHILD DONE AFTER REMINDER", status: "done" } }
+    return { text: textOf(messages[lastAssistant]?.content) || "CHILD IGNORES REMINDER" }
+  }
   // COURIER-SAY replies with the rest of the line, markdown and all, up to the quote the prompt arrives with.
   const saying = recent.match(/COURIER-SAY ([^"\n]+)/)
   if (saying) return { text: saying[1] }
@@ -365,6 +373,7 @@ function decide(body) {
   if (recent.includes("COURIER-DEPTH")) return { tool: "courier_spawn", args: { task: "CHILD-DEEPENS" } }
   if (recent.includes("COURIER-FAIL")) return { tool: "courier_spawn", args: { task: "CHILD-FAILS" } }
   if (recent.includes("COURIER-LIMIT")) return { tool: "courier_spawn", args: { task: "CHILD-LIMITED" } }
+  if (recent.includes("COURIER-SILENT-HEEDS")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT CHILD-HEEDS" } }
   if (recent.includes("COURIER-SILENT")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT" } }
   if (recent.includes("COURIER-PROGRESS")) return { tool: "courier_spawn", args: { task: "CHILD-PROGRESSES" } }
   if (recent.includes("COURIER-WAITING")) return { tool: "courier_spawn", args: { task: "CHILD-WAITS" } }

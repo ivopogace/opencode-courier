@@ -34,7 +34,7 @@ version in its `package.json`. Every release and its version:
 OpenCode never checks the version. The plugin loads on any host from 2.0.4 on, but its tools may
 break on another version. On 2.0.0 to 2.0.3 it fails to load with
 `TypeError: undefined is not an object (evaluating 'host.model.list')`. The terminal part is tested on
-OpenCode 2.2.4 only.
+OpenCode 2.2.5 only.
 
 On a version other than the pinned one, the plugin writes one line to the server log when it loads
 (`opencode serve --print-logs` shows it):

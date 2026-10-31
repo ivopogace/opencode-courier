@@ -40,14 +40,14 @@ bun test
 bun run build      # dist/: tsc for the server half and rpc, script/build-tui.ts for tui
 bun script/compat-table.ts --check   # the version tables against the release tags (git fetch --tags)
 # live test: install the CLI once, at the version of the pinned plugin API
-npm install --prefix <scratch>/oc @opencode/cli@2.2.4
+npm install --prefix <scratch>/oc @opencode/cli@2.2.5
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode npm run test:e2e   # every scenario in one run, no API key; E2E_SHARD=k/n for a part
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TUI part, needs tmux
 ```
 
 ## Rules
 
-- The plugin API is pinned to `@opencode/plugin@2.2.4` exactly, as devDependency and peer alike, and
+- The plugin API is pinned to `@opencode/plugin@2.2.5` exactly, as devDependency and peer alike, and
   the live test installs `@opencode/cli` at that version. Read the API's types in `node_modules`, and
   OpenCode's source on the `v2` branch of https://github.com/anomalyco/opencode (tagged per release).
   A pin bump moves the version README names and the exact `effect` to the one the new plugin depends

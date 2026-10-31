@@ -343,7 +343,7 @@ courier children are invisible to it ([reference](../reference.md#goal-and-couri
   (`plugin/hooks.ts`) runs the callbacks one after another in registration order, and built-ins come
   before package plugins (`plugin/supervisor.ts`), so the verdict and its continuation are in before
   the courier's hook runs. A later hook can add input but not take any back. A fix needs OpenCode to
-  let a plugin declare background work, which an upstream request asks for.
+  let a plugin declare background work, which [an upstream request](https://github.com/anomalyco/opencode/issues/60860) asks for.
 - Seen live at 2.2.4, with a scripted reviewer answering `continue`: three continuations within a
   second of the spawn, then paused, 25 s before the child reported; the same with a native child.
 

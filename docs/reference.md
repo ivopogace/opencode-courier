@@ -531,6 +531,23 @@ A spawned session cannot use OpenCode's own schedules (`schedule_create` and the
 so a child that scheduled one and ended its turn would read as having ended without a report.
 `courier_later` is the way for a child to wait. A root session keeps them.
 
+## `/goal` and courier children
+
+OpenCode's `/goal` (2.2.4 and later) has a reviewer check the session each time its turn ends and
+prompts it to continue unless the goal is met, blocked or paused. It holds back only for OpenCode's
+own background work in that session: subagents of the task tool, image jobs and shells. Courier
+children, native ones too, are not in that list, and a plugin cannot add to it; an upstream request
+asks OpenCode for a way to.
+
+So a session with an active goal that spawns children and ends its turn to wait for their reports is
+prompted to continue at once. It may poll, redo the children's work or spawn again, and after three
+rounds in a row with the same reason or no tool call the goal pauses (`Not making progress`). The
+children carry on, and their reports wake the session as usual.
+
+Don't set a goal on a session that waits on courier children: their reports wake it, and
+`courier_later` covers a check-in. A goal on a session that does the work itself is not affected.
+Once the reports are in, `/goal resume` picks a paused goal up again.
+
 ## Memory
 
 The plugin keeps **one record per session tree** in the project, under its top session. It is

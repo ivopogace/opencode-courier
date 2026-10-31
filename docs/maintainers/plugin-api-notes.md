@@ -288,6 +288,15 @@ can see one, and a child that schedules a wake and ends its turn would read as e
   own, so the `context` hook cannot drop them. `Tool.snapshot` (`packages/core/src/tool.ts`) drops a
   tool whose action, its id (`opencode_` and the name), a rule wholly denies, from the direct tools
   and the catalog alike; the session's rules come after the agent's (`session/context.ts`).
+- `courier_later` keeps its own scheduler (checked at 2.2.5). Schedules are unreachable: no schedule
+  domain, not under `ctx.experimental` either, no events, and the plugin is not given the server's
+  address or password for its HTTP routes. They are off by default (`experimental.schedules: true`
+  is opt-in), so the courier would need two delivery paths. A firing is a plain steered prompt
+  (`admitWake`, `packages/core/src/schedule.ts`: `delivery: "steer"`, `metadata: { schedule }`),
+  without the sender's envelope, waiting for a running turn to end, telling `Waits` the session
+  waits, or cancelling by `courier_stop`. And `Waits` cannot see it, hence `CHILD_RULES`. The
+  `experimental.idle` hook (2.2.4) is no substitute: it runs only as a session is about to go idle
+  and can continue that execution, but has no clock, so it cannot wake a session later.
 - 2.2.4's `ctx.experimental.artifact` (artifact providers for `artifact_create` and the rest, behind
   `experimental.artifacts`) is not used: the plugin stores and serves no files.
 

@@ -541,8 +541,8 @@ asks OpenCode for a way to.
 
 So a session with an active goal that spawns children and ends its turn to wait for their reports is
 prompted to continue at once. It may poll, redo the children's work or spawn again, and after three
-rounds with the same reason or no tool call the goal pauses (`Not making progress`). The children
-carry on, and their reports wake the session as usual.
+rounds in a row with the same reason or no tool call the goal pauses (`Not making progress`). The
+children carry on, and their reports wake the session as usual.
 
 Don't set a goal on a session that waits on courier children: their reports wake it, and
 `courier_later` covers a check-in. A goal on a session that does the work itself is not affected.

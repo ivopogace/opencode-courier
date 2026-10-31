@@ -310,8 +310,9 @@ courier children are invisible to it ([reference](../reference.md#goal-and-couri
   subagents, image jobs and shells. A native courier child has a `parentID` but is not a job.
 - `goal.ts` returns early only for a `subagent` or `image` entry of the session itself, and offers
   `wait` only while one of its own shells runs. Otherwise `continue` admits a synthetic continuation
-  in the same execution; `MAX_STALLS` (3) rounds with the same reason or no tool call pause the goal.
-- The courier's own `experimental.idle` hook cannot change that. `PluginHooks.trigger`
+  in the same execution; `MAX_STALLS` (3) rounds in a row with the same reason or no tool call
+  pause the goal.
+- An `experimental.idle` hook of the courier's could not change that. `PluginHooks.trigger`
   (`plugin/hooks.ts`) runs the callbacks one after another in registration order, and built-ins come
   before package plugins (`plugin/supervisor.ts`), so the verdict and its continuation are in before
   the courier's hook runs. A later hook can add input but not take any back. A fix needs OpenCode to

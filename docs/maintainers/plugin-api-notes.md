@@ -300,6 +300,25 @@ can see one, and a child that schedules a wake and ends its turn would read as e
 - 2.2.4's `ctx.experimental.artifact` (artifact providers for `artifact_create` and the rest, behind
   `experimental.artifacts`) is not used: the plugin stores and serves no files.
 
+## `/goal`'s idle reviewer
+
+`/goal` (`packages/core/src/plugin/goal.ts`, a built-in plugin) judges on `experimental.idle`, and
+courier children are invisible to it ([reference](../reference.md#goal-and-courier-children)).
+
+- The runner (`session/runner/llm.ts`) fills `background` from `SessionBackground.outstanding`
+  (`session/background.ts`): the host's running jobs under the session, which are task-tool
+  subagents, image jobs and shells. A native courier child has a `parentID` but is not a job.
+- `goal.ts` returns early only for a `subagent` or `image` entry of the session itself, and offers
+  `wait` only while one of its own shells runs. Otherwise `continue` admits a synthetic continuation
+  in the same execution; `MAX_STALLS` (3) rounds with the same reason or no tool call pause the goal.
+- The courier's own `experimental.idle` hook cannot change that. `PluginHooks.trigger`
+  (`plugin/hooks.ts`) runs the callbacks one after another in registration order, and built-ins come
+  before package plugins (`plugin/supervisor.ts`), so the verdict and its continuation are in before
+  the courier's hook runs. A later hook can add input but not take any back. A fix needs OpenCode to
+  let a plugin declare background work.
+- Seen live at 2.2.4, with a scripted reviewer answering `continue`: three continuations within a
+  second of the spawn, then paused, 25 s before the child reported; the same with a native child.
+
 ## Creating a worktree from a given commit
 
 `worktree.create` takes `projectID` and optionally `from`, `branch`, `directory` and `name`

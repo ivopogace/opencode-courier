@@ -66,8 +66,8 @@ jobs:
       # Either way the job can only stage: the version goes live once a maintainer approves it with
       # 2FA on npmjs.com (Staged Packages) or with `npm stage approve <id>`.
       #
-      # token: NPM_TOKEN is a granular access token without 2FA bypass, with read and write on this
-      # package only; such a token can stage but not publish. It stands in for trusted publishing
+      # token: NPM_TOKEN is a granular access token without 2FA bypass, with stage-only read and write
+      # on this package only; such a token can stage but not publish. It stands in for trusted publishing
       # while npm rejects the OIDC subject claims GitHub issues for this repository (npm/cli#9969).
       - name: Check the npm token
         if: env.NPM_AUTH == 'token'

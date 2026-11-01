@@ -63,8 +63,8 @@ The repository variable `NPM_AUTH` picks how Release authenticates: `token` (the
 With `token`, `NPM_TOKEN` is a secret of the `npm` environment (Settings → Environments → `npm`). It
 is an npm granular access token (npmjs.com → Access Tokens → Granular Access Token) with:
 
-- read and write on `opencode-courier` only;
-- **Bypass two-factor authentication off**, so the token can stage but not publish;
+- **Read and write (stage only)** on `opencode-courier` only, so the token can stage but not publish;
+- **Bypass two-factor authentication (2FA)** unchecked, and Organizations on **No access**;
 - an expiry date. When it expires, the job stops at "Check the npm token"; replace the secret.
 
 Limit the `npm` environment to the tag pattern `v*` (Deployment branches and tags), so no other

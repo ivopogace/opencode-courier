@@ -297,8 +297,8 @@ The shape is in the prompt, so the plugin's tools are under test and not a playb
 each stage ran with is a note. The checker (`e2e/real-model-review.mjs`) tells the stages apart by
 order at the root: the sessions started before any report are the change, the first started after
 that report is the review, those started after the review's report are the fix. It runs the
-project's tests itself in the root's checkout (`COURIER_TEST_COMMAND`, the TAP totals in
-`tests.txt`) and makes ten checks: a session for the change in the first turn, which ended with no
+project's tests itself in the root's checkout (`COURIER_TEST_COMMAND`; the runner's output goes to
+`tests.txt`, and the totals are read from node's TAP or spec reporter) and makes ten checks: a session for the change in the first turn, which ended with no
 report in it; a review session in a later turn; the review session and anything it started changed
 nothing (no `write`, `edit` or `patch`, no shell command that commits, stages, installs, edits in
 place or redirects into a file); its report reached the root before the final reply; no polling;
@@ -307,6 +307,10 @@ files exist and the first holds the symbol (`COURIER_EXPECT`); the tests pass, `
 more; the reply holds `REVIEWED` and that number. Its notes say, per session the root started, which
 stage it was, its agent, isolation and group; what the change made and committed; what the review
 read and ran and what it reported; what the root did after the review, itself or through sessions.
+
+| Model | OpenCode | Result |
+|---|---|---|
+| a self-hosted model behind an OpenAI-compatible endpoint, eb4e68e, with a playbook skill of the person's own, `implementer` and `reviewer` agents that load superpowers' skills, and superpowers in the global config | 2.2.5 | 2 of 3 passed, 10/10 in 42 and 56 requests, 3.5 and 5 minutes. In both, the change, the review and the fix each ran as their role agent, the review native, and the review found real findings (non-ASCII letters dropped) that the root reproduced itself before starting the fix. The failed run never split: right after loading two skills and reading three files, the root acted on a user message that was never sent, telling it to stop using sub-agents, did the job itself test-first and replied `REVIEWED 8`; six checks caught it. Two checker fixes came from these runs, in the same PR: `=>` in a probe read as a redirect, and node's spec reporter totals. |
 
 ## Seeding a record
 
@@ -363,5 +367,5 @@ check-in still pays. Which session loads the skill varies from run to run; on on
 models do not load it. The recursive rows at 646112c reach the five-run floor on one model, the
 self-hosted one; no row reaches it on two. Not re-run on the current wording: `permission`
 (`COURIER_PERSON=other-server` included), `question`, `recursive-fault`, `recursive-staged`, and
-the models other than those in the 646112c rows. `review` has no row yet. Earlier rows, among them a native-notice wording
+the models other than those in the 646112c rows. Earlier rows, among them a native-notice wording
 that scored 0/6, are in this file's history.

@@ -27,13 +27,15 @@ const send = (sessionID: string, message: string, status?: string) => tool("cour
 const shell = (command: string) => tool("shell", { command })
 const report = (from: string, status: string, text: string): Message => ({ type: "synthetic", text: `<courier from="${from}" status="${status}">\n${text}\n</courier>`, time: { created: tick() } })
 
-type Variant = "clean" | "fixed" | "review-edits" | "no-review" | "root-skips-tests" | "root-polls"
+type Variant = "clean" | "fixed" | "review-edits" | "review-redirects" | "no-review" | "root-skips-tests" | "root-polls"
 
 /** The transcripts: the root starts the implementer, then the reviewer, then (fixed) a fixer, runs the tests and replies. */
 function transcripts(variant: Variant): Record<string, Message[]> {
   const impl = [user("make the change"), step("tool-calls", tool("skill", { id: "test-driven-development" }), tool("write", { path: "lib/words.js" }), tool("edit", { path: "test/words.test.js" }), shell("npm test"), shell("git commit -am slugify"), send("ses_root", "Added slugify with three tests; npm test passes 5.", "done")), step("stop", say("Reported.")), idle()]
-  const reviewerTools = [tool("read", { path: "lib/words.js" }), shell("git diff HEAD~1 -- lib test"), shell("npm test 2>&1 | tail -5")]
+  // A probe with arrow functions and `2>&1` is reading, not writing; a redirect into a file is a change.
+  const reviewerTools = [tool("read", { path: "lib/words.js" }), shell("git diff HEAD~1 -- lib test"), shell("npm test 2>&1 | tail -5"), shell('node -e \'import("./lib/words.js").then(({ slugify }) => { const show = (v) => slugify(v); console.log(show("a--b")) })\' >&2')]
   if (variant === "review-edits") reviewerTools.push(tool("edit", { path: "lib/words.js" }))
+  if (variant === "review-redirects") reviewerTools.push(shell('echo "export const x = 1" > lib/extra.js'))
   const finding = variant === "fixed" ? "One finding: slugify keeps a trailing hyphen for input ending in two punctuation marks." : "No findings: the change meets the job."
   const reviewer = [user("review the change"), step("tool-calls", ...reviewerTools, send("ses_root", finding, "done")), step("stop", say("Reported.")), idle()]
   const fixer = [user("fix the finding"), step("tool-calls", tool("edit", { path: "lib/words.js" }), shell("npm test"), send("ses_root", "Fixed the trailing hyphen; 5 tests pass.", "done")), step("stop", say("Reported.")), idle()]
@@ -91,7 +93,13 @@ describe("the review checker", () => {
     expect(run.notes).toContain("the root started ses_review in turn 2 for the review: agent reviewer")
     expect(run.notes).toContain("after the review, the root changed nothing and started no session")
     expect(run.notes.some((note) => note.startsWith("the change: ses_impl made 3 changing call(s) and committed 1 time(s)"))).toBe(true)
-    expect(run.notes.some((note) => note.startsWith("the review: ses_review made 1 read call(s) and 2 shell call(s)"))).toBe(true)
+    expect(run.notes.some((note) => note.startsWith("the review: ses_review made 1 read call(s) and 3 shell call(s)"))).toBe(true)
+  })
+
+  test("a review session that redirected a shell command into a file fails the review check", () => {
+    const run = check("review-redirects")
+    expect(run.failed).toEqual(["the review session changed nothing: no file tool, no shell command that writes, commits or installs, and nothing it started did either"])
+    expect(run.notes.some((note) => note.startsWith("the review changed the checkout: ses_review shell("))).toBe(true)
   })
 
   test("a finding fixed by a session the root started after the review passes, and is noted", () => {

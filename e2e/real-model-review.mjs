@@ -22,10 +22,11 @@ const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 5)
 const LOOKS = new Set(["courier_children", "courier_tree"])
 const RECALL = "courier_recall"
 const SKILL = "courier-orchestrate"
-// What changes the checkout: a file tool, or a shell command that commits, stages, installs, edits in place or redirects into a file.
+// What changes the checkout: a file tool, or a shell command that commits, stages, installs, edits in place or redirects into
+// a file; a redirect is a `>` that is no `2>&1`, `>&2`, `> /dev/null`, `=>` or `->`, so a probe with an arrow function is none.
 const CHANGING_TOOLS = new Set(["write", "edit", "patch", "apply_patch", "multiedit"])
 const CHANGING_SHELL =
-  /\bgit\s+(commit|add|merge|checkout|switch|reset|stash|rebase|cherry-pick|rm|mv|apply)\b|\bsed\s+-i\b|\b(npm|pnpm|yarn|bun)\s+(install|add|remove|i)\b|\b(rm|mv|cp|mkdir|touch|tee|chmod)\s|(?<![\d&<])>(?!\s*&|\s*\/dev\/null)/
+  /\bgit\s+(commit|add|merge|checkout|switch|reset|stash|rebase|cherry-pick|rm|mv|apply)\b|\bsed\s+-i\b|\b(npm|pnpm|yarn|bun)\s+(install|add|remove|i)\b|\b(rm|mv|cp|mkdir|touch|tee|chmod)\s|(?<![\d&<=-])>(?!\s*&|\s*\/dev\/null)/
 const TEST_SHELL = /\b(npm|pnpm|yarn|bun)(\s+run)?\s+test\b|\bnode\s+--test\b/
 const loadsAnySkill = (part) => part.type === "tool" && part.name === "skill" && part.state.status === "completed"
 
@@ -201,12 +202,16 @@ const timeline = lines.join("\n")
 writeFileSync(join(work, "timeline.txt"), `${timeline}\n`)
 console.log(timeline)
 
-// The project's tests, run here in the root's checkout: the exit code and the TAP totals, when the runner prints them.
+// The project's tests, run here in the root's checkout: the exit code and the totals, as node's TAP reporter prints them
+// (`# pass 9`) or its spec reporter does (`ℹ pass 9`), when the runner prints any.
 const project = join(work, "project")
 const tests = (() => {
   const run = spawnSync(testCommand[0], testCommand.slice(1), { cwd: project, encoding: "utf8", shell: process.platform === "win32", timeout: 120_000 })
   const output = `${run.stdout ?? ""}${run.stderr ?? ""}`
-  const total = (name) => (output.match(new RegExp(`^# ${name} (\\d+)`, "m")) ? Number(output.match(new RegExp(`^# ${name} (\\d+)`, "m"))[1]) : undefined)
+  const total = (name) => {
+    const match = output.match(new RegExp(`^(?:#|ℹ)\\s*${name} (\\d+)`, "m"))
+    return match ? Number(match[1]) : undefined
+  }
   return { command: testCommand.join(" "), exit: run.status, error: run.error?.message, pass: total("pass"), fail: total("fail"), output }
 })()
 writeFileSync(join(work, "tests.txt"), tests.output)

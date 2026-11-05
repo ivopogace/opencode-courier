@@ -374,6 +374,10 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
 - **Loading:** `skill({ id })` asks the `skill` permission (with `save: [id]`). Its result is
   `<skill_content name="…">` with the content and the base directory; files are listed only when the
   path's basename is `SKILL.md`.
+- **A person's own skills:** OpenCode reads `<name>/SKILL.md` under `skill/` and `skills/` of each
+  config directory (`~/.config/opencode`, a project's `.opencode`), and a project's `.claude/skills/`
+  and `.agents/skills/` (2.2.5, checked by listing them). They load after the server answers, so a
+  list read at once can lack them.
 - **Activating:** the TUI's `/skills` attaches `skills: [{ id }]` to the prompt, and the text goes
   first in that message. A compaction keeps it (`messageToText`, `session/recent-text.ts`).
 - **Managed policy:** a `skill.use` deny (before 2.2.3 `integration.use` on `skill:<id>`, still

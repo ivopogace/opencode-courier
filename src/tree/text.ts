@@ -86,7 +86,7 @@ export function rolePart(depth: number | null, limits: Limits) {
   const budget = `At most ${maxChildren} of the sessions you start run at once, and ${maxTotal} in the whole tree.`
   if (depth === null)
     return (
-      `${ROLE_PREFIX} root, no sessions started yet. Before a task that touches several files or areas, load the ` +
+      `${ROLE_PREFIX} root, no sessions started yet. Before a task with 2 or more independent, substantial parts touching separate files or areas, load the ` +
       `${SKILL_ID} skill, call courier_recall once for how earlier trees in this project were split and how they went, ` +
       `and decide whether to split it across sessions (doing it yourself is fine; so is handing a heavy task, with long ` +
       `reading, many edits or long runs, whole to one session to keep your context, but never a small one), and say ` +

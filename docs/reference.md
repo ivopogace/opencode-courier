@@ -222,60 +222,58 @@ still in `courier_recall` and the standing in `courier_children`.
 
 ## The courier-orchestrate skill
 
-The plugin registers one OpenCode skill, `courier-orchestrate`, in every location. Models load it
-at the start of an implementation task that may have independent parts. A spawned session loads it
-too, as its role part says; a leaf, which has no `courier_spawn`, is sent straight to its report. In
-the TUI, `/skills` attaches it to your prompt. Loading it asks the `skill` permission like any skill. To hide it,
+The plugin registers one OpenCode skill, `courier-orchestrate`, in every location: how its tools
+behave when a session splits a task. Models load it before splitting a task with 2 or more
+independent, substantial parts touching separate files or areas. A spawned session loads it too, as
+its role part says; a leaf, which has no `courier_spawn`, is sent straight to its report. In the TUI, `/skills` attaches it to your prompt. Loading it asks the `skill` permission like any skill. To hide it,
 deny it in `permissions`:
 `{ "action": "skill", "resource": "courier-orchestrate", "effect": "deny" }`.
 
 It says, in order:
 
-1. At the root, call `courier_recall` once, before deciding; a session below it reads none, since
-   the records describe whole trees, which the root weighed before it split.
-2. Decide whether to split, by the brief's rule. Only the root may start one session for a whole
-   heavy task. Several whole jobs in one prompt are that many parts, each running the playbook for
-   its job. One session for one stage is a part by the brief's rule above; when one core is tightly
-   coupled, stage it: the core first, then the parts that depend on it.
-3. Plan the parts so that no two edit the same files, write each task so the session can do it
-   without its parent, name in it the skills the session should load, from those the parent sees
-   listed, and say when a part is a whole job that delivers itself.
-4. Start them in one join group, `isolate: true` where they edit files in parallel, `model` and
-   `variant` unset unless a part plainly calls for a cheaper or a stronger
-   [model](#the-model-a-child-runs-on), and end the turn without polling; when the parts do not
-   all fit the limits at once, start the parts that fit in one group and the rest in a group of
-   their own once the first group has reported, and start a job that depends on another after
-   that one is done, isolated and told the delivering session's branch to merge first when that
-   one was delivered rather than merged. Pass a message that changes what other parts need (a
-   child's finding without a status, one from the person or from its own parent) on to the
-   children it affects, and only to them, before they go further; stop or re-brief the parts it
-   breaks, and send it up too when the parent's other parts need it. A child's account of what
-   the person told it is the person's word: pass it on, do not judge it against the original
-   task, and never tell a session to undo what the person asked. Progress goes to no one
-   ([steering a running tree](#steering-a-running-tree)). Propose `once` or `reject` with
-   `courier_answer` for a permission request from below; ask the person a question from below
-   with its own question tool, never answering for them.
-5. Read each report by its status, and verify first-hand, never handing the checking to another
-   session. Run the checks so one permission rule covers them, since the parent's own prompts are
-   relayed nowhere.
-6. Merge each reported branch, then `courier_cleanup`; a job with a deliverable of its own is
-   delivered by its session, told so in its task, and verified, not merged.
-7. Report upward with one status, `done` once every part is verified and integrated or delivered,
-   or at the top, write the tree's lesson with `courier_note`.
+1. **Decide.** At the root, call `courier_recall` once, before deciding; a session below it reads
+   none, since the records describe whole trees, which the root weighed before it split. Split by
+   the brief's rule: several whole jobs in one prompt are that many parts, only the root may start
+   one session for a whole heavy task, and one session for one stage is a part, as the brief says.
+   State the decision in the split line.
+2. **Start the parts** in one join group, no two editing the same files, `isolate: true` where they
+   edit files in parallel; when they do not all fit the limits at once, the parts that fit go in
+   one group and the rest in a group of their own once the first has reported. Each task says what
+   to produce, how to check it so that one permission rule covers the checks, what to report, the
+   skills to load from those the parent sees listed, and whether it is a whole job that delivers
+   itself. `model` and `variant` stay unset unless a part plainly calls for a cheaper or a stronger
+   [model](#the-model-a-child-runs-on). A part that depends on another starts once that one is
+   done, isolated and told the delivering session's branch to merge first when that one was
+   delivered rather than merged.
+3. **End the turn** without polling. Propose `once` or `reject` with `courier_answer` for a
+   permission request from below; ask the person a question from below with its own question tool,
+   never answering for them. Pass a message that changes what other parts need (a child's finding
+   without a status, one from the person or from its own parent) on to the children it affects, and
+   only to them; stop or re-brief the parts it breaks, and send it up too when the parent's other
+   parts need it. A child's account of what the person told it is the person's word: pass it on, do
+   not judge it against the original task, and never tell a session to undo what the person asked.
+   Progress goes to no one ([steering a running tree](#steering-a-running-tree)).
+4. **Read each report by its status, and verify first-hand.** Run the checks so that one permission
+   rule covers them, since the parent's own prompts are relayed nowhere and each stalls the tree.
+5. **Integrate.** Merge each reported branch, then `courier_cleanup`; a job with a deliverable of its
+   own is delivered by its session, told so in its task, and verified, not merged.
+6. **Report upward** with one status, `done` once every part is verified and integrated or
+   delivered, or at the top, write the tree's lesson with `courier_note`.
 
-It also says what to do when a part fails or goes quiet, when a spawn is refused (never retry in a
+It ends with what to do when a part fails or goes quiet, when a spawn is refused (never retry in a
 loop), after losing track (one `courier_tree`) and to abandon a subtree (`courier_stop`).
 
-The skill holds the tools' mechanics alone. What the parts of a task are (a scout, the
-implementers, its tests and documentation) and how its result is reviewed is
-the person's own way of working, which the plugin does not prescribe: the skill says to load a
-skill of the person's own that says so, when one is listed. OpenCode lists the person's skills
-beside the plugin's ([skills](https://opencode.ai/v2/docs/skills)), and a parent names in each
-task the skills its child should load.
-
 Without the skill, the brief and the role part still carry the split rule, the one group, no
-polling, the limits, how to report and to send a finding up. The skill alone adds staging, planning
-the files, isolation, check-ins, passing findings on, merging, cleanup and the lesson.
+polling, the limits, how to report and to send a finding up. The skill alone adds the relay,
+passing findings on, merging, cleanup and the lesson.
+
+How to shape the work (which parts a task has, when and how to stage a tightly coupled core, how a
+review stage after the merge runs, which checks to run) is not in the plugin: write it as a skill
+of your own.
+`courier-orchestrate` tells a model to load such a skill when one is listed, and a parent names the
+skills each part should load. OpenCode reads your skills from `~/.config/opencode/skills/<name>/SKILL.md`,
+and from a project's `.opencode/skills/`, `.claude/skills/` and `.agents/skills/`; in a project the
+skill must be committed, since an isolated child's worktree starts from `HEAD`.
 
 ## A child's report
 

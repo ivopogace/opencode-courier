@@ -179,7 +179,7 @@ with a seeded record can.
 ## A part that goes wrong
 
 `COURIER_SCENARIO=recursive-fault`: the recursive job with one half told to report `partial` first,
-then finish when its parent says so. It tests the skill's steps 5 to 8. The prompt passes that half
+then finish when its parent says so. It tests the skill's steps 4 to 6. The prompt passes that half
 its task word for word:
 
 > Have this job done through helper sessions started with courier_spawn, one session per part, and
@@ -223,7 +223,7 @@ or a shell redirect; `cd numbers && echo … > seed.txt` is not seen). The check
 before the seed was written (or its session reported); the session that staged started two or more
 halves together; it reported upward once, `done`.
 
-Run it with the skill and without, several runs each, and table them:
+Run it with the skill and without, several runs each, and table them. Since #431 the skill no longer says how to stage; the rows before it did:
 
 ```bash
 run() {  # run <name> [VAR=value ...]

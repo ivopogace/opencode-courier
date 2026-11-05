@@ -436,7 +436,7 @@ for (const [id, entry] of orchestrators) {
   const refused = toolsOf(entry.list).filter((part) => part.name === "courier_spawn" && part.state.status === "error")
   if (refused.length) notes.push(`${id === rootID ? "the root" : `session ${id}`} had ${refused.length} courier_spawn call(s) refused: ${short(refused[0].state.error, 100)}`)
 }
-// Whether each orchestrator had courier-orchestrate loaded when it split: the skill holds steps 5 to 8, the brief does not.
+// Whether each orchestrator had courier-orchestrate loaded when it split: the skill holds steps 4 to 6, the brief does not.
 const loadsSkill = (part) => loadsAnySkill(part) && part.state.input?.id === SKILL
 for (const [id, entry] of orchestrators) {
   const tools = toolsOf(entry.list)

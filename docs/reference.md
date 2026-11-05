@@ -245,7 +245,8 @@ It says, in order:
    [model](#the-model-a-child-runs-on). A part that depends on another starts once that one is
    done, isolated and told the delivering session's branch to merge first when that one was
    delivered rather than merged.
-3. **End the turn** without polling. Propose `once` or `reject` with `courier_answer` for a
+3. **End the turn** without polling, with a `courier_later` check-in scheduled for long work and
+   cancelled when the reports arrive. Propose `once` or `reject` with `courier_answer` for a
    permission request from below; ask the person a question from below with its own question tool,
    never answering for them. Pass a message that changes what other parts need (a child's finding
    without a status, one from the person or from its own parent) on to the children it affects, and
@@ -264,8 +265,8 @@ It ends with what to do when a part fails or goes quiet, when a spawn is refused
 loop), after losing track (one `courier_tree`) and to abandon a subtree (`courier_stop`).
 
 Without the skill, the brief and the role part still carry the split rule, the one group, no
-polling, the limits, how to report and to send a finding up. The skill alone adds the relay,
-passing findings on, merging, cleanup and the lesson.
+polling, the limits, how to report and to send a finding up. The skill alone adds planning the
+files, isolation, check-ins, the relay, passing findings on, merging, cleanup and the lesson.
 
 How to shape the work (which parts a task has, when and how to stage a tightly coupled core, how a
 review stage after the merge runs, which checks to run) is not in the plugin: write it as a skill

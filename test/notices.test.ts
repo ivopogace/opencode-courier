@@ -75,7 +75,7 @@ describe("envelope and child brief", () => {
     // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).not.toContain("bun run <script>")
-    // Step 3 names when a part gets another model or variant, once, so a weak model does not override on every spawn.
+    // Step 2 names when a part gets another model or variant, once, so a weak model does not override on every spawn.
     expect(skill.SKILL_CONTENT).toContain("Leave model and variant unset, so a part runs on your own model, unless the part plainly calls for another")
     // Step 2 has the parent name the person's own skills in each task: the skill names none, since it cannot know them.
     expect(skill.SKILL_CONTENT).toContain("Name the skills it should load for its part, from those listed to you")

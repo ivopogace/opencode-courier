@@ -223,58 +223,64 @@ still in `courier_recall` and the standing in `courier_children`.
 ## The courier-orchestrate skill
 
 The plugin registers one OpenCode skill, `courier-orchestrate`, in every location. Models load it
-at the start of an implementation task that may have independent parts. A spawned session loads it
-too, as its role part says; a leaf, which has no `courier_spawn`, is sent straight to its report. In
+before splitting a task with 2 or more independent, substantial parts touching separate files or
+areas, or when the person asks for parallel work. A spawned session loads it too, as its role part
+says; a leaf, which has no `courier_spawn`, is sent straight to its report. In
 the TUI, `/skills` attaches it to your prompt. Loading it asks the `skill` permission like any skill. To hide it,
 deny it in `permissions`:
 `{ "action": "skill", "resource": "courier-orchestrate", "effect": "deny" }`.
 
-It says, in order:
+It is written in Markdown sections, the core path first and the rules for a large tree after it:
 
-1. At the root, call `courier_recall` once, before deciding; a session below it reads none, since
-   the records describe whole trees, which the root weighed before it split.
-2. Decide whether to split, by the brief's rule. Keep the deciding, checking and integrating; hand
-   off the long reading and writing. Only the root may start one session for a whole heavy task.
-   Several whole jobs in one prompt are that many parts, each running the playbook for its job.
-   The parts a task can have besides its edits: a scout that reads and reports, the implementers,
-   tests and documentation, and a review stage after the merge: one review session, given the
-   diff to read, that may hand the reading to reviewers, then starts one verifier
-   with their findings, which drops what does not hold and starts one implementor for what holds
-   (2 or more, isolated, when the fixes are independent); the review session reports what was
-   found, held, fixed and refused, and running the checks on the fixed tree stays the parent's.
-   Under an isolated session the review session, the verifier and the implementor are isolated
-   too, each worktree from the one above. One session for one stage is a part by the brief's rule
-   above.
-3. When one core is tightly coupled, stage it: do the core first, then the parts that depend on it.
-4. Plan the parts so that no two edit the same files, name in each task the skills the session
-   should load for it, from those the parent sees listed, and say when a part is a whole job that
-   delivers itself.
-5. Start them in one join group, `isolate: true` where they edit files in parallel, `model` and
-   `variant` unset unless a part plainly calls for a cheaper or a stronger
-   [model](#the-model-a-child-runs-on), and end the
-   turn without polling; count 6 live sessions per part that runs a review stage against
-   `maxTotal`, start the parts that fit in one group and the rest in a group of their own once the
-   first group has reported, and start a job that depends on another after that one is done,
-   isolated and told the delivering session's branch to merge first when that one was delivered
-   rather than merged. Pass a message that changes what
-   other parts need (a child's finding without a status, one from the person or from its own
-   parent) on to the children it affects, and only to them, before they go further; stop or
-   re-brief the parts it breaks, and send it up too when the parent's other parts need it. A
-   child's account of what the person told it is the person's word: pass it on, do not judge it
-   against the original task, and never tell a session to undo what the person asked.
-   Progress goes to no one ([steering a running tree](#steering-a-running-tree)). Propose `once`
-   or `reject` with `courier_answer` for a permission request from below; ask the person a
-   question from below with its own question tool, never answering for them.
-6. Read each report by its status, and verify first-hand; on a review stage's report, settle the
-   refusals it disagrees with itself. Run checks through the project's scripts
-   (`bun run <script>`), so one permission rule covers them.
-7. Merge each reported branch, then `courier_cleanup`; a job with a deliverable of its own, such
-   as a ticket with its pull request, is delivered by its session, told so in its task, and
-   verified, not merged.
-8. Report upward with one status, `done` once every part is verified and integrated or delivered,
-   or at the top, write the tree's lesson with `courier_note`.
+1. **Decide.** At the root, call `courier_recall` once, before deciding; a session below it reads
+   none, since the records describe whole trees, which the root weighed before it split. Split when
+   there are 2 or more independent, substantial parts, or several whole jobs in one prompt, each
+   running the playbook for its job; do it yourself when the task is small, sequential, tightly
+   coupled, or not yet understood (look first, or start one scout). Keep the deciding, checking and
+   integrating; hand off the long reading and writing. Only the root may start one session for a
+   whole heavy task. State the decision in the split line.
+2. **Plan the parts.** The parts a task can have besides its edits: a scout that reads and reports,
+   the implementers, tests and documentation, and a review stage after the merge. No two parts edit
+   the same files; a tightly coupled core is staged first, then the parts that depend on it. Each
+   task names its scope, the context the session needs pasted in, its checks, what to report, the
+   skills to load from those the parent sees listed, and whether it is a whole job that delivers
+   itself. The skill shows one sample task.
+3. **Start them, then end the turn.** One join group, `isolate: true` where they edit files in
+   parallel, `model` and `variant` unset unless a part plainly calls for a cheaper or a stronger
+   [model](#the-model-a-child-runs-on), and no polling. Propose `once` or `reject` with
+   `courier_answer` for a permission request from below; ask the person a question from below with
+   its own question tool, never answering for them. Pass a message that changes what other parts
+   need (a child's finding without a status, one from the person or from its own parent) on to the
+   children it affects, and only to them; stop or re-brief the parts it breaks, and send it up too
+   when the parent's other parts need it. A child's account of what the person told it is the
+   person's word: pass it on, do not judge it against the original task, and never tell a session
+   to undo what the person asked. Progress goes to no one
+   ([steering a running tree](#steering-a-running-tree)).
+4. **Read each report by its status, and verify first-hand.** Run checks through the project's
+   scripts (`bun run <script>`), so one permission rule covers them.
+5. **Integrate.** Merge each reported branch, then `courier_cleanup`; a job with a deliverable of its
+   own, such as a ticket with its pull request, is delivered by its session, told so in its task,
+   and verified, not merged.
+6. **Report upward** with one status, `done` once every part is verified and integrated or
+   delivered, or at the top, write the tree's lesson with `courier_note`.
 
-It also says what to do when a part fails or goes quiet, when a spawn is refused (never retry in a
+Then come the common mistakes (a vague task, two parts in one file, polling, taking a report on its
+word, answering for the person) and, for a large task:
+
+- **The review stage**, after the merge: one review session, given the diff to read, that may hand
+  the reading to reviewers, then starts one verifier with their findings, which drops what does not
+  hold and starts one implementor for what holds (2 or more, isolated, when the fixes are
+  independent); the review session reports what was found, held, fixed and refused, and running the
+  checks on the fixed tree and settling the refusals it disagrees with stay the parent's. Under an
+  isolated session the review session, the verifier and the implementor are isolated too, each
+  worktree from the one above. One session for one stage is a part by the brief's rule above.
+- **Many parts:** count 6 live sessions per part that runs a review stage against `maxTotal`, start
+  the parts that fit in one group and the rest in a group of their own once the first group has
+  reported, and start a job that depends on another after that one is done, isolated and told the
+  delivering session's branch to merge first when that one was delivered rather than merged.
+- **Long work:** a `courier_later` check-in, cancelled when the reports arrive.
+
+It ends with what to do when a part fails or goes quiet, when a spawn is refused (never retry in a
 loop), after losing track (one `courier_tree`) and to abandon a subtree (`courier_stop`).
 
 Without the skill, the brief and the role part still carry the split rule, the one group, no

@@ -69,13 +69,13 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("Never hand the checking to another session")
     // A session without courier_spawn, a leaf or a root that cannot spawn, is sent to do the task itself.
     expect(skill.SKILL_CONTENT).toContain("If courier_spawn is not among your tools, you cannot split")
-    // Step 4: a permission request is proposed, a question asked of the person; the skill never answers for them.
+    // Step 3: a permission request is proposed, a question asked of the person; the skill never answers for them.
     expect(skill.SKILL_CONTENT).toContain("propose once with courier_answer, or reject with the reason when")
     expect(skill.SKILL_CONTENT).toContain("ask the person with your question tool, with the questions the notice gives")
     expect(skill.SKILL_CONTENT).toContain("Never answer for them")
-    // The kinds of part are listed for every split, not only a coupled core, and a reviewer never takes over step 6.
+    // The kinds of part are listed for every split, not only a coupled core, and a reviewer never takes over step 4.
     expect(skill.SKILL_CONTENT).toContain("Parts a task can have, besides its edits")
-    expect(skill.SKILL_CONTENT).toContain("It does not replace step 6: running the checks on the fixed tree stays yours")
+    expect(skill.SKILL_CONTENT).toContain("It does not replace step 4: running the checks on the fixed tree stays yours")
     // The review stage: reviewers, then one verifier, then one implementor; one session per stage is a part, not the whole.
     expect(skill.SKILL_CONTENT).toContain("then starts one verifier with their reports")
     expect(skill.SKILL_CONTENT).toContain("starts one implementor for what holds")
@@ -100,11 +100,17 @@ describe("envelope and child brief", () => {
     // allows; a session below it reads none, since the root weighed the records before it split.
     expect(skill.SKILL_CONTENT).toContain(`At the root, first call ${memory.RECALL_TOOL} once`)
     expect(registered.find((tool) => tool.name === memory.RECALL_TOOL).description).toContain("a session another session started reads none")
-    // Step 8 asks the top for one courier_note, none when there is nothing, naming the job it comes from; the brief never
+    // Step 6 asks the top for one courier_note, none when there is nothing, naming the job it comes from; the brief never
     // mentions it: children write no lesson. The tool, the skill and the input ask for the lesson's scope, not only splitting.
     expect(skill.SKILL_CONTENT).toContain(`one ${memory.NOTE_TOOL} with that one line; none when there is nothing`)
     expect(skill.SKILL_CONTENT).toContain("Name the job it comes from and the reason")
     expect(skill.SKILL_CONTENT).not.toContain("about splitting work here")
+    // The playbook's shape: when to split and when not, a sample task, the common mistakes, the large-task rules after the core.
+    for (const heading of ["## 1. Decide: split or do", "Do it yourself when:", "A task that works:", "## Common mistakes", "## For a large task"])
+      expect(skill.SKILL_CONTENT).toContain(heading)
+    expect(skill.SKILL_CONTENT.indexOf("## For a large task")).toBeGreaterThan(skill.SKILL_CONTENT.indexOf("## 6. Report upward"))
+    expect(skill.SKILL_DESCRIPTION).toContain("2 or more independent, substantial parts touching separate files or areas")
+    expect(tree.rolePart(null, limits)).toContain("Before a task with 2 or more independent, substantial parts touching separate files or areas")
     expect(skill.SKILL_CONTENT).toContain("refuses a line over its limit rather than clipping it")
     expect(memory.NOTE_EMPTY).toContain("with the job it comes from and the reason")
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).not.toContain(memory.NOTE_TOOL)

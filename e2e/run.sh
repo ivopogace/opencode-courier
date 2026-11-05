@@ -1239,11 +1239,18 @@ run_skill() {
       length == 1 and (.[0].name == "courier-orchestrate") and (.[0].description | contains("courier_spawn"))')"
   check "every request of the session listed it among the available skills" \
     "$(jq -sr --arg session "$session" '[.[] | select(.session == $session and (.tools | length > 0))] | length > 0 and all(.skills | index("courier-orchestrate"))' "$WORK/model.log")"
-  check "the model loaded it with the skill tool and got the playbook" \
-    "$(tool_state skill <<<"$out" | jq -r '.status == "completed" and (.output | tojson | contains("Only the root, the session nobody started, may start exactly one session") and contains("Every other session never starts exactly one session") and contains("the root has a third form, split: 1 part:") and contains("Never hand the checking to another session") and contains("If courier_spawn is not among your tools, you cannot split") and contains("At the root, first call courier_recall once") and contains("then starts one verifier with their reports") and contains("## Common mistakes") and contains("## For a large task"))')"
+  check "the model loaded it with the skill tool and got the tools' mechanics, not the playbook" \
+    "$(tool_state skill <<<"$out" | jq -r '.status == "completed" and (.output | tojson | contains("Only the root, the session nobody started, may start exactly one session") and contains("Every other session never starts exactly one session") and contains("the root has a third form, split: 1 part:") and contains("Never hand the checking to another session") and contains("If courier_spawn is not among your tools, you cannot split") and contains("At the root, first call courier_recall once") and contains("is a playbook'"'"'s: if a skill for that is listed to you, load it too") and (contains("verifier") | not))')"
   # The person attaches the skill to a prompt, as the TUI's /skills dialog does, and its text goes to the model with the prompt.
   check "attached to the person's prompt, its text reached the model" \
     "$([[ $(person "session/$session/prompt" '{"text":"COURIER-SKILL-ATTACHED","skills":[{"id":"courier-orchestrate"}]}') == 20* ]] && has_text "$session" "SKILL SEEN" 30)"
+  # The playbook is the person's own skill, outside the plugin: installed in the project, OpenCode lists it beside the plugin's.
+  mkdir -p "$WORK/project/.opencode/skills/courier-playbook"
+  cp "$ROOT/docs/courier-playbook/SKILL.md" "$WORK/project/.opencode/skills/courier-playbook/"
+  check "the courier-playbook example, installed as the person's skill, is listed beside courier-orchestrate" \
+    "$(for _ in $(seq 1 30); do api "skill?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" |
+      jq -e '[.data[].id] | index("courier-playbook") and index("courier-orchestrate")' >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
+  rm -r "$WORK/project/.opencode/skills/courier-playbook"
 }
 
 run_wake() {

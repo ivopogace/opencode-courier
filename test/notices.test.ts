@@ -64,8 +64,6 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("Only the root, the session nobody started, may start exactly one session for the whole task")
     expect(skill.SKILL_CONTENT).toContain("Every other session never starts exactly one session for the whole task")
     expect(skill.SKILL_CONTENT).toContain(`the root has a third form, ${kernel.ONE_PART_LINE}`)
-    expect(skill.SKILL_CONTENT).toContain("When the core is coupled:")
-    expect(skill.SKILL_CONTENT).toContain("A staged core is one part of the task, not the whole task")
     expect(skill.SKILL_CONTENT).toContain("Never hand the checking to another session")
     // A session without courier_spawn, a leaf or a root that cannot spawn, is sent to do the task itself.
     expect(skill.SKILL_CONTENT).toContain("If courier_spawn is not among your tools, you cannot split")
@@ -73,13 +71,6 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("propose once with courier_answer, or reject with the reason when")
     expect(skill.SKILL_CONTENT).toContain("ask the person with your question tool, with the questions the notice gives")
     expect(skill.SKILL_CONTENT).toContain("Never answer for them")
-    // The kinds of part are listed for every split, not only a coupled core, and a reviewer never takes over step 4.
-    expect(skill.SKILL_CONTENT).toContain("Parts a task can have, besides its edits")
-    expect(skill.SKILL_CONTENT).toContain("It does not replace step 4: running the checks on the fixed tree stays yours")
-    // The review stage: reviewers, then one verifier, then one implementor; one session per stage is a part, not the whole.
-    expect(skill.SKILL_CONTENT).toContain("then starts one verifier with their reports")
-    expect(skill.SKILL_CONTENT).toContain("starts one implementor for what holds")
-    expect(skill.SKILL_CONTENT).toContain("One session for one stage, after a stage of 2 or more parts or one you did yourself, is a part of the task")
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.")
     // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
@@ -88,12 +79,7 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("Leave model and variant unset, so a part runs on your own model, unless the part plainly calls for another")
     // Step 2 has the parent name the person's own skills in each task: the skill names none, since it cannot know them.
     expect(skill.SKILL_CONTENT).toContain("Name the skills it should load for its part, from those listed to you")
-    // Several whole jobs in one prompt: the shape repeats per job, the root counts live sessions per part, waits for the first
-    // group before the next, gives the review stage its diff, and reports done once every part is integrated or delivered.
-    expect(skill.SKILL_CONTENT).toContain("so the tree below you repeats its shape once per job")
-    expect(skill.SKILL_CONTENT).toContain("count 6 live sessions per part against maxTotal")
-    expect(skill.SKILL_CONTENT).toContain("in a group of their own once the first group has reported")
-    expect(skill.SKILL_CONTENT).toContain("Put in its task the diff to read")
+    // A part is done once it is integrated or delivered, and a delivered part is verified, not merged.
     expect(skill.SKILL_CONTENT).toContain("or verified and delivered")
     expect(skill.SKILL_CONTENT).toContain("verify each delivery and merge nothing of it into your checkout")
     // Step 1 and the root's pointer ask the root for one courier_recall before the decision, which the recursive checker
@@ -105,10 +91,10 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain(`one ${memory.NOTE_TOOL} with that one line; none when there is nothing`)
     expect(skill.SKILL_CONTENT).toContain("Name the job it comes from and the reason")
     expect(skill.SKILL_CONTENT).not.toContain("about splitting work here")
-    // The playbook's shape: when to split and when not, a sample task, the common mistakes, the large-task rules after the core.
-    for (const heading of ["## 1. Decide: split or do", "Do it yourself when:", "A task that works:", "## Common mistakes", "## For a large task"])
-      expect(skill.SKILL_CONTENT).toContain(heading)
-    expect(skill.SKILL_CONTENT.indexOf("## For a large task")).toBeGreaterThan(skill.SKILL_CONTENT.indexOf("## 6. Report upward"))
+    // The skill is the tools' mechanics; planning, staging and the review stage are the playbook's, outside the plugin.
+    for (const policy of ["When the core is coupled", "review stage", "verifier", "implementor", "count 6 live sessions", "A task that works"])
+      expect(skill.SKILL_CONTENT).not.toContain(policy)
+    expect(skill.SKILL_CONTENT).toContain("is a playbook's: if a skill for that is listed to you, load it too")
     expect(skill.SKILL_DESCRIPTION).toContain("2 or more independent, substantial parts touching separate files or areas")
     expect(tree.rolePart(null, limits)).toContain("Before a task with 2 or more independent, substantial parts touching separate files or areas")
     expect(skill.SKILL_CONTENT).toContain("refuses a line over its limit rather than clipping it")
@@ -131,6 +117,23 @@ describe("envelope and child brief", () => {
     expect(tree.rolePart(3, limits)).not.toContain(kernel.SKILL_ID)
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Do not poll with courier_children, courier_tree or sleep")
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("poll")
+  })
+  test("the courier-playbook example skill", async () => {
+    const text = await Bun.file(new URL("../docs/courier-playbook/SKILL.md", import.meta.url)).text()
+    expect(text).toStartWith("---\nname: courier-playbook\ndescription: Load with courier-orchestrate")
+    for (const rule of [
+      "When the rest depend on names and texts the core fixes, split in stages",
+      "A staged core is one part of the task, not the whole task",
+      "Several whole jobs in one prompt, such as 4 tickets, are that many parts",
+      "Put in its task the diff to read",
+      "then starts one verifier with their reports",
+      "starts one implementor for what holds",
+      "running the checks on the fixed tree stays yours",
+      "One session for one stage, after a stage of 2 or more parts or one you did yourself, is a part of the task",
+      "count 6 live sessions per part against maxTotal",
+      "in a group of their own once the first group has reported",
+    ])
+      expect(text).toContain(rule)
   })
   test("refusals", () => {
     expect(tree.depthRefusal(3, 3)).toMatchSnapshot()

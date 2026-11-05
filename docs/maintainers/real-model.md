@@ -33,6 +33,7 @@ free messages"): run it from your own machine, or with a paid provider's key.
 | `COURIER_FILES` | per scenario | Recursive scenarios: the files that must hold those values, in order; for `recursive-staged` the first is the core's. |
 | `COURIER_MAX_DEPTH` | `5` | Recursive scenarios: the `maxDepth` the checker holds the tree to. |
 | `COURIER_SKILL` | | `deny` denies `courier-orchestrate` in `permissions`, so no session can load it. |
+| `COURIER_PLAYBOOK` | | `1` installs [`docs/courier-playbook`](../courier-playbook/SKILL.md) as the project's own skill, committed, as a person would. |
 | `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
 | `COURIER_NATIVE` | | `1` turns `nativeChildren` on, so every child is native unless the spawn says `native: false`. |
@@ -179,7 +180,7 @@ with a seeded record can.
 ## A part that goes wrong
 
 `COURIER_SCENARIO=recursive-fault`: the recursive job with one half told to report `partial` first,
-then finish when its parent says so. It tests the skill's steps 5 to 8. The prompt passes that half
+then finish when its parent says so. It tests the skill's steps 4 to 6. The prompt passes that half
 its task word for word:
 
 > Have this job done through helper sessions started with courier_spawn, one session per part, and
@@ -223,7 +224,7 @@ or a shell redirect; `cd numbers && echo … > seed.txt` is not seen). The check
 before the seed was written (or its session reported); the session that staged started two or more
 halves together; it reported upward once, `done`.
 
-Run it with the skill and without, several runs each, and table them:
+Staging is the playbook's since #431, so run it with the playbook installed and without it, several runs each, and table them. The rows before #431 had the playbook's text in `courier-orchestrate`:
 
 ```bash
 run() {  # run <name> [VAR=value ...]
@@ -231,7 +232,7 @@ run() {  # run <name> [VAR=value ...]
   env COURIER_SCENARIO=recursive-staged E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
   echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
 }
-for n in 1 2 3 4 5; do run staged-skill-$n; run staged-noskill-$n COURIER_SKILL=deny; done
+for n in 1 2 3 4 5; do run staged-skill-$n COURIER_PLAYBOOK=1; run staged-noskill-$n COURIER_SKILL=deny; done
 bun script/real-model-table.ts $(for n in 1 2 3 4 5; do echo skill=$HOME/courier-runs/staged-skill-$n noskill=$HOME/courier-runs/staged-noskill-$n; done)
 ```
 

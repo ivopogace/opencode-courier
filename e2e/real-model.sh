@@ -41,6 +41,8 @@
 #   COURIER_MAX_DEPTH                recursive(-fault, -staged, -finding): the maxDepth the checker holds the tree to (default 5).
 #   COURIER_SKILL                    deny adds a skill permission rule denying courier-orchestrate to
 #                                     opencode.json, so no session is offered it or can load it; any scenario.
+#   COURIER_PLAYBOOK                 1 installs docs/courier-playbook as the project's own skill, as a person would in
+#                                     their harness; recursive-staged and recursive-finding measure it.
 #   COURIER_TIMEOUT                  seconds to wait for the parent's turn and then for the
 #                                     children (default 300 each).
 #   COURIER_NATIVE                   1 loads the plugin with nativeChildren on, so a child started
@@ -182,6 +184,13 @@ jq -n --arg plugin "$ROOT/dist" --arg probe "$ROOT/e2e/probe-plugin" --arg probe
   permissions: $permissions
 }' >"$WORK/project/opencode.json"
 commit_config
+# Committed, so an isolated child's worktree has it too.
+if [ "${COURIER_PLAYBOOK:-}" = 1 ]; then
+  mkdir -p "$WORK/project/.opencode/skills/courier-playbook"
+  cp "$ROOT/docs/courier-playbook/SKILL.md" "$WORK/project/.opencode/skills/courier-playbook/"
+  git -C "$WORK/project" add .opencode
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -q -m "courier-playbook"
+fi
 
 # DEBUG records the provider calls and their errors, which INFO does not; run.sh keeps the default.
 SERVER_FLAGS="--log-level debug"

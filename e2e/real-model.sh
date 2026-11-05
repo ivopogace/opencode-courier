@@ -23,6 +23,10 @@
 # halves started only after it. COURIER_SCENARIO=recursive-finding is the recursive job with longer halves, and the
 # checker, run with --finding, as the person telling the "count" session mid-run that every file must hold its number
 # followed by " checked": whether that session sends it up, and its parents pass it on down to the halves, is the test.
+# COURIER_SCENARIO=review runs a change and its review: the project in e2e/fixtures/review-project, committed, and
+# a job of one function with tests, done by one session, read by a review session with fresh context that changes
+# nothing, fixed where the review holds, and checked by the root with the project's tests, which the checker
+# (e2e/real-model-review.mjs) runs too.
 #
 # The default model is a free one on OpenCode Zen, from OpenCode's catalog (models.dev), which needs
 # no key. To pick another:
@@ -39,6 +43,9 @@
 #   COURIER_FILES                    recursive(-fault, -staged, -finding): the files, relative to the project, that must hold
 #                                     them; with recursive-staged the first is the core's.
 #   COURIER_MAX_DEPTH                recursive(-fault, -staged, -finding): the maxDepth the checker holds the tree to (default 5).
+#   COURIER_TEST_COMMAND             review: the command the checker runs the project's tests with (default npm test).
+#   COURIER_TESTS                    review: how many tests must pass in the root's checkout (default 5: the fixture's 2
+#                                     and the 3 the job asks for).
 #   COURIER_SKILL                    deny adds a skill permission rule denying courier-orchestrate to
 #                                     opencode.json, so no session is offered it or can load it; any scenario.
 #   COURIER_TIMEOUT                  seconds to wait for the parent's turn and then for the
@@ -70,6 +77,7 @@ KEY_ENV=${COURIER_API_KEY_ENV:-}
 export COURIER_TIMEOUT=${COURIER_TIMEOUT:-300}
 SCENARIO=${COURIER_SCENARIO:-fanout}
 CHECKER_FLAGS=
+SEED_PROJECT=
 # Every action is allowed; the permission scenario adds a rule that makes its one command ask.
 PERMISSIONS='[{ "action": "*", "resource": "*", "effect": "allow" }]'
 case $SCENARIO in
@@ -127,7 +135,17 @@ case $SCENARIO in
     CHECKER=real-model-recursive.mjs
     CHECKER_FLAGS=--finding
     ;;
-  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, recursive-staged, recursive-finding, permission or question"; exit 1 ;;
+  review)
+    # A change and its review: the shape is in the prompt, so the plugin's tools are under test, not a playbook; which
+    # agent each stage runs with, what the review found and who fixed it are the checker's notes.
+    SEED_PROJECT=review-project
+    PROMPT=${COURIER_PROMPT:-'The tests of this project run with `npm test`. The job: add a function `slugify(text)` to lib/words.js, exported like the one already there, that lower-cases the text, turns every run of characters other than letters and digits into one hyphen and strips hyphens from both ends, so that "Hello, World!" gives "hello-world"; with tests for it in test/words.test.js, at least three, one of them for text with punctuation at both ends. Do none of the work yourself. First, one helper session started with courier_spawn makes the change and reports. Once it has reported, one review session with fresh context, started with courier_spawn, reads the change against this job, changes nothing and reports what it found. Then have any finding that holds fixed by a helper session. Finally run `npm test` yourself and reply with one line: REVIEWED <the number of passing tests>'}
+    export COURIER_EXPECT=${COURIER_EXPECT:-slugify}
+    export COURIER_FILES=${COURIER_FILES:-"lib/words.js test/words.test.js"}
+    export COURIER_TESTS=${COURIER_TESTS:-5}
+    CHECKER=real-model-review.mjs
+    ;;
+  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, recursive-staged, recursive-finding, review, permission or question"; exit 1 ;;
 esac
 case ${COURIER_SKILL:-} in
   "") ;;
@@ -182,6 +200,12 @@ jq -n --arg plugin "$ROOT/dist" --arg probe "$ROOT/e2e/probe-plugin" --arg probe
   permissions: $permissions
 }' >"$WORK/project/opencode.json"
 commit_config
+if [ -n "${SEED_PROJECT:-}" ]; then
+  # Committed, as the config is: an isolated session's worktree starts from HEAD.
+  cp -R "$ROOT/e2e/fixtures/$SEED_PROJECT/." "$WORK/project/"
+  git -C "$WORK/project" add -A
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -q -m "the project"
+fi
 
 # DEBUG records the provider calls and their errors, which INFO does not; run.sh keeps the default.
 SERVER_FLAGS="--log-level debug"

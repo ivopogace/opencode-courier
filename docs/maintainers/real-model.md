@@ -28,10 +28,12 @@ free messages"): run it from your own machine, or with a paid provider's key.
 | `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `deepseek-v4.1-flash-free` | The model, as OpenCode names it in its catalog, with the provider's usual key variable. |
 | `COURIER_BASE_URL` | | Declares the provider as an OpenAI-compatible endpoint, for a model not in the catalog. Zen's free tier refuses its own endpoint declared so (403, `FreeTierError`). |
 | `COURIER_API_KEY_ENV` | | For a declared provider, the variable holding its key (written as `{env:NAME}`, never to a file). |
-| `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault`, `recursive-staged` or `recursive-finding`. |
+| `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault`, `recursive-staged`, `recursive-finding` or `review`. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the reply must hold. |
 | `COURIER_FILES` | per scenario | Recursive scenarios: the files that must hold those values, in order; for `recursive-staged` the first is the core's. |
 | `COURIER_MAX_DEPTH` | `5` | Recursive scenarios: the `maxDepth` the checker holds the tree to. |
+| `COURIER_TEST_COMMAND` | `npm test` | `review`: the command the checker runs the project's tests with, in the root's checkout. |
+| `COURIER_TESTS` | `5` | `review`: how many tests must pass there, the fixture's two and the three the job asks for. |
 | `COURIER_SKILL` | | `deny` denies `courier-orchestrate` in `permissions`, so no session can load it. |
 | `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
@@ -273,6 +275,42 @@ the default wait gives up while a sub-orchestrator's wake turn still runs.
 | a self-hosted model behind an OpenAI-compatible endpoint, 63f7463 (#380: the person's message in a sentence of its own, skill step 4, a status sent downward dropped), skill listed, `COURIER_TIMEOUT=600` | 2.2.0 | 0 of 2 passed, 12/13 and 9/13; the four finding checks passed in one and three of four in the other. In both the "count" session sent the person's message up at once, quoted as the person's and without a status, before its report; the root passed it on and nobody reverted it; every file held `checked`. In the 12/13 the root sent the change to the halves itself, after one `courier_tree` look, so the "numbers" session had nothing left to pass on. In the 9/13 a half's turn failed or ended without a report during its `sleep 150`; the "numbers" session looked with `courier_children` and had the halves run again, and the wait gave up before the root's final reply. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 63f7463, `COURIER_SKILL=deny`, `COURIER_TIMEOUT=600` | 2.2.0 | 1 of 2 passed, 13/13 and 10/13; the four finding checks passed in both. The 10/13 lost the same three points as the 9/13 above, the same way. Two runs per condition, short of the three the issue asked for: an observation, but against 0 of 12 at 646112c the leaf's miss is gone in all four. |
 | `deepseek-v4.1-flash-free`, catalog, 646112c | 2.1.4 | No run: the free tier's daily limit was reached by the recursive runs before it. |
+
+## A change and its review
+
+`COURIER_SCENARIO=review`: a code change, reviewed by a session with fresh context, then fixed and
+checked. The project is `e2e/fixtures/review-project`, a Node module with one function and two
+tests that run with `npm test`, committed into the work directory so that an isolated session's
+worktree holds it. The parent is asked:
+
+> The tests of this project run with `npm test`. The job: add a function `slugify(text)` to
+> lib/words.js, exported like the one already there, that lower-cases the text, turns every run of
+> characters other than letters and digits into one hyphen and strips hyphens from both ends, so that
+> "Hello, World!" gives "hello-world"; with tests for it in test/words.test.js, at least three, one of
+> them for text with punctuation at both ends. Do none of the work yourself. First, one helper session
+> started with courier_spawn makes the change and reports. Once it has reported, one review session
+> with fresh context, started with courier_spawn, reads the change against this job, changes nothing
+> and reports what it found. Then have any finding that holds fixed by a helper session. Finally run
+> `npm test` yourself and reply with one line: REVIEWED \<the number of passing tests\>
+
+The shape is in the prompt, so the plugin's tools are under test and not a playbook; which agent
+each stage ran with is a note. The checker (`e2e/real-model-review.mjs`) tells the stages apart by
+order at the root: the sessions started before any report are the change, the first started after
+that report is the review, those started after the review's report are the fix. It runs the
+project's tests itself in the root's checkout (`COURIER_TEST_COMMAND`; the runner's output goes to
+`tests.txt`, and the totals are read from node's TAP or spec reporter) and makes ten checks: a session for the change in the first turn, which ended with no
+report in it; a review session in a later turn; the review session and anything it started changed
+nothing (no `write`, `edit` or `patch`, no shell command that commits, stages, installs, edits in
+place or redirects into a file); its report reached the root before the final reply; no polling;
+every session reported with a status; the root ran the tests itself after the review's report; the
+files exist and the first holds the symbol (`COURIER_EXPECT`); the tests pass, `COURIER_TESTS` or
+more; the reply holds `REVIEWED` and that number. Its notes say, per session the root started, which
+stage it was, its agent, isolation and group; what the change made and committed; what the review
+read and ran and what it reported; what the root did after the review, itself or through sessions.
+
+| Model | OpenCode | Result |
+|---|---|---|
+| a self-hosted model behind an OpenAI-compatible endpoint, eb4e68e, with a playbook skill of the person's own, `implementer` and `reviewer` agents that load superpowers' skills, and superpowers in the global config | 2.2.5 | 2 of 3 passed, 10/10 in 42 and 56 requests, 3.5 and 5 minutes. In both, the change, the review and the fix each ran as their role agent, the review native, and the review found real findings (non-ASCII letters dropped) that the root reproduced itself before starting the fix. The failed run never split: right after loading two skills and reading three files, the root acted on a user message that was never sent, telling it to stop using sub-agents, did the job itself test-first and replied `REVIEWED 8`; six checks caught it. Two checker fixes came from these runs, in the same PR: `=>` in a probe read as a redirect, and node's spec reporter totals. |
 
 ## Seeding a record
 

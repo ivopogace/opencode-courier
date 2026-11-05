@@ -268,37 +268,12 @@ Without the skill, the brief and the role part still carry the split rule, the o
 polling, the limits, how to report and to send a finding up. The skill alone adds the relay,
 passing findings on, merging, cleanup and the lesson.
 
-### The courier-playbook
-
-How to shape the work (which parts a task has, staging a coupled core, a review stage after the
-merge, fitting many parts in `maxTotal`) is a matter of taste, so the plugin does not register it.
-[`docs/courier-playbook/SKILL.md`](courier-playbook/SKILL.md) is one playbook, written as a skill you
-install yourself and change as you like. `courier-orchestrate` tells a model to load a playbook skill
-when one is listed, and a parent names the skills each part should load.
-
-Install it in your global OpenCode config, so every project and every worktree has it:
-`~/.config/opencode/skills/courier-playbook/SKILL.md`. OpenCode also reads `.opencode/skills/`,
-`.claude/skills/` and `.agents/skills/` in a project; there it must be committed, since an
-isolated child's worktree starts from `HEAD`.
-
-It says:
-
-- **The parts a task can have:** a scout that reads and reports, the implementers, tests and
-  documentation, and a review stage. Several whole jobs in one prompt are that many parts, each
-  running the playbook for its job.
-- **When the core is coupled:** stage it, the core first and merged, then the parts that depend on it.
-- **Writing a task:** scope, context, checks and report, with one sample task.
-- **The review stage:** one review session, given the diff to read, that may hand the reading to
-  reviewers, then starts one verifier with their findings, which drops what does not hold and starts
-  one implementor for what holds (2 or more, isolated, when the fixes are independent); the review
-  session reports what was found, held, fixed and refused, and running the checks on the fixed tree
-  and settling the refusals it disagrees with stay the parent's. Under an isolated session the
-  review session, the verifier and the implementor are isolated too, each worktree from the one
-  above. One session for one stage is a part by the brief's rule above.
-- **Many parts:** count 6 live sessions per part that runs a review stage against `maxTotal`, start
-  the parts that fit in one group and the rest in a group of their own once the first has reported.
-- **Common mistakes:** a vague task, two parts in one file, polling, taking a report on its word,
-  answering for the person.
+How to shape the work (which parts a task has, staging a tightly coupled core, a review stage after
+the merge, fitting many parts in `maxTotal`) is not in the plugin: write it as a skill of your own.
+`courier-orchestrate` tells a model to load such a skill when one is listed, and a parent names the
+skills each part should load. OpenCode reads your skills from `~/.config/opencode/skills/<name>/SKILL.md`,
+and from a project's `.opencode/skills/`, `.claude/skills/` and `.agents/skills/`; in a project the
+skill must be committed, since an isolated child's worktree starts from `HEAD`.
 
 ## A child's report
 

@@ -91,7 +91,7 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain(`one ${memory.NOTE_TOOL} with that one line; none when there is nothing`)
     expect(skill.SKILL_CONTENT).toContain("Name the job it comes from and the reason")
     expect(skill.SKILL_CONTENT).not.toContain("about splitting work here")
-    // The skill is the tools' mechanics; planning, staging and the review stage are the playbook's, outside the plugin.
+    // The skill is the tools' mechanics; planning, staging and the review stage are left to the person's own skills.
     for (const policy of ["When the core is coupled", "review stage", "verifier", "implementor", "count 6 live sessions", "A task that works"])
       expect(skill.SKILL_CONTENT).not.toContain(policy)
     expect(skill.SKILL_CONTENT).toContain("is a playbook's: if a skill for that is listed to you, load it too")
@@ -117,23 +117,6 @@ describe("envelope and child brief", () => {
     expect(tree.rolePart(3, limits)).not.toContain(kernel.SKILL_ID)
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Do not poll with courier_children, courier_tree or sleep")
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("poll")
-  })
-  test("the courier-playbook example skill", async () => {
-    const text = await Bun.file(new URL("../docs/courier-playbook/SKILL.md", import.meta.url)).text()
-    expect(text).toStartWith("---\nname: courier-playbook\ndescription: Load with courier-orchestrate")
-    for (const rule of [
-      "When the rest depend on names and texts the core fixes, split in stages",
-      "A staged core is one part of the task, not the whole task",
-      "Several whole jobs in one prompt, such as 4 tickets, are that many parts",
-      "Put in its task the diff to read",
-      "then starts one verifier with their reports",
-      "starts one implementor for what holds",
-      "running the checks on the fixed tree stays yours",
-      "One session for one stage, after a stage of 2 or more parts or one you did yourself, is a part of the task",
-      "count 6 live sessions per part against maxTotal",
-      "in a group of their own once the first group has reported",
-    ])
-      expect(text).toContain(rule)
   })
   test("refusals", () => {
     expect(tree.depthRefusal(3, 3)).toMatchSnapshot()

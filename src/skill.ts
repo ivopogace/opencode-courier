@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
 import { ONE_PART_LINE, SKILL_ID, SPLIT_LINE } from "./kernel/protocol.js"
 
-// The courier-orchestrate skill: the playbook a session loads with its skill tool.
+// The courier-orchestrate skill: the text a session loads with its skill tool.
 
 /** Why a model loads the skill, listed with every session's available skills. */
 export const SKILL_DESCRIPTION =
@@ -10,7 +10,7 @@ export const SKILL_DESCRIPTION =
   "parts, waiting without polling, relaying questions and permissions, reading reports, merging and reporting upward."
 
 /**
- * The skill's text: how the tools behave, not how to plan or review the parts, which is a playbook's (`docs/courier-playbook`).
+ * The skill's text: how the tools behave, not how to plan or review the parts, which is left to the person's own skills.
  * It names no limits, which the role part and the brief give; it repeats the brief's split rule, since the root has no brief.
  */
 export const SKILL_CONTENT = [

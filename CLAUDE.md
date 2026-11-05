@@ -11,8 +11,8 @@ the hub), `development.md` (commands, suites, CI), `real-model.md` and `releasin
 - `src/index.ts`: the server plugin and its composition root (tools, tick jobs, event modules, the
   `Waits` port). The only file that imports more than one module's `index.ts`.
 - `src/tui.tsx` and `src/rpc.ts`: the TUI and RPC entrypoints, never imported by the server half.
-  `src/skill.ts`: the `courier-orchestrate` skill, the tools' mechanics; `docs/courier-playbook/` is a
-  playbook a person installs as their own skill, which the plugin does not register.
+  `src/skill.ts`: the `courier-orchestrate` skill, the tools' mechanics; planning and reviewing the
+  parts is left to the person's own skills.
 - `src/kernel/`: what models see of the protocol (`protocol.ts`) and the tool helpers (`tool.ts`).
 - `src/platform/`: the process-wide hub, the scheduler loop, OpenCode's event stream, storage helpers.
   Imports nothing outside itself.

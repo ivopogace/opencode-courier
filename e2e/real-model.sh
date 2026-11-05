@@ -223,8 +223,14 @@ if [ "${COURIER_PERSON:-}" = other-server ]; then
   echo "a second server on the same data directory: $OTHER"
 fi
 if [ -n "${COURIER_SEED:-}" ]; then
-  # By the plugin's id: before the first prompt it may have stored nothing (an idle scheduler drops scheduler/owner).
-  project=$(api project | jq -r --arg dir "$WORK/project" 'first(.[] | select(.canonical == $dir) | .id) // .[0].id')
+  # By the plugin's id: before the first prompt it may have stored nothing (an idle scheduler drops scheduler/owner). Since
+  # OpenCode 2.2 the project is listed only once a session exists in it, so one is made for its projectID and deleted.
+  probe=$(curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
+    --data "$(jq -n --arg directory "$WORK/project" '{ location: { directory: $directory } }')" "$SERVER/api/session")
+  project=$(jq -r '.data.projectID // empty' <<<"$probe")
+  [ -z "$project" ] || curl -sf -o /dev/null -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$(jq -r '.data.id' <<<"$probe")" || true
+  [ -n "$project" ] || project=$(api project | jq -r --arg dir "$WORK/project" 'first(.[] | select(.canonical == $dir) | .id) // .[0].id')
+  [ "$project" != null ] && [ -n "$project" ] || { echo "could not find the project's id to seed under"; exit 1; }
   jq -r 'keys[]' "$COURIER_SEED" | while IFS= read -r key; do
     XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" set "${key//<project>/$project}" \
       "$(jq -r --arg key "$key" --arg project "$project" '.[$key] | tojson | gsub("<project>"; $project)' "$COURIER_SEED")" @courier

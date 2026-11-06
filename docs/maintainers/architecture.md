@@ -13,24 +13,29 @@ The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules
 
 - **The platform does not import features.** `index.ts` hands it the ordered tick jobs and event
   modules. There is no event bus of our own: OpenCode's event stream is one.
-- **Registration lives in this copy's closures, never in the hub's state**, so the hub's shape does
-  not change and an unloaded copy leaves nothing behind.
+- **Registration lives in closures, not in new hub fields**, so the hub's shape does not change.
+  The hub's `subscribe` and its scheduler's `tick` are the last-loaded copy's, and leaving clears
+  neither (see Version skew).
 - **The silent-turn rule is a query**, `Waits`, which `tree/` declares and `person/`, `scheduling/`
   and `webhook/` supply. `index.ts` composes it, so `tree/` does not depend on `person/`. The
   `context` hook takes the tools to hide from a leaf (`hiddenFromLeaf`) the same way.
 - **The memory refreshes in the `after` phase**, once the turn-end notices are out and the report
   state is written. It reads only through ports every hub-v2 member has (`storage`, `session`, `now`,
   `log`). What it needs beyond them is process-wide, under the key `opencode-courier.memory`.
-- **The TUI bundle carries nothing of the server half**: `tui.tsx` and `rpc.ts` import modules'
-  `tui.tsx` and `rpc.ts` directly. The TUI part goes through the same use cases as the tools, over
-  the RPCs `courier`, `courier-person` and `courier-memory`. The memory view is a dialog, not a
-  panel: the records are the project's, and a panel belongs to one session.
+- **The TUI bundle carries no server wiring** (no `index.ts`, tool, store or hub): the `tui.tsx` and
+  `rpc.ts` entrypoints skip the modules' `index.ts` (see the import rules), and a module's `tui.tsx`
+  shares with the server only its `rpc.ts`, its `text.ts` and the pure code those import. The TUI
+  part goes through the same use cases as the tools, over the RPCs `courier`, `courier-person` and
+  `courier-memory`. The memory view is a dialog, not a panel: the records are the project's, and a
+  panel belongs to one session.
 - **Text lives next to the module that speaks it**, with one snapshot over all of it.
 
 The import rules:
 
-- A module is imported from outside only through its `index.ts`, except that `tui.tsx` and `rpc.ts`
-  take a module's `tui.tsx` and `rpc.ts` directly.
+- A module is imported from outside only through its `index.ts`, except by the two other
+  entrypoints. `src/tui.tsx` imports only `@opencode/plugin/tui` itself (no subpath, no `solid-js`
+  or `@opentui/*`) and modules' `tui.tsx` and `rpc.ts`; `src/rpc.ts` imports only modules'
+  `rpc.ts`.
 - The only dependencies between modules are `person/`'s and `memory/`'s on `tree/`, through
   `tree/index.ts`. Each module may import `platform/**` and `kernel/**`; `platform/` imports
   nothing outside itself.
@@ -72,9 +77,11 @@ the tree's and the memory's keys.
 A session owes a report while `prompt` is later than `settled`. Its parent waits on it while
 `prompt` is later than `told` too. The prompt's time is the event's `created`; the report's is the
 server clock as `courier_send` runs, before it delivers, so a late event cannot make a report look
-older than its prompt. Each key keeps the later of two times, since both hub subscriptions note
-every event. `forgetReports` reads `report/` before the roster at load, so a child spawned during
-the sweep is never taken for an orphan. A held report outlives its member's roster entry.
+older than its prompt. A note to `prompt`, `settled`, `progress` or `told` keeps the later of two
+times, since both hub subscriptions note every event; `stopped` and `nudged` are overwritten. A
+failed `courier_send` or silent-end notice undoes its own note if the key still holds it.
+`pruneExpired` reads `report/` before the roster at load, so a child spawned during the sweep is
+never taken for an orphan. A held report outlives its member's roster entry.
 
 ## Several copies in one process
 

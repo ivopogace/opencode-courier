@@ -6,7 +6,7 @@ import { stoppedNotice, stopText, treeText } from "../src/tree/text.js"
 import { stoppedSincePrompt } from "../src/tree/report.js"
 import { childStore, groupStore, memberKey, progressKey, promptKey, settledKey, stoppedKey, wakeStore } from "../src/tree/store.js"
 import type { RosterEntry, StopPorts } from "../src/tree/ports.js"
-import { stop } from "../src/tree/stop.js"
+import { SETTLE_MS, stop } from "../src/tree/stop.js"
 import { RETENTION_MS } from "../src/tree/roster.js"
 import { subtree, tree } from "../src/tree/subtree.js"
 
@@ -23,7 +23,7 @@ const entry = (sessionID: string, parentID: string, createdAt: number, more: Par
 })
 
 /** A root with a middle session, two leaves under it and a sibling of the middle one. */
-async function fixture(options: { idle?: string[]; missing?: string[]; failing?: string[]; inspect?: (directory: string) => any } = {}) {
+async function fixture(options: { idle?: string[]; missing?: string[]; failing?: string[]; inspect?: (directory: string) => any; listed?: Record<string, Array<[string, number]>> } = {}) {
   const store = new Map<string, unknown>()
   const calls: Call[] = []
   const logs: string[] = []
@@ -48,6 +48,17 @@ async function fixture(options: { idle?: string[]; missing?: string[]; failing?:
     },
     get: async ({ sessionID }: any) => ({ id: sessionID, title: `title ${sessionID}`, time: { created: 1, updated: 2, idle: 2 } }),
     context: async () => [],
+    // OpenCode's children of a session, as `[id, created]`: native courier children and the subagents its subagent tool started.
+    ...(options.listed
+      ? {
+          list: async ({ parentID }: any) => {
+            calls.push({ method: "list", input: { parentID } })
+            if (parentID === "broken") throw new Error("no list")
+            const data = (options.listed![parentID] ?? []).map(([id, created]) => ({ id, parentID, title: `title ${id}`, location: { directory: "/repo" }, time: { created, updated: created } }))
+            return { data, cursor: {} }
+          },
+        }
+      : {}),
   }
   const nudges: number[] = []
   const courier = {
@@ -123,7 +134,71 @@ describe("subtree", () => {
   })
 })
 
+describe("subtree with OpenCode's subagents (#438)", () => {
+  // `sub1` under the root, `sub2` under `leaf2`, `sub2a` under `sub2`; `side` is a native child, listed and on the roster.
+  const listed = { root: [["side", 2], ["sub1", 5]], leaf2: [["sub2", 6]], sub2: [["sub2a", 7]] } as Record<string, Array<[string, number]>>
+
+  test("adds the sessions OpenCode lists under each that have no roster entry, marked subagent, in the order a tree is drawn", async () => {
+    const { ports } = await fixture({ listed })
+
+    const { nodes } = await subtree(ports.courier.storage, "root", undefined, ports.courier.session)
+
+    expect(nodes.map((node) => [node.entry.sessionID, node.depth, node.entry.parentID, node.subagent ?? false])).toEqual([
+      ["mid", 1, "root", false],
+      ["leaf1", 2, "mid", false],
+      ["leaf2", 2, "mid", false],
+      ["sub2", 3, "leaf2", true],
+      ["sub2a", 4, "sub2", true],
+      ["side", 1, "root", false],
+      ["sub1", 1, "root", true],
+    ])
+    expect(nodes.find((node) => node.entry.sessionID === "sub1")!.entry).toEqual({
+      sessionID: "sub1",
+      parentID: "root",
+      title: "title sub1",
+      directory: "/repo",
+      isolated: false,
+      createdAt: 5,
+    })
+  })
+
+  test("without the listing, or when it fails, reads the roster alone", async () => {
+    const { ports } = await fixture({ listed })
+    expect((await subtree(ports.courier.storage, "root")).nodes.map((node) => node.entry.sessionID)).toEqual(["mid", "leaf1", "leaf2", "side"])
+
+    await childStore(ports.courier.storage as any).record(entry("broken", "side", 9))
+    const { nodes } = await subtree(ports.courier.storage, "root", undefined, ports.courier.session)
+    expect(nodes.map((node) => node.entry.sessionID)).toContain("broken")
+  })
+
+  test("with retention, leaves out a subagent past it as it does an entry", async () => {
+    const { ports } = await fixture({ listed: { root: [["old", 1], ["new", RETENTION_MS + 2]] } })
+
+    const { nodes } = await subtree(ports.courier.storage, "root", { now: RETENTION_MS + 3, exists: () => false }, ports.courier.session)
+
+    expect(nodes.map((node) => node.entry.sessionID)).toEqual(["new"])
+  })
+})
+
 describe("tree", () => {
+  test("lists OpenCode's subagents marked subagent: true, without a report, beside the sessions courier started (#438)", async () => {
+    const { ports } = await fixture({ listed: { root: [["side", 2], ["sub1", 5]] } })
+
+    const result = await tree(ports.courier, "root")
+
+    expect(result.sessions.map((one) => [one.sessionID, one.depth, "subagent" in one])).toEqual([
+      ["mid", 1, false],
+      ["leaf1", 2, false],
+      ["leaf2", 2, false],
+      ["side", 1, false],
+      ["sub1", 1, true],
+    ])
+    const sub = result.sessions.at(-1)!
+    expect(sub).toMatchObject({ sessionID: "sub1", parentID: "root", subagent: true, isolated: false })
+    expect(sub).not.toHaveProperty("report")
+    expect(Object.values(sub).includes(undefined)).toBe(false)
+  })
+
   test("gives each session its status, depth, parent, group standing, report state and isolation", async () => {
     const { ports, store } = await fixture()
     await joinGroup(groupStore(ports.courier.storage), "root", "g", "mid", "title mid", 1)
@@ -176,6 +251,65 @@ describe("tree", () => {
 })
 
 describe("stop", () => {
+  test("interrupts OpenCode's subagents with the rest, deepest first, background ones included, noting no report for them (#438)", async () => {
+    const { ports, calls, store } = await fixture({ listed: { leaf2: [["sub2", 6]], sub2: [["sub2a", 7]], root: [["sub1", 5]] } })
+
+    const result = await stop(ports, "root", { sessionID: "mid" })
+
+    const order = calls.filter((call) => call.method === "interrupt").map((call) => call.input.sessionID)
+    expect(order.slice(0, 2)).toEqual(["sub2a", "sub2"])
+    expect(order.at(-1)).toBe("mid")
+    expect(order).not.toContain("sub1")
+    expect(result.stopped.filter((one) => one.subagent).map((one) => [one.sessionID, one.outcome])).toEqual([
+      ["sub2a", "interrupted"],
+      ["sub2", "interrupted"],
+    ])
+    for (const id of ["sub2", "sub2a"]) {
+      expect(store.has(settledKey(id))).toBe(false)
+      expect(store.has(stoppedKey(id))).toBe(false)
+    }
+    expect([...store.keys()].filter((key) => key.includes("standing"))).toEqual([])
+    expect(stopText(result)).toContain("- sub2a (subagent): interrupted")
+    expect(stopText(result)).toContain("- leaf2: interrupted")
+  })
+
+  test("interrupts a parent again once OpenCode's notice that its background subagent ended has woken it, not for a foreground one (#438)", async () => {
+    const { ports, calls } = await fixture({ listed: { leaf2: [["bg", 6], ["fg", 7]] } })
+    const session = ports.courier.session as any
+    const returned = { type: "tool", name: "subagent", state: { status: "completed", input: { background: true }, content: [{ type: "text", text: "working in the background (sessionID: bg)" }] } }
+    const running = { type: "tool", name: "subagent", state: { status: "running", input: {}, metadata: { sessionID: "fg", status: "running" } } }
+    let noticed = false
+    session.context = async ({ sessionID }: any) =>
+      sessionID === "leaf2"
+        ? [{ type: "assistant", content: [returned, running] }, ...(noticed ? [{ type: "synthetic", time: { created: Date.now() }, metadata: { source: "subagent", childID: "bg" }, text: "" }] : [])]
+        : []
+    const interrupt = session.interrupt
+    session.interrupt = async (input: any) => {
+      if (input.sessionID === "bg") setTimeout(() => (noticed = true), 100)
+      return interrupt(input)
+    }
+
+    const started = Date.now()
+    await stop(ports, "root", { sessionID: "leaf2" })
+
+    const order = calls.filter((call) => call.method === "interrupt").map((call) => call.input.sessionID)
+    expect(order.slice(0, 2).sort()).toEqual(["bg", "fg"])
+    expect(order.slice(2)).toEqual(["leaf2", "leaf2"])
+    expect(Date.now() - started).toBeLessThan(SETTLE_MS)
+  })
+
+  test("waits at most SETTLE_MS for a notice that does not come, and interrupts nothing more", async () => {
+    const { ports, calls } = await fixture({ listed: { leaf2: [["bg", 6]] } })
+    const returned = { type: "tool", name: "subagent", state: { status: "completed", input: {}, content: [{ type: "text", text: "(sessionID: bg)" }] } }
+    ;(ports.courier.session as any).context = async ({ sessionID }: any) => (sessionID === "leaf2" ? [{ type: "assistant", content: [returned] }] : [])
+
+    const started = Date.now()
+    await stop(ports, "root", { sessionID: "leaf2" })
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(SETTLE_MS)
+    expect(calls.filter((call) => call.method === "interrupt").map((call) => call.input.sessionID)).toEqual(["bg", "leaf2"])
+  })
+
   test("drops the wake watch of what waits in a stopped session's inbox, so nothing wakes it again", async () => {
     const { ports, store } = await fixture()
     const waiting = { at: 1, text: "report", running: true }

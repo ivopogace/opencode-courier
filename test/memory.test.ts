@@ -29,6 +29,7 @@ import {
   splitLinesOf,
   splitOf,
   splitProse,
+  subagentStatus,
   unreadPart,
   type PartRecord,
   type StoredRecord,
@@ -48,7 +49,7 @@ import type { RosterEntry } from "../src/tree/domain.js"
 import { turnOf } from "../src/tree/index.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
 
-type Session = { created?: number; updated: number; idle?: number; archived?: number; cost?: number; title?: string; messages?: unknown[]; projectID?: string; directory?: string }
+type Session = { created?: number; updated: number; idle?: number; archived?: number; cost?: number; title?: string; messages?: unknown[]; projectID?: string; directory?: string; outcome?: string; parentID?: string }
 
 const NOW = 1_700_000_000_000
 
@@ -76,9 +77,18 @@ function fakePorts(sessions: Record<string, Session>, windows: Array<{ providerI
     session: {
       get: async ({ sessionID }: { sessionID: string }) => {
         gets.push(sessionID)
-        const { created = NOW - 600_000, updated, idle, archived, cost = 0, title = `title ${sessionID}`, projectID = "proj_1", directory = "/repo" } = known(sessionID)
-        return { id: sessionID, title, cost, projectID, location: { directory }, time: { created, updated, ...(idle !== undefined ? { idle } : {}), ...(archived !== undefined ? { archived } : {}) } }
+        const { created = NOW - 600_000, updated, idle, archived, cost = 0, title = `title ${sessionID}`, projectID = "proj_1", directory = "/repo", outcome } = known(sessionID)
+        return { id: sessionID, title, cost, projectID, ...(outcome ? { outcome } : {}), location: { directory }, time: { created, updated, ...(idle !== undefined ? { idle } : {}), ...(archived !== undefined ? { archived } : {}) } }
       },
+      // OpenCode's children of a session: those given a `parentID`, its subagents (and native courier children) among them.
+      list: async ({ parentID }: { parentID: string }) => ({
+        data: await Promise.all(
+          Object.entries(sessions)
+            .filter(([, session]) => session.parentID === parentID)
+            .map(([sessionID]) => ports.session.get({ sessionID })),
+        ),
+        cursor: {},
+      }),
       context: async ({ sessionID }: { sessionID: string }) => {
         contexts.push(sessionID)
         return known(sessionID).messages ?? []
@@ -305,6 +315,17 @@ describe("revise", () => {
   })
 })
 
+describe("subagentStatus", () => {
+  test("is out while a subagent runs, stalled before that, and how its last turn ended once it does not (#438)", () => {
+    expect(subagentStatus({ running: true, stalled: false })).toBe("out")
+    expect(subagentStatus({ running: true, stalled: true })).toBe("stalled")
+    expect(subagentStatus({ running: false, stalled: false, outcome: "succeeded" })).toBe("done")
+    expect(subagentStatus({ running: false, stalled: false })).toBe("done")
+    expect(subagentStatus({ running: false, stalled: false, outcome: "failed" })).toBe("failed")
+    expect(subagentStatus({ running: false, stalled: false, outcome: "interrupted" })).toBe("interrupted")
+  })
+})
+
 describe("partStatus", () => {
   const known = { known: true, owes: false }
   test("is the last report's status once settled by one, how the wait ended otherwise, and out while a report is owed or nothing is known", () => {
@@ -435,6 +456,10 @@ describe("the store", () => {
         { sessionID: "ses_b", title: "", depth: 1, isolated: false, status: "out" },
       ],
     })
+    expect(readRecord({ parts: [{ sessionID: "ses_s", status: "done", subagent: true }, { sessionID: "ses_t", status: "done", subagent: "yes" }] })?.parts).toEqual([
+      { sessionID: "ses_s", title: "", depth: 1, isolated: false, subagent: true, status: "done" },
+      { sessionID: "ses_t", title: "", depth: 1, isolated: false, status: "done" },
+    ])
     expect(readRecord({ parts: [], recalled: { calls: 2 } })).toMatchObject({ recalled: { calls: 2 } })
     expect(readRecord({ parts: [], movedAt: 7, lesson: { text: "Give the docs to one session", at: 5, depth: 2 } })).toMatchObject({ lesson: { text: "Give the docs to one session", at: 5, depth: 2 } })
     expect(readRecord({ parts: [], movedAt: 7, lesson: "  Do the docs\nyourself " })).toMatchObject({ lesson: { text: "Do the docs yourself", at: 7 } })
@@ -568,6 +593,50 @@ describe("refresh", () => {
       ],
     })
     expect(store.get(recordKey("proj_1", "ses_top"))).toEqual(record)
+  })
+
+  test("lists OpenCode's subagents in the tree as parts marked subagent, with title, duration, cost and context; the split's part count leaves them out (#438)", async () => {
+    const { ports, state } = fakePorts(
+      {
+        ses_top: { created: NOW - 400_000, updated: NOW - 50_000, idle: NOW - 50_000, messages: [done("split: 2 parts: core, docs"), done("split: later line")] },
+        ses_a: { created: NOW - 290_000, updated: NOW - 100_000, idle: NOW - 100_000, cost: 0.25 },
+        ses_b: { created: NOW - 280_000, updated: NOW - 10_000, idle: NOW - 200_000, cost: 0.5 },
+        ses_look: { parentID: "ses_b", created: NOW - 60_000, updated: NOW - 30_000, idle: NOW - 30_000, outcome: "succeeded", cost: 0.1, title: "Look it up", messages: [usage(400)] },
+        ses_bg: { parentID: "ses_top", created: NOW - 40_000, updated: NOW - 1_000, cost: 0.05, title: "Run the checks", messages: [text("Working.")] },
+      },
+      [SMALL],
+    )
+    await tree(ports)
+
+    const record = await refresh(ports, state, "ses_top", NOW)
+
+    expect(record!.parts.map((one) => [one.sessionID, one.depth, one.subagent ?? false, one.status])).toEqual([
+      ["ses_a", 1, false, "done"],
+      ["ses_b", 1, false, "out"],
+      ["ses_look", 2, true, "done"],
+      ["ses_bg", 1, true, "out"],
+    ])
+    expect(record!.parts[2]).toEqual({ sessionID: "ses_look", title: "Look it up", depth: 2, isolated: false, subagent: true, status: "done", duration: 30_000, cost: 0.1, context: 0.4 })
+    expect(record!.revisions).toEqual([{ text: "split: later line", at: 1, parts: 2 }])
+    expect(record!.finished).toBe(false)
+    expect(recordLine({ ...record!, projectID: "proj_1", sessionID: "ses_top" }, "ses_other", NOW)).toContain(" · 2 parts: 1 done, 1 out, 2 levels deep, 1 isolated, 2 subagents · ")
+  })
+
+  test("reads a tree whose only parts are settled subagents as finished, and a subagent OpenCode removed since as gone (#438)", async () => {
+    const { ports, state, sessions } = fakePorts({
+      ses_top: { updated: NOW - 50_000, idle: NOW - 50_000 },
+      ses_sub: { parentID: "ses_top", created: NOW - 60_000, updated: NOW - 30_000, idle: NOW - 30_000, outcome: "interrupted" },
+      ses_run: { parentID: "ses_top", created: NOW - 60_000, updated: NOW - 1_000, messages: [text("Working.")] },
+    })
+
+    const first = await refresh(ports, state, "ses_top", NOW)
+    expect(first!.parts.map((one) => [one.sessionID, one.status])).toEqual([["ses_sub", "interrupted"], ["ses_run", "out"]])
+    expect(first!.finished).toBe(false)
+
+    delete sessions.ses_run
+    const second = await refresh(ports, state, "ses_top", NOW)
+    expect(second!.parts.map((one) => [one.sessionID, one.subagent, one.status])).toEqual([["ses_sub", true, "interrupted"], ["ses_run", true, "gone"]])
+    expect(second!.finished).toBe(true)
   })
 
   test("reads a session OpenCode no longer knows from its entry and notes, with no duration, and a tree with nothing running and every part settled as finished", async () => {

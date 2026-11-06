@@ -394,6 +394,30 @@ describe("panel", () => {
     ])
   })
 
+  test("adds OpenCode's subagents under the session that started them, marked subagent, with what they do and cost, and no report (#438)", async () => {
+    const { ports } = fakePorts({
+      ses_root: { updated: 5, idle: 5 },
+      ses_a: { updated: 5, idle: 5 },
+      ses_sub: { updated: 9, idle: 5, cost: 0.25, title: "Search the docs", messages: [assistant(tool("grep", 3))] },
+    })
+    await childStore(ports.storage).record(entry("ses_a", "ses_root"))
+    ;(ports.session as any).list = async ({ parentID }: { parentID: string }) => ({
+      data: parentID === "ses_a" ? [{ id: "ses_sub", parentID, title: "Search the docs", location: { directory: "/repo" }, time: { created: 950, updated: 9 } }] : [],
+      cursor: {},
+    })
+
+    const tree = await panel(ports, "ses_root")
+
+    expect(tree.rows.map((row) => [row.sessionID, row.parentID, row.depth, row.subagent ?? false])).toEqual([
+      ["ses_a", "ses_root", 1, false],
+      ["ses_sub", "ses_a", 2, true],
+    ])
+    const sub = tree.rows[1]!
+    expect(sub).toMatchObject({ title: "Search the docs", state: "running", isolated: false, cost: 0.25, tool: { name: "grep", at: 3 }, created: 1 })
+    expect(sub).not.toHaveProperty("report")
+    expect(sub).not.toHaveProperty("group")
+  })
+
   test("marks a session courier_stop stopped since its last prompt, and not one prompted again", async () => {
     const { ports } = fakePorts({ ses_stopped: { updated: 5, idle: 5, outcome: "interrupted" }, ses_again: { updated: 5, idle: 5 }, ses_plain: { updated: 5, idle: 5 } })
     const children = childStore(ports.storage)

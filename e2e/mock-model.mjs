@@ -70,6 +70,12 @@ function decide(body) {
     // The middle session of COURIER-SUBTREE-START has started its leaf and then waits for a model reply that does not come in time.
     if (call?.function?.name === "courier_spawn" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-SUBTREE-MID"))
       return { text: "MID HOLDING", hold: true }
+    // COURIER-SUBAGENT's middle session starts a background subagent with OpenCode's subagent tool, then a foreground one,
+    // whose call blocks its turn until the test stops it.
+    if (call?.function?.name === "subagent" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-SUBAGENT-MID"))
+      return (call.function.arguments ?? "").includes('"background"')
+        ? { tool: "subagent", args: { agent: "general", description: "Look it up", prompt: "SUBAGENT-FOREGROUND" } }
+        : { text: "MID DONE" }
     // COURIER-STALL's root ends its turn once its middle is started.
     if (call?.function?.name === "courier_spawn" && prompt.includes("COURIER-STALL")) return { text: "ROOT SPAWNED" }
     // COURIER-STALL's middle has started its leaf and ends its turn; the test stages a revert on it, so the
@@ -162,6 +168,9 @@ function decide(body) {
   // COURIER-HOLD starts a turn whose reply does not come in time, for the test to archive and interrupt it meanwhile; only
   // the last prompt holds, as an interrupted hold leaves no reply and a later prompt to the session sees it still.
   if (textOf(messages.findLast((message) => message.role === "user")?.content).includes("COURIER-HOLD")) return { text: "HOLDING", hold: true }
+  // A subagent OpenCode's subagent tool started holds its turn until the test stops it; its parent, told it ended, says so a model's while later.
+  if (recent.includes("You are a subagent spawned by another session.")) return { text: "SUBAGENT HOLDING", hold: true }
+  if (/<subagent sessionID="ses_\w+" state=/.test(recent)) return { text: "SAW SUBAGENT END", delayed: true }
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
   // COURIER-NEST's middle session commits on its branch, then merges the branch its leaf reports.
   const nestBranch = branchIn(messages)
@@ -222,6 +231,8 @@ function decide(body) {
   if (parent && recent.includes("CHILD-DEEPENS"))
     return { calls: [{ tool: "courier_spawn", args: { task: "CHILD-LEAF" } }, { tool: "courier_spawn", args: { task: "CHILD-LEAF CHILD-FORCES" } }] }
   if (parent && recent.includes("CHILD-LEAF")) return { tool: "courier_spawn", args: { task: "CHILD-TOO-DEEP" } }
+  if (parent && recent.includes("CHILD-SUBAGENT-MID"))
+    return { tool: "subagent", args: { agent: "general", description: "Run the checks", prompt: "SUBAGENT-BACKGROUND", background: true } }
   // The middle session of COURIER-SUBTREE-START starts a leaf, whose turn runs on until the test stops it.
   if (parent && recent.includes("CHILD-SUBTREE-MID")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-LEAF" } }
   if (parent && recent.includes("CHILD-SUBTREE-LEAF")) return { text: "LEAF HOLDING", hold: true }
@@ -322,6 +333,7 @@ function decide(body) {
   const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)
   if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
   if (recent.includes("COURIER-SUBTREE-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-MID" } }
+  if (recent.includes("COURIER-SUBAGENT-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBAGENT-MID" } }
   // COURIER-STALL: the root starts a middle session, which starts a leaf and ends its turn; the test stages a
   // revert on the middle, so the leaf's report is admitted without a wake.
   if (recent.includes("COURIER-STALL")) return { tool: "courier_spawn", args: { task: "CHILD-STALL-MID" } }

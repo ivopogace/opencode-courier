@@ -420,6 +420,8 @@ describe("the tree panel's lines", () => {
     expect(parts(rows, "ses_parent")).toEqual({ reported: 1, started: 3 })
     expect(parts(rows, "ses_c")).toEqual({ reported: 1, started: 1 })
     expect(parts(rows, "ses_d")).toEqual({ reported: 0, started: 0 })
+    // OpenCode's subagents owe no report, so the bar leaves them out (#438).
+    expect(parts([...rows, row("ses_sub", { subagent: true, report: undefined })], "ses_parent")).toEqual({ reported: 1, started: 3 })
   })
 
   test("a status line names what the session does, its report, its group standing and its isolation", () => {
@@ -430,6 +432,7 @@ describe("the tree panel's lines", () => {
     expect(statusLine(row("ses_a", { state: "waiting", isolated: true, model: "mock/small#high" }))).toBe("waiting on you · owes a report · isolated · mock/small#high")
     expect(statusLine(row("ses_a", { state: "running", native: true }))).toBe("running · owes a report · native")
     expect(statusLine(row("ses_a", { native: true, model: "mock/small" }))).toBe("idle · owes a report · native · mock/small")
+    expect(statusLine(row("ses_a", { state: "running", subagent: true, report: undefined }))).toBe("running · subagent")
     expect(statusLine(row("ses_a", { outcome: "failed", report: { state: "ended", progressed: false } }))).toBe("failed · ended without a report")
     const pad = (value: number) => String(value).padStart(2, "0")
     const lifts = new Date(NOW + 25 * 60_000)
@@ -623,6 +626,25 @@ describe("the tree panel", () => {
     const frame = app.captureCharFrame()
     expect(frame).toContain("Read the diff  idle · owes a report · group pair out · native")
     expect(frame).toMatch(/Write the fix  idle · owes a report · group pair out\s*\n/)
+  })
+
+  test("marks OpenCode's subagent's row subagent, under the session that started it; s and x leave it alone (#438)", async () => {
+    const fake = fakeContext(async () => empty)
+    fake.state.tree = async () => ({
+      rows: [row("ses_sub", { title: "Look it up", state: "running", subagent: true, report: undefined, tool: { name: "grep", at: NOW } })],
+    })
+    await tui.setup(fake.context)
+    const app = await renderPanel(fake.claim("session.panel"), panelInput().value)
+
+    await app.waitForFrame((frame) => frame.includes("Look it up"))
+    expect(app.captureCharFrame()).toContain("Look it up  running · subagent")
+    fake.state.confirm = true
+    fake.command("s")!.run()
+    fake.command("x")!.run()
+    await settle()
+    expect(fake.state.confirms).toEqual([])
+    expect(fake.calls.filter((call) => Array.isArray(call) && (call[0] === "stop" || call[0] === "cleanup"))).toEqual([])
+    expect(fake.state.toasts.at(-1)).toMatchObject({ message: 'x acts on a session started with courier_spawn; "Look it up" is a subagent, stopped with the one above it.', variant: "warning" })
   })
 
   test("shows a session's context use muted, and in the warning colour past 80%", async () => {

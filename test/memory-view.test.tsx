@@ -265,6 +265,13 @@ describe("the memory view's lines", () => {
     expect(pinnedLine(newest, "none")).toBe('Nothing to pin for "Add memory to courier": it was already gone')
   })
 
+  test("counts OpenCode's subagents apart from the parts courier started, and marks a subagent's line (#438)", () => {
+    const sub = { sessionID: "ses_sub", title: "Look it up", depth: 2, isolated: false, subagent: true, status: "done" as const, duration: 120_000, cost: 0.1 }
+    expect(partsCounted([...newest.parts, sub])).toBe("3 parts: 1 done, 1 partial, 1 out, 1 subagent")
+    expect(partsCounted([sub])).toBe("no parts, 1 subagent")
+    expect(partLine(sub)).toBe("done · depth 2 · subagent · 2 min · $0.10")
+  })
+
   test("a part's line: its status, depth, isolation, group, duration, cost, context use and spawns refused", () => {
     expect(newest.parts.map(partLine)).toEqual(["done · depth 1 · isolated · group wave · 9 min · $0.42 · ctx 31%", "partial · depth 1 · 1 min · $0.86 · 1 spawn refused", "out · depth 2"])
   })

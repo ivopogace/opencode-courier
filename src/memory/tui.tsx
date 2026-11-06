@@ -56,14 +56,18 @@ const money = (cost: number) => `$${cost.toFixed(2)}`
 /** A record's name, as its rows and confirms show it: its title on one line, else its top session. */
 export const nameOf = (record: MemoryRecord) => clip(oneLine(record.title) || record.sessionID, 60)
 
-/** A record's parts counted by status, in the order of `PART_STATUSES`: "3 parts: 2 done, 1 partial"; "no parts" with none. */
-export function partsCounted(parts: ReadonlyArray<MemoryPart>) {
-  if (!parts.length) return "no parts"
+/**
+ * A record's parts counted by status, in the order of `PART_STATUSES`, then its subagents: "3 parts: 2 done, 1 partial, 1
+ * subagent"; "no parts" with none.
+ */
+export function partsCounted(all: ReadonlyArray<MemoryPart>) {
+  const parts = all.filter((part) => !part.subagent)
+  const subagents = all.length - parts.length
   const statuses = PART_STATUSES.flatMap((status) => {
     const n = parts.filter((part) => part.status === status).length
     return n ? [`${n} ${status}`] : []
   }).join(", ")
-  return `${count(parts.length, "part")}: ${statuses}`
+  return [parts.length ? `${count(parts.length, "part")}: ${statuses}` : "no parts", ...(subagents ? [count(subagents, "subagent")] : [])].join(", ")
 }
 
 /** The parts' costs summed, when any is known. */
@@ -116,12 +120,13 @@ export function recordDetails(record: MemoryRecord) {
   return record.lesson ? [clip(`${lessonHeading(record.lesson)}: "${oneLine(record.lesson.text)}"`, LESSON_LINE_MAX)] : []
 }
 
-/** One part as the record in full describes it: its status, depth, isolation, group, duration, cost, context use and spawns refused. */
+/** One part as the record in full describes it: its status, depth, isolation or subagent mark, group, duration, cost, context use and spawns refused. */
 export function partLine(part: MemoryPart) {
   return [
     part.status,
     `depth ${part.depth}`,
     part.isolated ? "isolated" : "",
+    part.subagent ? "subagent" : "",
     part.group ? `group ${part.group}` : "",
     part.duration === undefined ? "" : duration(part.duration),
     part.cost === undefined ? "" : money(part.cost),

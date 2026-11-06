@@ -274,9 +274,9 @@ export function duration(ms: number) {
   return `${Math.floor(seconds / 3600)}h ${pad(Math.floor(seconds / 60) % 60)}m`
 }
 
-/** How many of a session's children have reported, out of those it started, among the rows read. */
+/** How many of a session's children have reported, out of those it started with courier_spawn, among the rows read. */
 export function parts(rows: ReadonlyArray<Row>, parentID: string) {
-  const children = rows.filter((row) => row.parentID === parentID)
+  const children = rows.filter((row) => row.parentID === parentID && !row.subagent)
   return { reported: children.filter((row) => row.report?.state === "reported").length, started: children.length }
 }
 
@@ -312,6 +312,7 @@ export function statusParts(row: Row, now = Date.now()) {
     { text: row.group ? `group ${row.group.name} ${row.group.standing}` : "", kind: "plain" },
     { text: row.isolated ? "isolated" : "", kind: "plain" },
     { text: row.native ? "native" : "", kind: "plain" },
+    { text: row.subagent ? "subagent" : "", kind: "plain" },
     { text: row.model ?? "", kind: "plain" },
   ]
   return parts.filter((part) => part.text)
@@ -738,8 +739,12 @@ function TreePanel(props: {
     setSelectedID(row.sessionID)
     openRow(row)
   }
-  // The panel acts as its own session, which neither stops nor forgets itself.
+  // The panel acts as its own session, which neither stops nor forgets itself; a subagent is stopped with the session above it.
   const ownRow = (row: Row, key: string) => {
+    if (row.subagent) {
+      ctx.ui.toast.show({ title: "courier", message: `${key} acts on a session started with courier_spawn; "${oneLine(row.title)}" is a subagent, stopped with the one above it.`, variant: "warning" })
+      return true
+    }
     if (row.sessionID !== view.root) return false
     ctx.ui.toast.show({ title: "courier", message: `${key} acts on a session under "${oneLine(row.title)}", the panel's own.`, variant: "warning" })
     return true
@@ -1084,14 +1089,15 @@ export function addTreePanel(ctx: Context, verbs: Readonly<Record<string, Verb>>
       (error: unknown) => ({ rows: [] as Row[], error }),
     )
     const rows = read.rows
+    const spawned = rows.filter((row) => !row.subagent)
     if (!target && "error" in read) return ctx.ui.toast.show({ title: "courier stop", message: reason(read.error), variant: "error" })
-    if (!target && !rows.length)
+    if (!target && !spawned.length)
       return ctx.ui.toast.show({ title: "courier stop", message: "No session started with courier_spawn under this one.", variant: "warning" })
     const sessionID =
       target ||
       (await ctx.ui.dialog.select({
         title: "Stop which session?",
-        options: rows.map((row) => ({ title: row.title, value: row.sessionID, description: `${row.sessionID} · ${statusLine(row)}` })),
+        options: spawned.map((row) => ({ title: row.title, value: row.sessionID, description: `${row.sessionID} · ${statusLine(row)}` })),
       }))
     if (!sessionID) return
     const row = rows.find((one) => one.sessionID === sessionID)

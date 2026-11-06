@@ -184,6 +184,9 @@ export interface Role {
 /** The keyed session entries, missing on a host before 2.2.0 (every copy's ports carry the host's `session`): an entry is then skipped. */
 export type Instructions = Partial<Pick<Context["session"], "instructions">>
 
+/** OpenCode's session listing, which finds the sessions under a session courier did not start (its subagents); a fake may leave it out. */
+export type Lister = Partial<Pick<Context["session"], "list">>
+
 /** A keyed session instruction entry: its key, `^[a-z0-9][a-z0-9._-]*$`, and its text. */
 export interface Entry {
   readonly key: string
@@ -207,7 +210,7 @@ export interface StandingPorts {
 /** The slice of the plugin context the courier tools use; tests pass a fake. */
 export interface CourierPorts {
   /** `instructions`, the keyed session entries, is missing on a host before 2.2.0: the role then goes in a system part. */
-  readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context" | "interrupt"> & Instructions
+  readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context" | "interrupt"> & Instructions & Lister
   /** The entries of other modules a spawned session gets before its prompt, the memory's lessons; none when not given. */
   readonly entries?: Entries
   readonly agent: Pick<Context["agent"], "get">

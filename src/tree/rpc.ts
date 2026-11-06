@@ -61,6 +61,8 @@ const Row = Schema.Struct({
   isolated: Schema.Boolean,
   /** Set when it is OpenCode's subagent of its parent (a native child), which OpenCode's session lists leave out. */
   native: Schema.optionalKey(Schema.Boolean),
+  /** Set when OpenCode's subagent tool started it, not courier_spawn: it has no report, group or roster entry, and courier_stop cannot target it. */
+  subagent: Schema.optionalKey(Schema.Boolean),
   /** The model it was started on, `provider/model` with `#variant` when one is set, when that is not its parent's. */
   model: Schema.optionalKey(Schema.String),
   created: Schema.Number,

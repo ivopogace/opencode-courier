@@ -17,6 +17,8 @@ const Part = Schema.Struct({
   /** 1 for a session the top started. */
   depth: Count,
   isolated: Schema.Boolean,
+  /** Started by OpenCode's subagent tool, not courier_spawn. */
+  subagent: Schema.optionalKey(Schema.Boolean),
   group: Schema.optionalKey(Schema.String),
   status: Schema.Literals(PART_STATUSES),
   duration: Schema.optionalKey(Schema.Number),

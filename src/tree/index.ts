@@ -13,6 +13,7 @@ export type {
   Entries,
   Entry,
   Instructions,
+  Lister,
   ModelWindow,
   Pending,
   PendingPrompt,

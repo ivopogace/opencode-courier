@@ -1,16 +1,20 @@
 import type { Plugin } from "@opencode/plugin"
 import { cut, isLive } from "./domain.js"
-import type { CourierPorts, Pending, RosterEntry, RosterStorage, ShownForm } from "./ports.js"
+import type { CourierPorts, Lister, Pending, RosterEntry, RosterStorage, ShownForm } from "./ports.js"
 import { lastStatus, reportOf } from "./report.js"
 import { isExpired, type Exists } from "./roster.js"
 import { turnOf } from "./running.js"
 import { described } from "./status.js"
 import { childStore } from "./store.js"
 
-/** A session below the one a subtree is read from, with how many levels below it is: a child is at depth 1. */
+/**
+ * A session below the one a subtree is read from, with how many levels below it is: a child is at depth 1. `subagent`
+ * marks one OpenCode's subagent tool started, which has no roster entry: its `entry` is made of OpenCode's info of it.
+ */
 export interface Below {
   readonly entry: RosterEntry
   readonly depth: number
+  readonly subagent?: true
 }
 
 /** What a read drops: the entries past retention at `now`, as `courier_children` drops them; `exists` tells a worktree still there. */
@@ -19,23 +23,45 @@ export interface Retention {
   readonly exists?: Exists
 }
 
+/** The sessions OpenCode lists under a parent, as roster entries made of its info; none when it cannot list them. */
+async function listedUnder(sessions: Lister | undefined, parentID: string): Promise<RosterEntry[]> {
+  if (!sessions?.list) return []
+  const listed = await sessions.list({ parentID }).then(
+    (page) => page.data,
+    () => [],
+  )
+  return listed.map((info) => ({
+    sessionID: info.id,
+    parentID,
+    title: info.title ?? "",
+    directory: info.location.directory,
+    isolated: false,
+    createdAt: info.time.created,
+  }))
+}
+
 /**
  * The sessions started from a session, directly or through others, every one of them, read one prefix scan per
- * parent, in the order a tree is drawn; with `retention`, without the expired entries and what is under them.
+ * parent, in the order a tree is drawn; with `retention`, without the expired entries and what is under them. With
+ * `sessions`, also those OpenCode lists under each that have no roster entry, OpenCode's subagents, marked `subagent`.
  */
-export async function subtree(storage: RosterStorage, rootID: string, retention?: Retention): Promise<{ nodes: Below[] }> {
+export async function subtree(storage: RosterStorage, rootID: string, retention?: Retention, sessions?: Lister): Promise<{ nodes: Below[] }> {
   const children = childStore(storage)
   const byParent = new Map<string, Below[]>()
   const seen = new Set([rootID])
+  const kept = (entry: RosterEntry) => !seen.has(entry.sessionID) && !(retention && isExpired(entry, retention.now, retention.exists))
   const expand = async (level: string[], depth: number): Promise<void> => {
     if (!level.length) return
-    const found = await Promise.all(level.map((parentID) => children.children(parentID)))
+    const found = await Promise.all(level.map((parentID) => Promise.all([children.children(parentID), listedUnder(sessions, parentID)])))
     const next: string[] = []
-    for (const [index, entries] of found.entries()) {
-      const kept = entries.filter((entry) => !seen.has(entry.sessionID) && !(retention && isExpired(entry, retention.now, retention.exists)))
-      for (const entry of kept) seen.add(entry.sessionID)
-      if (kept.length) byParent.set(level[index]!, kept.map((entry) => ({ entry, depth })))
-      next.push(...kept.map((entry) => entry.sessionID))
+    for (const [index, [entries, listed]] of found.entries()) {
+      const spawned = entries.filter(kept).map((entry): Below => ({ entry, depth }))
+      for (const node of spawned) seen.add(node.entry.sessionID)
+      const subagents = listed.filter(kept).map((entry): Below => ({ entry, depth, subagent: true }))
+      for (const node of subagents) seen.add(node.entry.sessionID)
+      const all = [...spawned, ...subagents].sort((a, b) => a.entry.createdAt - b.entry.createdAt)
+      if (all.length) byParent.set(level[index]!, all)
+      next.push(...all.map((node) => node.entry.sessionID))
     }
     return expand(next, depth + 1)
   }
@@ -68,9 +94,12 @@ export interface Listed extends Looked {
 
 export type ReadPorts = Pick<CourierPorts, "storage" | "session" | "pending" | "forms" | "now" | "limits">
 
-/** Every session under a session, without those past retention, each looked up, in the order a tree is drawn. */
-export async function lookUp(ports: ReadPorts, rootID: string): Promise<Looked[]> {
-  const { nodes } = await subtree(ports.storage, rootID, { now: ports.now() })
+/**
+ * Every session under a session, without those past retention, each looked up, in the order a tree is drawn; with
+ * `subagents`, OpenCode's subagents among them (`subtree`).
+ */
+export async function lookUp(ports: ReadPorts, rootID: string, subagents = false): Promise<Looked[]> {
+  const { nodes } = await subtree(ports.storage, rootID, { now: ports.now() }, subagents ? ports.session : undefined)
   return Promise.all(nodes.map((node) => look(ports, node)))
 }
 
@@ -110,14 +139,14 @@ export async function readTop(ports: ReadPorts, rootID: string): Promise<Listed 
 }
 
 /**
- * The listing of at most `max` of the sessions under a session: the live ones first, then the newest, with what is
- * above them, in the order a tree is drawn (`cut`); `leftOut` counts the rest.
+ * The listing of at most `max` of the sessions under a session, OpenCode's subagents among them: the live ones first,
+ * then the newest, with what is above them, in the order a tree is drawn (`cut`); `leftOut` counts the rest.
  */
 export async function readTree(ports: ReadPorts, rootID: string, max = ports.limits.maxTotal) {
   const children = childStore(ports.storage)
   const all = await Promise.all(
-    (await lookUp(ports, rootID)).map(async (node): Promise<Listed> => {
-      const report = await reportOf(children, node.entry.sessionID).catch(() => undefined)
+    (await lookUp(ports, rootID, true)).map(async (node): Promise<Listed> => {
+      const report = node.subagent ? undefined : await reportOf(children, node.entry.sessionID).catch(() => undefined)
       return { ...node, report, live: isLive(node.info ? node.running : undefined, node.pending.length + node.forms.length, report) }
     }),
   )
@@ -130,18 +159,19 @@ export async function readTree(ports: ReadPorts, rootID: string, max = ports.lim
 
 /**
  * The subtree under a session as courier_tree lists it (`readTree`): each session as courier_children shows it, plus
- * its depth, its parent and its report state; `truncated` counts the older sessions left out.
+ * its depth, its parent and its report state, or `subagent` for OpenCode's; `truncated` counts the older sessions left out.
  */
 export async function tree(ports: CourierPorts, rootID: string) {
   const { kept, leftOut } = await readTree(ports, rootID)
   const children = childStore(ports.storage)
   const listed = await Promise.all(
-    kept.map(async ({ entry, depth, report }) => {
-      const [info, last] = await Promise.all([described(ports, entry), lastStatus(children, entry.sessionID).catch(() => undefined)])
+    kept.map(async ({ entry, depth, report, subagent }) => {
+      const [info, last] = await Promise.all([described(ports, entry), report ? lastStatus(children, entry.sessionID).catch(() => undefined) : undefined])
       return {
         ...info,
         parentID: entry.parentID,
         depth,
+        ...(subagent ? { subagent } : {}),
         ...(report
           ? { report: { owes: report.owes, progressed: report.progressed, ended: report.ended, ...(last ? { status: last } : {}) } }
           : {}),

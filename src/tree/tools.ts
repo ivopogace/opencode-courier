@@ -188,7 +188,8 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
     description:
       "List the whole tree of sessions under this one (or under sessionID): every session started with courier_spawn " +
       "from it, directly or through others, each with its depth, what courier_children shows, and whether it still " +
-      "owes a report, sent progress, or ended without one. For a one-off look, not for waiting. A long tree lists at most " +
+      "owes a report, sent progress, or ended without one, and the subagents OpenCode's subagent tool started in it, " +
+      "marked subagent: true, which owe no report. For a one-off look, not for waiting. A long tree lists at most " +
       "maxTotal sessions, the live ones first, then the newest, and says how many older ones are left out.",
     input: TreeInput,
     execute: async (input, context) => {
@@ -201,8 +202,8 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
     name: "courier_stop",
     options: { codemode: false },
     description:
-      "Stop a session you started, directly or through others, and every session under it: each running turn is " +
-      "interrupted, deepest first, and the messages scheduled for them with courier_later are cancelled. Use it when a " +
+      "Stop a session you started, directly or through others, and every session under it, subagents included: each " +
+      "running turn is interrupted, deepest first, and the messages scheduled for them with courier_later are cancelled. Use it when a " +
       "subtree went wrong or is no longer needed. They do not report back, and you are not told of what you stopped; a " +
       "session between you and the target is. A stopped session can be woken again with courier_send. With " +
       "cleanup: true their worktrees are removed too, unless they hold work that is on no branch.",

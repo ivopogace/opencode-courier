@@ -499,6 +499,26 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
 - **The paired app's dock** (`session-request-tree.ts`) walks `parentID` down from the open session.
   Read in the source only.
 
+## OpenCode's subagent tool
+
+What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/plugin/subagent.ts`,
+`session/subagent-job.ts`, `session/subagent-completion.ts`):
+
+- **The tool is `subagent`**, not `task`. It creates the child with `parentID` and the
+  `description` as title, and prompts it with `You are a subagent spawned by another session.`
+  first. `experimental.subagent_depth` (default 1) counts `parentID` links up to the root, so a
+  native courier child cannot start one by default; a standalone one can.
+- **`session.list({ parentID })`** lists a session's children from any location, 50 by default,
+  newest first (`session/store.ts`). The plugin's `ctx.session.list` is the same call.
+- **A foreground call** blocks on the child's job and interrupts it when the parent's call is
+  interrupted. **A background one** (`background: true`, or a foreground one moved there) is tied to
+  nothing: when the child's execution ends, interrupted included, its job ends and a forked observer
+  sends the parent a synthetic `<subagent sessionID=… state=…>` with `metadata.childID`, without
+  `resume: false`, which wakes an idle parent, or one still stopping. `courier_stop` waits for it
+  (`SETTLE_MS`) and interrupts the parent again.
+- **A completed background call's content** names the child's id (`working in the background
+  (sessionID: …)`); a foreground call's stays `running` until the child ends.
+
 ## TUI and RPC entrypoints
 
 - **Found by export.** `Host.resolve` (`packages/plugin/src/host.ts`) resolves `<name>/server` (else

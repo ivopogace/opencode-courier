@@ -27,7 +27,6 @@ const delivered = (id: string, created: number, inboxID?: string, sessionID = "s
 
 const succeeded = (id: string, created: number) => ({ id, type: "session.execution.succeeded", created, data: { sessionID: "ses_child" } })
 
-/** A spawned child, prompted at 100, over fresh fake ports. */
 async function prompted(pending: Parameters<typeof fakePorts>[1] = []) {
   const fake = fakePorts([], pending)
   await childStore(fake.ports.storage).record(child())

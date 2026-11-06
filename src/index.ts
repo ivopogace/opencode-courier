@@ -61,22 +61,14 @@ import {
   type WebhookPorts,
 } from "./webhook/index.js"
 
-/** The spawns under way in the process, outside the hub, so spawns in other locations, copies and hub versions count them. */
 const gate = sharedState<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() }))
 
-/** The type of each item enqueued for a spawned session, outside the hub like the gate. */
 const inbox = sharedState("inbox", () => new Map<string, string>())
 
-/** The forms shown now, which the person events keep and the footer and tree panel count; outside the hub like the inbox. */
 const shown = sharedState<FormsShown>("formsShown", () => new Map())
 
-/** What the memory shares: the models' windows, the locations with memory off, the tops that recalled and the turn ends recorded. */
 const memoryState = sharedState<MemoryState>("memory", () => ({ windows: new Map(), off: new Set(), tops: new Set(), seen: new Set() }))
 
-/**
- * What each tick of the scheduler does, in order, through the first loaded member, of whichever copy:
- * due `courier_later` messages, released join groups, then missed wakes. Every hub-v2 member's `later` is its LaterPorts.
- */
 const jobs: TickJob[] = [
   dueJob,
   (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
@@ -85,34 +77,20 @@ const jobs: TickJob[] = [
 
 const { join, track, nudge } = openInProcess(jobs)
 
-/** The permission domains of the loaded instances: every member's is its location's, whichever copy joined it. */
 const permissions = domains as () => Iterable<Permissions>
 
-// One set of handled events and of told permission requests for every instance in the process, since
-// several subscriptions and copies see the same events. The scheduler's claim set is the hub's own.
 const { watched } = hub
 const watchState: WatchState = { seen: watched.seen, inbox }
 const personState: PersonState = { ...watched, forms: hub.forms, shown }
 
-/**
- * What a session waits on outside the tree, for the silent-turn rule, cheapest first: a request of its
- * own to the person, then a scheduled message or a webhook it subscribed to since its last prompt.
- */
 const outside = waitsOn(asksPermission, asksQuestion, together(isScheduled, subscribedSince))
 
-/** What the hub's subscriptions do with each event of OpenCode's, module by module, in this order. */
 const eventModules = [treeEvents(watchState, outside), personEvents(personState), memoryEvents(memoryState)]
 
-/**
- * The courier tools and webhook receiver, as a promise plugin joining the hub that runs the scheduler
- * and the watcher; its member carries the location by which the question relay finds its ports.
- */
 export const courier = () => Plugin.define({
   id: "courier",
   setup: async (ctx) => {
     const log = (message: string) => console.error(message)
-    // One line per load when this OpenCode is not the version the plugin was built against; the
-    // tools are registered all the same, and no tool result says so.
     try {
       const notice = versionNotice(builtVersions(), ctx.app)
       if (notice) log(notice)
@@ -141,7 +119,6 @@ export const courier = () => Plugin.define({
       roles,
       nudge,
       log,
-      // What a spawned session gets besides its role: the memory's lessons entry, handed to the tree here as `outside` hands it the `Waits` suppliers.
       entries: () => lessonsOf(memoryPorts),
       session: ctx.session,
       agent: ctx.agent,
@@ -190,7 +167,6 @@ export const courier = () => Plugin.define({
     }
 
     const stopPorts = { courier: ports, cancelScheduled: (sessionID: string) => cancelScheduled(later, sessionID), cleanup: cleanupPorts }
-    // The tools in a fixed order: the tree's, then the person's, the scheduled messages', the webhooks' and the memory's.
     await ctx.tool.transform((tools) => {
       addTreeTools(tools, { courier: ports, cleanup: cleanupPorts, stop: stopPorts })
       addPersonTools(tools, { answer: answerPorts, questions: questionPorts, waiting: watched.waiting })
@@ -199,19 +175,17 @@ export const courier = () => Plugin.define({
       addMemoryTools(tools, { memory: memoryPorts, state: memoryState })
     })
     await ctx.skill.transform(addSkill)
-    // What the TUI part reads and its stop; a host that cannot register it still gets the rest, the tools included.
     await Promise.resolve()
       .then(() => registerTreeRpc(ctx.rpc, stopPorts))
       .then(() => registerPersonRpc(ctx.rpc, { questions: questionPorts, permissions }))
       .then(() => registerMemoryRpc(ctx.rpc, memoryPorts))
       .catch((error: unknown) => log(`courier rpc: not registered, the TUI part shows nothing and cannot stop: ${String(error)}`))
-    // `instructions` is read off the context as is: a host before 2.2.0 has none, and the hook then adds the role part.
+    // a host before 2.2.0 has no instructions entries (api-notes)
     const instructions = (ctx.session as Partial<typeof ctx.session>).instructions
     await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, instructions, hiddenFromLeaf: [RECALL_TOOL, NOTE_TOOL], log }, event))
 
     const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
     const swept = sweepRecords(ctx.storage, Date.now()).catch((error: unknown) => log(`courier memory sweep: ${String(error)}`))
-    // The windows the memory reads each part's context use by; a tree whose top runs in a location with memory off is not recorded.
     const windowed = ports
       .models()
       .then((models) => models.forEach(({ providerID, id, context }) => memoryState.windows.set(`${providerID}/${id}`, { providerID, id, context })))
@@ -231,12 +205,10 @@ export const courier = () => Plugin.define({
       log: later.log,
       nudge,
     }
-    // A spawned session about to go idle owing a report is reminded once, in the same execution. The hook is
-    // experimental, and a host before 2.2.4 lacks it: the rest loads all the same, and its parents are told as before.
     await Promise.resolve()
+      // a host before 2.2.4 takes this hook and never runs it (api-notes)
       .then(() => ctx.session.hook("experimental.idle", (event) => onIdle(watchPorts, watchState.seen, outside, event).then(() => undefined)))
       .catch((error: unknown) => log(`courier idle: not registered, a child that ends without a report is not reminded: ${String(error)}`))
-    // The hub's subscriptions to OpenCode's events, one and a standby, start with this copy's modules.
     watchFromHub(hub, eventModules)
     const member: Member = {
       directory: ctx.location.directory,
@@ -248,15 +220,12 @@ export const courier = () => Plugin.define({
       log,
     }
     const leaveHub = join(member)
-    // The leave waits for them, so they do not run on against a location that is closing.
     track(member, pruned)
     track(member, noticed)
     track(member, swept)
     track(member, windowed)
     const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
-      // Waits, for a moment at most, for the work this instance leaves behind, and on the last
-      // leave for the scheduler's owner key to be released, so another server takes over at once.
       const leftHub = leaveHub()
       if (!memory) memoryState.off.delete(ctx.location.directory)
       leaveRelay()
@@ -266,17 +235,13 @@ export const courier = () => Plugin.define({
   },
 })
 
-/**
- * The plugin OpenCode loads: an Effect plugin, since the question relay wraps OpenCode's question tool
- * and only the Effect API makes its call interruptible; the rest is the promise plugin, adapted.
- */
+// an Effect plugin, so the question call can be interrupted (api-notes)
 export default EffectPlugin.define({
   id: "courier",
   effect: (host) =>
     Effect.gen(function* () {
       yield* fromPromise(courier()).effect(host)
-      // The promise plugin's instance is handed this same location and has just joined with it: its
-      // member, bound now, while it stays loaded.
+      // the adapter hands the promise plugin this same location (api-notes)
       yield* relayQuestions(host, portsAt(host.location))
     }),
 })

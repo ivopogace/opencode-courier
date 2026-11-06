@@ -26,7 +26,6 @@ import { answeredText, questionNotice, questionSettledNotice as settledNotice } 
 import { RETENTION_MS } from "../src/tree/roster.js"
 import { childStore } from "../src/tree/store.js"
 
-/** Joins the process's hub, as an instance with no tick jobs. */
 const { join } = openInProcess([])
 
 let showForms = true
@@ -51,10 +50,6 @@ const toppings = [
   { question: "Which toppings?", header: "Toppings", options: [{ label: "Ham", description: "" }, { label: "Egg", description: "" }], multiple: true },
 ]
 
-/**
- * OpenCode's question tool as the relay sees it: form.created once the call starts, unless refused
- * first; the call ends when the form is answered or dismissed, or is interrupted, which cancels it.
- */
 function questionTool() {
   const forms = new Map<string, { sessionID: string; answer: (answers: string[][]) => void; dismiss: () => void; fail: (message: string) => void }>()
   const cancelled: string[] = []
@@ -89,10 +84,6 @@ function questionTool() {
 }
 
 let calls = 0
-/**
- * A relay in one location with its own timings and a `TestClock`, moved only by a test (`advance`)
- * and shared by its ports and fibers; a dismissal is taken at once unless a test holds it.
- */
 async function setUp(timings: Partial<QuestionTiming> = {}) {
   const clock = Effect.runSync(Effect.scoped(TestClock.make()))
   await Effect.runPromise(clock.setTime(1_000_000))
@@ -136,9 +127,7 @@ async function setUp(timings: Partial<QuestionTiming> = {}) {
     Effect.runFork(
       wrapped.execute({ questions }, { sessionID, agent: "build", messageID: "msg", id: `call_${++calls}`, progress: () => Effect.void }),
     ) as Fiber.Fiber<any, any>
-  // OpenCode's `location.shutdown` for `directory`, as the watcher reports it, by this clock.
   const shutDown = (directory?: string) => locationClosing(clock.currentTimeMillisUnsafe(), directory)
-  // Moves the clock on, which ends the relay's waits that fall due, and lets what follows them run.
   const advance = async (ms: number) => {
     await Effect.runPromise(clock.adjust(ms))
     await settle()
@@ -439,7 +428,6 @@ describe("the question tool of a spawned session", () => {
         'Session ses_child no longer waits on this question: it was already answered with courier_answer (User has answered your questions: "Which greeting?"="Hi". You can now continue with the user\'s answers in mind.). There is nothing to pass on; tell the person it is settled.',
       metadata: { relayed: "question_1", withdrawn: true },
     })
-    // Both forms are gone, and nothing more is said or kept.
     expect(tool.cancelled).toHaveLength(2)
     expect(tool.forms.size).toBe(0)
     await settle()
@@ -490,7 +478,7 @@ describe("the question tool of a spawned session", () => {
 
     const answering = answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
     await settle()
-    // The person picks in the parent's session just then: OpenCode takes their pick before the withdrawal.
+    // OpenCode takes a pick made just before the withdrawal
     formOf(tool, "ses_parent").answer([["Hey"]])
     await settle()
     release()
@@ -517,7 +505,6 @@ describe("the question tool of a spawned session", () => {
 
     formOf(tool, "ses_parent").dismiss()
     expect(Exit.isFailure(await exitOf(parent))).toBe(true)
-    // Within the grace the dismissal is held for, courier_answer answers the question.
     const answered = await answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
     await advance(80)
 
@@ -540,7 +527,6 @@ describe("the question tool of a spawned session", () => {
     const second = ask("ses_parent")
     await settle()
     expect(formOf(tool, "ses_parent")).toBeDefined()
-    // The grace passes without a shutdown: the dismissal was the person's.
     await advance(50)
 
     const childExit = await exitOf(child)
@@ -590,7 +576,6 @@ describe("the question tool of a spawned session", () => {
 
     await Effect.runPromise(Fiber.interrupt(child))
     await settle()
-    // The child's own cut-off is not told while the parent asks the person.
     expect(attempts).toBe(0)
     await Effect.runPromise(Fiber.interrupt(parent))
     await settle()
@@ -605,7 +590,7 @@ describe("the question tool of a spawned session", () => {
     const child = ask("ses_child")
     await settle()
 
-    // What an interrupt does, from the person or from OpenCode's sweep after an hour without activity.
+    // as the person's interrupt or OpenCode's inactivity eviction does
     await Effect.runPromise(Fiber.interrupt(child))
     await settle()
 
@@ -616,7 +601,6 @@ describe("the question tool of a spawned session", () => {
     expect(stopped[0].text).toContain('<courier from="ses_child" asks="question" request="question_1" stopped="true">')
     expect(await pendingQuestions(ports.storage, "ses_child")).toEqual([{ type: "question", requestID: "question_1", questions: greeting, stopped: true }])
 
-    // A new instance loading in the same process does not tell the parent again.
     await noticeCutOff(ports)
     expect(told).toHaveLength(2)
 
@@ -668,7 +652,7 @@ describe("the question tool of a spawned session", () => {
     const parent = ask("ses_parent")
     await settle()
 
-    // What a server shutdown does at 0.0.0-beta-19271: the plugin unloads, then every open form goes.
+    // shutdown at 0.0.0-beta-19271: the plugin unloads, then open forms go
     unload()
     formOf(tool, "ses_child").dismiss()
     formOf(tool, "ses_parent").dismiss()
@@ -678,7 +662,6 @@ describe("the question tool of a spawned session", () => {
 
     expect(told).toHaveLength(1)
     expect(store.has("question/question_1")).toBe(true)
-    // The location loads again in the same process, or after a restart.
     await noticeCutOff(ports)
     expect(told.at(-1).text).toContain('asks="question" request="question_1" restarted="true"')
   })
@@ -690,7 +673,7 @@ describe("the question tool of a spawned session", () => {
     const parent = ask("ses_parent")
     await settle()
 
-    // What a server shutdown does at 2.0.22: every open form goes, then `location.shutdown`, then the plugin unloads.
+    // shutdown at 2.0.22: forms go, then location.shutdown, then the unload
     formOf(tool, "ses_child").dismiss()
     formOf(tool, "ses_parent").dismiss()
     await settle()
@@ -700,7 +683,6 @@ describe("the question tool of a spawned session", () => {
     expect(Exit.isFailure(await exitOf(parent))).toBe(true)
     await settle()
     expect(relayState.closingWaiters.size).toBe(0)
-    // No instance is loaded once the closing grace is over to tell the parent.
     await advance(30_000)
 
     expect(told).toHaveLength(1)
@@ -886,7 +868,6 @@ describe("the question tool of a spawned session", () => {
     const exit = await exitOf(child)
     await settle()
 
-    // Whichever way it went, the child has the answer, and the parent was told the truth.
     expect(answered).toMatchObject({ answered: true })
     if (answered.answered && answered.by === "result") expect(Exit.isSuccess(exit) && exit.value.output).toEqual({ answers: [["Hi"]] })
     else {
@@ -963,7 +944,6 @@ describe("the question tool of a spawned session", () => {
 
   test("labels a locale would rank as equal still match in any order", async () => {
     const { tool, ask } = await setUp()
-    // "é" written as one character and as "e" with a combining accent: localeCompare ranks them equal.
     const accents = (labels: string[]) => [{ question: "Which spelling?", header: "Spelling", options: labels.map((label) => ({ label, description: "" })) }]
     const labels = ["Zebra", "apple", "\u00e9", "e\u0301"]
     const child = ask("ses_child", accents(labels))
@@ -990,13 +970,11 @@ describe("the question tool of a spawned session", () => {
     formOf(tool, "ses_parent").answer([["Yes"]])
 
     const parentExit = await exitOf(parent)
-    // Not linked, but told how to pass the answers on, should it have asked for the child after all.
     expect(Exit.isSuccess(parentExit) && parentExit.value.content).toContain(
       'If you asked this for session ses_child (requestID "question_1"), these answers were not passed on by themselves: pass them on with courier_answer.',
     )
     expect(Exit.isSuccess(parentExit) && parentExit.value.metadata.passed).toBeUndefined()
     expect(formOf(tool, "ses_child")).toBeDefined()
-    // Asked again with the same words, differently spaced and cased, it is.
     const again = ask("ses_parent", yesNo("delete  the old branch?"))
     await settle()
     formOf(tool, "ses_parent").answer([["No"]])
@@ -1069,7 +1047,6 @@ describe("the question tool of a spawned session", () => {
     const { ports, told, ask } = await setUp()
     const child = ask("ses_child")
     await settle()
-    // A copy loaded beside this one, a release before the hub say, passes an answer on: it shows in the shared state only.
     let passed!: () => void
     relayState.passing.set("question_1", new Promise<void>((resolve) => (passed = resolve)))
     let answered: unknown
@@ -1118,10 +1095,8 @@ describe("the question tool of a spawned session", () => {
     }
     const input = { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] }
 
-    // Never returns: its notice hangs.
     void answerQuestion(ports, "ses_parent", input).catch(() => undefined)
     await advance(5)
-    // Behind it, an answer waits until the hung one gives way, and then goes through.
     const second = answerQuestion(ports, "ses_parent", { ...input, answers: ["Hey"] })
     await advance(25)
     expect(await second).toMatchObject({ answered: true, by: "message" })
@@ -1182,7 +1157,6 @@ describe("the question tool of a spawned session", () => {
     formShownOff()
     const child = ask("ses_child")
     await settle()
-    // Another instance still follows the events, so nothing was missed.
     expect(eventsFollowed()).toBe(false)
     eventsLeft()
     eventsLeft()
@@ -1341,7 +1315,6 @@ describe("the question tool of a spawned session", () => {
     await expect(
       answerQuestion(ports, "ses_child", { sessionID: "ses_grandchild", requestID: "question_1", answers: ["Hi"] }),
     ).rejects.toThrow("ses_grandchild's questions go to ses_parent")
-    // The middle session asking the same is itself relayed to the top, not linked to its child's question.
     const middle = ask("ses_child")
     await settle()
     expect(told.filter((item) => item.text.includes(' asks="question"')).map((item) => item.sessionID)).toEqual(["ses_parent", "ses_parent"])
@@ -1485,13 +1458,11 @@ describe("noticeCutOff", () => {
   test("a notice slow to go out does not hold up the others", async () => {
     const { ports, store, told } = await setUp()
     const stored = (requestID: string, askedAt: number) => ({ requestID, sessionID: "ses_child", top: "ses_parent", title: "t", questions: greeting, askedAt })
-    // Newest first: question_new is told before question_older.
     store.set("question/question_new", stored("question_new", 1_000_000))
     store.set("question/question_older", stored("question_older", 999_999))
     let olderSent: () => void = () => undefined
     const older = new Promise<void>((resolve) => (olderSent = resolve))
     ;(ports.session as any).synthetic = async (input: any) => {
-      // Waits for the other notice, or gives up after a while when there is none.
       if (input.text.includes('request="question_new"')) await Promise.race([older, new Promise((resolve) => setTimeout(resolve, 200))])
       told.push(input)
       if (input.text.includes('request="question_older"')) olderSent()
@@ -1576,18 +1547,15 @@ describe("a question answered by the person in the TUI's asks inbox", () => {
     expect(tool.cancelled).toHaveLength(1)
     await settle()
     expect(store.has("question/question_1")).toBe(false)
-    // One notice that it asks, one that it is settled, and nothing asks the person again.
     expect(told.map((item) => item.sessionID)).toEqual(["ses_parent", "ses_parent"])
     const settled = notices(told, "answered")
     expect(settled).toHaveLength(1)
     expect(settled[0].text).toContain('<courier from="ses_child" answered="elsewhere" request="question_1">')
     expect(settled[0].text).toContain('"Which greeting?"="Hi"')
-    // A child without native parentID too: it was answered by the person, not in its own session.
     expect(settled[0].text).toContain('The question question_1 of this session, "Fix the bug", was answered by the person (')
     expect(settled[0].text).not.toContain("in its own session")
     expect(settled[0].text).toContain("so it no longer waits on you")
     expect(relayState.questions.size).toBe(0)
-    // The parent's courier_answer after it passes nothing on.
     expect((await answerQuestion(ports, "ses_parent", { ...input, answers: ["Hey"] })).answered).toBe(false)
     expect(told).toHaveLength(2)
   })
@@ -1629,7 +1597,6 @@ describe("a question answered by the person in the TUI's asks inbox", () => {
 
   test("a parent never told about the question is not told it is settled", async () => {
     const { ports, told, ask } = await setUp()
-    // The notice that it asks fails; any after it would be told.
     const synthetic = ports.session.synthetic
     let failing = true
     ;(ports.session as { synthetic: unknown }).synthetic = async (input: any) => {

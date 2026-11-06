@@ -1,18 +1,12 @@
-/** The tree's model-facing texts: the child brief, the role part, refusals, reports, notices and tool results. */
 import { obj, str } from "../platform/json.js"
 import { clipText, defuse, defuseBlock, END_TURN, ROOT_SPLIT_LINE, SKILL_ID, SPLIT_LINE, STATUSES } from "../kernel/protocol.js"
 import { retryDelay, type ModelRef } from "./domain.js"
 import type { Artifacts, CleanupResult, ExecutionError, HeldReport, LeftMember, Limits, Sent, Standing } from "./ports.js"
 
-// The envelope and the child brief.
-
-/** How a text names the statuses a report may carry. */
 const STATUS_LIST = `${STATUSES.slice(0, -1).join(", ")} or ${STATUSES.at(-1)}`
 
-/** The branch an isolated child commits its work on, and names in the `branch` of its report. */
 export const childBranch = (sessionID: string) => `courier/${sessionID}`
 
-/** What a spawned session at `depth` is told; `depth` 1 is a child of a session nobody spawned. `branch` is for an isolated one. */
 export function childBrief(parentID: string, task: string, depth: number, limits: Limits, branch?: string) {
   return [
     `You were started by session ${parentID} through opencode-courier.`,
@@ -71,16 +65,10 @@ function splitRule(parentID: string, depth: number, limits: Limits) {
   ]
 }
 
-/** How every role part begins, in the role entry and in the part the context hook adds without one, so no second copy is added. */
 export const ROLE_PREFIX = "opencode-courier role:"
 
-/** The key of the session instruction entry carrying a spawned session's role part, `<context key="role">` in its system prompt. */
 export const ROLE_KEY = "role"
 
-/**
- * The system part naming a session's place in its tree: `depth` 0 for a session nobody spawned that
- * has started one, `null` for one that has started none, which is pointed to the skill. The same on every request.
- */
 export function rolePart(depth: number | null, limits: Limits) {
   const { maxDepth, maxChildren, maxTotal } = limits
   const budget = `At most ${maxChildren} of the sessions you start run at once, and ${maxTotal} in the whole tree.`
@@ -108,31 +96,22 @@ export function rolePart(depth: number | null, limits: Limits) {
   )
 }
 
-// The standing entry: what a parent's system prompt says of the sessions it started.
-
-/** The key of the session instruction entry on a parent listing the sessions it started, `<context key="standing">`. */
 export const STANDING_KEY = "standing"
 
-/** How every standing entry begins. */
 export const STANDING_PREFIX = "opencode-courier standing:"
 
-/** How many children the entry lists; older ones past that are counted. */
 export const STANDING_MAX = 10
 
-/** The most characters of a child's title the entry shows. */
 const TITLE_MAX = 40
 
-/** What a child is doing, as its parent's standing entry says it; `reported` carries the status. */
 export type ChildState =
   | { readonly kind: "started" | "working" | "ended" | "failed" | "interrupted" | "stopped"; readonly progressed?: boolean }
   | { readonly kind: "reported"; readonly status: string; readonly progressed?: boolean }
 
-/** One child as the standing entry lists it. */
 export interface StandingRow {
   readonly sessionID: string
   readonly title: string
   readonly state: ChildState
-  /** Its join group and its standing there, `unknown` when that could not be read. */
   readonly group?: { readonly name: string; readonly standing: Standing | "unknown" }
 }
 
@@ -172,10 +151,6 @@ function groupWords(name: string, standing: Standing | "unknown") {
   }
 }
 
-/**
- * The standing entry: one line per session the parent started, oldest first, with its state and its place in its join group,
- * in the same words for the same state, so an unchanged standing is not put again.
- */
 export function standingEntry(rows: ReadonlyArray<StandingRow>) {
   const shown = rows.slice(-STANDING_MAX)
   const older = rows.length - shown.length
@@ -191,13 +166,10 @@ export function standingEntry(rows: ReadonlyArray<StandingRow>) {
   ].join("\n")
 }
 
-// courier_spawn's refusals, one per limit.
-
 export const depthRefusal = (depth: number, maxDepth: number) =>
   `Not started: this session is at depth ${depth} of its session tree, and the tree goes at most ${maxDepth} deep ` +
   "(maxDepth), so it cannot start sessions. Do the task yourself, and report with courier_send."
 
-/** How a refusal names sessions that count against a limit: those running, and those that have not reported yet. */
 const live = (n: number) => (n === 1 ? "is running or has not reported yet" : "are running or have not reported yet")
 
 export const childrenRefusal = (running: number, maxChildren: number) =>
@@ -208,18 +180,14 @@ export const totalRefusal = (running: number, maxTotal: number) =>
   `Not started: ${count(running, "session")} in this session tree ${live(running)}, the most allowed at once ` +
   `(maxTotal ${maxTotal}). Do this part yourself, or end your turn and try again once a report has arrived.`
 
-// courier_spawn's refusals of a model or a variant OpenCode does not list.
+const LISTED_MAX = 12
 
-/** How many models, or providers, a refusal names before it counts the rest. */
-const NAMED = 12
-
-const some = (items: ReadonlyArray<string>) => (items.length > NAMED ? `${items.slice(0, NAMED).join(", ")} and ${items.length - NAMED} more` : items.join(", "))
+const some = (items: ReadonlyArray<string>) => (items.length > LISTED_MAX ? `${items.slice(0, LISTED_MAX).join(", ")} and ${items.length - LISTED_MAX} more` : items.join(", "))
 
 export const modelFormatRefusal = (given: string) =>
   `Not started: model must be provider/model, as OpenCode names them (opencode/gpt-5-nano, anthropic/claude-sonnet-4-5), not ${JSON.stringify(given)}. ` +
   "Leave it unset to run the session on your own model."
 
-/** The model is not among those OpenCode lists; `named` says the caller named it, rather than inherited it and named a variant. */
 export function unknownModelRefusal(model: ModelRef, known: ReadonlyArray<Pick<ModelRef, "providerID" | "id">>, named: boolean) {
   const name = `${model.providerID}/${model.id}`
   const ids = known.filter((item) => item.providerID === model.providerID).map((item) => item.id)
@@ -240,22 +208,15 @@ export function unknownVariantRefusal(model: ModelRef, variants: ReadonlyArray<s
   )
 }
 
-/** A variant was named, but the model it would apply to could not be read: the named agent's, else the caller's own or OpenCode's default. */
 export function variantWithoutModelRefusal(variant: string, agent?: string) {
   const why = agent ? `the agent ${agent} could not be looked up` : "neither your own model nor OpenCode's default could be read"
   return `Not started: variant ${JSON.stringify(variant)} needs a model to apply to, and ${why}. Name a model as provider/model, or leave variant unset.`
 }
 
-/** The strings of a list given as artifacts, whatever else the model put in it. */
 const strings = (value: unknown) => (Array.isArray(value) ? value.flatMap((item) => (typeof item === "string" ? [item.trim()] : [])) : []).filter(Boolean)
 
-/** A list's line in the artifacts block, or none when it is empty. */
 const listed = (name: string, items: readonly string[]) => (items.length ? [`- ${name}: ${items.join(", ")}`] : [])
 
-/**
- * The body of a report: its text, then the artifacts in a fixed layout, the same for every report,
- * so a parent finds the branch, the commits, the files and the checks without reading prose.
- */
 export function reportBody(message: string, artifacts: Artifacts | undefined) {
   const given = obj(artifacts)
   const checks = (Array.isArray(given.checks) ? given.checks : []).flatMap((check: unknown) => {
@@ -271,9 +232,6 @@ export function reportBody(message: string, artifacts: Artifacts | undefined) {
   return lines.length ? [message, "", "Artifacts:", ...lines].join("\n") : message
 }
 
-// Tool results.
-
-/** courier_spawn's refusal of `native: true` with `isolate: true`: OpenCode gives a session a worktree or a parent, never both. */
 export const nativeIsolateRefusal = () =>
   "Not started: native: true and isolate: true cannot go together. OpenCode runs a session in a worktree of its own or as a " +
   "subagent of its parent, never both. Start it with isolate: true alone for a worktree of its own, or with native: true alone for a subagent in your directory."
@@ -286,7 +244,6 @@ export function spawnText(child: {
   readonly groupError?: string
   readonly fromParent?: boolean
   readonly uncommitted?: boolean
-  /** The model it runs on, when that is not the caller's own. */
   readonly model?: string
 }) {
   const warning =
@@ -308,7 +265,6 @@ export function spawnText(child: {
   )
 }
 
-/** courier_send's result: for a message to the session that started the sender, whether it was its report; below it, the status dropped. */
 export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report" | "held" | "dropped"> = {}) {
   if (sent.dropped)
     return (
@@ -347,7 +303,6 @@ export function cleanupText(result: CleanupResult) {
   return `${done} Dropped it from group "${result.group}" without a report: the group's other reports reach you once they are in and your turn has ended, the message naming it, and a report it sends after all comes on its own.`
 }
 
-/** courier_tree's result: the sessions under a session, drawn depth first, as JSON. */
 export function treeText(tree: { readonly sessions: ReadonlyArray<unknown>; readonly truncated?: number }) {
   if (!tree.sessions.length) return "No sessions started with courier_spawn."
   if (tree.truncated === undefined) return JSON.stringify(tree, null, 2)
@@ -356,7 +311,6 @@ export function treeText(tree: { readonly sessions: ReadonlyArray<unknown>; read
   return JSON.stringify(tree, null, 2) + note
 }
 
-/** What courier_stop did to each session, and to the messages and worktrees. */
 export function stopText(result: {
   readonly sessionID: string
   readonly stopped: ReadonlyArray<{ readonly sessionID: string; readonly outcome: string; readonly error?: string; readonly subagent?: true }>
@@ -381,7 +335,6 @@ export function stopText(result: {
 
 const FORCE_HINT = " Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it."
 
-/** courier_stop's lines on the worktrees it was asked to remove. */
 function worktreeLines(cleanup: ReadonlyArray<CleanupResult | { readonly sessionID: string; readonly outcome: "failed"; readonly error: string }>) {
   if (!cleanup.length) return ["None of them ran in a worktree of its own."]
   return cleanup.map((one) =>
@@ -391,14 +344,12 @@ function worktreeLines(cleanup: ReadonlyArray<CleanupResult | { readonly session
   )
 }
 
-/** What the parent of a stopped session is told when the stop was ordered by a session above both. */
 export const stoppedNotice = (title: string, by: string) =>
   [
     `This session, "${title}", which you started with courier_spawn, was stopped by ${by}, a session above you, together with the sessions under it.`,
     "It was not a failure and it will not report back. Carry on without it, or start a replacement if you still need what it was doing.",
   ].join("\n")
 
-/** Why a worktree in this state must be kept, or undefined when removing it loses nothing. */
 export function keepReason(state: { readonly changes: readonly string[]; readonly commits: readonly string[] }) {
   const reasons = [
     state.changes.length ? `${count(state.changes.length, "uncommitted change")} (${preview(state.changes)})` : "",
@@ -417,9 +368,6 @@ function preview(items: readonly string[]) {
   return items.length > 5 ? `${items.slice(0, 5).join(", ")}, ...` : items.join(", ")
 }
 
-// Turn failures.
-
-/** A wait in whole minutes, rounded up: "1 minute", "45 minutes", "2 hours 5 minutes". */
 function wait(ms: number) {
   const minutes = Math.ceil(ms / 60_000)
   if (minutes < 60) return count(minutes, "minute")
@@ -427,22 +375,16 @@ function wait(ms: number) {
   return [count(Math.floor(minutes / 60), "hour"), rest ? count(rest, "minute") : ""].filter(Boolean).join(" ")
 }
 
-/** A time as the notices say it, in UTC, with its date when it is not the day of `from`. */
 function clock(at: number, from: number) {
   const iso = new Date(at).toISOString()
   return iso.slice(0, 10) === new Date(from).toISOString().slice(0, 10) ? `${iso.slice(11, 16)} UTC` : `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
 }
 
-/** The line saying how long the provider asked to wait, and until when if the failure's time `at` is known. */
 function waitLine(delay: number, at: number | undefined) {
   const until = at === undefined ? "" : `, until about ${clock(at + delay, at)}`
   return `The provider asked to wait about ${wait(delay)} before trying again${until}.`
 }
 
-/**
- * What the parent is told when a session it started failed its turn; `at` is when the failure happened, which the provider's
- * retry time (`retryAfterMs`) counts from. Message the child before that and it fails again, so the notice says to wait.
- */
 export function failureNotice(title: string, error: ExecutionError, group?: string, at?: number) {
   const status = error.status === undefined ? "" : `, status ${error.status}`
   const delay = retryDelay(error)
@@ -463,7 +405,6 @@ export function failureNotice(title: string, error: ExecutionError, group?: stri
   ].join("\n")
 }
 
-/** The one reminder a spawned session gets as it is about to end its turn owing its parent a report; it carries on in the same turn. */
 export function reportReminder(parentID: string) {
   return [
     `You are about to end your turn without reporting to session ${parentID}, which started you.`,
@@ -473,13 +414,8 @@ export function reportReminder(parentID: string) {
   ].join("\n")
 }
 
-/** Longest last reply a notice that a session ended its turn without reporting quotes. */
-const MAX_REPLY = 2000
+const QUOTED_REPLY_MAX = 2000
 
-/**
- * What the parent is told when a session it started ends its turn without a report to it;
- * `progressed` when it messaged the parent without a status since its last prompt.
- */
 export function silentNotice(title: string, lastText: string | undefined, progressed = false, group?: string) {
   const reply = lastText?.trim()
   return [
@@ -487,7 +423,7 @@ export function silentNotice(title: string, lastText: string | undefined, progre
     ...(progressed
       ? [`Its last message to you had no status, so it was progress, not its report: a report carries status ${STATUS_LIST}.`]
       : []),
-    ...(reply ? ["Its last reply:", defuse(clipText(reply, MAX_REPLY))] : ["It ended without a reply."]),
+    ...(reply ? ["Its last reply:", defuse(clipText(reply, QUOTED_REPLY_MAX))] : ["It ended without a reply."]),
     "",
     "Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.",
     "Until it reports, it counts toward your limits on the sessions you run at once.",
@@ -500,9 +436,6 @@ export function silentNotice(title: string, lastText: string | undefined, progre
   ].join("\n")
 }
 
-// Join groups.
-
-/** How a release names each status among its reports: `2 done, 1 failed`. */
 function statusCounts(reports: ReadonlyArray<Pick<HeldReport, "status">>) {
   return STATUSES.flatMap((status) => {
     const n = reports.filter((report) => report.status === status).length
@@ -517,10 +450,6 @@ const LEFT_HOW = {
   dropped: "you dropped it with courier_cleanup",
 }
 
-/**
- * What the parent gets when a group it named is released: every report, with its status, text and artifacts in
- * `reportBody`'s layout, and the members that left without one, in the order they joined.
- */
 export function groupNotice(group: string, reports: ReadonlyArray<HeldReport & { readonly sessionID: string; readonly title: string }>, left: ReadonlyArray<LeftMember> = []) {
   const total = reports.length + left.length
   const listed = reports.flatMap((report, index) => [

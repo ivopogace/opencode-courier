@@ -5,12 +5,7 @@ import { scanAll, type Storage } from "../platform/storage.js"
 type Context = Plugin.Context
 
 const PREFIX = "later/"
-/** The latest time a Date can hold; a message due after it could never be shown or delivered. */
 const LATEST = 8.64e15
-/**
- * A plain decimal number of minutes, the only string form of delayMinutes taken ("0x10" is not),
- * once trimmed of the whitespace `\s` matches.
- */
 const DECIMAL = /^(?:\d+(?:\.\d*)?|\.\d+)$/
 
 export interface LaterEntry {
@@ -24,7 +19,6 @@ export interface LaterEntry {
 
 export interface LaterPorts {
   readonly storage: Storage
-  /** `get` for the release of a join group, which waits for its parent's turn to end; `get` and `context` for a missed wake (`ctx.session`). */
   readonly session: Pick<Context["session"], "synthetic" | "get" | "context">
   readonly now: () => number
   readonly newID: () => string
@@ -33,7 +27,6 @@ export interface LaterPorts {
 
 export interface LaterInput {
   readonly message: string
-  /** A number, or a string holding one, which some models send instead. */
   readonly delayMinutes?: number | string
   readonly at?: string
   readonly sessionID?: string
@@ -62,7 +55,6 @@ function fireTime(now: number, input: LaterInput) {
   return at
 }
 
-/** Stores a message for later delivery; the scheduler in `deliverDue` sends it once it is due. */
 export async function schedule(ports: LaterPorts, from: string, input: LaterInput): Promise<LaterEntry> {
   const now = ports.now()
   const entry: LaterEntry = {
@@ -77,7 +69,6 @@ export async function schedule(ports: LaterPorts, from: string, input: LaterInpu
   return entry
 }
 
-/** Drops a pending message; false when there was none, e.g. it was already delivered. */
 export async function cancel(ports: LaterPorts, id: string) {
   if ((await ports.storage.get(PREFIX + id)) === undefined) return false
   await ports.storage.remove(PREFIX + id)
@@ -88,27 +79,20 @@ function pending(ports: Pick<LaterPorts, "storage">) {
   return scanAll<LaterEntry>(ports.storage, PREFIX)
 }
 
-/** The messages scheduled for a session that have not been delivered yet. */
 export async function scheduledFor(storage: Pick<Storage, "scan">, sessionID: string) {
   return (await pending({ storage: storage as Storage })).filter((entry) => entry.sessionID === sessionID)
 }
 
-/** Cancels every message scheduled for a session; the ids of those cancelled. */
 export async function cancelScheduled(ports: LaterPorts, sessionID: string) {
   const scheduled = await scheduledFor(ports.storage, sessionID)
   const dropped = await Promise.all(scheduled.map(async (later) => ((await cancel(ports, later.id)) ? later.id : undefined)))
   return dropped.filter((id) => id !== undefined)
 }
 
-/** Whether a session waits on a scheduled message of its own. */
 export async function isScheduled(ports: { readonly storage: Pick<Storage, "scan"> }, sessionID: string) {
   return (await scheduledFor(ports.storage, sessionID)).length > 0
 }
 
-/**
- * Delivers every due message once: an id is claimed synchronously in the shared `claimed`, re-read,
- * delivered and only then removed; a crash in between delivers it again after a restart, not never.
- */
 export async function deliverDue(ports: LaterPorts, claimed: Set<string>) {
   const now = ports.now()
   for (const due of (await pending(ports)).filter((entry) => entry.fireAt <= now)) {

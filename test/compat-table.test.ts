@@ -49,7 +49,6 @@ test("rows=N in the start marker keeps the header and the newest N rows", () => 
   expect(replaceTable(text, releases).split("\n").slice(1, -2)).toEqual([...table(releases).slice(0, 2), "| 0.3.0 | 2.0.3 |", "| 0.2.0 | 2.0.2 |"])
 })
 
-// The tables themselves are checked against the release tags by `bun script/compat-table.ts --check` in CI.
 test("the README holds the newest rows, linking to docs/reference.md, which holds them all", () => {
   const [readme, reference] = FILES.map((file) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8"))
   expect(FILES).toEqual(["README.md", "docs/reference.md"])

@@ -1,6 +1,7 @@
-// script/render-demo.sh's timing: `cast` caps a cast's pauses and reads its scenes and highlights, `plan` fits each scene
-// to its voice and writes the highlight filter (docs/maintainers/development.md).
 import { readFileSync, writeFileSync } from "node:fs"
+
+const AGG_CELL_WIDTH_PER_FONT_SIZE = 0.6
+const AGG_CELL_HEIGHT_PER_FONT_SIZE = 1.4
 
 const IDLE = Number(process.env.IDLE ?? 3)
 const LEAD = 0.4
@@ -22,7 +23,6 @@ if (command === "cast") {
   writeFileSync(output, [header, ...moved.map((event) => JSON.stringify(event))].join("\n") + "\n")
 
   const end = moved.at(-1)[0]
-  // The GIF's own markers, a click's in the video too, mean nothing here.
   const markers = moved.filter(([, kind, label]) => kind === "m" && !/^(caption|key|click) /.test(label))
   const scenes = markers.filter(([, , label]) => !label.startsWith("focus "))
   const named = Object.keys(read(narrationPath).scenes)
@@ -31,7 +31,6 @@ if (command === "cast") {
     console.error(`the narration's scenes are not the cast's: it has\n  ${named.join("\n  ")}\nand the cast, after "", has\n  ${expected.slice(1).join("\n  ")}`)
     process.exit(1)
   }
-  // A highlight lasts until "focus off", the next highlight or the next scene.
   const focus = []
   for (const [index, [time, , label]] of markers.entries()) {
     if (!label.startsWith("focus ") || label === "focus off") continue
@@ -51,12 +50,9 @@ if (command === "cast") {
     plan.push({ start: bounds[index], length, total, at })
     at += total
   }
-  // A time of the cast in the narrated video, where each scene's last frame is held while its voice runs on.
   const scene = (time) => Math.max(0, plan.findLastIndex((one) => one.start <= time))
   const moved = (time) => plan[scene(time)].at + (time - plan[scene(time)].start)
-  // agg's cells: 0.6 of the font size wide and 1.4 high, inside a margin of one cell across and half one down.
-  const cell = { width: 0.6 * fontSize, height: 1.4 * fontSize }
-  // Boxes only, so a highlight costs the pixels it covers: four dark ones around it, then its frame.
+  const cell = { width: AGG_CELL_WIDTH_PER_FONT_SIZE * fontSize, height: AGG_CELL_HEIGHT_PER_FONT_SIZE * fontSize }
   const boxes = focus.flatMap((one) => {
     const own = plan[scene(one.start)]
     const end = one.end >= own.start + own.length ? own.at + own.total : moved(one.end)

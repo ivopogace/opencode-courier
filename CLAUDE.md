@@ -69,5 +69,6 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   same on every request. So `courier_spawn` does not gate on the skill being loaded. The skill
   repeats the brief's split rule on purpose: the root has no brief.
 - Feature work goes on a branch and through a PR with green CI; `Closes #N` in the body.
-- Code comments and TSDoc only where the code cannot say it itself, at most two lines each.
+- No TSDoc. A comment only for a fact about OpenCode or the host the code cannot say: one line of
+  at most 80 characters; the long form goes in docs/maintainers/plugin-api-notes.md.
 - Running several issues at once in child sessions: the `courier-wave` skill.

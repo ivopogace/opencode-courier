@@ -17,14 +17,11 @@ export const UnsubscribeInput = Schema.Struct({
   sessionID: Schema.optional(Schema.String.annotate({ description: "The session to unsubscribe; defaults to this one." })),
 })
 
-/** What the webhook tools run on. */
 export interface WebhookToolPorts {
   readonly hooks: WebhookPorts
-  /** Whether a webhook receiver runs in this server. */
   readonly receiving: () => Promise<boolean>
 }
 
-/** Adds `courier_subscribe` and `courier_unsubscribe`. */
 export function addWebhookTools(tools: ToolEditor, ports: WebhookToolPorts) {
   tools.add({
     name: "courier_subscribe",

@@ -35,17 +35,13 @@ import { asksQuestion } from "../src/person/question/index.js"
 import { subscribedSince } from "../src/webhook/index.js"
 import { asked, child, fakePorts, fresh, replied, request, settled, shown } from "./fixtures/events.js"
 
-/** What a session waits on outside the tree, as src/index.ts composes it. */
 const outside = waitsOn(asksPermission, asksQuestion, together(isScheduled, subscribedSince))
 
-/** The plugin's event modules over `state`, in src/index.ts's order. */
 const modules = (state: WatchState & PersonState) => [treeEvents(state, outside), personEvents(state)]
 
-/** Follows the events through `ports` with the plugin's modules, as a hub's subscription does. */
 const watchChildren = (ports: WatchPorts, state: WatchState & PersonState, signal: AbortSignal, retryMs?: number) =>
   follow(ports, modules(state), signal, retryMs)
 
-/** Whether a spawned session owes its parent a report, as `reportOf` reads it. */
 const owesReport = async (storage: Parameters<typeof childStore>[0], sessionID: string) => (await reportOf(childStore(storage), sessionID))?.owes
 
 const blocked = { type: "provider.auth", message: "This model is not available in your country", status: 403 }
@@ -163,7 +159,6 @@ describe("reportFailure", () => {
   })
 })
 
-/** OpenCode's event of type `type` for `sessionID`, published at `created`. */
 const sessionEvent = (type: string, id: string, created: number, sessionID = "ses_child", reason?: string) => ({
   id,
   type,
@@ -174,7 +169,6 @@ const delivered = (id: string, created: number, sessionID = "ses_child", inboxID
   const event = sessionEvent("session.inbox.delivered", id, created, sessionID)
   return inboxID ? { ...event, data: { ...event.data, inboxID } } : event
 }
-/** OpenCode's `session.inbox.enqueued` of an item of type `type`, which a `delivered` with `inboxID` later delivers. */
 const enqueued = (id: string, inboxID: string, type: string, sessionID = "ses_child") => ({
   id,
   type: "session.inbox.enqueued",
@@ -183,7 +177,6 @@ const enqueued = (id: string, inboxID: string, type: string, sessionID = "ses_ch
 })
 const succeeded = (id: string, created: number, sessionID = "ses_child") => sessionEvent("session.execution.succeeded", id, created, sessionID)
 
-/** courier_send through the courier's own ports, over the watcher's storage, at `now`: a report with `status`, or progress with "none". */
 function sendFrom(ports: WatchPorts, from: string, to: string, now: number, status: "done" | "blocked" | "none" = "done") {
   const courier = { session: { synthetic: async () => ({ id: "msg_r" }) }, storage: ports.storage, now: () => now, nudge: ports.nudge } as unknown as CourierPorts
   return send(courier, from, { sessionID: to, message: "done", ...(status === "none" ? {} : { status }) })
@@ -295,7 +288,6 @@ describe("reportSilent", () => {
     const seen = new Set<string>()
     await notePrompt(ports, delivered("evt_d1", 100))
     await sendFrom(ports, "ses_child", "ses_parent", 150)
-    // Steered into the same turn, after the report.
     await notePrompt(ports, delivered("evt_d2", 160))
 
     expect(await reportSilent(ports, seen, succeeded("evt_s", 200), outside)).toEqual(["ses_parent"])
@@ -305,7 +297,6 @@ describe("reportSilent", () => {
   test("judges by when OpenCode delivered the prompt, not when the watcher got to it", async () => {
     const { ports, sent } = fakePorts()
     await childStore(ports.storage).record(child())
-    // The report is noted before the event of the prompt it answers is handled.
     await sendFrom(ports, "ses_child", "ses_parent", 150)
     await notePrompt(ports, delivered("evt_d", 100))
 
@@ -355,7 +346,6 @@ describe("reportSilent", () => {
     await notePrompt(ports, delivered("evt_d2", 110, "ses_grandchild"))
     expect(await reportSilent(ports, seen, succeeded("evt_s1", 200), outside)).toEqual([])
 
-    // Woken by its child's report, it ends its turn without reporting itself.
     await sendFrom(ports, "ses_grandchild", "ses_child", 300)
     await notePrompt(ports, delivered("evt_d3", 310))
     expect(await reportSilent(ports, seen, succeeded("evt_s2", 400), outside)).toEqual(["ses_parent"])
@@ -370,11 +360,9 @@ describe("reportSilent", () => {
     await notePrompt(ports, delivered("evt_d1", 100))
     await notePrompt(ports, delivered("evt_d2", 110, "ses_grandchild"))
     expect(await reportSilent(ports, seen, succeeded("evt_s1", 200), outside)).toEqual([])
-    // The grandchild ends silently too; ses_child is told, and that notice prompts it.
     expect(await reportSilent(ports, seen, succeeded("evt_s2", 300, "ses_grandchild"), outside)).toEqual(["ses_child"])
     await notePrompt(ports, delivered("evt_d3", 310))
 
-    // It takes the grandchild's last reply and ends its turn without reporting itself.
     expect(await reportSilent(ports, seen, succeeded("evt_s3", 400), outside)).toEqual(["ses_parent"])
     expect(sent.map((notice: any) => notice.sessionID)).toEqual(["ses_child", "ses_parent"])
   })
@@ -415,7 +403,6 @@ describe("reportSilent", () => {
     await children.record(child())
     await children.record({ ...child("ses_child"), sessionID: "ses_grandchild" })
 
-    // Parent first, as with nativeChildren when the events arrive that way: the lineage still runs through it.
     await noteDeleted(ports, sessionEvent("session.deleted", "evt_x", 150) as SessionEvent)
     expect(await children.entry("ses_parent", "ses_child")).toBeDefined()
     await noteDeleted(ports, sessionEvent("session.deleted", "evt_y", 160, "ses_grandchild") as SessionEvent)
@@ -444,7 +431,6 @@ describe("reportSilent", () => {
     await expect(reportSilent(ports, new Set(), succeeded("evt_s", 200), outside)).rejects.toThrow("parent is gone")
     expect(store.has(toldKey("ses_child"))).toBe(false)
 
-    // A later notice told the parent meanwhile: that stays.
     ;(ports.session as any).synthetic = async () => {
       store.set(toldKey("ses_child"), { at: 400 })
       throw new Error("parent is gone")
@@ -466,7 +452,6 @@ describe("reportSilent", () => {
     await notePrompt(hooked.ports, delivered("evt_d", 100))
     await hooked.ports.storage.set("webhook/o%2Fr%237/ses_child", { sessionID: "ses_child", topic: "o/r#7", createdAt: 150 })
     expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s1", 200), outside)).toEqual([])
-    // The delivery it waited for came, and it ended its turn without reporting: the subscription is no wait.
     await notePrompt(hooked.ports, delivered("evt_d2", 300))
     expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s2", 400), outside)).toEqual(["ses_parent"])
   })
@@ -584,7 +569,6 @@ describe("join groups", () => {
     expect(sent[0].text).toBe(envelope("ses_b", failureNotice("B", blocked, "pair"), { failed: "provider.auth" }))
     expect(sent[0].text).toContain('It is a member of group "pair"')
     expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 200, by: "failed" } })
-    // The scheduler is nudged after the notice, so the group's message cannot overtake it.
     expect(nudges).toEqual([1])
   })
 
@@ -632,7 +616,6 @@ describe("join groups", () => {
     expect(sent[0].text).toContain('It is a member of group "pair", whose other reports are held until it reports')
     expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2 })
 
-    // One whose report is held, told after a later turn of its own, is not said to hold the group up.
     await notePrompt(ports, delivered("evt_d3", 300, "ses_a"))
     expect(await reportSilent(ports, seen, succeeded("evt_s2", 400, "ses_a"), outside)).toEqual(["ses_parent"])
     expect(sent[1].text).not.toContain("group")
@@ -706,15 +689,12 @@ describe("join groups", () => {
     await notePrompt(ports, delivered("evt_d1", 100, "ses_parent"))
     await notePrompt(ports, delivered("evt_d2", 110, "ses_a"))
     await notePrompt(ports, delivered("evt_d3", 110, "ses_b"))
-    // One report held, the other member still owes: the parent waits.
     await sendFrom(ports, "ses_a", "ses_parent", 150)
     expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_parent"), outside)).toEqual([])
-    // Its last member reports and the group is held complete, for the scheduler: the parent still waits.
     await sendFrom(ports, "ses_b", "ses_parent", 250)
     expect(await reportSilent(ports, seen, succeeded("evt_s2", 300, "ses_parent"), outside)).toEqual([])
     expect(sent).toEqual([])
 
-    // Delivered and dropped, the group's message prompts the parent, which ends its turn without reporting: told.
     for (const id of ["ses_a", "ses_b"]) store.delete(memberKey("ses_parent", "pair", id))
     await notePrompt(ports, delivered("evt_d4", 350, "ses_parent"))
     expect(await reportSilent(ports, seen, succeeded("evt_s3", 400, "ses_parent"), outside)).toEqual(["ses_root"])
@@ -729,11 +709,9 @@ describe("join groups", () => {
     await notePrompt(ports, delivered("evt_d2", 110, "ses_a"))
     await notePrompt(ports, delivered("evt_d3", 110, "ses_b"))
     await sendFrom(ports, "ses_a", "ses_parent", 150)
-    // ses_b ends silently: the parent is told, and prompted by that notice.
     expect(await reportSilent(ports, seen, succeeded("evt_s1", 200, "ses_b"), outside)).toEqual(["ses_parent"])
     await notePrompt(ports, delivered("evt_d4", 210, "ses_parent"))
 
-    // It ends its turn without reporting, with the group open but stuck on a member it was told of: its parent is told.
     expect(await reportSilent(ports, seen, succeeded("evt_s2", 300, "ses_parent"), outside)).toEqual(["ses_root"])
     expect(sent.map((notice: any) => notice.sessionID)).toEqual(["ses_parent", "ses_root"])
   })
@@ -791,7 +769,6 @@ describe("join groups", () => {
 })
 
 describe("what makes a child owe a report", () => {
-  /** Runs `events` through a watcher of a child that reported at 150, returning the notices sent. */
   async function afterReport(events: unknown[]) {
     const watching = new AbortController()
     const { ports, sent } = fakePorts([events])
@@ -826,7 +803,6 @@ describe("what makes a child owe a report", () => {
     const { ports, sent } = fakePorts([exchange("user")])
     ;(ports as any).log = () => watching.abort()
     await childStore(ports.storage).record(child())
-    // What courier_spawn writes before `session.prompt`.
     await childStore(ports.storage).prompted("ses_child", 100)
     await watchChildren(ports, fresh(), watching.signal, 1)
     expect(sent.map((notice: any) => notice.metadata.ended)).toEqual(["without-report"])
@@ -973,7 +949,6 @@ describe("watchChildren", () => {
     await childStore(ports.storage).record(child())
     await childStore(ports.storage).record({ ...child("ses_child"), sessionID: "ses_grandchild", createdAt: 150, group: "pair" })
     await ports.storage.set(memberKey("ses_child", "pair", "ses_grandchild"), { title: "G", joinedAt: 150, report: { at: 180, status: "done", message: "m" } })
-    // A tick that delivers and drops the group before anything else runs.
     ;(ports as any).nudge = () => {
       for (const key of [...store.keys()]) if (key.startsWith("group/")) store.delete(key)
       watching.abort()
@@ -1084,7 +1059,6 @@ describe("watchChildren, stopped", () => {
       sent.push(input)
       return new Promise((resolve) => (deliver = resolve))
     }
-    // A stream that yields one event and then never another, and is never closed.
     ;(ports.event as any).subscribe = async function* () {
       yield failed()
       await new Promise(() => {})
@@ -1094,7 +1068,6 @@ describe("watchChildren, stopped", () => {
     await Bun.sleep(1)
     expect(sent).toHaveLength(1)
 
-    // Its notice is going out: aborting does not end it until the notice has gone.
     watching.abort()
     await Bun.sleep(1)
     expect(ended).toBe(false)
@@ -1120,7 +1093,6 @@ describe("watchChildren, stopped", () => {
     }
     await watchChildren(ports, fresh(), watching.signal, 1)
     expect(seen).toBe(1_000)
-    // One wait for the next event listening, whatever the number of events before it.
     expect(atEnd).toBe(1)
   })
 
@@ -1151,10 +1123,8 @@ describe("watchChildren, stopped", () => {
 })
 
 describe("the hub's subscriptions: one active, one standby", () => {
-  /** The scheduler's loop, which joining starts, never ticks here. */
   const idle = { every: () => 0, stop: () => {}, wait: async () => {} }
 
-  /** A member whose event stream stays open until its subscription is aborted, counting subscriptions. */
   function member(name: string, pending: PermissionAsked["data"][] = [], events: unknown[] = []) {
     const { ports, sent } = fakePorts([], pending)
     let subscriptions = 0
@@ -1172,7 +1142,6 @@ describe("the hub's subscriptions: one active, one standby", () => {
     return { joined, ports, sent, subscriptions: () => subscriptions, ended: () => ended }
   }
 
-  /** Loads `member` as an instance does, with this copy's watcher; returns its unload, which settles once its subscription, if any, has ended. */
   function load(opened: ReturnType<typeof open>, loaded: ReturnType<typeof member>, state = fresh()) {
     watchFromHub(opened.hub, modules(state), 1)
     const leave = opened.join(loaded.joined)
@@ -1199,11 +1168,9 @@ describe("the hub's subscriptions: one active, one standby", () => {
     expect([a.subscriptions(), b.subscriptions(), c.subscriptions()]).toEqual([1, 1, 0])
     expect(relayState.following).toBe(2)
 
-    // An instance with no subscription leaves without touching them.
     await unloadC()
     expect(watchingThrough(opened.hub)).toEqual([a.joined, b.joined])
 
-    // The last one to leave stops the last subscription.
     await unloadA()
     expect(watchingThrough(opened.hub)).toEqual([b.joined])
     await unloadB()
@@ -1226,14 +1193,12 @@ describe("the hub's subscriptions: one active, one standby", () => {
     relayState.shown.set("ses_child call_1", () => (released = true))
 
     const ended = unloadA()
-    // Never fewer than one subscription following the events, so nothing is taken as missed.
     expect(watchingThrough(opened.hub)).toEqual([b.joined, c.joined])
     expect(relayState.following).toBe(3)
     await ended
     expect(relayState.following).toBe(2)
     expect([b.subscriptions(), c.subscriptions()]).toEqual([1, 1])
 
-    // The new standby, like any subscription, relays what is already pending, once.
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(c.sent.map((notice: any) => notice.metadata.requestID)).toEqual(["per_1"])
     expect(released).toBe(false)

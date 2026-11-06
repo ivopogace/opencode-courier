@@ -126,12 +126,19 @@ below are in it.
   marks such messages in their metadata (`resume: false` beside `source: "courier"`) and `watchWake`
   skips them. A permission request's settled notice is sent this way.
 - Every event carries `created`, its publish time in epoch milliseconds.
+- A failed execution's `retryAfterMs`, set by rate and quota limits, counts from the event's
+  `created`. OpenCode clamps a provider's retry header to 2^53 ms, past what a `Date` holds, so the
+  plugin ignores a wait over 30 days.
+- Closing a subscription's stream (`return()` on its iterator) waits on OpenCode, which may not
+  answer while a location closes, so the courier closes it without awaiting.
 - `session.context()` returns stored messages, not what the `context` hook sees. A turn's end is
   recorded as an `idle` message with `outcome: "succeeded" | "failed" | "interrupted"`.
 - OpenCode evicts a location after 60 minutes without a stored session event
   (`experimental.location_idle_timeout`) when no session in it is executing. A location with a running
   session is held for up to 24 hours without a durable event; then its sessions are interrupted with
   `reason: "inactivity"` and it is evicted. A tool call has no timeout.
+- A provider's 402 fails the turn at once; a 429 OpenCode retries for minutes. The live suite's
+  out-of-quota child answers 402 (`e2e/mock-model.mjs`).
 - A graceful shutdown closes locations one by one. A closing location first withdraws its forms, so
   a question call dies with `QuestionTool.CancelledError` as if dismissed; about 40 ms later
   `location.shutdown` arrives, then the plugin unloads. The question relay holds a dismissal 2
@@ -249,6 +256,9 @@ each `background` item's `sessionID`.
   session id `global`). `GET /api/form` lists them; `DELETE /api/session/:id/form/:form` dismisses
   one. `session.form.list` on a session whose location is idle answers an empty list without booting
   it.
+- A field shows when all its `when` conditions hold. A condition on a field not answered is false;
+  on a multiselect, `eq` means the answer includes the value. A hidden field is not asked: OpenCode's
+  form view submits its default, when it has one, and conditions read it.
 
 ## Web search's form
 
@@ -553,7 +563,8 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
 - **The context:** `ctx.client` is the TUI's client. `ctx.location` may be `undefined`; fall back to
   `ctx.data.location.default()`. The footer slot shows on the home screen too, with no `sessionID`.
   `data.session.permission` has no `reply`, so the inbox uses `client.permission.reply`. Forms go
-  through `data.session.form.reply` and `client.session.form.list`. OpenCode sounds `permission` and
+  through `client.session.form.list` and `client.session.form.reply`: `data.session.form.reply`
+  resolves only once the form is gone. The client throws an RPC error as a plain `{ type, message }`. OpenCode sounds `permission` and
   `question` for every request and form itself.
 - **A slot that renders bare text** shows a crash toast, no longer taking the TUI down; a slot still
   renders only elements.

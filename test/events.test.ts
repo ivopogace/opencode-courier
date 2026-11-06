@@ -7,7 +7,6 @@ import type { Hub, Member } from "../src/platform/hub.js"
 import { treeEvents, waitsOn } from "../src/tree/events.js"
 import { fakePorts, fresh } from "./fixtures/events.js"
 
-/** Ports whose subscriptions yield `streams` one after another; the last one aborts `stop` once it has yielded its events. */
 function ports(streams: HostEvent[][], stop: AbortController) {
   const logged: string[] = []
   const options: { types?: readonly string[] }[] = []
@@ -27,7 +26,6 @@ function ports(streams: HostEvent[][], stop: AbortController) {
 
 const event = (type: string, sessionID = "ses_a"): HostEvent => ({ type, data: { sessionID } })
 
-/** A module recording each of its phases in `seen`, under `name`. */
 function recording(name: string, seen: string[], overrides: Partial<EventModule<EventPorts>> = {}): EventModule<EventPorts> {
   return {
     handle: async (_ports, { type }) => void seen.push(`${name} handle ${type}`),
@@ -195,7 +193,7 @@ describe("the event types a subscription asks for", () => {
     const seen: string[] = []
     const eventPorts = {
       event: {
-        // As the plugin adapter does, ignoring every option but `types` and `signal`.
+        // the plugin adapter forwards only types and signal (api-notes)
         subscribe: async function* () {
           await Bun.sleep(30)
           seen.push("event")
@@ -247,7 +245,6 @@ describe("the event types a subscription asks for", () => {
       "session.inbox.delivered",
       "session.inbox.enqueued",
     ])
-    // The live suite's probe follows the same types, and checks the courier asks for them.
     const live = (await Bun.file(new URL("../e2e/run.sh", import.meta.url)).text()).match(/^COURIER_TYPES='(.*)'$/m)?.[1]
     expect(JSON.parse(live ?? "null")).toEqual(options[0]?.types)
   })

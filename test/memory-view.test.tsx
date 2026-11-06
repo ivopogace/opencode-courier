@@ -1,6 +1,3 @@
-// The memory view (#262), the memory module's TUI part: the project's tree records in a dialog, against a fake TUI
-// context whose dialogs a test answers, and whose footer actions a test presses. Its dates are local (#272): the file
-// runs in Berlin's zone, two hours ahead of UTC in October, so a day differs from UTC's late in the evening.
 import { afterAll, describe, expect, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin/tui"
 import type { Forgotten, MemoryRecord, Pinned, Records } from "../src/memory/rpc.js"
@@ -32,7 +29,6 @@ import {
   wrap,
 } from "../src/memory/tui.js"
 
-// Set before the records below are made, so that their local days and the view's agree whatever the hour.
 const TZ = process.env.TZ
 process.env.TZ = "Europe/Berlin"
 afterAll(() => {
@@ -40,7 +36,6 @@ afterAll(() => {
   else process.env.TZ = TZ
 })
 
-/** 23:30 UTC on 2026-10-17: 01:30 on the 18th in Berlin. */
 const NOW = Date.UTC(2026, 9, 17, 23, 30)
 
 const lesson = { text: "The docs part was ten lines; next time do it yourself.", at: Date.UTC(2026, 9, 17, 22, 30) }
@@ -63,10 +58,8 @@ const record = (sessionID: string, title: string, movedAt: number, more: Partial
 const newest = record("ses_root", "Add memory to courier", NOW, { lesson, recalled: { at: NOW - 40 * 60_000, calls: 2 } })
 const older = record("ses_old", "Fix the bug", NOW - 86_400_000, { parts: [], finished: false, split: "not stated" })
 const oldest = record("ses_oldest", "Bump the pin", NOW - 2 * 86_400_000)
-/** The same two trees, the first last moved now, so that the view lists it under "Today" on the real clock. */
 const LIVE = Date.now()
 const todays = record("ses_root", "Add memory to courier", LIVE, { lesson, recalled: { at: LIVE - 40 * 60_000, calls: 2 } })
-// The same time a local calendar day earlier: 25 hours back on the day the clocks fall back, not 24.
 const YESTERDAY = new Date(LIVE)
 YESTERDAY.setDate(YESTERDAY.getDate() - 1)
 const yesterdays = record("ses_old", "Fix the bug", YESTERDAY.getTime(), { parts: [], finished: false, split: "not stated" })
@@ -74,13 +67,8 @@ const yesterday = YESTERDAY.toDateString()
 
 type Dialog = { kind: "select" | "confirm" | "alert" | "prompt"; options: any }
 
-/** An answer that presses a footer action and leaves the dialog open. */
 const HOLD = Symbol("hold")
 
-/**
- * A fake TUI context with the open session `ses_root`: the memory's RPC answers `state.records` and `state.forgotten`,
- * and each dialog is answered by the next of `answers`, which backs out once they run out.
- */
 function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, location = { directory: "/workspace" } }: { memory?: boolean; location?: { directory: string } | null } = {}) {
   const state = {
     records: [...records] as MemoryRecord[],
@@ -98,7 +86,7 @@ function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, loca
   const layers: (() => any)[] = []
   const sizes: unknown[] = []
   let route: { type: string; sessionID?: string } = { type: "session", sessionID: "ses_root" }
-  // As the host's: a dialog shown, or cleared, closes the one before, whose promise resolves with nothing.
+  // a new or cleared dialog resolves the open one with nothing (api-notes)
   let close: (() => void) | undefined
   const dialog = (kind: Dialog["kind"]) => (options: any) => {
     close?.()
@@ -120,7 +108,6 @@ function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, loca
     })
   }
   const context = {
-    // null stands for a TUI with no location of its own.
     location: location ?? undefined,
     data: {
       location: { default: () => ({ directory: "/default" }) },
@@ -144,7 +131,6 @@ function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, loca
             if (state.forgotten.outcome === "lesson") state.records = state.records.map((one) => (one.sessionID === input.sessionID ? { ...one, lesson: undefined } : one))
             return state.forgotten
           },
-          // As the server: the pin lies beside the record, and the listing puts the pinned first.
           pin: async (input: { sessionID: string; pinned: boolean }, options: unknown) => {
             calls.push({ method: "pin", input, options })
             if (state.pinError) throw state.pinError
@@ -193,16 +179,13 @@ function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, loca
   }
 }
 
-/** The dialog's option whose title starts with `title`, chosen. */
 const pick = (title: string) => (dialog: Dialog) => dialog.options.options.find((option: any) => option.title.startsWith(title))?.value
-/** The footer action bound to `key` pressed on the option whose title starts with `title` (the first with none), the dialog left open. */
 const press = (key: string, title?: string) => (dialog: Dialog) => {
   const action = dialog.options.actions.find((one: any) => one.bind === key)
   const option = title === undefined ? dialog.options.options[0] : dialog.options.options.find((one: any) => one.title.startsWith(title))
   action.onTrigger(option?.value)
   return HOLD
 }
-/** Esc: the dialog closes with nothing. */
 const escape = () => undefined
 const yes = () => true
 const no = () => false
@@ -219,12 +202,11 @@ describe("the memory view's lines", () => {
     expect(recordTitle(newest, "ses_root")).toBe("Add memory to courier (this session)")
     expect(recordTitle(newest, "ses_other")).toBe("Add memory to courier")
     expect(recordTitle({ ...older, title: "" })).toBe("ses_old")
-    // Within the 61 characters the host's row keeps of a title, "(this session)" included.
+    // the host's select row cuts a title at 61 characters (api-notes)
     expect(recordTitle({ ...newest, title: "x".repeat(80) }, "ses_root")).toBe(`${"x".repeat(ROW_TITLE_MAX - 1)}… (this session)`)
     expect(recordTitle({ ...newest, title: "x".repeat(80) }, "ses_root")).toHaveLength(61)
     expect(recordDescription(newest)).toBe("3 parts: 1 done, 1 partial, 1 out · 42 min · $1.28")
     expect(recordDescription(older)).toBe("no parts · 42 min · not finished")
-    // 22:30 UTC on the 17th is the 18th in Berlin.
     expect(lessonHeading(lesson)).toBe("lesson (2026-10-18)")
     expect(recordDetails(newest)).toEqual(['lesson (2026-10-18): "The docs part was ten lines; next time do it yourself."'])
     expect(recordDetails({ ...newest, lesson: { ...lesson, depth: 1, text: "y".repeat(300) } })[0]).toHaveLength(LESSON_LINE_MAX)
@@ -233,18 +215,14 @@ describe("the memory view's lines", () => {
   })
 
   test("a row's group is Today for a tree last moved on the local day, else that local date as the host's Sessions dialog writes it", () => {
-    // 23:30 UTC on the 17th: still the 17th in UTC, the 18th in Berlin, the local day of `now`.
     expect(recordCategory(newest, NOW)).toBe(TODAY)
     expect(recordCategory(older, NOW)).toBe("Sat Oct 17 2026")
-    // A tree that started a day earlier and last moved today is under Today: the group follows the order, by the last move.
     expect(recordCategory({ ...newest, startedAt: NOW - 86_400_000 }, NOW)).toBe(TODAY)
     expect(recordCategory(newest, NOW + 86_400_000)).toBe("Sun Oct 18 2026")
-    // Just before local midnight on the 17th, and just after it, are two days.
     expect(recordCategory({ ...newest, movedAt: Date.UTC(2026, 9, 17, 21, 59) }, NOW)).toBe("Sat Oct 17 2026")
     expect(recordCategory({ ...newest, movedAt: Date.UTC(2026, 9, 17, 22, 0) }, NOW)).toBe(TODAY)
     expect(recordCategory(todays)).toBe(TODAY)
     expect(recordCategory(yesterdays)).toBe(yesterday)
-    // A pinned record is under Pinned whenever it last moved.
     expect(recordCategory({ ...older, pinned: { at: NOW } }, NOW)).toBe(PINNED)
   })
 
@@ -376,12 +354,10 @@ describe("the memory view", () => {
       [yesterday, "Fix the bug", "no parts · 42 min · not finished", []],
     ])
     expect(yesterday).not.toBe(TODAY)
-    // `x` and `p` alone, so every other letter, `q` among them, goes to the search.
     expect(list.actions.map((action: any) => [action.bind, action.title, action.selection])).toEqual([
       ["x", "forget", undefined],
       ["p", "pin", undefined],
     ])
-    // Esc left it: nothing more is shown or read.
     expect(fake.dialogs).toHaveLength(1)
     expect(fake.toasts).toEqual([])
   })
@@ -435,7 +411,6 @@ describe("the memory view", () => {
     expect(detailAgain!.options.title).toBe("Sun Oct 18 2026  Add memory to courier")
     expect(listOnceMore!.options.title).toBe("Memory (2)")
     expect(fake.dialogs).toHaveLength(5)
-    // Each list and each record is read anew, so a record forgotten elsewhere meanwhile is gone.
     expect(fake.reads()).toHaveLength(5)
     expect(fake.sizes).toHaveLength(5)
   })
@@ -459,7 +434,6 @@ describe("the memory view", () => {
       { title: "courier", message: 'Forgot the record of "Add memory to courier"', variant: "success" },
       { title: "courier", message: NO_RECORDS, variant: "info" },
     ])
-    // The confirm closed itself, and the empty project shows no dialog of its own.
     expect(fake.dialogs.at(-1)!.kind).toBe("confirm")
   })
 
@@ -477,7 +451,6 @@ describe("the memory view", () => {
 
   test("after a forget, a neighbour gone meanwhile is passed over for the next nearest", async () => {
     const fake = fakeContext([newest, older, oldest])
-    // Another TUI forgets the record after it while the confirm is open.
     fake.answers.push(press("x", "Fix the bug"), () => {
       fake.state.records = [newest, older]
       return true
@@ -518,7 +491,6 @@ describe("the memory view", () => {
     expect(detailAgain!.options.options.filter((option: any) => option.category === "Lesson").map((option: any) => option.title)).toEqual(["No lesson"])
     expect(list!.options.title).toBe("Memory (2)")
     expect(fake.toasts).toEqual([{ title: "courier", message: 'Forgot the lesson of "Add memory to courier"; its facts stay', variant: "success" }])
-    // The record shown again is on the row that replaced the lesson, and back in the list on its own row.
     expect("current" in detail!.options).toBe(false)
     expect(detailAgain!.options.current).toEqual({ kind: "fact", key: "lesson" })
     expect(list!.options.current).toEqual({ ...newest, lesson: undefined })

@@ -4,16 +4,11 @@ import { ownRequests, pendingOf, type Permissions } from "./permission.js"
 import { answerForPerson, pendingQuestions, type QuestionPorts } from "./question/index.js"
 import { personRpc, type Answered, type Asks } from "./rpc.js"
 
-/** What the person's RPC reads and answers through: the relay's ports, which carry the storage, and every location's permissions. */
 export interface PersonRpcPorts {
   readonly questions: QuestionPorts
   readonly permissions: () => Iterable<Permissions>
 }
 
-/**
- * The permission requests and questions waiting in the courier tree a session is in, the top's own requests first, read from the
- * roster from the top of its lineage down, so each session of the tree sees the same inbox.
- */
 export async function asks(ports: PersonRpcPorts, sessionID: string): Promise<Asks> {
   const { storage } = ports.questions
   const top = (await lineage(storage, sessionID)).at(-1)?.parentID ?? sessionID
@@ -72,7 +67,6 @@ export async function asks(ports: PersonRpcPorts, sessionID: string): Promise<As
   }
 }
 
-/** Passes the person's answers to a question on, as courier_answer does; a refusal, such as answers that do not fit, comes back as `problem`. */
 export async function answer(ports: PersonRpcPorts, input: { sessionID: string; requestID: string; answers: ReadonlyArray<ReadonlyArray<string>> }): Promise<Answered> {
   try {
     const result = await answerForPerson(ports.questions, input)
@@ -82,7 +76,6 @@ export async function answer(ports: PersonRpcPorts, input: { sessionID: string; 
   }
 }
 
-/** Serves the person's RPC at the plugin's location; disposed with the plugin. */
 export function registerPersonRpc(rpc: Pick<Plugin.Context["rpc"], "register">, ports: PersonRpcPorts) {
   return rpc.register(personRpc, {
     asks: ({ sessionID }) => asks(ports, sessionID),

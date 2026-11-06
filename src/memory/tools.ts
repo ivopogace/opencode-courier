@@ -22,13 +22,11 @@ export const NoteInput = Schema.Struct({
   }),
 })
 
-/** What the memory's tools run on: one instance's ports and the process's shared state. */
 export interface MemoryToolPorts {
   readonly memory: MemoryPorts
   readonly state: Pick<MemoryState, "tops">
 }
 
-/** Adds `courier_recall` and `courier_note`, direct tools rather than code-mode ones. */
 export function addMemoryTools(tools: ToolEditor, ports: MemoryToolPorts) {
   tools.add({
     name: RECALL_TOOL,
@@ -71,7 +69,6 @@ export function addMemoryTools(tools: ToolEditor, ports: MemoryToolPorts) {
     input: NoteInput,
     execute: async (input, context) => {
       const result = await note(ports.memory, context.sessionID, input).catch(rethrow(NOTE_TOOL))
-      // A refusal is the tool's failure, as courier_spawn's are, so the step ends on it and the model reads why.
       const refuse = (text: string) => describeFailure(NOTE_TOOL, new Error(text))
       switch (result.kind) {
         case "noted": {

@@ -97,6 +97,8 @@ every copy's watch session is the host's `ctx.session`, so an older member's por
 types only what it owns; feature ports and state are typed by their owners through `sharedState`.
 Each event module declares the event types it handles (`types`), and both hub subscriptions ask
 `event.subscribe` for their union; one module without a declaration leaves them unfiltered.
+The shared claim sets stay plain `Set`s and `Map`s, bounded by functions (`platform/bounded.ts`),
+since older copies call `.has` and `.add` on them.
 
 On unload OpenCode waits up to 2 seconds for work the instance leaves behind.
 

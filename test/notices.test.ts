@@ -15,13 +15,9 @@ import { addWebhookTools } from "../src/webhook/index.js"
 import { addMemoryTools } from "../src/memory/index.js"
 import { githubEvent } from "../src/webhook/receiver.js"
 
-// Every model-facing string, built from fixed inputs and kept in __snapshots__/notices.test.ts.snap: every
-// src/**/text.ts, imported each by its path (test/imports.test.ts checks none is missing), the skill and the
-// tools. A wording change shows up there as a snapshot diff; after one, rerun e2e/real-model.sh (CLAUDE.md).
 
 const registered: any[] = []
 const editor = { add: (tool: unknown) => registered.push(tool) } as unknown as ToolEditor
-// In the order src/index.ts adds them.
 addTreeTools(editor, {} as never)
 addPersonTools(editor, {} as never)
 addSchedulingTools(editor, {} as never)
@@ -35,7 +31,7 @@ describe("tools", () => {
 
   for (const tool of registered)
     test(tool.name, () => {
-      // Closed, as OpenCode renders a tool's schema for the model; Effect 4.0.6 leaves objects open by default.
+      // OpenCode renders tool schemas closed; effect leaves objects open
       const input = Schema.toJsonSchemaDocument(tool.input, { onExcessProperty: "error" }).schema
       expect({ description: tool.description, input }).toMatchSnapshot()
     })
@@ -58,44 +54,29 @@ describe("envelope and child brief", () => {
     expect(kernel.SKILL_ID).toBe("courier-orchestrate")
     expect(skill.SKILL_DESCRIPTION).toMatchSnapshot()
     expect(skill.SKILL_CONTENT).toMatchSnapshot()
-    // The description is what the model reads in every session's skill list; the content, only once loaded.
     expect(skill.SKILL_DESCRIPTION.length).toBeLessThan(400)
-    // Only the root may start exactly one session for the whole task; every other session never does.
     expect(skill.SKILL_CONTENT).toContain("Only the root, the session nobody started, may start exactly one session for the whole task")
     expect(skill.SKILL_CONTENT).toContain("Every other session never starts exactly one session for the whole task")
     expect(skill.SKILL_CONTENT).toContain(`the root has a third form, ${kernel.ONE_PART_LINE}`)
     expect(skill.SKILL_CONTENT).toContain("Never hand the checking to another session")
-    // A session without courier_spawn, a leaf or a root that cannot spawn, is sent to do the task itself.
     expect(skill.SKILL_CONTENT).toContain("If courier_spawn is not among your tools, you cannot split")
-    // Step 3: a permission request is proposed, a question asked of the person; the skill never answers for them.
     expect(skill.SKILL_CONTENT).toContain("propose once with courier_answer, or reject with the reason when")
     expect(skill.SKILL_CONTENT).toContain("ask the person with your question tool, with the questions the notice gives")
     expect(skill.SKILL_CONTENT).toContain("Never answer for them")
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.")
-    // SPLIT_LINE is asked for in the skill, the brief and the root's pointer, which adds the one-part form.
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).not.toContain("bun run <script>")
-    // Step 2 names when a part gets another model or variant, once, so a weak model does not override on every spawn.
     expect(skill.SKILL_CONTENT).toContain("Leave model and variant unset, so a part runs on your own model, unless the part plainly calls for another")
-    // Step 2 has the parent name the person's own skills in each task: the skill names none, since it cannot know them.
     expect(skill.SKILL_CONTENT).toContain("Name the skills it should load for its part, from those listed to you")
-    // A part is done once it is integrated or delivered, and a delivered part is verified, not merged.
     expect(skill.SKILL_CONTENT).toContain("or verified and delivered")
     expect(skill.SKILL_CONTENT).toContain("verify each delivery and merge nothing of it into your checkout")
-    // Step 1 and the root's pointer ask the root for one courier_recall before the decision, which the recursive checker
-    // allows; a session below it reads none, since the root weighed the records before it split.
     expect(skill.SKILL_CONTENT).toContain(`At the root, first call ${memory.RECALL_TOOL} once`)
     expect(registered.find((tool) => tool.name === memory.RECALL_TOOL).description).toContain("a session another session started reads none")
-    // Step 6 asks the top for one courier_note, none when there is nothing, naming the job it comes from; the brief never
-    // mentions it: children write no lesson. The tool, the skill and the input ask for the lesson's scope, not only splitting.
     expect(skill.SKILL_CONTENT).toContain(`one ${memory.NOTE_TOOL} with that one line; none when there is nothing`)
     expect(skill.SKILL_CONTENT).toContain("Name the job it comes from and the reason")
     expect(skill.SKILL_CONTENT).not.toContain("about splitting work here")
-    // The skill is the tools' mechanics; planning, staging and the review stage are left to the person's own skills.
     for (const policy of ["When the core is coupled", "review stage", "scout", "reviewer", "verifier", "implementor", "count 6 live sessions", "bun run", "node_modules", "pull request"])
       expect(skill.SKILL_CONTENT).not.toContain(policy)
-    // What the brief states stays: a stage is a part, several whole jobs are that many parts, and the parts that do not
-    // fit the limits wait for the first group; a check is run so that one permission rule covers it, naming no tool.
     expect(skill.SKILL_CONTENT).toContain("One session for one stage is a part, not the whole, as your brief says")
     expect(skill.SKILL_CONTENT).toContain("so the tree below you repeats its shape once per job")
     expect(skill.SKILL_CONTENT).toContain("in a group of their own once the first group has reported")
@@ -113,7 +94,6 @@ describe("envelope and child brief", () => {
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(kernel.SPLIT_LINE)
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
     expect(tree.rolePart(null, limits)).toContain(kernel.ROOT_SPLIT_LINE)
-    // The one-part form is the root's alone: no brief, no sub-orchestrator's role and no leaf's offers it.
     expect(kernel.ROOT_SPLIT_LINE).toBe(`${kernel.SPLIT_LINE} or ${kernel.ONE_PART_LINE}`)
     expect(kernel.SPLIT_LINE).not.toContain("1 part")
     for (const depth of [1, 2, 3]) expect(tree.childBrief("ses_parent", "Fix the bug", depth, limits)).not.toContain(kernel.ONE_PART_LINE)
@@ -172,7 +152,7 @@ describe("envelope and child brief", () => {
     expect(tree.reportBody("Fixed it.", undefined)).toBe("Fixed it.")
     expect(tree.reportBody("Fixed it.", {})).toBe("Fixed it.")
     expect(tree.reportBody("Fixed it.", { branch: "  ", commits: [], files: [], checks: [] })).toBe("Fixed it.")
-    // OpenCode does not check the schema: what is not a list of strings, or a check without a command, is left out.
+    // OpenCode does not check tool input against the schema
     expect(
       tree.reportBody("Fixed it.", { commits: ["abc", 7, " def "], files: "src/a.ts", checks: [{ command: "bun test" }, { result: "?" }, "lint"] } as never),
     ).toBe("Fixed it.\n\nArtifacts:\n- commits: abc, def\n- checks:\n  - bun test: (no result given)")
@@ -456,7 +436,6 @@ describe("questions", () => {
 })
 
 describe("webhook deliveries", () => {
-  /** The summary a subscribed session gets for a GitHub delivery, as the receiver makes it. */
   const summary = (name: string, body: Record<string, any>, action?: string, sender?: string) =>
     githubEvent(name, { ...body, repository: { full_name: "octo/repo" }, ...(action ? { action } : {}), ...(sender ? { sender: { login: sender } } : {}) })
       ?.summary

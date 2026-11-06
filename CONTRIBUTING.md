@@ -30,7 +30,8 @@ open an issue first so we can agree on the shape before you write it.
   and check the diff. Say so in the PR: such a change also needs a run against a real model
   (`e2e/real-model.sh`), which a maintainer does if you have no API key.
 - The plugin API is pinned to an exact OpenCode version, and no experimental OpenCode API is used.
-- Keep the change to what the issue needs. Code comments only where the code cannot say it itself.
+- Keep the change to what the issue needs. No TSDoc; a comment only for a one-line fact about
+  OpenCode or the host.
 - Describe what was wrong, what you changed and why it works, in your own words. A large, clearly
   AI-generated description may get the PR closed.
 

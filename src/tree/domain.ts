@@ -1,14 +1,9 @@
-/**
- * The tree's pure rules, on plain data: the limits, a session's lineage, whether it runs, and a group
- * member's standing. Imports nothing of the plugin's but `kernel/` and `platform/json.ts`.
- */
 import type { Plugin } from "@opencode/plugin"
 import type { Status } from "../kernel/protocol.js"
 import { millis, obj } from "../platform/json.js"
 
 type Context = Plugin.Context
 
-/** The limits on the tree of sessions courier_spawn builds, from the plugin's options. */
 export interface Limits {
   readonly maxDepth: number
   readonly maxChildren: number
@@ -17,7 +12,6 @@ export interface Limits {
 
 export const DEFAULT_LIMITS: Limits = { maxDepth: 5, maxChildren: 5, maxTotal: 30 }
 
-/** The limits in the plugin's options; one that is not a positive integer keeps its default and is named in `problems`. */
 export function readLimits(options: unknown) {
   const given = obj(options)
   const problems: string[] = []
@@ -32,35 +26,25 @@ export function readLimits(options: unknown) {
   return { limits, problems }
 }
 
-/** The `nativeChildren` option: whether a child started without isolate or `native` gets OpenCode's own `parentID`; off unless `true`. */
 export function readNativeChildren(options: unknown) {
   const value: unknown = obj(options).nativeChildren
   if (value === undefined || typeof value === "boolean") return { nativeChildren: value === true, problems: [] }
   return { nativeChildren: false, problems: [`nativeChildren must be true or false, not ${JSON.stringify(value)}; using false`] }
 }
 
-/** A session's times, as `session.get` gives them. */
 type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
-/** A session's times as `busy` reads them; `busy`, when its latest execution started, is stamped since OpenCode 2.2.2. */
 export type BusyTimes = Pick<Times, "updated" | "idle" | "busy">
 
-/**
- * Whether a session may run by its times: it has never finished a turn, or its latest execution started after the last one ended
- * (`busy`; without it `updated`, which a rename, an archive or a waiting inbox item also stamp); only its transcript then tells.
- */
+// time.busy exists since 2.2.2; time.updated is no sign of activity (api-notes)
 export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.busy ?? time.updated) > millis(time.idle)
 
-/** The messages the person's switch of agent or model, move or shell command appends, at rest or mid-turn alike. */
+// a person's switches and shell commands append these, at rest or mid-turn
 const ASIDES = new Set(["agent-switched", "model-switched", "location-switched", "shell"])
 
-/** A stored message as `turnEnd` reads it: an assistant message's `error` says how its step ended. */
 type Stored = { readonly type: string; readonly error?: { readonly type: string }; readonly time?: { readonly created?: unknown; readonly completed?: unknown } }
 
-/**
- * The message a transcript's last turn ended on, unless one runs, past asides made since: an `idle` message, or a step
- * interrupted with none after it, as a declined permission or dismissed question ends a turn, recording no `idle` (#326).
- */
+// a decline or dismissed question ends on an aborted step, no idle (api-notes)
 export function turnEnd<M extends Stored>(messages: ReadonlyArray<M>): M | undefined {
   const last = messages.findLast((message) => !ASIDES.has(message.type))
   return last?.type === "idle" || (last?.type === "assistant" && last.error?.type === "aborted") ? last : undefined
@@ -68,20 +52,14 @@ export function turnEnd<M extends Stored>(messages: ReadonlyArray<M>): M | undef
 
 export const endsIdle = (messages: ReadonlyArray<Stored>) => turnEnd(messages) !== undefined
 
-/** When the turn `end` ended: the session's idle time for an `idle` message, else when its interrupted step ended. */
 export function endedAt(end: Stored, time: BusyTimes) {
   const at = end.type === "idle" ? millis(time.idle) : millis(end.time?.completed ?? end.time?.created)
   return Number.isFinite(at) ? at : undefined
 }
 
-/**
- * Whether a session of a tree read is live, for a cut listing's order: it runs (its turn not failed or interrupted since its last
- * prompt), waits on a request or form, or owes a report, but not, unlike for the limits, for a message waiting in its inbox.
- */
 export const isLive = (running: boolean | undefined, waits: number, report: { readonly owes: boolean; readonly ended: boolean } | undefined) =>
   running !== undefined && ((running && !report?.ended) || waits > 0 || (report?.owes ?? false))
 
-/** A session of a tree read, as `cut` takes it: where it is in the tree, when it was started, and whether it is live. */
 export interface Cuttable {
   readonly sessionID: string
   readonly parentID: string
@@ -89,10 +67,6 @@ export interface Cuttable {
   readonly live: boolean
 }
 
-/**
- * Which sessions a listing of at most `max` keeps, of a tree read in the order it is drawn: the live ones first, then
- * the newest, each with the sessions above it so the tree still draws; `leftOut` counts the rest.
- */
 export function cut<T extends Cuttable>(nodes: ReadonlyArray<T>, max: number) {
   const byID = new Map(nodes.map((node) => [node.sessionID, node]))
   const ranked = nodes
@@ -108,23 +82,13 @@ export function cut<T extends Cuttable>(nodes: ReadonlyArray<T>, max: number) {
   return { kept: nodes.filter((node) => kept.has(node.sessionID)), leftOut: nodes.length - kept.size }
 }
 
-/**
- * Entries older than this are dropped when their parent's roster is read, and on plugin setup,
- * except isolated children whose worktree is still there: those stay until courier_cleanup.
- */
 export const RETENTION_MS = 14 * 24 * 60 * 60_000
 
-/** Whether a directory still exists; tests pass a fake. */
 export type Exists = (directory: string) => boolean
 
-/**
- * Whether an entry is past retention at `now`: recorded more than `RETENTION_MS` before, unless it is an isolated
- * child whose worktree exists, which is kept so it can still be cleaned up.
- */
 export const isExpired = (entry: RosterEntry, now: number, exists: Exists) =>
   now - entry.createdAt > RETENTION_MS && !(entry.isolated && exists(entry.directory))
 
-/** A session started with courier_spawn, recorded under the session that started it. */
 export interface RosterEntry {
   readonly sessionID: string
   readonly parentID: string
@@ -132,68 +96,51 @@ export interface RosterEntry {
   readonly directory: string
   readonly isolated: boolean
   readonly createdAt: number
-  /** For an isolated child, the directory its worktree was made from; for the record, nothing acts on it. */
   readonly source?: string
-  /** For an isolated child, the project its worktree belongs to; courier_cleanup removes it from there. */
   readonly project?: string
-  /** For an isolated child, the commit its worktree was made from; its own work is what came after. */
   readonly base?: string
-  /** `"status"` when its brief asked for a report with a status; absent for a child an earlier release briefed. */
   readonly reports?: "status"
-  /** The join group courier_spawn put it in, whose release holds its report; absent for a child in none. */
   readonly group?: string
-  /** Created with OpenCode's own `parentID` (courier_spawn's `native`, else the `nativeChildren` option), so OpenCode shows its asks in its parent's view. */
   readonly native?: true
-  /** The model it was started on, as `modelName` writes it, when that is not the model its parent was on. */
   readonly model?: string
 }
 
-/** How a child was started, as courier_children and the panel show it: isolated, native when it is, and its model when not its parent's. */
 export function startedAs(entry: RosterEntry) {
   return { isolated: entry.isolated, ...(entry.native ? { native: true as const } : {}), ...(entry.model ? { model: entry.model } : {}) }
 }
 
-/** A model as a session names it: its provider, its id, and its variant, which `"default"` and none both leave to the provider. */
 export interface ModelRef {
   readonly providerID: string
   readonly id: string
   readonly variant?: string
 }
 
-/** `provider/model` as `courier_spawn` takes it: one slash, nothing empty on either side. */
 export function parseModelName(text: string): Pick<ModelRef, "providerID" | "id"> | undefined {
   const slash = text.indexOf("/")
   if (slash <= 0 || slash === text.length - 1) return undefined
   return { providerID: text.slice(0, slash), id: text.slice(slash + 1) }
 }
 
-/** A model as the roster, the panel and the results name it: `provider/model`, with `#variant` for a variant that is not the default. */
 export function modelName(model: ModelRef) {
   const variant = model.variant && model.variant !== "default" ? `#${model.variant}` : ""
   return `${model.providerID}/${model.id}${variant}`
 }
 
-/** `lineage` over roster entries already read. */
 export function lineageIn(entries: ReadonlyArray<RosterEntry>, sessionID: string) {
   return lineageBy(bySession(entries), sessionID)
 }
 
-/** Roster entries by their session, for `lineageBy`. */
 export function bySession(entries: ReadonlyArray<RosterEntry>) {
   return new Map(entries.map((entry) => [entry.sessionID, entry]))
 }
 
-/** `lineage` over roster entries already read and mapped by `bySession`. */
 export function lineageBy(bySession: ReadonlyMap<string, RosterEntry>, sessionID: string) {
   const chain: RosterEntry[] = []
   for (let entry = bySession.get(sessionID); entry && !chain.includes(entry); entry = bySession.get(entry.parentID)) chain.push(entry)
   return chain
 }
 
-/**
- * The session whose view OpenCode shows the asks of a lineage's first session in: up its native parents, to the
- * first session that is not a native child (an isolated one, or the top). The session itself when it is not native.
- */
+// OpenCode shows a native child's asks in its root's view (api-notes)
 export function nativeRootOf(chain: ReadonlyArray<RosterEntry>) {
   let root = chain[0]!.sessionID
   for (const entry of chain) {
@@ -203,7 +150,6 @@ export function nativeRootOf(chain: ReadonlyArray<RosterEntry>) {
   return root
 }
 
-/** What a report lists besides its text; `checks` are the commands the session ran and what each gave. */
 export interface Artifacts {
   readonly branch?: string
   readonly commits?: ReadonlyArray<string>
@@ -211,7 +157,6 @@ export interface Artifacts {
   readonly checks?: ReadonlyArray<{ readonly command: string; readonly result: string }>
 }
 
-/** A report held with its group: its status, text and artifacts, as courier_send was given them, and when. */
 export interface HeldReport {
   readonly at: number
   readonly status: Status
@@ -219,19 +164,16 @@ export interface HeldReport {
   readonly artifacts?: Artifacts
 }
 
-/** A member of a group that left it without a report, and why: its turn failed or was interrupted, it was deleted, or courier_cleanup dropped it. */
 export interface LeftMember {
   readonly sessionID: string
   readonly title: string
   readonly by: "failed" | "interrupted" | "deleted" | "dropped"
 }
 
-/** What a group may be called: short, and with no `/`, which separates the parts of its keys, or `"`, which closes an attribute. */
-const NAME = /^[\w.-]{1,60}$/
+const GROUP_NAME = /^[\w.-]{1,60}$/
 
-export const isGroupName = (value: unknown): value is string => typeof value === "string" && NAME.test(value)
+export const isGroupName = (value: unknown): value is string => typeof value === "string" && GROUP_NAME.test(value)
 
-/** A member of a group, as stored: its title for the release notice, and its report or how it left. */
 export interface Member {
   readonly title: string
   readonly joinedAt: number
@@ -239,23 +181,19 @@ export interface Member {
   readonly left?: { readonly at: number; readonly by: LeftMember["by"] }
 }
 
-/** What is known of a member's standing: its report is held, still out, or it left, or it is no longer in an open group. */
 export type Standing = "held" | "out" | LeftMember["by"] | "released"
 
-/** A member's standing from its stored value, or `released` when there is none. */
 export function standingOf(member: Member | undefined): Standing {
   if (!member) return "released"
   if (member.report) return "held"
   return member.left?.by ?? "out"
 }
 
-/** Whether every member of a group has a held report or has left: released once the parent's turn has ended. */
 export const complete = (members: ReadonlyArray<Member>) => members.every((member) => member.report || member.left)
 
-/** Longer than this is no wait a notice can plan around; OpenCode clamps a header to 2^53 ms, past what a `Date` holds. */
+// OpenCode clamps retry-after to 2^53 ms, past what a Date holds
 const RETRY_MAX_MS = 30 * 24 * 3_600_000
 
-/** How long the provider asked to wait after a failed turn, if it did: a positive number of milliseconds, at most `RETRY_MAX_MS`. */
 export function retryDelay(error: { readonly retryAfterMs?: unknown }) {
   const wait = error.retryAfterMs
   return typeof wait === "number" && Number.isFinite(wait) && wait > 0 && wait <= RETRY_MAX_MS ? wait : undefined

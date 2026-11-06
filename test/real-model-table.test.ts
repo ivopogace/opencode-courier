@@ -32,7 +32,6 @@ describe("real-model-table", () => {
     expect(out.match(/^### /gm)).toHaveLength(2)
     expect(out).toContain("### base\n")
     expect(out).toContain("### pass-a\n")
-    // pass-a's summary keeps its cache reads, 2600 over 26 requests, and its uncached input, 1300; fail-b's, written before they were kept, shows none and leaves the means to pass-a.
     expect(out).toContain("| pass-a | pass | 2/2 | d0: 1, d1: 1 | 2 | 2 (parts, numbers-halves) | 0 | 26 | 100 | 50 | 52 s | split: 2 parts \\| numbers, count | split: 2 halves |")
     expect(out).toContain("| fail-b | fail | 1/3 | none | 0 | 0 | 2 | 18 | - | - | - |")
     expect(out).toContain("3 run(s), 2 finished, 1 pass; mean score 1.5/2.5, 1.0 polled session(s), 22.0 requests, 100.0 cache reads/request, 50.0 uncached input tokens/request.")
@@ -87,7 +86,6 @@ test("a label with no directory, or a summary.json that is not one, is skipped",
   expect(tables(["base=", dir, fixture("pass-a")]).match(/^### /gm)).toHaveLength(1)
 })
 
-// The parser reads these strings of the checker's notes (e2e/real-model-recursive.mjs); a change there fails here, so the parser is changed with it.
 test("the checker still writes the notes the parser reads", () => {
   const checker = readFileSync(join(import.meta.dir, "..", "e2e", "real-model-recursive.mjs"), "utf8")
   const who = '${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`}'

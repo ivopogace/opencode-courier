@@ -1,6 +1,3 @@
-// Reads, removes or sets a plugin storage key in the OpenCode under test's database, so the e2e test
-// can stand in for an older copy or another server: bun e2e/kv.ts get|remove|set <key> [value]
-// set names a key the plugin stored, or `@<plugin id>` when it may have stored none yet.
 import { Database } from "bun:sqlite"
 import { readdirSync } from "node:fs"
 import { join } from "node:path"
@@ -10,7 +7,7 @@ const [value, sibling] = process.argv.slice(4)
 if (!["get", "remove", "set"].includes(action!) || !key || (action === "set") !== (sibling !== undefined))
   throw new Error("usage: bun e2e/kv.ts get|remove <key>, or set <key> <json> <a key the plugin stored | @<plugin id>>")
 
-// OpenCode's own database is directly in its data directory, not in a worktree under it.
+// OpenCode's database is in its data directory, not a worktree under it
 const data = join(process.env.XDG_DATA_HOME!, "opencode")
 const databases = readdirSync(data)
   .filter((file) => file.endsWith(".db"))
@@ -26,7 +23,7 @@ const withKv = databases.filter((file) => {
 if (withKv.length !== 1) throw new Error(`expected one database with a kv table, found ${withKv.length} in ${databases.join(", ")}`)
 const db = new Database(withKv[0]!, action === "get" ? { readonly: true } : { readwrite: true })
 
-// A plugin's keys are stored as `plugin:<its id, hex-encoded>:<key>`, four hex digits per UTF-16 unit.
+// a key is plugin:<hex id>:<key>, four hex digits per UTF-16 unit
 const rows = db.query("select key, value from kv where key like 'plugin:%'").all() as Array<{ key: string; value: string }>
 const named = (name: string) => rows.filter((row) => row.key.slice(row.key.indexOf(":", "plugin:".length) + 1) === name)
 const found = named(key)

@@ -1,5 +1,3 @@
-// The person's RPC, which the TUI's asks inbox reads and answers questions through, and the notices the
-// parent gets when the inbox answers a permission request or a form through OpenCode.
 import { afterEach, describe, expect, test } from "bun:test"
 import { answer, asks, registerPersonRpc, type PersonRpcPorts } from "../src/person/rpc-handlers.js"
 import { personRpc } from "../src/person/rpc.js"
@@ -30,7 +28,6 @@ const entry = (sessionID: string, parentID: string, title: string, group?: strin
 
 const greeting = [{ question: "Which greeting?", header: "Greeting", options: [{ label: "Hi", description: "" }] }]
 
-/** The RPC's ports over a map: a tree ses_root › ses_a › ses_b, with a permission request of ses_b's pending in a second location. */
 async function setUp() {
   const store = new Map<string, unknown>()
   const told: any[] = []
@@ -102,7 +99,6 @@ describe("the asks method", () => {
         { sessionID: "ses_b", requestID: "per_1", action: "bash", resources: ["bun test"], save: ["bun *"] },
       ])
     expect((await personRpc.methods.asks.output["~standard"].validate(await asks(ports, "ses_root"))).issues).toBeUndefined()
-    // A session outside any courier tree lists nothing, its own requests included: OpenCode shows those in it.
     expect((await asks(ports, "ses_alone")).permissions).toEqual([])
   })
 
@@ -173,7 +169,6 @@ describe("a permission request or a form answered in the inbox, through OpenCode
     const state = fresh()
     await reportAsked(ports, state, asked())
 
-    // OpenCode's permission.replied for the inbox's reply, seen by both of the hub's subscriptions.
     await reportReplied(ports, state, replied())
     await reportReplied(ports, state, replied())
 

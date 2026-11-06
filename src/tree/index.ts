@@ -1,5 +1,3 @@
-// What the rest of the plugin uses of the session tree: its tools, RPC, event module, context hook and tick jobs
-// for `src/index.ts`, the lineage and subtree queries and types `person/` reads, and what `memory/` reads of each session.
 export { dirtyOf, headOf, inspectWorktree } from "./cleanup.js"
 export { shapeContext } from "./context.js"
 export { endsIdle, lineageIn, nativeRootOf, readLimits, readNativeChildren } from "./domain.js"

@@ -1,5 +1,3 @@
-// Waits for a real model's fan-out to settle, saves the transcripts to WORK and reports what happened
-// (node e2e/real-model.mjs <parentSessionID>, or --saved to re-read WORK). Exit 2 means inconclusive.
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -10,10 +8,8 @@ const auth = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD}`).t
 const work = process.env.WORK
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
-// Calls that look at children; right after spawning, or more than once a turn, that is polling.
 const LOOKS = new Set(["courier_children", "courier_tree"])
 
-// A session's whole transcript, oldest first, a page at a time.
 async function messages(sessionID) {
   if (saved) return JSON.parse(readFileSync(join(work, sessionID === parentID ? "parent.json" : `child-${sessionID}.json`), "utf8"))
   const all = []
@@ -26,7 +22,7 @@ async function messages(sessionID) {
     const page = await response.json()
     all.push(...page.data)
     if (page.data.length < 50 || !page.cursor?.next) return all
-    // The cursor carries the order; OpenCode refuses both together.
+    // OpenCode refuses a cursor together with an order
     query = `cursor=${encodeURIComponent(page.cursor.next)}`
   }
 }
@@ -39,26 +35,18 @@ const textOf = (message) =>
     : (message.text ?? "")
 const contentText = (state) =>
   (state.content ?? []).flatMap((item) => (typeof item?.text === "string" ? [item.text] : [])).join("")
-// Whether the message ending a turn says it failed: a step whose model request failed, as on a rate
-// limit, or the idle marker 2.0.22 records after each turn, with its outcome.
 const failed = (message) => message.error !== undefined || message.finish === "error" || message.outcome === "failed"
-// The two kinds of failure that make a failing run inconclusive, counted apart in the note: a step
-// whose model request failed, and a turn whose idle marker says it failed (for whatever reason).
 const failedRequest = (message) => message.type === "assistant" && message.error !== undefined
 const failedTurn = (message) => message.type === "idle" && message.outcome === "failed"
-// A step that ended its turn rather than handing tool results back to the model, or that failed.
-// Since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
+// since OpenCode 2.0.22 a turn's end is also an `idle` message
 const ended = (message) =>
   message?.type === "idle" ||
   (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
-// Whether a session has finished its turn and nothing has arrived since.
 const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
 const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
 }
-// Splits a transcript into turns: a prompt or delivered message opens one when the last step had ended
-// its turn (or, since 2.0.22, an idle marker was recorded); otherwise it steered the running turn.
 function turnsOf(list) {
   const turns = []
   let busy = false
@@ -78,31 +66,23 @@ function turnsOf(list) {
   }
   return turns
 }
-// A courier_spawn that completed, and the child it started.
 function childOf(part) {
   if (part.name !== "courier_spawn" || part.state.status !== "completed") return undefined
   const metadata = part.state.metadata ?? {}
   return metadata.sessionID ?? metadata.metadata?.sessionID ?? contentText(part.state).match(/Started session (ses_\w+)/)?.[1]
 }
-// A courier message delivered to the parent, and who sent it: one session, or, for a join group's
-// message, every member whose report it carries.
 const sendersOf = (message) =>
   message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.[1].split(",") ?? []) : []
 const senderOf = (message) => sendersOf(message)[0]
 const groupOf = (message) => message.text?.match(/^<courier from="[^"]*" group="([^"]+)"/)?.[1]
-// The status a report carries as an attribute, when the child gave one; in a group's message, each
-// report's own line names it.
 const statusOf = (message, from) =>
   groupOf(message)
     ? message.text.match(new RegExp(`^\\[\\d+/\\d+\\] ${from} ".*": (\\w+)$`, "m"))?.[1]
     : message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ?? "")
-// Who sent a report with courier_send; a courier_later check-in, from whoever, is not a report.
 const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
 const reporterOf = (message) => reportersOf(message)[0]
-// The split decision a session's first turn states: a line that begins with `split:` (after any markdown), else one holding it.
 const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()
-// How the timeline names a delivered message.
 function deliveryOf(message) {
   const from = senderOf(message)
   if (!from) return message.type === "synthetic" ? "a message" : undefined
@@ -112,8 +92,6 @@ function deliveryOf(message) {
   return children.has(from) ? `the report from ${from}` : `a message from ${from}`
 }
 
-// How long everything must have been quiet, with a report missing, before giving up on it: a
-// report can reach the parent's transcript a little after its child has finished.
 const GRACE_MS = 15_000
 const started = Date.now()
 let quietSince
@@ -145,7 +123,6 @@ for (;;) {
 writeFileSync(join(work, "parent.json"), JSON.stringify(parent, null, 2))
 for (const [id, list] of children) writeFileSync(join(work, `child-${id}.json`), JSON.stringify(list, null, 2))
 
-// What the parent did, turn by turn.
 const turns = turnsOf(parent)
 const lines = []
 for (const [number, turn] of turns.entries()) {
@@ -174,7 +151,6 @@ const timeline = lines.join("\n")
 writeFileSync(join(work, "timeline.txt"), `${timeline}\n`)
 console.log(timeline)
 
-// The checks.
 const first = turns[0] ?? []
 const firstTools = toolsOf(first)
 const parentTools = toolsOf(parent)
@@ -183,8 +159,6 @@ const looksIn = (turn) =>
   toolsOf(turn).filter(
     (part) => LOOKS.has(part.name) || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))),
   ).length
-// Any look in the first turn, right after spawning, is polling; later, a single look per turn is
-// the one-off check courier_children is for, and more is a loop.
 const polled = looksIn(first) > 0 || turns.slice(1).some((turn) => looksIn(turn) > 1)
 const laterLooks = turns.slice(1).reduce((sum, turn) => sum + looksIn(turn), 0)
 const sends = new Map(
@@ -231,7 +205,6 @@ const checks = [
 ]
 
 const notes = []
-// Whether the parent loaded the courier-orchestrate skill, and the split decision its replies state, as the pointer asks (#119).
 const loads = parentTools.filter((part) => part.name === "skill" && part.state.status === "completed").map((part) => part.state.input?.id)
 notes.push(loads.length ? `the parent loaded the skill(s): ${loads.join(", ")}` : "the parent loaded no skill")
 const decision = splitLineOf(firstText)
@@ -251,8 +224,6 @@ if (laterLooks) notes.push(`the parent looked at its children ${laterLooks} time
 for (const id of spawned)
   if (sends.get(id).length > 1) notes.push(`child ${id} called courier_send ${sends.get(id).length} times`)
 
-// Failed model requests (rate limits, mostly, on free tiers), or a turn whose idle marker says it
-// failed: a run that fails its checks with any is not the plugin's verdict.
 const transcript = [parent, ...children.values()].flat()
 const providerErrors = transcript.filter(failedRequest).map((message) => message.error.type ?? "error")
 const failedTurns = transcript.filter(failedTurn).length

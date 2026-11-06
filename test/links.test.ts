@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, join, relative, resolve } from "node:path"
 
-// Every relative Markdown link and #anchor in the docs resolves, so a moved file or heading fails here.
 const root = resolve(import.meta.dir, "..")
 
 const markdownUnder = (dir: string): string[] =>
@@ -15,12 +14,10 @@ const markdownUnder = (dir: string): string[] =>
 const atRoot = readdirSync(root).filter((name) => name.endsWith(".md"))
 const files = [...atRoot, ...markdownUnder("docs"), ...markdownUnder(".claude")]
 
-// Fenced blocks and code spans hold examples, not links.
 const unfenced = (text: string) => text.replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, "")
 const prose = (text: string) => unfenced(text).replace(/`+[^`\n]*`+/g, "")
 
-// GitHub's heading ids: lowercased, punctuation dropped, spaces to dashes, repeats numbered.
-const anchors = (text: string) => {
+const githubAnchors = (text: string) => {
   const seen = new Map<string, number>()
   const ids = new Set<string>()
   for (const [, heading] of unfenced(text).matchAll(/^#{1,6}\s+(.+?)\s*#*\s*$/gm)) {
@@ -59,7 +56,7 @@ describe("relative Markdown links", () => {
         }
         if (anchor === undefined) continue
         if (statSync(target).isDirectory() || !target.endsWith(".md")) broken.push(`${link}: anchor into a non-Markdown file`)
-        else if (!anchors(readFileSync(target, "utf8")).has(decodeURIComponent(anchor)))
+        else if (!githubAnchors(readFileSync(target, "utf8")).has(decodeURIComponent(anchor)))
           broken.push(`${link}: no heading #${anchor} in ${relative(root, target)}`)
       }
       expect(broken).toEqual([])

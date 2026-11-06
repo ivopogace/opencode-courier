@@ -2,8 +2,6 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 
-// e2e/run.sh's shards: every group runs in exactly one shard of any count, in the order of a full run,
-// the two groups that restart the server share one, and the matrix in CI names every shard.
 const root = resolve(import.meta.dir, "..")
 
 const plan = (env: Record<string, string>) => {
@@ -35,8 +33,6 @@ describe("e2e/run.sh shards", () => {
       expect(restarts).toHaveLength(1)
       expect(restarts[0]).toContain("restart-question")
       expect(restarts[0]).toContain("roster")
-      // `native` leaves nativeChildren on, and plugin-add swaps the plugin: both come last in their shard, in this order;
-      // `spawn-native` needs the option off, so it runs before `native` wherever they share a shard.
       for (const shard of shards) {
         if (shard.includes("native") && shard.includes("plugin-add")) expect(shard.indexOf("native")).toBeLessThan(shard.indexOf("plugin-add"))
         if (shard.includes("spawn-native") && shard.includes("native")) expect(shard.indexOf("spawn-native")).toBeLessThan(shard.indexOf("native"))

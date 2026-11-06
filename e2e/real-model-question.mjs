@@ -1,5 +1,3 @@
-// The question scenario of e2e/real-model.sh (node e2e/real-model-question.mjs <parentSessionID>): the child asks the
-// person a greeting through its parent; with COURIER_NATIVE=1 the parent is only told, and the person answers the child's form.
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -35,12 +33,11 @@ const forms = async (sessionID) => (await api(`session/${sessionID}/form`)).data
 const toolsOf = (list) => list.flatMap((message) => (message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : []))
 const textOf = (message) =>
   message.type === "assistant" ? message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") : (message.text ?? "")
-// Since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
+// since OpenCode 2.0.22 a turn's end is also an `idle` message
 const ended = (message) =>
   message?.type === "idle" ||
   (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
 const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
-// The last message that is not the idle marker.
 const lastStep = (list) => list.findLast((message) => message.type !== "idle") ?? {}
 const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
@@ -51,11 +48,9 @@ const childOf = (part) => (part.name === "courier_spawn" && part.state.status ==
 const labels = (form) => JSON.stringify(form.fields.map((field) => (field.options ?? []).map((option) => option.label).sort()))
 const isNotice = (message) => message.type === "synthetic" && /^<courier from="ses_\w+" asks="question"/.test(message.text)
 const isSettled = (message) => message.type === "synthetic" && /^<courier from="ses_\w+" answered="elsewhere"/.test(message.text)
-// A message the child sent its parent with courier_send: its envelope carries the status, when it gave one, and nothing else.
 const isReport = (message, child) => message.type === "synthetic" && new RegExp(`^<courier from="${child}"( status="\\w+")?>`).test(message.text)
 const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 
-/** Polls until `ready` returns something, or gives up after the timeout. */
 async function until(what, ready) {
   const started = Date.now()
   for (;;) {
@@ -73,7 +68,6 @@ async function until(what, ready) {
   }
 }
 
-/** The person's pick in a form: the option labelled with the answer, or the answer typed in. */
 function answerOf(form) {
   return Object.fromEntries(
     form.fields.map((field) => {
@@ -84,8 +78,6 @@ function answerOf(form) {
   )
 }
 
-// 1. The child asks, with its question tool or a message, and the parent asks the person (a native child's parent
-//    only ends its turn): a form in the parent's session, or a turn that ends with a question in text.
 let child
 let childForm
 const asked = NATIVE
@@ -124,7 +116,6 @@ const answeredItself = asked
 let how = "did not ask"
 let personAt = Infinity
 
-// 2. The person answers, in the parent's form or as a new message; for a native child, in the child's own form.
 if (asked?.native && !answeredItself) {
   personAt = Date.now()
   const answer = answerOf(childForm)
@@ -151,7 +142,6 @@ if (asked?.native && !answeredItself) {
   }
 }
 
-// 3. The answer reaches the child, which reports it, and the parent's turn settles.
 let parent = (await messages(parentID).catch(() => [])) ?? []
 if (asked)
   await until("the child's report and the parent's last turn", async () => {
@@ -182,8 +172,6 @@ writeFileSync(join(work, "timeline.txt"), `${timeline}\n`)
 console.log(timeline)
 
 const question = toolsOf(childMessages).find((part) => part.name === "question")
-// Over the whole transcript: the parent's own question call starts before the person answers it, and
-// a courier_answer before that already fails "did not answer by itself".
 const passedOn = toolsOf(parent).filter(
   (part) =>
     (part.name === "question" && metadataOf(part).passed === true) ||
@@ -223,8 +211,6 @@ if (route === "question tool") {
 notes.push(`passed on with: ${[...new Set(passedOn.map((part) => (part.name === "question" ? "the linked question" : part.name)))].join(", ") || "nothing"}`)
 if (report) notes.push(`the child's report carried ${statusOf(report) ? `status ${statusOf(report)}` : "no status"}`)
 if (personAt !== Infinity && report) notes.push(`from the person's answer to the child's report: ${Math.round((report.time.created - personAt) / 1000)} s`)
-// Failed model requests, or a turn whose idle marker (2.0.22) says it failed: a run that fails its
-// checks with any is inconclusive rather than failed. The two are counted apart.
 const providerErrors = [...parent, ...childMessages].filter((message) => message.type === "assistant" && message.error !== undefined)
 const failedTurns = [...parent, ...childMessages].filter((message) => message.type === "idle" && message.outcome === "failed").length
 if (providerErrors.length) notes.push(`${providerErrors.length} model request(s) failed: ${[...new Set(providerErrors.map((message) => message.error.type ?? "error"))].join(", ")}`)

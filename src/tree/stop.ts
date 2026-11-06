@@ -13,39 +13,27 @@ export interface StopInput {
   readonly cleanup?: boolean
 }
 
-/** What happened to one session: its turn was interrupted, it was not running, OpenCode no longer knows it, or the interrupt failed. */
 export interface Stopped {
   readonly sessionID: string
   readonly title: string
   readonly depth: number
   readonly outcome: "interrupted" | "idle" | "gone" | "failed"
   readonly error?: string
-  /** Set for one OpenCode's subagent tool started, which has no roster entry. */
   readonly subagent?: true
 }
 
 export interface StopResult {
   readonly sessionID: string
-  /** Every session stopped, deepest first; the target is the last. */
   readonly stopped: ReadonlyArray<Stopped>
-  /** The ids of the courier_later messages cancelled. */
   readonly cancelled: ReadonlyArray<string>
-  /** With `cleanup`: what became of each isolated session's worktree, deepest first. */
   readonly cleanup?: ReadonlyArray<CleanupResult | { readonly sessionID: string; readonly outcome: "failed"; readonly error: string }>
-  /** The session told that the target was stopped, when that is not the caller. */
   readonly told?: string
 }
 
-/** Rounds of looking again for sessions started while others were being stopped. */
 const ROUNDS = 3
 
-/** How long a stop waits for OpenCode to tell a parent that a background subagent it stopped has ended. */
 export const SETTLE_MS = 2_000
 
-/**
- * Stops a session and everything under it, deepest first, and cancels the messages scheduled for them; only a session above the target may.
- * The caller is not told; the target's parent is, unless that is the caller.
- */
 export async function stop(ports: StopPorts, callerID: string, input: StopInput): Promise<StopResult> {
   const { storage, session } = ports.courier
   const { sessionID } = input
@@ -66,7 +54,6 @@ export async function stop(ports: StopPorts, callerID: string, input: StopInput)
     if (!pending.length || left === 0) return
     for (const node of pending) seen.add(node.entry.sessionID)
     nodes.push(...pending)
-    // Before any interrupt, so nothing scheduled wakes a session that was just stopped.
     await Promise.all(pending.map((node) => silence(ports, node, cancelled)))
     results.push(...(await eachDeepestFirst(pending, (node) => interrupt(ports, node))))
     const meanwhile = (await subtree(storage, sessionID, undefined, session)).nodes.filter((node) => !seen.has(node.entry.sessionID))
@@ -76,7 +63,6 @@ export async function stop(ports: StopPorts, callerID: string, input: StopInput)
   const background = await backgroundSubagents(ports, first)
   await round([{ entry: target, depth: 0 }, ...first], ROUNDS)
   await settle(ports, nodes, results, background, startedAt)
-  // Each parent among them reads its stopped children at its next step; the caller's own entry, when it is the target's parent, too.
   const parents = new Set(nodes.flatMap((node) => (node.subagent ? [] : [node.entry.parentID])))
   await Promise.all([...parents].map((parentID) => syncStanding(ports.courier, parentID)))
 
@@ -93,7 +79,6 @@ export async function stop(ports: StopPorts, callerID: string, input: StopInput)
   }
 }
 
-/** Runs `act` on the nodes level by level, the deepest level first and the level's nodes at once; the results in that order. */
 function eachDeepestFirst<T>(nodes: ReadonlyArray<Below>, act: (node: Below) => Promise<T>) {
   const depths = [...new Set(nodes.map((node) => node.depth))].sort((a, b) => b - a)
   return depths.reduce(
@@ -102,10 +87,6 @@ function eachDeepestFirst<T>(nodes: ReadonlyArray<Below>, act: (node: Below) => 
   )
 }
 
-/**
- * Notes that a session was stopped, so the failure and silent-end notices stay quiet for it, and cancels its pending
- * messages; a subagent owes no report, so nothing is noted for it.
- */
 async function silence(ports: StopPorts, { entry, subagent }: Below, cancelled: string[]) {
   const { storage, now, log } = ports.courier
   const { sessionID } = entry
@@ -125,7 +106,7 @@ async function interrupt(ports: StopPorts, { entry, depth, subagent }: Below): P
   const one = { sessionID, title, depth, ...(subagent ? { subagent } : {}) }
   try {
     const { interrupted } = await session.interrupt({ sessionID })
-    // The event for it says so too; noted here as well, so the end is settled when this returns.
+    // the interrupted event may arrive after this returns
     if (interrupted && !subagent) await childStore(storage).settled(sessionID, "interrupted", now()).catch(() => undefined)
     return { ...one, outcome: interrupted ? "interrupted" : "idle" }
   } catch (error) {
@@ -136,7 +117,7 @@ async function interrupt(ports: StopPorts, { entry, depth, subagent }: Below): P
 
 type Messages = Awaited<ReturnType<StopPorts["courier"]["session"]["context"]>>
 
-/** The subagents running in the background, by their parent: those whose subagent call in it has already returned. */
+// a completed background subagent call names its child (api-notes)
 async function backgroundSubagents(ports: StopPorts, nodes: ReadonlyArray<Below>): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
   const parents = [...new Set(nodes.flatMap((node) => (node.subagent ? [node.entry.parentID] : [])))]
   const found = await Promise.all(
@@ -153,10 +134,7 @@ async function backgroundSubagents(ports: StopPorts, nodes: ReadonlyArray<Below>
   return new Map(found.filter(([, ids]) => ids.size))
 }
 
-/**
- * OpenCode tells a parent when its background subagent ends, interrupted too, and that wakes it: once each stopped one's
- * notice reached its parent, within `SETTLE_MS`, the parent is interrupted again, so nothing it started outlives the stop.
- */
+// a background subagent's end wakes its parent (api-notes)
 async function settle(ports: StopPorts, nodes: ReadonlyArray<Below>, results: ReadonlyArray<Stopped>, background: ReadonlyMap<string, ReadonlySet<string>>, since: number) {
   const ended = new Set(results.flatMap((one) => (one.subagent && one.outcome === "interrupted" ? [one.sessionID] : [])))
   await Promise.all(
@@ -170,7 +148,6 @@ async function settle(ports: StopPorts, nodes: ReadonlyArray<Below>, results: Re
   )
 }
 
-/** Whether OpenCode's notice of each subagent's end has reached the parent since `since`, looked for until `SETTLE_MS` has passed. */
 async function told(ports: StopPorts, parentID: string, ids: ReadonlySet<string>, since: number): Promise<boolean> {
   const messages = await ports.courier.session.context({ sessionID: parentID }).catch((): Messages => [])
   const noticed = new Set(
@@ -182,7 +159,6 @@ async function told(ports: StopPorts, parentID: string, ids: ReadonlySet<string>
   return told(ports, parentID, ids, since)
 }
 
-/** Tells the target's parent, which is below the caller, that it was stopped; undefined when that could not be done. */
 async function tell(ports: StopPorts, callerID: string, target: Below["entry"]) {
   const { session, log } = ports.courier
   try {
@@ -200,10 +176,8 @@ async function tell(ports: StopPorts, callerID: string, target: Below["entry"]) 
   }
 }
 
-/** Removes the isolated sessions' worktrees, deepest first, through courier_cleanup's checks; a failure is reported, not thrown. */
 async function removeWorktrees(ports: StopPorts, nodes: ReadonlyArray<Below>) {
   type Removed = NonNullable<StopResult["cleanup"]>[number]
-  // One at a time: git locks the repository's worktree list while it removes one.
   const removeNext = async (queue: ReadonlyArray<Below>, done: Removed[]): Promise<Removed[]> => {
     const [next, ...rest] = queue
     if (!next) return done

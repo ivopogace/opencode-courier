@@ -1,5 +1,4 @@
-// Builds the `tui` entrypoint to dist/tui.js: Solid's JSX compiled for OpenTUI, since the host compiles none
-// under node_modules, and every package left external, since the host provides them (docs/maintainers/plugin-api-notes.md).
+// the host compiles no JSX in node_modules and provides packages (api-notes)
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
 
 const result = await Bun.build({

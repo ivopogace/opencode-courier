@@ -34,7 +34,6 @@ test("one line on another OpenCode, naming the plugin, the pin, the running vers
       "https://github.com/ivopogace/opencode-courier/blob/main/docs/reference.md#the-opencode-version",
   )
   expect(notice).not.toContain("\n")
-  // An older server too: the check is for equality, not order.
   expect(versionNotice({ plugin: "0.2.0", opencode: "2.0.22" }, { version: "2.0.21", channel: "latest" })).toContain("this server is 2.0.21")
 })
 

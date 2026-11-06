@@ -7,10 +7,6 @@ import { childStore } from "./store.js"
 import { childrenRefusal, depthRefusal, totalRefusal } from "./text.js"
 import { waitsInInbox } from "./wake.js"
 
-/**
- * Whether a spawned session counts against the limits: it runs (its turn not failed or interrupted since its last prompt), owes
- * its parent a report, or has a courier message waiting in its inbox that it is to be woken for. One OpenCode no longer knows does not.
- */
 async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: string) {
   const [time, report] = await Promise.all([
     ports.session.get({ sessionID }).then(
@@ -20,16 +16,11 @@ async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: s
     reportOf(childStore(ports.storage), sessionID).catch(() => undefined),
   ])
   if (time === null) return false
-  // One whose first prompt failed never ran, and has no idle time to tell so.
   const running = time !== undefined && !report?.ended && (await runs(ports.session, sessionID, time))
-  // A waiting message is in no transcript until delivered, so `runs` misses it; a stalled one, which nothing wakes it for, is not counted.
+  // a waiting inbox item is in no transcript until delivered (api-notes)
   return running || (report?.owes ?? false) || (await waitsInInbox(ports, sessionID, { stalled: false }).catch(() => true))
 }
 
-/**
- * Checks the limits for a spawn from `parentID`, then holds its place in `gate` until `release`;
- * throws a refusal naming the limit. Checks run one at a time, so spawns made together count each other.
- */
 export async function admit(ports: LimitPorts, parentID: string) {
   const gate = ports.gate
   const checked = gate.turn.then(() => check(ports, parentID))
@@ -51,12 +42,10 @@ async function check(ports: LimitPorts, parentID: string) {
   const chains = new Map(entries.map((entry) => [entry.sessionID, lineageBy(parents, entry.sessionID)]))
   const tree = entries.filter((entry) => chains.get(entry.sessionID)!.at(-1)?.parentID === top)
   const counting = await Promise.all(tree.map((entry) => live(ports, entry.sessionID)))
-  // A session waiting on a live descendant is live too: the brief tells it to end its turn meanwhile.
   const active = new Set(
     tree.filter((_, i) => counting[i]).flatMap((entry) => [entry.sessionID, ...chains.get(entry.sessionID)!.map((above) => above.parentID)]),
   )
   const counted = tree.filter((entry) => active.has(entry.sessionID))
-  // A spawn whose child is on the roster already is counted there, if it is live, not by its reservation.
   const recorded = new Set(tree.map((entry) => entry.sessionID))
   const pending = [...ports.gate.reserved].filter((held) => held.top === top && !(held.sessionID && recorded.has(held.sessionID)))
   const mine = counted.filter((entry) => entry.parentID === parentID).length + pending.filter((held) => held.parentID === parentID).length

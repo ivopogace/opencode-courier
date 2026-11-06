@@ -1,4 +1,3 @@
-// The TUI part against a fake TUI context, rendered headless by OpenTUI's test renderer.
 import { afterEach, describe, expect, jest, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin/tui"
 import type { SlotClaim } from "@opencode/plugin/tui/context"
@@ -13,20 +12,14 @@ import { MEMORY_USAGE } from "../src/memory/tui.js"
 import tui from "../src/tui.js"
 import hostNotifications from "./host-notifications.js"
 
-/** The fake theme's success background, a row's flash. */
 const FLASH = RGBA.fromInts(0, 200, 0)
 
-/** The fake theme's `background.raised.base`, a hovered row's. */
 const HOVER = RGBA.fromInts(40, 40, 40)
 
 const empty: Summary = { running: 0, waiting: 0, idle: 0, groups: [] }
 
 type Listener = (event: { type: string; data?: unknown; details: { type: string; data?: unknown } }) => void
 
-/**
- * A fake TUI context whose RPC answers `answer` for each session's summary and `tree` for its tree, keeping what it is
- * asked and shown; its route and panel are signals, and a route to another session closes the panel, as the host's do.
- */
 function fakeContext(
   answer: (sessionID: string) => Promise<Summary>,
   { location, sessions = {} }: { location?: { directory: string }; sessions?: Record<string, { directory?: string; title?: string }> } = {
@@ -161,7 +154,6 @@ function fakeContext(
     for (const listener of typed.get(type) ?? []) listener({ type, data, details: { type } })
   }
   const claim = (path: string) => state.claims.find((one) => one.append === path)
-  /** The command of the layers registered so far bound to `bind`, or with the id `bind`. */
   const command = (bind: string) =>
     state.layers
       .flatMap((layer) => layer().commands ?? [])
@@ -174,7 +166,6 @@ afterEach(() => {
   for (const app of renderers.splice(0)) app.renderer.destroy()
 })
 
-/** Renders the claimed footer slot for the session `sessionID()` gives, `width` columns wide (80 by default), in a row laid out like OpenCode's footer. */
 async function renderFooter(claim: SlotClaim | undefined, sessionID: () => string | undefined, width = 80) {
   expect(claim?.append).toBe("prompt.footer.status")
   const render = claim!.render as (input: unknown) => any
@@ -315,7 +306,6 @@ describe("the footer status entry", () => {
     await app.waitForFrame((frame) => frame.includes("courier 2 idle"))
     expect(fake.calls).toHaveLength(2)
 
-    // Archiving stamps a session's times, which an archived idle one no longer reads as running by.
     fake.emit("session.archived")
     await settle()
     await app.waitForFrame((frame) => frame.includes("courier 3 idle"))
@@ -345,7 +335,6 @@ describe("the footer status entry", () => {
   test("the TUI part's cleanup stops listening and gives the slots back", async () => {
     const fake = fakeContext(async () => empty)
     const cleanup = await tui.setup(fake.context)
-    // The footer entry's, the panel's and the asks inbox's, and the attention's.
     expect(fake.listeners.size).toBe(3)
     expect(fake.typed.get("session.inbox.enqueued")?.size).toBe(1)
 
@@ -358,7 +347,6 @@ describe("the footer status entry", () => {
 
 const NOW = Date.now()
 
-/** A row of the tree panel: an idle child of ses_parent that owes its report, unless `fields` say otherwise. */
 const row = (sessionID: string, fields: Partial<Row> = {}): Row => ({
   sessionID,
   parentID: "ses_parent",
@@ -374,7 +362,6 @@ const row = (sessionID: string, fields: Partial<Row> = {}): Row => ({
   ...fields,
 })
 
-/** A theme colour per feedback token, distinct, as the fake context's and the marks' tests'. */
 const THEME = {
   warning: { base: "#ffaa00" },
   error: { base: "#ff0000" },
@@ -420,7 +407,6 @@ describe("the tree panel's lines", () => {
     expect(parts(rows, "ses_parent")).toEqual({ reported: 1, started: 3 })
     expect(parts(rows, "ses_c")).toEqual({ reported: 1, started: 1 })
     expect(parts(rows, "ses_d")).toEqual({ reported: 0, started: 0 })
-    // OpenCode's subagents owe no report, so the bar leaves them out (#438).
     expect(parts([...rows, row("ses_sub", { subagent: true, report: undefined })], "ses_parent")).toEqual({ reported: 1, started: 3 })
   })
 
@@ -479,16 +465,13 @@ describe("the tree panel's lines", () => {
     expect(detailLines(rows[0]!, rows, NOW)).toEqual(["[██████████] 1/1 reported"])
     expect(detailLines(rows[1]!, rows, NOW)).toEqual(["ran 2m 00s · no tool call yet · $0.01"])
     expect(detailLines(rows[2]!, rows, NOW)).toEqual(["asks permission: shell echo courier-asks", "asks: Which greeting?", "shows a form: Web Search"])
-    // A stalled session says since when a message waits, under its bar if it is an orchestrator.
     expect(detailLines(row("ses_mid", { state: "stalled", stalled: NOW - 65_000 }), rows, NOW)).toEqual([
       "[██████████] 1/1 reported",
       "a message waits in its inbox since 1m 05s, woken again in vain",
     ])
-    // What it waits on the person for comes first: that is what the person can act on.
     expect(detailLines(row("ses_ask", { state: "waiting", stalled: NOW - 65_000, waits: [{ type: "form", title: "Web Search" }] }), rows, NOW)).toEqual([
       "shows a form: Web Search",
     ])
-    // A session OpenCode no longer knows has no activity to show.
     expect(detailLines(row("ses_gone", { state: "gone", idle: undefined, cost: undefined }), rows, NOW)).toEqual([])
   })
 
@@ -510,7 +493,6 @@ describe("the tree panel's lines", () => {
   })
 })
 
-/** A panel's input, as the host gives the `session.panel` slot, for the panel opened in `sessionID`. */
 function panelInput(sessionID = "ses_parent", name = PANEL, { presentation = "panel", focused = true }: { presentation?: "panel" | "fullscreen"; focused?: boolean } = {}) {
   const input = { closed: 0, fullscreen: 0 }
   return {
@@ -528,7 +510,6 @@ function panelInput(sessionID = "ses_parent", name = PANEL, { presentation = "pa
   }
 }
 
-/** Renders the claimed panel slot, 100 columns by 24 rows unless `height` and `width` say otherwise, on `under` as the host's panel background. */
 async function renderPanel(claim: SlotClaim | undefined, value: ReturnType<typeof panelInput>["value"], height = 24, width = 100, under?: RGBA) {
   expect(claim?.append).toBe("session.panel")
   const render = claim!.render as (input: unknown) => any
@@ -537,7 +518,6 @@ async function renderPanel(claim: SlotClaim | undefined, value: ReturnType<typeo
   return app
 }
 
-/** A tree of two children of ses_parent in group pair: one reported, one waits on a permission request. */
 const pair = (reported: number): Tree => ({
   rows: [
     row("ses_one", {
@@ -575,7 +555,6 @@ describe("guides", () => {
       ses_b: ["└ ", "  │ "],
       ses_b1: ["  └ ", "      "],
     })
-    // Without the top row, the sessions under the panel's session are the roots, with no branch of their own.
     expect(guides(tree.slice(1), 1).get("ses_a1")).toEqual({ row: "├ ", detail: "│   " })
     expect(guides(tree.slice(1), 1).get("ses_a")).toEqual({ row: "", detail: "│ " })
   })
@@ -603,7 +582,6 @@ describe("the tree panel", () => {
     fake.emit("session.tool.success")
     fake.emit("session.tool.called")
     await settle()
-    // A burst is asked once, a second after its first event, as each ask reads every row's messages.
     expect(fake.calls).toHaveLength(asked)
     await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS - SETTLE_MS))
     await app.waitForFrame((frame) => frame.includes("2/2 reported"))
@@ -754,7 +732,6 @@ describe("the tree panel", () => {
     fake.command("f")!.run()
     fake.command("q")!.run()
     expect(input).toEqual({ closed: 1, fullscreen: 1 })
-    // Its keys are the panel's only while it has the keyboard.
     expect((fake.state.layers.at(-1)!() as { enabled?: () => boolean }).enabled?.()).toBe(true)
   })
 
@@ -790,7 +767,6 @@ describe("the tree panel", () => {
     fake.command("r")!.run()
     await app.waitForFrame((frame) => !frame.includes("Bravo"))
     expect(app.captureCharFrame()).toContain("▸   Charlie")
-    // The selection now belongs to Charlie, so a row added above it does not move it.
     rows = [row("ses_z", { title: "Zulu" }), ...rows]
     fake.command("r")!.run()
     await app.waitForFrame((frame) => frame.includes("Zulu"))
@@ -892,7 +868,6 @@ describe("the tree panel", () => {
   })
 })
 
-/** Where `text` first shows in the app's frame: its column and line. */
 function cellOf(app: Awaited<ReturnType<typeof testRender>>, text: string) {
   const lines = app.captureCharFrame().split("\n")
   const y = lines.findIndex((line) => line.includes(text))
@@ -900,7 +875,6 @@ function cellOf(app: Awaited<ReturnType<typeof testRender>>, text: string) {
   return { x: lines[y]!.indexOf(text), y }
 }
 
-/** The background of the cell where `text` starts, as integers. */
 function backgroundOf(app: Awaited<ReturnType<typeof testRender>>, text: string) {
   for (const line of app.captureSpans().lines) {
     const span = line.spans.find((one) => one.text.includes(text))
@@ -910,16 +884,13 @@ function backgroundOf(app: Awaited<ReturnType<typeof testRender>>, text: string)
 }
 
 describe("the tree panel's mouse (#250)", () => {
-  /** Opens the panel on `pair(1)`, focused unless `focused` is false, and waits for its rows. */
   async function opened(focused = true) {
     const fake = fakeContext(async () => empty)
     fake.state.tree = async () => pair(1)
     await tui.setup(fake.context)
     const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_parent", PANEL, { focused }).value)
     await app.waitForFrame((frame) => frame.includes("asks permission"))
-    // The header's second line shows once the panel's size is known, which moves the rows down a line.
     await app.waitForFrame((frame) => frame.split("\n")[1]!.includes("1 waiting on you · 1 idle"))
-    /** Moves the pointer to where `text` starts, `down` lines below it, and draws what follows. */
     const moveTo = async (text: string, down = 0) => {
       const at = cellOf(app, text)
       await app.mockMouse.moveTo(at.x, at.y + down)
@@ -940,7 +911,6 @@ describe("the tree panel's mouse (#250)", () => {
     await moveTo("CHILD-ASKS")
     expect(backgroundOf(app, "CHILD-ASKS")).toEqual(HOVER.toInts())
     expect(backgroundOf(app, "asks permission")).toEqual(HOVER.toInts())
-    // The detail line is the same row: the hover stays on it.
     await moveTo("asks permission")
     expect(backgroundOf(app, "CHILD-ASKS")).toEqual(HOVER.toInts())
     await moveTo("courier tree")
@@ -967,7 +937,6 @@ describe("the tree panel's mouse (#250)", () => {
   })
 
   test("the hover survives a read of the tree, which draws its rows anew, and leaves with its row", async () => {
-    // Unfocused, so the selection, which the returning row takes, has no colour to hide a hover.
     const { fake, app, moveTo } = await opened(false)
     let tree = pair(1)
     fake.state.tree = async () => tree
@@ -976,7 +945,6 @@ describe("the tree panel's mouse (#250)", () => {
     await settle()
     await app.renderOnce()
     expect(backgroundOf(app, "CHILD-ASKS")).toEqual(HOVER.toInts())
-    // Its row gone, nothing is under the pointer, and the hover goes: the row back, away from the pointer, is not hovered.
     const [first, second] = tree.rows
     tree = { rows: [first!] }
     fake.command("r")!.run()
@@ -1023,7 +991,6 @@ describe("the tree panel's mouse (#250)", () => {
 })
 
 describe("the tree panel following navigation", () => {
-  /** A context whose panel was opened with /courier tree in ses_parent, over `trees`, and drawn as `fields` say. */
   async function opened(trees: Record<string, Tree>, fields: Parameters<typeof panelInput>[2] = {}) {
     const fake = fakeContext(async () => empty)
     fake.state.tree = async (sessionID) => trees[sessionID] ?? { rows: [] }
@@ -1070,13 +1037,11 @@ describe("the tree panel following navigation", () => {
 
     const asked = trees(fake).length
     const app = await renderPanel(fake.claim("session.panel"), panelInput("ses_two").value)
-    // The tree last read shows at once, then the root's is asked again, not the child's.
     await app.renderOnce()
     expect(app.captureCharFrame()).toContain("▸ ● CHILD-ASKS (on screen)  waiting on you")
     await settle()
     expect(trees(fake).slice(asked)).toEqual(["ses_parent"])
     expect(app.captureCharFrame()).toContain("courier tree  [█████░░░░░] 1/2 reported")
-    // The panel had the keyboard, so it keeps it.
     expect(fake.state.dispatched).toEqual([])
 
     fake.state.route = { type: "session", sessionID: "ses_parent" }
@@ -1124,7 +1089,6 @@ describe("the tree panel following navigation", () => {
     await settle()
     expect(fake.state.opened).toHaveLength(2)
     expect(fake.context.ui.panel.current()).toBeUndefined()
-    // Hidden, not closed: back in a session with a tree, it shows again.
     fake.state.route = { type: "session", sessionID: "ses_parent" }
     await settle()
     expect(fake.state.opened).toHaveLength(3)
@@ -1142,7 +1106,6 @@ describe("the tree panel following navigation", () => {
     await new Promise((resolve) => setTimeout(resolve, PANEL_SETTLE_MS + 100))
     expect(fake.state.opened).toHaveLength(2)
     expect(fake.context.ui.panel.current()).toEqual({ name: PANEL, sessionID: "ses_lonely" })
-    // It opened without the person moving, so the prompt keeps the keyboard.
     await renderPanel(fake.claim("session.panel"), panelInput("ses_lonely").value)
     await settle()
     expect(fake.state.dispatched).toEqual(["pane.focus.left"])
@@ -1236,7 +1199,6 @@ describe("the /courier command", () => {
     const fake = fakeContext(async () => empty)
     await tui.setup(fake.context)
     await fake.command("courier.command")!.run("frobnicate")
-    // With the memory view's verb, which src/tui.tsx hands the command, in the usage.
     expect(fake.state.toasts.at(-1)).toMatchObject({ message: `${USAGE}; ${MEMORY_USAGE}`, variant: "warning" })
   })
 
@@ -1251,7 +1213,6 @@ describe("the /courier command", () => {
     expect(ran).toEqual(["memory"])
     await command.run("remember")
     expect(fake.state.toasts.at(-1)).toMatchObject({ message: `${USAGE}; /courier memory lists the records`, variant: "warning" })
-    // The verbs are the command's own, not an object's: a prototype's name runs nothing.
     await command.run("constructor")
     expect(ran).toEqual(["memory"])
   })
@@ -1336,7 +1297,6 @@ describe("the footer status entry's width", () => {
 
       const frame = await app.waitForFrame((one) => one.includes("waiting on you"))
       const shown = frame.split("\n")[0]!
-      // Every part is whole: a group reads "name n/m" and the count reads "+N groups".
       for (const word of shown.matchAll(/group (\S+)( (\S+))?/g)) expect(word[3]).toMatch(/^\d+\/\d+$/)
       expect(shown).not.toMatch(/ [·+]\s{2,}/)
       if (width === 120) expect(shown).toContain("group tests 1/3 · group docs 0/2 · group api 2/2")
@@ -1450,7 +1410,6 @@ test("a long title keeps the row's status in view, and a line break stays on the
   expect(frame).not.toMatch(/\n line two/)
 })
 
-/** Counts the panel's frame timers, the intervals of `FRAME_MS` set and not cleared, while fake timers run. */
 function frameTimers() {
   const live = new Set<unknown>()
   const slow = new Set<unknown>()
@@ -1469,7 +1428,6 @@ function frameTimers() {
   }) as typeof clearInterval
   return {
     count: () => live.size,
-    /** The timer at Digby's own cadence, which runs while only he moves. */
     slow: () => slow.size,
     restore: () => {
       globalThis.setInterval = set
@@ -1478,14 +1436,9 @@ function frameTimers() {
   }
 }
 
-/** How many turns of immediates `settle` runs before it gives up on what it awaits. */
 const SETTLE_TURNS = 100
 
-/**
- * Lets the test run the pending `setImmediate` callbacks itself, each still once: under fake timers no real timer is left
- * to wake Bun's event loop, which can then sleep on a pending immediate until the test times out (#344).
- */
-function immediates() {
+function immediatesRunUnderFakeTimers() {
   const pending = new Map<ReturnType<typeof setImmediate>, () => void>()
   const set = globalThis.setImmediate
   const clear = globalThis.clearImmediate
@@ -1501,7 +1454,6 @@ function immediates() {
     clear(handle)
   }) as typeof clearImmediate
   return {
-    /** Runs the callbacks pending now, in the order they were set, as a turn of the event loop does. */
     turn: () => {
       for (const [handle, run] of [...pending])
         if (pending.delete(handle)) {
@@ -1518,7 +1470,7 @@ function immediates() {
 
 describe("the tree panel's motion (#224)", () => {
   let timers: ReturnType<typeof frameTimers> | undefined
-  let turns: ReturnType<typeof immediates> | undefined
+  let turns: ReturnType<typeof immediatesRunUnderFakeTimers> | undefined
   afterEach(() => {
     timers?.restore()
     timers = undefined
@@ -1527,7 +1479,6 @@ describe("the tree panel's motion (#224)", () => {
     jest.useRealTimers()
   })
 
-  /** Awaits `work`, running the immediates it waits on, and fails rather than hangs when they never finish it. */
   async function settle<T>(work: Promise<T>): Promise<T> {
     let done = false
     work.then(
@@ -1542,12 +1493,11 @@ describe("the tree panel's motion (#224)", () => {
     }
   }
 
-  /** Opens the panel, unfocused so no selection colours a row, on the trees `trees()` gives, with fake timers and `options`. */
   async function motion(trees: () => Tree, options: Record<string, unknown> = {}, height = 24, width = 100, under?: RGBA) {
     jest.useFakeTimers()
     timers = frameTimers()
     turns?.restore()
-    turns = immediates()
+    turns = immediatesRunUnderFakeTimers()
     const fake = fakeContext(async () => empty)
     Object.assign(fake.context, { options })
     fake.state.tree = async () => trees()
@@ -1558,11 +1508,10 @@ describe("the tree panel's motion (#224)", () => {
     const frame = async () => {
       for (let i = 0; i < 20; i++) await Promise.resolve()
       await settle(app.renderOnce())
-      // The renderer is gone only once a timeout ended the test: stop its body here rather than draw on a freed buffer.
+      // a timed-out test destroys the OpenTUI renderer; its buffer is freed
       if (app.renderer.isDestroyed) await new Promise(() => {})
       return app.captureCharFrame()
     }
-    /** Moves the fake clock by `ms` and draws what follows. */
     const advance = async (ms: number) => {
       jest.advanceTimersByTime(ms)
       return frame()
@@ -1571,7 +1520,6 @@ describe("the tree panel's motion (#224)", () => {
       fake.command("r").run()
       return frame()
     }
-    /** The background of the cell where `text` starts, as integers. */
     const background = (text: string) => {
       for (const line of app.captureSpans().lines) {
         const span = line.spans.find((one) => one.text.includes(text))
@@ -1581,7 +1529,6 @@ describe("the tree panel's motion (#224)", () => {
     }
     await frame()
     await frame()
-    /** The header glyph's two lines, as drawn, or undefined with none. */
     const glyphShown = async (): Promise<string[] | undefined> => {
       const lines = (await frame()).split("\n")
       return lines[0]!.includes("courier tree") && lines[0]!.indexOf("courier tree") > 1 ? [lines[0]!.slice(1, 9), lines[1]!.slice(1, 9)] : undefined
@@ -1652,7 +1599,6 @@ describe("the tree panel's motion (#224)", () => {
     await panel.advance(FLASH_MS / 2 + FRAME_MS)
     expect(panel.background("ses_one")).toEqual(rest)
     expect(timers!.count()).toBe(0)
-    // Read again still reported, it does not flash again.
     await panel.refresh()
     expect(panel.background("ses_one")).toEqual(rest)
     expect(timers!.count()).toBe(0)
@@ -1685,7 +1631,6 @@ describe("the tree panel's motion (#224)", () => {
     expect(step).not.toContain("[█████░░░░░]")
     expect(step).not.toContain("[██████████]")
     expect(await panel.advance(BAR_MS)).toContain("[██████████] 2/2 reported")
-    // The flash of the row that reported holds a while longer.
     await panel.advance(FLASH_MS)
     expect(timers!.count()).toBe(0)
   })
@@ -1722,10 +1667,8 @@ describe("the tree panel's motion (#224)", () => {
     expect(timers!.count()).toBe(0)
   })
 
-  /** The glyph's two lines of cells as the panel draws them, for `state` at mascot frame `frame`. */
   const drawn = (state: MascotState, frame?: number) => cells(glyph(state, frame)).map((line) => line.map((one) => one.char).join(""))
 
-  /** Each glyph the panel shows over `steps` of Digby's frames. */
   const seen = async (panel: Awaited<ReturnType<typeof motion>>, steps: number) => {
     const shown: string[][] = []
     for (let i = 0; i < steps; i++) {
@@ -1742,7 +1685,6 @@ describe("the tree panel's motion (#224)", () => {
     expect(await seen(panel, 4)).toContainEqual(drawn("idle", 2))
     expect(timers!.count()).toBe(0)
     expect(timers!.slow()).toBe(1)
-    // Running's cycle is long and his blink falls where it falls: over one cycle, he is seen still and seen digging.
     state = "running"
     await panel.refresh()
     const running = await seen(panel, GLYPH.running.length)
@@ -1784,7 +1726,6 @@ describe("the tree panel's motion (#224)", () => {
     expect(GLYPH.spawn.map((_, frame) => drawn("spawn", frame))).toContainEqual((await panel.glyph())!)
     await panel.advance(FLASH_MS + FRAME_MS)
     expect(GLYPH.idle.map((_, frame) => drawn("idle", frame)).concat([drawn("idle", 2)])).toContainEqual((await panel.glyph())!)
-    // Read again with the same sessions, nothing new arrived.
     await panel.refresh()
     expect(GLYPH.spawn.map((_, frame) => drawn("spawn", frame))).not.toContainEqual((await panel.glyph())!)
   })
@@ -1823,17 +1764,14 @@ describe("the tree panel's motion (#224)", () => {
     expect(timers!.count() + timers!.slow()).toBe(0)
   })
 
-  /** The 16×16's lines as the panel draws them, for `state` at mascot frame `frame`. */
   const drawnArt = (state: MascotState, frame?: number) => art(state, frame).map((line) => line.map((one) => one.char).join(""))
 
-  /** The 16×16 the panel shows, its eight lines ending on the ground's full one, or undefined with none. */
   const artIn = (frame: string) => {
     const lines = frame.split("\n").map((line) => line.slice(1, 17))
     const ground = lines.lastIndexOf("█".repeat(16))
     return ground < 7 ? undefined : lines.slice(ground - 7, ground + 1)
   }
 
-  /** The frame counts of each state's 16×16, idle's breathing and drifting `z` taking four. */
   const artFrames = (state: MascotState) => (state === "idle" ? 4 : ART[state].length)
 
   test("the empty panel shows the 16×16 idle Digby where there is room, breathing, and no header glyph (#226, #245)", async () => {
@@ -1871,7 +1809,6 @@ describe("the tree panel's motion (#224)", () => {
   })
 
   test("the 16×16 shows below the rows from BELOW_ROWS free rows, the header's glyph below that (#245)", async () => {
-    // Two header lines, the footer, and one row with its detail line leave the list `height - 5` rows free.
     const free = (height: number) => height - 5
     const at = async (height: number) => {
       timers?.restore()
@@ -1915,13 +1852,10 @@ describe("the tree panel's motion (#224)", () => {
     expect(timers!.count() + timers!.slow()).toBe(0)
   })
 
-  /** The tree's states Digby shows when no report or spawn holds his pose. */
   const STEADY = ["idle", "running", "waiting", "stalled", "gone"] as const
 
-  /** The host's background under the panel, as it paints a split one. */
   const UNDER = RGBA.fromInts(10, 20, 30)
 
-  /** A panel on `UNDER` whose tree `go`, `report` and `spawn` move, and `holds`, which reads Digby back cell by cell, chars and backgrounds. */
   async function poses(where: "header" | "below") {
     let state: Row["state"] = "idle"
     let reported = false
@@ -1954,9 +1888,7 @@ describe("the tree panel's motion (#224)", () => {
           .map((line) => line.spans.flatMap((span) => Array.from({ length: span.width }, () => span.bg.toInts())).slice(1, 1 + width)),
       }
     }
-    /** Digby shows one of `pose`'s frames, each cell's background its own token's or the panel's, now and for `steps` frames on. */
     const holds = async (pose: MascotState, steps = 3) => {
-      // Every frame until the cycles of 2, 3 and 4 frames and the blink line up again.
       const each = Array.from({ length: BLINK_EVERY * 12 }, (_, frame) => JSON.stringify(expected(where === "header" ? cells(glyph(pose, frame)) : art(pose, frame))))
       const frames = [...new Set(each)].map((one) => JSON.parse(one))
       expect(frames).toContainEqual(await shown())
@@ -2007,7 +1939,6 @@ describe("the tree panel's motion (#224)", () => {
         await digby.settle()
         await digby.holds(under)
       }
-      // A spawn during a report shows once the report ends; a report during a spawn shows at once.
       await digby.go("idle")
       await digby.report()
       await digby.advance(FRAME_MS * MASCOT_EVERY * 2)
@@ -2064,14 +1995,12 @@ describe("Digby, the tree panel's mascot (#226)", () => {
     expect(glyph("idle")[2]).toBe("..gggg..")
   })
 
-  /** Where a muted pixel touches a mound pixel in `pixels`, as `[row, column]`s. */
   const touching = (pixels: ReadonlyArray<string>) =>
     pixels.flatMap((line, row) =>
       [...line].flatMap((pixel, column) =>
         pixel === "m" && [[0, 1], [0, -1], [1, 0], [-1, 0]].some(([down, right]) => pixels[row + down!]?.[column + right!] === "g") ? [[row, column]] : [],
       ),
     )
-  // The cells' pixels back, two rows to a line; a character such as idle's `z` fills both with its colour.
   const unfold = (lines: ReadonlyArray<ReadonlyArray<{ char: string; fg?: string; bg?: string }>>) =>
     lines.flatMap((line) => {
       const halves = line.map(({ char, fg, bg }) =>
@@ -2081,7 +2010,6 @@ describe("Digby, the tree panel's mascot (#226)", () => {
     })
 
   test("no muted pixel touches the mound, in the 8×4 or the 16×16 (#248, #251)", () => {
-    // Frames 0 to 43 cover every frame of every state with the blink (11) and the breathing (4).
     const frames = Array.from({ length: 44 }, (_, frame) => frame)
     for (const state of Object.keys(GLYPH) as MascotState[])
       for (const frame of [undefined, ...frames]) {
@@ -2099,11 +2027,9 @@ describe("Digby, the tree panel's mascot (#226)", () => {
       expect(frame(true).join("")).toContain("k")
       expect(frame(false).join("")).not.toContain("k")
     }
-    // His eyes: two pixels, three apart on one row, straight ahead, then left, then right, over the still frames.
     const eyes = ART.running.slice(0, DIG_EVERY).map((frame) => frame(true).find((row) => row.includes("k"))!).map((row) => [...row].flatMap((pixel, column) => (pixel === "k" ? [column] : [])))
     expect(new Set(eyes.map((pair) => pair[1]! - pair[0]!))).toEqual(new Set([3]))
     expect(new Set(eyes.map((pair) => pair[0]))).toEqual(new Set([5, 6, 7]))
-    // The dig: a clod is in the air, above the mound's rim, in every frame of the cycle and in none before it.
     for (const frame of ART.running.slice(DIG_EVERY)) expect(frame(true).slice(0, 10).join("")).toContain("m")
     for (const frame of ART.running.slice(0, DIG_EVERY)) expect(frame(true).join("")).not.toContain("m")
     expect(GLYPH.running.slice(DIG_EVERY).some((pixels) => pixels[0]!.includes("m"))).toBe(true)
@@ -2173,7 +2099,6 @@ describe("the tree panel's motion, its pieces", () => {
       expect(flashes.reported()).toBe(true)
       expect(flashes.strength("ses_a")).toBe(1)
       setBreathing(false)
-      // The hold ends on the first frame at or past FLASH_MS.
       jest.advanceTimersByTime((Math.ceil(FLASH_MS / FRAME_MS) - 1) * FRAME_MS)
       expect(flashes.reported()).toBe(true)
       jest.advanceTimersByTime(FRAME_MS)
@@ -2198,7 +2123,7 @@ describe("the tree panel's motion, its pieces", () => {
 
 describe("Digby's colours", () => {
   const hex = RGBA.fromHex
-  // The resolved `opencode` theme (see the PR): dark's accent is #fab283, light's is the v1 theme's #ec5b2b.
+  // OpenCode's resolved `opencode` theme: light's accent is the v1 #ec5b2b
   const themes = {
     dark: { base: "#0a0a0a", text: "#eeeeee", max: "#4c4c4c", selected: "#fab283" },
     light: { base: "#ffffff", text: "#1a1a1a", max: "#bebcb9", selected: "#ec5b2b" },
@@ -2219,7 +2144,7 @@ describe("Digby's colours", () => {
 
 describe("a hovered row's colour (#250)", () => {
   const hex = RGBA.fromHex
-  // The default `opencode` theme at v2.1.0 (packages/tui/src/theme/assets/v2/opencode.json), resolved with @opencode/theme.
+  // OpenCode's `opencode` theme at v2.1.0, resolved with @opencode/theme
   const themes = {
     dark: { base: "#0a0a0a", raised: "#141414", high: "#1e1e1e" },
     light: { base: "#ffffff", raised: "#fafafa", high: "#f5f5f5" },

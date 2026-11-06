@@ -12,7 +12,6 @@ import { childBrief, depthRefusal, childrenRefusal, ROLE_KEY, ROLE_PREFIX, roleP
 import { reportOf } from "../src/tree/report.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
 
-/** Whether a spawned session owes its parent a report, as `reportOf` reads it. */
 const owesReport = async (storage: Parameters<typeof childStore>[0], sessionID: string) => (await reportOf(childStore(storage), sessionID))?.owes
 
 function fakeStorage() {
@@ -31,7 +30,6 @@ function fakeStorage() {
 const RUNNING = { created: 1, updated: 5 }
 const FINISHED = { created: 1, updated: 5, idle: 5 }
 
-/** A host's keyed session instructions over `entries` (session id to key to value); each call is recorded in `calls`. */
 function fakeInstructions(entries: Map<string, Map<string, unknown>>, calls: string[]) {
   return {
     entry: {
@@ -51,13 +49,11 @@ function fakeInstructions(entries: Map<string, Map<string, unknown>>, calls: str
   }
 }
 
-/** The calls a spawn ends with: the parent's standing entry, read and put with its children `working`. */
 const standingCalls = (parentID: string, ...children: Array<[string, string]>) => [
   `list ${parentID}`,
   `put ${parentID} ${STANDING_KEY}: ${standingEntry(children.map(([sessionID, title]) => ({ sessionID, title, state: { kind: "working" } })))}`,
 ]
 
-/** Limit ports over a roster and the sessions' times, all running, by their transcripts too, unless `times` says otherwise; `turns` run on in theirs. */
 function limitPorts(limits = DEFAULT_LIMITS, times: Record<string, object> = {}, turns: ReadonlyArray<string> = []) {
   const storage = fakeStorage()
   const gate: SpawnGate = { reserved: new Set(), turn: Promise.resolve() }
@@ -75,7 +71,6 @@ function limitPorts(limits = DEFAULT_LIMITS, times: Record<string, object> = {},
   return { ports, storage, gate, child }
 }
 
-/** Records a chain root -> d1 -> d2 -> ... down to `depth`, returning the deepest session. */
 async function chainTo(child: (parentID: string, sessionID: string) => Promise<void>, depth: number) {
   let parent = "ses_root"
   for (let level = 1; level <= depth; level++) {
@@ -175,7 +170,6 @@ describe("endsIdle", () => {
     expect(endsIdle([{ type: "idle" }, { type: "compaction" }])).toBe(false)
   })
 
-  // #326: a declined permission or dismissed question interrupts the step and ends the turn with no `idle` message.
   test("on a step interrupted with nothing after it, as a decline ends a turn, but not a step that failed otherwise", () => {
     const declined = { type: "assistant", error: { type: "aborted" } }
     expect(endsIdle([{ type: "idle" }, { type: "user" }, declined])).toBe(true)
@@ -200,7 +194,6 @@ describe("runs", () => {
     expect(await runs(unread, "ses_a", { updated: 4, idle: 5 } as any)).toBe(false)
   })
 
-  // #326: what stamps `updated` after a turn's end, and what each leaves in the transcript (projector.ts, message-updater.ts, v2.1.0).
   const ended = [{ type: "user" }, { type: "assistant" }, { type: "idle" }]
   const atRest: Array<[string, Array<{ type: string; error?: { type: string } }>]> = [
     ["a rename, a metadata or permissions change", ended],
@@ -299,7 +292,6 @@ describe("runs", () => {
     expect(reads.filter((sessionID) => sessionID === "ses_idle")).toHaveLength(1)
   })
 
-  // An item enqueued at a stamp is not in the transcript until delivered, which stamps nothing until its first step starts.
   test("reads a rest answer again while its stamp is fresh, so a delivery after it is seen; a running one, or an older rest, is kept", async () => {
     let messages: { type: string }[] = [{ type: "idle" }]
     let reads = 0
@@ -321,7 +313,6 @@ describe("runs", () => {
     expect(reads).toBe(3)
   })
 
-  // A wake sent again under a waiting item's id delivers it with no new stamp, so a rest is read again within 30 s.
   test("keeps a rest answer 30 s from its read, then reads again; a running one until the next stamp", async () => {
     let messages: { type: string }[] = [{ type: "idle" }]
     let reads = 0
@@ -340,14 +331,12 @@ describe("runs", () => {
     expect(reads).toBe(2)
   })
 
-  // #400: since OpenCode 2.2.2 `time.busy` is when the latest execution started, stamped with `updated` left alone.
   describe("with the latest execution's start stamped (time.busy, OpenCode 2.2.2)", () => {
     const unread = session(new Error("not read"))
     const running = [...ended, { type: "user" }, { type: "assistant" }]
     const declined = [...ended, { type: "user" }, { type: "assistant", error: { type: "aborted" } }]
 
     test("at rest from the times alone, no transcript read, when it is not later than the last turn's end, whatever stamped updated since", async () => {
-      // A rename, an archive, a switch or a waiting inbox item: updated past idle, busy not.
       expect(await runs(unread, "ses_a", { updated: 9, idle: 5, busy: 3 } as any)).toBe(false)
       expect(await runs(unread, "ses_a", { updated: 9, idle: 5, busy: 5 } as any)).toBe(false)
       expect(await runs(unread, "ses_a", { updated: 9, idle: 5, busy: 3, archived: 9 } as any)).toBe(false)
@@ -365,7 +354,6 @@ describe("runs", () => {
     test("by the transcript when it is later: a plain decline leaves it so at rest, as it stamps no idle, and a turn runs on it", async () => {
       expect(await runs(session(declined), "ses_a", { updated: 9, idle: 5, busy: 7 } as any)).toBe(false)
       expect(await runs(session(running), "ses_a", { updated: 9, idle: 5, busy: 7 } as any)).toBe(true)
-      // An execution started with no step yet stamps busy alone: the transcript tells, where the times once said rest.
       expect(await runs(session([...ended, { type: "synthetic" }]), "ses_a", { updated: 5, idle: 5, busy: 7 } as any)).toBe(true)
       expect(await runs(session(ended), "ses_a", { updated: 5, idle: 5, busy: 7 } as any)).toBe(false)
     })
@@ -540,7 +528,6 @@ describe("admit", () => {
 })
 
 describe("admit, with children that owe a report", () => {
-  /** Three finished children of ses_root: ses_a reported, ses_b ended without reporting, ses_c is `c`. */
   async function owing(c: "failed" | "interrupted" | "silent") {
     const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 2, maxTotal: 2 }, {
       ses_a: FINISHED,
@@ -599,7 +586,7 @@ describe("admit, with children that owe a report", () => {
     expect((await admit(ports, "ses_root")).depth).toBe(1)
   })
 
-  // OpenCode's inbox item is in no transcript until delivered, so the wake store says that a follow-up owes it a turn.
+  // an inbox item is in no transcript until delivered (api-notes)
   test("but one that reported counts while a courier message sent with a wake waits in its inbox, and not once it is delivered", async () => {
     const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: { ...FINISHED, updated: 9 } })
     await child("ses_root", "ses_a")
@@ -612,7 +599,6 @@ describe("admit, with children that owe a report", () => {
     expect((await admit(ports, "ses_root")).depth).toBe(1)
   })
 
-  // #330: the enqueued event is handled after the send returns, so the spawn in the same step must not wait for it.
   test("and counts it as soon as courier_send returns, before OpenCode's enqueued event is handled (#330)", async () => {
     const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: { ...FINISHED, updated: 9 } })
     await child("ses_root", "ses_a")
@@ -702,7 +688,6 @@ describe("admit, with children that owe a report", () => {
 })
 
 describe("admit, with sessions waiting on their own children", () => {
-  /** A tree under ses_r: ses_a and ses_b, each with one child; `running` names the sessions whose turn runs. */
   async function waitingTree(limits: Partial<typeof DEFAULT_LIMITS>, running: string[]) {
     const storage = fakeStorage()
     const ports: LimitPorts = {
@@ -742,7 +727,6 @@ describe("admit, with sessions waiting on their own children", () => {
 })
 
 describe("spawn", () => {
-  /** Spawn ports; with `entries`, a host with keyed session instructions, each put recorded in `calls` and kept in `entries`. */
   function spawnPorts(limits = DEFAULT_LIMITS, entries?: Map<string, Map<string, unknown>>) {
     const { ports, storage, gate, child } = limitPorts(limits)
     const calls: string[] = []
@@ -878,12 +862,10 @@ describe("spawn", () => {
       childBrief("ses_root", "t", 1, limits),
       ...standingCalls("ses_root", ["ses_new1", "t"]),
     ])
-    // The root's entries go once; a lesson written since reaches it through courier_note, not a later spawn.
     calls.length = 0
     lessons = "opencode-courier lessons: two"
     await spawn(courier, "ses_root", { task: "u" })
     expect(calls.filter((call) => call.includes("lessons"))).toEqual(["put ses_new2 lessons: opencode-courier lessons: two"])
-    // A leaf gets none: it cannot split, and courier_recall is hidden from it.
     calls.length = 0
     await child("ses_root", "ses_a")
     await spawn(courier, "ses_a", { task: "v" })
@@ -942,7 +924,6 @@ describe("spawn", () => {
     await expect(spawn(courier, "ses_root", { task: "t" })).rejects.toThrow("session gone")
 
     expect(await owesReport(storage, "ses_new1")).toBe(false)
-    // OpenCode still knows it, and it never finished a turn: by its times alone it would run.
     expect((await admit(courier, "ses_root")).depth).toBe(1)
   })
 
@@ -959,7 +940,6 @@ describe("spawn", () => {
 describe("the context hook", () => {
   const tools = () => ({ courier_spawn: {}, courier_send: {}, read: {} })
 
-  /** Context ports; with `entries`, a host with keyed session instructions, each read recorded in `calls`. */
   function contextPorts(limits = DEFAULT_LIMITS, entries?: Map<string, Map<string, unknown>>) {
     const { storage, child } = limitPorts(limits)
     const logged: string[] = []
@@ -979,7 +959,7 @@ describe("the context hook", () => {
     return { ports, storage, child, shape, logged, calls }
   }
 
-  /** The role entry's block as OpenCode renders it at the tail of the instruction baseline. */
+  // OpenCode renders an entry as a <context> block ending the baseline
   const baseline = (depth: number) => `AGENTS.md says so.\n\n<context key="${ROLE_KEY}">\n${rolePart(depth, DEFAULT_LIMITS)}\n</context>`
 
   test("adds no part for a session whose role entry is listed, reading the entries once per session", async () => {

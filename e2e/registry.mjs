@@ -1,5 +1,3 @@
-// A stand-in npm registry for the e2e test: serves one package from a local tarball and redirects the
-// rest to the real registry. REGISTRY_TARBALL names the tarball, REGISTRY_MANIFEST its package.json.
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { createServer } from "node:http"
@@ -29,6 +27,8 @@ const packument = (host) => ({
   },
 })
 
+const REDIRECT_KEEPING_METHOD = 307
+
 createServer((req, res) => {
   const path = new URL(req.url, "http://registry").pathname
   if (path === `/${manifest.name}`) {
@@ -39,7 +39,6 @@ createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/octet-stream", "content-length": tarball.length })
     return res.end(tarball)
   }
-  // 307 keeps the method and body of anything other than a GET.
-  res.writeHead(307, { location: `${upstream}${req.url}` })
+  res.writeHead(REDIRECT_KEEPING_METHOD, { location: `${upstream}${req.url}` })
   res.end()
 }).listen(port, "127.0.0.1", () => console.log(`registry for ${manifest.name}@${manifest.version} on ${port}`))

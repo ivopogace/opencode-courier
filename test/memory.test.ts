@@ -1,7 +1,3 @@
-// The memory (#260): a record per tree, built from the roster, each session's info and messages and its report state,
-// kept current by the event module, read back and noted by courier_recall, bounded per project, off with one option;
-// and its lesson (#261, #269): the one line courier_note writes on it from the top or a sub-orchestrator, never a leaf,
-// refused over LESSON_MAX rather than clipped.
 import { describe, expect, spyOn, test } from "bun:test"
 import type { ToolEditor } from "../src/kernel/tool.js"
 import {
@@ -53,7 +49,6 @@ type Session = { created?: number; updated: number; idle?: number; archived?: nu
 
 const NOW = 1_700_000_000_000
 
-/** Ports over an in-memory store, with each session as given; one not given is gone. */
 function fakePorts(sessions: Record<string, Session>, windows: Array<{ providerID: string; id: string; context: number }> = []) {
   const store = new Map<string, unknown>()
   const logged: string[] = []
@@ -80,7 +75,6 @@ function fakePorts(sessions: Record<string, Session>, windows: Array<{ providerI
         const { created = NOW - 600_000, updated, idle, archived, cost = 0, title = `title ${sessionID}`, projectID = "proj_1", directory = "/repo", outcome } = known(sessionID)
         return { id: sessionID, title, cost, projectID, ...(outcome ? { outcome } : {}), location: { directory }, time: { created, updated, ...(idle !== undefined ? { idle } : {}), ...(archived !== undefined ? { archived } : {}) } }
       },
-      // OpenCode's children of a session: those given a `parentID`, its subagents (and native courier children) among them.
       list: async ({ parentID }: { parentID: string }) => ({
         data: await Promise.all(
           Object.entries(sessions)
@@ -122,7 +116,6 @@ const entry = (sessionID: string, parentID: string, more: Partial<RosterEntry> =
 })
 
 const text = (text: string) => ({ type: "assistant", id: "msg", time: { created: 1 }, content: [{ type: "text", text }] })
-/** A reply OpenCode has finished, which another session's turn end reads too. */
 const done = (line: string, created = 1) => ({ ...text(line), time: { created, completed: created + 1 } })
 const spawnCall = (status: "completed" | "error") => ({
   type: "assistant",
@@ -140,7 +133,6 @@ const usage = (input: number, model = { providerID: "mock", id: "small" }) => ({
 })
 const SMALL = { providerID: "mock", id: "small", context: 1_000 }
 
-/** The clock's date, as the listing shows it. */
 const DAY = new Date(NOW).toISOString().slice(0, 10)
 
 describe("readMemory", () => {
@@ -161,7 +153,6 @@ describe("splitLineOf", () => {
     expect(splitLineOf("- **split: no, because small; considered: docs**")).toBe("- **split: no, because small; considered: docs**")
   })
 
-  // #294: a stated line outranks a mention, once; only a stated line is never replaced.
   test("splitOf keeps a stated line, gives a mention up for the first stated line only, and takes either while none is recorded", () => {
     const mention = "I'll decide the split: after reading the code"
     expect([isStated("**split: 1 part: core**"), isStated(mention), isStated(NOT_STATED)]).toEqual([true, false, false])
@@ -175,7 +166,6 @@ describe("splitLineOf", () => {
   })
 })
 
-// #282: the stored line keeps its markdown; only the listing reads it as prose.
 describe("splitProse", () => {
   test("splitProse drops the block marks, the bold and italic asterisks, and a code or underscore span wrapping the whole line", () => {
     expect(splitProse("**split: 2 parts: core, docs**")).toBe("split: 2 parts: core, docs")
@@ -295,7 +285,6 @@ describe("revise", () => {
       { text: "split: 3 parts", at: 4, parts: 2 },
       { text: b, at: 5, parts: 2 },
     ])
-    // Replies read before an overlapping refresh wrote a later revision append nothing; newer ones after a compaction do.
     expect(revise({ split: a, revisions }, [line(a, 1)], 60, 2)).toEqual(revisions)
     expect(revise({ split: a, revisions }, [line(a, 1), line("split: 3 parts", 4)], 60, 2)).toEqual([...revisions, { text: "split: 3 parts", at: 4, parts: 2 }])
     expect(revise({ split: a, revisions }, [line("split: 3 parts", 4), line(b, 5)], 60, 2)).toEqual([
@@ -303,7 +292,6 @@ describe("revise", () => {
       { text: "split: 3 parts", at: 4, parts: 2 },
       { text: b, at: 5, parts: 2 },
     ])
-    // Dated by the refresh, the line recorded last is found by its words alone.
     expect(revise({ split: a, revisions: [{ text: b, at: 50, parts: 1 }] }, [line(a), line(b)], 60, 2)).toEqual([{ text: b, at: 50, parts: 1 }])
   })
 
@@ -416,9 +404,7 @@ describe("keep", () => {
     expect(kept.map((record) => record.sessionID)).toContain("ses_pinned")
     expect(kept.map((record) => record.sessionID)).toContain("ses_lesson")
     expect(dropped.map((record) => record.sessionID)).toEqual([`ses_${MAX_RECORDS - 1}`])
-    // A lesson does not keep a record past RETENTION_MS: that is what the pin is for.
     expect(keep([stored("ses_stale", NOW - RETENTION_MS - 1, { lesson })], NOW).dropped).toHaveLength(1)
-    // Stale records with a lesson take no slot from a live record without one.
     const stale = Array.from({ length: MAX_RECORDS }, (_, i) => stored(`ses_stale_${i}`, NOW - RETENTION_MS - 1 - i, { lesson }))
     expect(keep([...stale, stored("ses_live", NOW)], NOW).kept.map((record) => record.sessionID)).toEqual(["ses_live"])
   })
@@ -465,13 +451,11 @@ describe("the store", () => {
     expect(readRecord({ parts: [], movedAt: 7, lesson: "  Do the docs\nyourself " })).toMatchObject({ lesson: { text: "Do the docs yourself", at: 7 } })
     expect(readRecord({ parts: [], lesson: { text: "x", at: 5, depth: 0 } })?.lesson).toEqual({ text: "x", at: 5 })
     expect(readRecord({ parts: [], lesson: { text: "x", at: 5, depth: 1.5 } })?.lesson).toEqual({ text: "x", at: 5 })
-    // A hand-written lesson is clipped, as a refusal cannot reach a file; courier_note refuses one this long.
     expect(readRecord({ parts: [], lesson: { text: "y".repeat(LESSON_MAX + 1), at: 5 } })?.lesson?.text).toBe("y".repeat(LESSON_MAX))
     expect(readRecord({ parts: [], lesson: "   " })).not.toHaveProperty("lesson")
     expect(readRecord({ parts: [], lesson: { at: 5 } })).not.toHaveProperty("lesson")
     expect(readRecord({ parts: [], lesson: 7 })).not.toHaveProperty("lesson")
     expect(readRecord({ parts: [], recalled: { at: 5, calls: "two" } })).not.toHaveProperty("recalled")
-    // The split line's revisions: an entry without a text, a time or a count of parts is left out, and the newest MAX_REVISIONS kept.
     const revisions = [
       { text: " split: 2 parts: a, b ", at: 5, parts: 1 },
       { text: "", at: 6, parts: 1 },
@@ -523,13 +507,10 @@ describe("the store", () => {
     expect(await ports.storage.get(pinKey("proj_1", "ses_a"))).toEqual({ at: 30 })
     const read = await store.get("proj_1", "ses_a")
     expect(read).toMatchObject({ title: "tree ses_a", reads: { shown: 2, read: 1, at: 25 }, pinned: { at: 30 } })
-    // The record's fields keep their order, the reads and the pin before the parts.
     expect(Object.keys(read!)).toEqual(["startedAt", "movedAt", "title", "split", "finished", "reads", "pinned", "parts"])
     expect((await store.ofProject("proj_1")).map((record): unknown[] => [record.sessionID, record.reads, record.pinned])).toEqual([["ses_a", { shown: 2, read: 1, at: 25 }, { at: 30 }]])
-    // A refresh or a note writes the record it read, reads and pin included: neither reaches the storage.
     await store.put("proj_1", "ses_a", { ...read!, title: "written again" })
     expect(await store.get("proj_1", "ses_a")).toMatchObject({ title: "written again", reads: { shown: 2, read: 1, at: 25 }, pinned: { at: 30 } })
-    // Any value under the pin key pins, dated 0 without a time; reads without a time, or malformed, count nothing.
     await ports.storage.set(pinKey("proj_1", "ses_a"), true as never)
     await ports.storage.set(readsKey("proj_1", "ses_a", "ses_r3"), { shown: 5 } as never)
     await ports.storage.set(readsKey("proj_1", "ses_a", "ses_r4"), { shown: -1, read: "x", at: 40 } as never)
@@ -556,7 +537,6 @@ describe("the store", () => {
   })
 })
 
-/** A tree of two children under ses_top, one reported done and idle, one still out and running, with report notes. */
 async function tree(ports: RefreshPorts) {
   const children = childStore(ports.storage)
   await children.record(entry("ses_a", "ses_top", { isolated: true, group: "pair" }))
@@ -867,7 +847,6 @@ describe("refresh", () => {
     await children.settled("ses_goner", "report", NOW - 260_000, "done")
     const before = (await refresh(ports, state, "ses_top", NOW))!.parts[0]
     expect(before).toEqual({ sessionID: "ses_goner", title: "Goner", depth: 1, isolated: true, status: "done", duration: 30_000, cost: 0.1 })
-    // As noteDeleted leaves an isolated child: its report state forgotten, its entry kept for its worktree.
     delete sessions.ses_goner
     await children.forgetReport("ses_goner")
 
@@ -896,7 +875,6 @@ describe("refresh", () => {
       part("ses_known", "out"),
       { sessionID: "ses_new", title: "entry ses_new", depth: 1, isolated: false, status: "gone" },
     ])
-    // ses_known is forgotten by the roster but OpenCode still knows it: out as last recorded, until it is gone too.
     expect(record!.finished).toBe(false)
     delete sessions.ses_known
     expect(await refresh(ports, state, "ses_top", NOW + 1000)).toMatchObject({ finished: true, parts: [{}, {}, part("ses_known", "gone"), {}] })
@@ -981,7 +959,6 @@ describe("refresh", () => {
     contexts.length = 0
     const record = await refresh(ports, state, "ses_top", NOW, "ses_a")
 
-    // Once each: ses_c, never recorded, is read for its use and for whether it runs by the same read.
     expect(contexts.toSorted()).toEqual(["ses_a", "ses_c"])
     expect(record!.parts.map(({ sessionID, context, refused }) => [sessionID, context, refused])).toEqual([
       ["ses_a", 0.6, 1],
@@ -1011,7 +988,6 @@ describe("refresh", () => {
     expect((await refresh(ports, state, "ses_top", NOW - 3000, "ses_b"))!.split).toBe("split: no, because it is small; considered: docs")
     expect(contexts).toEqual(["ses_b"])
 
-    // Its first reply compacted away, the top's later line is a revision beside the first, not in its place.
     contexts.length = 0
     expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toMatchObject({
       split: "split: no, because it is small; considered: docs",
@@ -1036,11 +1012,9 @@ describe("refresh", () => {
     const stage = { text: "## split: 2 parts: its tests, its docs", at: NOW - 5000, parts: 1 }
 
     expect(await refresh(ports, state, "ses_top", NOW - 4000, "ses_top")).toMatchObject({ split: "split: 1 part: the core", revisions: [stage] })
-    // Re-reading the same replies appends nothing, and neither does a rewording of the markdown alone.
     expect((await refresh(ports, state, "ses_top", NOW - 3000, "ses_top"))!.revisions).toEqual([stage])
     sessions.ses_top!.messages = [text("split: 1 part: the core"), later, text("**split:  2 parts: its tests, its docs**"), text("I decided to split: no, after all")]
     expect((await refresh(ports, state, "ses_top", NOW - 2000, "ses_top"))!.revisions).toEqual([stage])
-    // Both replies compacted away, the record keeps both lines; one more is appended, dated by the refresh without a reply time.
     sessions.ses_top!.messages = [{ type: "assistant", id: "msg", content: [{ type: "text", text: "split: 3 parts: tests, docs, e2e" }] }]
     expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toMatchObject({
       split: "split: 1 part: the core",
@@ -1048,7 +1022,6 @@ describe("refresh", () => {
     })
   })
 
-  // #294: a stated line outranks a mention, once, and another session's turn end reads only the top's finished replies.
   const mention = "I'll decide the split: after reading the code"
 
   test("a stated line replaces a mention, which is no revision; a re-read or a later mention then changes nothing", async () => {
@@ -1063,7 +1036,6 @@ describe("refresh", () => {
     expect(await refresh(ports, state, "ses_top", NOW - 3000, "ses_top")).toEqual({ ...stated!, movedAt: NOW - 3000 })
     sessions.ses_top!.messages = [text(mention), text("split: 2 parts: core, docs"), text("I decided to split: no, after all")]
     expect(await refresh(ports, state, "ses_top", NOW - 2000, "ses_top")).toEqual({ ...stated!, movedAt: NOW - 2000 })
-    // Its reply compacted away, the stated line stays, and a mention is not taken for it.
     sessions.ses_top!.messages = [text(mention)]
     expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toEqual({ ...stated!, movedAt: NOW })
   })
@@ -1104,7 +1076,6 @@ describe("refresh", () => {
     sessions.ses_top!.messages = [text(mention), done(a.text, 2), done(b.text, 3)]
     expect(await refresh(ports, state, "ses_top", NOW - 4000, "ses_top")).toMatchObject({ split: a.text, revisions: [b] })
 
-    // The first line's reply compacted away, the second is still among the revisions: the first is split all the same.
     await store.set(recordKey("proj_1", "ses_top"), stored("ses_top", NOW - 9000, { split: mention, revisions: [a, b] }))
     sessions.ses_top!.messages = [done(b.text, 3), done("split: 3 parts", 4)]
     expect(await refresh(ports, state, "ses_top", NOW, "ses_top")).toMatchObject({ split: a.text, revisions: [b, { text: "split: 3 parts", at: 4, parts: 0 }] })
@@ -1124,7 +1095,6 @@ describe("refresh", () => {
     sessions.ses_top!.messages = [done(mention), text("split: 2 parts: a, b")]
     expect((await refresh(ports, state, "ses_top", NOW - 4000, "ses_a"))!.split).toBe(mention)
 
-    // A mention is no stated line, so the top's replies are still read; its unfinished one waits for its own turn end.
     contexts.length = 0
     const record = await refresh(ports, state, "ses_top", NOW - 3000, "ses_b")
     expect(contexts).toContain("ses_top")
@@ -1146,7 +1116,6 @@ describe("refresh", () => {
     const get = ports.storage.get
     let reads = 0
     ;(ports.storage as any).get = async (key: string) => {
-      // ses_b's refresh runs whole between ses_a's first read of the record and its read just before the write.
       if (key === recordKey("proj_1", "ses_top") && ++reads === 2) await refresh(ports, state, "ses_top", NOW - 1000, "ses_b")
       return get(key)
     }
@@ -1169,7 +1138,6 @@ describe("refresh", () => {
     sessions.ses_a!.messages = [usage(600)]
     const context = ports.session.context
     ;(ports.session as any).context = async (input: { sessionID: string }) => {
-      // ses_a's refresh runs whole while the top's own refresh reads its messages.
       if (input.sessionID === "ses_top") await refresh(ports, state, "ses_top", NOW - 1000, "ses_a")
       return context(input)
     }
@@ -1187,7 +1155,6 @@ describe("refresh", () => {
     })
     await tree(ports)
     await refresh(ports, state, "ses_top", NOW - 5000, "ses_top")
-    // Archived since its turn ended, with its split line stated: only whether it runs reads its transcript.
     sessions.ses_top = { ...sessions.ses_top!, updated: 2, archived: 2 }
     const context = ports.session.context
     ;(ports.session as any).context = async (input: { sessionID: string }) => {
@@ -1274,7 +1241,6 @@ describe("the event module", () => {
 
     contexts.length = 0
     await noteTurnEnd(ports, state, ended("ses_b", "evt_2"))
-    // For its use and for whether it runs (its times stamped since its last turn ended), by one read.
     expect(contexts).toEqual(["ses_b"])
   })
 
@@ -1326,7 +1292,6 @@ describe("the event module", () => {
     const get = ports.storage.get
     let noted = false
     ;(ports.storage as any).get = async (key: string) => {
-      // The call lands once the refresh has read the record and before it writes it back.
       if (!noted && key === recordKey("proj_1", "ses_top")) {
         noted = true
         const value = await get(key)
@@ -1405,7 +1370,6 @@ describe("recall", () => {
     await store.set(recordKey("proj_1", "ses_old"), stored("ses_old", NOW - 100_000))
 
     const found = await recall(ports, state, "ses_root", { sessionID: "ses_old" })
-    // The read is counted on the record, and given with it.
     expect(found).toEqual({ kind: "record", projectID: "proj_1", record: { ...stored("ses_old", NOW - 100_000), reads: { shown: 0, read: 1, at: NOW } } })
     expect(await recall(ports, state, "ses_root", { sessionID: "ses_none" })).toEqual({ kind: "missing", projectID: "proj_1", sessionID: "ses_none" })
     expect((await recall(ports, state, "ses_root", { sessionID: "  " })).kind).toBe("list")
@@ -1421,7 +1385,6 @@ describe("recall", () => {
     await store.set(recordKey("proj_1", "ses_older"), stored("ses_older", NOW - 200_000))
     const memory = memoryStore(ports.storage)
 
-    // A part's call counts under its tree's top, as the top's own does, on the other trees' records only.
     const listed = await recall(ports, state, "ses_a", {})
     if (listed.kind !== "list") throw new Error()
     expect(listed.records.map((record) => record.sessionID)).toEqual(["ses_old", "ses_top", "ses_older"])
@@ -1432,7 +1395,6 @@ describe("recall", () => {
     expect(store.get(readsKey("proj_1", "ses_old", "ses_top"))).toEqual({ shown: 2, read: 0, at: NOW })
     expect((await memory.get("proj_1", "ses_old"))?.reads).toEqual({ shown: 2, read: 0, at: NOW })
 
-    // A full read counts apart, and the record is given with it; the caller's own record is given uncounted.
     const full = await recall(ports, state, "ses_top", { sessionID: "ses_old" })
     if (full.kind !== "record") throw new Error()
     expect(full.record.reads).toEqual({ shown: 2, read: 1, at: NOW })
@@ -1441,7 +1403,6 @@ describe("recall", () => {
     if (own.kind !== "record") throw new Error()
     expect(own.record).not.toHaveProperty("reads")
     expect(store.has(readsKey("proj_1", "ses_top", "ses_top"))).toBe(false)
-    // Another tree's reads add to the sum; the record's own key was never written by a count.
     await recall(ports, state, "ses_b", { sessionID: "ses_old" })
     expect(store.get(readsKey("proj_1", "ses_old", "ses_top"))).toEqual({ shown: 2, read: 2, at: NOW })
     expect(readRecord(store.get(recordKey("proj_1", "ses_old")))).not.toHaveProperty("reads")
@@ -1487,7 +1448,6 @@ describe("lessonText", () => {
 })
 
 describe("note", () => {
-  /** A tree whose top started ses_mid, which started ses_leaf, with a record, at maxDepth 2. */
   async function recorded() {
     const made = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_mid: { updated: 1, idle: 1 }, ses_leaf: { updated: 1, idle: 1 } })
     ;(made.ports as any).maxDepth = 2
@@ -1780,14 +1740,12 @@ describe("courier_recall", () => {
     expect(lines.slice(1).map((line) => line.split(" ")[1])).toEqual(["ses_old", "ses_root", "ses_new"])
     expect(lines[1]).toContain(" · finished · pinned")
     expect(lines[3]).not.toContain("pinned")
-    // A listing without a pinned record among the others says nothing of pins.
     await store.delete(pinKey("proj_1", "ses_old"))
     expect((await tool(ports, state).execute({}, { sessionID: "ses_root" })).content).not.toContain("pinned")
   })
 })
 
 describe("the lessons entry (#384)", () => {
-  /** A host's keyed session instructions over `entries` (session id to key to value); each call is recorded in `calls`. */
   function fakeInstructions(entries = new Map<string, Map<string, unknown>>(), calls: string[] = []) {
     return {
       entries,
@@ -1808,7 +1766,6 @@ describe("the lessons entry (#384)", () => {
     }
   }
   const lesson = (text: string, at = NOW - 10_000) => ({ text, at })
-  /** The project's records as `lessonsOf` reads them: one record per entry of `given`, in key order. */
   async function project(ports: MemoryPorts, given: Record<string, Partial<StoredRecord>>) {
     const store = memoryStore(ports.storage)
     for (const [sessionID, more] of Object.entries(given)) {
@@ -1850,7 +1807,6 @@ describe("the lessons entry (#384)", () => {
     expect(await lessonsOf(ports)).toEqual([])
   })
 
-  /** A recorded tree at maxDepth 3, the top having started ses_mid, which started ses_leaf, on a host with keyed instructions. */
   async function recordedWithEntries(maxDepth = 3) {
     const made = fakePorts({ ses_top: { updated: 1, idle: 1 }, ses_mid: { updated: 1, idle: 1 }, ses_leaf: { updated: 1, idle: 1 } })
     const host = fakeInstructions()
@@ -1873,7 +1829,6 @@ describe("the lessons entry (#384)", () => {
     expect(current!.value).toContain(`lesson (${DAY}, from depth 2): "Seen from depth 2."`)
     expect(calls).toEqual(["list ses_top", "list ses_mid", "list ses_leaf", `put ses_top ${LESSONS_KEY}`, `put ses_mid ${LESSONS_KEY}`, `put ses_leaf ${LESSONS_KEY}`])
     for (const sessionID of ["ses_top", "ses_mid", "ses_leaf"]) expect(entries.get(sessionID)?.get(LESSONS_KEY)).toBe(current!.value)
-    // The same lesson again: every entry holds it, so nothing is put.
     calls.length = 0
     await note(ports, "ses_leaf", { text: "Seen from depth 2." })
     expect(calls).toEqual(["list ses_top", "list ses_mid", "list ses_leaf"])

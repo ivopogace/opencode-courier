@@ -5,7 +5,6 @@ import type { RosterStorage } from "../src/tree/ports.js"
 import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 import { memoryStore } from "../src/memory/store.js"
 
-/** A storage that logs every write and removal with the value as JSON, the form another copy or server reads it in. */
 function loggingStorage() {
   const store = new Map<string, string>()
   const writes: string[] = []
@@ -29,7 +28,6 @@ function loggingStorage() {
   return { storage, store, writes }
 }
 
-// Older copies and a second server on the same data directory read and write these keys: none may move or change shape.
 test("the stores write a child's roster entry, reverse key, report state and group membership under the keys older copies read", async () => {
   const { storage, store, writes } = loggingStorage()
   const children = childStore(storage)
@@ -87,7 +85,6 @@ test("the stores write a child's roster entry, reverse key, report state and gro
     "remove report/ses_child/stopped",
     "remove report/ses_child/nudged",
   ])
-  // The held report outlives the child's entry: it still goes to the parent with its group.
   expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_child"])
 })
 
@@ -111,7 +108,6 @@ test("the wake store keeps a watched message under wake/<sessionID>/<inboxID>, w
   expect(writes).toEqual(["remove wake/ses_parent/msg_1"])
 })
 
-// A record is read by the next release, by `e2e/kv.ts` and by a person seeding one by hand (docs/reference.md, § Memory).
 test("the memory store keeps a tree's record under memory/<projectID>/<topSessionID>, as the reference describes it, and reads back what it wrote", async () => {
   const { storage, writes } = loggingStorage()
   const records = memoryStore(storage)
@@ -135,8 +131,6 @@ test("the memory store keeps a tree's record under memory/<projectID>/<topSessio
   ])
   expect(await records.get("proj_1", "ses_top")).toEqual(record)
   expect(await records.ofProject("proj_1")).toEqual([{ ...record, projectID: "proj_1", sessionID: "ses_top" }])
-  // Beside the record, under its key (#285): the person's pin, and the reads of each tree that listed or read it, each
-  // key with one writer; the record is read with them, written without them, and removed with them.
   writes.length = 0
   await records.pin("proj_1", "ses_top", { at: 1760001000000 })
   await records.noteRead("proj_1", "ses_top", "ses_reader", "shown", 1760002000000)

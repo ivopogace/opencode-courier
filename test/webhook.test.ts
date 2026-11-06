@@ -51,7 +51,6 @@ const verifySignature = (secret: string, body: Uint8Array, header: string | unde
   checkSignature(secret, body, header) !== undefined
 
 describe("checkSignature", () => {
-  // The example from GitHub's "Validating webhook deliveries" documentation.
   test("accepts GitHub's documented example", () => {
     const header = "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17"
     expect(verifySignature(SECRET, Buffer.from("Hello, World!"), header)).toBe(true)
@@ -277,7 +276,6 @@ describe("dispatch, concurrency", () => {
     let fastSent: () => void = () => undefined
     const fast = new Promise<void>((resolve) => (fastSent = resolve))
     ;(ports.session as any).synthetic = async (input: any) => {
-      // Waits for the other session's message, or gives up after a while when there is none.
       if (input.sessionID === "ses_slow") await Promise.race([fast, new Promise((resolve) => setTimeout(resolve, 200))])
       const result = await synthetic(input)
       if (input.sessionID === "ses_fast") fastSent()
@@ -298,7 +296,6 @@ describe("receive", () => {
 
     expect(response).toEqual({ status: 202, body: "delivered to 1 session(s)" })
     expect(delivered[0].text).toContain("changes_requested")
-    // The log names the event, never the payload or the secret.
     expect(logs.join("\n")).not.toContain("Please rename")
     expect(logs.join("\n")).not.toContain(SECRET)
   })

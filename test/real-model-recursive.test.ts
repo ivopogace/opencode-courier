@@ -3,9 +3,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
-// e2e/real-model-recursive.mjs on fixture transcripts, read back with --saved: the recursive tree, the fault in it
-// (COURIER_SCENARIO=recursive-fault), handled or not, the staged core (COURIER_SCENARIO=recursive-staged) and the
-// finding passed on (COURIER_SCENARIO=recursive-finding).
 const CHECKER = join(import.meta.dir, "..", "e2e", "real-model-recursive.mjs")
 const FILES = { "numbers/a.txt": "391", "numbers/b.txt": "1024", "count/total.txt": "42" }
 
@@ -38,7 +35,6 @@ const released = (group: string, reports: ReadonlyArray<readonly [string, string
 
 type Variant = "handled" | "reports-early" | "does-it-itself" | "no-fault"
 
-/** The tree's transcripts: the root splits into numbers and count, numbers into halves a and b, and b is the faulty half. */
 function transcripts(variant: Variant): Record<string, Message[]> {
   const count = [user("count"), step("tool-calls", tool("shell", { command: "echo 42" }), write("count/total.txt"), send("ses_root", "42", "done")), step("stop", say("Reported.")), idle()]
   const a = [user("half a"), step("tool-calls", tool("shell", { command: "echo 391" }), write("numbers/a.txt"), send("ses_num", "391", "done")), step("stop", say("Reported.")), idle()]
@@ -72,11 +68,9 @@ function transcripts(variant: Variant): Record<string, Message[]> {
 
 type Run = { tree: Record<string, Message[]>; files: Record<string, string>; config?: unknown; expect?: string }
 
-/** Runs the checker with --saved on a run directory holding `variant`'s transcripts and files, once per list of flags; the last run's exit code and summary. */
 function check(variant: Variant | Run, ...runs: string[][]) {
   const { tree, files, config, expect: expected } = typeof variant === "string" ? { tree: transcripts(variant), files: FILES, config: undefined, expect: undefined } : variant
   const work = mkdtempSync(join(tmpdir(), "rmr-"))
-  // The checker reads COURIER_* from its environment: none of the caller's, such as an exported COURIER_MAX_DEPTH.
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("COURIER_")))
   try {
     for (const [id, list] of Object.entries(tree)) writeFileSync(join(work, id === "ses_root" ? "parent.json" : `child-${id}.json`), JSON.stringify(list))
@@ -104,7 +98,7 @@ describe("the recursive checker and the instruction updates", () => {
   test("a system message OpenCode stores at a wake's start, before the message that opens the turn, is no step and ends no turn (#384)", () => {
     const tree = transcripts("no-fault")
     const root = tree.ses_root!
-    // The root's first turn ends; at its wake, the standing entry's update lands before the group's message.
+        // an instructions update lands before the message that wakes (api-notes)
     const idleAt = root.findIndex((message) => message.type === "idle")
     root.splice(idleAt + 1, 0, { type: "system", description: "Instructions updated: api/standing", time: { created: tick() } })
     const run = check({ tree, files: FILES })
@@ -171,7 +165,6 @@ test("without --fault the recursive checker makes its nine checks only", () => {
 })
 
 test("a report in a group notice counts whatever quotes the child's title holds", () => {
-  // A title is the task's first line, such as `Part "count". Do exactly this:`, so the notice's line carries quotes inside the quoted title.
   const tree = transcripts("no-fault")
   const quoted = (text: string) => text.replace('"ses_num"', '"Part "numbers". Your part is two halves"').replace('"ses_count"', '"Part "count". Do exactly this:"')
   tree.ses_root = tree.ses_root!.map((message) => (message.type === "synthetic" && /group="parts"/.test(String(message.text)) ? synthetic(quoted(String(message.text))) : message))
@@ -187,8 +180,6 @@ test("a re-read with --saved keeps the fault checks of a run made with --fault, 
   expect(run.failed).toContain("it then reported done")
 })
 
-// The staged tree (COURIER_SCENARIO=recursive-staged), on a clock of seconds: the root splits into numbers and count, and
-// numbers writes numbers/seed.txt, itself or in session ses_core, and starts the halves ses_a and ses_b.
 const STAGED_FILES = { "numbers/seed.txt": "427", "numbers/a.txt": "7259", "numbers/b.txt": "1427", "count/total.txt": "42" }
 const START = Date.UTC(2026, 9, 21, 10, 0, 0)
 const at = (second: number) => START + second * 1000
@@ -206,7 +197,6 @@ const DENY = { permissions: [{ action: "*", resource: "*", effect: "allow" }, { 
 
 type Staging = "itself" | "core-session" | "half-before-seed" | "half-before-report" | "skill-denied" | "one-session" | "partial-upward"
 
-/** A half: reads the seed, writes its file, reports done to numbers. */
 const half = (file: string, from: number) => [
   userAt(from, `the half for ${file}`),
   stepAt(from + 1, from + 4, "tool-calls", timed(tool("shell", { command: "cat numbers/seed.txt" }), from + 1, from + 2), timed(write(file), from + 2, from + 3), timed(send("ses_num", "written", "done"), from + 3, from + 4)),
@@ -214,7 +204,6 @@ const half = (file: string, from: number) => [
   idleAt(from + 5),
 ]
 
-/** The core's session: runs the seed's command, writes the seed (and, alone, both halves' files too) and reports done. */
 function coreOf(staging: Staging): Message[] {
   const seed = [timed(tool("shell", { command: SEED }), 6, 26), timed(write("numbers/seed.txt"), 26, 27)]
   const steps =
@@ -227,10 +216,8 @@ function coreOf(staging: Staging): Message[] {
   return [userAt(5, "the seed"), ...steps, stepAt(end, end + 1, "stop", say("Reported.")), idleAt(end + 1)]
 }
 
-/** The numbers session up to the halves' group release. */
 function numbersOf(staging: Staging): Message[] {
   const opened = userAt(3, "numbers")
-  // The seed itself, then both halves in a step of their own.
   if (staging === "itself")
     return [
       opened,
@@ -239,7 +226,6 @@ function numbersOf(staging: Staging): Message[] {
       stepAt(33, 34, "stop", say("split: the seed myself, then 2 halves")),
       idleAt(34),
     ]
-  // The seed's command and both spawns in one step, the spawns made while the command still ran.
   if (staging === "half-before-seed")
     return [
       opened,
@@ -261,7 +247,6 @@ function numbersOf(staging: Staging): Message[] {
     idleAt(7),
   ]
   if (staging === "one-session") return first
-  // A courier_later check-in finds the seed written and starts the halves before the core's session has reported.
   if (staging === "half-before-report")
     return [
       ...first,
@@ -395,14 +380,12 @@ test("without --staged the recursive checks keep their rules on a staged tree: a
   expect(denied.notes.some((note) => note.startsWith("staged:"))).toBe(false)
 })
 
-// What e2e/real-model-recursive.mjs --finding tells the "count" session as the person.
 const PERSON_NOTE =
   "A change from the person for the whole job, not only for your part: every file this job writes must hold its number " +
   "followed by a space and the word checked, such as 7 checked. Write yours that way."
 const FINDING = "Every file of the job must hold its number followed by the word checked."
 type Finding = "passed" | "not-down" | "in-report"
 
-/** The recursive tree with --finding's person telling "count" mid-run; `not-down` skips half b, `in-report` sends it up only in the report. */
 function findingRun(variant: Finding): Run {
   const plain = variant !== "in-report"
   const count = [
@@ -470,7 +453,6 @@ describe("the recursive checker with --finding", () => {
 
 const POLL = "no orchestrator polled (courier_children, courier_tree, sleep)"
 
-/** The no-fault tree with the count session handing its one part to a session of its own, after `before` in the same turn. */
 function loneSpawnRun(before: unknown[]): Run {
   const tree = transcripts("no-fault")
   const c1 = [user("the count"), step("tool-calls", tool("shell", { command: "echo 42" }), write("count/total.txt"), send("ses_count", "42", "done")), step("stop", say("Reported.")), idle()]
@@ -487,7 +469,6 @@ function loneSpawnRun(before: unknown[]): Run {
   return { tree: { ...tree, ses_count: count, ses_c1: c1 }, files: FILES }
 }
 
-/** The no-fault tree with a courier_recall call added to a first turn's tools, before its spawns, the times kept. */
 function recallRun(where: "root" | "sub" | "root-twice"): Run {
   const tree = transcripts("no-fault")
   const recall = tool("courier_recall", {})

@@ -3,8 +3,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
-// e2e/real-model-review.mjs on fixture transcripts, read back with --saved: the change, the review session that
-// changes nothing, the fix, the root's own test run and its reply (COURIER_SCENARIO=review).
 const CHECKER = join(import.meta.dir, "..", "e2e", "real-model-review.mjs")
 const FILES = {
   "lib/words.js": "export function capitalize(word) { return word }\nexport function slugify(text) { return text }",
@@ -29,10 +27,8 @@ const report = (from: string, status: string, text: string): Message => ({ type:
 
 type Variant = "clean" | "fixed" | "review-edits" | "review-redirects" | "no-review" | "root-skips-tests" | "root-polls"
 
-/** The transcripts: the root starts the implementer, then the reviewer, then (fixed) a fixer, runs the tests and replies. */
 function transcripts(variant: Variant): Record<string, Message[]> {
   const impl = [user("make the change"), step("tool-calls", tool("skill", { id: "test-driven-development" }), tool("write", { path: "lib/words.js" }), tool("edit", { path: "test/words.test.js" }), shell("npm test"), shell("git commit -am slugify"), send("ses_root", "Added slugify with three tests; npm test passes 5.", "done")), step("stop", say("Reported.")), idle()]
-  // A probe with arrow functions and `2>&1` is reading, not writing; a redirect into a file is a change.
   const reviewerTools = [tool("read", { path: "lib/words.js" }), shell("git diff HEAD~1 -- lib test"), shell("npm test 2>&1 | tail -5"), shell('node -e \'import("./lib/words.js").then(({ slugify }) => { const show = (v) => slugify(v); console.log(show("a--b")) })\' >&2')]
   if (variant === "review-edits") reviewerTools.push(tool("edit", { path: "lib/words.js" }))
   if (variant === "review-redirects") reviewerTools.push(shell('echo "export const x = 1" > lib/extra.js'))
@@ -59,7 +55,6 @@ function transcripts(variant: Variant): Record<string, Message[]> {
 
 type Options = { pass?: number; exit?: number }
 
-/** Runs the checker with --saved on a run directory holding `variant`'s transcripts, the files and a stand-in test runner; the exit code and the summary. */
 function check(variant: Variant, { pass = 5, exit = 0 }: Options = {}) {
   const work = mkdtempSync(join(tmpdir(), "rmv-"))
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("COURIER_")))
@@ -69,7 +64,6 @@ function check(variant: Variant, { pass = 5, exit = 0 }: Options = {}) {
       mkdirSync(dirname(join(work, "project", file)), { recursive: true })
       writeFileSync(join(work, "project", file), `${text}\n`)
     }
-    // The stand-in for the project's test runner: TAP totals and an exit code, run by the checker in the project.
     writeFileSync(join(work, "project", "tests.js"), `console.log("# pass ${pass}\\n# fail ${exit === 0 ? 0 : 1}"); process.exit(${exit})`)
     const run = Bun.spawnSync([process.execPath, CHECKER, "ses_root", "--saved"], {
       env: { ...env, WORK: work, COURIER_EXPECT: "slugify", COURIER_FILES: Object.keys(FILES).join(" "), COURIER_TESTS: "5", COURIER_TEST_COMMAND: "bun tests.js" },

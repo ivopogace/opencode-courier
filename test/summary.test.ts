@@ -8,13 +8,10 @@ import { treeRpc } from "../src/tree/rpc.js"
 import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 import { summary } from "../src/tree/summary.js"
 
-/** A session's times, and `rest` when its transcript ends on its turn's end though something stamped `updated` since. */
 type Times = { updated: number; idle?: number; archived?: number; rest?: true }
 
-/** Whether a session's transcript runs on: as its times say, unless it is at `rest`. */
 const ranOn = (time: Times | undefined) => time !== undefined && !time.rest && (time.idle === undefined || time.updated > time.idle)
 
-/** Ports over an in-memory store, with each session's times and pending requests as given; one without times is gone. */
 function fakePorts(
   times: Record<string, Times>,
   pending: Record<string, Pending[]> = {},
@@ -103,7 +100,6 @@ describe("summary", () => {
     for (const child of ["ses_stalled", "ses_idle"]) await childStore(ports.storage).record(entry(child, "ses_root"))
     const stalled = { at: 6, text: "report", running: false, idleAt: 6, rewoken: 7, stalled: 8 }
     await wakeStore(ports.storage).put({ sessionID: "ses_stalled", inboxID: "msg_1", ...stalled })
-    // Woken again but not yet found stalled: the message waiting in its inbox is no turn, so it counts idle (#326).
     await wakeStore(ports.storage).put({ sessionID: "ses_idle", inboxID: "msg_2", ...stalled, stalled: undefined })
 
     expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 0, idle: 1, stalled: 1, groups: [] })
@@ -177,7 +173,6 @@ describe("summary", () => {
       message: "Done",
     })
     await leaveGroup(groups, "ses_root", "pair", "ses_c", "failed", 960)
-    // A grandchild's group is its own parent's to wait on, not the root's.
     await children.record(entry("ses_x", "ses_b"))
     await children.record(entry("ses_y", "ses_x", "inner"))
     await joinGroup(groups, "ses_x", "inner", "ses_y", "ses_y", 900)
@@ -188,7 +183,6 @@ describe("summary", () => {
   test("reads the groups from the group store: a released one is gone, a held report outlives its member's entry", async () => {
     const { ports } = fakePorts({ ses_a: { updated: 5, idle: 5 } })
     const groups = groupStore(ports.storage)
-    // Released: its roster entry still names the group, whose members have been dropped.
     await childStore(ports.storage).record(entry("ses_a", "ses_root", "pair"))
     await joinGroup(groups, "ses_root", "trio", "ses_gone", "ses_gone", 900)
     await holdReport(groups, { parentID: "ses_root", group: "trio", sessionID: "ses_gone", title: "ses_gone", joinedAt: 900 }, {

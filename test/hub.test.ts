@@ -27,19 +27,16 @@ import { portsAt, questionState, shared as relayState } from "../src/person/ques
 import { resetHub } from "./fixtures/reset.js"
 import { deliverDue, type LaterEntry, type LaterPorts } from "../src/scheduling/index.js"
 
-/** The plugin's tick jobs, as src/index.ts registers them. */
 const jobs: TickJob[] = [
   (owner, claimed) => deliverDue(owner.later as LaterPorts, claimed),
   (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
 ]
 
-/** Joins the process's hub, as an instance of this copy would. */
 const { join } = openInProcess(jobs)
 
 const LEGACY = ["claimed", "watched", "forms", "questions", "receiver", "locations"]
 const at = (registry: Record<symbol, unknown>, key: string) => registry[Symbol.for(key)]
 
-/** Scheduler ports over `store`, recording the deliveries made through them under `directory`. */
 function laterPorts(
   directory: string,
   store = new Map<string, unknown>(),
@@ -78,8 +75,6 @@ const member = (directory: string, log: (message: string) => void = () => {}, la
     log,
   }) as unknown as Member
 
-// These members carry no ports to follow OpenCode's events through, so the process's hub starts no
-// subscription while they are joined, whichever test file set its watcher before.
 let subscribe: typeof hub.subscribe
 beforeEach(() => {
   subscribe = hub.subscribe
@@ -149,14 +144,12 @@ describe("the hub", () => {
     expect(fresh.claimed).toBe(claimed)
     expect(fresh.watched).toBe(watched)
     expect(fresh.questions).toBe(questions)
-    // The question relay fills in the fields its state lacks, on the hub's own object.
     const filled = questionState(registry)
     expect(filled).toBe(fresh.questions as never)
     expect(filled.noticed.has("question_1")).toBe(true)
     expect(filled.loaded).toBeInstanceOf(Set)
     expect(filled.following).toBe(0)
     expect(filled.followed).toBe(false)
-    // The ones the earlier copy did not make are made, under their keys, for the copies after.
     expect(at(registry, "opencode-courier.forms")).toBe(fresh.forms)
     expect(at(registry, "opencode-courier.receiver")).toBe(fresh.receivers)
     for (const name of LEGACY) expect(at(registry, `opencode-courier.${name}`)).toBeDefined()
@@ -169,7 +162,6 @@ describe("the hub", () => {
 
   test("of another version found under its key is logged once, and the copy keeps its own, sharing the claim sets", () => {
     const other = { version: HUB_VERSION + 1 }
-    // The other copy's claim set, under the key every copy shares.
     const claimed = new Set(["later_1"])
     const registry: Record<symbol, unknown> = { [Symbol.for(HUB_KEY)]: other, [Symbol.for("opencode-courier.claimed")]: claimed }
 
@@ -177,13 +169,11 @@ describe("the hub", () => {
     expect(at(registry, HUB_KEY)).toBe(other)
     expect(at(registry, `${HUB_KEY}@${HUB_VERSION}`)).toBe(skewed.hub)
     expect(skewed.hub.version).toBe(HUB_VERSION)
-    // The claim set is the one every copy claims in, so an older copy and this one never both act.
     expect(skewed.hub.claimed).toBe(claimed)
 
     const logs: string[] = []
     const leaveA = skewed.join(member("/a", (message) => logs.push(message)))
     const leaveB = skewed.join(member("/b", (message) => logs.push(message)))
-    // A second copy of the same version finds the same versioned hub, which has logged already.
     const again = open(registry, jobs)
     expect(again.hub).toBe(skewed.hub)
     const leaveC = again.join(member("/c", (message) => logs.push(message)))
@@ -207,18 +197,15 @@ describe("the hub", () => {
   })
 
   test("is shared by two copies of the module in one process, the one joined last running its own jobs and event modules", () => {
-    // In a process of its own, since a second copy would replace this one's coverage (see the script).
     const run = Bun.spawnSync([process.execPath, joinPath(import.meta.dir, "fixtures", "two-copies.ts")])
     expect(run.stderr.toString()).toBe("")
     expect(JSON.parse(run.stdout.toString())).toEqual({
-      // The copy joined last runs its own jobs and event modules, through the other copy's members.
       registration: {
         sameHub: true,
         beforeNewer: ["older job through /a", "older ping through /a", "older ping through /b"],
         afterNewer: ["newer job through /a", "newer ping through /c"],
         watchingThrough: ["/b", "/c"],
       },
-      // Renewed for the first copy's tick by the second's, each tick, until a minute from its start.
       otherCopy: {
         renewedAt: [1_000 + TICK_MS, 1_000 + 2 * TICK_MS, 1_000 + 3 * TICK_MS, 1_000 + 3 * TICK_MS],
         heldWhileDelivering: true,
@@ -232,7 +219,6 @@ describe("the hub", () => {
       loopKept: true,
       emptyAtEnd: true,
       skewedOwnLoop: true,
-      // One tick as the shared loop started, through the first copy's instance, and one as the skewed hub's did.
       ownerReads: ["/a", "/c"],
       skewedOwnHub: true,
       skewedSharesClaims: true,
@@ -274,10 +260,6 @@ describe("the hub", () => {
   })
 })
 
-/**
- * Timers the test fires by hand, recording what was started and stopped and how long each wait
- * before re-reading the owner key was; a wait ends at once, or, with `held`, when `go` is called.
- */
 function fakeTimers(held = false) {
   const started: Array<{ run: () => void; ms: number }> = []
   const stopped: unknown[] = []
@@ -363,7 +345,6 @@ describe("the scheduler", () => {
     let scans = 0
     const scan = later.storage.scan
     ;(later.storage as any).scan = async (input: { prefix: string }) => {
-      // The first scan of groups waits, as a slow storage's would; a nudge comes meanwhile.
       if (input.prefix === "group/" && ++scans === 1) await new Promise<void>((resolve) => (release = resolve))
       return scan(input)
     }
@@ -424,7 +405,6 @@ describe("the scheduler", () => {
     leaveB()
     expect(stopped).toEqual([1])
     expect(fresh.scheduler.timer).toBeUndefined()
-    // A leave called again does not stop it twice.
     leaveB()
     expect(stopped).toEqual([1])
 
@@ -468,7 +448,6 @@ describe("the scheduler", () => {
     let now = 1_000
     const clock = () => now
     const later = laterPorts("/a", new Map(), [], clock)
-    // A tick through /a that never ends, as through an instance whose location has shut down.
     const hung: LaterPorts = { ...later, storage: { ...later.storage, scan: () => new Promise(() => {}) } }
     const store = new Map<string, unknown>([["later/later_1", due("later_1")]])
     const delivered: string[] = []
@@ -476,7 +455,6 @@ describe("the scheduler", () => {
     const leaveB = joinHub(member("/b", () => {}, laterPorts("/b", store, delivered, clock)))
     await settle()
 
-    // Gone, its tick may still be delivering: the next ones skip, for a minute from its start.
     leaveA()
     now = 1_000 + OWNER_EXPIRY_MS - 1
     fire()
@@ -488,7 +466,6 @@ describe("the scheduler", () => {
     await settle()
     expect(delivered).toEqual(["/b later_1"])
 
-    // And once every instance has left, the next to join ticks at once once the hung tick is a minute old.
     const leaveC = joinHub(member("/c", () => {}, { ...hung, now: clock }))
     await settle()
     void leaveB()
@@ -641,7 +618,6 @@ describe("the owner key", () => {
     const leaveA = open({}, jobs, a.timers, "server_a").join(member("/a", () => {}, laterPorts("/a", store, delivered)))
     const leaveB = open({}, jobs, b.timers, "server_b").join(member("/b", () => {}, laterPorts("/b", store, delivered)))
     await settle()
-    // Both read the key free and wrote it before either read it back.
     expect(a.waits).toHaveLength(1)
     expect(b.waits).toHaveLength(1)
     a.go()
@@ -674,7 +650,6 @@ describe("the owner key", () => {
     await settle()
     expect(delivered).toEqual([])
 
-    // A key just renewed is renewed again without a wait.
     store.set(OWNER_KEY, { server: "server_a", at: now - OWNER_RENEW_MS + 1 })
     fire()
     await settle()
@@ -732,7 +707,6 @@ describe("the owner key", () => {
     let now = 1_000
     const store = new Map<string, unknown>()
     const later = laterPorts("/a", store, [], () => now)
-    // A delivery that does not end, as one held up by a slow session.
     const slow: LaterPorts = { ...later, storage: { ...later.storage, scan: () => new Promise(() => {}) } }
     const leave = joinHub(member("/a", () => {}, slow))
     await settle()
@@ -744,7 +718,6 @@ describe("the owner key", () => {
       await settle()
       expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: now })
     }
-    // A minute after the tick started it is taken to hang, and the key is left to expire.
     now = 1_000 + OWNER_EXPIRY_MS
     fire()
     await settle()
@@ -773,7 +746,6 @@ describe("the owner key", () => {
     }
     expect(fresh.scheduler.running?.member.directory).toBe("/a")
 
-    // Past the minute it holds the key no longer, and the next tick starts, through /b.
     now = 1_000 + OWNER_EXPIRY_MS
     fire()
     await settle()
@@ -868,13 +840,11 @@ describe("the owner key", () => {
     }
     const leave = joinHub(member("/a", () => {}, slow))
     await settle()
-    // The first tick's wait before reading the key back; the leave's own wait is never let go.
     go()
     await settle()
     let left = false
     void leave().then(() => (left = true))
     await settle()
-    // Still delivering: the key stays, so no other server takes the message meanwhile.
     expect(store.get(OWNER_KEY)).toEqual({ server: "server_a", at: 1_000 })
     expect(left).toBe(false)
     finish()
@@ -914,7 +884,6 @@ describe("the owner key", () => {
     const store = new Map<string, unknown>([[OWNER_KEY, { server: "server_a", at: 1_000 }]])
     const leave = joinHub(member("/a", () => {}, laterPorts("/a", store)))
     await settle()
-    // The first tick renews its own fresh key without a wait; the leave's wait is never let go.
     await leave()
     expect(store.has(OWNER_KEY)).toBe(false)
     go()
@@ -967,7 +936,6 @@ describe("the owner key", () => {
   })
 })
 
-/** A promise the test settles by hand. */
 function deferred<T = void>() {
   let resolve: (value: T) => void = () => {}
   let reject: (error: unknown) => void = () => {}
@@ -975,7 +943,6 @@ function deferred<T = void>() {
   return { promise, resolve, reject }
 }
 
-/** Whether `promise` has settled by now. */
 async function settledYet(promise: Promise<unknown>) {
   let settled = false
   void promise.then(
@@ -987,7 +954,6 @@ async function settledYet(promise: Promise<unknown>) {
 }
 
 describe("a leave", () => {
-  // The owner key held fresh by this server, so a tick renews it without the wait `held` timers hold.
   const owned = () => new Map<string, unknown>([[OWNER_KEY, { server: "server_a", at: 1_000 }]])
 
   test("waits for the work its member handed over, a failure included, and not for another member's", async () => {
@@ -1043,7 +1009,6 @@ describe("a leave", () => {
     const leaveC = joinHub(member("/c", () => {}, laterPorts("/c", store)))
     await settle()
 
-    // /b runs no tick: its leave does not wait for /a's.
     expect(await settledYet(leaveB())).toBe(true)
     const left = leaveA()
     expect(await settledYet(left)).toBe(false)
@@ -1071,7 +1036,6 @@ describe("a leave", () => {
     const leaveC = joinHub(member("/c", () => {}, laterPorts("/c", store)))
 
     const left = leaveA()
-    // Its replacement, through /c, started before it ends.
     expect(fresh.watchers.map((watcher) => watcher.member.directory)).toEqual(["/b", "/c"])
     expect(await settledYet(left)).toBe(false)
     ended.get("/a")!.resolve()
@@ -1113,7 +1077,6 @@ describe("the question relay's binding to its member", () => {
     const leaveFirst = join(first)
     const firstPorts = portsAt(location)
     expect(firstPorts()).toBe(first.questions)
-    // A new instance on the same location object while the first is still loaded, as in a reload.
     const leaveSecond = join(second)
     const secondPorts = portsAt(location)
     expect(secondPorts()).toBe(second.questions)
@@ -1124,7 +1087,6 @@ describe("the question relay's binding to its member", () => {
     expect(secondPorts()).toBe(second.questions)
     await leaveSecond()
     expect(secondPorts()).toBeUndefined()
-    // Another location object, even of the same directory, finds none.
     expect(portsAt({ directory: "/a" })()).toBeUndefined()
   })
 })
@@ -1148,7 +1110,6 @@ describe("a tick's end", () => {
     scanning.reject(new Error("storage gone"))
     expect(await settledYet(tick.done)).toBe(true)
     expect(await settledYet(left)).toBe(true)
-    // And the key the tick renewed is given back, the loop having stopped.
     expect(store.has(OWNER_KEY)).toBe(false)
   })
 })

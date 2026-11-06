@@ -1,5 +1,3 @@
-// What a read of a tree lists (#188): every session is looked up, the listing keeps the live ones first, then the
-// newest, with what is above them, and counts the older ones it leaves out; expired entries are left out of every read.
 import { describe, expect, test } from "bun:test"
 import { cut, DEFAULT_LIMITS, isLive, type RosterEntry } from "../src/tree/domain.js"
 import type { Pending } from "../src/tree/ports.js"
@@ -24,11 +22,8 @@ describe("cut", () => {
 
   test("keeps what is above a kept node, so the tree still draws, and skips a node that would not fit with it", () => {
     const nodes = [node("a", "root", 1), node("a1", "a", 2), node("a1x", "a1", 5, true), node("b", "root", 3), node("c", "root", 4)]
-    // The live grandchild needs its parent and grandparent: three of three; the newest, c, does not fit.
     expect(cut(nodes, 3).kept.map((one) => one.sessionID)).toEqual(["a", "a1", "a1x"])
-    // With four, c fits as the newest; b is left out.
     expect(cut(nodes, 4)).toMatchObject({ kept: [nodes[0]!, nodes[1]!, nodes[2]!, nodes[4]!], leftOut: 1 })
-    // Two: the grandchild's chain of three does not fit, so the newest that do are kept.
     expect(cut(nodes, 2).kept.map((one) => one.sessionID)).toEqual(["b", "c"])
   })
 })
@@ -50,13 +45,10 @@ describe("isLive", () => {
   })
 })
 
-/** A session's times, and `rest` when its transcript ends on its turn's end though something stamped `updated` since. */
 type Times = { updated: number; idle?: number; archived?: number; rest?: true }
 
-/** Whether a session's transcript runs on: as its times say, unless it is at `rest`. */
 const ranOn = (time: Times | undefined) => time !== undefined && !time.rest && (time.idle === undefined || time.updated > time.idle)
 
-/** Ports over an in-memory store, with each session's times and pending requests as given; one without times is gone. */
 function fakePorts(times: Record<string, Times>, pending: Record<string, Pending[]> = {}, maxTotal = DEFAULT_LIMITS.maxTotal) {
   const store = new Map<string, unknown>()
   const ports: ReadPorts = {

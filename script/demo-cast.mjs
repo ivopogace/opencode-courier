@@ -1,5 +1,3 @@
-// script/record-demo.sh's asciicast writer, fed by tmux's pipe-pane: node script/demo-cast.mjs <out.cast> <columns> <rows>
-// <marks file>, each `<epoch ms>\t<label>` line of which is a marker; <out.cast>.part until the pane closes.
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 
 const [out, columns, rows, marks] = process.argv.slice(2)

@@ -1,7 +1,3 @@
-// Waits for a real model's change-and-review job to settle, saves every session's transcript to WORK, runs the
-// project's tests in the root's checkout and checks the stages: one session for the change, a review session with
-// fresh context that changed nothing, fixes where the review held, the tests run by the root and the reply.
-// (node e2e/real-model-review.mjs <rootSessionID> [--saved to re-read WORK]). Exit 2 means inconclusive.
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -12,25 +8,20 @@ const server = process.env.SERVER
 const auth = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD}`).toString("base64")}`
 const work = process.env.WORK
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
-// The symbol the first file must hold, the files that must exist, how many tests must pass and what runs them.
 const symbol = process.env.COURIER_EXPECT ?? ""
 const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
 const minTests = Number(process.env.COURIER_TESTS ?? 1)
 const testCommand = (process.env.COURIER_TEST_COMMAND ?? "npm test").split(/\s+/).filter(Boolean)
 const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 5)
-// Calls that look at other sessions; right after spawning, or more than once a turn, that is polling.
 const LOOKS = new Set(["courier_children", "courier_tree"])
 const RECALL = "courier_recall"
 const SKILL = "courier-orchestrate"
-// What changes the checkout: a file tool, or a shell command that commits, stages, installs, edits in place or redirects into
-// a file; a redirect is a `>` that is no `2>&1`, `>&2`, `> /dev/null`, `=>` or `->`, so a probe with an arrow function is none.
 const CHANGING_TOOLS = new Set(["write", "edit", "patch", "apply_patch", "multiedit"])
 const CHANGING_SHELL =
   /\bgit\s+(commit|add|merge|checkout|switch|reset|stash|rebase|cherry-pick|rm|mv|apply)\b|\bsed\s+-i\b|\b(npm|pnpm|yarn|bun)\s+(install|add|remove|i)\b|\b(rm|mv|cp|mkdir|touch|tee|chmod)\s|(?<![\d&<=-])>(?!\s*&|\s*\/dev\/null)/
 const TEST_SHELL = /\b(npm|pnpm|yarn|bun)(\s+run)?\s+test\b|\bnode\s+--test\b/
 const loadsAnySkill = (part) => part.type === "tool" && part.name === "skill" && part.state.status === "completed"
 
-// A session's whole transcript, oldest first, a page at a time.
 async function messages(sessionID) {
   if (saved) return JSON.parse(readFileSync(join(work, sessionID === rootID ? "parent.json" : `child-${sessionID}.json`), "utf8"))
   const all = []
@@ -41,7 +32,7 @@ async function messages(sessionID) {
     const page = await response.json()
     all.push(...page.data)
     if (page.data.length < 50 || !page.cursor?.next) return all
-    // The cursor carries the order; OpenCode refuses both together.
+    // OpenCode refuses a cursor together with an order
     query = `cursor=${encodeURIComponent(page.cursor.next)}`
   }
 }
@@ -53,8 +44,7 @@ const contentText = (state) => (state.content ?? []).flatMap((item) => (typeof i
 const failed = (message) => message.error !== undefined || message.finish === "error" || message.outcome === "failed"
 const failedRequest = (message) => message.type === "assistant" && message.error !== undefined
 const failedTurn = (message) => message.type === "idle" && message.outcome === "failed"
-// A step that ended its turn rather than handing tool results back to the model, or that failed;
-// since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
+// since OpenCode 2.0.22 a turn's end is also an `idle` message
 const ended = (message) =>
   message?.type === "idle" ||
   (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
@@ -63,20 +53,17 @@ const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
 }
-// A time field ({ created, ran?, completed? }, epoch ms) as "12:00:01.234 -> 12:00:05.001 (3.8 s)"; "…" while it has not ended.
 const clock = (ms) => new Date(ms).toISOString().slice(11, 23)
 const spanOf = (time) =>
   time?.created === undefined
     ? ""
     : `${clock(time.created)} -> ${time.completed === undefined ? "…" : `${clock(time.completed)} (${((time.completed - time.created) / 1000).toFixed(1)} s)`}`
-// Splits a transcript into turns: a prompt or delivered message opens one when the last step had
-// ended its turn; otherwise it steered the running turn.
 function turnsOf(list) {
   const turns = []
   let busy = false
   let last
   for (const message of list) {
-    // An instruction update is OpenCode's, stored at the next step's start: no step, and it opens no turn.
+    // a system message is OpenCode's instruction update, no step (api-notes)
     if (message.type === "system") continue
     const incoming = message.type === "user" || message.type === "synthetic"
     if (incoming && !busy && (!last || last.type === "idle" || (last.time.completed ?? Infinity) <= message.time.created)) {
@@ -92,14 +79,12 @@ function turnsOf(list) {
   }
   return turns
 }
-// A courier_spawn that completed, and the session it started.
 function childOf(part) {
   if (part.name !== "courier_spawn" || part.state.status !== "completed") return undefined
   const metadata = part.state.metadata ?? {}
   return metadata.sessionID ?? metadata.metadata?.sessionID ?? contentText(part.state).match(/Started session (ses_\w+)/)?.[1]
 }
 const spawnsOf = (list) => toolsOf(list).map(childOf).filter(Boolean)
-// Each completed courier_spawn of a transcript with the index of its message, its turn and its input.
 const spawnPartsOf = (list) => {
   const turns = turnsOf(list)
   return list.flatMap((message, index) =>
@@ -108,29 +93,22 @@ const spawnPartsOf = (list) => {
       : message.content.flatMap((part) => (childOf(part) ? [{ id: childOf(part), index, turn: turns.findIndex((turn) => turn.includes(message)) + 1, input: part.state.input ?? {} }] : [])),
   )
 }
-// The sessions whose reports a delivered courier message carries: one, or a join group's members.
 const sendersOf = (message) => (message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.[1].split(",") ?? []) : [])
 const groupOf = (message) => message.text?.match(/^<courier from="[^"]*" group="([^"]+)"/)?.[1]
 const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ?? "")
-// The status a report from `from` carries: as an attribute, or on its own line in a group's message.
 const statusOf = (message, from) =>
   groupOf(message)
     ? message.text.match(new RegExp(`^\\[\\d+/\\d+\\] ${from} ".*": (\\w+)$`, "m"))?.[1]
     : message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
-// Who sent a report with courier_send; a courier_later check-in, from whoever, is not a report.
 const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
-// The reports of `child` delivered to its parent's transcript, in order: a message with its status.
 const deliveriesFrom = (list, child) =>
   list.flatMap((message, index) => (reportersOf(message).includes(child) && statusOf(message, child) ? [{ index, message }] : []))
-// A session's completed courier_send calls to `to`, with their status.
 const sendsTo = (list, to) =>
   toolsOf(list).flatMap((part) =>
     part.name === "courier_send" && part.state.status === "completed" && part.state.input?.sessionID === to ? [{ status: part.state.input.status, message: part.state.input.message }] : [],
   )
 const reportsTo = (list, parentID) => sendsTo(list, parentID).filter((send) => send.status)
 
-// The tree: every session reached from the root through completed courier_spawn calls, with its
-// transcript, parent and depth; read again on each wait, as sessions keep starting sessions.
 async function readTree() {
   const sessions = new Map([[rootID, { parentID: undefined, depth: 0, list: await messages(rootID) }]])
   for (const [id, entry] of sessions) {
@@ -141,8 +119,6 @@ async function readTree() {
   return sessions
 }
 
-// How long everything must have been quiet, with a report missing, before giving up on it: two of the
-// scheduler's ticks, since a group's release at each level can wait for one.
 const GRACE_MS = 30_000
 const started = Date.now()
 let quietSince
@@ -170,7 +146,6 @@ for (;;) {
 
 for (const [id, entry] of tree) writeFileSync(join(work, id === rootID ? "parent.json" : `child-${id}.json`), JSON.stringify(entry.list, null, 2))
 
-// What each session did, turn by turn, the root first and each session's children after it.
 const lines = []
 function describe(id, indent) {
   const entry = tree.get(id)
@@ -202,8 +177,6 @@ const timeline = lines.join("\n")
 writeFileSync(join(work, "timeline.txt"), `${timeline}\n`)
 console.log(timeline)
 
-// The project's tests, run here in the root's checkout: the exit code and the totals, as node's TAP reporter prints them
-// (`# pass 9`) or its spec reporter does (`ℹ pass 9`), when the runner prints any.
 const project = join(work, "project")
 const tests = (() => {
   const run = spawnSync(testCommand[0], testCommand.slice(1), { cwd: project, encoding: "utf8", shell: process.platform === "win32", timeout: 120_000 })
@@ -216,7 +189,6 @@ const tests = (() => {
 })()
 writeFileSync(join(work, "tests.txt"), tests.output)
 
-// The checks.
 const who = (id) => (id === rootID ? "the root" : `session ${id} (depth ${tree.get(id).depth})`)
 const root = tree.get(rootID).list
 const rootTurns = turnsOf(root)
@@ -224,21 +196,17 @@ const first = rootTurns[0] ?? []
 const spawned = [...tree].filter(([id]) => id !== rootID)
 const orchestrators = [...tree].filter(([, entry]) => spawnsOf(entry.list).length > 0)
 const rootSpawns = spawnPartsOf(root).filter((spawn) => tree.has(spawn.id))
-// The stages, by order at the root: the sessions it started before any of them reported made the change; the first
-// it started after that report is the review session; what it started after the review's report fixed.
 const firstReport = Math.min(...rootSpawns.map((spawn) => deliveriesFrom(root, spawn.id)[0]?.index ?? Infinity))
 const changers = rootSpawns.filter((spawn) => spawn.index < firstReport)
 const review = rootSpawns.find((spawn) => spawn.index > firstReport)
 const reviewReport = review ? deliveriesFrom(root, review.id)[0] : undefined
 const afterReview = reviewReport ? rootSpawns.filter((spawn) => spawn.index > reviewReport.index) : []
-// A session's subtree: itself and every session below it.
 const subtreeOf = (id) => [id, ...spawnsOf(tree.get(id)?.list ?? []).filter((child) => tree.has(child)).flatMap(subtreeOf)]
 const changes = (list) =>
   toolsOf(list).filter((part) => part.state.status === "completed" && (CHANGING_TOOLS.has(part.name) || (part.name === "shell" && CHANGING_SHELL.test(part.state.input?.command ?? ""))))
 const changesBelow = (id) => subtreeOf(id).flatMap((member) => changes(tree.get(member).list).map((part) => ({ id: member, part })))
 const sleeps = (part) => part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))
 const looksIn = (turn) => toolsOf(turn).filter((part) => LOOKS.has(part.name) || part.name === RECALL || sleeps(part)).length
-// The one courier_recall call the root's turn may make before its first courier_spawn, which the skill asks for.
 const allowedRecall = (id, turn) => {
   if (id !== rootID) return 0
   const tools = toolsOf(turn)
@@ -246,7 +214,6 @@ const allowedRecall = (id, turn) => {
   const recalls = tools.flatMap((part, index) => (part.name === RECALL ? [index] : []))
   return recalls.length === 1 && (firstSpawn === -1 || recalls[0] < firstSpawn) ? 1 : 0
 }
-// Any look in the first turn, right after spawning, is polling, but the root's one recall before its split; later, more than one look a turn is a loop.
 const polledIn = (id, list) => {
   const [firstTurn = [], ...later] = turnsOf(list)
   return looksIn(firstTurn) - allowedRecall(id, firstTurn) > 0 || later.some((turn) => looksIn(turn) > 1)
@@ -255,7 +222,6 @@ const pollers = orchestrators.filter(([id, entry]) => polledIn(id, entry.list)).
 const finalIndex = root.findLastIndex((message) => message.type === "assistant" && textOf(message).trim())
 const finalText = finalIndex === -1 ? "" : textOf(root[finalIndex])
 const reportOf = (id) => deliveriesFrom(tree.get(tree.get(id).parentID).list, id)[0]
-// The root's own test runs after the review reported, by message index.
 const rootTestRuns = root.flatMap((message, index) =>
   message.type === "assistant" ? message.content.filter((part) => part.type === "tool" && part.name === "shell" && TEST_SHELL.test(part.state.input?.command ?? "")).map(() => index) : [],
 )
@@ -298,7 +264,6 @@ for (const [id, entry] of tree) {
   const recalls = toolsOf(entry.list).filter((part) => part.name === RECALL).length
   if (recalls) notes.push(`${who(id)} called courier_recall ${recalls} time(s)`)
 }
-// The split decision each session's first turn states, as the brief and the skill ask: a line that begins with `split:`.
 const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()
 for (const [id, entry] of tree) {
   const decision = splitLineOf((turnsOf(entry.list)[0] ?? []).filter((message) => message.type === "assistant").map(textOf).join("\n"))
@@ -346,7 +311,6 @@ if (tests.exit !== 0 && !tests.error) notes.push(`tests output: ${short(tests.ou
 const subagents = [...tree.values()].reduce((n, entry) => n + toolsOf(entry.list).filter((part) => part.name === "subagent").length, 0)
 if (subagents) notes.push(`OpenCode's own subagent tool was used ${subagents} time(s)`)
 
-// Failed model requests, or a turn whose idle marker says it failed: a run that fails its checks with any is not the plugin's verdict.
 const transcript = [...tree.values()].flatMap((entry) => entry.list)
 const providerErrors = transcript.filter(failedRequest).map((message) => message.error.type ?? "error")
 const failedTurns = transcript.filter(failedTurn).length

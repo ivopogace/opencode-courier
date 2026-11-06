@@ -4,12 +4,10 @@ type Context = Plugin.Context
 
 export type Storage = Pick<Context["storage"], "get" | "set" | "remove" | "scan">
 
-/** Every value stored under `prefix`, following the scan's pages. */
 export async function scanAll<T>(storage: Pick<Storage, "scan">, prefix: string) {
   return (await scanEntries<T>(storage, prefix)).map((entry) => entry.value)
 }
 
-/** Every key under `prefix`, without the prefix, with its value, following the scan's pages. */
 export async function scanEntries<T>(storage: Pick<Storage, "scan">, prefix: string) {
   const entries: Array<{ key: string; value: T }> = []
   let after: string | undefined
@@ -21,13 +19,8 @@ export async function scanEntries<T>(storage: Pick<Storage, "scan">, prefix: str
   return entries
 }
 
-/** Where process-wide values are kept: `globalThis`, or a stand-in for it in tests. */
 export type Registry = Record<symbol, unknown>
 
-/**
- * The one value the whole process keeps under `Symbol.for(key)`, made by `create` the first time,
- * so every instance of the plugin, and every copy of it loaded later, gets the same one.
- */
 export function processWide<T>(key: string, create: () => T, registry: Registry = globalThis as Registry): T {
   const symbol = Symbol.for(key)
   registry[symbol] ??= create()

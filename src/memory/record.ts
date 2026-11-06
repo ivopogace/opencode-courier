@@ -7,7 +7,6 @@ import { memoryStore } from "./store.js"
 type Info = Awaited<ReturnType<RefreshPorts["session"]["get"]>>
 type Messages = Awaited<ReturnType<RefreshPorts["session"]["context"]>>
 
-/** A session's replies, in order, each with when it was created, for its split lines; only the `finished` ones when asked. */
 const repliesOf = (messages: Messages, finished: boolean) =>
   messages.flatMap((message) =>
     message.type === "assistant" && (!finished || message.time?.completed !== undefined)
@@ -15,11 +14,9 @@ const repliesOf = (messages: Messages, finished: boolean) =>
       : [],
   )
 
-/** The lines in the replies that begin with `split:`, each with its reply's time. */
 const statedIn = (replies: ReturnType<typeof repliesOf>): Stated[] =>
   replies.flatMap(({ text, at }) => splitLinesOf(text).map((line) => (at === undefined ? { text: line } : { text: line, at })))
 
-/** How many courier_spawn calls of a session failed, refused by a limit mostly. */
 const refusedIn = (messages: Messages) =>
   messages.reduce(
     (n, message) => (message.type === "assistant" ? n + message.content.filter((part) => part.type === "tool" && part.name === "courier_spawn" && part.state.status === "error").length : n),
@@ -28,33 +25,25 @@ const refusedIn = (messages: Messages) =>
 
 type Use = Pick<PartRecord, "context" | "refused">
 
-/** A part's context use and refused spawns, as its messages show them. */
 function useOf(messages: Messages, windows: ReadonlyArray<ModelWindow>): Use {
   const context = contextOf(messages, windows)
   const refused = refusedIn(messages)
   return { ...(context !== undefined ? { context: Math.round(context * 100) / 100 } : {}), ...(refused ? { refused } : {}) }
 }
 
-/** A part's use as last recorded. */
 const keptUse = (last: PartRecord | undefined): Use => ({
   ...(last?.context !== undefined ? { context: last.context } : {}),
   ...(last?.refused ? { refused: last.refused } : {}),
 })
 
-/** A session's info, or `gone` when OpenCode no longer knows it; neither when it could not be read for another reason. */
 const infoOf = (ports: RefreshPorts, sessionID: string): Promise<{ info?: Info; gone: boolean }> =>
   ports.session.get({ sessionID }).then(
     (info) => ({ info, gone: false }),
     (error: unknown) => ({ gone: isNotFound(error) }),
   )
 
-/**
- * One session of the tree as its record keeps it, without its use when its messages were not read for it (only when its turn
- * `ended` or it is `known` to no record yet), without a duration when its info was not, and whether it runs or is owed a turn.
- */
 async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth, subagent }: Below, stalled: boolean, at: number, known: boolean, ended: boolean) {
   const { sessionID } = entry
-  // Read once: for its use, and for whether it runs when its times do not show rest.
   const readAt = Date.now()
   const messages = ended || !known ? ports.session.context({ sessionID }) : undefined
   const [{ info, gone, running, endedAt }, use, report, waiting] = await Promise.all([
@@ -81,28 +70,21 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
     ...(info ? { duration: Math.max(0, end - created) } : {}),
     ...(cost !== undefined ? { cost } : {}),
   }
-  // A courier message waiting to be taken keeps it unfinished, unless OpenCode no longer knows it, which then takes none.
   return { record, use, running: running || (waiting && !gone), unread: info === undefined, gone }
 }
 
-/** Of the parts last recorded, those the roster has forgotten before they settled whose session OpenCode no longer knows. */
 async function goneSince(ports: RefreshPorts, parts: ReadonlyArray<PartRecord>, onRoster: ReadonlySet<string>) {
   const unsettled = parts.filter((one) => !onRoster.has(one.sessionID) && !isSettled(one.status))
   const looked = await Promise.all(unsettled.map(async ({ sessionID }) => ({ sessionID, ...(await infoOf(ports, sessionID)) })))
   return new Set(looked.flatMap((one) => (one.gone ? [one.sessionID] : [])))
 }
 
-/** The top's turn: from the transcript read at `readAt`, unless a stamp since then moved its times, which `turnOf` reads again. */
 async function topTurnAfter(ports: RefreshPorts, top: string, info: Info, messages: Promise<Messages> | undefined, readAt: number): Promise<Turn> {
   const fresh = await ports.session.get({ sessionID: top }).catch(() => undefined)
   if (fresh && millis(fresh.time.updated) > readAt) return turnOf(ports.session, top, fresh.time)
   return messages ? turnIn(ports.session, top, info.time, messages, readAt) : turnOf(ports.session, top, info.time)
 }
 
-/**
- * Writes the record of the tree under `top` as it stands at `at`, after the turn of `ended`; a part the roster has forgotten
- * keeps its last recorded state, unless found gone before it settled. Nothing for a top unknown to OpenCode or with memory off.
- */
 export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "windows" | "off">, top: string, at: number, ended?: string): Promise<TreeRecord | undefined> {
   let info: Info
   try {
@@ -114,8 +96,6 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   if (state.off.has(info.location.directory)) return undefined
   const store = memoryStore(ports.storage)
   const [previous, { nodes }] = await Promise.all([store.get(info.projectID, top), subtree(ports.storage, top, undefined, ports.session)])
-  // The split lines are in the top's own replies, so only its own turn end can revise one stated already; another's reads
-  // them while none is stated, and only the replies finished, never a line the top is still writing.
   const own = ended === top
   const topReadAt = Date.now()
   const topMessages = own || !isStated(previous?.split ?? NOT_STATED) ? ports.session.context({ sessionID: top }) : undefined
@@ -127,11 +107,8 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
     Promise.all(nodes.map((node) => part(ports, windows, node, stalled.has(node.entry.sessionID), at, known.has(node.entry.sessionID), node.entry.sessionID === ended))),
     goneSince(ports, previous?.parts ?? [], new Set(nodes.map((node) => node.entry.sessionID))),
   ])
-  // A courier message waiting in the top's inbox is a turn its transcript does not show yet, as for a part; a store that
-  // cannot be read counts as one waiting, as `runs` counts a transcript it cannot read as running.
   const topTurn = topTurnAfter(ports, top, info, topMessages, topReadAt)
   const [said, topRunning, topOwed] = await Promise.all([replies, topTurn.then((turn) => turn.running), waitsInInbox(ports, top).catch(() => true)])
-  // Read again just before the write: a courier_recall or courier_note call, or another turn end's refresh, wrote meanwhile.
   const latest = (await store.get(info.projectID, top).catch(() => previous)) ?? previous
   const last = new Map(latest?.parts.map((one) => [one.sessionID, one]))
   const current = read.map(({ record, use, unread, gone }) => {
@@ -142,13 +119,12 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   const parts = mergeParts(latest?.parts ?? [], [...current, ...forgotten])
   const recalled = latest?.recalled ?? previous?.recalled
   const lesson = latest?.lesson ?? previous?.lesson
-  // The first stated line stays even when compaction has dropped its reply; a later one is a revision.
+  // the transcript starts at the last compaction (api-notes)
   const first = latest?.split ?? NOT_STATED
   const found = splitOf(first, said.map((reply) => reply.text).join("\n"))
   const stated = statedIn(said)
   const replaced = found !== first
   const { split, revisions: recorded } = replaced ? replacingMention(found, latest?.revisions) : { split: first, revisions: latest?.revisions }
-  // The line that replaced a mention is the first stated, so beside revisions already recorded it is not one of them too.
   const since = replaced && recorded ? stated.slice(1) : stated
   const revisions = split === NOT_STATED ? undefined : revise({ split, revisions: recorded }, since, at, parts.filter((one) => !one.subagent).length)
   const record: TreeRecord = {

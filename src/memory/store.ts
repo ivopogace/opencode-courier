@@ -18,26 +18,19 @@ import {
 } from "./domain.js"
 import type { MemoryStore } from "./ports.js"
 
-// The memory's storage: the only file that knows its keys and layout. A record is read leniently, as one written by hand
-// with `e2e/kv.ts set` is; beside it, under its key and each with its own writer, lie the person's pin and each reader tree's reads.
 
 const PREFIX = "memory/"
 
-/** A record as the storage takes it, which asks for an index signature the interface lacks. */
 type Stored = Parameters<Storage["set"]>[1]
 
 export const recordKey = (projectID: string, sessionID: string) => `${PREFIX}${projectID}/${sessionID}`
 
-/** The key prefix of a project's records. */
 export const projectPrefix = (projectID: string) => `${PREFIX}${projectID}/`
 
-/** The key prefix of what lies beside a record: its pin and its reads. */
 const besidePrefix = (projectID: string, sessionID: string) => `${recordKey(projectID, sessionID)}/`
 
-/** The person's pin on a record, `{ at }`; the key's presence pins. */
 export const pinKey = (projectID: string, sessionID: string) => `${besidePrefix(projectID, sessionID)}pin`
 
-/** The reads of a record by the tree under `by`, `{ shown, read, at }`, written only by that tree's sessions. */
 export const readsKey = (projectID: string, sessionID: string, by: string) => `${besidePrefix(projectID, sessionID)}reads/${by}`
 
 function readPart(value: unknown): PartRecord | undefined {
@@ -72,7 +65,6 @@ function readRecalled(value: unknown): Recalled | undefined {
   return at === undefined ? { calls } : { at, calls }
 }
 
-/** A lesson as `{ text, at, depth }`, or as a bare string written by hand, dated `movedAt`; none for an empty text. */
 function readLesson(value: unknown, movedAt: number): Lesson | undefined {
   const given = typeof value === "string" ? { text: value } : obj(value)
   const { text } = lessonText(str(given.text) ?? "")
@@ -81,7 +73,6 @@ function readLesson(value: unknown, movedAt: number): Lesson | undefined {
   return { text, at: num(given.at) ?? movedAt, ...(depth !== undefined && Number.isInteger(depth) && depth > 0 ? { depth } : {}) }
 }
 
-/** The revisions as `{ text, at, parts }`, the newest `MAX_REVISIONS`, leaving out an entry without a text, a time or a count of parts. */
 function readRevisions(value: unknown): Revision[] {
   if (!Array.isArray(value)) return []
   const revisions = value.flatMap((entry: unknown): Revision[] => {
@@ -94,7 +85,6 @@ function readRevisions(value: unknown): Revision[] {
   return revisions.slice(-MAX_REVISIONS)
 }
 
-/** A record as stored, or undefined for a value that is not one; its reads and pin lie beside it (`beside`). */
 export function readRecord(value: unknown): TreeRecord | undefined {
   const given = obj(value)
   if (!Array.isArray(given.parts)) return undefined
@@ -115,7 +105,6 @@ export function readRecord(value: unknown): TreeRecord | undefined {
   }
 }
 
-/** One tree's reads as `{ shown, read, at }`; a count missing is 0, an entry without a time is none. */
 function readReads(value: unknown): Reads | undefined {
   const given = obj(value)
   const at = num(given.at)
@@ -124,26 +113,21 @@ function readReads(value: unknown): Reads | undefined {
   return { shown: count("shown"), read: count("read"), at }
 }
 
-/** The pin as `{ at }`: any value under the key pins, dated 0 when it says no time. */
 const readPinned = (value: unknown): Pinned => ({ at: num(obj(value).at) ?? 0 })
 
-/** What lies beside a record under its key. */
 interface Beside {
   pinned?: Pinned
   reads: Reads[]
 }
 
-/** A record with what lies beside it: its readers' reads as one, and its pin. */
 function beside(record: TreeRecord, { pinned, reads }: Beside): TreeRecord {
   const { parts, ...facts } = record
   const summed = sumReads(reads)
   return { ...facts, ...(summed ? { reads: summed } : {}), ...(pinned ? { pinned } : {}), parts }
 }
 
-/** The key's path under `memory/`, split: `[projectID, sessionID]` a record, then `pin`, or `reads` and the reader. */
 const pathOf = (prefix: string, key: string) => `${prefix.slice(PREFIX.length)}${key}`.split("/")
 
-/** Sorts a scan's entries by record: the record's value, when the scan held it, and what lies beside it. */
 function group(prefix: string, entries: ReadonlyArray<{ key: string; value: unknown }>) {
   const groups = new Map<string, { record?: unknown; beside: Beside }>()
   const of = (projectID: string, sessionID: string) => {
@@ -168,7 +152,6 @@ function group(prefix: string, entries: ReadonlyArray<{ key: string; value: unkn
   })
 }
 
-/** The `MemoryStore` over the plugin's storage. */
 export function memoryStore(storage: Storage): MemoryStore {
   const scanned = async (prefix: string) => group(prefix, await scanEntries<unknown>(storage, prefix))
   const under = async (prefix: string): Promise<StoredRecord[]> =>
@@ -182,7 +165,6 @@ export function memoryStore(storage: Storage): MemoryStore {
       const record = readRecord(value)
       return record && beside(record, others[0]?.beside ?? { reads: [] })
     },
-    // What lies beside the record is never written with it, so no refresh or note can write over a pin or a count.
     async put(projectID, sessionID, { reads: _reads, pinned: _pinned, ...record }) {
       await storage.set(recordKey(projectID, sessionID), { ...record, parts: record.parts.map((part) => ({ ...part })) } as unknown as Stored)
     },

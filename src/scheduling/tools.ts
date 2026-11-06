@@ -6,8 +6,6 @@ import { cancelText, laterText } from "./text.js"
 export const LaterInput = Schema.Struct({
   message: Schema.String.annotate({ description: "The message to deliver." }),
   delayMinutes: Schema.optional(
-    // Some models send the number as a string ("3", "3.0") whatever the schema says, and resend it
-    // unchanged after the error, so a string is accepted and schedule reads it as a number.
     Schema.Union([Schema.Number, Schema.String]).annotate({
       description: "Deliver this many minutes from now. Give this or at.",
     }),
@@ -20,7 +18,6 @@ export const CancelInput = Schema.Struct({
   id: Schema.String.annotate({ description: "The id courier_later returned." }),
 })
 
-/** Adds `courier_later` and `courier_cancel`. */
 export function addSchedulingTools(tools: ToolEditor, later: LaterPorts) {
   tools.add({
     name: "courier_later",

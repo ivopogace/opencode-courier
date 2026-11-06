@@ -26,15 +26,12 @@ export const AnswerInput = Schema.Struct({
   ),
 })
 
-/** What the person's tool runs on. */
 export interface PersonToolPorts {
   readonly answer: AnswerPorts
   readonly questions: QuestionPorts
-  /** The permission requests sessions were told about and have not answered. */
   readonly waiting: Waiting
 }
 
-// One tool answers both: a question's id is the plugin's own, a permission request's OpenCode's.
 async function answerRequest(ports: PersonToolPorts, callerID: string, input: typeof AnswerInput.Type, call?: AnswerCall) {
   const { sessionID, requestID } = input
   if (isQuestion(requestID)) {
@@ -55,7 +52,6 @@ async function answerRequest(ports: PersonToolPorts, callerID: string, input: ty
   })
 }
 
-/** Adds `courier_answer`. */
 export function addPersonTools(tools: ToolEditor, ports: PersonToolPorts) {
   tools.add({
     name: "courier_answer",
@@ -73,7 +69,7 @@ export function addPersonTools(tools: ToolEditor, ports: PersonToolPorts) {
     execute: async (input, context) => {
       const call: AnswerCall = { messageID: context.messageID, callID: context.id }
       const result = await answerRequest(ports, context.sessionID, input, call).catch((error: unknown) => {
-        // A plain rejection of the caller's prompt ends its step, as OpenCode's own tools do: it goes back as it is.
+        // rethrown untouched, a plain decline ends the step (api-notes)
         if (isDeclined(error)) throw error
         return rethrow("courier_answer")(error)
       })

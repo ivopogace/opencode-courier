@@ -1,5 +1,3 @@
-// The memory's RPC (#262), through which the TUI's memory view reads the project's tree records, forgets one or only its
-// lesson, and pins one (#285); and the forget and pin use cases behind it.
 import { describe, expect, test } from "bun:test"
 import { PART_STATUSES } from "../src/memory/domain.js"
 import { forget } from "../src/memory/forget.js"
@@ -11,7 +9,6 @@ import type { TreeRecord } from "../src/memory/domain.js"
 
 const NOW = 1_700_000_000_000
 
-/** Ports over a map, with the writes made, the project `proj_1` and the clock at `NOW`. */
 function fakePorts(memory = true) {
   const store = new Map<string, unknown>()
   const writes: string[] = []
@@ -167,7 +164,6 @@ describe("pin", () => {
     expect(store.get("memory/proj_1/ses_a/pin")).toEqual({ at: NOW })
     expect((await memory.get("proj_1", "ses_a"))?.pinned).toEqual({ at: NOW })
 
-    // Pinned again later, it keeps when it was first pinned.
     ;(ports as any).now = () => NOW + 5000
     expect(await pin(ports, "ses_a", true)).toBe("pinned")
     expect(store.get("memory/proj_1/ses_a/pin")).toEqual({ at: NOW })

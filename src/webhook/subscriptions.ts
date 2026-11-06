@@ -21,10 +21,6 @@ export interface Subscription {
 const GITHUB_REPO = /^[\w.-]+\/[\w.-]+$/
 export const GENERIC_NAME = /^[\w.-]{1,64}$/
 
-/**
- * Normalises a topic: `owner/repo` or `owner/repo#12` (optionally `github:`-prefixed) is a GitHub
- * repo, PR or issue; any other name of letters, digits, `.`, `_` and `-` is posted to `/hook/<name>`.
- */
 export function parseTopic(input: string) {
   const raw = input.trim()
   const github = raw.replace(/^github:/i, "")
@@ -39,11 +35,9 @@ export function parseTopic(input: string) {
   )
 }
 
-// Topic first, so a delivery scans only its own topics' subscribers.
 const topicPrefix = (topic: string) => `${PREFIX}${encodeURIComponent(topic)}/`
 export const keyOf = (sessionID: string, topic: string) => topicPrefix(topic) + sessionID
 
-/** Subscribes an existing session to a topic; throws for a session OpenCode does not know. */
 export async function subscribe(ports: WebhookPorts, sessionID: string, topic: string) {
   const subscription: Subscription = { sessionID, topic: parseTopic(topic), createdAt: ports.now() }
   await ports.session.get({ sessionID })
@@ -51,7 +45,6 @@ export async function subscribe(ports: WebhookPorts, sessionID: string, topic: s
   return subscription
 }
 
-/** Drops one subscription, or all of the session's when no topic is given; returns the topics dropped. */
 export async function unsubscribe(ports: WebhookPorts, sessionID: string, topic?: string) {
   if (topic !== undefined) {
     const key = keyOf(sessionID, parseTopic(topic))
@@ -64,13 +57,10 @@ export async function unsubscribe(ports: WebhookPorts, sessionID: string, topic?
   return dropped.map((item) => item.topic)
 }
 
-/** Every subscription, or those to one topic. */
 export function subscriptions(ports: Pick<WebhookPorts, "storage">, topic?: string) {
   return scanAll<Subscription>(ports.storage, topic === undefined ? PREFIX : topicPrefix(topic))
 }
 
-/** Whether a session waits on a webhook it subscribed to at `since` or later. */
 export async function subscribedSince(ports: Pick<WebhookPorts, "storage">, sessionID: string, since: number) {
-  // An older subscription is no wait: a prompt, most likely its delivery, has come since.
   return (await subscriptions(ports)).some((subscription) => subscription.sessionID === sessionID && subscription.createdAt >= since)
 }

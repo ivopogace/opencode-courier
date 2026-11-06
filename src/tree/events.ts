@@ -13,10 +13,8 @@ import { lastReply } from "./status.js"
 import { failureNotice, silentNotice } from "./text.js"
 import { forgetWakes, settleWake, wakeEnded, wakeStarted, watchWake, type Enqueued, type Execution, type InboxSettled } from "./wake.js"
 
-/** The part of OpenCode's `session.execution.failed` event the notice is made from. */
 export interface ExecutionFailed {
   readonly id: string
-  /** When OpenCode published it, in epoch milliseconds. */
   readonly created?: number
   readonly data: {
     readonly sessionID: string
@@ -24,17 +22,12 @@ export interface ExecutionFailed {
   }
 }
 
-/** OpenCode's events that concern one session's turns and inbox: `session.execution.succeeded` and the like. */
 export interface SessionEvent {
   readonly id: string
   readonly created?: number
   readonly data: { readonly sessionID: string; readonly reason?: string }
 }
 
-/**
- * Tells the parent of a child whose turn failed, since a child that cannot reach its model cannot
- * call courier_send. Returns the parents told.
- */
 export async function reportFailure(ports: WatchPorts, seen: Set<string>, event: ExecutionFailed) {
   if (!claim(seen, event.id)) return []
   const { sessionID, error } = event.data
@@ -42,16 +35,12 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   const entries = await children.entriesOf(sessionID)
   const at = event.created ?? ports.now()
   const wait = retryDelay(error)
-  // Not in the way of the notice: kept only so the limits stop counting the child, and the panel can say when its limit lifts.
   if (entries.length)
     await children.settled(sessionID, "failed", at, undefined, wait === undefined ? undefined : at + wait).catch((error: unknown) =>
       ports.log(`courier watch: could not note the failed turn of ${sessionID}: ${String(error)}`),
     )
   const out = await Promise.all(entries.map((entry) => outIn(ports, entry)))
-  // Left before the notice, so the parent waits on the group meanwhile; nudged after it, so the group's
-  // message does not overtake the notice, short of an interval tick falling in between.
   const completed = await Promise.all(out.map((member) => (member ? leave(ports, member, "failed", at) : Promise.resolve(false))))
-  // A session courier_stop stopped is not a failure to tell: its parent was told of the stop, or ordered it.
   const quiet = entries.length > 0 && (await stoppedSincePrompt(children, sessionID).catch(() => false))
   try {
     if (quiet) return []
@@ -73,15 +62,13 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   return entries.map((entry) => entry.parentID)
 }
 
-/** OpenCode's `session.inbox.enqueued`: the item's type, which its `session.inbox.delivered` does not carry. */
 export interface InboxEnqueued {
   readonly data: { readonly sessionID: string; readonly inboxID: string; readonly item: { readonly type: string } }
 }
 
-/** Inbox items that are not courier's or the parent's business: the person's own prompts, compactions and moves. */
+// only inbox.enqueued carries the item's type (api-notes)
 const UNOWED = new Set(["user", "compaction", "move"])
 
-/** Remembers the type of an item enqueued for a spawned session, for `notePrompt`; other sessions cost one read. */
 export async function noteEnqueued(ports: WatchPorts, inbox: Map<string, string>, event: InboxEnqueued) {
   const { sessionID, inboxID, item } = event.data
   if ((await childStore(ports.storage).indexedParent(sessionID)) === undefined) return false
@@ -89,32 +76,23 @@ export async function noteEnqueued(ports: WatchPorts, inbox: Map<string, string>
   return true
 }
 
-/**
- * Notes that a message reached a spawned session, which then owes its parent a report, unless `inbox` knows it for one of
- * `UNOWED` (`spawn` notes the task itself); reads the reverse index alone, and claims nothing: the note is the same twice.
- */
 export async function notePrompt(
   ports: WatchPorts,
   event: SessionEvent & { readonly data: { readonly inboxID?: string } },
   inbox?: Map<string, string>,
 ) {
   const { sessionID, inboxID } = event.data
-  // Kept, not deleted: the hub's other subscription looks it up for the same delivery.
   if (inboxID !== undefined && UNOWED.has(inbox?.get(inboxID) ?? "")) return false
   const children = childStore(ports.storage)
   const parentID = await children.indexedParent(sessionID)
   if (parentID === undefined) return false
-  // The reminder to report is not a prompt: it asks for the report the last one owes.
+  // the idle hook's reminder still publishes inbox.delivered (api-notes)
   if (inboxID !== undefined && (await children.nudgeOf(sessionID)).inboxID === inboxID) return false
   await children.prompted(sessionID, event.created ?? ports.now())
   await syncStanding(ports, parentID)
   return true
 }
 
-/**
- * Notes that a spawned session's turn was stopped, which takes it out of its group without a report; a
- * shutdown's is left to `reportDeclined`, as one stopped between steps resumes on the next start.
- */
 export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
   if (event.data.reason === "shutdown") return false
   const { sessionID } = event.data
@@ -129,10 +107,6 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
   return true
 }
 
-/**
- * Forgets what a deleted session leaves (report state, groups) and, unless isolated or a parent on the roster, its
- * entry. Returns the sessions forgotten.
- */
 export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const { sessionID } = event.data
   const children = childStore(ports.storage)
@@ -146,7 +120,6 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   return forgotten
 }
 
-/** A `Waits` asking `suppliers` one after another, cheapest first: the first that waits answers. */
 export const waitsOn =
   (...suppliers: Waits[]): Waits =>
   async (ports, sessionID, since) => {
@@ -154,28 +127,20 @@ export const waitsOn =
     return false
   }
 
-/** A `Waits` asking `suppliers` at once, as cheap as each other: it waits when one does, and fails when one fails. */
 export const together =
   (...suppliers: Waits[]): Waits =>
   async (ports, sessionID, since) =>
     (await Promise.all(suppliers.map((supplier) => supplier(ports, sessionID, since)))).includes(true)
 
-/**
- * Tells the parent of a spawned session whose turn ended without reporting to it since its last
- * prompt, unless it waits; finds the session by the reverse index alone. Returns the parents told.
- */
 export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: SessionEvent, outside: Waits) {
   const { sessionID } = event.data
   const children = childStore(ports.storage)
   const entry = await children.indexedEntry(sessionID)
-  // Claimed after the lookup, so other sessions' turns do not crowd `seen`, and before anything is told.
   if (!entry || !claim(seen, event.id)) return []
   const report = await owedUnwaited(ports, children, outside, sessionID)
   if (!report) return []
-  // The notice goes out without the reply rather than not at all.
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
   const group = (await outIn(ports, entry))?.group
-  // Before the notice, which may end the parent's turn at once: once told, it no longer waits for this one.
   const toldAt = event.created ?? ports.now()
   await children.told(sessionID, toldAt).catch((error: unknown) =>
     ports.log(`courier watch: could not note that the parent of ${sessionID} was told: ${String(error)}`),
@@ -189,7 +154,6 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
       delivery: "steer",
     })
   } catch (error) {
-    // Not told after all: the parent still waits for it.
     await children.untold(sessionID, toldAt).catch(() => undefined)
     throw error
   }
@@ -197,10 +161,7 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   return [entry.parentID]
 }
 
-/**
- * A session's turn that OpenCode reports as a shutdown ended in a plain decline, if its transcript ends on an aborted step: its
- * parent is told as for a turn that succeeded without a report. A real shutdown during a step reads the same, and is told too.
- */
+// a plain decline ends as a shutdown, on an aborted step (api-notes)
 export async function reportDeclined(ports: WatchPorts, seen: Set<string>, event: SessionEvent, outside: Waits) {
   if (event.data.reason !== "shutdown" || (await childStore(ports.storage).indexedParent(event.data.sessionID)) === undefined) return []
   if (!endsIdle(await ports.session.context({ sessionID: event.data.sessionID }).catch(() => []))) return []
@@ -209,7 +170,6 @@ export async function reportDeclined(ports: WatchPorts, seen: Set<string>, event
 
 const TURN_ENDS = new Set(["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"])
 
-/** What `route` and `after` dispatch on; the wake watch needs `inbox.enqueued` and `execution.started` both. */
 const TREE_TYPES = [
   "session.execution.started",
   "session.execution.succeeded",
@@ -221,8 +181,8 @@ const TREE_TYPES = [
   "session.deleted",
 ] as const satisfies readonly EventType[]
 
-/** A session's turn ended, sealing its groups: one that is complete has the scheduler deliver it now; not a shutdown's, which stamps no idle time. */
 async function sealGroups(ports: WatchPorts, event: SessionEvent) {
+  // a shutdown stamps no time.idle (api-notes)
   if (event.data.reason === "shutdown") return
   try {
     if (await hasCompleteGroup(groupStore(ports.storage), event.data.sessionID)) ports.nudge()
@@ -231,7 +191,6 @@ async function sealGroups(ports: WatchPorts, event: SessionEvent) {
   }
 }
 
-/** The events of spawned sessions' turns and inboxes, and their deletion: the tree's. */
 function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: HostEvent) {
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent, outside)
@@ -245,7 +204,6 @@ function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: 
   return undefined
 }
 
-/** The events that move a courier message waiting in a session's inbox: enqueued, taken, cancelled, and the turns around it. */
 function routeWake(ports: WatchPorts, event: HostEvent) {
   if (event.type === "session.inbox.enqueued") return watchWake(ports, event as unknown as Enqueued)
   if (event.type === "session.inbox.delivered" || event.type === "session.inbox.cancelled") return settleWake(ports, event as unknown as InboxSettled)
@@ -255,7 +213,6 @@ function routeWake(ports: WatchPorts, event: HostEvent) {
   return undefined
 }
 
-/** The tree's handling of an event alongside the wake watch's, which touches other keys and never fails the tree's. */
 async function route(ports: WatchPorts, state: WatchState, outside: Waits, event: HostEvent) {
   const watched = routeWake(ports, event)?.catch((error: unknown) => ports.log(`courier watch: wake of ${event.type}: ${String(error)}`))
   try {
@@ -265,15 +222,10 @@ async function route(ports: WatchPorts, state: WatchState, outside: Waits, event
   }
 }
 
-/**
- * Tells parents of a child's failed or silent turn, unless it waits on what `outside` says, and notes
- * its prompts, interruptions and deletion; `after` a turn's end, seals the groups of its session.
- */
 export function treeEvents(state: WatchState, outside: Waits): EventModule<WatchPorts> {
   return {
     types: TREE_TYPES,
     handle: (ports, event) => route(ports, state, outside, event),
-    // After: a silent end is judged while the group the nudge may deliver is still there to wait on.
     after: (ports, event) => (TURN_ENDS.has(event.type) ? sealGroups(ports, event as unknown as SessionEvent) : undefined),
   }
 }

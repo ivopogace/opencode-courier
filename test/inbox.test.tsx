@@ -1,4 +1,3 @@
-// The asks inbox, the person module's TUI part, against a fake TUI context whose dialogs a test answers.
 import { describe, expect, test } from "bun:test"
 import type { Plugin } from "@opencode/plugin/tui"
 import { addAsksInbox, askFooter, askTitle, asksOf, INBOX_COMMAND, pathOf, SETTLE_MS, active, type Ask } from "../src/person/tui.js"
@@ -27,10 +26,6 @@ const questionForm = { id: "frm_q", sessionID: "ses_a", title: "Greeting", metad
 
 type Dialog = { kind: "select" | "prompt" | "alert"; options: any }
 
-/**
- * A fake TUI context with the open session `ses_root`: the person's RPC answers `state.asks`, the forms are
- * `state.forms`, and each dialog is answered by the next of `answers`, which backs out once they run out.
- */
 function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
   const state = { asks, forms, formError: undefined as unknown, answered: { answered: true, by: "result" } as Answered }
   const dialogs: Dialog[] = []
@@ -43,7 +38,7 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
   const layers: (() => any)[] = []
   const sizes: unknown[] = []
   let route: { type: string; sessionID?: string } = { type: "session", sessionID: "ses_root" }
-  // As the host's: a dialog shown, or cleared, closes the one before, whose promise resolves with nothing.
+  // a new or cleared dialog resolves the open one with nothing (api-notes)
   let close: (() => void) | undefined
   let cleared = 0
   const dialog = (kind: Dialog["kind"]) => (options: any) => {
@@ -126,7 +121,7 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
     keymap: { layer: (factory: () => any) => void layers.push(factory) },
   } as unknown as Plugin.Context
   const emit = (type: string, sessionID?: string) => {
-    // As the host sends them: a form's session is in its form.
+    // the host puts form.created's sessionID inside its form
     const data = type === "form.created" ? { form: { sessionID } } : { sessionID }
     for (const listener of listeners) listener({ details: { type, ...(sessionID ? { data } : {}) } } as never)
   }
@@ -151,10 +146,8 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
 }
 
 const empty: Asks = { top: "ses_root", sessions, permissions: [], questions: [] }
-/** The dialog's option whose title starts with `title`, chosen. */
 const pick = (title: string) => (dialog: Dialog) => dialog.options.options.find((option: any) => option.title.startsWith(title))?.value
 const type = (text: string) => () => text
-/** Leaves the dialog open until another replaces it. */
 const hold = () => new Promise(() => undefined)
 const settle = () => new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50))
 
@@ -199,7 +192,6 @@ describe("the inbox", () => {
     expect(fake.sizes).toEqual([{ size: "large" }, { size: "large" }])
     const last = fake.dialogs.at(-1)!.options
     expect(last.title).toBe("Waiting on you (2)")
-    // The permission request was seen first, so it stays first, though the question's session comes first in the tree.
     expect(last.options.map((option: any) => [option.title, option.description, option.footer])).toEqual([
       ["Permission: bash bun test", "Root › Fix the bug › Write tests", "depth 2 · group pair"],
       ["Question: Greeting: Which greeting?", "Root › Fix the bug", "depth 1"],
@@ -310,7 +302,6 @@ describe("the open list follows the tree", () => {
     fake.emit("permission.asked", "ses_a")
     await opening
     expect(fake.replies()).toEqual([{ method: "permission.reply", input: { sessionID: "ses_b", requestID: "per_1", decision: "once" } }])
-    // Listed again after the answer, with the question left; then the person leaves.
     expect(titles(fake.dialogs.at(-1)!)).toEqual(["Question: Greeting: Which greeting?"])
   })
 
@@ -345,7 +336,6 @@ describe("the open list follows the tree", () => {
     await settle()
     expect(fake.dialogs.at(-1)!.options.title).toBe("Permission: bash bun test")
 
-    // Leaving the permission's dialog lists the tree again, read then; leaving the list closes it.
     fake.dialogs.length = 0
     fake.context.ui.dialog.clear()
     await opening
@@ -368,11 +358,8 @@ describe("answering a permission request", () => {
   test("allows it once or always through OpenCode's reply, as the person, never through assert, then lists what is left", async () => {
     for (const [choice, decision] of [["Allow once", "once"], ["Always allow", "always"]] as const) {
       const fake = await answer(pick(choice))
-      // The inbox answers as the person, so no prompt is asked anywhere: the reply alone, straight to OpenCode.
       expect(fake.replies()).toEqual([{ method: "permission.reply", input: { sessionID: "ses_b", requestID: "per_1", decision } }])
-      // Listed again, without the one answered, and so nothing is left.
       expect(fake.dialogs.map((dialog) => dialog.kind)).toEqual(["select", "select"])
-      // The start-up read, then the two the inbox makes.
       expect(fake.calls.filter(({ method }) => method === "asks")).toHaveLength(3)
     }
   })
@@ -401,7 +388,6 @@ describe("answering a permission request", () => {
 })
 
 describe("the top session's own permission requests", () => {
-  // The top's courier_answer prompt for ses_b's request, and a request of the top's own.
   const prompt = { sessionID: "ses_root", requestID: "per_top", action: "bash", resources: ["bun test"], passesOn: { sessionID: "ses_b", requestID: "per_1" } }
   const own = { sessionID: "ses_root", requestID: "per_own", action: "edit", resources: ["src/a.ts"], save: ["src/*"] }
   const withTop: Asks = { ...empty, permissions: [prompt, own, bash] }
@@ -499,7 +485,6 @@ describe("answering a question", () => {
     expect(refused.toasts).toEqual([
       expect.objectContaining({ message: "The answer was not passed on: answers needs one entry per question, 1 in all, not 2.", variant: "error" }),
     ])
-    // Not taken for answered: it is listed again.
     expect(refused.dialogs.at(-1)!.options.title).toBe("Waiting on you (1)")
   })
 })
@@ -613,7 +598,6 @@ describe("attention", () => {
   })
 
   test("in a mixed tree, the native sibling's ask gets the courier's notification and the standalone sibling's none; the inbox lists both", async () => {
-    // ses_b, with the permission request, is native; ses_a, with the question, is a standalone session.
     const fake = fakeContext(empty)
     fake.native.add("ses_b")
     const inbox = addAsksInbox(fake.context, FOLLOWS)
@@ -734,7 +718,6 @@ test("asks the fields OpenCode's form service treats as active", async () => {
     ],
   }
   const fake = fakeContext(empty, { ses_b: [form] })
-  // a: skipped; then TS and Go picked.
   fake.answers.push(pick("Form"), type(""), pick("[ ] TS"), pick("[ ] Go"), pick("Done"), type("cfg"))
   await addAsksInbox(fake.context, FOLLOWS).open()
   expect(fake.dialogs.map((d) => d.options.title)).toEqual(["Waiting on you (1)", "When · A", "When · Langs", "When · Langs", "When · Langs", "When · TS config"])
@@ -864,7 +847,6 @@ test("an unrelated request does not sound asks that were already waiting", async
   const fake = fakeContext({ ...empty, permissions: [bash], questions: [greeting] })
   addAsksInbox(fake.context, FOLLOWS)
   await settle()
-  // A permission request in a session outside this tree; the tree's two asks were there before.
   fake.emit("permission.asked", "ses_elsewhere")
   await settle()
   expect(fake.notified).toEqual([])
@@ -877,7 +859,6 @@ test("the first ask in a tree reached after start sounds, the ones already waiti
   addAsksInbox(fake.context, FOLLOWS)
   await settle()
   fake.goSession("ses_root")
-  // bash waits in ses_b; the event names the session of the new ask.
   fake.emit("form.created", "ses_a")
   await settle()
   expect(fake.notified.map((options) => options.message)).toEqual([expect.stringContaining("Greeting")])

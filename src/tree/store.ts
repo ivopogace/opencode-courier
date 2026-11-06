@@ -4,36 +4,21 @@ import { scanAll, scanEntries, type Storage } from "../platform/storage.js"
 import { lineageIn, type Artifacts, type HeldReport, type Member, type RosterEntry } from "./domain.js"
 import type { ChildStore, GroupStore, Membership, ReportField, ReportNote, Settled, Stored, Wake, WakeStore } from "./ports.js"
 
-// The tree's storage: the only file that knows its keys and layouts. Older copies and a second server on the same data
-// directory read and write the same keys, so a key or a stored value never changes shape.
-
-const PREFIX = "roster/"
-/**
- * The reverse index: a child's `ReverseEntry` under `roster-by-child/<sessionID>`, written with its
- * roster entry; only an index, so `roster/` is scanned for entries lacking one, and confirms a hit.
- */
+const ROSTER_PREFIX = "roster/"
 const BY_CHILD = "roster-by-child/"
 
-/**
- * What the reverse index holds for a child: the sessions above it, its parent first and the top
- * session, which courier_spawn did not start, last; each is the parent of the one before it.
- */
 export interface ReverseEntry {
   readonly ancestors: ReadonlyArray<string>
 }
 
 export function rosterKey(parentID: string, sessionID: string) {
-  return `${PREFIX}${parentID}/${sessionID}`
+  return `${ROSTER_PREFIX}${parentID}/${sessionID}`
 }
 
 export function reverseKey(sessionID: string) {
   return `${BY_CHILD}${sessionID}`
 }
 
-/**
- * Whether a spawned session has reported since its last prompt, under `report/<sessionID>/`: `prompt`, `settled`, `progress`,
- * `told`, `stopped` and `nudged` (the reminder to report); docs/maintainers/architecture.md has each.
- */
 const REPORT_PREFIX = "report/"
 
 export const promptKey = (sessionID: string) => `${REPORT_PREFIX}${sessionID}/prompt`
@@ -52,22 +37,13 @@ const REPORT_KEYS: Readonly<Record<ReportField, (sessionID: string) => string>> 
   nudged: nudgedKey,
 }
 
-/**
- * Join groups: each member of a parent's group under `group/<parentID>/<name>/<sessionID>`, with its
- * held report or how it left; released and dropped once none is out. docs/maintainers/architecture.md, § Storage.
- */
 const GROUP_PREFIX = "group/"
 
 export const memberKey = (parentID: string, group: string, sessionID: string) => `${GROUP_PREFIX}${parentID}/${group}/${sessionID}`
 
-/** The key prefix of a parent's groups, and of one group's members. */
 export const groupsPrefix = (parentID: string) => `${GROUP_PREFIX}${parentID}/`
 export const groupPrefix = (parentID: string, group: string) => `${groupsPrefix(parentID)}${group}/`
 
-/**
- * The courier messages waiting in a session's inbox, each under `wake/<sessionID>/<inboxID>` until it is delivered, for
- * the scheduler to wake a session whose wake was missed. docs/maintainers/architecture.md, § Storage.
- */
 const WAKE_PREFIX = "wake/"
 
 export const wakeKey = (sessionID: string, inboxID: string) => `${WAKE_PREFIX}${sessionID}/${inboxID}`
@@ -77,7 +53,6 @@ function isReverse(value: unknown): value is ReverseEntry {
   return Array.isArray(ancestors) && ancestors.length > 0 && ancestors.every((id) => typeof id === "string")
 }
 
-/** Whether a reverse key's value leads to this entry. */
 function indexes(value: unknown, entry: RosterEntry) {
   return isReverse(value) && value.ancestors[0] === entry.parentID
 }
@@ -89,12 +64,11 @@ const timeOf = (value: unknown) => {
 
 const noteOf = (value: unknown): ReportNote => ({ at: timeOf(value), by: obj(value).by, status: obj(value).status, resumesAt: obj(value).resumesAt })
 
-/** The `ChildStore` over the plugin's storage. */
 export function childStore(storage: Storage): ChildStore {
   const entry = async (parentID: string, sessionID: string) =>
     (await storage.get(rosterKey(parentID, sessionID))) as unknown as RosterEntry | undefined
 
-  const all = () => scanAll<RosterEntry>(storage, PREFIX)
+  const all = () => scanAll<RosterEntry>(storage, ROSTER_PREFIX)
 
   const indexedAncestors = async (sessionID: string) => {
     const indexed = await storage.get(reverseKey(sessionID))
@@ -106,8 +80,6 @@ export function childStore(storage: Storage): ChildStore {
     let indexed: ReverseEntry = first
     const chain: RosterEntry[] = []
     let below = sessionID
-    // One read per level, all at once, and one more for the top's own reverse key, in case it was
-    // recorded after the key that names it; the chain ends where an entry is gone, as a scan's would.
     for (;;) {
       const { ancestors }: ReverseEntry = indexed
       const top = ancestors.at(-1)!
@@ -137,10 +109,6 @@ export function childStore(storage: Storage): ChildStore {
     await storage.set(reverseKey(child.sessionID), { ancestors: [child.parentID, ...ancestors] })
   }
 
-  /**
-   * Drops a reverse key whose entry was not in the roster read, unless that entry is there now:
-   * another instance may have recorded the child since, and it writes the entry before the key.
-   */
   const dropDangling = async (sessionID: string, value: unknown) => {
     if (isReverse(value) && (await storage.get(rosterKey(value.ancestors[0]!, sessionID))) !== undefined) return
     await storage.remove(reverseKey(sessionID))
@@ -151,7 +119,6 @@ export function childStore(storage: Storage): ChildStore {
   }
 
   return {
-    // The entry is what counts: written first, so a failed index write leaves it to be found by a scan.
     async record(child) {
       await storage.set(rosterKey(child.parentID, child.sessionID), { ...child })
       await index(child).catch(() => undefined)
@@ -165,7 +132,7 @@ export function childStore(storage: Storage): ChildStore {
     },
     entry,
     async children(parentID) {
-      const entries = await scanAll<RosterEntry>(storage, `${PREFIX}${parentID}/`)
+      const entries = await scanAll<RosterEntry>(storage, `${ROSTER_PREFIX}${parentID}/`)
       return entries.sort((a, b) => a.createdAt - b.createdAt)
     },
     all,
@@ -204,7 +171,6 @@ export function childStore(storage: Storage): ChildStore {
       const values = await Promise.all(fields.map((field) => storage.get(REPORT_KEYS[field](sessionID))))
       return Object.fromEntries(fields.map((field, i) => [field, noteOf(values[i])])) as { readonly [K in F]: ReportNote }
     },
-    // Both of the hub's subscriptions note each event, one of them maybe behind: an earlier note never replaces a later one.
     async prompted(sessionID, at) {
       if ((timeOf(await storage.get(promptKey(sessionID))) ?? -Infinity) < at) await storage.set(promptKey(sessionID), { at })
     },
@@ -282,12 +248,9 @@ function readReport(value: unknown): HeldReport | undefined {
   return { at, status, message, ...(given.artifacts !== undefined ? { artifacts: given.artifacts as Artifacts } : {}) }
 }
 
-/** A member as the storage takes it, which asks for an index signature the interface lacks. */
 const stored = (member: Member) => ({ ...member }) as unknown as Stored
 
-/** The `GroupStore` over the plugin's storage. */
 export function groupStore(storage: Storage): GroupStore {
-  /** The members under `prefix`, a key prefix within `GROUP_PREFIX`; a value that is not a member is left out. */
   const membersUnder = async (prefix: string): Promise<Membership[]> => {
     const entries = await scanEntries<unknown>(storage, prefix)
     return entries.flatMap(({ key, value }) => {
@@ -311,7 +274,6 @@ export function groupStore(storage: Storage): GroupStore {
   }
 }
 
-/** A watched message as stored under its key's session and inbox id; one that cannot be read is left out. */
 function readWake(sessionID: string, inboxID: string, value: unknown): Wake | undefined {
   const given = obj(value)
   const at = num(given.at)
@@ -335,7 +297,6 @@ function readWake(sessionID: string, inboxID: string, value: unknown): Wake | un
   }
 }
 
-/** The `WakeStore` over the plugin's storage. */
 export function wakeStore(storage: Storage): WakeStore {
   const under = async (prefix: string) => {
     const entries = await scanEntries<unknown>(storage, prefix)

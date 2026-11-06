@@ -1,4 +1,3 @@
-/** `own` when the message goes to the session that scheduled it. */
 export function laterText(entry: { readonly id: string; readonly sessionID: string }, fireAt: string, own: boolean) {
   const next = own
     ? "It arrives when due, after your current turn if one is running, so do not wait for it: once nothing " +

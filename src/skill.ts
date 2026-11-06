@@ -1,18 +1,11 @@
 import type { Plugin } from "@opencode/plugin"
 import { ONE_PART_LINE, SKILL_ID, SPLIT_LINE } from "./kernel/protocol.js"
 
-// The courier-orchestrate skill: the text a session loads with its skill tool.
-
-/** Why a model loads the skill, listed with every session's available skills. */
 export const SKILL_DESCRIPTION =
   "How opencode-courier's session tools work. Load before you split a task with courier_spawn: when it has 2 or more " +
   "independent, substantial parts touching separate files or areas. Starting the parts, waiting without polling, " +
   "relaying questions and permissions, reading reports, merging and reporting upward."
 
-/**
- * The skill's text: how the tools behave, not how to plan or review the parts, which is left to the person's own skills.
- * It names no limits, which the role part and the brief give; it repeats the brief's split rule, since the root has no brief.
- */
 export const SKILL_CONTENT = [
   "# How opencode-courier's session tools work",
   "",
@@ -118,17 +111,14 @@ export const SKILL_CONTENT = [
     "too, and nothing in it reports back. cleanup: true removes their worktrees.",
 ].join("\n")
 
-/** The editor OpenCode hands a skill transform. */
 export type SkillEditor = Parameters<Parameters<Plugin.Context["skill"]["transform"]>[0]>[0]
 
-/** A skill's path is where OpenCode would look for its files; this one has none, so a path of the plugin's own. */
+// OpenCode names the path's directory to the model (api-notes)
 const SKILL_PATH = `/opencode-courier/${SKILL_ID}.md`
 
-/** The courier-orchestrate skill as OpenCode lists it: its id, name and description, and the text the model loads. */
 export const orchestrateSkill = () =>
   ({ id: SKILL_ID, name: SKILL_ID, description: SKILL_DESCRIPTION, path: SKILL_PATH, content: SKILL_CONTENT }) as const
 
-/** Adds the courier-orchestrate skill; every instance adds the same one, under the same id. */
 export function addSkill(skills: SkillEditor) {
   skills.add(orchestrateSkill() as Parameters<SkillEditor["add"]>[0])
 }

@@ -8,32 +8,20 @@ type FormField = FormInfo["fields"][number]
 type FormAnswer = Parameters<Context["data"]["session"]["form"]["reply"]>[0]["answer"]
 type FormValue = FormAnswer[string]
 
-/**
- * Something a session of the tree waits on the person for; `key` is unique across kinds. `prompted` marks a permission
- * request the top session's courier_answer prompt asks about.
- */
 export type Ask = { readonly key: string; readonly session: TreeSession } & (
   | { readonly kind: "permission"; readonly request: AskedPermission; readonly prompted?: boolean }
   | { readonly kind: "question"; readonly question: AskedQuestion }
   | { readonly kind: "form"; readonly form: FormInfo }
 )
 
-/** The `metadata.kind` of the forms OpenCode's question tool asks with: the relay lists those as questions. */
 const QUESTION_FORM = "question"
 
-/** The command that opens the inbox, from its key, its slash command, the palette or the footer. */
 export const INBOX_COMMAND = "courier.asks"
 
-/** How long after the first of a burst of asks the inbox reads the tree again, to sound the new ones. */
 export const SETTLE_MS = 250
 
-/** The top session, at depth 0, as its own permission requests name it. */
 export const topSession = (asks: Asks): TreeSession => ({ sessionID: asks.top, title: "", parentID: "", depth: 0 })
 
-/**
- * The asks of a tree in the order the inbox lists them: the top session's own permission requests, then by the tree's
- * order, each session's permissions, questions, then forms.
- */
 export function asksOf(asks: Asks, forms: ReadonlyMap<string, ReadonlyArray<FormInfo>>): Ask[] {
   const prompting = new Set(asks.permissions.flatMap((request) => (request.sessionID === asks.top && request.passesOn ? [request.passesOn.requestID] : [])))
   return [topSession(asks), ...asks.sessions].flatMap((session): Ask[] => [
@@ -55,7 +43,6 @@ export function asksOf(asks: Asks, forms: ReadonlyMap<string, ReadonlyArray<Form
   ])
 }
 
-/** Where an ask comes from: the titles from the top session down to the asking one, as "root › child › grandchild", each as the TUI knows it now, else as spawned. */
 export function pathOf(asks: Asks, sessionID: string, topTitle: string, currentTitle: (sessionID: string) => string | undefined = () => undefined) {
   const byID = new Map(asks.sessions.map((session) => [session.sessionID, session]))
   const titles: string[] = []
@@ -65,7 +52,6 @@ export function pathOf(asks: Asks, sessionID: string, topTitle: string, currentT
 
 const clip = (text: string, max = 80) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 
-/** What an ask is, in one line. */
 export function askTitle(ask: Ask) {
   switch (ask.kind) {
     case "permission": {
@@ -85,7 +71,6 @@ export function askTitle(ask: Ask) {
   }
 }
 
-/** The line under an ask: its depth (the top's own say so) and group, that a question's call was cut off, or that the top's courier_answer prompt asks for it. */
 export function askFooter(ask: Ask) {
   const top = ask.session.depth === 0
   return [
@@ -98,7 +83,7 @@ export function askFooter(ask: Ask) {
     .join(" · ")
 }
 
-/** Whether a form field applies, given the answers so far (a hidden field's default among them): its `when` conditions hold, as OpenCode reads them (a condition on an unanswered field is false; on a multiselect, `eq` means includes). */
+// as OpenCode reads a field's when conditions (api-notes)
 export function active(field: FormField, answers: FormAnswer) {
   const when = "when" in field ? (field.when ?? []) : []
   return when.every(({ key, op, value }) => {
@@ -112,7 +97,7 @@ export function active(field: FormField, answers: FormAnswer) {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const isDate = (text: string) => /^\d{4}-\d{2}-\d{2}$/.test(text) && new Date(`${text}T00:00:00.000Z`).toISOString().slice(0, 10) === text
 
-/** What is wrong with a field's answer by the limits OpenCode's form service checks on reply, worded as its form view does; undefined when it fits. */
+// the limits OpenCode's form service checks on reply, worded as its view
 export function misfit(field: FormField, value: FormValue): string | undefined {
   if (field.type === "string") {
     if (typeof value !== "string") return "Expected text"
@@ -150,7 +135,6 @@ export function misfit(field: FormField, value: FormValue): string | undefined {
 
 const numberOf = (limit: unknown) => (typeof limit === "number" ? limit : undefined)
 
-/** The limits of a typed field as a prompt's placeholder: "1-5", "at least 3 characters", "email"; undefined without any. */
 export function limitsOf(field: FormField): string | undefined {
   const range = (low: number | undefined, high: number | undefined, unit = "") => {
     if (low !== undefined && high !== undefined) return `${low}-${high}${unit}`
@@ -167,10 +151,8 @@ export function limitsOf(field: FormField): string | undefined {
   return parts.filter(Boolean).join(", ") || undefined
 }
 
-/** A choice offered for a question or a form field: shown by its label, answered with its value. */
 type Choice = { readonly label: string; readonly value: string; readonly description?: string }
 
-/** The options of one round of `choose`: the choices, marked when several may be picked, then the extra ones. */
 function chooseOptions(choices: ReadonlyArray<Choice>, picked: ReadonlyArray<string>, { multiple = false, own = false, optional = false }) {
   const mark = (value: string) => {
     if (!multiple) return ""
@@ -190,36 +172,25 @@ function chooseOptions(choices: ReadonlyArray<Choice>, picked: ReadonlyArray<str
   ]
 }
 
-/** Picks `value` if it is not picked, else unpicks it. */
 function toggle(picked: string[], value: string) {
   const at = picked.indexOf(value)
   if (at >= 0) picked.splice(at, 1)
   else picked.push(value)
 }
 
-/** The choice that leads to a prompt for an answer of the person's own. */
 const OWN = Symbol("own")
-/** The choice that ends a multiple choice. */
 const DONE = Symbol("done")
-/** The choice that leaves a field that is not required unanswered. */
 const SKIP = Symbol("skip")
-/** The disabled first option carrying a field's description; never chosen. */
 const NOTE = Symbol("note")
 
-/**
- * Adds the asks inbox: what the open session's courier tree waits on the person for, read through the person's RPC and
- * answered in dialogs, opened by its command, its open list read again on `follows`; a sound for each new ask.
- */
 export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
   const person = ctx.client.rpc(personRpc)
   const currentTitle = (sessionID: string) => ctx.data.session.get(sessionID)?.title
-  // Where the session runs, which has the plugin loaded, as the footer asks.
   const location = (sessionID: string) => ctx.data.session.get(sessionID)?.location ?? ctx.location ?? ctx.data.location.default()
   const openSession = () => {
     const route = ctx.ui.router.current()
     return route.type === "session" ? route.sessionID : undefined
   }
-  // When the inbox first saw each ask, so it lists the oldest first after the top's own; and those it answered, which the server may list a moment longer.
   const firstSeen = new Map<string, number>()
   const answered = new Set<string>()
   let seen = 0
@@ -235,13 +206,12 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     )
     const listed = asksOf(asks, forms).filter((ask) => !answered.has(ask.key))
     for (const ask of listed) if (!firstSeen.has(ask.key)) firstSeen.set(ask.key, seen++)
-    // The top's own requests first, as they hold up the sessions below.
     const rank = (ask: Ask) => (ask.session.depth === 0 ? 0 : 1)
     listed.sort((a, b) => rank(a) - rank(b) || firstSeen.get(a.key)! - firstSeen.get(b.key)!)
     return { asks, listed }
   }
 
-  /** The host's client throws an RPC error as a plain `{ type, message }` object, not an `Error`. */
+  // the host's client throws an RPC error as a plain { type, message }
   const reason = (error: unknown) => {
     if (error instanceof Error) return error.message
     return typeof error === "object" && error && "message" in error ? String(error.message) : String(error)
@@ -250,10 +220,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
   const fail = (what: string) => (error: unknown) =>
     ctx.ui.toast.show({ title: "courier", message: `${what}: ${reason(error)}`, variant: "error" })
 
-  /**
-   * Asks the person to pick one or more of `choices`, each answered with its value, or to give an answer of their
-   * own; undefined when they back out, an empty list when they skip an optional one.
-   */
   async function choose(
     title: string,
     choices: ReadonlyArray<Choice>,
@@ -291,7 +257,7 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     const message = decision === "reason" ? await ctx.ui.dialog.prompt({ title: "Why not?", placeholder: "Passed on to the session" }) : undefined
     if (decision === "reason" && message === undefined) return false
     const reply = decision === "reason" ? "reject" : decision
-    // With a reason, a refusal fails the call and the session carries on; a bare one would end its turn.
+    // a bare rejection would end the session's turn (api-notes)
     await ctx.client.permission.reply({
       sessionID: request.sessionID,
       requestID: request.requestID,
@@ -320,7 +286,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     return true
   }
 
-  /** Typed text for a field, asked again while empty and required; undefined when the person backs out. */
   async function typed(title: string, field: { description?: string; default?: string; placeholder?: string }, optional: boolean) {
     for (;;) {
       const text = await ctx.ui.dialog.prompt({
@@ -334,7 +299,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     }
   }
 
-  /** A number for a field, a whole one for an integer, asked again until it is one. */
   async function numeric(title: string, field: Extract<FormField, { type: "number" | "integer" }>, optional: boolean) {
     const label = field.title ?? field.key
     const whole = field.type === "integer"
@@ -352,7 +316,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     return limits ? { placeholder: limits } : {}
   }
 
-  /** The person's answer to one field, asked again with a warning until it fits the field's limits; undefined when they back out, `SKIP` for none. */
   async function answerField(form: { title?: string }, field: FormField): Promise<FormValue | typeof SKIP | undefined> {
     for (;;) {
       const value = await askField(form, field)
@@ -400,7 +363,7 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     for (const field of form.fields) {
       if (!active(field, answer)) continue
       if ("hidden" in field && field.hidden) {
-        // Not asked, as OpenCode's form view submits it: its default, when it has one.
+        // OpenCode's form view submits a hidden field's default
         if ("default" in field && field.default !== undefined) answer[field.key] = field.default
         continue
       }
@@ -408,8 +371,8 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
       if (value === undefined) return false
       if (value !== SKIP) answer[field.key] = value
     }
-    // The client, not the data layer's reply, which resolves when the form is gone.
     try {
+      // data.session.form.reply resolves only once the form is gone
       await ctx.client.session.form.reply({ sessionID: form.sessionID, formID: form.id, answer })
     } catch (error) {
       const tag = (error as { _tag?: unknown } | undefined)?._tag
@@ -432,12 +395,10 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
   }
 
   type Found = Awaited<ReturnType<typeof read>>
-  /** The list on screen: its tree, its asks' keys, and how to show a newer read of it in its place. */
   let listing: { readonly sessionID: string; readonly keys: string; readonly replace: (found: Found) => void } | undefined
   let following: ReturnType<typeof setTimeout> | undefined
   const keysOf = (listed: ReadonlyArray<Ask>) => listed.map((ask) => ask.key).join("\n")
   let reads = 0
-  /** Reads the tree of the list on screen again, and shows the new list when its asks changed; of overlapping reads, the last. */
   const follow = async () => {
     const sessionID = listing?.sessionID
     if (!sessionID) return
@@ -447,7 +408,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     if (ticket === reads && shown?.sessionID === sessionID && keysOf(found.listed) !== shown.keys) shown.replace(found)
   }
 
-  /** Shows the list of `found` and waits for the person's choice, or for a newer read of the tree to show in its place. */
   async function showList(sessionID: string, { asks, listed }: Found) {
     let replace: (found: Found) => void = () => undefined
     const newer = new Promise<Found>((resolve) => {
@@ -460,17 +420,14 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
       placeholder: "Search",
       options: listed.map((ask) => ({ title: askTitle(ask), value: ask, description: pathOf(asks, ask.session.sessionID, top, currentTitle), footer: askFooter(ask) })),
     })
-    // Wider than a dialog opens, for where each ask comes from.
     ctx.ui.dialog.set({ size: "large" })
     try {
-      // A newer list replaces this one, whose select then resolves with nothing.
       return await Promise.race([choosing.then((chosen) => ({ chosen })), newer.then((read) => ({ read }))])
     } finally {
       listing = undefined
     }
   }
 
-  /** Answers the ask chosen; one answered is not listed again, though the server may list it a moment longer. */
   async function answerChosen(chosen: Ask) {
     const done = await answer(chosen).catch((error: unknown) => {
       fail("The answer was not passed on")(error)
@@ -480,10 +437,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
   }
 
   let opened = false
-  /**
-   * Lists the asks of the open session's tree, answers the one chosen, and lists what is left, until none is or the person
-   * leaves; while the list is shown it follows the tree, shown again as asks arrive or are settled elsewhere.
-   */
   async function open(sessionID = openSession()) {
     if (!sessionID) {
       ctx.ui.toast.show({ title: "courier", message: "Open a session to see what its sessions ask you.", variant: "info" })
@@ -494,7 +447,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     try {
       let found = await read(sessionID).catch(fail("The asks could not be read"))
       let first = true
-      // Whether the last read replaces a list still on screen.
       let shown = false
       while (found?.listed.length) {
         first = false
@@ -510,7 +462,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
       }
       if (!found) return
       if (first) ctx.ui.toast.show({ title: "courier", message: "Nothing in this courier tree waits on you.", variant: "info" })
-      // All settled elsewhere while it was shown: the list closes.
       if (shown) ctx.ui.dialog.clear()
     } finally {
       opened = false
@@ -519,8 +470,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     }
   }
 
-  // A new ask in the open session's tree sounds once: read after a burst of asks, the ones not seen before.
-  // A tree's first read only records the asks waiting there, except those in sessions the events named.
   const sounded = new Set<string>()
   const readTops = new Set<string>()
   let named = new Set<string>()
@@ -541,8 +490,7 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
       if (sounded.has(ask.key)) continue
       sounded.add(ask.key)
       if (first && !eventSessions.has(ask.session.sessionID)) continue
-      // OpenCode sounds every ask and notifies for a session that is not a native child; the courier adds
-      // the tree path as a notification for a native child, whose OpenCode one is off.
+      // OpenCode notifies for every ask but a native child's
       if (!ctx.data.session.get(ask.session.sessionID)?.parentID) continue
       void ctx.attention.notify({
         title: pathOf(asks, ask.session.sessionID, top, currentTitle),

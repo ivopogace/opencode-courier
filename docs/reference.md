@@ -366,7 +366,7 @@ Before it goes idle owing a report, the child is reminded once: a message in a `
 from="courier" reminder="report">` envelope, naming the session to report to. It runs in the same
 turn, on the warm prompt cache, and the parent is not woken. One reminder per prompt that reached
 the child: if it still ends its turn without a report, the parent gets a message marked
-`ended="without-report"`, with the child's last reply. The parent can tell the child to carry on or
+`ended="without-report"`, with the child's last reply (its first 2,000 characters). The parent can tell the child to carry on or
 to report, or start a replacement. The reminder is not a prompt of its own: the child owes the same
 report, and it is not watched as a [missed wake](#a-missed-wake). It needs OpenCode 2.2.4's
 experimental `experimental.idle` hook; an older OpenCode, or one where the hook changed, skips the
@@ -531,7 +531,7 @@ Pending `courier_later` messages are checked every 15 seconds, so one can arrive
 late. They are queued behind a running turn and survive a restart. A crash between delivering a
 message and forgetting it can deliver it twice. After a start,
 OpenCode loads plugins when a project is first used, so messages that fell due meanwhile arrive
-then.
+then. `delayMinutes` may be a number or a string holding a plain decimal (`"3"`, `"2.5"`).
 
 A spawned session cannot use OpenCode's own schedules (`schedule_create` and the rest, with
 `experimental.schedules` on): its session's rules deny them. A wake-up of theirs goes round the tree,
@@ -792,8 +792,9 @@ nothing is left. Choosing an ask opens its dialog; `esc` goes back.
   page is left to its own session.
 - **A question:** each question in turn, one or several choices, or `Type your own answer…`.
 
-New asks play OpenCode's own sounds. Asks already waiting when the TUI starts, or when it first
-reads a tree, are not announced.
+New asks play OpenCode's own sounds. A native child's new ask, which OpenCode does not announce,
+also shows a notification naming its path in the tree. Asks already waiting when the TUI starts, or
+when it first reads a tree, are not announced.
 
 ### The memory view
 
@@ -859,7 +860,8 @@ the first to load wins.
    `smee --url https://smee.io/<channel> --target http://127.0.0.1:4097/github` (no inbound port).
 3. On GitHub, add a webhook to the repository (Settings → Webhooks): `<public URL>/github`, content
    type `application/json`, the same secret, and the events you want.
-4. `courier_subscribe` a session to `owner/repo`, `owner/repo#N` or a name.
+4. `courier_subscribe` a session to `owner/repo`, `owner/repo#N` (either may start `github:`) or a
+   name of up to 64 letters, digits, `.`, `_` and `-`.
 
 The receiver starts when OpenCode first loads the plugin after a start. Deliveries before that fail;
 GitHub lists them under Recent Deliveries, with a Redeliver button.

@@ -28,10 +28,6 @@ import {
 import { background, run, within } from "./runtime.js"
 import { anyLoaded, isPassing, keyOf, QUESTION_TOOL, shared, storedOf } from "./shared.js"
 
-/**
- * Tells the top session about a question its closing location cut off, after the closing grace of
- * `ports`, through any instance still loaded then; without one, the next load tells it.
- */
 function tellLater(ports: QuestionPorts, question: Question) {
   const tellNow = Effect.suspend(() => {
     const later = anyLoaded()
@@ -47,7 +43,6 @@ function tellLater(ports: QuestionPorts, question: Question) {
   )
 }
 
-/** Registers a question, stores it and tells the top session; false when storing or telling failed. */
 async function relay(ports: QuestionPorts, question: Question) {
   shared.questions.set(question.requestID, question)
   try {
@@ -56,56 +51,39 @@ async function relay(ports: QuestionPorts, question: Question) {
     else await tell(ports, question, questionNotice(question), { asks: "question", request: question.requestID })
     return true
   } catch (error) {
-    // The question stays registered and the call waits on: courier_children lists it, and an answer
-    // that comes anyway, through a link or courier_answer, still reaches the call.
     ports.log(`courier question: could not tell ${question.top} about ${question.requestID}: ${String(error)}`)
     return false
   }
 }
 
-/**
- * After a relayed call ended: tidies up, and tells the top session if it was settled without it.
- * `loaded` says whether the plugin instance that ran the call is still loaded.
- */
 const settle = (ports: QuestionPorts, question: Question, exit: CallExit, loaded: () => boolean) =>
   Effect.gen(function* () {
     const unloaded = !loaded()
-    // A dismissal is held from now, alongside the wait below, so the grace is not spent waiting.
     const dismissed = Exit.isFailure(exit) && isDismissal(exit.cause)
     const held = dismissed && !unloaded ? yield* Effect.forkChild(closingSoon(ports, loaded, question.directory), { startImmediately: true }) : undefined
-    // The top session is told first, for a while only, so what follows neither overtakes the notice
-    // nor waits forever on one that never returns; `told` is false when it was not told, or not yet.
     const told = (yield* within(question.relaying, ports.timing.relayWaitMs)) === true
-    // Answered by the top session.
     if (Exit.isSuccess(exit) && exit.value.by === "top") {
       if (shared.questions.get(question.requestID) === question) shared.questions.delete(question.requestID)
       return yield* Effect.promise(() => forget(ports, question))
     }
-    // Never relayed, or dropped meanwhile.
     if (shared.questions.get(question.requestID) !== question) {
       return yield* Effect.promise(() => forget(ports, question))
     }
-    // Cut off: the turn was stopped, or the closing location withdrew its forms as if dismissed, so a
-    // dismissal is held for a following shutdown or unload; the question stays, answered by message.
+    // a closing location withdraws its forms as if dismissed (api-notes)
     const closing = unloaded || !loaded() || (held !== undefined && (yield* Fiber.join(held)))
     if (Exit.isFailure(exit) && (closing || (!dismissed && Exit.hasInterrupts(exit))))
       return closing ? tellLater(ports, question) : yield* Effect.promise(() => stopped(ports, question))
     yield* Effect.promise(() => settledElsewhere(ports, question, settledIn(exit), told))
   })
 
-/** A relayed call cut off by its stopped turn: the top session is told now, unless it asks the person. */
 async function stopped(ports: QuestionPorts, question: Question) {
   if (!question.link) await tellCutOff(ports, question, "stopped")
 }
 
-/** A relayed call settled in the asking session: `told` says whether the top session was told about it. */
 async function settledElsewhere(ports: QuestionPorts, question: Question, how: Elsewhere, told: boolean) {
-  // Its record goes before its registration, so an answer that finds the question gone does not
-  // find the record still there and send it on.
   await forget(ports, question)
   shared.questions.delete(question.requestID)
   if (question.link) return question.link(how)
-  // A top session never told about the question is not told that it is settled either.
   if (!told) return
   await tell(ports, question, questionSettledNotice(question, how), {
     answered: how.by === "child" ? "elsewhere" : how.by,
@@ -113,10 +91,6 @@ async function settledElsewhere(ports: QuestionPorts, question: Question, how: E
   })
 }
 
-/**
- * Starts settling a relayed call that ended, kept on the question until it is through: an answer
- * the call did not take waits for it.
- */
 function startSettling(ports: QuestionPorts, question: Question, exit: CallExit, loaded: () => boolean) {
   question.settling = background(settle(ports, question, exit, loaded), (error) =>
     ports.log(`courier question: could not settle ${question.requestID}: ${String(error)}`),
@@ -125,10 +99,6 @@ function startSettling(ports: QuestionPorts, question: Question, exit: CallExit,
   })
 }
 
-/**
- * A spawned session's question call: once its form is shown the top session is told, and whichever
- * answer comes first ends the call, the other side's question withdrawn. Other calls run unchanged.
- */
 function asking(ports: () => QuestionPorts | undefined, directory: string, original: Execute): Execute {
   return (input, context) =>
     Effect.gen(function* () {
@@ -137,10 +107,8 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
       if (!current || !chain.length) return yield* original(input, context)
       const byTop = Deferred.makeUnsafe<Outcome>()
       const accepted = Deferred.makeUnsafe<boolean>()
-      // For a copy of the plugin that answers through `call`, which takes promises.
       let acceptancePromise: Promise<boolean> | undefined
       const acceptance = () => (acceptancePromise ??= Effect.runPromise(Deferred.await(accepted)))
-      // Handed one outcome only: a second, while the first still ends the call, is not taken.
       let handed = false
       const top = chain.at(-1)!.parentID
       const question: Question = {
@@ -151,7 +119,7 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
         ...(chain.length > 1 ? { startedBy: chain[0]!.parentID } : {}),
         questions: promptsOf(input),
         askedAt: current.now(),
-        // OpenCode shows a native child's form in its native root's view: when that is the top's, the person answers there.
+        // a native child's form shows in its native root's view (api-notes)
         ...(nativeRootOf(chain) === top ? { native: true as const } : {}),
         directory,
         call: (outcome) => {
@@ -161,17 +129,13 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
           return acceptance()
         },
       }
-      // The form is shown only once OpenCode's permission check for the call has passed; a call
-      // refused there never reaches the top session.
+      // form.created comes only once the call's permission check passed
       const key = `${context.sessionID} ${context.id}`
       const loaded = () => ports() === current
       const shown = Deferred.makeUnsafe<void>()
-      // Called as a plain function, by this copy's watcher or another copy's.
       shared.shown.set(key, () => Deferred.doneUnsafe(shown, Exit.void))
       const fromTop = Effect.gen(function* () {
         yield* Deferred.await(shown)
-        // Started, not waited for: a store or a notice that hangs must not keep the top session's
-        // answer from the call. Kept on the question, so settle can wait for it.
         question.relaying = relay(current, question)
         return { by: "top" as const, outcome: yield* Deferred.await(byTop) }
       })
@@ -179,15 +143,12 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
         original(input, context).pipe(Effect.map((result) => ({ by: "child" as const, result }))),
         fromTop,
       ).pipe(
-        // Not waited for, so storing or a notice that hangs cannot hold the call up.
         Effect.onExit((exit) =>
           Effect.sync(() => {
             shared.shown.delete(key)
-            // The call no longer waits, whatever settle makes of it: an answer from now on waits for settle.
             const byTopSession = Exit.isSuccess(exit) && exit.value.by === "top"
             if (!byTopSession) question.call = undefined
             startSettling(current, question, exit, loaded)
-            // After settling is set, which an answer the call did not take then waits for.
             Deferred.doneUnsafe(accepted, Exit.succeed(byTopSession))
           }),
         ),
@@ -208,14 +169,9 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
     }) as ReturnType<Execute>
 }
 
-/** Whether the top session's question call may be linked to a question: not a native child's while its own form is shown. */
 const linkable = (question: Question, sessionID: string) =>
   question.top === sessionID && !question.link && !isPassing(question.requestID) && !(question.native && question.call)
 
-/**
- * The waiting question a top session's call asks again, the oldest if several: the same question with
- * the same choices, in any order. Choices alone would let an unrelated yes-or-no answer a child's.
- */
 function linkFor(sessionID: string, questions: ReadonlyArray<Prompt>) {
   const asked = { choices: choices(questions), wording: wording(questions) }
   return [...shared.questions.values()]
@@ -228,10 +184,6 @@ function linkFor(sessionID: string, questions: ReadonlyArray<Prompt>) {
     .sort((a, b) => a.askedAt - b.askedAt)[0]
 }
 
-/**
- * The result of a top session's question call that no waiting question was linked to: when one waits
- * with the same choices, reworded or asked earlier, it says how to pass the answers on.
- */
 function unlinkedResult(result: ToolResult, sessionID: string, questions: ReadonlyArray<Prompt>): ToolResult {
   if (typeof result.content !== "string") return result
   const asked = choices(questions)
@@ -240,10 +192,6 @@ function unlinkedResult(result: ToolResult, sessionID: string, questions: Readon
   return { ...result, content: `${result.content}\n${unlinkedNote(similar)}` }
 }
 
-/**
- * After a linked call failed with its location still loaded: a dismissal by the person dismisses the
- * child's question too, or is logged if answered meanwhile; a stop while cut off tells the top.
- */
 const linkedCallFailed = (ports: QuestionPorts, linked: Question, cause: Cause.Cause<unknown>, loaded: () => boolean, directory: string) =>
   Effect.gen(function* () {
     if (isDismissal(cause)) {
@@ -253,14 +201,9 @@ const linkedCallFailed = (ports: QuestionPorts, linked: Question, cause: Cause.C
     } else if (!linked.call && shared.questions.get(linked.requestID) === linked) yield* Effect.promise(() => tellCutOff(ports, linked, "stopped"))
   })
 
-/** Logs that what happened to a linked call could not be passed on. */
 const notPassedOn = (ports: QuestionPorts, linked: Question) => (error: unknown) =>
   ports.log(`courier question: could not pass on what happened to ${linked.requestID}: ${String(error)}`)
 
-/**
- * The question call of a session that a waiting question was relayed to, asking the person the
- * same: what they choose is passed on, and the call is withdrawn if the question is settled first.
- */
 function linking(ports: () => QuestionPorts | undefined, directory: string, ask: Execute): Execute {
   return (input, context) =>
     Effect.gen(function* () {
@@ -273,7 +216,6 @@ function linking(ports: () => QuestionPorts | undefined, directory: string, ask:
       }
       const loaded = () => ports() === current
       const elsewhere = Deferred.makeUnsafe<Withdrawal>()
-      // Called as a plain function, by this copy or another one.
       const settled = (how: Withdrawal) => void Deferred.doneUnsafe(elsewhere, Exit.succeed(how))
       linked.link = settled
       const ended = yield* Effect.raceFirst(
@@ -283,9 +225,8 @@ function linking(ports: () => QuestionPorts | undefined, directory: string, ask:
         Effect.onExit((exit) =>
           Effect.sync(() => {
             if (linked.link === settled) linked.link = undefined
-            // Unloaded: OpenCode is closing the location, which withdraws the form; nobody dismissed it.
+            // unloaded: OpenCode withdrew the form as it closed the location
             if (Exit.isSuccess(exit) || !loaded()) return
-            // Not waited for, as in asking.
             void background(linkedCallFailed(current, linked, exit.cause, loaded, directory), notPassedOn(current, linked))
           }),
         ),
@@ -310,9 +251,7 @@ function linking(ports: () => QuestionPorts | undefined, directory: string, ask:
     }) as ReturnType<Execute>
 }
 
-/** Wraps OpenCode's question tool for the relay. A tool by that id that is missing is left alone. */
 export function relayQuestions(host: Pick<EffectPlugin.Context, "tool" | "location">, ports: () => QuestionPorts | undefined) {
-  // The wrapped tool runs the calls of the host's location: its shutdown is what withdraws their forms.
   const { directory } = host.location
   return host.tool.transform((editor) => {
     editor.update(QUESTION_TOOL, (tool) => {

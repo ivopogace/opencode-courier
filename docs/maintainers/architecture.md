@@ -22,10 +22,12 @@ The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules
 - **The memory refreshes in the `after` phase**, once the turn-end notices are out and the report
   state is written. It reads only through ports every hub-v2 member has (`storage`, `session`, `now`,
   `log`). What it needs beyond them is process-wide, under the key `opencode-courier.memory`.
-- **The TUI bundle carries nothing of the server half**: the `tui.tsx` and `rpc.ts` entrypoints
-  skip the modules' `index.ts` (see the import rules). The TUI part goes through the same use cases
-  as the tools, over the RPCs `courier`, `courier-person` and `courier-memory`. The memory view is
-  a dialog, not a panel: the records are the project's, and a panel belongs to one session.
+- **The TUI bundle carries no server wiring** (no `index.ts`, tool, store or hub): the `tui.tsx` and
+  `rpc.ts` entrypoints skip the modules' `index.ts` (see the import rules), and a module's `tui.tsx`
+  shares with the server only its `rpc.ts`, its `text.ts` and the pure code those import. The TUI
+  part goes through the same use cases as the tools, over the RPCs `courier`, `courier-person` and
+  `courier-memory`. The memory view is a dialog, not a panel: the records are the project's, and a
+  panel belongs to one session.
 - **Text lives next to the module that speaks it**, with one snapshot over all of it.
 
 The import rules:

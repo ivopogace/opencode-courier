@@ -442,7 +442,6 @@ describe("relayPending, concurrency", () => {
     let secondSent: () => void = () => undefined
     const told = new Promise<void>((resolve) => (secondSent = resolve))
     ;(ports.session as any).synthetic = async (input: any) => {
-      // Waits for the other notice, or gives up after a while when there is none.
       if (input.metadata.requestID === "per_1") await Promise.race([told, new Promise((resolve) => setTimeout(resolve, 200))])
       sent.push(input)
       if (input.metadata.requestID === "per_2") secondSent()

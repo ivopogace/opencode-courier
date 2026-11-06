@@ -1,4 +1,3 @@
-// The tree panel's RPC: its rows, read as courier_tree reads the tree, and its stop, courier_stop's path.
 import { describe, expect, test } from "bun:test"
 import { cancelScheduled, type LaterPorts } from "../src/scheduling/index.js"
 import { DEFAULT_LIMITS, type RosterEntry } from "../src/tree/domain.js"
@@ -12,7 +11,6 @@ import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 type Session = { updated: number; idle?: number; archived?: number; outcome?: string; cost?: number; title?: string; messages?: unknown[] }
 type Window = { providerID: string; id: string; context: number; variants?: string[] }
 
-/** Ports over an in-memory store, with each session as given; one not given is gone. */
 function fakePorts(
   sessions: Record<string, Session>,
   pending: Record<string, Pending[]> = {},
@@ -453,7 +451,6 @@ describe("panel", () => {
   })
 })
 
-/** The tree's RPC registered over fake ports with courier_stop's and courier_cleanup's, whose worktrees are clean: its handlers. */
 async function registered(sessions: Record<string, Session>) {
   const { ports, calls } = fakePorts(sessions)
   const later = { storage: ports.storage, session: ports.session, now: () => 1_000, newID: () => "later_1", log: () => {} } as unknown as LaterPorts
@@ -491,7 +488,6 @@ describe("the tree's RPC", () => {
       cancelled: 0,
     })
     expect(calls.filter((call) => call.method === "interrupt").map((call) => call.input.sessionID)).toEqual(["ses_leaf", "ses_mid"])
-    // The caller stopped its own child: no one else to tell.
     expect(calls.filter((call) => call.method === "synthetic")).toEqual([])
   })
 

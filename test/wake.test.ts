@@ -6,7 +6,6 @@ import { missed, stalledAmong, WAKE_MS, waitsInInbox, wakeMissed, type WakePorts
 
 type Message = { id: string; type: string }
 
-/** Ports over an in-memory store, each session's stored messages as given, its times at rest unless set, the clock as set. */
 function fakePorts(messages: Record<string, Message[]> = {}) {
   const times: Record<string, { created: number; updated: number; idle?: number; busy?: number }> = {}
   const store = new Map<string, unknown>()
@@ -49,7 +48,6 @@ function fakePorts(messages: Record<string, Message[]> = {}) {
 const idle = (id = "msg_idle"): Message => ({ id, type: "idle" })
 const assistant = (id = "msg_a"): Message => ({ id, type: "assistant" })
 
-/** A courier message enqueued for `sessionID`, as OpenCode publishes it. */
 const enqueued = (sessionID = "ses_parent", inboxID = "msg_report", created = 100_000, metadata: object = { source: "courier", from: "ses_child" }) => ({
   id: `evt_enq_${inboxID}`,
   type: "session.inbox.enqueued",
@@ -64,7 +62,6 @@ const event = (type: string, sessionID = "ses_parent", created = 100_000, extra:
   data: { sessionID, ...extra },
 })
 
-/** The tree's event module over `ports`, as a hub subscription runs it. */
 const handle = (ports: WatchPorts, e: { type: string; data?: unknown }) =>
   treeEvents({ seen: new Set(), inbox: new Map() }, async () => false).handle!(ports, e as never)
 
@@ -141,7 +138,6 @@ describe("watching a courier message until it is delivered", () => {
       [true, undefined],
       [true, undefined],
     ])
-    // The turn took msg_taken, whose delivery this subscription missed, and left msg_report waiting.
     messages.ses_parent = [idle(), { id: "msg_taken", type: "synthetic" }, assistant(), idle("msg_idle_2")]
     await handle(ports, event("session.execution.succeeded", "ses_parent", 101_000))
     expect(await wakeStore(ports.storage).of("ses_parent")).toEqual([
@@ -313,18 +309,16 @@ describe("waking a session whose wake was missed", () => {
     expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: false, rewoken: 100_000 + WAKE_MS })
   })
 
-  // #400: since OpenCode 2.2.2 `time.busy` is when the session's latest execution started, event seen by this instance or not.
+    // since 2.2.2 time.busy is the latest execution's start (api-notes)
   test("on 2.2.2, one whose session shows no execution started since it was left waiting is woken again by its busy time alone, its transcript unread", async () => {
     const { ports, sent, at, messages, times } = fakePorts({ ses_parent: [idle()] })
     await handle(ports, enqueued())
-    // Stamped before the message arrived, which stamped updated; the transcript would read running, which the busy time overrules.
     times.ses_parent = { created: 0, updated: 100_000, idle: 99_000, busy: 98_000 }
     messages.ses_parent = [idle(), assistant("msg_busy")]
     at(100_000 + WAKE_MS)
     await wakeMissed(ports, new Set())
     expect(sent).toHaveLength(1)
     expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: false, rewoken: 100_000 + WAKE_MS })
-    // The wake again rang: an execution started at or after it, which takes the message, however the transcript reads.
     times.ses_parent = { created: 0, updated: 100_000, idle: 99_000, busy: 100_000 + WAKE_MS }
     messages.ses_parent = [idle()]
     at(100_000 + 2 * WAKE_MS)

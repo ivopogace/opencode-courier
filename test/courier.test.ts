@@ -9,16 +9,13 @@ import { childBrief, modelFormatRefusal, nativeIsolateRefusal, reportBody, spawn
 import { joinGroup } from "../src/tree/group.js"
 import { childStore, groupStore, memberKey, progressKey, rosterKey, settledKey } from "../src/tree/store.js"
 
-/** Every spawned session's own ruleset: OpenCode's schedule tools denied. */
 const CHILD_RULES = [{ action: "opencode_schedule_*", resource: "*", effect: "deny" }]
 
 type Call = { method: string; input: any }
 
-/** What spawn did after looking up the model to give the child. */
 const afterLookups = (calls: Call[]) => calls.filter((call) => !["session.get", "agent.get", "model.list", "model.default"].includes(call.method))
 
 type Known = { providerID: string; id: string; variants: string[] }
-/** The models the fake OpenCode lists: the parent's usual one, with the effort variants, and a smaller one with none. */
 const KNOWN: Known[] = [
   { providerID: "mock", id: "chat", variants: ["low", "medium", "high"] },
   { providerID: "mock", id: "small", variants: [] },
@@ -274,7 +271,6 @@ describe("spawn", () => {
   })
 
   describe("nested isolation", () => {
-    /** ses_parent is an isolated child of ses_root, working in /wt/parent. */
     const isolatedParent = async (ports: CourierPorts) =>
       childStore(ports.storage).record({ sessionID: "ses_parent", parentID: "ses_root", title: "P", directory: "/wt/parent", isolated: true, createdAt: 1, base: "root000" })
 
@@ -669,10 +665,8 @@ describe("spawn, into a group", () => {
       return set(key, value as never)
     }
     expect(await spawn(ports, "ses_parent", { task: "t", group: "reviews" })).toEqual({ sessionID: "ses_child", directory: "/repo", groupError: "group failed: disk full" })
-    // Recorded in no group, so courier_children does not show it as one whose report was released.
     expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("group")
 
-    // A write that fails after landing leaves no member behind for its group to wait on.
     ;(ports.storage as any).set = async (key: string, value: unknown) => {
       await set(key, value as never)
       if (key.startsWith("group/")) throw new Error("timed out")
@@ -694,7 +688,6 @@ describe("send", () => {
 
     const result = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done: PR #4" })
 
-    // Not a spawned session: neither a report nor progress.
     expect(result).toEqual({ messageID: "msg_2" })
     expect(calls[0]).toEqual({
       method: "session.synthetic",
@@ -756,7 +749,6 @@ describe("send", () => {
     expect(await send(ports, "ses_parent", { sessionID: "ses_grand", message: "Undo it.", status: "blocked" })).toEqual({ messageID: "msg_2", dropped: "blocked" })
     expect(calls[0]!.input).toMatchObject({ text: envelope("ses_parent", "Undo it."), metadata: { source: "courier", from: "ses_parent" } })
     expect(await send(ports, "ses_child", { sessionID: "ses_grand", message: "m", status: "done" })).toEqual({ messageID: "msg_2", dropped: "done" })
-    // Upward and sideways, the status stays.
     expect(await send(ports, "ses_grand", { sessionID: "ses_child", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done", report: true })
     expect(await send(ports, "ses_grand", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done" })
     expect(await send(ports, "ses_other", { sessionID: "ses_grand", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done" })
@@ -786,7 +778,6 @@ describe("send", () => {
       'status must be one of done, partial, blocked, failed, not "finished".',
     )
     expect(calls).toEqual([])
-    // Some models send null for an optional field they leave out.
     expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", status: null as never })).toEqual({ messageID: "msg_2" })
   })
 
@@ -837,7 +828,6 @@ describe("send", () => {
     await expect(send(ports, "ses_child", report)).rejects.toThrow("parent is gone")
     expect(store.get(settledKey("ses_child"))).toEqual({ at: 5, by: "failed" })
 
-    // Another courier_send of the child's noted its report meanwhile: that note stays.
     ;(ports.session as any).synthetic = async () => {
       store.set(settledKey("ses_child"), { at: 2_000, by: "report", status: "done" })
       throw new Error("parent is gone")
@@ -921,7 +911,6 @@ describe("send, from a member of a group", () => {
     await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done.", status: "done" })
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { status: "done" } })
 
-    // Only once the blocked report is delivered: one that is not leaves the held report in place.
     ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is gone"))
     await expect(send(ports, "ses_child", { sessionID: "ses_parent", message: "Which?", status: "blocked" })).rejects.toThrow("parent is gone")
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { status: "done" } })
@@ -955,7 +944,6 @@ describe("send, from a member of a group", () => {
 
     expect(calls.filter((call) => call.method === "session.synthetic")).toEqual([])
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { status: "done" } })
-    // Nudged all the same: the group may be complete, and a tick that finds nothing due is cheap.
     expect(nudges).toHaveLength(1)
   })
 
@@ -973,11 +961,9 @@ describe("send, from a member of a group", () => {
     expect(await send(ports, "ses_other", { sessionID: "ses_parent", message: "m", status: "done" })).toEqual({ messageID: "msg_2", status: "done", report: true })
     expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(2)
     expect(store.get(settledKey("ses_other"))).toEqual({ at: 1_000, by: "report", status: "done" })
-    // Dropped from the group, which the scheduler then finds complete without it, so the others are not held for ever.
     expect(store.has(memberKey("ses_parent", "pair", "ses_other"))).toBe(false)
     expect(nudges).toHaveLength(1)
 
-    // Neither held nor dropped: the call fails, its note taken back, so the sender sends it again rather than the group waiting for ever.
     store.set(memberKey("ses_parent", "pair", "ses_other"), { title: "B", joinedAt: 2 })
     store.delete(settledKey("ses_other"))
     const remove = ports.storage.remove

@@ -22,7 +22,6 @@ const entry = (sessionID: string, parentID: string, createdAt: number, more: Par
   ...more,
 })
 
-/** A root with a middle session, two leaves under it and a sibling of the middle one. */
 async function fixture(options: { idle?: string[]; missing?: string[]; failing?: string[]; inspect?: (directory: string) => any; listed?: Record<string, Array<[string, number]>> } = {}) {
   const store = new Map<string, unknown>()
   const calls: Call[] = []
@@ -48,7 +47,6 @@ async function fixture(options: { idle?: string[]; missing?: string[]; failing?:
     },
     get: async ({ sessionID }: any) => ({ id: sessionID, title: `title ${sessionID}`, time: { created: 1, updated: 2, idle: 2 } }),
     context: async () => [],
-    // OpenCode's children of a session, as `[id, created]`: native courier children and the subagents its subagent tool started.
     ...(options.listed
       ? {
           list: async ({ parentID }: any) => {
@@ -81,7 +79,6 @@ async function fixture(options: { idle?: string[]; missing?: string[]; failing?:
     worktree: { remove: async (input: any) => void removed.push(input) },
     inspect: async (directory: string) => (options.inspect ? options.inspect(directory) : { changes: [], commits: [] }),
   }
-  // `later` too, for the tests to schedule the messages courier_stop cancels.
   const ports = { courier, later, cancelScheduled: (sessionID: string) => cancelScheduled(later, sessionID), cleanup: cleanupPorts } as unknown as StopPorts & { readonly later: LaterPorts }
   const entries = [
     entry("mid", "root", 1, { isolated: true, directory: "/wt/mid", group: "g" }),
@@ -135,7 +132,6 @@ describe("subtree", () => {
 })
 
 describe("subtree with OpenCode's subagents (#438)", () => {
-  // `sub1` under the root, `sub2` under `leaf2`, `sub2a` under `sub2`; `side` is a native child, listed and on the roster.
   const listed = { root: [["side", 2], ["sub1", 5]], leaf2: [["sub2", 6]], sub2: [["sub2a", 7]] } as Record<string, Array<[string, number]>>
 
   test("adds the sessions OpenCode lists under each that have no roster entry, marked subagent, in the order a tree is drawn", async () => {
@@ -239,7 +235,6 @@ describe("tree", () => {
     expect(newest.truncated).toBe(2)
     expect(treeText(newest)).toContain("2 older sessions are not listed: at most maxTotal are, the live ones first, then the newest")
 
-    // The oldest owes a report, so it is live and listed; the one next to it comes first by its place in the tree.
     store.set(promptKey("side"), { at: 10 })
     const live = await tree(ports.courier, "root")
     expect(live.sessions.map((one) => one.sessionID)).toEqual(["mid", "side"])

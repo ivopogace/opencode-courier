@@ -1,5 +1,3 @@
-// The permission scenario of e2e/real-model.sh (node e2e/real-model-permission.mjs <parentSessionID>): the parent proposes
-// once, OpenCode's prompt in its session is answered here; with COURIER_NATIVE=1 it is only told, and the child's prompt is.
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -36,7 +34,7 @@ async function messages(sessionID) {
 const toolsOf = (list) => list.flatMap((message) => (message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : []))
 const textOf = (message) =>
   message.type === "assistant" ? message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") : (message.text ?? "")
-// Since OpenCode 2.0.22 the transcript also records an `idle` message when a turn ends.
+// since OpenCode 2.0.22 a turn's end is also an `idle` message
 const ended = (message) =>
   message?.type === "idle" ||
   (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
@@ -46,18 +44,15 @@ const short = (value, max = 160) => {
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
 }
 const isNotice = (message) => message.type === "synthetic" && /^<courier from="ses_\w+" asks="permission"/.test(message.text)
-/** The request OpenCode asks the person in the parent's session for the child's request, through courier_answer's assert. */
 const promptFor = async (request) => (await api(`session/${parentID}/permission`)).data.find((item) => item.metadata?.requestID === request)
 const lastAnswer = (list) => toolsOf(list).findLast((part) => part.name === "courier_answer")
 const childOf = (part) =>
   part.name === "courier_spawn" && part.state.status === "completed"
     ? (part.state.metadata?.sessionID ?? part.state.metadata?.metadata?.sessionID)
     : undefined
-// A message the child sent its parent with courier_send: its envelope carries the status, when it gave one, and nothing else.
 const isReport = (message, child) => message.type === "synthetic" && new RegExp(`^<courier from="${child}"( status="\\w+")?>`).test(message.text)
 const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 
-/** Polls until `ready` returns something, or gives up after the timeout. */
 async function until(what, ready) {
   const started = Date.now()
   for (;;) {
@@ -75,7 +70,6 @@ async function until(what, ready) {
   }
 }
 
-/** The answer a person who wants to allow it once gives to the parent's form. */
 function answerOf(form) {
   const once = (options) =>
     options.find((option) => /once/i.test(`${option.value} ${option.label}`)) ??
@@ -91,14 +85,11 @@ function answerOf(form) {
   )
 }
 
-// 1. The child asks, the parent is told, and the turn that opens proposes with courier_answer, so OpenCode's prompt
-// opens in the parent's session, or asks the person first, with a form or in text, or settles.
 const told = await until("the parent to be told of the request, and to propose or ask", async () => {
   const list = await messages(parentID)
   const notice = list.findIndex(isNotice)
   if (notice < 0) return undefined
   const request = list[notice].text.match(/request="(per_\w+)"/)?.[1]
-  // With nativeChildren, a prompt in the parent's session means the parent proposed although told not to.
   const prompt = await promptFor(request)
   if (prompt) return { list, notice, prompt, held: lastAnswer(list)?.state.status === "running" }
   const forms = (await api(`session/${parentID}/form`)).data
@@ -107,7 +98,6 @@ const told = await until("the parent to be told of the request, and to propose o
 })
 
 const before = told ? told.list.slice(told.notice + 1) : []
-// A courier_answer that completed, so passed something on or failed, before the person had answered anything.
 const answeredItself = toolsOf(before).some((part) => part.name === "courier_answer" && part.state.status !== "running")
 const last = told?.list.findLast((message) => message.type !== "idle")
 const askedFirst = Boolean(told) && !told.prompt && !answeredItself && (told.form !== undefined || (ended(last) && !last.error && textOf(last).trim() !== ""))
@@ -115,7 +105,6 @@ let how = "did not ask"
 let personAt = Infinity
 const childIDOf = (text) => text.match(/<courier from="(ses_\w+)"/)?.[1]
 const requestOf = (text) => text.match(/request="(per_\w+)"/)?.[1]
-/** The person answers the prompt OpenCode shows in the parent's session, once it is there. */
 async function answerPrompt(decision) {
   const prompt = told.prompt ?? (await until("OpenCode's prompt in the parent's session", () => promptFor(requestOf(noticeText))))
   if (!prompt) return false
@@ -124,7 +113,6 @@ async function answerPrompt(decision) {
   return true
 }
 
-// 2. The person answers, in the form or as a new message; with COURIER_OTHER_SERVER, through that server.
 let elsewhereSaid = ""
 const noticeText = told ? told.list[told.notice].text : ""
 if (NATIVE && told && !answeredItself) {
@@ -138,12 +126,9 @@ if (NATIVE && told && !answeredItself) {
   const request = noticeText.match(/request="(per_\w+)"/)?.[1]
   console.log(`  the person allows ${request} once in OpenCode's own prompt`)
   await api(`session/${childID}/permission/${request}/reply`, { method: "POST", body: JSON.stringify({ decision: "once" }) })
-  // The second prompt, if any, is rejected without a reason, which ends the parent's held call as a decline would.
   if (told.prompt) await answerPrompt("reject")
 } else if (told && !answeredItself && other) {
   if (told.prompt) {
-    // The person rejects the prompt on the first server without a reason, which ends the parent's step and leaves the
-    // child's request waiting, then answers through the other server, where courier_answer finds no request.
     how = "proposed once with courier_answer, whose prompt the person rejected without a reason"
     await answerPrompt("reject")
     await until("the parent's turn to end after the rejection", async () => settled(await messages(parentID)))
@@ -169,7 +154,6 @@ if (NATIVE && told && !answeredItself) {
   })
   const list = await messages(parentID)
   elsewhereSaid = textOf(list.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {}).trim()
-  // The person follows the advice: allows the request in the child's own session, on the first server.
   const asking = told.list[told.notice].text
   const childID = asking.match(/<courier from="(ses_\w+)"/)?.[1]
   const request = asking.match(/request="(per_\w+)"/)?.[1]
@@ -191,11 +175,9 @@ if (NATIVE && told && !answeredItself) {
     console.log(`  the person replies "${ANSWER}"`)
     await api(`session/${parentID}/prompt`, { method: "POST", body: JSON.stringify({ text: ANSWER }) })
   }
-  // Either way, nothing is passed on until the person has answered OpenCode's prompt in the parent's session.
   await answerPrompt("once")
 }
 
-// 3. The answer reaches the child, which runs its command and reports.
 let parent = (await messages(parentID).catch(() => [])) ?? []
 const child = toolsOf(parent).map(childOf).find(Boolean)
 if (told)
@@ -227,7 +209,6 @@ console.log(timeline)
 
 const answers = toolsOf(parent).filter((part) => part.name === "courier_answer")
 const afterPerson = parent.filter((message) => message.type === "assistant" && message.time.created >= personAt)
-// A courier_answer that completed once the person had answered: its call began before, so its message is older.
 const completedAfter = (part) => (part.state.time?.end ?? personAt) >= personAt
 const passedOn = toolsOf(parent).filter(
   (part) =>
@@ -275,8 +256,6 @@ if (report) notes.push(`the child's report carried ${statusOf(report) ? `status 
 if (other) notes.push(`after courier_answer on the other server, the parent said: ${short(elsewhereSaid, 600)}`)
 const asChecked = (other ? notPending : passedOn).length
 if (answers.length > asChecked) notes.push(`courier_answer was called ${answers.length} time(s), ${asChecked} of them as checked`)
-// Failed model requests, or a turn whose idle marker (2.0.22) says it failed: a run that fails its
-// checks with any is inconclusive rather than failed. The two are counted apart.
 const providerErrors = [...parent, ...childMessages].filter((message) => message.type === "assistant" && message.error !== undefined)
 const failedTurns = [...parent, ...childMessages].filter((message) => message.type === "idle" && message.outcome === "failed").length
 if (providerErrors.length) notes.push(`${providerErrors.length} model request(s) failed: ${[...new Set(providerErrors.map((message) => message.error.type ?? "error"))].join(", ")}`)

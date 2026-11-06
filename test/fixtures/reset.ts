@@ -2,10 +2,6 @@ import { hub, sharedState } from "../../src/platform/hub.js"
 import type { SpawnGate } from "../../src/tree/ports.js"
 import { shared as questions } from "../../src/person/question/shared.js"
 
-/**
- * Forgets every remembered id, the spawns under way, the forms shown and the question relay's state, loaded instances
- * and watcher count included. Members, locations and the receiver are left to unloading.
- */
 export function resetHub() {
   sharedState<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() })).reserved.clear()
   sharedState("inbox", () => new Map<string, string>()).clear()

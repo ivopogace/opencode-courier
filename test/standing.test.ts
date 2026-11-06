@@ -11,10 +11,6 @@ import { childStore, groupStore } from "../src/tree/store.js"
 import { STANDING_KEY, STANDING_MAX, STANDING_PREFIX, standingEntry, type StandingRow } from "../src/tree/text.js"
 import { child, fakePorts } from "./fixtures/events.js"
 
-// The parent's `standing` entry (#384): what the tree keeps of its children, one line each, put when it changes and
-// removed when the parent has no children left, through every tool and event that changes it.
-
-/** A host's keyed session instructions over `entries` (session id to key to value); each call is recorded in `calls`. */
 function fakeInstructions(entries = new Map<string, Map<string, unknown>>(), calls: string[] = []) {
   const instructions = {
     entry: {
@@ -35,7 +31,6 @@ function fakeInstructions(entries = new Map<string, Map<string, unknown>>(), cal
   return { instructions, entries, calls, standingOf: (sessionID: string) => entries.get(sessionID)?.get(STANDING_KEY) as string | undefined }
 }
 
-/** The watcher's fake ports with keyed instructions on their session. */
 function watchPorts() {
   const made = fakePorts()
   const host = fakeInstructions()
@@ -62,7 +57,6 @@ describe("stateOf", () => {
     expect(stateOf(notes({ prompt: note(10), settled: note(20, { by: "failed" }) }))).toEqual({ kind: "failed" })
     expect(stateOf(notes({ prompt: note(10), settled: note(20, { by: "interrupted" }) }))).toEqual({ kind: "interrupted" })
     expect(stateOf(notes({ prompt: note(10), settled: note(20, { by: "report", status: "done" }), stopped: note(25) }))).toEqual({ kind: "stopped" })
-    // Prompted again: the stop and the earlier report no longer count.
     expect(stateOf(notes({ prompt: note(30), settled: note(20, { by: "report", status: "done" }), stopped: note(25), told: note(16) }))).toEqual({ kind: "working" })
   })
 })
@@ -180,7 +174,6 @@ const blocked = { type: "provider.auth", message: "This model is not available i
 const failedEvent = (sessionID = "ses_child", id = "evt_1"): ExecutionFailed & { type: string } => ({ id, type: "session.execution.failed", data: { sessionID, error: blocked } })
 const sessionEvent = (type: string, id: string, created: number, sessionID = "ses_child", reason?: string) => ({ id, type, created, data: { sessionID, ...(reason ? { reason } : {}) } })
 
-/** courier_send through the courier's own ports over the watcher's, at `now`. */
 function sendFrom(ports: WatchPorts, from: string, to: string, now: number, status?: "done" | "blocked" | "partial") {
   const courier = { session: { synthetic: async () => ({ id: "msg_r" }), instructions: (ports.session as any).instructions }, storage: ports.storage, now: () => now, nudge: ports.nudge, log: ports.log } as unknown as CourierPorts
   return send(courier, from, { sessionID: to, message: "m", ...(status ? { status } : {}) })
@@ -270,7 +263,6 @@ describe("syncs of one parent run one after another", () => {
     const children = childStore(ports.storage)
     await children.record({ ...child(), title: "A" })
     await children.prompted("ses_child", 5)
-    // The first list stalls, as a slow host would; the second sync must still not be overtaken.
     const list = instructions.entry.list
     let stalls = 1
     instructions.entry.list = async (input) => {
@@ -279,14 +271,12 @@ describe("syncs of one parent run one after another", () => {
     }
 
     const first = syncStanding(ports, "ses_parent")
-    // The first has read the roster and stalls on its list when the report lands.
     await new Promise((resolve) => setTimeout(resolve, 5))
     await children.settled("ses_child", "report", 9, "done")
     const second = syncStanding(ports, "ses_parent")
 
     expect(await Promise.all([first, second])).toEqual(["put", "put"])
     expect(standingOf("ses_parent")).toBe(line("ses_child", "A", { kind: "reported", status: "done" }))
-    // Another parent's sync is not held behind this one's.
     expect(await syncStanding(ports, "ses_other")).toBe("absent")
   })
 })

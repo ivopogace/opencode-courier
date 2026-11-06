@@ -333,20 +333,17 @@ test("forgetting a child started in a group has the scheduler deliver the group,
 
   expect(await cleanup(ports, "ses_parent", { sessionID: "ses_child" })).toMatchObject({ outcome: "removed", group: "pair" })
 
-  // Marked as dropped, so the release names it; the scheduler is nudged once the worktree is gone.
   expect(store.get("group/ses_parent/pair/ses_child")).toEqual({ title: "t", joinedAt: 1, left: { at: 1_000, by: "dropped" } })
   expect(store.has(rosterKey("ses_parent", "ses_child"))).toBe(false)
   expect(nudges).toEqual([1])
   await childStore(ports.storage).record(child())
   expect(await cleanup(ports, "ses_parent", { sessionID: "ses_child" })).not.toHaveProperty("group")
   expect(nudges).toEqual([1])
-  // One that already left keeps why, and is not named as dropped by this call.
   await childStore(ports.storage).record(child({ group: "pair" }))
   store.set("group/ses_parent/pair/ses_child", { title: "t", joinedAt: 1, left: { at: 5, by: "failed" } })
   expect(await cleanup(ports, "ses_parent", { sessionID: "ses_child" })).not.toHaveProperty("group")
   expect(store.get("group/ses_parent/pair/ses_child")).toEqual({ title: "t", joinedAt: 1, left: { at: 5, by: "failed" } })
   expect(nudges).toEqual([1])
-  // A member whose report is held is kept in its group, which did not change: no nudge.
   await childStore(ports.storage).record(child({ group: "pair" }))
   store.set("group/ses_parent/pair/ses_child", { title: "t", joinedAt: 1, report: { at: 2, status: "done", message: "m" } })
   await cleanup(ports, "ses_parent", { sessionID: "ses_child" })

@@ -132,6 +132,8 @@ below are in it.
   (`experimental.location_idle_timeout`) when no session in it is executing. A location with a running
   session is held for up to 24 hours without a durable event; then its sessions are interrupted with
   `reason: "inactivity"` and it is evicted. A tool call has no timeout.
+- A provider's 402 fails the turn at once; a 429 OpenCode retries for minutes. The live suite's
+  out-of-quota child answers 402 (`e2e/mock-model.mjs`).
 - A graceful shutdown closes locations one by one. A closing location first withdraws its forms, so
   a question call dies with `QuestionTool.CancelledError` as if dismissed; about 40 ms later
   `location.shutdown` arrives, then the plugin unloads. The question relay holds a dismissal 2

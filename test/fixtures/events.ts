@@ -3,8 +3,6 @@ import type { FormField } from "../../src/person/ports.js"
 import type { PermissionAsked, PermissionReplied } from "../../src/person/permission.js"
 import type { WatchPorts } from "../../src/tree/ports.js"
 
-/** The fakes the event-module tests share: a permission request, its events, the shared state and ports over a map. */
-
 export const request = { id: "per_1", sessionID: "ses_child", action: "shell", resources: ["git push"], save: ["git push*"] }
 
 export const asked = (id = "evt_a", data: PermissionAsked["data"] = request): PermissionAsked & { type: string } => ({

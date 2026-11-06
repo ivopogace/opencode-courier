@@ -21,7 +21,6 @@ import { groupNotice } from "../src/tree/text.js"
 
 function fakePorts(options: { pageSize?: number; store?: Map<string, unknown> } = {}) {
   const store = options.store ?? new Map<string, unknown>()
-  // When the parent's last turn ended; past every join unless a test moves it.
   const parent = { idle: 1_000 as number | undefined }
   const delivered: any[] = []
   const logs: string[] = []
@@ -41,7 +40,6 @@ function fakePorts(options: { pageSize?: number; store?: Map<string, unknown> } 
     },
     session: {
       synthetic: (async (input: any) => {
-        // Yield first, like a real call, so concurrent deliveries interleave.
         await Promise.resolve()
         delivered.push(input)
         return { id: `msg_${delivered.length}` }
@@ -108,7 +106,6 @@ describe("joining and leaving", () => {
     await leaveGroup(groupStore(ports.storage), "ses_parent", "pair", "ses_b", "failed", 50)
     expect(await hasCompleteGroup(groupStore(ports.storage), "ses_parent")).toBe(true)
     expect(await hasCompleteGroup(groupStore(ports.storage), "ses_nobody")).toBe(false)
-    // A group whose every member left has no message coming: not one about to be delivered.
     await ports.storage.set(memberKey("ses_parent", "pair", "ses_a"), { title: "A", joinedAt: 1, left: { at: 60, by: "deleted" } })
     expect(await hasCompleteGroup(groupStore(ports.storage), "ses_parent")).toBe(false)
   })
@@ -127,7 +124,6 @@ describe("joining and leaving", () => {
     expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toMatchObject({ report: { status: "done" } })
     expect(await markLeft(groupStore(ports.storage), b, "interrupted", 50)).toBe(true)
     expect(store.get(memberKey("ses_parent", "pair", "ses_b"))).toEqual({ title: "B", joinedAt: 2, left: { at: 50, by: "interrupted" } })
-    // One that left is no longer out, and keeps why it left; nothing written, nothing to deliver anew.
     const left = (await membershipOf(groupStore(ports.storage), "ses_parent", "pair", "ses_b"))!
     expect(left.out).toBe(false)
     expect(await markLeft(groupStore(ports.storage), left, "deleted", 60)).toBe(false)
@@ -158,7 +154,6 @@ describe("joining and leaving", () => {
     await holdReport(groupStore(ports.storage), membership("ses_a", "A"), report("done"))
     expect(await standing()).toEqual({ reported: 1, members: 2, complete: false })
     expect(store.get(memberKey("ses_parent", "pair", "ses_a"))).toEqual({ title: "A", joinedAt: 1, report: report("done") })
-    // A second report of the same member replaces the first.
     await holdReport(groupStore(ports.storage), membership("ses_a", "A"), report("partial"))
     expect(await standing()).toEqual({ reported: 1, members: 2, complete: false })
     await holdReport(groupStore(ports.storage), membership("ses_b", "B"), { ...report("failed"), artifacts: { files: ["a.ts"] } })
@@ -174,9 +169,7 @@ describe("joining and leaving", () => {
     expect(await leaveGroup(groupStore(ports.storage), "ses_parent", "pair", "ses_a", "failed", 50)).toBe(false)
     expect(await groupStore(ports.storage).member("ses_parent", "pair", "ses_a")).toEqual({ title: "A", joinedAt: 1, left: { at: 50, by: "failed" } })
     expect(standingOf(await groupStore(ports.storage).member("ses_parent", "pair", "ses_a"))).toBe("failed")
-    // Not a member: nothing to leave.
     expect(await leaveGroup(groupStore(ports.storage), "ses_parent", "pair", "ses_c", "deleted", 50)).toBeUndefined()
-    // The last member's report completes the group: the one that left counts no more among its members.
     await holdReport(groupStore(ports.storage), membership("ses_b", "B"), report("done"))
     expect(await groupStanding(groupStore(ports.storage), "ses_parent", "pair")).toEqual({ reported: 1, members: 1, complete: true })
   })
@@ -289,7 +282,7 @@ describe("deliverReleased", () => {
     expect(delivered).toEqual([])
     expect(store.size).toBe(2)
 
-    // As OpenCode's API gives it: a DateTime.
+    // OpenCode's API gives idle as a DateTime
     parent.idle = DateTime.makeUnsafe(1) as never
     await deliverReleased(ports, new Set())
     expect(delivered).toHaveLength(1)
@@ -424,7 +417,6 @@ describe("deliverReleased", () => {
     await leaveGroup(groupStore(ports.storage), "ses_parent", "pair", "ses_b", "failed", 50)
     const synthetic = ports.session.synthetic
     ;(ports.session as any).synthetic = async (input: unknown) => {
-      // The member that left reports after all, while the group's message goes out without it.
       await holdReport(groupStore(ports.storage), membership("ses_b", "Second"), report("done", "Late."))
       return synthetic(input as never)
     }

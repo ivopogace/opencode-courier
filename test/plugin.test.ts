@@ -15,7 +15,6 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
 
-/** An event stream the test feeds; it ends when the plugin stops watching. */
 function fakeEvents() {
   const waiting: Array<(event: unknown) => void> = []
   const queued: unknown[] = []
@@ -34,7 +33,6 @@ function fakeEvents() {
   }
 }
 
-/** The pinned OpenCode, as the fake context reports it unless a test says otherwise. */
 const pinned = { name: "opencode", version: builtVersions().opencode, channel: "latest" }
 
 async function setUp(
@@ -42,7 +40,6 @@ async function setUp(
   options?: Record<string, unknown>,
   permissions: any[] = [],
   app: { name: string; version: string; channel: string } = pinned,
-  // Storage scans outside the scheduler's messages wait for it, as a slow storage's would.
   hold: Promise<unknown> = Promise.resolve(),
   overrides: Record<string, unknown> = {},
 ) {
@@ -75,7 +72,6 @@ async function setUp(
       },
       context: record("session.context", []),
       hook: async (name: string, callback: (event: any) => Promise<void> | void) => {
-        // A host before the hook was added: `refusesHook` names the one it does not know.
         if (overrides.refusesHook === name) throw new Error(`Unknown hook: ${name}`)
         hooks.set(name, callback)
         return { dispose: async () => {} }
@@ -96,7 +92,6 @@ async function setUp(
         calls.push({ method: "permission.reply", input })
         permissions.splice(permissions.findIndex((item) => item.id === input.requestID), 1)
       },
-      // The caller's session allows what is asked, unless the test has the person decline it there.
       assert: async (input: any) => {
         calls.push({ method: "permission.assert", input })
         if (declines) throw declines
@@ -159,7 +154,6 @@ test("a loaded instance is found in the hub by its location, its ports in the re
   const member = memberAt(location)
   expect(member?.directory).toBe("/repo")
   expect(relayState.loaded.has(member!.questions as QuestionPorts)).toBe(true)
-  // Another location object, as another instance's, even of the same directory, finds no member.
   expect(memberAt({ ...location })).toBeUndefined()
   await cleanups.shift()!()
   expect(memberAt(location)).toBeUndefined()
@@ -169,7 +163,6 @@ test("a loaded instance is found in the hub by its location, its ports in the re
 test("unloading waits for the roster's prune and the cut-off questions' notice still in flight", async () => {
   let release = () => {}
   const hold = new Promise<void>((resolve) => (release = resolve))
-  // The owner key this server holds fresh, so the scheduler's first tick ends at once.
   const { cleanup } = await setUp({ [OWNER_KEY]: { server: SERVER, at: Date.now() } }, undefined, [], pinned, hold)
   cleanups.pop()
   let unloaded = false
@@ -413,7 +406,6 @@ test("courier_answer tells a question from a permission request by its id, and s
 test("a spawned child's question shows under pending, and courier_answer passes the answers on", async () => {
   const { tools, calls, store } = await setUp()
   await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
-  // A question whose call was cut off, as after a restart: the answer goes to the child as a message.
   const questions = [{ question: "Which greeting?", header: "Greeting", options: [{ label: "Hi", description: "" }] }]
   store.set("question/question_p1", { requestID: "question_p1", sessionID: "ses_child", top: "ses_parent", title: "Fix the bug", questions, askedAt: Date.now() })
 
@@ -496,13 +488,11 @@ test("two instances follow OpenCode's events, one as a standby, and a third take
   const third = await setUp({}, undefined, [request])
   expect([first.subscriptions(), second.subscriptions(), third.subscriptions()]).toEqual([1, 1, 0])
 
-  // The roster is the third instance's storage, which the others do not share in this fake.
   await third.tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
   await first.cleanup!()
   cleanups.splice(cleanups.indexOf(first.cleanup!), 1)
   expect(third.subscriptions()).toBe(1)
 
-  // Subscribing relays what is already pending, since the request was asked before.
   await new Promise((resolve) => setTimeout(resolve, 20))
   const notices = third.calls.filter((call) => call.method === "session.synthetic").map((call) => call.input.text)
   expect(notices).toHaveLength(1)
@@ -523,7 +513,6 @@ test("a spawned child's permission request reaches its parent, and courier_answe
   const listed = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
   expect(listed.metadata.children[0].pending).toEqual([{ type: "permission", requestID: "per_1", action: "shell", resources: ["git push"] }])
 
-  // The person's plain rejection of the caller's own prompt ends its step: the error goes back as it is, and the child waits on.
   const declines = Object.assign(new Error(""), { _tag: "Permission.DeclinedError" })
   decline(declines)
   const declined = await tools
@@ -550,7 +539,6 @@ test("a spawned child's permission request reaches its parent, and courier_answe
   expect(answered.content).toContain("Allowed in your session, by the person in OpenCode's prompt or by your rules, and passed on once for request per_1 of ses_child")
   expect(calls.find((call) => call.method === "permission.reply")!.input).toEqual({ sessionID: "ses_child", requestID: "per_1", decision: "once" })
 
-  // The reply event that answer causes is not reported back as a stale notice.
   emit({ id: `evt_${Math.random()}`, type: "permission.replied", data: { sessionID: "ses_child", requestID: "per_1", reply: "once" } })
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(1)
@@ -654,7 +642,6 @@ test("on setup, delivers messages that fell due while OpenCode was down", async 
   const due = { id: "later_x", sessionID: "ses_parent", from: "ses_parent", message: "wake", fireAt: 1, createdAt: 0 }
   const { calls, store } = await setUp({ "later/later_x": due })
 
-  // The first tick takes the scheduler's owner key, reading it back after a wait of up to a second.
   for (let i = 0; i < 300 && store.has("later/later_x"); i++) await Bun.sleep(10)
 
   expect(calls.find((call) => call.method === "session.synthetic")?.input).toMatchObject({

@@ -161,7 +161,6 @@ describe("roster", () => {
       const { storage, store } = fakeStorage()
       await childStore(storage).record(entry("ses_child", "ses_top", 1))
       await childStore(storage).record(entry("ses_grandchild", "ses_child", 2))
-      // As an older copy of the plugin removes them: the entry only, the reverse key stays.
       store.delete(rosterKey("ses_top", "ses_child"))
 
       expect(ids(await lineage(storage, "ses_grandchild"))).toEqual(["ses_grandchild"])
@@ -179,7 +178,6 @@ describe("roster", () => {
       expect(await childStore(storage).entriesOf("ses_child")).toEqual([entry("ses_child", "ses_top", 1)])
       expect(ids(await lineage(storage, "ses_old"))).toEqual(["ses_old", "ses_grandchild", "ses_child"])
       expect(scans).toEqual(["roster/", "roster/"])
-      // The grandchild, recorded by this copy, was indexed through that scan, its parent included.
       expect(store.get(reverseKey("ses_grandchild"))).toEqual({ ancestors: ["ses_child", "ses_top"] })
       expect(await childStore(storage).entriesOf("ses_nobody")).toEqual([])
       expect(await lineage(storage, "ses_nobody")).toEqual([])
@@ -212,7 +210,6 @@ describe("roster", () => {
       store.set("roster/ses_parent/ses_c", { ...entry("ses_c", "ses_parent", 3), group: "pair" })
       await forgetChild(storage, "ses_parent", "ses_c", "pair")
       expect([...store.keys()]).toEqual([])
-      // A held report outlives the entry: the group still delivers it.
       store.set("group/ses_parent/pair/ses_d", { title: "d", joinedAt: 4, report: { at: 5, status: "done", message: "m" } })
       store.set("roster/ses_parent/ses_d", { ...entry("ses_d", "ses_parent", 4), group: "pair" })
       await forgetChild(storage, "ses_parent", "ses_d", "pair")
@@ -298,7 +295,6 @@ describe("roster", () => {
         ...storage,
         scan: async (request) => {
           const page = await storage.scan(request)
-          // The roster is read second: a child recorded after the report keys were read is on it.
           if (request.prefix === "report/") await childStore(storage).record(entry("ses_new", "ses_top", now)).then(() => store.set("report/ses_new/prompt", { at: now }))
           return page
         },

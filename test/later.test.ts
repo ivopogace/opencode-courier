@@ -26,7 +26,6 @@ function fakePorts(options: { pageSize?: number; failDelivery?: boolean } = {}) 
     },
     session: {
       synthetic: (async (input: any) => {
-        // Yield first, like a real call, so concurrent deliveries interleave.
         await Promise.resolve()
         if (options.failDelivery) throw new Error("session gone")
         delivered.push(input)

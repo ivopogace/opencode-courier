@@ -4,17 +4,12 @@ import { join, posix } from "node:path"
 
 const SRC = join(import.meta.dir, "..", "src")
 
-/** The source files of src/, `.ts` and `.tsx`, each with its module: its path there without the extension, `/`-separated. */
 function sources() {
   return readdirSync(SRC, { recursive: true, encoding: "utf8" })
     .filter((name) => /\.tsx?$/.test(name))
     .map((name) => ({ file: name, module: name.replace(/\.tsx?$/, "").split("\\").join("/") }))
 }
 
-/**
- * Each module of src/, by its path there without `.ts` (`platform/hub`, `person/question/relay`), with the modules of
- * src/ it imports: static, type-only, side-effect and dynamic imports alike.
- */
 function imports() {
   const graph = new Map<string, string[]>()
   for (const { file, module } of sources()) {
@@ -29,7 +24,6 @@ function imports() {
   return graph
 }
 
-/** The modules of src/ each module imports with `import type` or `export type … from` only, as `module -> imported`. */
 function typeOnly() {
   const edges = new Set<string>()
   for (const { file, module } of sources()) {
@@ -40,7 +34,6 @@ function typeOnly() {
   return edges
 }
 
-/** Each module of src/ with the packages it imports, by their specifier: `effect`, `@opencode/plugin/tui`, `node:fs`. */
 function packages() {
   const graph = new Map<string, string[]>()
   for (const { file, module } of sources()) {
@@ -51,8 +44,6 @@ function packages() {
 }
 
 test("no module of src/ imports itself through others, type-only imports included", () => {
-  // But a text.ts's types: it takes them from its module's ports.ts, which re-exports some from the code
-  // that imports the text.ts back for its texts (person/'s question relay).
   const exempt = typeOnly()
   const graph = imports()
   const cycles: string[] = []
@@ -106,13 +97,10 @@ test("person/ outside person/question/ uses the relay through person/question/in
   expect(reaching).toEqual([])
 })
 
-/** The modules of src/: each a folder of its own, used from outside through its index.ts. */
 const MODULES = ["tree", "person", "scheduling", "webhook", "memory"]
 
-/** The module a file of src/ is in, or undefined for `src/index.ts`, `skill.ts`, `kernel/` and `platform/`. */
 const moduleOf = (file: string) => MODULES.find((folder) => file.startsWith(`${folder}/`))
 
-/** What an entrypoint may take of a module directly, besides its index.ts: its RPC contract, and for `tui` its TUI part. */
 const ENTRY_REACH: Record<string, readonly string[]> = { rpc: ["rpc"], tui: ["rpc", "tui"] }
 
 test("a module is imported from outside only through its index.ts, but by the tui and rpc entrypoints", () => {
@@ -154,7 +142,6 @@ test("no file of src/ is outside a folder but index.ts, skill.ts and the rpc.ts 
   expect(top.filter((module) => !["index", "rpc", "skill", "tui"].includes(module))).toEqual([])
 })
 
-/** The packages that are the TUI's: the host provides them to a TUI part, and nothing of the server half may import them. */
 const isTuiPackage = (name: string) =>
   name === "@opencode/plugin/tui" || name.startsWith("@opencode/plugin/tui/") || name === "solid-js" || name.startsWith("solid-js/") || name.startsWith("@opentui/")
 

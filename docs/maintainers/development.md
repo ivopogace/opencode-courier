@@ -45,7 +45,8 @@ and openssl. New behaviour gets a scenario there.
   message delivered at the same tick). Sleep a second or two only where there is none.
 
 `e2e/kv.ts` reads, removes or sets the plugin's storage keys; `e2e/search-plugin` stands in for a
-web search provider; `e2e/probe-plugin` logs the events each instance receives.
+web search provider; `e2e/probe-plugin` logs the events each instance receives; `e2e/registry.mjs`
+serves the packed plugin as a stand-in npm registry and redirects every other request to the real one.
 
 ## Recording the demo
 

@@ -6,7 +6,8 @@ Why the code is shaped as it is. [CLAUDE.md](../../CLAUDE.md)'s Layout is the sh
 ## Modules
 
 `src/` is split by feature: `tree/`, `person/`, `scheduling/`, `webhook/` and `memory/`, each
-hexagonal inside. `kernel/` holds what models see of the protocol; `platform/` the hub, events and
+hexagonal inside where it has domain rules (`scheduling/` and `webhook/` have no `ports.ts` or
+`domain.ts`). `kernel/` holds what models see of the protocol; `platform/` the hub, events and
 storage helpers. Two composition roots sit on top: `index.ts` (the server plugin) and `tui.tsx`.
 The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules' RPC contracts.
 
@@ -18,8 +19,8 @@ The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules
   and `webhook/` supply. `index.ts` composes it, so `tree/` does not depend on `person/`. The
   `context` hook takes the tools to hide from a leaf (`hiddenFromLeaf`) the same way.
 - **The memory refreshes in the `after` phase**, once the turn-end notices are out and the report
-  state is written. It reads only through ports every hub-v2 member has (`storage`, `session`). What
-  it needs beyond them is process-wide, under the key `opencode-courier.memory`.
+  state is written. It reads only through ports every hub-v2 member has (`storage`, `session`, `now`,
+  `log`). What it needs beyond them is process-wide, under the key `opencode-courier.memory`.
 - **The TUI bundle carries nothing of the server half**: `tui.tsx` and `rpc.ts` import modules'
   `tui.tsx` and `rpc.ts` directly. The TUI part goes through the same use cases as the tools, over
   the RPCs `courier`, `courier-person` and `courier-memory`. The memory view is a dialog, not a
@@ -81,7 +82,7 @@ OpenCode runs one plugin instance per location, all in one process. After an upd
 new copy next to the old one until the old one unloads. All instances share one hub
 (`opencode-courier.hub` on `globalThis`), where each scheduled message, released group, event,
 request, form and question is claimed once before any instance acts on it. The hub runs one
-scheduler and follows events through two instances, one a standby, so an unload leaves no gap.
+scheduler and follows events through two instances, both active, so an unload leaves no gap.
 Spawns under way, inbox item types and shown forms are process-wide under fixed keys of their own.
 
 The hub carries `HUB_VERSION`, changed only when its shape or a field's meaning does. A copy that

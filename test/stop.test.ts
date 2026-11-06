@@ -171,6 +171,14 @@ describe("subtree with OpenCode's subagents (#438)", () => {
     expect(nodes.map((node) => node.entry.sessionID)).toContain("broken")
   })
 
+  test("does not take a native child past retention for a subagent, though OpenCode still lists it", async () => {
+    const { ports } = await fixture({ listed: { root: [["side", RETENTION_MS + 2]] } })
+
+    const { nodes } = await subtree(ports.courier.storage, "root", { now: RETENTION_MS + 3, exists: () => false }, ports.courier.session)
+
+    expect(nodes).toEqual([])
+  })
+
   test("with retention, leaves out a subagent past it as it does an entry", async () => {
     const { ports } = await fixture({ listed: { root: [["old", 1], ["new", RETENTION_MS + 2]] } })
 

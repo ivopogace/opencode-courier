@@ -57,7 +57,9 @@ export async function subtree(storage: RosterStorage, rootID: string, retention?
     for (const [index, [entries, listed]] of found.entries()) {
       const spawned = entries.filter(kept).map((entry): Below => ({ entry, depth }))
       for (const node of spawned) seen.add(node.entry.sessionID)
-      const subagents = listed.filter(kept).map((entry): Below => ({ entry, depth, subagent: true }))
+      // A native child is listed too: the roster's entry decides, kept or past retention.
+      const onRoster = new Set(entries.map((entry) => entry.sessionID))
+      const subagents = listed.filter((entry) => !onRoster.has(entry.sessionID) && kept(entry)).map((entry): Below => ({ entry, depth, subagent: true }))
       for (const node of subagents) seen.add(node.entry.sessionID)
       const all = [...spawned, ...subagents].sort((a, b) => a.entry.createdAt - b.entry.createdAt)
       if (all.length) byParent.set(level[index]!, all)

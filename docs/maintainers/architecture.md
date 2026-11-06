@@ -7,8 +7,8 @@ Why the code is shaped as it is. [CLAUDE.md](../../CLAUDE.md)'s Layout is the sh
 
 `src/` is split by feature: `tree/`, `person/`, `scheduling/`, `webhook/` and `memory/`, each
 hexagonal inside. `kernel/` holds what models see of the protocol; `platform/` the hub, events and
-storage helpers. Two composition roots sit on top: `index.ts` (the server plugin) and `tui.tsx`;
-`rpc.ts` only re-exports the modules' RPC contracts.
+storage helpers. Two composition roots sit on top: `index.ts` (the server plugin) and `tui.tsx`.
+The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules' RPC contracts.
 
 - **The platform does not import features.** `index.ts` hands it the ordered tick jobs and event
   modules. There is no event bus of our own: OpenCode's event stream is one.
@@ -37,8 +37,9 @@ The import rules:
   `domain.ts`.
 - `tree/store.ts` and `memory/store.ts` are the only files that know their storage keys; no file
   outside the module imports them, and no other file names their key prefixes.
-- A module's `tui.tsx` imports only `@opencode/plugin/tui` and its subpaths, `solid-js`, `@opentui/*`, its `rpc.ts`,
-  `text.ts` and `mascot.ts`; a module's `rpc.ts` only `@opencode/plugin/rpc` and `effect`.
+- A module's `tui.tsx` imports only `@opencode/plugin/tui`, `solid-js` (each with its subpaths),
+  `@opentui/*`, its `rpc.ts`, `text.ts` and `mascot.ts`; a module's `rpc.ts` only
+  `@opencode/plugin/rpc` and `effect`.
 
 ## Storage
 

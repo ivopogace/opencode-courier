@@ -101,8 +101,8 @@ export const SKILL_CONTENT = [
   "## When a part goes wrong",
   "",
   '- A failed turn (failed="...") or a silent end (ended="without-report", quoting the session\'s last reply): message ' +
-    "the session with courier_send to carry on, to report, or to try again; or start a replacement. Until it reports, " +
-    "it counts toward the limits.",
+    "the session with courier_send to carry on, to report, or to try again; or start a replacement. A silent end counts " +
+    "toward the limits until it reports; a failed turn does not, until you message it again.",
   "- A refusal from courier_spawn naming maxDepth, maxChildren or maxTotal: do that part yourself, or end your turn and " +
     "start it once a report has arrived. Do not retry it in a loop.",
   "- Lost track, after a compaction or a restart: one courier_tree shows every session under you with its depth, its " +

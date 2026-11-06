@@ -247,7 +247,7 @@ test("tree/store.ts is imported from no file outside tree/, and tree/index.ts re
 })
 
 test("only tree/store.ts names the tree's storage prefixes, so no other file builds its keys", () => {
-  const prefix = /\b(?:roster|roster-by-child|report|group)\//
+  const prefix = /\b(?:roster|roster-by-child|report|group|wake)\//
   const naming = sources()
     .filter(({ file }) => prefix.test(readFileSync(join(SRC, file), "utf8")))
     .map(({ file }) => file.split("\\").join("/"))
@@ -261,7 +261,7 @@ test("memory/store.ts is imported from no file outside memory/, and only it name
   expect(importing).toContain("memory/rpc-handlers")
   expect(importing.filter((module) => !module.startsWith("memory/") || module === "memory/index")).toEqual([])
   const naming = sources()
-    .filter(({ file }) => /"memory\//.test(readFileSync(join(SRC, file), "utf8")))
+    .filter(({ file }) => /(?<![\w./-])memory\//.test(readFileSync(join(SRC, file), "utf8")))
     .map(({ file }) => file.split("\\").join("/"))
   expect(naming).toEqual(["memory/store.ts"])
 })

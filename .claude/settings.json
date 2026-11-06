@@ -1,5 +1,14 @@
 {
   "enabledPlugins": {
-    "code-review@claude-plugins-official": true
+    "code-review@claude-plugins-official": true,
+    "egm@egm": true
+  },
+  "extraKnownMarketplaces": {
+    "egm": {
+      "source": {
+        "source": "github",
+        "repo": "google/elephant-goldfish-model"
+      }
+    }
   }
 }

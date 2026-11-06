@@ -1,10 +1,6 @@
-// Live-test probe: logs each event per instance (location, pid) to its `log` option's file, and, after the
-// courier's context hook, each request's tools and role; puts courier_spawn and courier_note back for a CHILD-FORCES task.
 import { appendFileSync, realpathSync } from "node:fs"
 
-// The session an event concerns, where the watcher looks for it: `data.sessionID`, or a form's.
 const sessionOf = (data) => data?.sessionID ?? data?.form?.sessionID
-// The directory with symlinks resolved, so the test compares one spelling of each location.
 const canonical = (directory) => {
   try {
     return realpathSync(directory)
@@ -25,7 +21,7 @@ export default {
     }
     write({ type: "probe.loaded" })
     await ctx.session.hook("context", (event) => {
-      // The role line heads the courier's own part, or follows `<context key="role">` in OpenCode's instruction baseline.
+      // the role follows <context key="role"> in OpenCode's instruction baseline
       const role = event.system.map((part) => part.text.match(/^opencode-courier role: (root orchestrator|sub-orchestrator|leaf|root)/m)?.[1]).find(Boolean)
       write({ type: "probe.context", sessionID: event.sessionID, tools: Object.keys(event.tools), role: role ?? null })
       if (JSON.stringify(event.messages).includes("CHILD-FORCES")) {
@@ -42,7 +38,6 @@ export default {
       }
     })
     const following = new AbortController()
-    // Subscribes again when the stream ends or breaks, as the courier's watcher does.
     const follow = (options, line) => (async () => {
       while (!following.signal.aborted) {
         try {
@@ -55,7 +50,6 @@ export default {
       }
     })()
     void follow({}, (event) => ({ type: event.type, id: event.id, sessionID: sessionOf(event.data) }))
-    // With a `types` option, also what a subscription filtered on them gets, as the courier's is.
     if (ctx.options.types)
       void follow({ types: ctx.options.types }, (event) => ({ type: "probe.filtered", event: event.type, id: event.id, sessionID: sessionOf(event.data) }))
     return () => {

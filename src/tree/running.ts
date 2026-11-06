@@ -5,42 +5,33 @@ import { busy, endedAt, turnEnd, type BusyTimes } from "./domain.js"
 
 type Session = Pick<Plugin.Context["session"], "context">
 
-/** Whether a session runs and, when it does not, when its last turn ended, where known. */
 export interface Turn {
   readonly running: boolean
   readonly endedAt?: number
 }
 
-/** How many sessions' answers each session port remembers. */
 const ANSWERS_MAX = 500
 
-/** How long after its stamp an answer of rest is read again: an item enqueued then may be delivered, stamping nothing until its step. */
+// a delivered item stamps nothing until its first step (api-notes)
 const FRESH_MS = 10_000
 
-/** How long an answer of rest is kept: an item waiting since a lost wake is delivered on the wake sent again, which stamps nothing. */
+// a re-sent wake's delivery stamps nothing until its step (api-notes)
 const REST_MS = 30_000
 
 const RUNNING: Turn = { running: true }
 
 const rest = (at: number | undefined): Turn => (at === undefined ? { running: false } : { running: false, endedAt: at })
 
-/** A session's last answer read, the times it was read at, and until when an answer of rest holds. */
 type Answer = { readonly stamp: string; readonly turn: Promise<Turn>; until: number }
 
-/** Each session port's last answer per session, which holds until the next stamp, but for those `turnOf` drops or keeps `until`. */
 const answers = new WeakMap<Session, Map<string, Answer>>()
 
 type Messages = Awaited<ReturnType<Session["context"]>>
 
-/**
- * Whether a session runs and, at rest, when its last turn ended: by its times when they show rest, else by its transcript
- * (#324, #326), kept until the next stamp, a rest for `REST_MS` and not within `FRESH_MS` of it; one unread or empty runs.
- */
 export function turnOf(session: Session, sessionID: string, time: BusyTimes, now = Date.now()): Promise<Turn> {
   return resolve(session, sessionID, time, now, () => session.context({ sessionID }), true)
 }
 
-/** `turnOf` for a caller that reads the transcript itself: it answers from these `messages`, read just now, and keeps the answer. */
 export function turnIn(session: Session, sessionID: string, time: BusyTimes, messages: Promise<Messages>, now = Date.now()): Promise<Turn> {
   return resolve(session, sessionID, time, now, () => messages, false)
 }
@@ -52,7 +43,6 @@ function resolve(session: Session, sessionID: string, time: BusyTimes, now: numb
   const stamp = [time.updated, time.idle, time.busy].map(millis).join(" ")
   const found = known.get(sessionID)
   if (cached && found?.stamp === stamp && now < found.until) return found.turn
-  // Only its own answer: a newer read of the session may have taken its place meanwhile.
   const forget = () => {
     if (known.get(sessionID) === answer) known.delete(sessionID)
   }

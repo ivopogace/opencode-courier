@@ -10,7 +10,6 @@ import { stalledAmong } from "./wake.js"
 
 type Messages = Awaited<ReturnType<CourierPorts["session"]["context"]>>
 
-/** The last tool call in a session's messages, and when it was made. */
 export function lastTool(messages: Messages) {
   for (const message of messages.toReversed()) {
     if (message.type !== "assistant") continue
@@ -20,7 +19,7 @@ export function lastTool(messages: Messages) {
   return undefined
 }
 
-/** How full a session's context is, as OpenCode's session view reads it (packages/tui/src/util/session.ts, v2.1.0): the last usage since the last compaction over its model's window. */
+// as OpenCode's session view reads it (packages/tui/src/util/session.ts)
 export function contextOf(messages: Messages, windows: ReadonlyArray<ModelWindow>) {
   const compacted = messages.findLastIndex((message) => message.type === "compaction" && message.status === "completed")
   const last = messages.findLast((message, index) => index > compacted && message.type === "assistant" && message.tokens !== undefined)
@@ -31,16 +30,13 @@ export function contextOf(messages: Messages, windows: ReadonlyArray<ModelWindow
   return used > 0 && window ? used / window : undefined
 }
 
-/** A request as the panel says what a paused session waits on: a permission request, or its first question. */
 export const waitOf = (pending: Pending): Wait =>
   pending.type === "permission"
     ? { type: "permission", action: pending.action, resources: [...pending.resources] }
     : { type: "question", question: pending.questions[0]?.question ?? "" }
 
-/** A form a session shows, as the panel says what it waits on. */
 export const formWait = (form: ShownForm): Wait => ({ type: "form", title: form.title })
 
-/** A session's report since its last prompt, as the panel shows it; none for one spawned before this was kept. */
 function reportRow(report: Listed["report"], status: Status | undefined): Pick<Row, "report"> {
   if (!report) return {}
   if (report.owes) return { report: { state: "owed", progressed: report.progressed } }
@@ -48,17 +44,12 @@ function reportRow(report: Listed["report"], status: Status | undefined): Pick<R
   return { report: { state: "reported", progressed: report.progressed, ...(status ? { status } : {}) } }
 }
 
-/**
- * What a session does: waiting on a request to the person or a form it shows them, stalled, running, idle, or gone when
- * OpenCode no longer knows it. A message waiting in its inbox is no turn (`runs`); a stalled one reads stalled.
- */
 function stateOf(info: unknown, waits: number, stalled: boolean, running: boolean): Row["state"] {
   if (!info) return "gone"
   if (waits) return "waiting"
   if (stalled) return "stalled"
   return running ? "running" : "idle"
 }
-/** One session of the panel: what it is doing, its report and group standing, its last tool call, context use and cost. */
 async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth, subagent, info, running, endedAt, pending, forms, report }: Listed, stalled: number | undefined): Promise<Row> {
   const { sessionID } = entry
   const [messages, status, standing, stopped] = await Promise.all([
@@ -70,7 +61,6 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
   const tool = lastTool(messages)
   const context = contextOf(messages, windows)
   const state = stateOf(info, pending.length + forms.length, stalled !== undefined, running)
-  // A prompt since the failure drops it from the report, so `resumesAt` here is that of the last turn alone.
   const resumes = state === "idle" && !stopped && report?.resumesAt !== undefined && report.resumesAt > ports.now() ? report.resumesAt : undefined
   return {
     sessionID,
@@ -95,10 +85,6 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
   }
 }
 
-/**
- * The tree panel's rows: the sessions under a session as courier_tree lists them, at most `maxTotal`, live ones first,
- * then the newest, each as `row` reads it; `top` the session itself, `truncated` the ones left out, `stalled` its stall.
- */
 export async function panel(ports: CourierPorts, rootID: string): Promise<Tree> {
   const [{ kept, leftOut }, root] = await Promise.all([readTree(ports, rootID), readTop(ports, rootID)])
   const stalled = await stalledAmong(ports, [rootID, ...kept.map((node) => node.entry.sessionID)])

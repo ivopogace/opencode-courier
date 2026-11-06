@@ -9,7 +9,6 @@ import { stop } from "./stop.js"
 import { childStore } from "./store.js"
 import { summary } from "./summary.js"
 
-/** Serves the tree's RPC at the plugin's location, through the same use cases as the tools; disposed with the plugin. */
 export function registerTreeRpc(rpc: Pick<Plugin.Context["rpc"], "register">, ports: StopPorts) {
   const refused = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause))
   return rpc.register(treeRpc, {
@@ -33,10 +32,6 @@ export function registerTreeRpc(rpc: Pick<Plugin.Context["rpc"], "register">, po
   })
 }
 
-/**
- * Forgets a session OpenCode no longer knows as courier_cleanup called from its own parent, once `by` is found above it,
- * as courier_stop checks. A session OpenCode still has, or cannot say it lost, is refused: forgetting it loses its report.
- */
 async function forget(ports: StopPorts, by: string, sessionID: string): Promise<Forgotten> {
   const chain = await childStore(ports.courier.storage).lineage(sessionID)
   if (!chain.length) throw new Error(`${sessionID} was not started with courier_spawn, so there is nothing to forget.`)

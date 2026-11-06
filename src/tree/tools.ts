@@ -10,11 +10,6 @@ import { stop } from "./stop.js"
 import { tree } from "./subtree.js"
 import { childrenText, cleanupText, sendText, spawnText, stopText, treeText } from "./text.js"
 
-/**
- * The tree's courier tools: their input schemas, descriptions, and what each returns. The descriptions are
- * model-facing like the texts in `text.ts`, and snapshotted with them in `test/notices.test.ts`.
- */
-
 export const SpawnInput = Schema.Struct({
   task: Schema.String.annotate({ description: "What the new session should do. It is told who started it and how to report back." }),
   title: Schema.optional(Schema.String.annotate({ description: "Session title; defaults to the task's first line." })),
@@ -122,14 +117,12 @@ export const CleanupInput = Schema.Struct({
   ),
 })
 
-/** What the tree's tools run on: one plugin instance's ports. */
 export interface TreeToolPorts {
   readonly courier: CourierPorts
   readonly cleanup: CleanupPorts
   readonly stop: StopPorts
 }
 
-/** Adds the tree's courier tools, each a direct tool rather than a code-mode one. */
 export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
   tools.add({
     name: "courier_spawn",

@@ -14,18 +14,12 @@ export interface SpawnInput {
   readonly agent?: string
   readonly isolate?: boolean
   readonly group?: string
-  /** `provider/model` to run on; left out, the agent's own model, else the caller's. */
   readonly model?: string
-  /** The variant of that model, its reasoning effort; left out, the chosen model's own. */
   readonly variant?: string
-  /** Whether the child is OpenCode's subagent of the caller; left out, the `nativeChildren` option decides. */
   readonly native?: boolean
 }
 
-/**
- * A spawned session's own rules: OpenCode's schedule tools are hidden, as their wake-ups go round the tree, so a child
- * that schedules one and ends its turn would read as silent. A native child would otherwise run on its parent's rules.
- */
+// a schedule's wake-up is invisible to Waits (api-notes, OpenCode's schedules)
 const CHILD_RULES = [{ action: "opencode_schedule_*", resource: "*", effect: "deny" }] as const
 
 function titleOf(task: string) {
@@ -33,21 +27,13 @@ function titleOf(task: string) {
   return line.length > 60 ? `${line.slice(0, 57)}...` : line
 }
 
-/** Removes a worktree made for a child that was never created; one that cannot be removed stays. */
 async function dropWorktree(ports: CourierPorts, directory: string) {
   try {
     await ports.worktree.remove({ projectID: ports.projectID, directory, force: false })
-  } catch {
-    // The spawn's own failure is the one to report.
-  }
+  } catch {}
 }
 
-/**
- * Creates a child session, hands it the task and returns at once; the child reports back with
- * courier_send. Refused past a limit, whether or not the `context` hook hid the tool.
- */
 export async function spawn(ports: CourierPorts, parentID: string, input: SpawnInput) {
-  // Some models send null, or an empty string, for an optional field they leave out.
   const group = typeof input.group === "string" ? input.group.trim() || undefined : (input.group ?? undefined)
   if (group !== undefined && !isGroupName(group))
     throw new Error(`group must be a name of 1 to 60 letters, digits, dots, dashes or underscores, not ${JSON.stringify(group)}.`)
@@ -79,7 +65,6 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
   try {
     await handOver(ports, entry, admitted.depth, input.task, !rosterError, !rosterError && !groupError)
   } finally {
-    // The parent's standing with the child on it, prompted or failed, announced at its next step.
     await syncStanding(ports, parentID)
   }
   return {
@@ -95,10 +80,6 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
   }
 }
 
-/**
- * Creates the child's session, in a worktree of its own if asked, which goes again if the session cannot be created.
- * `model` names the child's model when it is not its parent's, for the roster and the result.
- */
 async function create(ports: CourierPorts, parentID: string, input: SpawnInput) {
   const { model, parent } = await chooseModel(ports, parentID, input, input.agent)
   const handedDown = input.isolate ? await parentWork(ports, parentID) : undefined
@@ -107,7 +88,7 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
     : undefined
   const base = worktree ? await ports.head(worktree) : undefined
   const title = input.title ?? titleOf(input.task)
-  // OpenCode takes a location or a parentID, never both, so an isolated child cannot be a native one.
+  // OpenCode takes a location or a parentID, never both
   const native = (input.native ?? ports.nativeChildren === true) && !worktree
   const child = await ports.session
     .create({
@@ -120,7 +101,6 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
       metadata: { courier: { parentID } },
     })
     .catch(async (error: unknown) => {
-      // No session will ever use the fresh worktree, and nothing records it, so it goes now.
       if (worktree) await dropWorktree(ports, worktree)
       throw error
     })
@@ -136,10 +116,6 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
   }
 }
 
-/**
- * The worktree and HEAD an isolated parent hands its isolated child, by the reverse index alone; undefined for any
- * other parent. An unreadable HEAD fails the spawn rather than start the child without the parent's work.
- */
 async function parentWork(ports: CourierPorts, parentID: string) {
   const parent = await childStore(ports.storage).indexedEntry(parentID)
   if (!parent?.isolated) return undefined
@@ -152,10 +128,6 @@ async function parentWork(ports: CourierPorts, parentID: string) {
   return { directory: parent.directory, head, uncommitted }
 }
 
-/**
- * Records the child on the roster, before the prompt, so a child that exists is on the roster even if prompting
- * fails, then in its group. A failed write must not keep the child from its task: each is reported, not thrown.
- */
 async function enrol(ports: CourierPorts, entry: RosterEntry, group: string | undefined) {
   const rosterError = await childStore(ports.storage).record(entry).then(
     () => undefined,
@@ -165,12 +137,8 @@ async function enrol(ports: CourierPorts, entry: RosterEntry, group: string | un
   return { rosterError, groupError }
 }
 
-/**
- * Hands the child its task. `rostered` says whether its report state is kept, which a child off the roster has none
- * of, and `grouped` whether it is in its group; a child that never got its task leaves both, as it will never report.
- */
 async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, task: string, rostered: boolean, grouped: boolean) {
-  // A baseline, until OpenCode's event for the prompt's delivery moves it on; written first, so it never overtakes that.
+  // the prompt's inbox.delivered event moves this on; so written first
   const children = childStore(ports.storage)
   if (rostered) await children.prompted(entry.sessionID, ports.now()).catch(() => undefined)
   try {
@@ -186,10 +154,6 @@ async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, 
   }
 }
 
-/**
- * Joins a child to its group; one that cannot be joined is recorded in no group, so it reports on its own,
- * and the result says so. Returns the error's message, if any.
- */
 async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
   const groups = groupStore(ports.storage)
   try {
@@ -197,7 +161,6 @@ async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
     return undefined
   } catch (error) {
     const { group: _, ...ungrouped } = entry
-    // A write that failed may have landed all the same: a member left there would hold its group up for good.
     await Promise.all([
       childStore(ports.storage).record(ungrouped).catch(() => undefined),
       groups.remove(entry.parentID, group, entry.sessionID).catch(() => undefined),
@@ -206,10 +169,7 @@ async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
   }
 }
 
-/**
- * The child's role and the other modules' entries before its prompt, so its first request carries them, and a root's own at
- * its first spawn, remembered for the `context` hook; a parent that is no root is forgotten there, as its depth may have changed.
- */
+// entries put before the first step are in its baseline (api-notes)
 async function nameBoth(ports: CourierPorts, parentID: string, childID: string, depth: number) {
   const extra = await extraEntries(ports)
   await nameRole(ports, childID, depth)
@@ -221,7 +181,6 @@ async function nameBoth(ports: CourierPorts, parentID: string, childID: string, 
   else ports.roles.delete(parentID)
 }
 
-/** The entries the other modules give a spawned session, the memory's lessons; none when they cannot be read, logged. */
 async function extraEntries(ports: CourierPorts): Promise<ReadonlyArray<Entry>> {
   if (!ports.entries || !ports.session.instructions) return []
   try {
@@ -232,10 +191,7 @@ async function extraEntries(ports: CourierPorts): Promise<ReadonlyArray<Entry>> 
   }
 }
 
-/**
- * Writes a session's role part to its `role` entry: a child's system prompt carries it from its first request, a root's
- * transcript as an update. False on a host without entries, or when the put failed, logged: the `context` hook adds the part.
- */
+// a host before 2.2.0 has no entries; the context hook adds the part
 async function nameRole(ports: CourierPorts, sessionID: string, depth: number) {
   const entries = ports.session.instructions?.entry
   if (!entries) return false

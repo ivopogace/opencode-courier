@@ -463,14 +463,16 @@ still ask with `courier_send`.
 **`courier_tree`** lists the sessions under a session, depth first, at most `maxTotal`: the live ones
 first, then the newest. Past that it says how many it left out (`truncated`). Each entry has what
 `courier_children` shows, plus `parentID`, `depth` and `report`: `owes`, `progressed`, `ended`, or
-the `status` of its last report. Anyone can read any tree.
+the `status` of its last report. [OpenCode's subagents](#opencodes-subagents) in the tree are listed
+too, marked `subagent: true`, without `report`. Anyone can read any tree.
 
 **`courier_stop { sessionID, cleanup? }`** stops a session and every session under it:
 
 1. Only a session above the target may stop it.
 2. The `courier_later` messages scheduled for them are cancelled.
-3. They are interrupted deepest first. Each says `interrupted`, `idle` (it was not running),
-   `gone` (OpenCode no longer has it) or `failed` (it may still run).
+3. They are interrupted deepest first, [OpenCode's subagents](#opencodes-subagents) among them,
+   marked `subagent: true`. Each says `interrupted`, `idle` (it was not running), `gone` (OpenCode
+   no longer has it) or `failed` (it may still run).
 4. With `cleanup: true`, their worktrees are removed by `courier_cleanup`'s rules, without `force`.
 
 The target's parent is told once, `ended="stopped"`, unless it is the caller or the target was not
@@ -560,19 +562,21 @@ rewritten at each turn end in the tree, from facts the plugin already has:
 
 - when the tree started and last moved, and the top session's title;
 - the top's `split:` line, and up to 3 later ones that read otherwise;
-- for each session started in it: title, depth, isolation, group, status, duration, cost, context use
-  and spawns refused;
+- for each session started in it, [OpenCode's subagents](#opencodes-subagents) included: title,
+  depth, isolation, group, status, duration, cost, context use and spawns refused;
 - whether the tree is finished;
 - the lesson, the one thing a model writes.
 
 It never holds a report's body, artifacts or replies. A part's status is a report's status, or
-`interrupted`, `stopped`, `stalled`, `out` (owes a report), or `gone` (deleted before it settled).
+`interrupted`, `stopped`, `stalled`, `out` (owes a report, or a subagent still runs), or `gone`
+(deleted before it settled). A subagent's is how its last turn ended: `done`, `failed` or
+`interrupted`.
 
 **`courier_recall { sessionID? }`** lists the project's records, pinned first, then newest first,
 one line each; its description asks the root for the one call and a spawned session for none:
 
 ```
-- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 2 done, 1 partial, 2 levels deep, 2 isolated, 1 spawn refused · ran 42 min · last moved 5 days ago · $1.28 · finished · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
+- ses_old 2026-10-03: "Add memory to courier" · split: 3 parts: core, e2e, docs · 3 parts: 2 done, 1 partial, 2 levels deep, 2 isolated, 1 spawn refused, 1 subagent · ran 42 min · last moved 5 days ago · $1.28 · finished · lesson (2026-10-03): "The docs part was ten lines; next time do it yourself."
 ```
 
 With `sessionID`, a listed top, it gives that record in full as JSON. Each call counts on the other
@@ -611,7 +615,7 @@ milliseconds:
 | `recalled` | `{ calls, at? }`: `courier_recall` calls from the tree; `at` when the top first called. |
 | `lesson` | `{ text, at, depth? }`, from `courier_note`; `depth` for a sub-orchestrator's. |
 | `reads`, `pinned` | Merged in when read, from keys beside the record (below); never written with it. |
-| `parts` | One per session started in the tree, in tree order: `sessionID`, `title`, `depth`, `isolated`, `group`, `status`, `duration`, `cost`, `context` (0 to 1) and `refused`. |
+| `parts` | One per session started in the tree, in tree order: `sessionID`, `title`, `depth`, `isolated`, `subagent` (`true` for [OpenCode's subagents](#opencodes-subagents)), `group`, `status`, `duration`, `cost`, `context` (0 to 1) and `refused`. A count of parts, as in `revisions` and the listing's line, leaves the subagents out; the listing counts them apart. |
 
 Beside the record, each key with one writer: `…/<topSessionID>/pin` (`{ at }`, the memory view's
 pin) and `…/<topSessionID>/reads/<readerTopSessionID>` (`{ shown, read, at }`, from that reader
@@ -673,6 +677,29 @@ An isolated child cannot be native: `native: true` with `isolate: true` is refus
 started; with the option on, an isolated child is a standalone session. A tree with isolated children
 shows in OpenCode as several trees, split at each isolated child; `courier_tree` shows the whole.
 
+## OpenCode's subagents
+
+A session in a tree may start subagents with OpenCode's own `subagent` tool, in the foreground or
+with `background: true`. They are the sessions whose OpenCode `parentID` is a session of the tree
+but which have no roster entry; a [native child](#native-child-sessions) has both and is the
+courier's. The plugin finds them through OpenCode's session list, under every session of the tree,
+subagents' own subagents too.
+
+- **`courier_tree` and the [tree panel](#the-tree-panel)** list them under the session that started
+  them, marked `subagent: true` and `subagent` in the row, with what they do and cost. They owe no
+  report and are in no group, so a parent's bar leaves them out. `enter` opens one; `s` and `x` do
+  not act on one, which is stopped with the session above it.
+- **[`courier_stop`](#seeing-and-stopping-a-subtree)** interrupts them with the rest of the subtree,
+  background ones included, which would outlive their parent: OpenCode ties only a foreground
+  subagent to its parent's tool call. OpenCode tells a parent of each background subagent's end, and
+  that wakes it; the stop waits up to two seconds for that notice and interrupts the parent again. A
+  subagent cannot be the target itself.
+- **The [record](#the-record)** lists them in `parts`, so its cost is the whole tree's.
+
+They are not counted in the [status entry](#the-status-entry), where OpenCode's own footer counts
+them, nor against the [limits](#session-trees-and-their-limits), since the courier did not start
+them and cannot refuse them; a listing cut at `maxTotal` counts them as it does any session. Their asks show in the top session's view in OpenCode's TUI and are not relayed.
+
 ## In the terminal
 
 The package ships a part for OpenCode's terminal UI, loaded from the server's plugin list. The
@@ -687,8 +714,9 @@ In the prompt's footer, for the open session:
 courier 1 waiting on you · 1 stalled · 2 running · group pair 1/2 · 1 idle
 ```
 
-It counts every session under the open one: waiting on you (a permission request, question or
-form), stalled, running, or idle. Then each open join group of its children, as reported over
+It counts every session started with `courier_spawn` under the open one: waiting on you (a
+permission request, question or form), stalled, running, or idle; OpenCode's footer counts its
+[subagents](#opencodes-subagents). Then each open join group of its children, as reported over
 members. A zero part is left out. A click on `waiting on you` opens the [asks inbox](#the-asks-inbox).
 While a permission prompt or form shows, OpenCode hides the footer; use `ctrl+x k`.
 
@@ -716,8 +744,9 @@ panel acts as that session. Tree guides join each session to the one that starte
 
 Each row has a mark (`✓` reported, a spinner while running, `●` waiting on you, `!` stalled, `✗`
 failed or interrupted), the title, what it does, its report, its group's standing, `isolated`,
-`native` for a [subagent](#native-child-sessions) and its [model](#the-model-a-child-runs-on) when
-that is not its parent's.
+`native` for a [native child](#native-child-sessions), `subagent` for one [OpenCode's subagent
+tool](#opencodes-subagents) started, and its [model](#the-model-a-child-runs-on) when that is not
+its parent's.
 Under it: a progress bar for an orchestrator, each ask for a session waiting on you, and for a leaf
 how long it ran, its last tool call, its context use and its cost. Digby, the courier's mole, digs
 in the header and follows the tree's state, the panel's own session included: while any of it runs he

@@ -26,21 +26,26 @@ export function age(ms: number) {
   return days < 1 ? duration(ms) : count(days, "day")
 }
 
-/** How a listing counts the parts of a record: by status, in the order of `PART_STATUSES`, plus how many were isolated and how many spawns were refused. */
-function partsLine(parts: ReadonlyArray<PartRecord>) {
-  if (!parts.length) return "no parts"
+/**
+ * How a listing counts the parts of a record: those courier started by status, in the order of `PART_STATUSES`, plus how many
+ * were isolated, how many spawns were refused and how many subagents OpenCode's subagent tool started.
+ */
+function partsLine(all: ReadonlyArray<PartRecord>) {
+  const parts = all.filter((part) => !part.subagent)
+  const subagents = all.length - parts.length
   const statuses = PART_STATUSES.flatMap((status) => {
     const n = parts.filter((part) => part.status === status).length
     return n ? [`${n} ${status}`] : []
   }).join(", ")
   const isolated = parts.filter((part) => part.isolated).length
   const refused = parts.reduce((n, part) => n + (part.refused ?? 0), 0)
-  const deepest = Math.max(...parts.map((part) => part.depth))
+  const deepest = Math.max(0, ...all.map((part) => part.depth))
   return [
-    `${count(parts.length, "part")}: ${statuses}`,
+    parts.length ? `${count(parts.length, "part")}: ${statuses}` : "no parts",
     ...(deepest > 1 ? [`${deepest} levels deep`] : []),
     ...(isolated ? [`${isolated} isolated`] : []),
     ...(refused ? [`${count(refused, "spawn")} refused`] : []),
+    ...(subagents ? [count(subagents, "subagent")] : []),
   ].join(", ")
 }
 

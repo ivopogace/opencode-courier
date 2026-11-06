@@ -1,7 +1,7 @@
 /** The memory's ports: what refreshing a record and courier_recall need of the plugin context, and what the process shares. */
 import type { Plugin } from "@opencode/plugin"
 import type { Storage } from "../platform/storage.js"
-import type { Instructions, ModelWindow } from "../tree/index.js"
+import type { Instructions, Lister, ModelWindow } from "../tree/index.js"
 import type { Pinned, ReadKind, Reads, StoredRecord, TreeRecord } from "./domain.js"
 
 export type { Lesson, PartRecord, PartStatus, Pinned, ReadKind, Reads, Recalled, Revision, StoredRecord, TreeRecord } from "./domain.js"
@@ -11,7 +11,8 @@ type Context = Plugin.Context
 /** What refreshing a record runs on: every hub-v2 member's watch ports have these, so the event module runs through any. */
 export interface RefreshPorts {
   readonly storage: Storage
-  readonly session: Pick<Context["session"], "get" | "context">
+  /** `list` finds OpenCode's subagents in the tree; a part is not recorded for them without it. */
+  readonly session: Pick<Context["session"], "get" | "context"> & Lister
   readonly now: () => number
   readonly log: (message: string) => void
 }

@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 schedules:20 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 schedules:20 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 subagent:8 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1474,6 +1474,59 @@ run_subtree() {
     "$([ "$(notices_with "$root" ended)" = '[]' ] && [ "$(notices_with "$middle" ended)" = '[]' ] && echo true || echo false)"
   check "the stop is noted for both" "$([ -n "$(kv get "report/$leaf/stopped")" ] && [ -n "$(kv get "report/$middle/stopped")" ] && echo true || echo false)"
   check "a failure notice did not follow either" "$(notices_with "$root" failed | jq -r 'length == 0')"
+}
+
+# OpenCode's subagents in a courier tree (#438): a session courier_spawn started starts one with OpenCode's subagent tool in the
+# background, then one in the foreground; courier_tree and the panel list both, marked, courier_stop interrupts them with
+# the rest, and the tree's record lists them as parts.
+run_subagent() {
+  scenario "OpenCode's subagents show in courier_tree and the panel, courier_stop interrupts them, background ones included, and the record lists them (#438)"
+  child_delay 1000
+  out=$(prompt "COURIER-SUBAGENT-START")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the middle session started a background subagent, then a foreground one" "$(has_text "$middle" "working in the background" 60)"
+  seen=""
+  for _ in $(seq 1 30); do
+    seen=$(prompt_in "$root" "COURIER-SUBTREE-TREE" | tool_state courier_tree)
+    [ "$(jq -r '[.metadata.metadata.sessions[] | select(.subagent == true)] | length' <<<"$seen")" = 2 ] && break
+    sleep 1
+  done
+  echo "  $(jq -c '[.metadata.metadata.sessions[] | {sessionID, depth, parentID, subagent, title}]' <<<"$seen")"
+  check "courier_tree lists the middle session, and both subagents under it, marked subagent, owing no report" \
+    "$(jq -r --arg root "$root" --arg middle "$middle" '.metadata.metadata.sessions | map([.sessionID, .depth, .parentID, .subagent // false]) as $rows |
+      $rows[0] == [$middle, 1, $root, false] and ($rows[1:] | length == 2 and all(.[1] == 2 and .[2] == $middle and .[3] == true)) and
+      (.[1:] | all(has("report") | not) and (map(.title) | sort == ["Look it up", "Run the checks"]))' <<<"$seen")"
+  background=$(jq -r '.metadata.metadata.sessions[] | select(.title == "Run the checks") | .sessionID' <<<"$seen")
+  foreground=$(jq -r '.metadata.metadata.sessions[] | select(.title == "Look it up") | .sessionID' <<<"$seen")
+  check "both subagents run" "$([ "$(session_info "$background" | jq -r '.parentID')" = "$middle" ] && [ "$(texts "$foreground" | grep -c 'SUBAGENT-FOREGROUND')" -ge 1 ] && echo true || echo false)"
+  directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")
+  panel=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$root\"}}" | jq -c '[.output.rows[] | {sessionID, parentID, depth, subagent}]')
+  echo "  $panel"
+  check "the panel's rows have both subagents under the middle session, marked subagent" \
+    "$(jq -r --arg middle "$middle" --arg bg "$background" --arg fg "$foreground" '(map(select(.subagent == true)) | map(.sessionID) | sort) == ([$bg, $fg] | sort) and
+      all(.[]; .subagent != true or (.parentID == $middle and .depth == 2))' <<<"$panel")"
+  summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$root\"}}" | jq -c '.output')
+  check "the status entry counts only the middle session, as OpenCode's footer counts the subagents" "$(jq -r '.running + .waiting + .idle + (.stalled // 0) == 1' <<<"$summary")"
+  stopped=$(prompt_in "$root" "COURIER-SUBTREE-STOP $middle" | tool_state courier_stop)
+  echo "  $(jq -c '.metadata.metadata.stopped' <<<"$stopped")"
+  check "courier_stop interrupted both subagents, then the middle session" \
+    "$(jq -r --arg middle "$middle" --arg bg "$background" --arg fg "$foreground" '.status == "completed" and (.metadata.metadata.stopped | map([.sessionID, .outcome, .subagent // false]) as $s |
+      ($s[0:2] | sort) == ([[$bg, "interrupted", true], [$fg, "interrupted", true]] | sort) and $s[2] == [$middle, "interrupted", false] and ($s | length == 3))' <<<"$stopped")"
+  ended() { for _ in $(seq 1 30); do [ "$(api "session/$1" | jq -r '(.data // .) | .outcome')" = interrupted ] && { echo true; return; }; sleep 1; done; echo false; }
+  check "all three ended interrupted" "$([ "$(ended "$background")" = true ] && [ "$(ended "$foreground")" = true ] && [ "$(ended "$middle")" = true ] && echo true || echo false)"
+  sleep 3
+  check "OpenCode told the middle session that its background subagent ended" \
+    "$(api "session/$middle/message" | jq -r --arg bg "$background" '[.data[] | select(.type == "synthetic") | .text | select(startswith("<subagent sessionID=\"" + $bg + "\""))] | length >= 1')"
+  check "the background subagent's end did not wake the stopped middle session again" \
+    "$([ "$(has_text "$middle" "SAW SUBAGENT END" 1)" = false ] && [ "$(session_info "$middle" | jq -r '.outcome')" = interrupted ] && echo true || echo false)"
+  check "no courier report state was noted for the subagents" "$([ -z "$(kv get "report/$background/stopped")" ] && [ -z "$(kv get "report/$foreground/settled")" ] && echo true || echo false)"
+  project=$(session_info "$root" | jq -r '.projectID')
+  record=$(record_of "$root" '[.parts[] | select(.subagent == true)] | length == 2')
+  echo "  $(jq -c '[.parts[] | {sessionID, depth, subagent, status}]' <<<"$record")"
+  check "the tree's record lists both subagents as parts under the middle session, marked subagent, with duration and cost" \
+    "$(jq -r --arg bg "$background" --arg fg "$foreground" '[.parts[] | select(.subagent == true)] | (map(.sessionID) | sort) == ([$bg, $fg] | sort) and
+      all(.[]; .depth == 2 and .isolated == false and (.duration | type) == "number" and (.cost | type) == "number" and (.title | length) > 0)' <<<"$record")"
 }
 
 # With maxChildren 1, a reported child archived, renamed, switched or unarchived reads idle and frees a spawn, one still running or

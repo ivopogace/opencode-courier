@@ -1,6 +1,6 @@
 import { finite, isNotFound, millis } from "../platform/json.js"
 import { contextOf, reportState, stalledAmong, subtree, turnIn, turnOf, waitsInInbox, type Below, type ModelWindow, type Turn } from "../tree/index.js"
-import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, replacingMention, revise, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
+import { isSettled, isStated, mergeParts, NOT_STATED, partStatus, subagentStatus, replacingMention, revise, splitLinesOf, splitOf, unreadPart, type PartRecord, type Stated, type TreeRecord } from "./domain.js"
 import type { MemoryState, RefreshPorts } from "./ports.js"
 import { memoryStore } from "./store.js"
 
@@ -52,7 +52,7 @@ const infoOf = (ports: RefreshPorts, sessionID: string): Promise<{ info?: Info; 
  * One session of the tree as its record keeps it, without its use when its messages were not read for it (only when its turn
  * `ended` or it is `known` to no record yet), without a duration when its info was not, and whether it runs or is owed a turn.
  */
-async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth }: Below, stalled: boolean, at: number, known: boolean, ended: boolean) {
+async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth, subagent }: Below, stalled: boolean, at: number, known: boolean, ended: boolean) {
   const { sessionID } = entry
   // Read once: for its use, and for whether it runs when its times do not show rest.
   const readAt = Date.now()
@@ -64,7 +64,7 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
       return { ...one, ...(await turn) }
     }),
     messages?.then((read) => useOf(read, windows), () => undefined),
-    reportState(ports.storage, sessionID).catch(() => undefined),
+    subagent ? undefined : reportState(ports.storage, sessionID).catch(() => undefined),
     waitsInInbox(ports, sessionID).catch(() => true),
   ])
   const created = finite(millis(info?.time.created)) ?? entry.createdAt
@@ -75,8 +75,9 @@ async function part(ports: RefreshPorts, windows: ReadonlyArray<ModelWindow>, { 
     title: info?.title ?? entry.title,
     depth,
     isolated: entry.isolated,
+    ...(subagent ? { subagent } : {}),
     ...(entry.group ? { group: entry.group } : {}),
-    status: partStatus({ stopped: report?.stopped ?? false, stalled, report }),
+    status: subagent ? subagentStatus({ running, stalled, outcome: info?.outcome }) : partStatus({ stopped: report?.stopped ?? false, stalled, report }),
     ...(info ? { duration: Math.max(0, end - created) } : {}),
     ...(cost !== undefined ? { cost } : {}),
   }
@@ -112,7 +113,7 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   }
   if (state.off.has(info.location.directory)) return undefined
   const store = memoryStore(ports.storage)
-  const [previous, { nodes }] = await Promise.all([store.get(info.projectID, top), subtree(ports.storage, top)])
+  const [previous, { nodes }] = await Promise.all([store.get(info.projectID, top), subtree(ports.storage, top, undefined, ports.session)])
   // The split lines are in the top's own replies, so only its own turn end can revise one stated already; another's reads
   // them while none is stated, and only the replies finished, never a line the top is still writing.
   const own = ended === top
@@ -149,7 +150,7 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   const { split, revisions: recorded } = replaced ? replacingMention(found, latest?.revisions) : { split: first, revisions: latest?.revisions }
   // The line that replaced a mention is the first stated, so beside revisions already recorded it is not one of them too.
   const since = replaced && recorded ? stated.slice(1) : stated
-  const revisions = split === NOT_STATED ? undefined : revise({ split, revisions: recorded }, since, at, parts.length)
+  const revisions = split === NOT_STATED ? undefined : revise({ split, revisions: recorded }, since, at, parts.filter((one) => !one.subagent).length)
   const record: TreeRecord = {
     startedAt: finite(millis(info.time.created)) ?? previous?.startedAt ?? at,
     movedAt: at,

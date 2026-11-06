@@ -74,6 +74,17 @@ describe("summary", () => {
     expect(await summary(ports, "ses_root")).toEqual({ running: 2, waiting: 1, idle: 1, groups: [] })
   })
 
+  test("leaves out OpenCode's subagents, which its own footer counts (#438)", async () => {
+    const { ports } = fakePorts({ ses_run: { updated: 5 }, ses_sub: { updated: 5 } })
+    await childStore(ports.storage).record(entry("ses_run", "ses_root"))
+    ;(ports.session as any).list = async ({ parentID }: { parentID: string }) => ({
+      data: parentID === "ses_root" ? [{ id: "ses_sub", parentID, title: "sub", location: { directory: "/repo" }, time: { created: 950, updated: 5 } }] : [],
+      cursor: {},
+    })
+
+    expect(await summary(ports, "ses_root")).toEqual({ running: 1, waiting: 0, idle: 0, groups: [] })
+  })
+
   test("counts a running session showing a form as waiting, and an idle one by its times, its form's withdrawal missed", async () => {
     const form = [{ id: "frm_1", title: "Web Search" }]
     const { ports } = fakePorts(

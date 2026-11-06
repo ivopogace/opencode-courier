@@ -359,7 +359,7 @@ export function treeText(tree: { readonly sessions: ReadonlyArray<unknown>; read
 /** What courier_stop did to each session, and to the messages and worktrees. */
 export function stopText(result: {
   readonly sessionID: string
-  readonly stopped: ReadonlyArray<{ readonly sessionID: string; readonly outcome: string; readonly error?: string }>
+  readonly stopped: ReadonlyArray<{ readonly sessionID: string; readonly outcome: string; readonly error?: string; readonly subagent?: true }>
   readonly cancelled: ReadonlyArray<string>
   readonly cleanup?: ReadonlyArray<CleanupResult | { readonly sessionID: string; readonly outcome: "failed"; readonly error: string }>
   readonly told?: string
@@ -369,7 +369,7 @@ export function stopText(result: {
   return [
     `Stopped ${result.sessionID} and ${count(result.stopped.length - 1, "session")} under it, deepest first: ${interrupted} had a turn running and was interrupted, ` +
       `${result.stopped.filter((one) => one.outcome === "idle" || one.outcome === "gone").length} did not run.`,
-    ...result.stopped.map((one) => `- ${one.sessionID}: ${one.outcome}${one.error ? " (" + one.error + ")" : ""}`),
+    ...result.stopped.map((one) => `- ${one.sessionID}${one.subagent ? " (subagent)" : ""}: ${one.outcome}${one.error ? " (" + one.error + ")" : ""}`),
     ...(failed.length ? ["Those that failed may still run: try courier_stop again."] : []),
     result.cancelled.length
       ? `Cancelled ${count(result.cancelled.length, "scheduled message")}: ${result.cancelled.join(", ")}.`

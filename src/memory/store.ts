@@ -54,6 +54,7 @@ function readPart(value: unknown): PartRecord | undefined {
     title: str(given.title) ?? "",
     depth: num(given.depth) ?? 1,
     isolated: given.isolated === true,
+    ...(given.subagent === true ? { subagent: true as const } : {}),
     ...(group ? { group } : {}),
     status: isPartStatus(given.status) ? given.status : "out",
     ...optional("duration"),

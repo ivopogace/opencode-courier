@@ -19,7 +19,8 @@ export const LESSON_MAX = 300
 
 /**
  * How a part stands: its last report's status, how its wait ended without one (`failed`, `interrupted`), `stopped` by
- * courier_stop, `gone` before it settled, `stalled` on a message it will not take, or `out`: it owes a report.
+ * courier_stop, `gone` before it settled, `stalled` on a message it will not take, or `out`: it owes a report, or a
+ * subagent still runs.
  */
 export const PART_STATUSES = [...STATUSES, "interrupted", "stopped", "gone", "stalled", "out"] as const
 export type PartStatus = (typeof PART_STATUSES)[number]
@@ -36,6 +37,8 @@ export interface PartRecord {
   /** 1 for a session the top started. */
   readonly depth: number
   readonly isolated: boolean
+  /** Started by OpenCode's subagent tool, not courier_spawn: it owes no report, and its status is how its last turn ended. */
+  readonly subagent?: true
   readonly group?: string
   readonly status: PartStatus
   /** From its start to the end of its last turn, or to the refresh while it runs. */
@@ -267,6 +270,13 @@ export function partStatus({ stopped, stalled, report }: Standing): PartStatus {
   if (!report?.known || report.owes) return "out"
   if (report.ended) return report.ended
   return report.status ?? "done"
+}
+
+/** A subagent's status: it owes no report, so it is out while it runs, else stalled, else as OpenCode says its last turn ended. */
+export function subagentStatus({ running, stalled, outcome }: { readonly running: boolean; readonly stalled: boolean; readonly outcome?: string }): PartStatus {
+  if (stalled) return "stalled"
+  if (running) return "out"
+  return outcome === "failed" || outcome === "interrupted" ? outcome : "done"
 }
 
 /**

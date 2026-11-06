@@ -696,6 +696,23 @@ mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
 git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory on"
 start_server
 
+echo "the tree panel shows a subagent OpenCode's subagent tool started, under the session that started it, marked subagent (#438)"
+out=$(prompt "COURIER-SUBAGENT-START")
+sub_root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+sub_mid=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out")
+for _ in $(seq 1 60); do [ "$(rpc tree "{\"sessionID\":\"$sub_root\"}" | jq -r '[.output.rows[]? | select(.subagent == true)] | length')" -ge 1 ] && break; sleep 1; done
+check "the RPC's tree has a subagent row under the middle session" \
+  "$(rpc tree "{\"sessionID\":\"$sub_root\"}" | jq -r --arg mid "$sub_mid" '[.output.rows[] | select(.subagent == true)] | length >= 1 and all(.parentID == $mid and .depth == 2)')"
+open_tui tui-subagent "$sub_root"
+check "the TUI is on the session" "$(shows "courier 1 running" 60 tui-subagent-footer)"
+tmux send-keys -t "$TMUX_SESSION" "/courier tree"
+sleep 1
+tmux send-keys -t "$TMUX_SESSION" Enter
+check "the panel has the subagent's row, running and marked subagent" "$(shows "running · subagent" 30 tui-subagent-panel)"
+check "the middle session's bar counts no subagent as a part owed" "$(grep -qF "0/0 reported" "$WORK/tui-subagent-panel.txt" && echo false || echo true)"
+rpc stop "{\"sessionID\":\"$sub_mid\",\"by\":\"$sub_root\"}" >/dev/null || true
+tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+
 echo "opencode plugin add installs the package with its tui and rpc entrypoints"
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 stop_server
@@ -730,7 +747,7 @@ check "the TUI loads the installed package's tui entrypoint and shows the entry"
 
 # What a failed check saw: the screens, and the children's messages, kept with the logs.
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-list tui-memory-record tui-memory-lesson-confirm tui-memory-lesson-forgotten tui-memory-no-lesson tui-memory-back tui-memory-search tui-memory-unfiltered tui-memory-again tui-memory-cursor-confirm tui-memory-cursor-forgotten tui-memory-cursor tui-memory-cursor-kept tui-memory-confirm tui-memory-fewer tui-memory-empty tui-memory-off tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-list tui-memory-record tui-memory-lesson-confirm tui-memory-lesson-forgotten tui-memory-no-lesson tui-memory-back tui-memory-search tui-memory-unfiltered tui-memory-again tui-memory-cursor-confirm tui-memory-cursor-forgotten tui-memory-cursor tui-memory-cursor-kept tui-memory-confirm tui-memory-fewer tui-memory-empty tui-memory-off tui-subagent-footer tui-subagent-panel tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

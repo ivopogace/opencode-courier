@@ -649,13 +649,24 @@ run_early_report() {
   check "the middle session reported to the root in the turn that started its group" "$(has_text "$root" "MID DONE EARLY" 60)"
   check "its group's message reached it after, in a turn of its own" "$([ -n "$(reply_time "$middle" "MID SAW GROUP" 60)" ] && echo true || echo false)"
   turn_ended "$middle"
-  sleep 2
-  check "that turn ended without a report reminder" "$(notices_with "$middle" reminder | jq -r 'length == 0')"
-  check "the root got one report from it, and was not told it ended without one" "$(api "session/$root/message" | jq -r --arg middle "$middle" '
-    [.data[] | select(.type == "synthetic") | .text | select(startswith("<courier from=\"" + $middle + "\""))] |
-    length == 1 and (.[0] | contains("status=\"done\"") and contains("MID DONE EARLY"))')"
-  check "the group's delivery was not taken for a prompt" \
-    "$(jq -nr --argjson prompt "$(kv get "report/$middle/prompt")" --argjson settled "$(kv get "report/$middle/settled")" '$prompt.at <= $settled.at')"
+  # The idle hook runs before a turn goes idle, so a reminder would be in this turn already.
+  check "that turn ended without a report reminder, and the middle session reported once" "$(api "session/$middle/message" | jq -r --arg root "$root" '
+    ([.data[] | select(.type == "synthetic") | .text | select(contains(" reminder=\"report\""))] | length == 0) and
+    ([.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send" and .state.input.sessionID == $root)] | length == 1)')"
+  prompt_at=$(kv get "report/$middle/prompt" | jq -r .at)
+  check "the group's delivery was not taken for a prompt" "$(kv get "report/$middle/settled" | jq -r --argjson prompt "$prompt_at" '.at >= $prompt')"
+  # The plugin handles events in order: once a later message's delivery moves the prompt note, the
+  # group turn's end, where a silent end would be noted as told, has been handled.
+  api_post "session/$middle/synthetic" "$(jq -nc --arg text "<courier from=\"$root\">CHILD-REPORT-NOW</courier>" --arg from "$root" \
+    '{text: $text, description: ("Message from " + $from), metadata: {source: "courier", from: $from}, delivery: "steer"}')" >/dev/null
+  moved=$(for _ in $(seq 1 60); do
+    [ "$(kv get "report/$middle/prompt" | jq -r --argjson before "$prompt_at" '.at > $before')" = true ] && { echo true; exit; }
+    sleep 0.5
+  done; echo false)
+  check "a later courier message to it counted as a prompt" "$moved"
+  check "the end of the group's turn told the root nothing" "$([ -z "$(kv get "report/$middle/told")" ] && echo true || echo false)"
+  check "the root's next message from it is the report that message asked for, with no notice of a silent end before it" \
+    "$([ "$(has_text "$root" "CHILD DONE AFTER NUDGE" 30)" = true ] && notices_with "$root" ended | jq -r 'length == 0')"
 }
 
 run_finding() {

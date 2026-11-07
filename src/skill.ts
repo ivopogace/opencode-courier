@@ -33,8 +33,8 @@ export const SKILL_CONTENT = [
   "",
   "## 3. End your turn",
   "",
-  "- Reply without calling more tools; reports and notices wake you. One courier_later check-in per group, cancelled " +
-    "when its reports arrive.",
+  "- Reply without calling more tools; reports and notices wake you. For a long task or batch, one courier_later " +
+    "check-in per group (per session when ungrouped); courier_cancel it when its reports arrive.",
   "- At the top, a permission request or question from below arrives with its own instructions: follow them, and never " +
     "answer for the person.",
   "- When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves " +

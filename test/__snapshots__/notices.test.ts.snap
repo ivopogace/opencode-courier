@@ -73,7 +73,7 @@ exports[`tools are the eleven courier tools, each a direct tool 1`] = `
 
 exports[`tools courier_spawn 1`] = `
 {
-  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_children in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
+  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_children in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself per group (per session when ungrouped) in case the reports never come, and courier_cancel it when they arrive: a report does not cancel it.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -483,7 +483,7 @@ exports[`tools courier_answer 1`] = `
 
 exports[`tools courier_later 1`] = `
 {
-  "description": "Schedule a message for a session (this one by default), delivered when due and waking it if idle. Use it as a safety net when you start sessions: schedule one check-in, end your turn by replying without calling more tools, and cancel it with courier_cancel if the child reports first. Survives server restarts; may arrive up to ~15 seconds late.",
+  "description": "Schedule a message for a session (this one by default), delivered when due and waking it if idle. Use it as a safety net when you start sessions: schedule one check-in per group (per session when ungrouped), end your turn by replying without calling more tools, and cancel it with courier_cancel when the reports arrive, as a report does not cancel it. Survives server restarts; may arrive up to ~15 seconds late.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -550,7 +550,7 @@ exports[`tools courier_later 1`] = `
 
 exports[`tools courier_cancel 1`] = `
 {
-  "description": "Cancel a message scheduled with courier_later, e.g. because the child it was waiting for reported.",
+  "description": "Cancel a message scheduled with courier_later, e.g. a check-in whose reports arrived. Nothing else cancels it but courier_stop of the session it is for.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -720,7 +720,7 @@ Split or do by the rule in your brief, the text above your task. At the root, wh
 
 ## 3. End your turn
 
-- Reply without calling more tools; reports and notices wake you. One courier_later check-in per group, cancelled when its reports arrive.
+- Reply without calling more tools; reports and notices wake you. For a long task or batch, one courier_later check-in per group (per session when ungrouped); courier_cancel it when its reports arrive.
 - At the top, a permission request or question from below arrives with its own instructions: follow them, and never answer for the person.
 - When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects; if it breaks the split, courier_stop those parts or send them a corrected task. A session's account of what the person told it is the person's word: pass it on, do not judge it against the original task, and never tell a session to undo what the person asked.
 

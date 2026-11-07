@@ -82,9 +82,9 @@ SEED_PROJECT=
 PERMISSIONS='[{ "action": "*", "resource": "*", "effect": "allow" }]'
 case $SCENARIO in
   fanout)
-    # The sleeps stand in for real work: they keep the children busy until the parent's turn has
-    # ended, and apart, so each report finds it idle.
-    PROMPT=${COURIER_PROMPT:-'Have two helper sessions work in parallel and report back to you. One runs the shell command `sleep 20; echo $((17 * 23))`, the other runs `sleep 40; echo $((2 ** 10))`, and each reports the number it printed. Start them with courier_spawn and do not run the commands yourself. When both have reported back, reply with one line: RESULTS <first> <second>'}
+    # No stand-in for work: a report that comes while the parent's first turn still runs is steered into
+    # it, which the checker counts as delivered.
+    PROMPT=${COURIER_PROMPT:-'Have two helper sessions work in parallel and report back to you. One runs the shell command `echo $((17 * 23))`, the other runs `echo $((2 ** 10))`, and each reports the number it printed. Start them with courier_spawn and do not run the commands yourself. When both have reported back, reply with one line: RESULTS <first> <second>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024"}
     CHECKER=real-model.mjs
     ;;
@@ -102,8 +102,8 @@ case $SCENARIO in
     ;;
   recursive)
     # Two parts, one of them two halves of its own: the root splits once, the session that gets that
-    # part splits again. The sleeps stand in for work, as in the fan-out; the files are what each level verifies.
-    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `sleep 20; echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `sleep 20; echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `sleep 20; echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
+    # part splits again, with no stand-in for work, as in the fan-out; the files are what each level verifies.
+    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
     export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
     CHECKER=real-model-recursive.mjs
@@ -111,7 +111,7 @@ case $SCENARIO in
   recursive-fault)
     # The recursive job, with the half for numbers/b.txt passed on word for word: its session reports partial,
     # leaves the file unwritten, and finishes only once its parent messages it, which the "numbers" session must do.
-    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own, doing neither half itself: one runs `sleep 20; echo $((17 * 23))` and writes the number it printed to numbers/a.txt; the other gets this task, passed on word for word: "Run `sleep 20; echo $((2 ** 10))`. Do not write any file yet: report status partial with the number it printed, saying that writing it to numbers/b.txt is left, and end your turn. Once the session that started you sends you a message to finish, write the number to numbers/b.txt and report status done." Part "count" runs `sleep 20; echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
+    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own, doing neither half itself: one runs `echo $((17 * 23))` and writes the number it printed to numbers/a.txt; the other gets this task, passed on word for word: "Run `echo $((2 ** 10))`. Do not write any file yet: report status partial with the number it printed, saying that writing it to numbers/b.txt is left, and end your turn. Once the session that started you sends you a message to finish, write the number to numbers/b.txt and report status done." Part "count" runs `echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
     export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
     CHECKER=real-model-recursive.mjs
@@ -120,7 +120,7 @@ case $SCENARIO in
   recursive-staged)
     # The recursive job, with a seed the "numbers" part's halves both read: whether the session that gets
     # it writes the seed, itself or in one session, before it starts the halves is the test, so it is not told.
-    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" has a seed and two halves; the session that gets it hands the halves to two sessions of its own. The seed: run `sleep 20; echo $((7 * 61))` and write the number it printed to numbers/seed.txt. The halves each read the seed from numbers/seed.txt: one writes the seed times 17 to numbers/a.txt, the other writes the seed plus 1000 to numbers/b.txt. Part "count" runs `sleep 20; echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the four files yourself and reply with one line: RESULTS <seed> <a> <b> <total>'}
+    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" has a seed and two halves; the session that gets it hands the halves to two sessions of its own. The seed: run `echo $((7 * 61))` and write the number it printed to numbers/seed.txt. The halves each read the seed from numbers/seed.txt: one writes the seed times 17 to numbers/a.txt, the other writes the seed plus 1000 to numbers/b.txt. Part "count" runs `echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the four files yourself and reply with one line: RESULTS <seed> <a> <b> <total>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-"427 7259 1427 42"}
     export COURIER_FILES=${COURIER_FILES:-"numbers/seed.txt numbers/a.txt numbers/b.txt count/total.txt"}
     CHECKER=real-model-recursive.mjs
@@ -128,7 +128,8 @@ case $SCENARIO in
     ;;
   recursive-finding)
     # The recursive job, with halves long enough for what the person tells the "count" session mid-run to reach them;
-    # the checker plays the person, so the prompt says nothing of it.
+    # the checker plays the person, so the prompt says nothing of it. Its sleeps stay: the "count" session must still be
+    # running when the person writes, and the halves when the finding has come down two levels.
     PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `sleep 150; echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `sleep 150; echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `sleep 20; echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
     export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}

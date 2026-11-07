@@ -1,7 +1,8 @@
-import { writeFileSync } from "node:fs"
+import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
-const [parentID] = process.argv.slice(2)
+const [parentID, ...flags] = process.argv.slice(2)
+const saved = flags.includes("--saved")
 const server = process.env.SERVER
 const auth = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD}`).toString("base64")}`
 const work = process.env.WORK
@@ -21,6 +22,7 @@ async function api(path, init = {}, base = server) {
 }
 
 async function messages(sessionID) {
+  if (saved) return JSON.parse(readFileSync(join(work, sessionID === parentID ? "parent.json" : `child-${sessionID}.json`), "utf8"))
   const all = []
   let query = "order=asc"
   for (;;) {
@@ -85,22 +87,71 @@ function answerOf(form) {
   )
 }
 
-const told = await until("the parent to be told of the request, and to propose or ask", async () => {
-  const list = await messages(parentID)
+const nativeSpawn = (list) => toolsOf(list).some((part) => part.name === "courier_spawn" && part.state.input?.native === true)
+const proposesOnce = (message) =>
+  message.type === "assistant" && message.content.some((part) => part.type === "tool" && part.name === "courier_answer" && part.state.input?.reply === "once")
+const savedSummary = (() => {
+  if (!saved) return undefined
+  try {
+    return JSON.parse(readFileSync(join(work, "summary.json"), "utf8"))
+  } catch {
+    return undefined
+  }
+})()
+// What the person saw live, kept in summary.json since the checker could re-read a run; without it (an older run), read
+// from the transcript: the parent's turn after the notice, where a courier_answer proposing once stands for the held prompt.
+const kept = savedSummary?.observed
+function toldFromTranscript(list) {
   const notice = list.findIndex(isNotice)
   if (notice < 0) return undefined
-  const request = list[notice].text.match(/request="(per_\w+)"/)?.[1]
-  const prompt = await promptFor(request)
-  if (prompt) return { list, notice, prompt, held: lastAnswer(list)?.state.status === "running" }
-  const forms = (await api(`session/${parentID}/form`)).data
-  if (forms.length) return { list, notice, form: forms[0] }
-  return settled(list) && list.length > notice + 1 ? { list, notice } : undefined
-})
+  const end = list.findIndex((message, index) => index > notice && ended(message))
+  const turn = list.slice(notice + 1, end === -1 ? list.length : end + 1)
+  const proposal = turn.findIndex(proposesOnce)
+  if (proposal !== -1) {
+    const at = notice + 1 + proposal
+    const lines = list[notice].text.split("\n")
+    const on = lines.indexOf("On:")
+    const resources = on === -1 ? [] : lines.slice(on + 1, lines.indexOf("", on)).map((line) => line.replace(/^- /, ""))
+    const pending = structuredClone(list[at])
+    for (const part of pending.content) if (part.type === "tool" && part.name === "courier_answer") part.state.status = "running"
+    return { list: [...list.slice(0, at), pending], notice, prompt: { action: lines.find((line) => line.startsWith("It asks for: "))?.slice(13), resources }, held: true }
+  }
+  if (toolsOf(turn).some((part) => part.name === "question")) return { list: list.slice(0, notice + 1 + turn.length), notice, form: { fields: [] } }
+  return end === -1 ? undefined : { list: list.slice(0, end + 1), notice }
+}
+function personAtFromTranscript(list, told) {
+  if (!told) return Infinity
+  const after = list.slice(told.list.length)
+  const answer = told.prompt ? told.list.at(-1) : after.find((message) => message.type === "user" || / answered="\w+"/.test(message.text ?? ""))
+  return answer?.time.created ?? Infinity
+}
 
-const before = told ? told.list.slice(told.notice + 1) : []
-const answeredItself = toolsOf(before).some((part) => part.name === "courier_answer" && part.state.status !== "running")
-const last = told?.list.findLast((message) => message.type !== "idle")
-const askedFirst = Boolean(told) && !told.prompt && !answeredItself && (told.form !== undefined || (ended(last) && !last.error && textOf(last).trim() !== ""))
+const told = kept
+  ? kept.told && { notice: kept.notice, prompt: kept.prompt ?? undefined, held: kept.held, form: kept.form ?? undefined }
+  : saved
+    ? toldFromTranscript(await messages(parentID))
+    : await until("the parent to be told of the request, and to propose or ask", async () => {
+        const list = await messages(parentID)
+        const notice = list.findIndex(isNotice)
+        if (notice < 0) return undefined
+        const request = list[notice].text.match(/request="(per_\w+)"/)?.[1]
+        const prompt = await promptFor(request)
+        if (prompt) return { list, notice, prompt, held: lastAnswer(list)?.state.status === "running" }
+        const forms = (await api(`session/${parentID}/form`)).data
+        if (forms.length) return { list, notice, form: forms[0] }
+        return settled(list) && list.length > notice + 1 ? { list, notice } : undefined
+      })
+
+const before = told?.list ? told.list.slice(told.notice + 1) : []
+const answeredItself = kept ? kept.answeredItself : toolsOf(before).some((part) => part.name === "courier_answer" && part.state.status !== "running")
+const questioned = kept ? kept.questioned : toolsOf(before).some((part) => part.name === "question")
+const last = told?.list?.findLast((message) => message.type !== "idle")
+const askedFirst = kept
+  ? kept.askedFirst
+  : Boolean(told) && !told.prompt && !answeredItself && (told.form !== undefined || (ended(last) && !last.error && textOf(last).trim() !== ""))
+const noticeText = kept ? (kept.noticeText ?? "") : told ? told.list[told.notice].text : ""
+// The parent may choose a native child on its own: courier_spawn's native, or the notice's shown="native", says so.
+const native = kept ? kept.native : NATIVE || noticeText.includes('shown="native"') || nativeSpawn(told?.list ?? [])
 let how = "did not ask"
 let personAt = Infinity
 const childIDOf = (text) => text.match(/<courier from="(ses_\w+)"/)?.[1]
@@ -114,73 +165,88 @@ async function answerPrompt(decision) {
 }
 
 let elsewhereSaid = ""
-const noticeText = told ? told.list[told.notice].text : ""
-if (NATIVE && told && !answeredItself) {
+if (kept) {
+  how = kept.how
+  personAt = kept.personAt ?? Infinity
+  elsewhereSaid = kept.elsewhereSaid ?? ""
+} else if (native && told && !answeredItself) {
   how = told.prompt
     ? "proposed once with courier_answer all the same, so OpenCode asked the person a second time, in the parent's session"
     : told.form
       ? "asked the person all the same, with a question form"
       : `did not ask with its question tool; it said: ${short(textOf(last).trim(), 300)}`
-  personAt = Date.now()
-  const childID = noticeText.match(/<courier from="(ses_\w+)"/)?.[1]
-  const request = noticeText.match(/request="(per_\w+)"/)?.[1]
-  console.log(`  the person allows ${request} once in OpenCode's own prompt`)
-  await api(`session/${childID}/permission/${request}/reply`, { method: "POST", body: JSON.stringify({ decision: "once" }) })
-  if (told.prompt) await answerPrompt("reject")
+  if (!saved) {
+    personAt = Date.now()
+    const childID = childIDOf(noticeText)
+    const request = requestOf(noticeText)
+    console.log(`  the person allows ${request} once in OpenCode's own prompt`)
+    await api(`session/${childID}/permission/${request}/reply`, { method: "POST", body: JSON.stringify({ decision: "once" }) })
+    if (told.prompt) await answerPrompt("reject")
+  }
 } else if (told && !answeredItself && other) {
   if (told.prompt) {
     how = "proposed once with courier_answer, whose prompt the person rejected without a reason"
-    await answerPrompt("reject")
-    await until("the parent's turn to end after the rejection", async () => settled(await messages(parentID)))
+    if (!saved) {
+      await answerPrompt("reject")
+      await until("the parent's turn to end after the rejection", async () => settled(await messages(parentID)))
+    }
   } else if (told.form) {
     how = `asked with a question form, which the person dismissed: ${short(told.form.fields.map((field) => ({ title: field.title, options: field.options?.map((option) => option.label) })), 300)}`
-    console.log("  the person dismisses the parent's form")
-    await api(`session/${parentID}/form/${told.form.id}`, { method: "DELETE" })
-    await until("the parent's turn to end after the dismissal", async () => {
-      const list = await messages(parentID)
-      const forms = (await api(`session/${parentID}/form`)).data
-      for (const form of forms) await api(`session/${parentID}/form/${form.id}`, { method: "DELETE" })
-      return forms.length === 0 && settled(list)
-    })
+    if (!saved) {
+      console.log("  the person dismisses the parent's form")
+      await api(`session/${parentID}/form/${told.form.id}`, { method: "DELETE" })
+      await until("the parent's turn to end after the dismissal", async () => {
+        const list = await messages(parentID)
+        const forms = (await api(`session/${parentID}/form`)).data
+        for (const form of forms) await api(`session/${parentID}/form/${form.id}`, { method: "DELETE" })
+        return forms.length === 0 && settled(list)
+      })
+    }
   } else how = `asked in its reply: ${short(textOf(last).trim(), 300)}`
-  personAt = Date.now()
-  console.log(`  the person replies "${ANSWER}" through the other server`)
-  await api(`session/${parentID}/prompt`, { method: "POST", body: JSON.stringify({ text: ANSWER }) }, other)
-  await until("the parent's turn on the other server to end", async () => {
+  if (!saved) {
+    personAt = Date.now()
+    console.log(`  the person replies "${ANSWER}" through the other server`)
+    await api(`session/${parentID}/prompt`, { method: "POST", body: JSON.stringify({ text: ANSWER }) }, other)
+    await until("the parent's turn on the other server to end", async () => {
+      const list = await messages(parentID)
+      return toolsOf(list.filter((message) => message.time?.created >= personAt)).some((part) => part.name === "courier_answer") && settled(list)
+        ? list
+        : undefined
+    })
     const list = await messages(parentID)
-    return toolsOf(list.filter((message) => message.time?.created >= personAt)).some((part) => part.name === "courier_answer") && settled(list)
-      ? list
-      : undefined
-  })
-  const list = await messages(parentID)
-  elsewhereSaid = textOf(list.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {}).trim()
-  const asking = told.list[told.notice].text
-  const childID = asking.match(/<courier from="(ses_\w+)"/)?.[1]
-  const request = asking.match(/request="(per_\w+)"/)?.[1]
-  console.log(`  the person allows ${request} once in the child's own session`)
-  await api(`session/${childID}/permission/${request}/reply`, { method: "POST", body: JSON.stringify({ decision: "once" }) }).catch(
-    (error) => console.log(`  (the request could not be answered there: ${error.message})`),
-  )
+    elsewhereSaid = textOf(list.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {}).trim()
+    const childID = childIDOf(noticeText)
+    const request = requestOf(noticeText)
+    console.log(`  the person allows ${request} once in the child's own session`)
+    await api(`session/${childID}/permission/${request}/reply`, { method: "POST", body: JSON.stringify({ decision: "once" }) }).catch(
+      (error) => console.log(`  (the request could not be answered there: ${error.message})`),
+    )
+  }
 } else if (told && !answeredItself) {
-  personAt = Date.now()
+  if (!saved) personAt = Date.now()
   if (told.prompt) {
     how = `proposed once with courier_answer${told.held ? ", which was held" : ""}, and OpenCode asked the person in its session`
   } else if (told.form) {
     const answer = answerOf(told.form)
     how = `asked with a question form first: ${short(told.form.fields.map((field) => ({ title: field.title, options: field.options?.map((option) => option.label) })), 300)}`
-    console.log(`  the person answers the form with ${JSON.stringify(answer)}`)
-    await api(`session/${parentID}/form/${told.form.id}/reply`, { method: "POST", body: JSON.stringify({ answer }) })
+    if (!saved) {
+      console.log(`  the person answers the form with ${JSON.stringify(answer)}`)
+      await api(`session/${parentID}/form/${told.form.id}/reply`, { method: "POST", body: JSON.stringify({ answer }) })
+    }
   } else {
     how = `asked in its reply first: ${short(textOf(last).trim(), 300)}`
-    console.log(`  the person replies "${ANSWER}"`)
-    await api(`session/${parentID}/prompt`, { method: "POST", body: JSON.stringify({ text: ANSWER }) })
+    if (!saved) {
+      console.log(`  the person replies "${ANSWER}"`)
+      await api(`session/${parentID}/prompt`, { method: "POST", body: JSON.stringify({ text: ANSWER }) })
+    }
   }
-  await answerPrompt("once")
+  if (!saved) await answerPrompt("once")
 }
+if (saved && !kept) personAt = personAtFromTranscript(await messages(parentID), told)
 
 let parent = (await messages(parentID).catch(() => [])) ?? []
 const child = toolsOf(parent).map(childOf).find(Boolean)
-if (told)
+if (told && !saved)
   await until("the child's report and the parent's last turn", async () => {
     parent = await messages(parentID)
     return parent.some((message) => isReport(message, child)) && settled(parent)
@@ -228,15 +294,19 @@ const notPending = toolsOf(afterPerson).filter(
 )
 const report = parent.find((message) => isReport(message, child))
 const finalText = textOf(parent.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
-const askedAgain = Boolean(told?.form) || Boolean(NATIVE && told?.prompt) || toolsOf(before).some((part) => part.name === "question")
+const askedAgain = Boolean(told?.form) || Boolean(native && told?.prompt) || questioned
 const settledOnce = parent.some((message) => message.type === "synthetic" && / answered="once"/.test(message.text))
+const passedOnWhenTold = passedOn.filter((part) => toolsOf(afterPerson).includes(part))
 const prompted = Boolean(told?.prompt) && told.prompt.action === "shell" && told.prompt.resources.some((item) => item.includes("courier-permission"))
-const checks = NATIVE
+const checks = native
   ? [
       ["the parent spawned a child, which asked for permission, and the parent was told that OpenCode shows it", Boolean(child) && noticeText.includes('shown="native"')],
       ["the parent did not answer the request by itself", Boolean(told) && !answeredItself],
       ["the parent did not ask the person again", Boolean(told) && !askedAgain],
-      ["the parent was told the request was settled", settledOnce],
+      [
+        "the request was settled: the parent was told so, or passed once on with courier_answer after the person told it to",
+        settledOnce || passedOnWhenTold.length > 0,
+      ],
       ["the child ran its command and reported what it printed", Boolean(report) && expected !== "" && report.text.includes(expected)],
       ["the parent's final reply holds it", expected !== "" && finalText.includes(expected)],
     ]
@@ -252,6 +322,7 @@ const checks = NATIVE
       ["the parent's final reply holds it", expected !== "" && finalText.includes(expected)],
     ]
 const notes = [`the parent ${how}`]
+if (native && !NATIVE) notes.push("the parent made its child native itself (courier_spawn with native: true, or a notice with shown=\"native\"), so the native path's checks apply")
 if (report) notes.push(`the child's report carried ${statusOf(report) ? `status ${statusOf(report)}` : "no status"}`)
 if (other) notes.push(`after courier_answer on the other server, the parent said: ${short(elsewhereSaid, 600)}`)
 const asChecked = (other ? notPending : passedOn).length
@@ -267,5 +338,24 @@ console.log("")
 for (const [name, ok] of checks) console.log(`  ${ok ? "PASS" : "FAIL"} ${name}`)
 for (const note of notes) console.log(`  note: ${note}`)
 console.log(`result: ${verdict}${verdict === "inconclusive" ? " (checks failed, but so did model requests; run it again)" : ""}`)
-writeFileSync(join(work, "summary.json"), JSON.stringify({ verdict, parentID, child, checks: Object.fromEntries(checks), notes, finalText }, null, 2))
+// what only the live run could see (OpenCode's prompt and form in the parent's session), for --saved
+const observed = kept ?? {
+  told: Boolean(told),
+  notice: told?.notice,
+  noticeText,
+  native,
+  prompt: told?.prompt ? { action: told.prompt.action, resources: told.prompt.resources } : null,
+  held: Boolean(told?.held),
+  form: told?.form ? { fields: told.form.fields.map((field) => ({ title: field.title, options: field.options?.map((option) => ({ label: option.label })) })) } : null,
+  answeredItself,
+  questioned,
+  askedFirst,
+  how,
+  personAt: Number.isFinite(personAt) ? personAt : null,
+  elsewhereSaid,
+}
+writeFileSync(
+  join(work, "summary.json"),
+  JSON.stringify({ verdict, parentID, child, checks: Object.fromEntries(checks), notes, finalText, ...(saved && !kept ? {} : { observed }) }, null, 2),
+)
 process.exit(passed ? 0 : verdict === "inconclusive" ? 2 : 1)

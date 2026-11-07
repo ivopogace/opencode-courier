@@ -159,7 +159,6 @@ const looksIn = (turn) =>
   toolsOf(turn).filter(
     (part) => LOOKS.has(part.name) || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))),
   ).length
-// A delivery steered into a running turn wakes the parent as one that opens a turn does: one look after each is no poll.
 const segmentsOf = (turn) =>
   turn.reduce((segments, message, index) => {
     if (index > 0 && sendersOf(message).length) segments.push([])

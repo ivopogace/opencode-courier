@@ -40,15 +40,14 @@ const notice = (native: boolean) =>
 const report = () => synthetic(`<courier from="ses_child" status="done">\nIt printed ${EXPECT}.\n</courier>`)
 const child = () => [user("brief"), step("tool-calls", tool("shell", { command: COMMAND }), tool("courier_send", { sessionID: "ses_parent", message: EXPECT, status: "done" })), idle()]
 
-// "plain": the parent proposes once at the notice and the prompt holds it; "native-told": a child the parent made native
-// itself, a one-line reply, then courier_answer once the person says so (the run of 2026-11-07); "native-settled": the
-// person answers OpenCode's own prompt and the parent is told; "native-proposes": courier_answer at the notice all the same.
-type Shape = "plain" | "native-told" | "native-settled" | "native-proposes"
+type Shape = "plain" | "form-first" | "native-told" | "native-settled" | "native-proposes"
 
 function parentOf(shape: Shape): Message[] {
-  const native = shape !== "plain"
+  const native = shape.startsWith("native")
   const opening = [user("Have a helper run it."), step("tool-calls", tool("courier_spawn", { task: COMMAND, ...(native ? { native: true } : {}) }, { sessionID: "ses_child" })), step("stop", say("Started.")), idle(), notice(native)]
   const end = [report(), step("stop", say(`RESULT ${EXPECT}`)), idle()]
+  if (shape === "form-first")
+    return [...opening, step("tool-calls", tool("question", { questions: [] })), step("tool-calls", answer()), step("stop", say("Passed on.")), idle(), ...end]
   if (shape === "plain" || shape === "native-proposes") return [...opening, step("tool-calls", answer()), step("stop", say("Passed on.")), idle(), ...end]
   if (shape === "native-told")
     return [...opening, step("stop", say("The helper waits on your permission.")), idle(), user("Allow it once."), step("tool-calls", answer()), step("stop", say("Passed on.")), idle(), ...end]
@@ -77,6 +76,9 @@ describe("the permission checker re-reading a saved run", () => {
     expect(run.checks[PROPOSED]).toBe(true)
     expect(run.checks[PROMPTED]).toBe(true)
     expect(run.failed).toEqual([])
+  })
+  test("a question form before the proposal is asking first, though the proposal follows in the same turn", () => {
+    expect(check("form-first").failed).toEqual([PROPOSED, PROMPTED])
   })
   test("a child the parent made native itself gets the native checks, which its one-line reply and later courier_answer pass", () => {
     const run = check("native-told")

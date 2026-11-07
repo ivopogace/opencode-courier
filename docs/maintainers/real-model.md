@@ -62,14 +62,12 @@ stops moving:
 
 ### No sleeps
 
-Up to 7307371 the fan-out and recursive prompts began each command with `sleep 20;` (`sleep 40;` for
-the fan-out's second child), a stand-in for work that kept the children busy until the parent's turn
-had ended. They no longer do, except `recursive-finding`, which needs its sessions still running.
-Rows from then on say "no sleeps": their times and request counts are not comparable with earlier
-rows', run with sleeps of 20 s or the length the row names. A report that reaches a parent while
-its turn still runs is steered into that turn, and the checkers count it as delivered: the first
-turn may hold reports, and one look after each report, in a turn of its own or steered in, is not
-polling.
+The fan-out and recursive prompts give each command as it is, with no `sleep` standing in for work.
+`recursive-finding` is the exception, for a reason of its own (below). Rows marked "no sleeps" are not
+comparable, on times and request counts, with rows whose prompts put a sleep of 20 s, or the length
+the row names, before each command. A report that reaches a parent while its turn still runs is
+steered into that turn, and the checkers count it as delivered: the first turn may hold reports, and
+one look after each report, in a turn of its own or steered in, is not polling.
 
 ## The fan-out
 
@@ -83,8 +81,8 @@ Eight checks: two children spawned; the first turn ended after spawning; no poll
 `courier_children`, `courier_tree` or `sleep` right after spawning, or more than one after a
 report); both children reported to the parent; both reports reached it, waking it or steered into
 its running turn, and got a reply; each carries a status and its answer; the reply holds both. The
-README's Quickstart prompt is a shorter wording, which keeps its sleeps so that each report visibly
-wakes the parent: set `COURIER_PROMPT` to it. To check a join group, add *both in one join group named "pair"*.
+README's Quickstart prompt is a shorter wording with sleeps, which keep the children busy past the
+parent's first turn so that each report visibly wakes it: set `COURIER_PROMPT` to it. To check a join group, add *both in one join group named "pair"*.
 
 | Model | OpenCode | Result |
 |---|---|---|
@@ -117,8 +115,9 @@ native with `COURIER_NATIVE=1`, or when the parent spawns it with `native: true`
 the checker reads from the spawn or the notice.
 
 `--saved` re-reads a run. What only the live run saw, OpenCode's prompt or form in the parent's
-session, is kept in `summary.json`; for a run saved before that, it is read from the transcript, a
-`courier_answer` proposing `once` in the parent's turn after the notice standing for the held prompt.
+session, is kept in `summary.json` under `observed`. A `summary.json` without it has it read from the
+transcript, a `courier_answer` proposing `once` in the parent's turn after the notice standing for
+the held prompt.
 
 | Model | OpenCode | Result |
 |---|---|---|
@@ -262,9 +261,9 @@ bun script/real-model-table.ts $(for n in 1 2 3 4 5; do echo skill=$HOME/courier
 
 ## A finding passed on
 
-`COURIER_SCENARIO=recursive-finding`: the recursive job with halves of `sleep 150`, and the "count"
-part's `sleep 20`, kept when the other prompts lost theirs: the "count" session must still be running
-when the person writes, and the halves when the finding has come down two levels. The checker,
+`COURIER_SCENARIO=recursive-finding`: the recursive job with halves of `sleep 150` and a "count" part
+of `sleep 20`: the "count" session must still be running when the person writes, and the halves when
+the finding has come down two levels. The checker,
 run with `--finding`, plays the person: once the "count" session's turn runs, it prompts that
 session that every file of the job must hold its number followed by ` checked`. Neither the prompt
 nor the person's message says to pass it on; the brief and the skill do.

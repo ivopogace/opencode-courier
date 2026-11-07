@@ -217,7 +217,6 @@ const allowedRecall = (id, turn) => {
   const recalls = tools.flatMap((part, index) => (part.name === RECALL ? [index] : []))
   return recalls.length === 1 && (firstSpawn === -1 || recalls[0] < firstSpawn) ? 1 : 0
 }
-// A delivery steered into a running turn wakes a session as one that opens a turn does: one look after each is no poll.
 const segmentsOf = (turn) =>
   turn.reduce((segments, message, index) => {
     if (index > 0 && sendersOf(message).length) segments.push([])

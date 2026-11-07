@@ -98,8 +98,6 @@ const savedSummary = (() => {
     return undefined
   }
 })()
-// What the person saw live, kept in summary.json since the checker could re-read a run; without it (an older run), read
-// from the transcript: the parent's turn after the notice, where a courier_answer proposing once stands for the held prompt.
 const kept = savedSummary?.observed
 function toldFromTranscript(list) {
   const notice = list.findIndex(isNotice)
@@ -107,7 +105,8 @@ function toldFromTranscript(list) {
   const end = list.findIndex((message, index) => index > notice && ended(message))
   const turn = list.slice(notice + 1, end === -1 ? list.length : end + 1)
   const proposal = turn.findIndex(proposesOnce)
-  if (proposal !== -1) {
+  const question = turn.findIndex((message) => toolsOf([message]).some((part) => part.name === "question"))
+  if (proposal !== -1 && (question === -1 || proposal < question)) {
     const at = notice + 1 + proposal
     const lines = list[notice].text.split("\n")
     const on = lines.indexOf("On:")
@@ -116,7 +115,7 @@ function toldFromTranscript(list) {
     for (const part of pending.content) if (part.type === "tool" && part.name === "courier_answer") part.state.status = "running"
     return { list: [...list.slice(0, at), pending], notice, prompt: { action: lines.find((line) => line.startsWith("It asks for: "))?.slice(13), resources }, held: true }
   }
-  if (toolsOf(turn).some((part) => part.name === "question")) return { list: list.slice(0, notice + 1 + turn.length), notice, form: { fields: [] } }
+  if (question !== -1) return { list: list.slice(0, notice + 2 + question), notice, form: { fields: [] } }
   return end === -1 ? undefined : { list: list.slice(0, end + 1), notice }
 }
 function personAtFromTranscript(list, told) {
@@ -150,7 +149,6 @@ const askedFirst = kept
   ? kept.askedFirst
   : Boolean(told) && !told.prompt && !answeredItself && (told.form !== undefined || (ended(last) && !last.error && textOf(last).trim() !== ""))
 const noticeText = kept ? (kept.noticeText ?? "") : told ? told.list[told.notice].text : ""
-// The parent may choose a native child on its own: courier_spawn's native, or the notice's shown="native", says so.
 const native = kept ? kept.native : NATIVE || noticeText.includes('shown="native"') || nativeSpawn(told?.list ?? [])
 let how = "did not ask"
 let personAt = Infinity
@@ -338,7 +336,6 @@ console.log("")
 for (const [name, ok] of checks) console.log(`  ${ok ? "PASS" : "FAIL"} ${name}`)
 for (const note of notes) console.log(`  note: ${note}`)
 console.log(`result: ${verdict}${verdict === "inconclusive" ? " (checks failed, but so did model requests; run it again)" : ""}`)
-// what only the live run could see (OpenCode's prompt and form in the parent's session), for --saved
 const observed = kept ?? {
   told: Boolean(told),
   notice: told?.notice,

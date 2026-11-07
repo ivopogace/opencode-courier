@@ -7,7 +7,7 @@
 #
 # E2E_WORK picks the working directory (CI points it somewhere it can upload the logs from).
 #
-# Needs node and npm, bun (for the build), git, curl, jq and openssl.
+# Needs node and npm, bun (for the build), git, curl, jq, openssl and timeout (GNU coreutils).
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -65,9 +65,26 @@ print_timings() {
   sort -t$'\t' -k1,1nr "$TIMINGS" | awk -F'\t' '{ printf "%5d s  %s\n", $1, $2 }'
 }
 
-prompt() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json "$1" </dev/null); }
+# `opencode run` in directory $1 with the rest as its arguments, killed after PROMPT_LIMIT s (a turn here takes at most about
+# 60): a stalled client fails the scenario, named with its session, and the run goes on. The helpers run in command
+# substitutions, so a stall is counted from $WORK/stalled as the run ends.
+PROMPT_LIMIT=${PROMPT_LIMIT:-240}
+run_bounded() {
+  local directory=$1 out status=0 session
+  shift
+  out=$(cd "$directory" && timeout -k 5 "$PROMPT_LIMIT" "$OPENCODE" run --server "$SERVER" --auto --format json "$@" </dev/null) || status=$?
+  if [ "$status" = 124 ] || [ "$status" = 137 ]; then
+    session=$(jq -r 'select(.sessionID? != null) | .sessionID' <<<"$out" 2>/dev/null | head -1)
+    echo "  FAIL $SCENARIO: opencode run did not end in $PROMPT_LIMIT s (session ${session:-unknown}); killed it" >&2
+    echo "$SCENARIO" >>"$WORK/stalled"
+    status=0
+  fi
+  printf '%s\n' "$out"
+  return "$status"
+}
+prompt() { run_bounded "$WORK/project" "$1"; }
 # Like prompt, but a new turn in the existing session $1.
-prompt_in() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --session "$1" "$2" </dev/null); }
+prompt_in() { run_bounded "$WORK/project" --session "$1" "$2"; }
 now_ms() { node -e 'console.log(Date.now())'; }
 failures=0
 check() {
@@ -164,8 +181,11 @@ person() {
 }
 api_post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
 # A turn of session $1 with text $2 through the API: `opencode run --auto` answers a request in its own session itself,
-# and takes a native child's asks for its own and answers them.
-api_prompt() { api_post "session/$1/prompt" "{\"text\":\"$2\"}" >/dev/null; }
+# and takes a native child's asks for its own and answers them. The call returns as the turn is admitted: 30 s bound it.
+api_prompt() {
+  curl -sf -m 30 -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "{\"text\":\"$2\"}" \
+    "$SERVER/api/session/$1/prompt" >/dev/null || echo "  api_prompt: session $1 was not prompted in $SCENARIO" >&2
+}
 # The person dismisses form $2 of session $1, as the TUI does; prints the HTTP status.
 dismiss_form() {
   curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$1/form/$2"
@@ -385,7 +405,7 @@ run_reports() {
   check "and lists none for an unknown session" "$(prompt "COURIER-CHILDREN ses_missing" | tool_state courier_children | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
 
   scenario "a child runs on its parent's model, not the default one"
-  out=$(cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --model mock/other "COURIER-TEST" </dev/null)
+  out=$(run_bounded "$WORK/project" --model mock/other "COURIER-TEST")
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
@@ -1202,7 +1222,7 @@ run_probe() {
   # first one listed is the project itself), opened by a session of its own, which loads the plugins there.
   bystander=$(git -C "$WORK/project" worktree list --porcelain | sed -n 's/^worktree //p' | sed -n 2p)
   check "a third location is open" "$([ -n "$bystander" ] &&
-    (cd "$bystander" && "$OPENCODE" run --server "$SERVER" --auto --format json "hello" </dev/null >/dev/null) && echo true || echo false)"
+    run_bounded "$bystander" "hello" >/dev/null && echo true || echo false)"
   out=$(prompt "COURIER-PROBE")
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -2583,6 +2603,7 @@ for group in $GROUP_LIST; do
 done
 run_epilogue
 
+[ -s "$WORK/stalled" ] && failures=$((failures + $(wc -l <"$WORK/stalled")))
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed; rerun with KEEP=1 to keep the server and model logs"
   exit 1

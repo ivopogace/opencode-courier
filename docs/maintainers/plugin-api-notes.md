@@ -72,8 +72,8 @@ older host and branches on it. How the plugin itself answers a trap is in
   `synthetic`, `compaction`, `move`), so the plugin remembers it until delivery. It also carries a
   synthetic item's `payload.metadata`, which is how `notePrompt` tells a join group's release (the
   `group` key) and a session's own check-in (`scheduled` with `from` the receiving session, and
-  `scheduledAt`, the time it was scheduled, to compare with its report) from other courier
-  messages; the `synthetic` call's returned id may arrive after the `delivered` event, so it is not
+  `scheduledAt`, the time it was scheduled, to compare with its report) and a status-less message
+  (only `source` and `from`, checked against the child store) from other courier messages; the `synthetic` call's returned id may arrive after the `delivered` event, so it is not
   used.
 - A synthetic message steered to an idle session: `session.synthetic` admits it
   (`inbox.enqueued`, a pending inbox row), then rings the run coordinator

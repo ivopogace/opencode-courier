@@ -206,7 +206,7 @@ function decide(body) {
     return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE QUICKLY", status: "done" }, quick: true }
   if (parent && recent.includes("CHILD-PROGRESSES")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD HALFWAY" } }
   if (parent && recent.includes("CHILD-ROLLING-FIRST"))
-    return { tool: "courier_send", args: { sessionID: parent[1], message: "ROLLING FIRST DONE", status: "done" }, quick: true }
+    return { tool: "courier_send", args: { sessionID: parent[1], message: "ROLLING FIRST DONE", status: "done" } }
   if (parent && recent.includes("CHILD-CHECKIN-MID")) return { tool: "courier_later", args: { message: "MID-CHECK-IN", delayMinutes: 0.25 } }
   if (parent && recent.includes("CHILD-WAITS")) return { tool: "courier_later", args: { message: "CHILD-REPORT-NOW", delayMinutes: 0.25 } }
   if (parent && recent.includes("CHILD-DEEPENS"))

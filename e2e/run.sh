@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 schedules:20 wake:70 roster:36 webhook:10 cleanup:4 subtree:2 subagent:8 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 subtree:2 subagent:8 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -305,6 +305,7 @@ build_plugin
 # The event types the courier's modules declare, sorted as it asks for them; the probe follows them too.
 COURIER_TYPES='["form.cancelled","form.created","form.replied","location.shutdown","permission.asked","permission.replied","session.deleted","session.execution.failed","session.execution.interrupted","session.execution.started","session.execution.succeeded","session.inbox.cancelled","session.inbox.delivered","session.inbox.enqueued"]'
 
+# The webhook option is left from releases that had a receiver; run_webhook checks it is ignored.
 cat >"$WORK/project/opencode.json" <<EOF
 {
   "plugins": [
@@ -1378,43 +1379,10 @@ run_roster() {
 }
 
 run_webhook() {
-  scenario "a signed GitHub webhook wakes a subscribed idle session"
-  out=$(prompt "COURIER-SUBSCRIBE Codertocat/Hello-World#2")
-  turn_ended=$(now_ms)
-  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  check "courier_subscribe completed" "$(tool_state courier_subscribe <<<"$out" | jq -r '.status == "completed" and (.metadata.metadata.receiver == true)')"
-  payload=$ROOT/e2e/fixtures/pull_request_review.json
-  signature="sha256=$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -r "$payload" | cut -d' ' -f1)"
-  hook() { curl -s -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -H 'x-github-event: pull_request_review' \
-    -H 'x-github-delivery: 72d3162e-cc78-11e3-81ab-4c9367dc0958' "$@" --data-binary "@$payload" "http://127.0.0.1:$WEBHOOK_PORT/github"; }
-  check "an unsigned delivery is refused" "$([ "$(hook)" = 401 ] && echo true || echo false)"
-  check "a wrongly signed delivery is refused" "$([ "$(hook -H "x-hub-signature-256: sha256=$(printf '0%.0s' $(seq 64))")" = 401 ] && echo true || echo false)"
-  woke=$(reply_time "$parent" "PARENT WOKE" 2)
-  check "neither woke the session" "$([ -z "$woke" ] && echo true || echo false)"
-  check "a signed delivery is accepted" "$([ "$(hook -H "x-hub-signature-256: $signature")" = 202 ] && echo true || echo false)"
-  check "a replay of it is ignored" "$([ "$(hook -H "x-hub-signature-256: $signature")" = 200 ] && echo true || echo false)"
-  check "a replay with the signature upper-cased is ignored too" \
-    "$([ "$(hook -H "x-hub-signature-256: sha256=$(tr a-f A-F <<<"${signature#sha256=}")")" = 200 ] && echo true || echo false)"
-  check "a replay with junk after the signature is refused" "$([ "$(hook -H "x-hub-signature-256: ${signature}zz")" = 401 ] && echo true || echo false)"
-  woke=$(reply_time "$parent" "PARENT WOKE")
-  check "it started a new turn after the session's had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
-  summary=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] | join("")')
-  check "the turn got the event summary" "$([[ $summary == *"changes_requested"* && $summary == *"Hello-World#2"* ]] && echo true || echo false)"
-  check "the session got the event exactly once" \
-    "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic")] | length == 1')"
-
-  scenario "a child that subscribes to a webhook and ends its turn to wait is not reported, and reports once a delivery wakes it"
-  out=$(prompt "COURIER-HOOKED")
-  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
-  check "the child subscribed and ended its turn" "$(has_text "$child" "TOOL DONE courier_subscribe" 30)"
-  check "which was not told as one without a report" "$(turn_ended "$child"; notices_with "$parent" ended | jq -r 'length == 0')"
-  body='{"text":"CHILD-REPORT-NOW"}'
-  sig=$(printf '%s\n%s' child-ci "$body" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -r | cut -d' ' -f1)
-  check "a delivery to its topic is accepted" "$([ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "x-hub-signature-256: sha256=$sig" \
-    --data-binary "$body" "http://127.0.0.1:$WEBHOOK_PORT/hook/child-ci")" = 202 ] && echo true || echo false)"
-  check "the delivery woke the child, which reported" "$(has_text "$parent" "CHILD DONE AFTER NUDGE" 45)"
-  check "and the parent was never told it ended without a report" "$(turn_ended "$child"; notices_with "$parent" ended | jq -r 'length == 0')"
+  scenario "a webhook option left from an older release is ignored: no receiver listens"
+  check "the plugin loaded" "$(grep -qF "courier watch: following" "$WORK/server.log" && echo true || echo false)"
+  check "nothing listens on the old receiver's port" \
+    "$(curl -s -o /dev/null -X POST --max-time 2 "http://127.0.0.1:$WEBHOOK_PORT/github" && echo false || echo true)"
 }
 
 run_cleanup() {
@@ -2367,10 +2335,10 @@ run_plugin_add() {
   # Every load above, from dist/ and from the installed package, compared this OpenCode with the pin
   # the plugin reads from package.json. On the pinned version the server log carries no warning; on
   # any other, as on a CI leg that runs this suite against a newer release, it carries the line, naming
-  # the host's version. The webhook line proves the plugin's log lines reach the server log at all.
+  # the host's version. The watch line proves the plugin's log lines reach the server log at all.
   pin=$(jq -r '.devDependencies["@opencode/plugin"]' "$ROOT/package.json")
   host=$(host_version)
-  check "the plugin's log lines reach the server log" "$(grep -qF "courier webhook: listening on" "$WORK/server.log" && echo true || echo false)"
+  check "the plugin's log lines reach the server log" "$(grep -qF "courier watch: following" "$WORK/server.log" && echo true || echo false)"
   if [ "$host" = "$pin" ]; then
     echo "the server log names no version mismatch: OpenCode $host is the pinned version"
     check "no line says the version differs" "$(grep -qF "was built and tested against OpenCode" "$WORK/server.log" && echo false || echo true)"

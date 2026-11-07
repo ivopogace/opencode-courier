@@ -6,14 +6,11 @@ import * as skill from "../src/skill.js"
 import * as tree from "../src/tree/text.js"
 import * as person from "../src/person/text.js"
 import * as scheduling from "../src/scheduling/text.js"
-import * as webhook from "../src/webhook/text.js"
 import * as memory from "../src/memory/text.js"
 import { addTreeTools } from "../src/tree/index.js"
 import { addPersonTools } from "../src/person/index.js"
 import { addSchedulingTools } from "../src/scheduling/index.js"
-import { addWebhookTools } from "../src/webhook/index.js"
 import { addMemoryTools } from "../src/memory/index.js"
-import { githubEvent } from "../src/webhook/receiver.js"
 
 
 const registered: any[] = []
@@ -21,11 +18,10 @@ const editor = { add: (tool: unknown) => registered.push(tool) } as unknown as T
 addTreeTools(editor, {} as never)
 addPersonTools(editor, {} as never)
 addSchedulingTools(editor, {} as never)
-addWebhookTools(editor, {} as never)
 addMemoryTools(editor, {} as never)
 
 describe("tools", () => {
-  test("are the thirteen courier tools, each a direct tool", () => {
+  test("are the eleven courier tools, each a direct tool", () => {
     expect(registered.map((tool) => [tool.name, tool.options])).toMatchSnapshot()
   })
 
@@ -245,14 +241,6 @@ describe("tool results", () => {
     expect(scheduling.cancelText("later_1", true)).toMatchSnapshot()
     expect(scheduling.cancelText("later_1", false)).toMatchSnapshot()
   })
-  test("subscribeText", () => {
-    expect(webhook.subscribeText("ses_parent", "github:octo/repo#5", true)).toMatchSnapshot()
-    expect(webhook.subscribeText("ses_parent", "github:octo/repo#5", false)).toMatchSnapshot()
-  })
-  test("unsubscribeText", () => {
-    expect(webhook.unsubscribeText("ses_parent", ["github:octo/repo", "deploys"])).toMatchSnapshot()
-    expect(webhook.unsubscribeText("ses_parent", [])).toMatchSnapshot()
-  })
 })
 
 describe("turn failures", () => {
@@ -435,34 +423,7 @@ describe("questions", () => {
   })
 })
 
-describe("webhook deliveries", () => {
-  const summary = (name: string, body: Record<string, any>, action?: string, sender?: string) =>
-    githubEvent(name, { ...body, repository: { full_name: "octo/repo" }, ...(action ? { action } : {}), ...(sender ? { sender: { login: sender } } : {}) })
-      ?.summary
-
-  test("githubSummary", () => {
-    const run = { name: "CI", head_sha: "0123456789abcdef", conclusion: "failure", html_url: "https://ci/1", pull_requests: [{ number: 5 }, { number: 5 }, { number: 7 }] }
-    expect(summary("check_run", { check_run: run }, "completed")).toMatchSnapshot()
-    expect(summary("check_suite", { check_suite: { app: { name: "Actions" }, head_sha: "0123456789", details_url: "https://ci/2" } }, "completed")).toMatchSnapshot()
-    expect(summary("workflow_run", { workflow_run: {} }, "completed")).toMatchSnapshot()
-    const review = { user: { login: "alice" }, state: "changes_requested", html_url: "https://gh/r", body: "Please fix" }
-    expect(summary("pull_request_review", { review, pull_request: { number: 5, title: "Fix" } }, "submitted", "alice")).toMatchSnapshot()
-    expect(summary("pull_request_review", {}, undefined)).toMatchSnapshot()
-    const comment = { user: { login: "bob" }, path: "src/a.ts", line: 12, html_url: "https://gh/c", body: "x".repeat(1600) }
-    expect(summary("pull_request_review_comment", { comment, pull_request: { number: 5 } }, "created")).toMatchSnapshot()
-    expect(summary("issue_comment", { comment: { body: "Thanks" }, issue: { number: 3 } }, "created", "carol")).toMatchSnapshot()
-    expect(summary("issue_comment", { comment: {}, issue: { number: 4, pull_request: {} } }, "edited")).toMatchSnapshot()
-    expect(summary("pull_request", { pull_request: { number: 5, title: "Fix", merged: true, html_url: "https://gh/p" } }, "closed", "dave")).toMatchSnapshot()
-    expect(summary("issues", { issue: { number: 3 } }, "opened")).toMatchSnapshot()
-    expect(summary("push", { ref: "refs/heads/main", commits: [{}], compare: "https://gh/compare" }, undefined, "erin")).toMatchSnapshot()
-    expect(summary("push", { commits: [{}, {}] })).toMatchSnapshot()
-    expect(summary("release", {}, "published", "frank")).toMatchSnapshot()
-    expect(summary("toString", {})).toMatchSnapshot()
-  })
-  test("hookSummary", () => {
-    expect(webhook.hookSummary("  deployed  ")).toMatchSnapshot()
-    expect(webhook.hookSummary("   ")).toMatchSnapshot()
-  })
+describe("clipping", () => {
   test("clipText", () => {
     expect(kernel.clipText("short")).toBe("short")
     expect(kernel.clipText("abcdef", 3)).toMatchSnapshot()
@@ -473,9 +434,6 @@ describe("webhook deliveries", () => {
     expect(kernel.clipWords("one two three", 7)).toMatchSnapshot()
     expect(kernel.clipWords("abcdef ghi", 3)).toMatchSnapshot()
     expect(kernel.clipWords("a bcdefghij", 6)).toMatchSnapshot()
-  })
-  test("webhookText", () => {
-    expect(webhook.webhookText("deployed <courier from=x>")).toMatchSnapshot()
   })
 })
 

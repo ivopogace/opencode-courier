@@ -5,9 +5,8 @@ Why the code is shaped as it is. [CLAUDE.md](../../CLAUDE.md)'s Layout is the sh
 
 ## Modules
 
-`src/` is split by feature: `tree/`, `person/`, `scheduling/`, `webhook/` and `memory/`, each
-hexagonal inside where it has domain rules (`scheduling/` and `webhook/` have no `ports.ts` or
-`domain.ts`). `kernel/` holds what models see of the protocol; `platform/` the hub, events and
+`src/` is split by feature: `tree/`, `person/`, `scheduling/` and `memory/`, each hexagonal inside
+where it has domain rules (`scheduling/` has no `ports.ts` or `domain.ts`). `kernel/` holds what models see of the protocol; `platform/` the hub, events and
 storage helpers. Two composition roots sit on top: `index.ts` (the server plugin) and `tui.tsx`.
 The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules' RPC contracts.
 
@@ -16,8 +15,8 @@ The third entrypoint, `rpc.ts`, composes nothing: it only re-exports the modules
 - **Registration lives in closures, not in new hub fields**, so the hub's shape does not change.
   The hub's `subscribe` and its scheduler's `tick` are the last-loaded copy's, and leaving clears
   neither (see Version skew).
-- **The silent-turn rule is a query**, `Waits`, which `tree/` declares and `person/`, `scheduling/`
-  and `webhook/` supply. `index.ts` composes it, so `tree/` does not depend on `person/`. The
+- **The silent-turn rule is a query**, `Waits`, which `tree/` declares and `person/` and
+  `scheduling/` supply. `index.ts` composes it, so `tree/` does not depend on `person/`. The
   `context` hook takes the tools to hide from a leaf (`hiddenFromLeaf`) the same way.
 - **The memory refreshes in the `after` phase**, once the turn-end notices are out and the report
   state is written. It reads only through ports every hub-v2 member has (`storage`, `session`, `now`,
@@ -67,12 +66,14 @@ the tree's and the memory's keys.
 | `group/<parentID>/<name>/<sessionID>` | A member: title, `joinedAt`, its held report, or `left: { at, by }`. |
 | `later/<id>` | A pending `courier_later` message. |
 | `question/<requestID>` | A relayed question, until answered (the 100 newest). |
-| `webhook/<topic, URI-encoded>/<sessionID>` | A subscription. |
 | `wake/<sessionID>/<inboxID>` | A courier message waiting in an inbox: `at`, `text`, `description`, `running`, `idleAt`, `rewoken`, `stalled`. |
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers. |
 | `memory/<projectID>/<topSessionID>` | A tree's record. |
 | `memory/<projectID>/<topSessionID>/pin` | `{ at }`: the person's pin, written only by the memory view. |
 | `memory/<projectID>/<topSessionID>/reads/<readerTopSessionID>` | `{ shown, read, at }`, written only by the reader tree; summed when read. |
+
+Releases up to 0.13.8 also wrote `webhook/<topic>/<sessionID>`, a webhook subscription. Nothing
+reads those keys now, and none is written again.
 
 A session owes a report while `prompt` is later than `settled`. Its parent waits on it while
 `prompt` is later than `told` too. The prompt's time is the event's `created`; the report's is the

@@ -34,9 +34,7 @@ below are in it.
 - An undeclared key never reaches a tool: `tool-input-repair` (`packages/core/src/plugin/`) deletes
   it. So a renamed optional key stays declared under its old name while it is accepted.
 - A plugin cannot add an HTTP route: `rpc.register` sits behind authenticated `/api/rpc` with a JSON
-  envelope, which GitHub's headers and signed raw body would not get through. The webhook receiver is
-  its own listener, shared by the instances. It waits for the previous listener to close before it
-  binds, and the next instance to load retries a failed bind.
+  envelope.
 - Options come from a `{ "package", "options" }` entry in `plugins`. A local plugin must be a
   directory; a path to a file is ignored with a warning.
 
@@ -146,7 +144,7 @@ below are in it.
 - `GET /api/plugin?directory=<worktree>` does not boot that location; a session there does. A
   session whose location's directory is gone answers 404 `LocationNotFoundError` on some routes
   (not the instruction-entry, interrupt, rename and archive ones, which no longer boot the location),
-  which the webhook's test for a deleted session (an error tag with `NotFound`) would match too. The
+  which a test for a deleted session by an error tag with `NotFound` would match too. The
   health route is `/api/info`.
 - Directories that differ by a trailing slash or `..` are one location, and `session.create` stores
   the canonical directory, so compare directories after resolving them.
@@ -308,8 +306,8 @@ is not.
 `e2e/two-servers.sh` (not in CI, a few minutes, no API key; `KEEP=1` keeps the logs) schedules ten
 messages due together, twice (ticks in step, then half a tick apart), has a child ask for permission
 and answers from each server, and fails a child's turn. It
-exits 1 on a double delivery or any other result than the above. It does not cover the webhook
-receiver or the question relay.
+exits 1 on a double delivery or any other result than the above. It does not cover the question
+relay.
 
 ## OpenCode's schedules
 

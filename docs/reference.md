@@ -79,10 +79,10 @@ directory.
 | `maxTotal` | `30` | Live spawned sessions in one tree; the top is not counted. |
 | `memory` | `true` | `false` turns [memory](#memory) off. |
 | `nativeChildren` | `false` | The default for a child started without `native`: `true` creates non-isolated children as OpenCode subagents ([native child sessions](#native-child-sessions)). |
-| `webhook` | off | An object, or `true` for every default, starts the [webhook receiver](#webhooks). |
 
 The limits are positive integers. A value that is not valid keeps the default, and the server log
-says so. A change applies once OpenCode loads the plugin again.
+says so. A change applies once OpenCode loads the plugin again. The `webhook` option of releases up
+to 0.13.8 is ignored: the webhook receiver and `courier_subscribe` are gone.
 
 The terminal part gets no options from `opencode.json`. It reads them from its own config,
 `~/.config/opencode/cli.json`:
@@ -118,8 +118,6 @@ for a git elsewhere.
 | `courier_answer` | `sessionID`, `requestID`, `reply?`, `message?`, `answers?` | Proposes `once` or `reject` for a [permission request](#a-child-that-asks-for-permission), or passes on your answers to a [question](#a-child-that-asks-a-question). |
 | `courier_later` | `message`, `sessionID?`, `delayMinutes?` or `at?` | Schedules a [message](#scheduled-messages) for a session (this one by default), in `delayMinutes` or at an ISO 8601 time. Returns its id. |
 | `courier_cancel` | `id` | Drops a scheduled message. |
-| `courier_subscribe` | `topic`, `sessionID?` | Subscribes a session (this one by default) to [webhook](#webhooks) deliveries: `owner/repo`, `owner/repo#12` or a name for `/hook/<name>`. |
-| `courier_unsubscribe` | `sessionID?`, `topic?` | Drops one topic, or all of a session's. |
 | `courier_recall` | `sessionID?` | Lists the project's [tree records](#memory), or gives one in full. |
 | `courier_note` | `text` | Writes the [lesson](#the-lesson) of the caller's tree. |
 
@@ -377,11 +375,10 @@ reminder and only tells the parent. A child with an active [`/goal`](#goal-and-c
 reminder alongside the goal's continuation; it says to carry on if work is left.
 
 The parent is not told while the child waits on something: its own children's reports, a permission
-request or question, a scheduled message, or a webhook topic it subscribed to since its last
-prompt. Nor is the child reminded then, or while background work of its own (a shell, a subagent)
-still runs, whose end wakes it. A turn stopped by a server shutdown resumes on the next start and is
-not told. A turn ended by a plain permission decline or a dismissed question is told, without a
-reminder: an interrupted turn does not reach the hook.
+request or question, or a scheduled message. Nor is the child reminded then, or while background
+work of its own (a shell, a subagent) still runs, whose end wakes it. A turn stopped by a server
+shutdown resumes on the next start and is not told. A turn ended by a plain permission decline or a
+dismissed question is told, without a reminder: an interrupted turn does not reach the hook.
 
 ## A missed wake
 
@@ -481,8 +478,8 @@ without `report`. Anyone can read any tree.
 
 The target's parent is told once, `ended="stopped"`, unless it is the caller or the target was not
 running. Sessions under the target are not told. A stopped session stays on the roster and can be
-messaged again. Scheduled messages and webhook subscriptions the stopped sessions made for others are
-left alone. A session started by a running turn of the subtree while the stop runs may escape it.
+messaged again. Scheduled messages the stopped sessions made for others are left alone. A session
+started by a running turn of the subtree while the stop runs may escape it.
 
 ## Steering a running tree
 
@@ -830,88 +827,6 @@ is not, and how often other trees' `courier_recall` listed and opened it. The le
 - `esc` closes.
 
 Every letter but `x` and `p` types into the search. With memory off, the view says so.
-
-## Webhooks
-
-GitHub events, or anything signed posted to `/hook/<name>`, can wake a subscribed session. The
-receiver is off unless the plugin has a `webhook` option, in the **global** config: there is one
-receiver per OpenCode server. `"webhook": true` takes every default. If several locations set it,
-the first to load wins.
-
-```jsonc
-{
-  "plugins": [
-    {
-      "package": "opencode-courier",
-      "options": { "webhook": { "port": 4097, "secretFile": "~/.config/opencode/courier-webhook-secret" } }
-    }
-  ]
-}
-```
-
-| Option | Default | |
-|---|---|---|
-| `port` | `4097` | Port to listen on. |
-| `host` | `127.0.0.1` | Address to bind. Only this machine can reach the default. |
-| `secretFile` | | File holding the shared secret (`~` is expanded). |
-| `secretEnv` | `COURIER_WEBHOOK_SECRET` | Environment variable holding it, when there is no `secretFile`. |
-| `maxBytes` | `1048576` | Largest body accepted. |
-
-**Setup.**
-
-1. Make the secret: `openssl rand -hex 32 > ~/.config/opencode/courier-webhook-secret`, then
-   `chmod 600` it. It is never read from `opencode.json` (a `secret` key is refused). Prefer a file
-   with `opencode service start`, whose environment may not be your shell's. Without a secret the
-   receiver does not start, and the server log says why.
-2. Forward a public URL to the receiver with a tunnel you trust:
-   `cloudflared tunnel --url http://127.0.0.1:4097`, `ngrok http 4097`, or
-   `smee --url https://smee.io/<channel> --target http://127.0.0.1:4097/github` (no inbound port).
-3. On GitHub, add a webhook to the repository (Settings → Webhooks): `<public URL>/github`, content
-   type `application/json`, the same secret, and the events you want.
-4. `courier_subscribe` a session to `owner/repo`, `owner/repo#N` (either may start `github:`) or a
-   name of up to 64 letters, digits, `.`, `_` and `-`.
-
-The receiver starts when OpenCode first loads the plugin after a start. Deliveries before that fail;
-GitHub lists them under Recent Deliveries, with a Redeliver button.
-
-**What wakes whom.** Each delivery reaches the subscribed sessions as a short summary, queued behind
-a running turn:
-
-- `POST /github`: a review, a review comment, a comment, a pull request or issue opened, reopened,
-  closed, merged or marked ready, or a completed check run, check suite or workflow run on a pull
-  request goes to `owner/repo#N` and `owner/repo`. Anything else with a repository (a push, a
-  release) goes to `owner/repo` only. Pings, unfinished CI runs, edits, labels, assignments and
-  review requests wake nobody. Fork pull requests get no check suites, so their CI reaches
-  `owner/repo` only.
-- `POST /hook/<name>`: anything, for `<name>`. A JSON body's `text`, `summary` or `message` is
-  delivered, else the body itself, at most 1500 characters of it.
-
-The summary holds the event, repository and number, who, the state or conclusion, a link, and at
-most 1500 characters of a review or comment body. It is marked as outside text, to be treated as
-data. Anyone who can comment on the repository writes those bodies, so subscribe only to
-repositories whose commenters you trust.
-
-**Signing.** Every delivery needs an `X-Hub-Signature-256` header: `sha256=` and the HMAC-SHA256 hex
-digest under the secret. For GitHub it is of the raw body. For `/hook/<name>` it is of the name, a
-newline and the body, so a delivery cannot be replayed to another topic:
-
-```bash
-sig=$(printf '%s\n%s' deploys "$body" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)
-curl -X POST -H "x-hub-signature-256: sha256=$sig" --data-binary "$body" http://127.0.0.1:4097/hook/deploys
-```
-
-| Status | When |
-|---|---|
-| `202` | Delivered, with the number of sessions reached, which can be 0. |
-| `200 already delivered` | The same delivery was accepted before (the last 1000 are remembered). |
-| `401` | Missing or wrong signature. |
-| `413` | Body over `maxBytes`. |
-
-A delivery that reached no session because every send failed is forgotten, so GitHub's Redeliver
-retries it. A generic sender posting the same text twice should add something unique, such as a
-timestamp. A session OpenCode no longer knows loses its subscriptions to a delivery's topics when
-that delivery reaches them, and `courier_subscribe` refuses an unknown session. GitHub has no event
-for a merge conflict.
 
 ## Two servers on one data directory
 

@@ -45,7 +45,7 @@ answer. Use it when one result is all you need. Use courier for more:
 
 - **Messages mid-run.** A child reports progress or asks its parent at any time, and its parent
   passes a finding that changes the other parts on to the children it affects.
-- **Waking an idle session.** A message, a schedule or a GitHub webhook starts a new turn.
+- **Waking an idle session.** A message or a schedule starts a new turn.
 - **Parallel edits.** `isolate: true` gives a child its own git worktree and branch to merge.
 - **Asks reach you.** A child's permission requests and questions come to you through the top
   session. Only you approve a request, in OpenCode's own prompt.
@@ -111,7 +111,6 @@ Set the server options on the plugin's entry in the **global** config,
 | `maxTotal` | `30` | Live spawned sessions in one tree. |
 | `memory` | `true` | Keep a record of each session tree for later orchestrators ([memory](docs/reference.md#memory)). |
 | `nativeChildren` | `false` | The default for a spawn that does not set `native`: `true` creates non-isolated children as OpenCode subagents ([native children](docs/reference.md#native-child-sessions)). |
-| `webhook` | off | Start the webhook receiver ([webhooks](docs/reference.md#webhooks)). |
 
 The terminal part reads its options only from `~/.config/opencode/cli.json`, in the same entry
 form. Its one option, `"animations": false`, keeps the tree panel still.
@@ -127,7 +126,6 @@ form. Its one option, `"animations": false`, keeps the tree panel still.
 | `courier_cleanup` | Removes an isolated child's worktree and forgets the child. |
 | `courier_answer` | Proposes an answer to a child's permission request, or passes on your answer to its question. |
 | `courier_later` / `courier_cancel` | Schedules a message for a session, or drops one. |
-| `courier_subscribe` / `courier_unsubscribe` | Subscribes a session to webhook deliveries for a topic, or drops it. |
 | `courier_recall` / `courier_note` | Reads what earlier trees in this project did, or writes this tree's one-line lesson. |
 
 Parameters and behaviour: [the reference](docs/reference.md#the-tools).

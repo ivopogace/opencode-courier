@@ -22,7 +22,6 @@ import {
   notePrompt,
   reportFailure,
   reportSilent,
-  together,
   treeEvents,
   waitsOn,
   type ExecutionFailed,
@@ -32,10 +31,9 @@ import type { CourierPorts, WatchPorts, WatchState } from "../src/tree/ports.js"
 import { follow, watchFromHub } from "../src/platform/events.js"
 import { isScheduled } from "../src/scheduling/index.js"
 import { asksQuestion } from "../src/person/question/index.js"
-import { subscribedSince } from "../src/webhook/index.js"
 import { asked, child, fakePorts, fresh, replied, request, settled, shown } from "./fixtures/events.js"
 
-const outside = waitsOn(asksPermission, asksQuestion, together(isScheduled, subscribedSince))
+const outside = waitsOn(asksPermission, asksQuestion, isScheduled)
 
 const modules = (state: WatchState & PersonState) => [treeEvents(state, outside), personEvents(state)]
 
@@ -196,14 +194,6 @@ describe("the Waits port's composition", () => {
     expect(await waits(ports, "ses_child", 0)).toBe(true)
     expect(asked).toEqual(["a", "b"])
     expect(await waitsOn(supplier(false, asked, "d"))(ports, "ses_child", 0)).toBe(false)
-  })
-
-  test("together asks its suppliers at once: it waits when one does, and fails when one fails", async () => {
-    const asked: string[] = []
-    expect(await together(supplier(false, asked, "a"), supplier(true, asked, "b"))(ports, "ses_child", 0)).toBe(true)
-    expect(await together(supplier(false, asked, "c"), supplier(false, asked, "d"))(ports, "ses_child", 0)).toBe(false)
-    await expect(together(supplier(true, asked, "e"), supplier(new Error("storage gone"), asked, "f"))(ports, "ses_child", 0)).rejects.toThrow("storage gone")
-    expect(asked).toEqual(["a", "b", "c", "d", "e", "f"])
   })
 })
 
@@ -439,7 +429,7 @@ describe("reportSilent", () => {
     expect(store.get(toldKey("ses_child"))).toEqual({ at: 400 })
   })
 
-  test("tells nothing while a scheduled message for the child is pending, or a webhook it subscribed to since its last prompt", async () => {
+  test("tells nothing while a scheduled message for the child is pending, but a webhook subscription left from an older release holds nothing", async () => {
     const later = fakePorts()
     await childStore(later.ports.storage).record(child())
     await notePrompt(later.ports, delivered("evt_d", 100))
@@ -451,9 +441,7 @@ describe("reportSilent", () => {
     await childStore(hooked.ports.storage).record(child())
     await notePrompt(hooked.ports, delivered("evt_d", 100))
     await hooked.ports.storage.set("webhook/o%2Fr%237/ses_child", { sessionID: "ses_child", topic: "o/r#7", createdAt: 150 })
-    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s1", 200), outside)).toEqual([])
-    await notePrompt(hooked.ports, delivered("evt_d2", 300))
-    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s2", 400), outside)).toEqual(["ses_parent"])
+    expect(await reportSilent(hooked.ports, new Set(), succeeded("evt_s1", 200), outside)).toEqual(["ses_parent"])
   })
 
   test("notes the parent was told before telling it, as the notice may end the parent's turn at once", async () => {

@@ -83,7 +83,7 @@ async function chainTo(child: (parentID: string, sessionID: string) => Promise<v
 describe("readLimits", () => {
   test("defaults to maxDepth 5, maxChildren 5 and maxTotal 30", () => {
     expect(readLimits(undefined)).toEqual({ limits: { maxDepth: 5, maxChildren: 5, maxTotal: 30 }, problems: [] })
-    expect(readLimits({ webhook: true })).toEqual({ limits: DEFAULT_LIMITS, problems: [] })
+    expect(readLimits({ memory: false })).toEqual({ limits: DEFAULT_LIMITS, problems: [] })
   })
 
   test("reads each from the plugin's options", () => {

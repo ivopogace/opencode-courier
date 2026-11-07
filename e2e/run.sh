@@ -69,7 +69,7 @@ print_timings() {
 # 60): a stalled client fails the scenario, named with its session, and the run goes on. The helpers run in command
 # substitutions, so a stall is counted from $WORK/stalled as the run ends.
 PROMPT_LIMIT=${PROMPT_LIMIT:-240}
-run_bounded() {
+bounded_run() {
   local directory=$1 out status=0 session
   shift
   out=$(cd "$directory" && timeout -k 5 "$PROMPT_LIMIT" "$OPENCODE" run --server "$SERVER" --auto --format json "$@" </dev/null) || status=$?
@@ -82,9 +82,9 @@ run_bounded() {
   printf '%s\n' "$out"
   return "$status"
 }
-prompt() { run_bounded "$WORK/project" "$1"; }
+prompt() { bounded_run "$WORK/project" "$1"; }
 # Like prompt, but a new turn in the existing session $1.
-prompt_in() { run_bounded "$WORK/project" --session "$1" "$2"; }
+prompt_in() { bounded_run "$WORK/project" --session "$1" "$2"; }
 now_ms() { node -e 'console.log(Date.now())'; }
 failures=0
 check() {
@@ -279,7 +279,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 finding-up:12 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 subagent-role:3 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 total-refusal:40 plugin-add:14"
+SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 plugin-add:18"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -405,7 +405,7 @@ run_reports() {
   check "and lists none for an unknown session" "$(prompt "COURIER-CHILDREN ses_missing" | tool_state courier_children | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
 
   scenario "a child runs on its parent's model, not the default one"
-  out=$(run_bounded "$WORK/project" --model mock/other "COURIER-TEST")
+  out=$(bounded_run "$WORK/project" --model mock/other "COURIER-TEST")
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
@@ -1222,7 +1222,7 @@ run_probe() {
   # first one listed is the project itself), opened by a session of its own, which loads the plugins there.
   bystander=$(git -C "$WORK/project" worktree list --porcelain | sed -n 's/^worktree //p' | sed -n 2p)
   check "a third location is open" "$([ -n "$bystander" ] &&
-    run_bounded "$bystander" "hello" >/dev/null && echo true || echo false)"
+    bounded_run "$bystander" "hello" >/dev/null && echo true || echo false)"
   out=$(prompt "COURIER-PROBE")
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')

@@ -44,6 +44,8 @@ function decide(body) {
   const lastAssistant = messages.findLastIndex((message) => message.role === "assistant")
   const last = messages.at(-1)
   const prompt = textOf(messages.findLast((message) => message.role === "user")?.content)
+  const relayed = relayFinding(messages, lastAssistant)
+  if (relayed) return relayed
   const finding = passFinding(messages, lastAssistant)
   if (finding) return finding
   const demo = demoTree(messages, lastAssistant)
@@ -345,6 +347,43 @@ function decide(body) {
   const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)
   if (spawn) return spawnChild(spawn[1] === "isolate")
   return { text: "ok" }
+}
+
+// A depth-2 session finds something; its depth-1 parent passes it up to the root, as its brief says.
+function relayFinding(messages, lastAssistant) {
+  const first = textOf(messages.find((message) => message.role === "user")?.content)
+  const sent = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_send")
+  const briefedBy = first.match(/You were started by session (ses_\w+)/)
+  if (briefedBy && first.includes("CHILD-DEEP-FINDING")) {
+    if (sent.length === 0) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "FINDING-UP: the shared config is read-only" } }
+    if (sent.length === 1) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "DEEP DONE", status: "done" } }
+    return { text: "DEEP REPORTED" }
+  }
+  const last = messages.at(-1)
+  const call = last?.role === "tool" ? messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id) : undefined
+  if (briefedBy && first.includes("CHILD-RELAYS-UP")) {
+    if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-DEEP-FINDING" } }
+    const later = messages.slice(1).map((message) => textOf(message.content)).join("\n")
+    const found = later.match(/<courier from="(ses_\w+)">\n(FINDING-UP:[^\n<]*)/)
+    const passed = sent.some((item) => (item.function.arguments ?? "").includes("Passed up from"))
+    const reported = sent.some((item) => (item.function.arguments ?? "").includes("MID DONE"))
+    if (found && !passed) {
+      // the mock passes it up only when its brief says to
+      const told = first.includes("Do the same with one a session you started sends you, when it reaches past your own part.")
+      return { tool: "courier_send", args: { sessionID: briefedBy[1], message: told ? `Passed up from ${found[1]}: ${found[2]}` : "BRIEF SAYS NOTHING OF PASSING UP" } }
+    }
+    if (passed && !reported && /<courier from="ses_\w+" status="done">/.test(later))
+      return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "MID DONE", status: "done" } }
+    if (call?.function?.name === "courier_spawn") return { text: "MID SPAWNED" }
+    return { text: reported ? "MID REPORTED" : passed ? "MID PASSED UP" : "MID WAITS" }
+  }
+  if (!first.includes("COURIER-RELAY-UP")) return undefined
+  if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-RELAYS-UP" } }
+  if (call?.function?.name === "courier_spawn") return { text: "ROOT SPAWNED" }
+  const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
+  if (/<courier from="ses_\w+">\nPassed up from ses_\w+: FINDING-UP:/.test(recent)) return { text: "ROOT HEARD FINDING" }
+  if (/<courier from="ses_\w+" status="done">/.test(recent)) return { text: "ROOT GOT REPORT" }
+  return { text: "ROOT WOKE" }
 }
 
 function passFinding(messages, lastAssistant) {

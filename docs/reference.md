@@ -520,9 +520,9 @@ without `report`. Anyone can read any tree.
 
 When the target was interrupted, or was `idle` and still owed a report or had last reported
 `blocked`, its parent is told once, `ended="stopped"`, unless the parent is the caller. For an
-`idle` one that owed a report the message says it still counts toward the limits and holds back its
-join group if it is in one; for one that reported `blocked` it says not to send the answer it waits
-on. Both offer `courier_cleanup` or messaging it.
+`idle` one that owed a report the message says it still counts toward the limits; for one that
+reported `blocked` it says not to send the answer it waits on. Both say it holds back its join group
+if it is in one, and offer `courier_cleanup` or messaging it.
 Sessions under the target are not told. A stopped session stays on the roster and can be
 messaged again. Scheduled messages the stopped sessions made for others are left alone. A session
 started by a running turn of the subtree while the stop runs may escape it.

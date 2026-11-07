@@ -192,7 +192,8 @@ sends it goes on to its parent the same way when it reaches past its own part. A
 writes in its session, outside a `<courier>` envelope, is for the whole job: it sends it to its
 parent at once, without a status and quoted as the person's, before it acts on it, then carries on.
 The person's words that a session it started passes it go on to its parent the same way, always,
-so they climb the whole tree to the top.
+so they climb the whole tree to the top. They are the person's word: it does not judge them against
+its task and never tells a session to undo them.
 
 **The role.** Every spawned session carries one line in its system prompt, `opencode-courier role: …`,
 in the `role` entry of its session instructions (OpenCode 2.2.0's `<context key="role">` block),
@@ -276,7 +277,8 @@ order:
    the next tree should know something, none otherwise.
 
 Without the skill, a child's brief still carries the split rule, the one group, no polling, the
-limits, verifying, how to report and to send a finding or the person's words up. The root has no
+limits, verifying, how to report and to send a finding or the person's words up, never judging or
+undoing the person's words. The root has no
 brief: its role line carries the split rule until its first spawn, then only the limits and
 verifying. The tool descriptions carry the one group, no polling, check-ins, isolation, the model
 and `native`; the notices carry the relay and what to do about a child that fails or goes quiet.

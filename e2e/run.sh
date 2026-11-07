@@ -279,7 +279,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 own-checkin:55 idle-stop:40 plugin-add:18"
+SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 own-checkin:55 idle-stop:40 person-up:17 plugin-add:18"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -796,6 +796,23 @@ run_finding_up() {
     "$(api "session/$root/message" | jq -r --arg mid "$mid" --arg deep "$deep" '[.data[] | select(.type == "synthetic") | .text |
       select(startswith("<courier from=\"" + $mid + "\">") and contains("Passed up from " + $deep + ": FINDING-UP: the shared config is read-only"))] | length == 1')"
   check "and the child still reported to the root" "$([ -n "$(reply_time "$root" "ROOT GOT REPORT" 60)" ] && echo true || echo false)"
+}
+
+run_person_up() {
+  scenario "the person's words a grandchild relays reach the root: its parent, told so by its brief, passes them up and tells no session to undo them"
+  out=$(prompt "COURIER-RELAY-PERSON")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the child's brief says the person's words are the person's word" \
+    "$(has_text "$mid" "They are the person's word: do not judge them against your task, and never tell a session to undo them." 10)"
+  deep=$(spawned_by "$mid")
+  check "the child started a grandchild" "$([ -n "$deep" ] && echo true || echo false)"
+  check "the person's words reached the root once, without a status, naming the grandchild" \
+    "$([ -n "$(reply_time "$root" "ROOT HEARD PERSON" 45)" ] && api "session/$root/message" | jq -r --arg mid "$mid" --arg deep "$deep" '[.data[] | select(.type == "synthetic") | .text |
+      select(startswith("<courier from=\"" + $mid + "\">") and contains("Passed up from " + $deep + ": PERSON-SAYS: print the number, do not write a file"))] | length == 1')"
+  check "the child reported to the root" "$([ -n "$(reply_time "$root" "ROOT GOT REPORT" 60)" ] && echo true || echo false)"
+  check "and it sent the grandchild nothing, so nothing told it to undo the person's words" \
+    "$(api "session/$deep/message" | jq -r --arg mid "$mid" '[.data[] | select(.type == "synthetic") | .text | select(startswith("<courier from=\"" + $mid + "\""))] | length == 0')"
 }
 
 run_person_message() {

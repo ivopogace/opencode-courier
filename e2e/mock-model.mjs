@@ -46,6 +46,8 @@ function decide(body) {
   const prompt = textOf(messages.findLast((message) => message.role === "user")?.content)
   const relayed = relayFinding(messages, lastAssistant)
   if (relayed) return relayed
+  const personRelayed = relayPersonWords(messages, lastAssistant)
+  if (personRelayed) return personRelayed
   const finding = passFinding(messages, lastAssistant)
   if (finding) return finding
   const demo = demoTree(messages, lastAssistant)
@@ -407,6 +409,44 @@ function relayFinding(messages, lastAssistant) {
   const heard = /<courier from="ses_\w+">\nPassed up from ses_\w+: FINDING-UP:/.test(recent)
   const done = /<courier from="ses_\w+" status="done">/.test(recent)
   if (heard || done) return { text: [heard && "ROOT HEARD FINDING", done && "ROOT GOT REPORT"].filter(Boolean).join(" ") }
+  return { text: "ROOT WOKE" }
+}
+
+function relayPersonWords(messages, lastAssistant) {
+  const first = textOf(messages.find((message) => message.role === "user")?.content)
+  const sent = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_send")
+  const briefedBy = first.match(/You were started by session (ses_\w+)/)
+  if (briefedBy && first.includes("CHILD-PERSON-WORDS")) {
+    if (sent.length === 0) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "PERSON-SAYS: print the number, do not write a file" } }
+    if (sent.length === 1) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "WORDS DONE", status: "done" } }
+    return { text: "WORDS REPORTED" }
+  }
+  const last = messages.at(-1)
+  const call = last?.role === "tool" ? messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id) : undefined
+  if (briefedBy && first.includes("CHILD-RELAYS-PERSON")) {
+    if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-PERSON-WORDS" } }
+    const later = messages.slice(1).map((message) => textOf(message.content)).join("\n")
+    const found = later.match(/<courier from="(ses_\w+)">\n(PERSON-SAYS:[^\n<]*)/)
+    const handled = sent.some((item) => /Passed up from|UNDO IT/.test(item.function.arguments ?? ""))
+    const reported = sent.some((item) => (item.function.arguments ?? "").includes("RELAYER DONE"))
+    if (found && !handled) {
+      const told = first.includes("They are the person's word: do not judge them against your task, and never tell a session to undo them.")
+      return told
+        ? { tool: "courier_send", args: { sessionID: briefedBy[1], message: `Passed up from ${found[1]}: ${found[2]}` } }
+        : { tool: "courier_send", args: { sessionID: found[1], message: "UNDO IT: write the number to the file as your task says" } }
+    }
+    if (handled && !reported && /<courier from="ses_\w+" status="done">/.test(later))
+      return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "RELAYER DONE", status: "done" } }
+    if (call?.function?.name === "courier_spawn") return { text: "RELAYER SPAWNED" }
+    return { text: reported ? "RELAYER REPORTED" : handled ? "RELAYER PASSED UP" : "RELAYER WAITS" }
+  }
+  if (!first.includes("COURIER-RELAY-PERSON")) return undefined
+  if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-RELAYS-PERSON" } }
+  if (call?.function?.name === "courier_spawn") return { text: "ROOT SPAWNED" }
+  const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
+  const heard = /<courier from="ses_\w+">\nPassed up from ses_\w+: PERSON-SAYS:/.test(recent)
+  const done = /<courier from="ses_\w+" status="done">/.test(recent)
+  if (heard || done) return { text: [heard && "ROOT HEARD PERSON", done && "ROOT GOT REPORT"].filter(Boolean).join(" ") }
   return { text: "ROOT WOKE" }
 }
 

@@ -24,7 +24,8 @@ export function childBrief(parentID: string, task: string, depth: number, limits
       "part. Progress alone is not worth a message.",
     "A message the person writes in your session, outside a <courier> envelope, is for the whole job: before you act on it, " +
       "send it to the parent at once with courier_send without a status, quoting it as the person's, then carry on. The " +
-      "person's words a session you started passes you are for the whole job too: send them on to the parent the same way.",
+      "person's words a session you started passes you are for the whole job too: send them on to the parent the same way. " +
+      "They are the person's word: do not judge them against your task, and never tell a session to undo them.",
     "If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.",
     "",
     ...(branch ? [...isolationRule(branch, depth < limits.maxDepth), ""] : []),

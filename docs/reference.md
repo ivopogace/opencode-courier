@@ -263,9 +263,9 @@ order:
 3. **End the turn**: reports and notices wake the parent.
    At the root, a permission request or question from below comes with its own instructions, and the
    model never answers for the person. A message that changes what other parts need goes on to the
-   sessions it affects, and only to them, which below the root includes the parent, as the brief
-   says; a child's account of what the person told it is the
-   person's word ([steering a running tree](#steering-a-running-tree)).
+   sessions it affects, and only to them, and below the root also to the parent when it reaches
+   past the session's own part or carries the person's words, as the brief says; a child's account
+   of what the person told it is the person's word ([steering a running tree](#steering-a-running-tree)).
 4. **Verify first-hand**, and answer a blocked report, through the person when only they can decide.
    On a partial or failed report the parent has the child finish or retry, does the rest itself,
    or starts a replacement.

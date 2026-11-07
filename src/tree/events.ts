@@ -127,11 +127,6 @@ export const waitsOn =
     return false
   }
 
-export const together =
-  (...suppliers: Waits[]): Waits =>
-  async (ports, sessionID, since) =>
-    (await Promise.all(suppliers.map((supplier) => supplier(ports, sessionID, since)))).includes(true)
-
 export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: SessionEvent, outside: Waits) {
   const { sessionID } = event.data
   const children = childStore(ports.storage)

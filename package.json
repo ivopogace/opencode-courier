@@ -45,7 +45,6 @@
     "background-agents",
     "parallel",
     "worktree",
-    "webhook",
     "scheduler",
     "ai-agents"
   ],

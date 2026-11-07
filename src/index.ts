@@ -41,7 +41,6 @@ import {
   readNativeChildren,
   registerTreeRpc,
   shapeContext,
-  together,
   treeEvents,
   waitsOn,
   type CleanupPorts,
@@ -51,15 +50,6 @@ import {
   type WatchPorts,
   type WatchState,
 } from "./tree/index.js"
-import {
-  addWebhookTools,
-  joinReceiver,
-  readConfig,
-  receiving,
-  subscribedSince,
-  type WebhookConfig,
-  type WebhookPorts,
-} from "./webhook/index.js"
 
 const gate = sharedState<SpawnGate>("spawning", () => ({ reserved: new Set(), turn: Promise.resolve() }))
 
@@ -83,7 +73,7 @@ const { watched } = hub
 const watchState: WatchState = { seen: watched.seen, inbox }
 const personState: PersonState = { ...watched, forms: hub.forms, shown }
 
-const outside = waitsOn(asksPermission, asksQuestion, together(isScheduled, subscribedSince))
+const outside = waitsOn(asksPermission, asksQuestion, isScheduled)
 
 const eventModules = [treeEvents(watchState, outside), personEvents(personState), memoryEvents(memoryState)]
 
@@ -158,20 +148,12 @@ export const courier = () => Plugin.define({
       newID: () => `later_${randomUUID()}`,
       log,
     }
-    const hooks: WebhookPorts = { storage: ctx.storage, session: ctx.session, now: Date.now, log: later.log }
-    let webhook: WebhookConfig | undefined
-    try {
-      webhook = readConfig(ctx.options)
-    } catch (error) {
-      later.log(`courier webhook: not started: ${error instanceof Error ? error.message : String(error)}`)
-    }
 
     const stopPorts = { courier: ports, cancelScheduled: (sessionID: string) => cancelScheduled(later, sessionID), cleanup: cleanupPorts }
     await ctx.tool.transform((tools) => {
       addTreeTools(tools, { courier: ports, cleanup: cleanupPorts, stop: stopPorts })
       addPersonTools(tools, { answer: answerPorts, questions: questionPorts, waiting: watched.waiting })
       addSchedulingTools(tools, later)
-      addWebhookTools(tools, { hooks, receiving })
       addMemoryTools(tools, { memory: memoryPorts, state: memoryState })
     })
     await ctx.skill.transform(addSkill)
@@ -224,12 +206,10 @@ export const courier = () => Plugin.define({
     track(member, noticed)
     track(member, swept)
     track(member, windowed)
-    const leave = webhook ? joinReceiver(webhook, hooks) : undefined
     return async () => {
       const leftHub = leaveHub()
       if (!memory) memoryState.off.delete(ctx.location.directory)
       leaveRelay()
-      await leave?.()
       await leftHub
     }
   },

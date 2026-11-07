@@ -116,6 +116,10 @@ function decide(body) {
       if (call?.function?.name === "shell") return { tool: "courier_send", args: { sessionID: startedBy[1], message: "MID DONE EARLY", status: "done" } }
       if (call?.function?.name === "courier_send") return { text: "MID REPORTED EARLY" }
     }
+    if (startedBy && first.includes("CHILD-CHECKIN-MID")) {
+      if (call?.function?.name === "courier_later") return { tool: "courier_send", args: { sessionID: startedBy[1], message: "MID DONE BEFORE CHECK-IN", status: "done" } }
+      if (call?.function?.name === "courier_send") return { text: "MID REPORTED" }
+    }
     if (startedBy && first.includes("CHILD-NOTES-MID")) {
       if (call?.function?.name === "courier_note") return { tool: "courier_spawn", args: { task: "CHILD-NOTES-LEAF CHILD-FORCES" } }
       if (call?.function?.name === "courier_spawn") return { text: "MID SPAWNED LEAF" }
@@ -195,6 +199,7 @@ function decide(body) {
   if (parent && recent.includes("CHILD-QUICK"))
     return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE QUICKLY", status: "done" }, quick: true }
   if (parent && recent.includes("CHILD-PROGRESSES")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD HALFWAY" } }
+  if (parent && recent.includes("CHILD-CHECKIN-MID")) return { tool: "courier_later", args: { message: "MID-CHECK-IN", delayMinutes: 0.25 } }
   if (parent && recent.includes("CHILD-WAITS")) return { tool: "courier_later", args: { message: "CHILD-REPORT-NOW", delayMinutes: 0.25 } }
   if (parent && recent.includes("CHILD-DEEPENS"))
     return { calls: [{ tool: "courier_spawn", args: { task: "CHILD-LEAF" } }, { tool: "courier_spawn", args: { task: "CHILD-LEAF CHILD-FORCES" } }] }
@@ -209,6 +214,7 @@ function decide(body) {
   if (parent && recent.includes("CHILD-NESTS")) return { tool: "courier_spawn", args: { task: "CHILD-QUESTION" } }
   const answered = recent.match(/<courier from="ses_\w+" answers="question_[\w-]+"( dismissed="true")?>/)
   const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
+  if (startedBy && recent.includes("MID-CHECK-IN")) return { text: "MID SAW CHECK-IN" }
   if (startedBy && recent.includes("PERSON-ASKS")) return { text: "CHILD ANSWERS PERSON" }
   if (startedBy && recent.includes("CHILD-REPORT-NOW"))
     return { tool: "courier_send", args: { sessionID: startedBy[1], message: "CHILD DONE AFTER NUDGE", status: "done" } }
@@ -291,6 +297,7 @@ function decide(body) {
   const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
+  if (recent.includes("COURIER-OWN-CHECKIN")) return { tool: "courier_spawn", args: { task: "CHILD-CHECKIN-MID", native: false } }
   if (recent.includes("COURIER-EARLY-REPORT")) return { tool: "courier_spawn", args: { task: "CHILD-EARLY-MID", native: false } }
   if (recent.includes("COURIER-GROUP-NESTED")) return { tool: "courier_spawn", args: { task: "CHILD-GROUPS" } }
   if (recent.includes("COURIER-GROUP-SPLIT")) return { tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } }

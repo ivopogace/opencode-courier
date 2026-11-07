@@ -279,7 +279,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 idle-stop:20 plugin-add:18"
+SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 own-checkin:40 idle-stop:20 plugin-add:18"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -708,6 +708,34 @@ run_early_report() {
   done; echo false)
   check "a later courier message to it counted as a prompt" "$moved"
   check "the end of the group's turn told the root nothing" "$([ -z "$(kv get "report/$middle/told")" ] && echo true || echo false)"
+  check "the root's next message from it is the report that message asked for, with no notice of a silent end before it" \
+    "$([ "$(has_text "$root" "CHILD DONE AFTER NUDGE" 30)" = true ] && notices_with "$root" ended | jq -r 'length == 0')"
+}
+
+run_own_checkin() {
+  scenario "a child whose own check-in fires after it reported owes nothing for it, while its parent's scheduled message counts"
+  out=$(prompt "COURIER-OWN-CHECKIN")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the middle session scheduled a check-in for itself and reported to the root" "$(has_text "$root" "MID DONE BEFORE CHECK-IN" 60)"
+  check "its check-in reached it after, in a turn of its own" "$([ -n "$(reply_time "$middle" "MID SAW CHECK-IN" 60)" ] && echo true || echo false)"
+  turn_ended "$middle"
+  # The idle hook runs before a turn goes idle, so a reminder would be in this turn already.
+  check "that turn ended without a report reminder, and the middle session reported once" "$(api "session/$middle/message" | jq -r --arg root "$root" '
+    ([.data[] | select(.type == "synthetic") | .text | select(contains(" reminder=\"report\""))] | length == 0) and
+    ([.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send" and .state.input.sessionID == $root)] | length == 1)')"
+  prompt_at=$(kv get "report/$middle/prompt" | jq -r .at)
+  check "the check-in's delivery was not taken for a prompt" "$(kv get "report/$middle/settled" | jq -r --argjson prompt "$prompt_at" '.at >= $prompt')"
+  # A message the root scheduled for it, as courier_later delivers one. The plugin handles events in
+  # order: once its delivery moves the prompt note, the check-in turn's end has been handled.
+  api_post "session/$middle/synthetic" "$(jq -nc --arg text "<courier from=\"$root\" scheduled=\"2026-01-01T00:00:00.000Z\">CHILD-REPORT-NOW</courier>" --arg from "$root" \
+    '{text: $text, description: ("Scheduled message from " + $from), metadata: {source: "courier", from: $from, scheduled: "later_e2e"}, delivery: "queue"}')" >/dev/null
+  moved=$(for _ in $(seq 1 60); do
+    [ "$(kv get "report/$middle/prompt" | jq -r --argjson before "$prompt_at" '.at > $before')" = true ] && { echo true; exit; }
+    sleep 0.5
+  done; echo false)
+  check "a message its parent scheduled for it counted as a prompt" "$moved"
+  check "the end of the check-in's turn told the root nothing" "$([ -z "$(kv get "report/$middle/told")" ] && echo true || echo false)"
   check "the root's next message from it is the report that message asked for, with no notice of a silent end before it" \
     "$([ "$(has_text "$root" "CHILD DONE AFTER NUDGE" 30)" = true ] && notices_with "$root" ended | jq -r 'length == 0')"
 }

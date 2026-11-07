@@ -101,6 +101,25 @@ describe("nudgeSilent", () => {
     expect(await nudgeSilent(owing.ports, new Set(), outside, idle())).toBe(true)
   })
 
+  test("leaves a child that reported before its own check-in fired, but reminds one its parent's scheduled message reached", async () => {
+    const enqueued = (inboxID: string, from: string) => ({
+      data: { sessionID: "ses_child", inboxID, item: { type: "synthetic", payload: { metadata: { source: "courier", from, scheduled: "lat_1" } } } },
+    })
+    const own = await prompted()
+    const inbox = new Map<string, string>()
+    await reportFrom(own.ports, 150)
+    await noteEnqueued(own.ports, inbox, enqueued("inb_1", "ses_child"))
+    expect(await notePrompt(own.ports, delivered("evt_l", 200, "inb_1"), inbox)).toBe(false)
+    expect(await nudgeSilent(own.ports, new Set(), outside, idle())).toBe(false)
+    expect(own.sent).toEqual([])
+
+    const parents = await prompted()
+    await reportFrom(parents.ports, 150)
+    await noteEnqueued(parents.ports, inbox, enqueued("inb_2", "ses_parent"))
+    expect(await notePrompt(parents.ports, delivered("evt_l", 200, "inb_2"), inbox)).toBe(true)
+    expect(await nudgeSilent(parents.ports, new Set(), outside, idle())).toBe(true)
+  })
+
   test("leaves a child that waits on a permission request or a session of its own", async () => {
     const asking = await prompted([request])
     expect(await nudgeSilent(asking.ports, new Set(), outside, idle())).toBe(false)

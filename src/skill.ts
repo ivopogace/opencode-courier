@@ -113,8 +113,8 @@ export const SKILL_CONTENT = [
 
 export type SkillEditor = Parameters<Parameters<Plugin.Context["skill"]["transform"]>[0]>[0]
 
-// OpenCode names the path's directory to the model (api-notes)
-const SKILL_PATH = `/opencode-courier/${SKILL_ID}.md`
+// A skill:// path: the read tool serves it from the registry (api-notes)
+const SKILL_PATH = `skill://${SKILL_ID}/SKILL.md`
 
 export const orchestrateSkill = () =>
   ({ id: SKILL_ID, name: SKILL_ID, description: SKILL_DESCRIPTION, path: SKILL_PATH, content: SKILL_CONTENT }) as const

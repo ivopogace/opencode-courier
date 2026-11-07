@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 finding-up:12 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 subagent-role:3 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 total-refusal:40 plugin-add:14"
+SUITE="reports:81 reports-groups:91 reminder:20 finding:11 finding-up:12 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 subagent-role:3 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 total-refusal:40 early-report:25 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -639,6 +639,23 @@ run_reminder() {
   check "once, with the reply it gave after the reminder" "$(notices_with "$parent" ended | jq -r --arg child "$child" 'length == 1 and (.[0] |
     contains("<courier from=\"" + $child + "\" ended=\"without-report\">") and contains("CHILD SILENT REPLY"))')"
   check "and the child still owes the report of its task" "$([ -z "$(kv get "report/$child/settled")" ] && echo true || echo false)"
+}
+
+run_early_report() {
+  scenario "a child whose group completes in the turn that started it reports then, and owes nothing when the group arrives"
+  out=$(prompt "COURIER-EARLY-REPORT")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the middle session reported to the root in the turn that started its group" "$(has_text "$root" "MID DONE EARLY" 60)"
+  check "its group's message reached it after, in a turn of its own" "$([ -n "$(reply_time "$middle" "MID SAW GROUP" 60)" ] && echo true || echo false)"
+  turn_ended "$middle"
+  sleep 2
+  check "that turn ended without a report reminder" "$(notices_with "$middle" reminder | jq -r 'length == 0')"
+  check "the root got one report from it, and was not told it ended without one" "$(api "session/$root/message" | jq -r --arg middle "$middle" '
+    [.data[] | select(.type == "synthetic") | .text | select(startswith("<courier from=\"" + $middle + "\""))] |
+    length == 1 and (.[0] | contains("status=\"done\"") and contains("MID DONE EARLY"))')"
+  check "the group's delivery was not taken for a prompt" \
+    "$(jq -nr --argjson prompt "$(kv get "report/$middle/prompt")" --argjson settled "$(kv get "report/$middle/settled")" '$prompt.at <= $settled.at')"
 }
 
 run_finding() {

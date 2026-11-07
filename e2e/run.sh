@@ -1676,8 +1676,8 @@ run_idle_stop() {
   check "the middle session woke on the notice" "$(has_text "$middle" "PARENT WOKE" 45)"
   notices=$(notices_with "$middle" ended | jq -c 'map(select(contains("ended=\"stopped\"")))')
   echo "  $notices"
-  check "it was told once, from the leaf, not to send it the answer it waited on" \
-    "$(jq -r --arg leaf "$leaf" 'length == 1 and (.[0] | contains("<courier from=\"" + $leaf + "\" ended=\"stopped\">") and contains("waiting on your answer") and contains("Do not send it that answer") and (contains("still owed you a report") | not))' <<<"$notices")"
+  check "it was told once, from the leaf, not to send it the answer it waited on, and that it still holds back its join group (#523)" \
+    "$(jq -r --arg leaf "$leaf" 'length == 1 and (.[0] | contains("<courier from=\"" + $leaf + "\" ended=\"stopped\">") and contains("waiting on your answer") and contains("Do not send it that answer") and contains("It still holds back its join group") and (contains("still owed you a report") | not))' <<<"$notices")"
   turn_ended "$middle"
   turn_ended "$root"
 }

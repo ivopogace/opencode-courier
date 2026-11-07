@@ -148,21 +148,23 @@ Any spawned session can call `courier_spawn` too, so sessions form a tree. The s
 spawned is its top, at depth 0. `courier_spawn` refuses a spawn, naming the limit and what to do
 instead, when the child would be deeper than `maxDepth`, or when `maxChildren` or `maxTotal`
 sessions are already live; the last two say to do the part itself or start it once one of the
-caller's own children has reported and its turn has ended, not in a loop, and that one that ended
-without a report counts until the caller drops it with `courier_cleanup`. When none of the caller's own sessions is live, the `maxTotal` refusal says
+caller's own children has reported, not in a loop, and that a session that reported still counts
+while sessions it started are live, and one that ended without a report until its parent drops it
+with `courier_cleanup`. When none of the caller's own sessions is live, the `maxTotal` refusal says
 only to do the part itself, since no report will wake it; the `maxChildren` refusal cannot meet
 that case, as it counts only the caller's own.
 
 A session is live while:
 
-- its turn runs;
+- its turn runs, unless it has sent its parent a report that is not `blocked` since its last
+  prompt, so a parent woken by a report can start the next session in that same turn;
 - it [owes its parent a report](#a-child-that-ends-without-a-report);
 - a message sent to wake it waits in its inbox, unless it is [stalled](#a-missed-wake);
 - a session below it is live.
 
 So a child that ends its turn without reporting counts until it reports or its parent drops it
 with `courier_cleanup`, and a session waiting for
-its own children counts too. So does a session whose turn failed while sessions under it are still
+its own children counts too, even one that has reported, since their reports wake it again. So does a session whose turn failed while sessions under it are still
 live: their reports wake it, and its [failure notice](#a-child-that-fails) says so. Renaming, archiving or switching the model of a session does not make
 it live. A child counts from the moment `courier_send` to it returns, so a spawn in the same step
 counts it. Several spawns made at once cannot get past a limit together.

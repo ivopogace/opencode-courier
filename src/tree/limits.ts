@@ -16,7 +16,7 @@ async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: s
     reportOf(childStore(ports.storage), sessionID).catch(() => undefined),
   ])
   if (time === null) return false
-  const running = time !== undefined && !report?.ended && (await runs(ports.session, sessionID, time))
+  const running = time !== undefined && !report?.ended && !report?.reported && (await runs(ports.session, sessionID, time))
   // a waiting inbox item is in no transcript until delivered (api-notes)
   return running || (report?.owes ?? false) || (await waitsInInbox(ports, sessionID, { stalled: false }).catch(() => true))
 }

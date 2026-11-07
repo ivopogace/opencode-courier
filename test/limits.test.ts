@@ -518,7 +518,7 @@ describe("admit", () => {
     await expect(refused).rejects.toThrow(totalRefusal(3, 3, 0))
     await expect(refused).rejects.toThrow("no report will wake you")
     await expect(admit(ports, "ses_a")).rejects.toThrow(totalRefusal(3, 3, 1))
-    await expect(admit(ports, "ses_a")).rejects.toThrow("once one of the sessions you started has reported and its turn has ended, not in a loop;")
+    await expect(admit(ports, "ses_a")).rejects.toThrow("once one of the sessions you started has reported, not in a loop.")
   })
 
   test("maxTotal does not count another tree's sessions, or finished ones", async () => {
@@ -606,11 +606,58 @@ describe("admit, with children that owe a report", () => {
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(2, 2))
   })
 
-  test("counts a child that reported early while its turn still runs", async () => {
-    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 })
+  test("not one that reported while its turn still runs, so its parent can start the next in the turn the report starts (#511)", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, {}, ["ses_a"])
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+    await childStore(storage).settled("ses_a", "report", 150)
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  test("its courier_send notes the report before the parent can see it, so a spawn the report wakes is admitted (#511)", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, {}, ["ses_a"])
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    const admitted: number[] = []
+    const synthetic = async () => {
+      admitted.push((await admit(ports, "ses_root")).depth)
+      return { id: "msg_report" }
+    }
+    const sending = { ...ports, now: () => 200, nudge: () => undefined, log: () => undefined, session: { ...ports.session, synthetic } }
+
+    await send(sending as unknown as CourierPorts, "ses_a", { sessionID: "ses_root", message: "done", status: "done" })
+
+    expect(admitted).toEqual([1])
+  })
+
+  test("but one whose report is blocked while its turn still runs (#511)", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, {}, ["ses_a"])
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150, "blocked")
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+  })
+
+  test("and one that reported while a session it started is live, until that one is not (#511)", async () => {
+    const times: Record<string, object> = {}
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 3 }, times, ["ses_a"])
+    await child("ses_root", "ses_a")
+    await child("ses_a", "ses_g")
+    for (const id of ["ses_a", "ses_g"]) await childStore(storage).prompted(id, 100)
+    await childStore(storage).settled("ses_a", "report", 150)
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+    times.ses_g = FINISHED
+    await childStore(storage).settled("ses_g", "report", 160)
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+
+  test("counts one that reported again once a message waits in its inbox (#511)", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, {}, ["ses_a"])
     await child("ses_root", "ses_a")
     await childStore(storage).prompted("ses_a", 100)
     await childStore(storage).settled("ses_a", "report", 150)
+    await childStore(storage).prompted("ses_a", 200)
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
   })
 
@@ -692,11 +739,11 @@ describe("admit, with children that owe a report", () => {
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
   })
 
-  test("but one archived after reporting early, while its turn runs on between two steps, still counts", async () => {
+  test("but one archived after a blocked report, while its turn runs on between two steps, still counts", async () => {
     const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, { ses_a: { ...FINISHED, updated: 9, archived: 9 } }, ["ses_a"])
     await child("ses_root", "ses_a")
     await childStore(storage).prompted("ses_a", 100)
-    await childStore(storage).settled("ses_a", "report", 150)
+    await childStore(storage).settled("ses_a", "report", 150, "blocked")
 
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
   })
@@ -1111,18 +1158,22 @@ describe("the context hook", () => {
     expect(brief).not.toContain(forms[2])
   })
 
-  test("the maxChildren and maxTotal refusals say not to retry in a loop", () => {
+  test("the maxChildren and maxTotal refusals say not to retry in a loop, and what still counts (#511)", () => {
+    const counts = "A session that reported still counts while sessions it started are live, and one that ended without a report counts until"
+    expect(childrenRefusal(2, 2)).toContain("2 sessions you started are running or still owe a report")
     expect(childrenRefusal(2, 2)).toEndWith(
-      "start it once one of them has reported and its turn has ended, not in a loop; a session that ended without a report counts until you drop it with courier_cleanup.",
+      `start it once one of them has reported, not in a loop. ${counts} you drop it with courier_cleanup.`,
     )
     expect(totalRefusal(4, 4, 1)).toEndWith(
-      "try again once one of the sessions you started has reported and its turn has ended, not in a loop; one that ended without a report counts until you drop it with courier_cleanup.",
+      `try again once one of the sessions you started has reported, not in a loop. ${counts} its parent drops it with courier_cleanup.`,
     )
+    expect(childrenRefusal(1, 1)).not.toContain("turn has ended")
+    expect(totalRefusal(4, 4, 1)).not.toContain("turn has ended")
   })
 
   test("the maxTotal refusal to a session with none of its own running says to do the part itself", () => {
     const refusal = totalRefusal(4, 4, 0)
-    expect(refusal).toEndWith("Do this part yourself: none of the sessions you started is running, so no report will wake you.")
+    expect(refusal).toEndWith("Do this part yourself: none of the sessions you started counts, so no report will wake you.")
     expect(refusal).not.toContain("end your turn")
   })
 

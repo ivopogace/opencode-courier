@@ -163,7 +163,9 @@ and would go idle. Its name and shape may still change: a pin bump re-checks bot
   were working", `execution/restart.ts`), and the resumed execution stamps `time.busy` again. The
   plugin tells it from a real shutdown by the transcript ending on the aborted message (`endsIdle`,
   `wakeEnded`). A message steered in during the turn is then delivered at once in a turn of its own.
-  The group seal reads `time.idle`, so a decline does not seal.
+  The group seal reads `time.idle`, which a decline does not stamp, so it also takes a transcript
+  ending on the aborted step, completed at or after the last join (`sealed`, `src/tree/group.ts`),
+  and the turn-end hook nudges the release on such a shutdown.
 - `permission.assert({ sessionID, action, resources, save?, metadata?, source?, agent? })`
   (`packages/core/src/permission.ts`) checks the session's rules and, on ask, creates a request in
   that session and waits. It resolves with nothing: the request's id and whether the person chose

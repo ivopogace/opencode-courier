@@ -282,6 +282,13 @@ function decide(body) {
         { tool: "courier_spawn", args: { task: "CHILD-SILENT", group: "pair" } },
       ],
     }
+  if (recent.includes("COURIER-GROUP-DECLINE"))
+    return {
+      calls: [
+        { tool: "courier_spawn", args: { task: "Report back to your parent.", group: "pair" } },
+        { tool: "shell", args: { command: "echo courier-asks top" } },
+      ],
+    }
   if (recent.includes("COURIER-MIXED"))
     return {
       calls: [

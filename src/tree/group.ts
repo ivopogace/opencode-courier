@@ -1,6 +1,6 @@
 import { isNotFound, millis } from "../platform/json.js"
 import { envelope } from "../kernel/protocol.js"
-import { complete, standingOf, type HeldReport, type LeftMember, type Member, type RosterEntry } from "./domain.js"
+import { complete, endedAt, standingOf, turnEnd, type HeldReport, type LeftMember, type Member, type RosterEntry } from "./domain.js"
 import type { GroupPorts, GroupStore, Membership, WatchPorts } from "./ports.js"
 import { syncStanding } from "./standing.js"
 import { groupStore } from "./store.js"
@@ -119,8 +119,10 @@ async function sealed(ports: GroupPorts, parentID: string, members: ReadonlyArra
   const joined = Math.max(...members.map((member) => member.joinedAt))
   try {
     const { time } = await ports.session.get({ sessionID: parentID })
-    // only a turn's end stamps time.idle, not a shutdown (api-notes)
-    return millis(time.idle) >= joined
+    if (millis(time.idle) >= joined) return true
+    // a plain decline ends the turn on an aborted step, no idle (api-notes)
+    const end = turnEnd(await ports.session.context({ sessionID: parentID }).catch(() => []))
+    return end !== undefined && (endedAt(end, time) ?? Number.NEGATIVE_INFINITY) >= joined
   } catch (error) {
     if (isNotFound(error)) return "gone"
     throw error

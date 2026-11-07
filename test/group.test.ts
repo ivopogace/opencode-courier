@@ -21,7 +21,7 @@ import { groupNotice } from "../src/tree/text.js"
 
 function fakePorts(options: { pageSize?: number; store?: Map<string, unknown> } = {}) {
   const store = options.store ?? new Map<string, unknown>()
-  const parent = { idle: 1_000 as number | undefined }
+  const parent = { idle: 1_000 as number | undefined, messages: [] as any[] }
   const delivered: any[] = []
   const logs: string[] = []
   const ports: GroupPorts = {
@@ -45,6 +45,7 @@ function fakePorts(options: { pageSize?: number; store?: Map<string, unknown> } 
         return { id: `msg_${delivered.length}` }
       }) as any,
       get: (async () => ({ time: { idle: parent.idle } })) as any,
+      context: (async () => parent.messages) as any,
     },
     now: () => 1_000,
     log: (message) => logs.push(message),
@@ -287,6 +288,48 @@ describe("deliverReleased", () => {
     await deliverReleased(ports, new Set())
     expect(delivered).toHaveLength(1)
     expect(store.size).toBe(0)
+  })
+
+  test("releases a complete group once the parent's turn ended on a plain decline, which stamps no idle", async () => {
+    const { ports, delivered, store, parent } = fakePorts()
+    await pair(ports)
+    await holdReport(groupStore(ports.storage), membership("ses_a"), report("done"))
+    await holdReport(groupStore(ports.storage), membership("ses_b"), report("done"))
+    parent.idle = 0
+    const declined = (completed: number | undefined) => ({
+      type: "assistant",
+      error: { type: "aborted" },
+      time: { created: DateTime.makeUnsafe(1), ...(completed === undefined ? {} : { completed: DateTime.makeUnsafe(completed) }) },
+    })
+
+    parent.messages = [{ type: "user" }, { type: "assistant", time: { created: DateTime.makeUnsafe(1) } }]
+    await deliverReleased(ports, new Set())
+    parent.messages = [{ type: "user" }, declined(undefined), { type: "user" }, { type: "assistant", time: { created: DateTime.makeUnsafe(3) } }]
+    await deliverReleased(ports, new Set())
+    parent.messages = [{ type: "user" }, declined(0)]
+    await deliverReleased(ports, new Set())
+    expect(delivered).toEqual([])
+    expect(store.size).toBe(2)
+
+    parent.messages = [{ type: "user" }, declined(5), { type: "model-switched" }]
+    await deliverReleased(ports, new Set())
+    expect(delivered).toHaveLength(1)
+    expect(delivered[0].metadata).toMatchObject({ group: "pair", reports: 2 })
+    expect(store.size).toBe(0)
+  })
+
+  test("holds a complete group for the next tick when the parent's transcript cannot be read", async () => {
+    const { ports, delivered, store, parent } = fakePorts()
+    await pair(ports)
+    await holdReport(groupStore(ports.storage), membership("ses_a"), report("done"))
+    await holdReport(groupStore(ports.storage), membership("ses_b"), report("done"))
+    parent.idle = 0
+    ;(ports.session as any).context = async () => Promise.reject(new Error("busy"))
+
+    await deliverReleased(ports, new Set())
+
+    expect(delivered).toEqual([])
+    expect(store.size).toBe(2)
   })
 
   test("keeps a group whose parent cannot be looked up for the next tick, and drops it once the parent is gone", async () => {

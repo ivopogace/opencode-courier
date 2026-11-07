@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 subagent-role:3 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 subagent-role:3 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -2355,6 +2355,42 @@ run_native() {
   check "and with it the child" "$([ "$(status_of "$native_child")" = 404 ] && echo true || echo false)"
   check "whose report state is gone, as for any deleted child" \
     "$(for _ in $(seq 1 20); do [ -z "$(kv get "report/$native_child/prompt")$(kv get "report/$native_child/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
+}
+
+# A plain decline ends the parent's turn as a shutdown, with no idle time: the group seal reads its transcript too (#465).
+run_decline_seal() {
+  scenario "a group whose last member reports after a plain decline ended the parent's turn is released to the parent (#465)"
+  # The member's report lands well after the person declines.
+  child_delay 15000
+  parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
+  api_prompt "$parent" "COURIER-GROUP-DECLINE"
+  member=$(for _ in $(seq 1 30); do
+    id=$(texts "$parent" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
+    [ -n "$id" ] && { echo "$id"; break; }
+    sleep 1
+  done)
+  own=$(for _ in $(seq 1 30); do
+    id=$(api "session/$parent/permission" | jq -r '[.data[] | select(.action == "shell" and .resources == ["echo courier-asks top"]) | .id] | first // empty')
+    [ -n "$id" ] && { echo "$id"; break; }
+    sleep 1
+  done)
+  check "in one step, the parent started a member in group pair and asks the person to run a command" \
+    "$([ -n "$member" ] && [ -n "$own" ] && [ "$(kv get "group/$parent/pair/$member" | jq -r 'has("report") | not')" = true ] && echo true || echo false)"
+  check "the person declines the parent's own request, without a reason" \
+    "$([ "$(person "session/$parent/permission/$own/reply" '{"decision":"reject"}')" = 204 ] && echo true || echo false)"
+  for _ in $(seq 1 30); do [ "$(api "session/$parent/context" | jq -r '.data | last | .error.type == "aborted"')" = true ] && break; sleep 1; done
+  check "its transcript ends on the interrupted step, and it has no idle time" \
+    "$([ "$(api "session/$parent/context" | jq -r '.data | last | .type == "assistant" and .error.type == "aborted"')" = true ] &&
+      [ "$(session_info "$parent" | jq -r '.time.idle == null')" = true ] && echo true || echo false)"
+  check "the member's report is not in yet" "$([ "$(kv get "report/$member/settled" | jq -r '.by // empty')" != report ] && echo true || echo false)"
+  # Released by the turn end in the transcript, at the report's nudge or the next tick (15 s).
+  check "once the member reports, the group reaches the parent in one message, which starts a turn" \
+    "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r --arg member "$member" 'length == 1 and (.[0] |
+      startswith("<courier from=\"" + $member + "\" group=\"pair\" reports=\"1\">") and contains("CHILD DONE"))')"
+  check "and the group is gone from storage" "$([ -z "$(kv get "group/$parent/pair/$member")" ] && echo true || echo false)"
+  turn_ended "$parent"
+  # OpenCode keeps a declined turn's execution claim and resumes it at the next boot: delete it before a later group restarts.
+  check "the parent is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$parent") == 20* ]] && echo true || echo false)"
 }
 
 run_plugin_add() {

@@ -951,6 +951,35 @@ describe("watchChildren", () => {
     expect(nudges).toEqual([1])
   })
 
+  test("a parent's turn that a plain decline ended, reported as a shutdown, has a complete group of its delivered at once; a real shutdown's does not", async () => {
+    const watching = new AbortController()
+    const { ports, nudges } = fakePorts([
+      [
+        sessionEvent("session.execution.interrupted", "evt_i1", 150, "ses_parent", "shutdown"),
+        sessionEvent("session.execution.interrupted", "evt_i2", 160, "ses_other", "shutdown"),
+      ],
+    ])
+    for (const parentID of ["ses_parent", "ses_other"])
+      await ports.storage.set(memberKey(parentID, "pair", `ses_of_${parentID}`), { title: "A", joinedAt: 1, report: { at: 2, status: "done", message: "m" } })
+    const read: string[] = []
+    ;(ports.session as any).context = async ({ sessionID }: { sessionID: string }) => {
+      read.push(sessionID)
+      return sessionID === "ses_other"
+        ? [{ type: "user" }, { type: "assistant", content: [], error: { type: "aborted" } }]
+        : [{ type: "user" }, { type: "assistant", content: [] }]
+    }
+    const seen: string[][] = []
+    ;(ports as any).nudge = () => {
+      seen.push([...read])
+      nudges.push(1)
+      watching.abort()
+    }
+
+    await watchChildren(ports, fresh(), watching.signal, 1)
+
+    expect(seen).toEqual([["ses_parent", "ses_other"]])
+  })
+
   test("a sub-orchestrator's turn that ends with a complete group is not told of as silent, though the nudge delivers the group at once", async () => {
     const watching = new AbortController()
     const { ports, sent, store } = fakePorts([[delivered("evt_d", 100), succeeded("evt_s", 200)]])

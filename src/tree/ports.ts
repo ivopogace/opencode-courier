@@ -239,7 +239,7 @@ export interface StopPorts {
 
 export interface GroupPorts {
   readonly storage: Storage
-  readonly session: Pick<Context["session"], "synthetic" | "get"> & Instructions
+  readonly session: Pick<Context["session"], "synthetic" | "get" | "context"> & Instructions
   readonly now: () => number
   readonly log: (message: string) => void
 }

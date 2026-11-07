@@ -41,8 +41,12 @@ and openssl. New behaviour gets a scenario there.
   what a run would do.
 - The mock model holds a child's reply back 5 s (`CHILD_DELAY_MS`), so the parent is idle when it
   lands. A scenario that does not need that sets `child_delay 1000` after its heading.
-- A check that something did not happen waits for the event it would follow (`turn_ended`, a
-  message delivered at the same tick). Sleep a second or two only where there is none.
+- A check that something did not happen never waits out a timeout. It first waits for an event
+  ordered after the point where the unwanted thing would have happened, then checks once:
+  `end_handled` after `turn_ended` for what the courier does at a turn's end (its memory module
+  records the tree after the tree module has handled the end), a message delivered at the same tick,
+  a storage key the path removes last. A wait that fails after N seconds when the event never comes
+  is fine.
 
 `e2e/kv.ts` reads, removes or sets the plugin's storage keys (`bun e2e/kv.ts get|remove <key>`, or
 `set <key> <json> <a key the plugin stored | @<plugin id>>`), so a scenario can stand in for an older

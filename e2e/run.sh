@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 subtree:2 subagent:8 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 plugin-add:14"
+SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 subagent:8 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1417,6 +1417,21 @@ run_cleanup() {
   cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child force" | tool_state courier_cleanup)
   check "with force, courier_cleanup removed it" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
   check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
+}
+
+run_dirty_root() {
+  scenario "a root with uncommitted changes is warned that its isolated child does not see them (#461)"
+  child_delay 1000
+  echo "not committed" >"$WORK/project/dirty-root.txt"
+  out=$(prompt "COURIER-TEST isolate")
+  rm -f "$WORK/project/dirty-root.txt"
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  spawned=$(tool_state courier_spawn <<<"$out")
+  directory=$(jq -r '.metadata.metadata.directory' <<<"$spawned")
+  check "courier_spawn warned about the uncommitted changes" \
+    "$(jq -r '.status == "completed" and .metadata.metadata.uncommitted == true and (.metadata.metadata | has("fromParent") | not) and (.output | contains("Your working tree has uncommitted changes, which it does not see"))' <<<"$spawned")"
+  check "the child's worktree does not have the file" "$([ -d "$directory" ] && [ ! -e "$directory/dirty-root.txt" ] && echo true || echo false)"
+  check "the isolated child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
 }
 
 run_subtree() {

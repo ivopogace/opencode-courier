@@ -1,0 +1,48 @@
+rendered_line	src_skill_ts_line	text
+5	10	# How opencode-courier's session tools work
+6	-	
+7	12	Your brief, or the opencode-courier role line in your system
+8	-	
+9	16	This skill says how the tools behave. How to plan the parts,
+10	-	
+11	19	## 1. Decide: split or do
+12	-	
+13	21	- At the root, first call courier_recall once, before you de
+14	24	- Split when the task has 2 or more independent, substantial
+15	27	- Only the root, the session nobody started, may start exact
+16	33	- Say which in one line of your reply, before you start: spl
+17	-	
+18	35	## 2. Start the parts
+19	-	
+20	37	- One courier_spawn per part that runs at once, all with the
+21	41	- Write each task so the session can do it without you, sinc
+22	47	- Leave model and variant unset, so a part runs on your own 
+23	51	- A part that depends on another starts once that one is don
+24	-	
+25	55	## 3. End your turn
+26	-	
+27	57	Reply without calling more tools, and do not poll with couri
+28	-	
+29	61	- Answering from below: follow the notice. A permission requ
+30	66	- Passing a message on: when it changes what other parts nee
+31	-	
+32	73	## 4. Read each report, and verify first-hand
+33	-	
+34	75	- done: verify it. partial: what is left and why; have the s
+35	79	- Verify first-hand: open the files, run the checks. Never h
+36	-	
+37	83	## 5. Integrate
+38	-	
+39	85	Merge each reported branch into your own checkout (git merge
+40	-	
+41	90	## 6. Report upward
+42	-	
+43	92	- If a session started you: one courier_send to it, with one
+44	94	- At the top, before you reply to the person: if the next tr
+45	-	
+46	101	## When a part goes wrong
+47	-	
+48	103	- A failed turn (failed="...") or a silent end (ended="witho
+49	106	- A refusal from courier_spawn naming maxDepth, maxChildren 
+50	108	- Lost track, after a compaction or a restart: one courier_t
+51	110	- A subtree that went wrong or is no longer needed: courier_

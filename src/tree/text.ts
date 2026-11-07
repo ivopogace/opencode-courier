@@ -174,19 +174,22 @@ export const depthRefusal = (depth: number, maxDepth: number) =>
   `Not started: this session is at depth ${depth} of its session tree, and the tree goes at most ${maxDepth} deep ` +
   "(maxDepth), so it cannot start sessions. Do the task yourself, and report with courier_send."
 
-const live = (n: number) => (n === 1 ? "is running or has not reported yet" : "are running or have not reported yet")
+const live = (n: number) => (n === 1 ? "is running or still owes a report" : "are running or still owe a report")
+
+const stillCounts = (whoDrops: string) =>
+  `A session that reported still counts while sessions it started are live, and one that ended without a report counts until ${whoDrops} it with courier_cleanup.`
 
 export const childrenRefusal = (running: number, maxChildren: number) =>
   `Not started: ${count(running, "session")} you started ${live(running)}, the most allowed at once ` +
-  `(maxChildren ${maxChildren}). Do this part yourself, or end your turn and start it once one of them has reported and its turn has ended, ` +
-  "not in a loop; a session that ended without a report counts until you drop it with courier_cleanup."
+  `(maxChildren ${maxChildren}). Do this part yourself, or end your turn and start it once one of them has reported, not in a loop. ` +
+  stillCounts("you drop")
 
 export const totalRefusal = (running: number, maxTotal: number, yours: number) =>
   `Not started: ${count(running, "session")} in this session tree ${live(running)}, the most allowed at once (maxTotal ${maxTotal}). ` +
   (yours === 0
-    ? "Do this part yourself: none of the sessions you started is running, so no report will wake you."
-    : "Do this part yourself, or end your turn and try again once one of the sessions you started has reported and its turn has ended, " +
-      "not in a loop; one that ended without a report counts until you drop it with courier_cleanup.")
+    ? "Do this part yourself: none of the sessions you started counts, so no report will wake you."
+    : "Do this part yourself, or end your turn and try again once one of the sessions you started has reported, not in a loop. " +
+      stillCounts("its parent drops"))
 
 const LISTED_MAX = 12
 

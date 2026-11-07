@@ -279,7 +279,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 own-checkin:55 idle-stop:40 person-up:17 plugin-add:18"
+SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 own-checkin:55 idle-stop:40 rolling-slot:30 person-up:17 plugin-add:18"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1735,17 +1735,46 @@ run_total_refusal() {
   refused=$(prompt_in "$second" "COURIER-TEST" | tool_state courier_spawn)
   echo "  $(jq -c '.error' <<<"$refused")"
   check "the second child, none of its own running, is refused at maxTotal 2 and told no report will wake it" \
-    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself: none of the sessions you started is running, so no report will wake you.")) and (.error | tostring | contains("end your turn") | not)' <<<"$refused")"
+    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself: none of the sessions you started counts, so no report will wake you.")) and (.error | tostring | contains("end your turn") | not)' <<<"$refused")"
   turn_ended "$second"
   turn_ended "$root"
   refused=$(prompt_in "$root" "COURIER-TEST" | tool_state courier_spawn)
   check "the root, its two children still owing reports, is refused at maxTotal 2 and told to try again once one of them has reported" \
-    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself, or end your turn and try again once one of the sessions you started has reported and its turn has ended, not in a loop; one that ended without a report counts until you drop it with courier_cleanup."))' <<<"$refused")"
+    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself, or end your turn and try again once one of the sessions you started has reported, not in a loop. A session that reported still counts while sessions it started are live, and one that ended without a report counts until its parent drops it with courier_cleanup."))' <<<"$refused")"
   turn_ended "$root"
   stop_server
   jq 'del(.plugins[0].options.maxTotal)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
   git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "maxTotal default"
+  start_server
+}
+
+run_rolling_slot() {
+  scenario "a parent at maxChildren spawns the next in the turn a report starts, while the reporter's turn runs on (#511)"
+  stop_server
+  jq '.plugins[0].options.maxChildren = 1' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "maxChildren 1"
+  start_server
+  out=$(prompt "COURIER-ROLLING")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  first=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  started=$(reply_time "$root" "ROOT STARTED NEXT" 60)
+  next=$(api "session/$root/message" | jq -c '[.data[] | select(.type == "assistant") | .content[]? |
+    select(.type == "tool" and .name == "courier_spawn" and .state.input.task == "CHILD-ROLLING-NEXT") | .state] | first')
+  echo "  $(jq -c '.error // .status' <<<"$next")"
+  check "the root, woken by the report, started the next child at maxChildren 1" "$(jq -r '.status == "completed"' <<<"$next")"
+  finished_at=$(reply_time "$first" "ROLLING FIRST FINISHED" 60)
+  check "it did so while the reporter's turn still ran" \
+    "$([ -n "$started" ] && [ -n "$finished_at" ] && [ "$started" -lt "$finished_at" ] && echo true || echo false)"
+  second=$(jq -r '.metadata.metadata.sessionID // .metadata.sessionID // empty' <<<"$next")
+  [ -n "$second" ] && turn_ended "$second"
+  turn_ended "$first"
+  turn_ended "$root"
+  stop_server
+  jq 'del(.plugins[0].options.maxChildren)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "maxChildren default"
   start_server
 }
 

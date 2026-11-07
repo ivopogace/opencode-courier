@@ -239,6 +239,7 @@ describe("tool results", () => {
   })
   test("stoppedNotice", () => expect(tree.stoppedNotice("Review a.ts", "ses_root")).toMatchSnapshot())
   test("idleStoppedNotice", () => expect(tree.idleStoppedNotice("Review a.ts", "ses_root")).toMatchSnapshot())
+  test("blockedStoppedNotice", () => expect(tree.blockedStoppedNotice("Review a.ts", "ses_root")).toMatchSnapshot())
   test("cleanupText", () => {
     expect(tree.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "removed" })).toMatchSnapshot()
     expect(tree.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "gone" })).toMatchSnapshot()

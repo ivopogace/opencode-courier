@@ -375,6 +375,13 @@ export const idleStoppedNotice = (title: string, by: string) =>
       "Drop it with courier_cleanup if you no longer need it, or message it with courier_send to have it carry on.",
   ].join("\n")
 
+export const blockedStoppedNotice = (title: string, by: string) =>
+  [
+    `This session, "${title}", which you started with courier_spawn, was stopped by ${by}, a session above you, together with the sessions under it.`,
+    "It was not running: it had sent you status blocked and was waiting on your answer. Do not send it that answer, since the work it asked about was stopped above you. " +
+      "Drop it with courier_cleanup if you no longer need it, or message it with courier_send if you still need it to carry on.",
+  ].join("\n")
+
 export function keepReason(state: { readonly changes: readonly string[]; readonly commits: readonly string[] }) {
   const reasons = [
     state.changes.length ? `${count(state.changes.length, "uncommitted change")} (${preview(state.changes)})` : "",

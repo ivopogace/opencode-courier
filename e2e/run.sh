@@ -279,7 +279,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 own-checkin:40 idle-stop:20 plugin-add:18"
+SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 own-checkin:55 idle-stop:40 plugin-add:18"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -738,6 +738,16 @@ run_own_checkin() {
   check "the end of the check-in's turn told the root nothing" "$([ -z "$(kv get "report/$middle/told")" ] && echo true || echo false)"
   check "the root's next message from it is the report that message asked for, with no notice of a silent end before it" \
     "$([ "$(has_text "$root" "CHILD DONE AFTER NUDGE" 30)" = true ] && notices_with "$root" ended | jq -r 'length == 0')"
+  turn_ended "$middle"
+  turn_ended "$root"
+  # A message it schedules for itself after that report, as courier_later delivers one (#514).
+  api_post "session/$middle/synthetic" "$(jq -nc --arg text "<courier from=\"$middle\" scheduled=\"2026-01-01T00:00:00.000Z\">MID-CHECK-IN</courier>" \
+    --arg from "$middle" --argjson at "$(now_ms)" \
+    '{text: $text, description: ("Scheduled message from " + $from), metadata: {source: "courier", from: $from, scheduled: "later_e2e_own", scheduledAt: $at}, delivery: "queue"}')" >/dev/null
+  check "a message it scheduled for itself after its report got it a report reminder" "$(has_text "$middle" "<courier from=\"courier\" reminder=\"report\">" 45)"
+  check "and the root was told it ended without a report" "$(has_text "$root" "<courier from=\"$middle\" ended=\"without-report\">" 45)"
+  turn_ended "$middle"
+  turn_ended "$root"
 }
 
 run_finding() {
@@ -1618,6 +1628,29 @@ run_idle_stop() {
   check "it was told once, from the leaf, that it still counts, and offered courier_cleanup or a message" \
     "$(jq -r --arg leaf "$leaf" 'length == 1 and (.[0] | contains("<courier from=\"" + $leaf + "\" ended=\"stopped\">") and contains("still owed you a report") and contains("courier_cleanup") and (contains("will not report back") | not))' <<<"$notices")"
   check "the leaf still owes its report" "$([ -z "$(kv get "report/$leaf/settled")" ] && [ -n "$(kv get "report/$leaf/stopped")" ] && echo true || echo false)"
+  turn_ended "$middle"
+  turn_ended "$root"
+
+  scenario "courier_stop of an idle session that sent blocked tells the session that started it not to answer it (#512)"
+  out=$(prompt "COURIER-BLOCKED-STOP")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the middle session's leaf sent it status blocked" "$(has_text "$middle" "PARENT BLOCKED" 60)"
+  leaf=$(api "session/$middle/message" | jq -r '[.data[] | .. | strings | capture("Started session (?<id>ses_\\w+)").id] | first // empty')
+  [ -n "$leaf" ] && turn_ended "$leaf"
+  check "the leaf is idle, its last report blocked" \
+    "$([ -n "$leaf" ] && [ "$(kv get "report/$leaf/settled" | jq -r '.by == "report" and .status == "blocked"')" = true ] && echo true || echo false)"
+  turn_ended "$middle"
+  turn_ended "$root"
+  stopped=$(prompt_in "$root" "COURIER-SUBTREE-STOP $leaf" | tool_state courier_stop)
+  echo "  $(jq -c '.metadata.metadata | {stopped, told}' <<<"$stopped")"
+  check "courier_stop found the leaf idle and told the middle session" \
+    "$(jq -r --arg leaf "$leaf" --arg middle "$middle" '.status == "completed" and (.metadata.metadata.stopped | map([.sessionID, .outcome]) == [[$leaf, "idle"]]) and .metadata.metadata.told == $middle' <<<"$stopped")"
+  check "the middle session woke on the notice" "$(has_text "$middle" "PARENT WOKE" 45)"
+  notices=$(notices_with "$middle" ended | jq -c 'map(select(contains("ended=\"stopped\"")))')
+  echo "  $notices"
+  check "it was told once, from the leaf, not to send it the answer it waited on" \
+    "$(jq -r --arg leaf "$leaf" 'length == 1 and (.[0] | contains("<courier from=\"" + $leaf + "\" ended=\"stopped\">") and contains("waiting on your answer") and contains("Do not send it that answer") and (contains("still owed you a report") | not))' <<<"$notices")"
   turn_ended "$middle"
   turn_ended "$root"
 }

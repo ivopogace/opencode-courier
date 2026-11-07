@@ -159,7 +159,7 @@ describe("deliverDue", () => {
         sessionID: "ses_parent",
         text: envelope("ses_parent", "soon", { scheduled: new Date(1_000_000).toISOString() }),
         description: "Scheduled message from ses_parent",
-        metadata: { source: "courier", from: "ses_parent", scheduled: "later_1" },
+        metadata: { source: "courier", from: "ses_parent", scheduled: "later_1", scheduledAt: 1_000_000 },
         delivery: "queue",
       },
     ])

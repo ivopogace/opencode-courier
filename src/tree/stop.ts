@@ -2,11 +2,11 @@ import { isNotFound } from "../platform/json.js"
 import { describeFailure, envelope } from "../kernel/protocol.js"
 import { cleanup } from "./cleanup.js"
 import type { CleanupResult, StopPorts } from "./ports.js"
-import { reportOf } from "./report.js"
+import { lastStatus, reportOf } from "./report.js"
 import { syncStanding } from "./standing.js"
 import { childStore } from "./store.js"
 import { subtree, type Below } from "./subtree.js"
-import { idleStoppedNotice, stoppedNotice } from "./text.js"
+import { blockedStoppedNotice, idleStoppedNotice, stoppedNotice } from "./text.js"
 import { forgetWakes } from "./wake.js"
 
 export interface StopInput {
@@ -161,8 +161,11 @@ async function tellParent(ports: StopPorts, callerID: string, target: Below["ent
   const outcome = results.find((one) => one.sessionID === target.sessionID)?.outcome
   if (outcome === "interrupted") return tell(ports, target, stoppedNotice(target.title, callerID))
   if (outcome !== "idle") return undefined
-  const report = await reportOf(childStore(ports.courier.storage), target.sessionID).catch(() => undefined)
-  return report?.owes ? tell(ports, target, idleStoppedNotice(target.title, callerID)) : undefined
+  const children = childStore(ports.courier.storage)
+  const report = await reportOf(children, target.sessionID).catch(() => undefined)
+  if (report?.owes) return tell(ports, target, idleStoppedNotice(target.title, callerID))
+  const status = report ? await lastStatus(children, target.sessionID).catch(() => undefined) : undefined
+  return status === "blocked" ? tell(ports, target, blockedStoppedNotice(target.title, callerID)) : undefined
 }
 
 async function tell(ports: StopPorts, target: Below["entry"], notice: string) {

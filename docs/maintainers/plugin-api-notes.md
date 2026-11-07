@@ -298,6 +298,11 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
 - **`opencode run`** treats the native family as its own: `once` with `--auto`, reject without, and
   it cancels their questions and forms. The live suite drives native scenarios through
   `POST /api/session/:id/prompt`.
+- **`opencode run` and a running native child:** once the root is idle, the run waits while any
+  session under it is active, but it only checks again when a job's session ends
+  (`packages/cli/src/run/noninteractive.ts`). A native child still running when the root's turn
+  ends keeps the run from exiting, unless something after the child's end starts a turn in the
+  root (a report, a notice).
 - **Deletion:** `Session.remove` interrupts and removes each native child recursively, with a
   `session.deleted` each.
 - **No generated title** and no warming for a session with a `parentID`; the courier sets the

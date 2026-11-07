@@ -177,9 +177,9 @@ const TREE_TYPES = [
 ] as const satisfies readonly EventType[]
 
 async function sealGroups(ports: WatchPorts, event: SessionEvent) {
-  // a shutdown stamps no time.idle (api-notes)
-  if (event.data.reason === "shutdown") return
   try {
+    // a shutdown ends a turn only on a plain decline's aborted step (api-notes)
+    if (event.data.reason === "shutdown" && !endsIdle(await ports.session.context({ sessionID: event.data.sessionID }).catch(() => []))) return
     if (await hasCompleteGroup(groupStore(ports.storage), event.data.sessionID)) ports.nudge()
   } catch (error) {
     ports.log(`courier watch: could not read the groups of ${event.data.sessionID}: ${String(error)}`)

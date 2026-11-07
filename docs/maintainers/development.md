@@ -36,13 +36,17 @@ and openssl. New behaviour gets a scenario there.
 - Scenarios live in groups, each a `run_<name>` function that starts its own sessions and relies on
   no other group's state. A new scenario goes into its group, or a new one.
 - `E2E_SHARD=k/n` deals the groups to shards by the seconds each took in CI (the weights in
-  `SUITE`; update them when a group changes much). `restart-question` and `roster` restart the server
+  `SUITE`, which the run log prints as `group <name>: N s`; update them when a group changes much). `restart-question` and `roster` restart the server
   and share a shard. `epilogue`, the server log check, runs last in every shard. `E2E_PLAN=1` prints
   what a run would do.
 - The mock model holds a child's reply back 5 s (`CHILD_DELAY_MS`), so the parent is idle when it
   lands. A scenario that does not need that sets `child_delay 1000` after its heading.
-- A check that something did not happen waits for the event it would follow (`turn_ended`, a
-  message delivered at the same tick). Sleep a second or two only where there is none.
+- A check that something did not happen never waits out a timeout. It first waits for an event
+  ordered after the point where the unwanted thing would have happened, then checks once:
+  `end_handled` after `turn_ended` for what the courier does at a turn's end (its memory module
+  records the tree after the tree module has handled the end), a message delivered at the same tick,
+  a storage key the path removes last. A wait that fails after N seconds when the event never comes
+  is fine.
 
 `e2e/kv.ts` reads, removes or sets the plugin's storage keys (`bun e2e/kv.ts get|remove <key>`, or
 `set <key> <json> <a key the plugin stored | @<plugin id>>`), so a scenario can stand in for an older

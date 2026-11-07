@@ -62,6 +62,9 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
 - A behaviour change comes with unit tests and an e2e scenario, and updates `docs/reference.md`, where
   each behaviour is stated once. README.md stays at about 150 lines: the pitch, install, a short
   how-it-works, the options, the tools table and the demo.
+- Docs state how things are now: no history, no "used to", "since #N" or "no longer"; that lives in
+  git, PR bodies and release notes. The one exception is the result rows in `real-model.md`, which
+  name their commit and OpenCode version.
 - After changing a model-facing string (`src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or
   a tool description), re-run `e2e/real-model.sh` and update its table in `real-model.md`.
 - Keep the provider's prompt cache: a spawned session's role part goes to its `role` instruction

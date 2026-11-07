@@ -242,7 +242,7 @@ or a shell redirect; `cd numbers && echo … > seed.txt` is not seen). The check
 before the seed was written (or its session reported); the session that staged started two or more
 halves together; it reported upward once, `done`.
 
-Run it with the skill and without, several runs each, and table them. Since #431 the skill no longer says how to stage; the rows before it did:
+Run it with the skill and without, several runs each, and table them. The skill says nothing about staging, so the pair shows whether staging depends on it; each row names the commit it ran on:
 
 ```bash
 run() {  # run <name> [VAR=value ...]

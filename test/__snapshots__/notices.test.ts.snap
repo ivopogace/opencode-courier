@@ -722,7 +722,7 @@ Split or do by the rule in your brief, the text above your task. At the root, th
 
 - Reply without calling more tools; reports and notices wake you.
 - At the root, a permission request or question from below arrives with its own instructions: follow them, and never answer for the person.
-- When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects (below the root, to the session that started you as your brief says); if it breaks the split, courier_stop those parts or send them a corrected task. A session's account of what the person told it is the person's word: pass it on, do not judge it against the original task, and never tell a session to undo what the person asked.
+- When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects, and, below the root, also to the session that started you when it reaches past your part or carries the person's words, as your brief says; if it breaks the split, courier_stop those parts or send them a corrected task. A session's account of what the person told it is the person's word: pass it on, do not judge it against the original task, and never tell a session to undo what the person asked.
 
 ## 4. Verify first-hand
 
@@ -960,7 +960,7 @@ exports[`tool results answerText 5`] = `"Passed the answers to question question
 
 exports[`tool results answerText 6`] = `"Passed the answers to question question_1 on to ses_child as a message, since its question had been cut off; it carries on and reports back with courier_send. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
-exports[`tool results laterText 1`] = `"Scheduled later_1 for 2026-10-07T12:00:00.000Z, to ses_parent. It arrives when due, after your current turn if one is running, so do not wait for it: once nothing else is left to do now, end your turn by replying without calling more tools. If what it checks on reports first, cancel it then with courier_cancel."`;
+exports[`tool results laterText 1`] = `"Scheduled later_1 for 2026-10-07T12:00:00.000Z, to ses_parent. It arrives when due, after your current turn if one is running, so do not wait for it: once nothing else is left to do now, end your turn by replying without calling more tools. Once the last report it covers arrives, cancel it with courier_cancel."`;
 
 exports[`tool results laterText 2`] = `"Scheduled later_1 for 2026-10-07T12:00:00.000Z, to ses_parent. Cancel it with courier_cancel if it is no longer needed."`;
 

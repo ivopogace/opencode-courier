@@ -80,17 +80,19 @@ export interface InboxEnqueued {
 
 // only inbox.enqueued carries the item's type (api-notes)
 const UNOWED = new Set(["user", "compaction", "move"])
-const GROUP = "group"
+const OWN = "own"
 
-function kindOf(item: InboxEnqueued["data"]["item"]) {
+function kindOf(sessionID: string, item: InboxEnqueued["data"]["item"]) {
   const metadata = item.payload?.metadata
-  return item.type === "synthetic" && metadata?.source === "courier" && typeof metadata.group === "string" ? GROUP : item.type
+  if (item.type !== "synthetic" || metadata?.source !== "courier") return item.type
+  const ownCheckIn = typeof metadata.scheduled === "string" && metadata.from === sessionID
+  return typeof metadata.group === "string" || ownCheckIn ? OWN : item.type
 }
 
 export async function noteEnqueued(ports: WatchPorts, inbox: Map<string, string>, event: InboxEnqueued) {
   const { sessionID, inboxID, item } = event.data
   if ((await childStore(ports.storage).indexedParent(sessionID)) === undefined) return false
-  setBounded(inbox, inboxID, kindOf(item), SEEN_MAX)
+  setBounded(inbox, inboxID, kindOf(sessionID, item), SEEN_MAX)
   return true
 }
 
@@ -105,7 +107,7 @@ export async function notePrompt(
   const children = childStore(ports.storage)
   const parentID = await children.indexedParent(sessionID)
   if (parentID === undefined) return false
-  if (kind === GROUP && (await reportedSincePrompt(children, sessionID))) return false
+  if (kind === OWN && (await reportedSincePrompt(children, sessionID))) return false
   // the idle hook's reminder still publishes inbox.delivered (api-notes)
   if (inboxID !== undefined && (await children.nudgeOf(sessionID)).inboxID === inboxID) return false
   await children.prompted(sessionID, event.created ?? ports.now())

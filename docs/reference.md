@@ -387,10 +387,13 @@ An interrupted turn is not a failure. A failure while the server is down is not 
 
 A spawned session owes its parent a report from the moment a task or message reaches it until it
 reports with a status, or its turn fails or is interrupted. What you type in the child's own session
-does not make it owe one. Nor does its own [join group](#join-groups)'s release when it has reported
-(`done`, `partial` or `failed`) since its last prompt: a child that started a group, saw its members'
-work done and reported in that same turn is neither reminded nor reported silent when the held
-reports arrive after. A message from its parent or through courier after that makes it owe one again.
+does not make it owe one. Nor does its own [join group](#join-groups)'s release, or a
+[check-in](#scheduled-messages) it scheduled for itself, when it has reported (`done`, `partial` or
+`failed`) since its last prompt: a child that started a group, saw its members' work done and
+reported in that same turn is neither reminded nor reported silent when the held reports arrive
+after, nor is one whose check-in fires after its report. A message from its parent or through
+courier after that, a `courier_later` message its parent scheduled for it included, makes it owe
+one again.
 
 Before it goes idle owing a report, the child is reminded once: a message in a `<courier
 from="courier" reminder="report">` envelope, naming the session to report to. It runs in the same

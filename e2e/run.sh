@@ -1241,7 +1241,7 @@ run_skill() {
   check "every request of the session listed it among the available skills" \
     "$(jq -sr --arg session "$session" '[.[] | select(.session == $session and (.tools | length > 0))] | length > 0 and all(.skills | index("courier-orchestrate"))' "$WORK/model.log")"
   check "the model loaded it with the skill tool and got the tools' mechanics" \
-    "$(tool_state skill <<<"$out" | jq -r '.status == "completed" and (.output | tojson | contains("Only the root, the session nobody started, may start exactly one session") and contains("Every other session never starts exactly one session") and contains("the root has a third form, `split: 1 part:") and contains("Never hand the checking to another session") and contains("If courier_spawn is not among your tools, you cannot split") and contains("At the root, first call courier_recall once") and contains("is a playbook'"'"'s: if a skill for that is listed to you, load it too") and (contains("verifier") | not))')"
+    "$(tool_state skill <<<"$out" | jq -r '.status == "completed" and (.output | tojson | contains("Below the root, never start one session for the whole task") and contains("or, at the root only, `split: 1 part:") and contains("Open the files and run the project'"'"'s checks yourself") and contains("If courier_spawn is not among your tools, you cannot split") and contains("never answer for the person") and contains("is a playbook'"'"'s: if a skill for that is listed to you, load it too") and (contains("verifier") | not))')"
   # The person attaches the skill to a prompt, as the TUI's /skills dialog does, and its text goes to the model with the prompt.
   check "attached to the person's prompt, its text reached the model" \
     "$([[ $(person "session/$session/prompt" '{"text":"COURIER-SKILL-ATTACHED","skills":[{"id":"courier-orchestrate"}]}') == 20* ]] && has_text "$session" "SKILL SEEN" 30)"
@@ -1251,7 +1251,7 @@ run_skill() {
   check "the skill tool named skill://courier-orchestrate as the skill's base directory" \
     "$(tool_state skill <<<"$out" | jq -r '.status == "completed" and (.output | contains("Base directory for this skill: skill://courier-orchestrate\n"))')"
   check "a read of skill://courier-orchestrate/SKILL.md, the directory it was told about, served the skill's text" \
-    "$(tool_state read <<<"$out" | jq -r '.status == "completed" and (.input.path == "skill://courier-orchestrate/SKILL.md") and (.output | contains("Only the root, the session nobody started, may start exactly one session"))')"
+    "$(tool_state read <<<"$out" | jq -r '.status == "completed" and (.input.path == "skill://courier-orchestrate/SKILL.md") and (.output | contains("Below the root, never start one session for the whole task"))')"
 }
 
 run_wake() {

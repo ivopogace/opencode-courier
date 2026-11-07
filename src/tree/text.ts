@@ -88,7 +88,7 @@ export function rolePart(depth: number | null, limits: Limits) {
     )
   if (depth < maxDepth)
     return (
-      `${ROLE_PREFIX} sub-orchestrator, at depth ${depth} of at most ${maxDepth}. Before you split, load the ${SKILL_ID} ` +
+      `${ROLE_PREFIX} sub-orchestrator, at depth ${depth} of at most ${maxDepth}. Before you decide whether to split, load the ${SKILL_ID} ` +
       `skill. Split your task with courier_spawn or do it yourself, as your brief says; sessions can be started ${count(maxDepth - depth, "level")} below you. ${budget}`
     )
   return (

@@ -592,7 +592,7 @@ exports[`tools courier_recall 1`] = `
 
 exports[`tools courier_note 1`] = `
 {
-  "description": "Write the one lesson of your session tree for the next orchestrator in this project, once you have verified and integrated the work: what it should know about running a tree like this one that the record's facts do not say. How it was split (which parts collided, what was too small to hand off), how it was verified (what a part got wrong and what caught it), how the parts were briefed, or what the person decided. Name the job it comes from and the reason, so that a lesson for one kind of job can be told from one that holds everywhere. One line, at most 300 characters; a longer one is refused, not clipped, so write it again shorter. Kept on your own tree's record and listed by courier_recall after its facts, dated; a second call replaces the first. From the top session or one that started sessions, never a leaf. No code, no secrets, and not a rule that holds every time: that belongs in AGENTS.md or the skill, for the person to put there, so tell them instead.",
+  "description": "Write the one lesson of your session tree for the next orchestrator in this project, once you have verified and integrated the work: what it should know about running a tree like this one that the record's facts do not say. How it was split (which parts collided, what was too small to hand off), how it was verified (what a part got wrong and what caught it), how the parts were briefed, or what the person decided. Name the job it comes from and the reason, so that a lesson for one kind of job can be told from one that holds everywhere. One line, at most 300 characters; a longer one is refused, not clipped, so write it again shorter. Kept on your own tree's record and listed by courier_recall after its facts, dated; a second call replaces the first. From the top session only: a session below it puts what it learned in its report. No code, no secrets, and not a rule that holds every time: that belongs in AGENTS.md or the skill, for the person to put there, so tell them instead.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -1654,7 +1654,7 @@ exports[`memory noteText 2`] = `"Noted on the record of the tree under ses_top a
 
 exports[`memory NOTE_OFF 1`] = `"Not noted: the plugin's memory option is false, so no record of a session tree is kept in this project to write a lesson on."`;
 
-exports[`memory noteLeafRefusal 1`] = `"Not noted: this session is a leaf, at depth 3 of a session tree that goes at most 3 deep (maxDepth). A lesson is written by the session that verified the tree, the top or one that started sessions; put what you learned in your report instead."`;
+exports[`memory noteBelowRefusal 1`] = `"Not noted: this session is at depth 1 of the session tree under ses_top, and only that top session writes the tree's lesson, once the whole tree is verified. Put what you learned in your report instead: the top reads it and writes the tree's lesson."`;
 
 exports[`memory NOTE_EMPTY 1`] = `"Not noted: text is empty. Write one line, what the next orchestrator in this project should know about running a tree like this one, with the job it comes from and the reason, or nothing."`;
 

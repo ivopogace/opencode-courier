@@ -1494,23 +1494,32 @@ describe("note", () => {
     expect((await lessonOf(store))?.text).toHaveLength(LESSON_MAX)
   })
 
-  test("a sub-orchestrator's note goes on the same record, marked with its depth", async () => {
+  test("is refused from a sub-orchestrator and a leaf, before the text is read, and the top's lesson stays", async () => {
     const { ports, store } = await recorded()
+    await note(ports, "ses_top", { text: "The top's own." })
+    const before = JSON.stringify([...store])
 
-    const result = await note(ports, "ses_mid", { text: "Seen from the middle." })
-    expect(result).toEqual({ kind: "noted", projectID: "proj_1", top: "ses_top", lesson: { text: "Seen from the middle.", at: NOW, depth: 1 } })
-    expect(await lessonOf(store)).toEqual({ text: "Seen from the middle.", at: NOW, depth: 1 })
+    expect(await note(ports, "ses_mid", { text: "Seen from the middle." })).toEqual({ kind: "below", depth: 1, top: "ses_top" })
+    expect(await note(ports, "ses_leaf", { text: "" })).toEqual({ kind: "below", depth: 2, top: "ses_top" })
+    expect(await note(ports, "ses_mid", { text: "x".repeat(LESSON_MAX + 1) })).toEqual({ kind: "below", depth: 1, top: "ses_top" })
+    expect(JSON.stringify([...store])).toBe(before)
+    expect(await lessonOf(store)).toEqual({ text: "The top's own.", at: NOW })
+  })
+
+  test("replaces a lesson an earlier version wrote from below, and an old record's depth is still listed", async () => {
+    const { ports, store } = await recorded()
+    const key = recordKey("proj_1", "ses_top")
+    store.set(key, { ...(store.get(key) as object), lesson: { text: "Seen from the middle.", at: NOW - 1000, depth: 1 } })
     expect(lessonLine((await lessonOf(store))!)).toBe(`lesson (${DAY}, from depth 1): "Seen from the middle."`)
 
     expect(await note(ports, "ses_top", { text: "The top's own." })).toMatchObject({ lesson: { text: "The top's own.", at: NOW }, replaced: { depth: 1 } })
-    expect(await lessonOf(store)).not.toHaveProperty("depth")
+    expect(await lessonOf(store)).toEqual({ text: "The top's own.", at: NOW })
   })
 
-  test("is refused from a leaf, with an empty text, from a tree with no record and with the option off, writing nothing", async () => {
+  test("is refused with an empty text, from a tree with no record and with the option off, writing nothing", async () => {
     const { ports, store } = await recorded()
     const before = JSON.stringify([...store])
 
-    expect(await note(ports, "ses_leaf", { text: "From the leaf" })).toEqual({ kind: "leaf", depth: 2, maxDepth: 2 })
     expect(await note(ports, "ses_top", { text: " \n " })).toEqual({ kind: "empty" })
     expect(await note(ports, "ses_top", { text: null as never })).toEqual({ kind: "empty" })
     expect(await note(ports, "ses_alone", { text: "Nowhere to put it" })).toEqual({ kind: "unrecorded", top: "ses_alone" })
@@ -1582,13 +1591,14 @@ describe("courier_note", () => {
     expect(readRecord(store.get(recordKey("proj_1", "ses_top")))?.lesson).toEqual({ text: "The docs part was ten lines.", at: NOW })
   })
 
-  test("refuses a leaf, an empty text, a tree with no record and the option off as errors the model reads", async () => {
+  test("refuses a session below the top, an empty text, a tree with no record and the option off as errors the model reads", async () => {
     const { ports, state } = await recorded()
     const noteTool = tool(ports, state)
 
-    await expect(noteTool.execute({ text: "From a leaf" }, { sessionID: "ses_a" })).rejects.toThrow(
-      "courier_note failed: Not noted: this session is a leaf, at depth 1 of a session tree that goes at most 1 deep (maxDepth).",
+    await expect(noteTool.execute({ text: "From below" }, { sessionID: "ses_a" })).rejects.toThrow(
+      "courier_note failed: Not noted: this session is at depth 1 of the session tree under ses_top, and only that top session writes the tree's lesson",
     )
+    await expect(noteTool.execute({ text: "From below" }, { sessionID: "ses_a" })).rejects.toThrow("Put what you learned in your report instead")
     await expect(noteTool.execute({ text: "" }, { sessionID: "ses_top" })).rejects.toThrow("courier_note failed: Not noted: text is empty.")
     await expect(noteTool.execute({ text: "x" }, { sessionID: "ses_new" })).rejects.toThrow(
       "courier_note failed: Not noted: the tree under ses_new has no record in this project to write a lesson on.",
@@ -1819,19 +1829,19 @@ describe("the lessons entry (#384)", () => {
     return { ...made, ...host }
   }
 
-  test("courier_note puts the entry again on the writer's top, the top's current children below maxDepth and the writer, where it differs", async () => {
+  test("courier_note puts the entry again on the top and its current children below maxDepth, where it differs", async () => {
     const { ports, calls, entries } = await recordedWithEntries()
     entries.set("ses_mid", new Map([[LESSONS_KEY, "opencode-courier lessons: stale"]]))
 
-    expect(await note(ports, "ses_leaf", { text: "Seen from depth 2." })).toMatchObject({ kind: "noted" })
+    expect(await note(ports, "ses_top", { text: "Seen from the top." })).toMatchObject({ kind: "noted" })
 
     const [current] = await lessonsOf(ports)
-    expect(current!.value).toContain(`lesson (${DAY}, from depth 2): "Seen from depth 2."`)
-    expect(calls).toEqual(["list ses_top", "list ses_mid", "list ses_leaf", `put ses_top ${LESSONS_KEY}`, `put ses_mid ${LESSONS_KEY}`, `put ses_leaf ${LESSONS_KEY}`])
-    for (const sessionID of ["ses_top", "ses_mid", "ses_leaf"]) expect(entries.get(sessionID)?.get(LESSONS_KEY)).toBe(current!.value)
+    expect(current!.value).toContain(`lesson (${DAY}): "Seen from the top."`)
+    expect(calls).toEqual(["list ses_top", "list ses_mid", `put ses_top ${LESSONS_KEY}`, `put ses_mid ${LESSONS_KEY}`])
+    for (const sessionID of ["ses_top", "ses_mid"]) expect(entries.get(sessionID)?.get(LESSONS_KEY)).toBe(current!.value)
     calls.length = 0
-    await note(ports, "ses_leaf", { text: "Seen from depth 2." })
-    expect(calls).toEqual(["list ses_top", "list ses_mid", "list ses_leaf"])
+    await note(ports, "ses_top", { text: "Seen from the top." })
+    expect(calls).toEqual(["list ses_top", "list ses_mid"])
   })
 
   test("with maxDepth 1 the top's children are leaves and get none; a failed put is logged and the note stands", async () => {

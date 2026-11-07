@@ -498,7 +498,7 @@ describe("memory", () => {
     expect(memory.noteText("ses_top", { text: "x".repeat(300), at: lesson.at, depth: 1 }, lesson)).toMatchSnapshot()
   })
   test("NOTE_OFF", () => expect(memory.NOTE_OFF).toMatchSnapshot())
-  test("noteLeafRefusal", () => expect(memory.noteLeafRefusal(3, 3)).toMatchSnapshot())
+  test("noteBelowRefusal", () => expect(memory.noteBelowRefusal(1, "ses_top")).toMatchSnapshot())
   test("NOTE_EMPTY", () => expect(memory.NOTE_EMPTY).toMatchSnapshot())
   test("noteLongRefusal", () => expect(memory.noteLongRefusal(312)).toMatchSnapshot())
   test("noteUnrecordedRefusal", () => expect(memory.noteUnrecordedRefusal("ses_top")).toMatchSnapshot())

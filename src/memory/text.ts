@@ -103,9 +103,9 @@ export function noteText(top: string, lesson: Lesson, replaced: Lesson | undefin
 
 export const NOTE_OFF = "Not noted: the plugin's memory option is false, so no record of a session tree is kept in this project to write a lesson on."
 
-export const noteLeafRefusal = (depth: number, maxDepth: number) =>
-  `Not noted: this session is a leaf, at depth ${depth} of a session tree that goes at most ${maxDepth} deep (maxDepth). A lesson is ` +
-  "written by the session that verified the tree, the top or one that started sessions; put what you learned in your report instead."
+export const noteBelowRefusal = (depth: number, top: string) =>
+  `Not noted: this session is at depth ${depth} of the session tree under ${top}, and only that top session writes the tree's ` +
+  "lesson, once the whole tree is verified. Put what you learned in your report instead: the top reads it and writes the tree's lesson."
 
 const ONE_LINE = "what the next orchestrator in this project should know about running a tree like this one, with the job it comes from and the reason"
 

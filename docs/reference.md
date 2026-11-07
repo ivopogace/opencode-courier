@@ -206,7 +206,7 @@ in a `lessons` entry, written as it is started: the [lessons](#the-lesson) of th
 records as `courier_recall` lists them, pinned first and then newest first, at most 5, each with its
 tree's title, under one line saying that `courier_recall` has the records. A root gets its own at its
 first spawn, beside its role. When `courier_note` writes a lesson, the entry is written again on the
-writer's tree's top, the top's current children below `maxDepth` and the writer, where it changed.
+top and its current children below `maxDepth`, where it changed.
 A leaf gets none, as it cannot split. Nothing is written with the memory option off, or while no
 record of the project holds a lesson.
 
@@ -633,7 +633,7 @@ milliseconds:
 | `revisions` | Absent until the top states another split line: `[{ text, at, parts }]`, the newest 3. |
 | `finished` | Whether nothing in the tree ran or waited and every part had settled. |
 | `recalled` | `{ calls, at? }`: `courier_recall` calls from the tree; `at` when the top first called. |
-| `lesson` | `{ text, at, depth? }`, from `courier_note`; `depth` for a sub-orchestrator's. |
+| `lesson` | `{ text, at, depth? }`, from the top's `courier_note`; `depth` only on a lesson an earlier version took from a sub-orchestrator, listed as `from depth N`. |
 | `reads`, `pinned` | Merged in when read, from keys beside the record (below); never written with it. |
 | `parts` | One per session started in the tree, in tree order: `sessionID`, `title`, `depth`, `isolated`, `subagent` (`true` for [OpenCode's subagents](#opencodes-subagents)), `group`, `status`, `duration`, `cost`, `context` (0 to 1) and `refused`. A count of parts, as in `revisions` and the listing's line, leaves the subagents out; the listing counts them apart. |
 
@@ -650,9 +650,10 @@ Missing fields take their defaults, a part without `sessionID` is dropped, and a
 
 **`courier_note { text }`** writes the caller's tree's one lesson: one line, at most 300 characters,
 naming the job and the reason. A longer one is refused, not cut. A second note replaces the first,
-so write it last, once the work is verified. The top session or a sub-orchestrator may write it; a
-sub-orchestrator's is marked with its depth. A leaf may not, nor a tree with no record yet (one that
-has neither ended a turn with children nor called `courier_recall`). A lesson is not a rule: a rule
+so write it last, once the work is verified. Only the top session writes it. A session below the top,
+a sub-orchestrator or a leaf, is refused, told to put what it learned in its report, which the top
+reads before it writes the lesson. A tree with no record yet (one that has neither ended a turn with
+children nor called `courier_recall`) is refused too. A lesson is not a rule: a rule
 belongs in AGENTS.md. It is read by every later session in the project, so it holds no code or
 secrets. Besides the listing, the project's lessons reach every session that can split in its system
 prompt, through the [`lessons` entry](#session-trees-and-their-limits).

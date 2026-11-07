@@ -1981,19 +1981,23 @@ run_memory() {
     "$(jq -r --arg line "$line" --arg short "$short" '.status == "completed" and .metadata.metadata.lesson.text == $short and .metadata.metadata.replaced.text == $line and (.metadata.metadata | has("clipped") | not) and
       (.output | contains("It replaces the lesson (") and contains($line))' <<<"$noted")"
   check "and the record holds it" "$(record_of "$root" ".lesson.text == \"$short\"" | jq -r --arg short "$short" '.lesson.text == $short')"
-  # A sub-orchestrator's note goes on the same record, marked with its depth; a leaf is refused by the tool when another
-  # plugin's hook puts it back (the probe does, for a CHILD-FORCES task), as the courier's hook had hidden it.
+  # Only the top writes the lesson (#464): a sub-orchestrator's note is refused with a pointer to its report, and so is a
+  # leaf's when another plugin's hook puts the tool back (the probe does, for a CHILD-FORCES task), as the courier's hook
+  # had hidden it.
   child_delay 1000
   out=$(prompt_in "$root" "COURIER-NOTE-BELOW")
   middle=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
-  check "the middle session noted, started a leaf, and reported on what its leaf got" "$(has_text "$root" "MID GOT LEAF GOT" 60)"
+  check "the middle session tried to note, started a leaf, and reported on what its leaf got" "$(has_text "$root" "MID GOT LEAF GOT" 60)"
+  check "the middle session's note was refused, naming its depth and the top, and pointing it to its report" \
+    "$(has_text "$root" "Not noted: this session is at depth 1 of the session tree under $root, and only that top session writes the tree's lesson" 5)"
+  check "the refusal says where the lesson goes instead" "$(has_text "$root" "Put what you learned in your report instead: the top reads it and writes the tree's lesson." 5)"
   leaf=$(spawned_by "$middle")
   check "the leaf, which does not see the tool, was refused when it called it anyway, naming its depth" \
-    "$(has_text "$middle" "Not noted: this session is a leaf, at depth 2 of a session tree that goes at most 2 deep (maxDepth)." 5)"
-  check "the middle session's note replaced the root's on the same record, marked from depth 1" \
-    "$(record_of "$root" '.lesson.text == "Noted from depth 1"' | jq -r '.lesson.text == "Noted from depth 1" and .lesson.depth == 1 and (.parts | length) == 4')"
-  check "which courier_recall lists as from depth 1" \
-    "$(prompt_in "$root" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg root "$root" '.status == "completed" and (.output | contains("- " + $root + " (this tree) ") and contains(", from depth 1): \"Noted from depth 1\""))')"
+    "$(has_text "$middle" "Not noted: this session is at depth 2 of the session tree under $root" 5)"
+  check "the root's lesson stays on the record, as the root wrote it" \
+    "$(record_of "$root" '(.parts | length) == 4' | jq -r --arg short "$short" '.lesson.text == $short and (.lesson | has("depth") | not) and (.parts | length) == 4')"
+  check "which courier_recall lists as the root's, with nothing from below" \
+    "$(prompt_in "$root" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg root "$root" --arg short "$short" '.status == "completed" and (.output | contains("- " + $root + " (this tree) ") and contains("): \"" + $short + "\"") and (contains("Noted from depth 1") or contains("from depth") | not))')"
   check "every request of the leaf went without courier_note, as without courier_recall" \
     "$(jq -sr --arg leaf "$leaf" '[.[] | select(.type == "probe.context" and .sessionID == $leaf)] | length > 0 and all(.role == "leaf" and (.tools | index("courier_note") | not) and (.tools | index("courier_recall") | not))' "$WORK/probe.log")"
   check "a session nobody spawned, whose tree has no record yet, is refused" \
@@ -2082,7 +2086,7 @@ run_memory() {
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
   git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory on"
   start_server
-  check "the record kept its lesson meanwhile" "$(record_of "$root" '.lesson.text == "Noted from depth 1"' 5 | jq -r '.lesson.text == "Noted from depth 1" and .lesson.depth == 1')"
+  check "the record kept the root's lesson meanwhile" "$(record_of "$root" ".lesson.text == \"$short\"" 5 | jq -r --arg short "$short" '.lesson.text == $short and (.lesson | has("depth") | not)')"
   # The sweep runs as the plugin loads, after the server answers, so the unpinned record's removal is waited for.
   check "the sweep at load kept the pinned record, a year old, with its pin, and dropped the unpinned one as old (#285)" \
     "$(for _ in $(seq 1 20); do [ -z "$(kv get "memory/$project/ses_unpinned")" ] && break; sleep 1; done; [ -n "$(kv get "memory/$project/ses_seeded")" ] && [ -n "$(kv get "memory/$project/ses_seeded/pin")" ] && [ -z "$(kv get "memory/$project/ses_unpinned")" ] && echo true || echo false)"

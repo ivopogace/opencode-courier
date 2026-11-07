@@ -5,7 +5,7 @@ import { LESSON_MAX } from "./domain.js"
 import { note } from "./note.js"
 import type { MemoryPorts, MemoryState } from "./ports.js"
 import { recall } from "./recall.js"
-import { NOTE_EMPTY, NOTE_OFF, NOTE_TOOL, noteLeafRefusal, noteLongRefusal, noteText, noteUnrecordedRefusal, RECALL_OFF, RECALL_TOOL, recallListText, recallMissingText, recallRecordText } from "./text.js"
+import { NOTE_EMPTY, NOTE_OFF, NOTE_TOOL, noteBelowRefusal, noteLongRefusal, noteText, noteUnrecordedRefusal, RECALL_OFF, RECALL_TOOL, recallListText, recallMissingText, recallRecordText } from "./text.js"
 
 export const RecallInput = Schema.Struct({
   sessionID: Schema.optional(
@@ -64,7 +64,7 @@ export function addMemoryTools(tools: ToolEditor, ports: MemoryToolPorts) {
       "so that a lesson for one kind of job can be told from one that holds everywhere. One line, at most " +
       `${LESSON_MAX} characters; a longer one is refused, not clipped, so write it again shorter. Kept on your own tree's ` +
       "record and listed by courier_recall after its facts, dated; a second call replaces the first. From the top session " +
-      "or one that started sessions, never a leaf. No code, no secrets, and not a rule that holds every time: that belongs " +
+      "only: a session below it puts what it learned in its report. No code, no secrets, and not a rule that holds every time: that belongs " +
       "in AGENTS.md or the skill, for the person to put there, so tell them instead.",
     input: NoteInput,
     execute: async (input, context) => {
@@ -77,8 +77,8 @@ export function addMemoryTools(tools: ToolEditor, ports: MemoryToolPorts) {
         }
         case "off":
           throw refuse(NOTE_OFF)
-        case "leaf":
-          throw refuse(noteLeafRefusal(result.depth, result.maxDepth))
+        case "below":
+          throw refuse(noteBelowRefusal(result.depth, result.top))
         case "empty":
           throw refuse(NOTE_EMPTY)
         case "long":

@@ -11,7 +11,7 @@ export async function lessonsOf(ports: MemoryPorts): Promise<ReadonlyArray<Entry
   return value === undefined ? [] : [{ key: LESSONS_KEY, value }]
 }
 
-export async function relesson(ports: MemoryPorts, writerID: string, top: string) {
+export async function relesson(ports: MemoryPorts, top: string) {
   const entries = ports.session.instructions?.entry
   if (!entries) return []
   let sessions: string[] = []
@@ -20,7 +20,7 @@ export async function relesson(ports: MemoryPorts, writerID: string, top: string
     ;[entry] = await lessonsOf(ports)
     if (!entry) return []
     const children = ports.maxDepth > 1 ? await childrenOf(ports.storage, top) : []
-    sessions = [...new Set([top, ...children.map((child) => child.sessionID), writerID])]
+    sessions = [top, ...children.map((child) => child.sessionID)]
   } catch (error) {
     ports.log(`courier_note: the lessons entry could not be read again: ${String(error)}`)
     return []

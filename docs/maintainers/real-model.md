@@ -71,15 +71,12 @@ The default. The parent is asked:
 
 Eight checks: two children spawned; the first turn ended after spawning; no polling (a
 `courier_children`, `courier_tree` or `sleep` right after spawning, or more than one in a later
-turn; runs before `courier_status` was removed did not count `courier_tree`); both children reported to the parent; both reports woke it; each carries a status and its
+turn); both children reported to the parent; both reports woke it; each carries a status and its
 answer; the reply holds both. The README's Quickstart prompt is a shorter wording: set
 `COURIER_PROMPT` to it. To check a join group, add *both in one join group named "pair"*.
 
 | Model | OpenCode | Result |
 |---|---|---|
-| `longcat-2.5-preview-free` | 2.0.28 | 8/8 in 9 requests, both children in one group it named itself, `RESULTS 391 1024`. |
-| `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 8/8 in 11 requests; both children native, with an empty ruleset. |
-| `longcat-2.5-preview-free`, two isolated helpers that commit | 2.0.26 | Pass: each committed on `courier/<its session ID>` and named it in its report. |
 | `deepseek-v4.1-flash-free`, catalog, 646112c, skill listed and `COURIER_SKILL=deny` | 2.1.4 | 3 of 3 passed under each, 8/8 in 10 requests; both helpers in one join group every time. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 646112c, skill listed and `COURIER_SKILL=deny` | 2.1.4 | 3 of 3 passed under each, 8/8 in 10 to 12 requests; one join group every time. |
 
@@ -158,17 +155,6 @@ with a seeded record can.
 
 | Model | OpenCode | Result |
 |---|---|---|
-| `deepseek-v4.1-flash-free`, catalog, 045ae2c | 2.0.32 | 9/9 in 30 requests, 52 s: both orchestrators split into groups and scheduled and cancelled a check-in; no polling. |
-| `deepseek-v4.1-flash-free`, catalog, 43393b0 | 2.0.32 | 9/9 in 26 requests, 52 s: both orchestrators loaded the skill and recalled once before splitting; no gap in the timeline. |
-| `longcat-2.5-preview-free`, catalog, e6ec247 and 0d02efe | 2.0.32 | 9/9 twice and 5/9 once. In the 5/9 a leaf's next step never came, for unknown reasons. Skill loads varied from run to run. |
-| `longcat-2.5-preview-free`, catalog, 315587a | 2.0.32 | 9/9 twice, then Zen's free tier refused every request for over an hour. |
-| `glm-5.3-flash-free`, catalog, 315587a, memory off / on and empty / seeded | 2.0.32 | 8–9 of 9 in every condition; every lost point was polling. With memory on, the root recalled before its split in all six trees and cited the seeded record in all three. |
-| `glm-5.3-flash-free`, catalog, the open prompt, empty / seeded / lesson | 2.0.32 | Empty and seeded roots handed off all three parts flat. Every root with the lesson did "count" itself, as the lesson said (1 to 3 sessions, against 4). |
-| `glm-5.3-flash-free`, catalog, the open prompt, model-written lessons | 2.0.32 | The top wrote a lesson in 4 of 9 trees, and in 1 of 3 on the current wording. Each lesson, seeded into a fresh tree, steered it. |
-| `deepseek-v4.1-flash-free`, catalog, 646112c, skill listed | 2.1.4 | 3 of 3 passed, 9/9 in 25 to 41 requests; every root loaded the skill and recalled once before its split; no polling. The fourth and fifth runs, and their skill-denied pairs, were refused by the free tier's daily limit: in one, the "numbers" session retried its halves, then reported `blocked` rather than ending quietly. |
-| `deepseek-v4.1-flash-free`, catalog, 646112c, `COURIER_SKILL=deny` | 2.1.4 | 3 of 3 passed, 9/9 in 23 to 32 requests; two of three roots still stated their split line. |
-| a self-hosted model behind an OpenAI-compatible endpoint, 646112c, skill listed | 2.1.4 | 5 of 5 passed, 9/9, mean 30 requests; every root loaded the skill, recalled once and used two join groups; no polling. Six of these ten runs first lost "every spawned session reported" to a child's title with quotes in it, a checker misread fixed in #378; re-read with `--saved`. |
-| a self-hosted model behind an OpenAI-compatible endpoint, 646112c, `COURIER_SKILL=deny` | 2.1.4 | 5 of 5 passed, 9/9, mean 35 requests. |
 | `deepseek-v4.1-flash-free`, catalog, b8839dc, the role part pushed by the `context` hook | 2.2.0 | 2 of 3 passed, 9/9 twice and 8/9 once (one poll); mean 29 requests, 9922 cache reads per request. The "before" of #387, run alternating with the row below on one day, each tree built from its commit on the same host. |
 | `deepseek-v4.1-flash-free`, catalog, b6099f9, the role part in a `role` session instruction entry (#387) | 2.2.0 | 3 of 3 passed, 9/9; mean 38 requests (one tree of 51), 10813 cache reads per request against 9922 before, and the uncached input per request no higher. The cached prefix is no worse with the entry, so it stays. One root passed without loading the skill. |
 | a self-hosted model behind an OpenAI-compatible endpoint, b8839dc, the role part pushed by the `context` hook | 2.2.0 | 2 of 3 passed, 9/9 twice and 7/9 once (one poll, and a sub-orchestrator that reported before its halves had); mean 31 requests. The endpoint reports no cache usage, so the column reads 0 and this pair is a behaviour check only, run alternating with the row below on one day. |
@@ -275,11 +261,8 @@ the default wait gives up while a sub-orchestrator's wake turn still runs.
 
 | Model | OpenCode | Result |
 |---|---|---|
-| a self-hosted model behind an OpenAI-compatible endpoint, 646112c, skill listed | 2.1.4 | 0 of 6 passed (3 with the default wait, 3 with `COURIER_TIMEOUT=600`), 9/13 in four. In every run the "count" session applied the change to its own file and reported it inside its `done`, sending nothing up without a status; the root then judged the change bogus, since it had not come through the root, and told the leaf to revert it with a `courier_send` carrying `status: blocked`, which the leaf did. One root wrote a lesson to treat such changes as bogus; one did not revert but flagged the "stray checked" to the person, in a run where it had also sent every part to a working directory it made up. The other lost points: a default wait that gave up during the "numbers" session's wake turn (6/13), and one `courier_children` look after a spawn (8/13). |
-| a self-hosted model behind an OpenAI-compatible endpoint, 646112c, `COURIER_SKILL=deny` | 2.1.4 | 0 of 6 passed, 9/13 in five, the same miss word for word; the sixth lost two more points to a default wait that gave up. The rule the leaf misses is the brief's, which both conditions share, so the skill is not the lever here. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 63f7463 (#380: the person's message in a sentence of its own, skill step 4, a status sent downward dropped), skill listed, `COURIER_TIMEOUT=600` | 2.2.0 | 0 of 2 passed, 12/13 and 9/13; the four finding checks passed in one and three of four in the other. In both the "count" session sent the person's message up at once, quoted as the person's and without a status, before its report; the root passed it on and nobody reverted it; every file held `checked`. In the 12/13 the root sent the change to the halves itself, after one `courier_tree` look, so the "numbers" session had nothing left to pass on. In the 9/13 a half's turn failed or ended without a report during its `sleep 150`; the "numbers" session looked with `courier_children` and had the halves run again, and the wait gave up before the root's final reply. |
-| a self-hosted model behind an OpenAI-compatible endpoint, 63f7463, `COURIER_SKILL=deny`, `COURIER_TIMEOUT=600` | 2.2.0 | 1 of 2 passed, 13/13 and 10/13; the four finding checks passed in both. The 10/13 lost the same three points as the 9/13 above, the same way. Two runs per condition, short of the three the issue asked for: an observation, but against 0 of 12 at 646112c the leaf's miss is gone in all four. |
-| `deepseek-v4.1-flash-free`, catalog, 646112c | 2.1.4 | No run: the free tier's daily limit was reached by the recursive runs before it. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 63f7463, `COURIER_SKILL=deny`, `COURIER_TIMEOUT=600` | 2.2.0 | 1 of 2 passed, 13/13 and 10/13; the four finding checks passed in both. The 10/13 lost the same three points as the 9/13 above, the same way. Two runs per condition, short of the three the issue asked for: an observation, but against 0 of 12 at 646112c (in this file's history) the leaf's miss is gone in all four. |
 
 ## A change and its review
 
@@ -369,8 +352,8 @@ after.
 This is a smoke test, not a benchmark: a few runs on free models that change without notice. A
 model that passes here can still poll or forget to report on a harder task, so a `courier_later`
 check-in still pays. Which session loads the skill varies from run to run; on one-result tasks,
-models do not load it. The recursive rows at 646112c reach the five-run floor on one model, the
-self-hosted one; no row reaches it on two. Not re-run on the current wording: `permission`
-(`COURIER_PERSON=other-server` included), `question`, `recursive-fault`, `recursive-staged`, and
-the models other than those in the 646112c rows. Earlier rows, among them a native-notice wording
-that scored 0/6, are in this file's history.
+models do not load it. No row reaches the five-run floor on two models. Not re-run since the skill
+was cut to the tools' mechanics (#433): the fan-out, `permission` (`COURIER_PERSON=other-server`
+included), `question`, `recursive-fault`, `recursive-staged` and `recursive-finding`. Each table
+keeps its rows on OpenCode 2.2, or its latest where it has none; earlier rows are in this file's
+history and at the release tags.

@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:1 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 subtree:2 subagent:8 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 subtree:2 subagent:8 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1245,6 +1245,13 @@ run_skill() {
   # The person attaches the skill to a prompt, as the TUI's /skills dialog does, and its text goes to the model with the prompt.
   check "attached to the person's prompt, its text reached the model" \
     "$([[ $(person "session/$session/prompt" '{"text":"COURIER-SKILL-ATTACHED","skills":[{"id":"courier-orchestrate"}]}') == 20* ]] && has_text "$session" "SKILL SEEN" 30)"
+  # The skill is registered at skill://courier-orchestrate/SKILL.md, as OpenCode's built-ins are (#455), so the
+  # directory the skill tool names exists: the read tool serves it from the skill registry.
+  out=$(prompt "COURIER-SKILL-READ")
+  check "the skill tool named skill://courier-orchestrate as the skill's base directory" \
+    "$(tool_state skill <<<"$out" | jq -r '.status == "completed" and (.output | contains("Base directory for this skill: skill://courier-orchestrate\n"))')"
+  check "a read of skill://courier-orchestrate/SKILL.md, the directory it was told about, served the skill's text" \
+    "$(tool_state read <<<"$out" | jq -r '.status == "completed" and (.input.path == "skill://courier-orchestrate/SKILL.md") and (.output | contains("Only the root, the session nobody started, may start exactly one session"))')"
 }
 
 run_wake() {

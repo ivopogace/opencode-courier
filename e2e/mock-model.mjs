@@ -65,6 +65,9 @@ function decide(body) {
         ? { tool: "subagent", args: { agent: "general", description: "Look it up", prompt: "SUBAGENT-FOREGROUND" } }
         : { text: "MID DONE" }
     if (call?.function?.name === "courier_spawn" && prompt.includes("COURIER-STALL")) return { text: "ROOT SPAWNED" }
+    // Reads the directory the skill tool named, as a model that looks for the skill's files would.
+    const base = call?.function?.name === "skill" && prompt.includes("COURIER-SKILL-READ") ? result.match(/Base directory for this skill: (\S+)/)?.[1] : undefined
+    if (base) return { tool: "read", args: { path: `${base}/SKILL.md` } }
     if (call?.function?.name === "courier_spawn" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-STALL-MID"))
       return { text: "MID SPAWNED" }
     const roster = messages.some((message) => message.role === "user" && textOf(message.content).includes("COURIER-ROSTER"))

@@ -223,8 +223,10 @@ still in `courier_recall` and the standing in `courier_children`.
 The plugin registers one OpenCode skill, `courier-orchestrate`, in every location: how its tools
 behave when a session splits a task. Models load it before splitting a task with 2 or more
 independent, substantial parts touching separate files or areas. A spawned session loads it too, as
-its role part says; a leaf, which has no `courier_spawn`, is sent straight to its report. In the TUI, `/skills` attaches it to your prompt. Loading it asks the `skill` permission like any skill. To hide it,
-deny it in `permissions`:
+its role part says; a leaf, which has no `courier_spawn`, is sent straight to its report. In the TUI, `/skills` attaches it to your prompt. Loading it asks the `skill` permission like any skill. It is
+one document, `skill://courier-orchestrate/SKILL.md`, which the `read` tool serves from the skill
+registry (OpenCode 2.2.6 and later), so a model that reads the directory the skill tool names gets the
+same text. To hide it, deny it in `permissions`:
 `{ "action": "skill", "resource": "courier-orchestrate", "effect": "deny" }`.
 
 It says, in order:

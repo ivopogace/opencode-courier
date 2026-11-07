@@ -389,12 +389,14 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
 
 - **Registering:** `ctx.skill.transform((editor) => editor.add(info))` with `id`, `name`,
   `description`, `autoinvoke`, `path` and `content`. `path`'s directory is named to the model, so a
-  skill without files gives its own path; the courier's is `/opencode-courier/courier-orchestrate.md`.
-  The built-ins' was `/builtin/opencode.md` and is `skill://opencode/SKILL.md` since 2.2.6
-  (anomalyco/opencode#60921): a `skill://<id>/…` path names `skill://<id>` as the directory, and the
-  `read` tool serves `skill://<id>/SKILL.md` from the registry, after the `skill` and `read`
-  permissions. The host's editor takes extra in-memory files beside such a skill; the plugin API's
-  `SkillEditor.add` passes none. The same id from several locations is one entry.
+  skill without files gives its own path. The courier's is `skill://courier-orchestrate/SKILL.md`, as
+  the built-ins' is `skill://opencode/SKILL.md` since 2.2.6 (anomalyco/opencode#60921; it was
+  `/builtin/opencode.md`, and the courier's was `/opencode-courier/courier-orchestrate.md`, a path
+  that existed nowhere): a `skill://<id>/…` path names `skill://<id>` as the directory, and the `read`
+  tool serves `skill://<id>/SKILL.md` from the registry, after the `skill` and `read` permissions, so
+  a model that reads the directory it was told about gets the content. `Skill.Info.path` is a branded
+  string with no shape check. The host's editor takes extra in-memory files beside such a skill; the
+  plugin API's `SkillEditor.add` passes none. The same id from several locations is one entry.
 - **Listing:** every skill with a `description`, `autoinvoke` not `false` and not denied by a `skill`
   rule is listed in every system prompt (`core/skill-guidance`, `<available_skills>`, sorted by id).
   A change reaches a running session as a delta. `GET /api/skill?directory=…` lists them.

@@ -284,8 +284,8 @@ test("registers the courier-orchestrate skill, with a description so it is liste
 
   expect([...skills.keys()]).toEqual([SKILL_ID])
   const skill = skills.get(SKILL_ID)
-  expect(skill).toEqual({ id: SKILL_ID, name: SKILL_ID, description: SKILL_DESCRIPTION, path: `/opencode-courier/${SKILL_ID}.md`, content: SKILL_CONTENT })
-  expect(skill.path.startsWith("/")).toBe(true)
+  expect(skill).toEqual({ id: SKILL_ID, name: SKILL_ID, description: SKILL_DESCRIPTION, path: `skill://${SKILL_ID}/SKILL.md`, content: SKILL_CONTENT })
+  expect(skill.path.endsWith("/SKILL.md")).toBe(true)
   expect(skill.description.length).toBeGreaterThan(0)
 })
 

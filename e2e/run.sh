@@ -1441,6 +1441,9 @@ run_subtree() {
   root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the middle session started its leaf, and its turn runs on" "$(has_text "$middle" "Started session ses_" 60)"
+  below="Its permission requests and questions go to the top session of the tree, not to you"
+  check "the middle session's spawn result says its leaf's asks go to the top, and the root's does not (#477)" \
+    "$(texts "$middle" | grep -qF "$below" && ! texts "$root" | grep -qF "$below" && echo true || echo false)"
   seen=$(prompt_in "$root" "COURIER-SUBTREE-TREE" | tool_state courier_tree)
   leaf=$(jq -r '.metadata.metadata.sessions[1].sessionID // empty' <<<"$seen")
   check "courier_tree lists the middle session and its leaf, with their depths and parents" \

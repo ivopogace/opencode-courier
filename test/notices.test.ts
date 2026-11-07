@@ -159,6 +159,10 @@ describe("tool results", () => {
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", groupError: "group failed: disk full" })).toMatchSnapshot()
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", model: "mock/small#high" })).toMatchSnapshot()
   })
+  test("spawnText for a child started below the top", () => {
+    expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", belowTop: true })).toMatchSnapshot()
+    expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", group: "reviews", belowTop: true })).toMatchSnapshot()
+  })
   test("spawnText for a child started from its parent's HEAD", () => {
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/wt", fromParent: true })).toMatchSnapshot()
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/wt", fromParent: true, uncommitted: true })).toMatchSnapshot()

@@ -185,9 +185,12 @@ or `split: <n> parts: …`. A session that splits starts the parts in one join g
 without polling, checks each part and sends one combined report. At `maxDepth` it is told to do the
 task itself. Any spawned session is told to send its parent a finding the other parts need (an
 assumption of the split that is wrong, a shared file or API that behaves otherwise) at once, without
-a status, and carry on; progress alone is not worth a message. A message the person writes in its
-session, outside a `<courier>` envelope, is for the whole job: it sends it to its parent at once,
-without a status and quoted as the person's, before it acts on it, then carries on.
+a status, and carry on; progress alone is not worth a message. A finding that a session it started
+sends it goes on to its parent the same way when it reaches past its own part. A message the person
+writes in its session, outside a `<courier>` envelope, is for the whole job: it sends it to its
+parent at once, without a status and quoted as the person's, before it acts on it, then carries on.
+The person's words that a session it started passes it go on to its parent the same way, always,
+so they climb the whole tree to the top.
 
 **The role.** Every spawned session carries one line in its system prompt, `opencode-courier role: …`,
 in the `role` entry of its session instructions (OpenCode 2.2.0's `<context key="role">` block),
@@ -513,8 +516,9 @@ The person steers a running tree by talking to any session in it:
   it is dropped, the message goes without it, and the result says so.
 
 A child that finds something the other parts need, or is told it, sends it to its parent without a
-status ([the brief](#session-trees-and-their-limits)), and the skill has a parent pass such a message
-on to the children it affects ([the skill](#the-courier-orchestrate-skill)). Without the skill, ask
+status, and a parent below the top passes it on up when it reaches past its own part
+([the brief](#session-trees-and-their-limits)); the skill has a parent pass such a message on to the
+children it affects ([the skill](#the-courier-orchestrate-skill)). Without the skill, ask
 the parent to pass it on.
 
 ## Roster

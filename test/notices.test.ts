@@ -42,6 +42,17 @@ describe("envelope and child brief", () => {
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits, tree.childBranch("ses_child"))).toMatchSnapshot()
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits, tree.childBranch("ses_child"))).toMatchSnapshot()
   })
+  test("the brief passes a finding and the person's words from below up to the parent, at every depth", () => {
+    for (const depth of [1, 3]) {
+      const brief = tree.childBrief("ses_parent", "Fix the bug", depth, limits)
+      expect(brief).toContain(
+        "it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.",
+      )
+      expect(brief).toContain(
+        "The person's words a session you started passes you are for the whole job too: send them on to the parent the same way.",
+      )
+    }
+  })
   test("rolePart", () => {
     for (const depth of [0, 1, 2, 3, null]) expect(tree.rolePart(depth, limits)).toMatchSnapshot()
     for (const depth of [0, 1, 2, 3, null]) expect(tree.rolePart(depth, limits)).toStartWith(tree.ROLE_PREFIX)

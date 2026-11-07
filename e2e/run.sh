@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 subagent-role:3 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 total-refusal:40 plugin-add:14"
+SUITE="reports:81 reports-groups:91 reminder:20 finding:11 finding-up:12 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 subagent-role:3 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 total-refusal:40 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -661,6 +661,32 @@ run_finding() {
     "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r 'length == 1 and (.[0] |
       contains("reports=\"2\"") and contains("HEARD FINDING: the shared API returns cents") and contains("FINDER DONE"))')"
   check "neither child was told as one that ended without a report" "$(notices_with "$parent" ended | jq -r 'length == 0')"
+}
+
+run_finding_up() {
+  scenario "a grandchild's finding reaches the root: its parent, told so by its brief, passes it up without a status"
+  out=$(prompt "COURIER-RELAY-UP")
+  turn_ended=$(now_ms)
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the child's brief says to pass a finding from below up" \
+    "$(has_text "$mid" "Do the same with one a session you started sends you, when it reaches past your own part." 10)"
+  deep=$(for _ in $(seq 1 30); do
+    found=$(texts "$mid" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
+    [ -n "$found" ] && { echo "$found"; break; }
+    sleep 1
+  done)
+  check "the child started a grandchild" "$([ -n "$deep" ] && echo true || echo false)"
+  heard=$(reply_time "$root" "ROOT HEARD FINDING" 45)
+  check "the grandchild's finding reached the child without a status" \
+    "$(api "session/$mid/message" | jq -r --arg deep "$deep" '[.data[] | select(.type == "synthetic") | .text |
+      select(startswith("<courier from=\"" + $deep + "\">") and contains("FINDING-UP: the shared config is read-only"))] | length == 1')"
+  check "the child passed it up, and it started a new turn of the root after its first had ended" \
+    "$([ -n "$heard" ] && [ "$heard" -gt "$turn_ended" ] && echo true || echo false)"
+  check "it reached the root once, without a status, naming the grandchild" \
+    "$(api "session/$root/message" | jq -r --arg mid "$mid" --arg deep "$deep" '[.data[] | select(.type == "synthetic") | .text |
+      select(startswith("<courier from=\"" + $mid + "\">") and contains("Passed up from " + $deep + ": FINDING-UP: the shared config is read-only"))] | length == 1')"
+  check "and the child still reported to the root" "$([ -n "$(reply_time "$root" "ROOT GOT REPORT" 60)" ] && echo true || echo false)"
 }
 
 run_person_message() {

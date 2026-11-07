@@ -20,9 +20,11 @@ export function childBrief(parentID: string, task: string, depth: number, limits
       "A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.",
     "If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API " +
       "that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes " +
-      "it on to the sessions it affects. Progress alone is not worth a message.",
+      "it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own " +
+      "part. Progress alone is not worth a message.",
     "A message the person writes in your session, outside a <courier> envelope, is for the whole job: before you act on it, " +
-      "send it to the parent at once with courier_send without a status, quoting it as the person's, then carry on.",
+      "send it to the parent at once with courier_send without a status, quoting it as the person's, then carry on. The " +
+      "person's words a session you started passes you are for the whole job too: send them on to the parent the same way.",
     "If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.",
     "",
     ...(branch ? [...isolationRule(branch, depth < limits.maxDepth), ""] : []),

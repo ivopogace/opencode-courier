@@ -73,7 +73,7 @@ exports[`tools are the eleven courier tools, each a direct tool 1`] = `
 
 exports[`tools courier_spawn 1`] = `
 {
-  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, it waits for a permission or it asks a question. Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_children in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
+  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_children in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For long tasks, also courier_later a check-in for yourself in case it never reports, and courier_cancel it when it does.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -91,7 +91,7 @@ exports[`tools courier_spawn 1`] = `
       "group": {
         "anyOf": [
           {
-            "description": "A join group: start the sessions of one batch with the same name, and their reports are held and delivered to you in one message once every one of them has reported and your turn has ended, instead of one turn per report. A blocked report, a question, a permission request or a failed turn still reaches you at once. Letters, digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
+            "description": "A join group: start the sessions of one batch with the same name, and their reports are held and delivered to you in one message once every one of them has reported and your turn has ended, instead of one turn per report. A blocked report or a failed turn still reaches you at once, and so do a question and a permission request (at the top of the tree; below it they go to the top). Letters, digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
             "type": "string",
           },
           {
@@ -409,7 +409,7 @@ exports[`tools courier_cleanup 1`] = `
 
 exports[`tools courier_answer 1`] = `
 {
-  "description": "Pass on the answer to a permission request or a question that a session you started with courier_spawn (or one started from it) waits on, after a notice from it named the request. For a permission request, reply is the answer you propose, once or reject: proposing is not deciding. With once, OpenCode asks the person you are working with in your session, as its own permission prompt for what that session asked, under your permission rules, and the call returns once they have answered; what they allow is passed on, and a refusal with a reason fails this call and is passed on with the reason. Do not ask them in your reply or with your question tool first. For a question, answers is what the person chose: ask them first, with your question tool if you have one, and never answer for them. The session carries on once it has the answer.",
+  "description": "Pass on the answer to a permission request or a question that a session you started with courier_spawn (or one started from it) waits on, after a notice from it named the request. Only the top session of a tree gets those notices and can answer. For a permission request, reply is the answer you propose, once or reject: proposing is not deciding. With once, OpenCode asks the person you are working with in your session, as its own permission prompt for what that session asked, under your permission rules, and the call returns once they have answered; what they allow is passed on, and a refusal with a reason fails this call and is passed on with the reason. Do not ask them in your reply or with your question tool first. For a question, answers is what the person chose: ask them first, with your question tool if you have one, and never answer for them. The session carries on once it has the answer.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -619,7 +619,7 @@ If you need a decision from the session that started you, which you cannot make 
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Progress alone is not worth a message.
 A message the person writes in your session, outside a <courier> envelope, is for the whole job: before you act on it, send it to the parent at once with courier_send without a status, quoting it as the person's, then carry on.
-If you need the person to decide something, use your question tool; it reaches them through the session that started you.
+If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.
 
 You are at depth 1 of a session tree that goes at most 3 deep. Split your task or do it yourself:
 - Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
@@ -640,7 +640,7 @@ If you need a decision from the session that started you, which you cannot make 
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Progress alone is not worth a message.
 A message the person writes in your session, outside a <courier> envelope, is for the whole job: before you act on it, send it to the parent at once with courier_send without a status, quoting it as the person's, then carry on.
-If you need the person to decide something, use your question tool; it reaches them through the session that started you.
+If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.
 
 You are at depth 3, the deepest the session tree goes, so you cannot start sessions: do the task yourself.
 
@@ -657,7 +657,7 @@ If you need a decision from the session that started you, which you cannot make 
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Progress alone is not worth a message.
 A message the person writes in your session, outside a <courier> envelope, is for the whole job: before you act on it, send it to the parent at once with courier_send without a status, quoting it as the person's, then carry on.
-If you need the person to decide something, use your question tool; it reaches them through the session that started you.
+If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.
 
 You work in a git worktree of your own, on a detached HEAD. Commit your work on the branch courier/ses_child: create it first (git switch -c courier/ses_child), and name it in the branch of your report's artifacts, so the session that started you can merge it. Uncommitted work is not in your report.
 If you split your task and start a session with isolate: true, commit first: its worktree starts from your current HEAD, not from your uncommitted changes. Merge each branch it reports into yours before you report.
@@ -680,7 +680,7 @@ If you need a decision from the session that started you, which you cannot make 
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes it on to the sessions it affects. Progress alone is not worth a message.
 A message the person writes in your session, outside a <courier> envelope, is for the whole job: before you act on it, send it to the parent at once with courier_send without a status, quoting it as the person's, then carry on.
-If you need the person to decide something, use your question tool; it reaches them through the session that started you.
+If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.
 
 You work in a git worktree of your own, on a detached HEAD. Commit your work on the branch courier/ses_child: create it first (git switch -c courier/ses_child), and name it in the branch of your report's artifacts, so the session that started you can merge it. Uncommitted work is not in your report.
 
@@ -744,6 +744,8 @@ exports[`envelope and child brief refusals 2`] = `"Not started: 5 sessions you s
 exports[`envelope and child brief refusals 3`] = `"Not started: 1 session you started is running or has not reported yet, the most allowed at once (maxChildren 1). Do this part yourself, or end your turn and start it once one of them has reported, not in a loop."`;
 
 exports[`envelope and child brief refusals 4`] = `"Not started: 20 sessions in this session tree are running or have not reported yet, the most allowed at once (maxTotal 20). Do this part yourself, or end your turn and try again once a report has arrived, not in a loop."`;
+
+exports[`envelope and child brief refusals 5`] = `"Not started: 20 sessions in this session tree are running or have not reported yet, the most allowed at once (maxTotal 20). Do this part yourself: none of the sessions you started is running, so no report will wake you."`;
 
 exports[`envelope and child brief refusals of a model or variant 1`] = `"Not started: model must be provider/model, as OpenCode names them (opencode/gpt-5-nano, anthropic/claude-sonnet-4-5), not "small". Leave it unset to run the session on your own model."`;
 
@@ -813,6 +815,10 @@ exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its 
 exports[`tool results spawnText 4`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is in no group, so its report comes on its own: group failed: disk full"`;
 
 exports[`tool results spawnText 5`] = `"Started session ses_child in /repo, on mock/small#high. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
+
+exports[`tool results spawnText for a child started below the top 1`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
+
+exports[`tool results spawnText for a child started below the top 2`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report or a failed turn still reaches you at once. Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
 exports[`tool results spawnText for a child started from its parent's HEAD 1`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. Its worktree starts from the commit your own worktree is on."`;
 

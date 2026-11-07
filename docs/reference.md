@@ -148,7 +148,9 @@ Any spawned session can call `courier_spawn` too, so sessions form a tree. The s
 spawned is its top, at depth 0. `courier_spawn` refuses a spawn, naming the limit and what to do
 instead, when the child would be deeper than `maxDepth`, or when `maxChildren` or `maxTotal`
 sessions are already live; the last two say to do the part itself or start it once a report has
-come in, not in a loop.
+come in, not in a loop. When none of the caller's own sessions is live, the `maxTotal` refusal says
+only to do the part itself, since no report will wake it; the `maxChildren` refusal cannot meet
+that case, as it counts only the caller's own.
 
 A session is live while:
 
@@ -320,8 +322,8 @@ letters, digits, dots, dashes or underscores, scoped to the parent.
 
 **What is held.** A `done`, `partial` or `failed` report is held. A later report from the same member
 replaces it. Everything else reaches the parent at once: a `blocked` report (the member stays out
-until it reports again), progress, a failed turn, a silent end, a permission request, a question
-and a form.
+until it reports again), progress, a failed turn and a silent end; at the top of the tree also a
+permission request, a question and a form, which below it [go to the top](#a-child-that-asks-for-permission).
 
 **The release.** The message is wrapped in `<courier from="<members>" group="<name>"
 reports="<n>">`. It counts the reports by status, then lists each in join order, as
@@ -407,7 +409,8 @@ event, and the message is not sent again; on an older OpenCode the session's tra
 When a child's tool call needs approval, OpenCode holds it until someone answers in the child's
 session. The plugin sends the top session a message marked `asks="permission"` and
 `request="<id>"`, saying what the child asks for. A request from any depth goes to the top, and only
-the top can answer it.
+the top can answer it. A sub-orchestrator is not told of its children's requests or questions: its
+`courier_spawn` result says they go to the top session of the tree, not to it.
 
 The top session's model cannot approve. It proposes an answer with
 `courier_answer { sessionID, requestID, reply, message? }`:
@@ -449,7 +452,7 @@ servers' requests, are ignored.
 
 ## A child that asks a question
 
-When a child calls OpenCode's `question` tool, the plugin sends the top session a message marked
+When a child calls OpenCode's `question` tool, the plugin sends the top session, from any depth, a message marked
 `asks="question"` and `request="question_<id>"`, with the questions and their options. The top
 session should ask you the same questions with its own question tool. When the wording and options
 match, the two are linked: your pick goes straight to the child, which carries on in the same turn.

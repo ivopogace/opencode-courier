@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 subagent-role:3 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 plugin-add:14"
+SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 subagent-role:3 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 total-refusal:40 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1441,6 +1441,9 @@ run_subtree() {
   root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the middle session started its leaf, and its turn runs on" "$(has_text "$middle" "Started session ses_" 60)"
+  below="Its permission requests and questions go to the top session of the tree, not to you"
+  check "the middle session's spawn result says its leaf's asks go to the top, and the root's does not (#477)" \
+    "$(texts "$middle" | grep -qF "$below" && ! texts "$root" | grep -qF "$below" && echo true || echo false)"
   seen=$(prompt_in "$root" "COURIER-SUBTREE-TREE" | tool_state courier_tree)
   leaf=$(jq -r '.metadata.metadata.sessions[1].sessionID // empty' <<<"$seen")
   check "courier_tree lists the middle session and its leaf, with their depths and parents" \
@@ -1504,6 +1507,42 @@ run_failed_live() {
   jq 'del(.plugins[0].options.maxChildren)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
   git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "maxChildren default"
+  start_server
+}
+
+# With maxTotal 2, two silent children fill the tree (#479): the second, with none of its own running, is refused with "no
+# report will wake you"; the root, whose children still count, is told to try again once a report has arrived.
+run_total_refusal() {
+  scenario "a maxTotal refusal tells a session with none of its own running that no report will wake it (#479)"
+  stop_server
+  jq '.plugins[0].options.maxTotal = 2' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "maxTotal 2"
+  start_server
+  out=$(prompt "COURIER-SILENT")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  first=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the root was told its first child ended without a report" "$([ -n "$(reply_time "$root" "PARENT TOLD SILENT" 45)" ] && echo true || echo false)"
+  turn_ended "$first"
+  turn_ended "$root"
+  second=$(prompt_in "$root" "COURIER-SILENT" | tool_state courier_spawn | jq -r '.metadata.metadata.sessionID // empty')
+  check "the root started a second child, the first still owing its report" "$([ -n "$second" ] && echo true || echo false)"
+  [ -n "$second" ] && turn_ended "$second"
+  turn_ended "$root"
+  refused=$(prompt_in "$second" "COURIER-TEST" | tool_state courier_spawn)
+  echo "  $(jq -c '.error' <<<"$refused")"
+  check "the second child, none of its own running, is refused at maxTotal 2 and told no report will wake it" \
+    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself: none of the sessions you started is running, so no report will wake you.")) and (.error | tostring | contains("end your turn") | not)' <<<"$refused")"
+  turn_ended "$second"
+  turn_ended "$root"
+  refused=$(prompt_in "$root" "COURIER-TEST" | tool_state courier_spawn)
+  check "the root, its two children still owing reports, is refused at maxTotal 2 and told to try again once a report has arrived" \
+    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself, or end your turn and try again once a report has arrived, not in a loop."))' <<<"$refused")"
+  turn_ended "$root"
+  stop_server
+  jq 'del(.plugins[0].options.maxTotal)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "maxTotal default"
   start_server
 }
 

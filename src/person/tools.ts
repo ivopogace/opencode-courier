@@ -58,7 +58,8 @@ export function addPersonTools(tools: ToolEditor, ports: PersonToolPorts) {
     options: { codemode: false },
     description:
       "Pass on the answer to a permission request or a question that a session you started with courier_spawn (or " +
-      "one started from it) waits on, after a notice from it named the request. For a permission request, reply is " +
+      "one started from it) waits on, after a notice from it named the request. Only the top session of a tree gets " +
+      "those notices and can answer. For a permission request, reply is " +
       "the answer you propose, once or reject: proposing is not deciding. With once, OpenCode asks the person you are " +
       "working with in your session, as its own permission prompt for what that session asked, under your permission " +
       "rules, and the call returns once they have answered; what they allow is passed on, and a refusal with a reason " +

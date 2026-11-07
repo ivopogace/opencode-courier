@@ -77,6 +77,7 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     ...(handedDown?.uncommitted ? { uncommitted: true } : {}),
     ...(model ? { model } : {}),
     ...(entry.native ? { native: true } : {}),
+    ...(admitted.depth > 1 ? { belowTop: true } : {}),
   }
 }
 

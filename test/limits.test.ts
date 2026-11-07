@@ -504,8 +504,21 @@ describe("admit", () => {
     admitted.release()
     await child("ses_b", "ses_b1")
 
-    await expect(admit(ports, "ses_b")).rejects.toThrow(totalRefusal(4, 4))
-    await expect(admit(ports, "ses_root")).rejects.toThrow(totalRefusal(4, 4))
+    await expect(admit(ports, "ses_b")).rejects.toThrow(totalRefusal(4, 4, 1))
+    await expect(admit(ports, "ses_root")).rejects.toThrow(totalRefusal(4, 4, 2))
+  })
+
+  test("maxTotal: tells a session with none of its own running that no report will wake it (#479)", async () => {
+    const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxTotal: 3 })
+    await child("ses_root", "ses_a")
+    await child("ses_root", "ses_b")
+    await child("ses_a", "ses_a1")
+
+    const refused = admit(ports, "ses_b")
+    await expect(refused).rejects.toThrow(totalRefusal(3, 3, 0))
+    await expect(refused).rejects.toThrow("no report will wake you")
+    await expect(admit(ports, "ses_a")).rejects.toThrow(totalRefusal(3, 3, 1))
+    await expect(admit(ports, "ses_a")).rejects.toThrow("once a report has arrived, not in a loop.")
   })
 
   test("maxTotal does not count another tree's sessions, or finished ones", async () => {
@@ -579,7 +592,7 @@ describe("admit, with children that owe a report", () => {
   test("counts a child whose turn ended without a report, against maxChildren and maxTotal", async () => {
     const ports = await owing("silent")
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(2, 2))
-    await expect(admit(ports, "ses_b")).rejects.toThrow(totalRefusal(2, 2))
+    await expect(admit(ports, "ses_b")).rejects.toThrow(totalRefusal(2, 2, 0))
   })
 
   test("but not one that reported, failed or was interrupted since its last prompt", async () => {
@@ -745,7 +758,7 @@ describe("admit, with sessions waiting on their own children", () => {
 
   test("maxTotal counts those waiting sessions with the ones running below them", async () => {
     const ports = await waitingTree({ maxTotal: 3 }, ["ses_a1", "ses_b1"])
-    await expect(admit(ports, "ses_r")).rejects.toThrow(totalRefusal(4, 3))
+    await expect(admit(ports, "ses_r")).rejects.toThrow(totalRefusal(4, 3, 2))
   })
 
   test("as it counts children whose own turn runs", async () => {
@@ -1100,7 +1113,13 @@ describe("the context hook", () => {
 
   test("the maxChildren and maxTotal refusals say not to retry in a loop", () => {
     expect(childrenRefusal(2, 2)).toEndWith("start it once one of them has reported, not in a loop.")
-    expect(totalRefusal(4, 4)).toEndWith("try again once a report has arrived, not in a loop.")
+    expect(totalRefusal(4, 4, 1)).toEndWith("try again once a report has arrived, not in a loop.")
+  })
+
+  test("the maxTotal refusal to a session with none of its own running says to do the part itself", () => {
+    const refusal = totalRefusal(4, 4, 0)
+    expect(refusal).toEndWith("Do this part yourself: none of the sessions you started is running, so no report will wake you.")
+    expect(refusal).not.toContain("end your turn")
   })
 
   test("hides courier_spawn at maxDepth and keeps it above", async () => {

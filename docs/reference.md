@@ -163,10 +163,10 @@ A session is live while:
 - a session below it is live.
 
 So a child that ends its turn without reporting counts until it reports or its parent drops it
-with `courier_cleanup`, and a session waiting for
-its own children counts too, even one that has reported, since their reports wake it again. So does a session whose turn failed while sessions under it are still
-live: their reports wake it, and its [failure notice](#a-child-that-fails) says so. Renaming, archiving or switching the model of a session does not make
-it live. A child counts from the moment `courier_send` to it returns, so a spawn in the same step
+with `courier_cleanup`, and a session waiting for its own children counts too, reported or not,
+since their reports wake it again. So does a session whose turn failed while sessions under it are
+still live: their reports wake it, and its [failure notice](#a-child-that-fails) says so.
+Renaming, archiving or switching the model of a session does not make it live. A child counts from the moment `courier_send` to it returns, so a spawn in the same step
 counts it. Several spawns made at once cannot get past a limit together.
 
 Whether a session's turn runs is read from its times: on OpenCode 2.2.2 and later, from when its

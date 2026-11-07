@@ -120,7 +120,8 @@ function decide(body) {
       if (call?.function?.name === "courier_send") return { tool: "shell", args: { command: "sleep 12" }, quick: true }
       if (call?.function?.name === "shell") return { text: "ROLLING FIRST FINISHED" }
     }
-    if (call?.function?.name === "courier_spawn" && prompt.includes("ROLLING FIRST DONE")) return { text: "ROOT STARTED NEXT" }
+    if (call?.function?.name === "courier_spawn" && !startedBy && messages.some((message) => textOf(message.content).includes("ROLLING FIRST DONE")))
+      return { text: "ROOT STARTED NEXT" }
     if (startedBy && first.includes("CHILD-CHECKIN-MID")) {
       if (call?.function?.name === "courier_later") return { tool: "courier_send", args: { sessionID: startedBy[1], message: "MID DONE BEFORE CHECK-IN", status: "done" } }
       if (call?.function?.name === "courier_send") return { text: "MID REPORTED" }

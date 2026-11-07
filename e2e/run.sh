@@ -1699,7 +1699,6 @@ run_total_refusal() {
   start_server
 }
 
-# With maxChildren 1, a child reports and runs on for 12 s; the root, woken by the report, spawns the next in that turn (#511).
 run_rolling_slot() {
   scenario "a parent at maxChildren spawns the next in the turn a report starts, while the reporter's turn runs on (#511)"
   stop_server

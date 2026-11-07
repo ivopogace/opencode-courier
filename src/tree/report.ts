@@ -10,6 +10,11 @@ export async function stoppedSincePrompt(children: Notes, sessionID: string) {
   return stopped.at !== undefined && (prompt.at === undefined || stopped.at >= prompt.at)
 }
 
+export async function reportedSincePrompt(children: Notes, sessionID: string) {
+  const { prompt, settled } = await children.notes(sessionID, ["prompt", "settled"])
+  return prompt.at !== undefined && settled.by === "report" && settled.status !== "blocked" && since(settled.at, prompt.at)
+}
+
 export async function lastStatus(children: Notes, sessionID: string): Promise<Status | undefined> {
   const { status } = (await children.notes(sessionID, ["settled"])).settled
   return isStatus(status) ? status : undefined

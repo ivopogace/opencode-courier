@@ -69,7 +69,10 @@ older host and branches on it. How the plugin itself answers a trap is in
   does its continuation after the output token limit, so a continued turn owes no report again
   (after two continuations the turn fails as `output-limit`). The delivered message is stamped with
   the event's `created`. Only `session.inbox.enqueued` carries the item's type (`user`,
-  `synthetic`, `compaction`, `move`), so the plugin remembers it until delivery.
+  `synthetic`, `compaction`, `move`), so the plugin remembers it until delivery. It also carries a
+  synthetic item's `payload.metadata`, which is how `notePrompt` tells a join group's release (the
+  `group` key) from other courier messages; the `synthetic` call's returned id may arrive after
+  the `delivered` event, so it is not used.
 - A synthetic message steered to an idle session: `session.synthetic` admits it
   (`inbox.enqueued`, a pending inbox row), then rings the run coordinator
   (`packages/core/src/session/run-coordinator.ts`), which publishes `execution.started` and drains:

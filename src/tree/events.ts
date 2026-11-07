@@ -7,7 +7,7 @@ import { hasCompleteGroup, leave, outIn } from "./group.js"
 import { liveBelow } from "./limits.js"
 import type { ExecutionError, Waits, WatchPorts, WatchState } from "./ports.js"
 import { owedUnwaited } from "./nudge.js"
-import { stoppedSincePrompt } from "./report.js"
+import { reportedSincePrompt, stoppedSincePrompt } from "./report.js"
 import { syncStanding } from "./standing.js"
 import { childStore, groupStore } from "./store.js"
 import { lastReply } from "./status.js"
@@ -71,16 +71,26 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
 }
 
 export interface InboxEnqueued {
-  readonly data: { readonly sessionID: string; readonly inboxID: string; readonly item: { readonly type: string } }
+  readonly data: {
+    readonly sessionID: string
+    readonly inboxID: string
+    readonly item: { readonly type: string; readonly payload?: { readonly metadata?: { readonly [key: string]: unknown } } }
+  }
 }
 
 // only inbox.enqueued carries the item's type (api-notes)
 const UNOWED = new Set(["user", "compaction", "move"])
+const GROUP = "group"
+
+function kindOf(item: InboxEnqueued["data"]["item"]) {
+  const metadata = item.payload?.metadata
+  return item.type === "synthetic" && metadata?.source === "courier" && typeof metadata.group === "string" ? GROUP : item.type
+}
 
 export async function noteEnqueued(ports: WatchPorts, inbox: Map<string, string>, event: InboxEnqueued) {
   const { sessionID, inboxID, item } = event.data
   if ((await childStore(ports.storage).indexedParent(sessionID)) === undefined) return false
-  setBounded(inbox, inboxID, item.type, SEEN_MAX)
+  setBounded(inbox, inboxID, kindOf(item), SEEN_MAX)
   return true
 }
 
@@ -90,10 +100,12 @@ export async function notePrompt(
   inbox?: Map<string, string>,
 ) {
   const { sessionID, inboxID } = event.data
-  if (inboxID !== undefined && UNOWED.has(inbox?.get(inboxID) ?? "")) return false
+  const kind = inboxID === undefined ? undefined : inbox?.get(inboxID)
+  if (UNOWED.has(kind ?? "")) return false
   const children = childStore(ports.storage)
   const parentID = await children.indexedParent(sessionID)
   if (parentID === undefined) return false
+  if (kind === GROUP && (await reportedSincePrompt(children, sessionID))) return false
   // the idle hook's reminder still publishes inbox.delivered (api-notes)
   if (inboxID !== undefined && (await children.nudgeOf(sessionID)).inboxID === inboxID) return false
   await children.prompted(sessionID, event.created ?? ports.now())

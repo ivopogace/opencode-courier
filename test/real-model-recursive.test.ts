@@ -530,3 +530,37 @@ describe("the recursive checker and a report steered into the root's first turn"
     expect(check(steeredRun("before")).failed).toEqual([POLL])
   })
 })
+
+const UPWARD = "each sub-orchestrator reported upward once, after its own children had reported to it"
+
+function earlyRun(order: "after-children" | "before-children" | "twice"): Run {
+  const tree = transcripts("no-fault")
+  const half = (file: string, value: string) => [user(file), step("tool-calls", write(file), send("ses_num", value, "done")), step("stop", say("Reported.")), idle()]
+  const num = [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves"))]
+  const upward = () => step("tool-calls", tool("read", { path: "numbers/a.txt" }), tool("read", { path: "numbers/b.txt" }), send("ses_root", "391 and 1024", "done"))
+  if (order === "before-children") num.push(upward())
+  tree.ses_a = half("numbers/a.txt", "391")
+  tree.ses_b = half("numbers/b.txt", "1024")
+  if (order !== "before-children") num.push(upward())
+  num.push(step("stop", say("Reported.")), idle(), released("halves", [["ses_a", "done"], ["ses_b", "done"]]))
+  num.push(...(order === "twice" ? [step("tool-calls", send("ses_root", "Confirming: 391 and 1024", "done")), step("stop", say("Reported again."))] : [step("stop", say("Already reported."))]), idle())
+  tree.ses_num = num
+  const root = [user("the job"), step("tool-calls", spawn("ses_num", "parts"), spawn("ses_count", "parts")), step("stop", say("split: 2 parts | numbers, count")), idle()]
+  root.push(released("parts", [["ses_num", "done"], ["ses_count", "done"]]))
+  if (order === "twice") root.push(report("ses_num", "done", "Confirming: 391 and 1024"))
+  root.push(step("tool-calls", tool("read", { path: "numbers/a.txt" })), step("stop", say("RESULTS 391 1024 42")), idle())
+  tree.ses_root = root
+  return { tree, files: FILES }
+}
+
+describe("the recursive checker and a sub-orchestrator that reports in the turn that started its group", () => {
+  test("it passes once its children's reports were sent, though the group was still held", () => {
+    expect(check(earlyRun("after-children")).failed).toEqual([])
+  })
+  test("a report upward before its children had reported fails", () => {
+    expect(check(earlyRun("before-children")).failed).toEqual([UPWARD])
+  })
+  test("a second report upward after the group arrives fails", () => {
+    expect(check(earlyRun("twice")).failed).toEqual([UPWARD])
+  })
+})

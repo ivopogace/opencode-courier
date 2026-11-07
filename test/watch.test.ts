@@ -187,12 +187,13 @@ const delivered = (id: string, created: number, sessionID = "ses_child", inboxID
   const event = sessionEvent("session.inbox.delivered", id, created, sessionID)
   return inboxID ? { ...event, data: { ...event.data, inboxID } } : event
 }
-const enqueued = (id: string, inboxID: string, type: string, sessionID = "ses_child") => ({
+const enqueued = (id: string, inboxID: string, type: string, sessionID = "ses_child", metadata?: Record<string, unknown>) => ({
   id,
   type: "session.inbox.enqueued",
   created: 1,
-  data: { sessionID, inboxID, item: { type, payload: {}, delivery: "steer" } },
+  data: { sessionID, inboxID, item: { type, payload: metadata ? { text: "t", metadata } : {}, delivery: "steer" } },
 })
+const groupMetadata = { source: "courier", from: "ses_a,ses_b", group: "halves", reports: 2 }
 const succeeded = (id: string, created: number, sessionID = "ses_child") => sessionEvent("session.execution.succeeded", id, created, sessionID)
 
 function sendFrom(ports: WatchPorts, from: string, to: string, now: number, status: "done" | "blocked" | "none" = "done") {
@@ -800,6 +801,45 @@ describe("what makes a child owe a report", () => {
 
   test("a message through courier or the plugin does", async () => {
     expect(await afterReport(exchange("synthetic"))).toHaveLength(1)
+  })
+
+  test("its own group's reports delivered after it reported do not, but a later message does", async () => {
+    const group = [enqueued("evt_e", "inb_1", "synthetic", "ses_child", groupMetadata), delivered("evt_d", 160, "ses_child", "inb_1"), succeeded("evt_s", 200)]
+    expect(await afterReport(group)).toEqual([])
+    const later = [enqueued("evt_e2", "inb_2", "synthetic"), delivered("evt_d2", 210, "ses_child", "inb_2"), succeeded("evt_s2", 250)]
+    expect(await afterReport([...group, ...later])).toHaveLength(1)
+  })
+
+  test("its own group's reports delivered before it reported do, the report still owed", async () => {
+    const { ports } = fakePorts()
+    await childStore(ports.storage).record(child())
+    const inbox = new Map<string, string>()
+    await notePrompt(ports, delivered("evt_d0", 100))
+    await noteEnqueued(ports, inbox, enqueued("evt_e", "inb_1", "synthetic", "ses_child", groupMetadata))
+    expect(await notePrompt(ports, delivered("evt_d", 160, "ses_child", "inb_1"), inbox)).toBe(true)
+    expect(await owesReport(ports.storage, "ses_child")).toBe(true)
+  })
+
+  test("its own group's reports delivered after a blocked report do", async () => {
+    const { ports } = fakePorts()
+    await childStore(ports.storage).record(child())
+    const inbox = new Map<string, string>()
+    await notePrompt(ports, delivered("evt_d0", 100))
+    await sendFrom(ports, "ses_child", "ses_parent", 150, "blocked")
+    await noteEnqueued(ports, inbox, enqueued("evt_e", "inb_1", "synthetic", "ses_child", groupMetadata))
+    expect(await notePrompt(ports, delivered("evt_d", 160, "ses_child", "inb_1"), inbox)).toBe(true)
+    expect(await owesReport(ports.storage, "ses_child")).toBe(true)
+  })
+
+  test("its own group's reports delivered after a turn interrupted without a report do", async () => {
+    const { ports } = fakePorts()
+    await childStore(ports.storage).record(child())
+    const inbox = new Map<string, string>()
+    await notePrompt(ports, delivered("evt_d0", 100))
+    await noteInterrupted(ports, sessionEvent("session.execution.interrupted", "evt_i", 150, "ses_child", "user") as SessionEvent)
+    await noteEnqueued(ports, inbox, enqueued("evt_e", "inb_1", "synthetic", "ses_child", groupMetadata))
+    expect(await notePrompt(ports, delivered("evt_d", 160, "ses_child", "inb_1"), inbox)).toBe(true)
+    expect(await owesReport(ports.storage, "ses_child")).toBe(true)
   })
 
   test("a delivery whose item was not seen enqueued does, failing toward telling the parent", async () => {

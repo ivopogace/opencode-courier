@@ -3,7 +3,7 @@ import { envelope } from "../src/kernel/protocol.js"
 import { asksPermission } from "../src/person/permission.js"
 import { asksQuestion } from "../src/person/question/index.js"
 import { isScheduled } from "../src/scheduling/index.js"
-import { notePrompt, reportSilent, waitsOn } from "../src/tree/events.js"
+import { noteEnqueued, notePrompt, reportSilent, waitsOn } from "../src/tree/events.js"
 import { nudgeSilent, onIdle } from "../src/tree/nudge.js"
 import { reportOf } from "../src/tree/report.js"
 import { send } from "../src/tree/send.js"
@@ -81,6 +81,24 @@ describe("nudgeSilent", () => {
     expect(await nudgeSilent(stopped.ports, new Set(), outside, idle())).toBe(false)
 
     expect([...sent, ...reported.sent, ...stopped.sent]).toEqual([])
+  })
+
+  test("leaves a child that reported before its own group's reports arrived, but reminds one that had not", async () => {
+    const enqueued = (inboxID: string) => ({
+      data: { sessionID: "ses_child", inboxID, item: { type: "synthetic", payload: { metadata: { source: "courier", group: "halves" } } } },
+    })
+    const reported = await prompted()
+    const inbox = new Map<string, string>()
+    await reportFrom(reported.ports, 150)
+    await noteEnqueued(reported.ports, inbox, enqueued("inb_1"))
+    expect(await notePrompt(reported.ports, delivered("evt_g", 200, "inb_1"), inbox)).toBe(false)
+    expect(await nudgeSilent(reported.ports, new Set(), outside, idle())).toBe(false)
+    expect(reported.sent).toEqual([])
+
+    const owing = await prompted()
+    await noteEnqueued(owing.ports, inbox, enqueued("inb_2"))
+    expect(await notePrompt(owing.ports, delivered("evt_g", 200, "inb_2"), inbox)).toBe(true)
+    expect(await nudgeSilent(owing.ports, new Set(), outside, idle())).toBe(true)
   })
 
   test("leaves a child that waits on a permission request or a session of its own", async () => {

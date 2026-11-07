@@ -459,6 +459,20 @@ describe("stop", () => {
     expect(store.get(settledKey("leaf1"))).toMatchObject({ status: "blocked" })
   })
 
+  test("tells the parent of a stopped blocked group member that it still holds back its group, and leaves it in (#523)", async () => {
+    const { ports, store, calls } = await fixture({ idle: ["leaf1"] })
+    store.set(promptKey("leaf1"), { at: 1_000 })
+    store.set(settledKey("leaf1"), { at: 2_000, by: "report", status: "blocked" })
+    await joinGroup(groupStore(ports.courier.storage), "mid", "g", "leaf1", "title leaf1", 1)
+
+    await stop(ports, "root", { sessionID: "leaf1" })
+
+    const told = calls.filter((call) => call.method === "synthetic")
+    expect(told).toHaveLength(1)
+    expect(told[0]!.input.text).toContain("It still holds back its join group if it is in one.")
+    expect(store.get(memberKey("mid", "g", "leaf1"))).toEqual({ title: "title leaf1", joinedAt: 1 })
+  })
+
   test("tells no one of an idle target whose blocked report its parent answered and that then reported done", async () => {
     const { ports, store, calls } = await fixture({ idle: ["leaf1"] })
     store.set(promptKey("leaf1"), { at: 3_000 })

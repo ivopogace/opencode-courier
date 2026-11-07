@@ -590,7 +590,7 @@ describe("the question tool of a spawned session", () => {
     const child = ask("ses_child")
     await settle()
 
-    // as the person's interrupt or OpenCode's inactivity eviction does
+    // as the person's interrupt does
     await Effect.runPromise(Fiber.interrupt(child))
     await settle()
 

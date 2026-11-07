@@ -31,7 +31,7 @@ below are in it.
   each step. Since 2.2.6 registration takes a missing `input` as `{}` and refuses one that is neither
   an object nor a function (`commit` in `packages/core/src/tool.ts`); the courier's tools all declare
   a schema.
-- OpenCode renders every tool's schema closed (`onExcessProperty: "error"` in
+- OpenCode renders every Effect tool schema closed (`onExcessProperty: "error"` in
   `packages/core/src/tool/runtime.ts`). `test/notices.test.ts` renders them the same way.
 - An undeclared key never reaches a tool: `tool-input-repair` (`packages/core/src/plugin/`) deletes
   it. So a renamed optional key stays declared under its old name while it is accepted.
@@ -54,9 +54,8 @@ below are in it.
   when its stream connects: the `followed` hooks run at the first event or `CONNECTED_MS` after subscribing.
 - `session.execution.started`, `.succeeded`, `.failed` and `.interrupted` frame a busy period, one
   terminal event however many prompts were steered in. `.interrupted` has `reason` `user`,
-  `shutdown` (resumed on the next start; also what a plain permission decline reports) or
-  `inactivity` (the location was evicted, see below). The schema's `superseded` is published by
-  nothing. A steered message interrupts nothing:
+  `shutdown` (resumed on the next start; also what a plain permission decline reports). The schema's
+  `inactivity` and `superseded` are published by nothing. A steered message interrupts nothing:
   `inbox.enqueued` (`delivery: "steer"`), then `inbox.delivered` at the next step, then one
   `.succeeded`. An interrupt with `resume` while a steer waits publishes `.interrupted` (`user`), then
   `.started` and the steer's `inbox.delivered`.
@@ -70,8 +69,8 @@ below are in it.
   (`inbox.enqueued`, a pending inbox row), then rings the run coordinator
   (`packages/core/src/session/run-coordinator.ts`), which publishes `execution.started` and drains:
   `inbox.delivered`, the turn, one terminal event. A healthy wake is
-  `enqueued → started → delivered → … → succeeded`. Only a new synthetic, prompt or resume rings
-  again.
+  `enqueued → started → delivered → … → succeeded`. Only a new synthetic, prompt, compaction, skill
+  or resume rings again.
 - **A lost wake is silent:** `enqueued` with no `started`. The host's paths to it: `synthetic`
   skips the wake while a revert is staged, and an interrupt between the doorbell and the stop clears
   the wake with no error or log. Neither reproduces on demand, so the missed-wake watch keys on that
@@ -120,7 +119,7 @@ below are in it.
     turn).
   Each instance caches the answer per session (500 at most per port) until the next stamp. A rest
   read within 10 seconds of its stamp is read again, since a delivered item stamps nothing until its
-  first step; an answer is kept 30 seconds at most. An unreadable or empty transcript reads running.
+  first step; a rest answer is kept 30 seconds at most, a running one until the next stamp. An unreadable or empty transcript reads running.
 - **`resume: false` is the only way to send without starting a turn.** `queue` still wakes an idle
   session. The item waits for the next turn. `inbox.enqueued` does not carry `resume`, so the plugin
   marks such messages in their metadata (`resume: false` beside `source: "courier"`) and `watchWake`
@@ -134,9 +133,10 @@ below are in it.
 - `session.context()` returns stored messages, not what the `context` hook sees. A turn's end is
   recorded as an `idle` message with `outcome: "succeeded" | "failed" | "interrupted"`.
 - OpenCode evicts a location after 60 minutes without a stored session event
-  (`experimental.location_idle_timeout`) when no session in it is executing. A location with a running
-  session is held for up to 24 hours without a durable event; then its sessions are interrupted with
-  `reason: "inactivity"` and it is evicted. A tool call has no timeout.
+  (`experimental.location_idle_timeout`, `false` turns it off), but never while a session in it is
+  executing, a background job it owns runs, or a terminal or client MCP socket retains it
+  (`packages/core/src/location-activity.ts`). Eviction interrupts no session. A tool call has no
+  timeout.
 - A provider's 402 fails the turn at once; a 429 OpenCode retries for minutes. The live suite's
   out-of-quota child answers 402 (`e2e/mock-model.mjs`).
 - A graceful shutdown closes locations one by one. A closing location first withdraws its forms, so
@@ -212,7 +212,8 @@ each `background` item's `sessionID`.
   A plain rejection rejects with `Permission.DeclinedError` itself, which ends the step only if the
   tool rethrows it untouched, not through `describeFailure`.
   `Permission.Unattended` (2.2.2) is a core-internal reference that settles an `ask` when nobody is
-  present to answer; only the experimental schedule route provides it, and the plugin API does not
+  present to answer; only schedules provide it (the experimental schedule route and core's schedule
+  checks), and the plugin API does not
   expose it. 2.2.6's `Permission.invocation(context)` only names a tool call's `sessionID`, `agent`
   and `source` for the built-in tools' asserts; the request they make is the same.
 - That plain decline sets no `time.idle` and no `idle` message. The execution ends as
@@ -228,9 +229,12 @@ each `background` item's `sessionID`.
 - `opencode run --auto` replies `once` to every request in its session, asserted ones included
   (`packages/cli/src/run/noninteractive.ts`). The scenario that holds the prompt drives the parent
   through the API.
-- The TUI's prompt (`packages/tui/src/routes/session/permission.tsx`) shows action and resources; a
-  `source` of type `tool` adds that tool's input. `metadata` is read only for `url`, `query`,
-  `provider`, `files` and `diff`, and `assert` cannot set the request's `message`.
+- The TUI's prompt (`packages/tui/src/routes/session/permission.tsx`) renders per action
+  (`permissionPresentation`, `packages/tui/src/util/permission.ts`); an action it does not know,
+  such as a plugin's, shows only `Tool: <action>`, without its resources. A `source` of type `tool`
+  adds that tool call's input and metadata. Request `metadata` is read only for `url`, `query`,
+  `provider`, `files`, `diff`, `parentDir` and `filepath`, and `assert` cannot set the request's
+  `message`.
   `permission.list` gives `metadata` and `source` back, so the asks inbox reads which child the top's
   prompt is for.
 - `worktree.create`, `.remove` and `.list` take `projectID` (`location.project.id`); `agent.get`
@@ -327,7 +331,7 @@ can see one, and a child that schedules a wake and ends its turn would read as e
 - So every spawned session is created with `CHILD_RULES` (`tree/spawn.ts`): `opencode_schedule_*`
   denied on `*`. A root keeps the tools.
 - They are Code Mode tools (namespace `opencode`), in `execute`'s catalog rather than tools of their
-  own, so the `context` hook cannot drop them. `Tool.snapshot` (`packages/core/src/tool.ts`) drops a
+  own while `execute` is not wholly denied, so the `context` hook cannot drop them. `Tool.snapshot` (`packages/core/src/tool.ts`) drops a
   tool whose action, its id (`opencode_` and the name), a rule wholly denies, from the direct tools
   and the catalog alike; the session's rules come after the agent's (`session/context.ts`).
 - `courier_later` keeps its own scheduler (checked at 2.2.6). Schedules are unreachable: no schedule
@@ -359,8 +363,8 @@ courier children are invisible to it ([reference](../reference.md#goal-and-couri
   in the same execution; `MAX_STALLS` (3) rounds in a row with the same reason or no tool call
   pause the goal.
 - An `experimental.idle` hook of the courier's could not change that. `PluginHooks.trigger`
-  (`plugin/hooks.ts`) runs the callbacks one after another in registration order, and built-ins come
-  before package plugins (`plugin/supervisor.ts`), so the verdict and its continuation are in before
+  (`plugin/hooks.ts`) runs the callbacks one after another in registration order, and `/goal` is a
+  `pre` built-in, which runs before package plugins (`plugin/supervisor.ts`, `plugin/internal.ts`), so the verdict and its continuation are in before
   the courier's hook runs. A later hook can add input but not take any back. A fix needs OpenCode to
   let a plugin declare background work, which [an upstream request](https://github.com/anomalyco/opencode/issues/60860) asks for.
 - Seen live at 2.2.4, with a scripted reviewer answering `continue`: three continuations within a
@@ -378,7 +382,7 @@ courier children are invisible to it ([reference](../reference.md#goal-and-couri
 - **`from` is a source directory, not a ref:** one the project knows, else
   `SourceDirectoryNotFoundError`.
 - **`branch` is a starting ref, not a new branch:** it runs
-  `git worktree add --detach -- <dir> <branch ?? HEAD>`, so a commit works and HEAD is always
+  `git worktree add --detach -- <dir> <branch ?? HEAD>` (`packages/core/src/git.ts`), so a commit works and HEAD is always
   detached. Uncommitted changes are not carried over.
 - A project's worktrees share one repository, so commits and branches are visible across them.
 
@@ -425,13 +429,13 @@ its type is the client's `ExperimentalSessionApi` (anomalyco/opencode#59072), an
 `client.session.instructions` is a deprecated alias of `client.experimental.session.instructions`,
 removed in the next minor (still deprecated, not removed, at 2.2.6); the plugin context's path may
 move with it, so a pin bump checks (`ctx.session.instructions.entry` at 2.2.6). The
-courier writes three entries: a spawned session's role part to `role` and the project's lessons to `lessons`
-(`spawn.ts`, before the prompt; `memory/lessons.ts` supplies the text and `courier_note` renews it),
+courier writes three entries: a spawned session's role part to `role` and, to a session above the deepest level
+when memory is on and has lessons, the project's lessons to `lessons` (`spawn.ts`, before the prompt; `memory/lessons.ts` supplies the text and `courier_note` renews it),
 and a parent's children to `standing` (`tree/standing.ts`, from the tools and events that move a
 child, put only when the text changed, removed with the last child). Each value stays well under
 3 KiB. Read in
-`packages/core/src/session/instruction-entry.ts`, `instructions/index.ts`, `instruction-state.ts`,
-`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.6`:
+`packages/core/src/session/instruction-entry.ts`, `packages/core/src/instructions/index.ts`, and in
+`session/`, `instruction-state.ts`, `context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.6`:
 
 - **Rendering.** An entry is one block, `<context key="<key>">`, the value, `</context>`: a string
   as it is, any other JSON pretty-printed. The key matches `^[a-z0-9][a-z0-9._-]*$` (stored as
@@ -449,7 +453,7 @@ child, put only when the text changed, removed with the last child). Each value 
   experimental, so `context.ts` still reads the `role` entry through `entry.list`.
 - **The baseline is fixed at the session's first step** (`InstructionState.prepare`, run at every
   step boundary) and moved only by a compaction (`advanceEpoch` on `session.compaction.ended`) or
-  a revert past the epoch (`rewind`). So an entry put between `session.create` and the first prompt
+  a revert that removes an instruction update or the epoch start (`rewind`). So an entry put between `session.create` and the first prompt
   is in the system prompt from the first request, and the first `put` after spawn moves no cached
   prefix. An entry put after the first step is announced at the next step boundary as a
   `session.instructions.updated` event whose `text` is the block (for a new key), "The context under
@@ -489,7 +493,8 @@ child, put only when the text changed, removed with the last child). Each value 
   names a model runs on it at its own `variant`; the agent's `model.variant` counts only for a session
   with no model (`session/runner/model.ts`), so the plugin passes the agent's variant with its model.
 - A model OpenCode does not have, or a variant the model has not, fails the session's first turn
-  (`ModelUnavailableError`, `VariantUnavailableError` in `model-resolver.ts`), so `courier_spawn`
+  (`ModelUnavailableError` in `session/runner/model.ts`, `VariantUnavailableError` in
+  `model-resolver.ts`), so `courier_spawn`
   checks a choice against `model.list()` first: `models.available()`, the enabled models, each with its
   `variants`. `"default"` is no variant (`withVariant`), and `session.get` fills `variant: "default"`.
 - A configured model given neither `capabilities.reasoning` nor `variants` gets its package's default
@@ -538,8 +543,8 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
   `description` as title, and prompts it with `You are a subagent spawned by another session.`
   first. `experimental.subagent_depth` (default 1) counts `parentID` links up to the root, so a
   native courier child cannot start one by default; a standalone one can.
-- **`session.list({ parentID })`** lists a session's children from any location, 50 by default,
-  newest first (`session/store.ts`). The plugin's `ctx.session.list` is the same call.
+- **`session.list({ parentID })`** lists a session's children from any location, 50 by default
+  (`session.ts`), most recently updated first (`session/store.ts`). The plugin's `ctx.session.list` is the same call.
 - **A foreground call** blocks on the child's job and interrupts it when the parent's call is
   interrupted. **A background one** (`background: true`, or a foreground one moved there) is tied to
   nothing: when the child's execution ends, interrupted included, its job ends and a forked observer
@@ -552,8 +557,9 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
 ## TUI and RPC entrypoints
 
 - **Found by export.** `Host.resolve` (`packages/plugin/src/host.ts`) resolves `<name>/server` (else
-  the package), `<name>/tui` and `<name>/rpc`. In a local directory, `tui.js` and `rpc.js` sit next
-  to `index.js`. A local plugin given as a file path gets `server` only.
+  the package), `<name>/tui` and `<name>/rpc`. A local directory whose `package.json` has a
+  `name` and `exports` resolves like a package; without them, `index.js`, `tui.js` and `rpc.js` sit
+  at its root. A local plugin given as a file path gets `server` only.
 - **The server runs only `server`**, recording `features: { server, tui, rpc }` (in
   `GET /api/plugin`). `opencode plugin add` adds a package with `server` to the global config.
 - **The TUI loads `tui`** with a plain `import()` for each plugin with `features.tui`
@@ -575,7 +581,8 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
 - **RPC.** `Rpc.define` (`@opencode/plugin/rpc`) takes `{ id, methods, events }`; `rpc.*` names are
   reserved. Registration and `client.rpc` take Standard Schema, so one definition serves both
   halves. One service per location; the last registration of an id answers. Errors:
-  `rpc.invalid_input`, declared errors, `rpc.internal`, `rpc.unavailable`, `rpc.invalid_output`.
+  `rpc.invalid_input`, `rpc.method_not_found`, declared errors, `rpc.internal`, `rpc.unavailable`,
+  `rpc.invalid_output`.
   Over HTTP: `POST /api/rpc/:rpcID/:method?directory=…` with `{ "input": … }`.
 - **Options:** `ctx.options` is the TUI's own `cli.json` entry. A plugin loaded from the server's
   list enters bare, so `opencode.json` options never reach it. The TUI's `animations` setting is not
@@ -603,14 +610,14 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
   layered on `dialog`; a theme's `@dialog` may carry `@footer`). No TUI part of the plugin uses
   `text.faint` or a surface.
 - **The panel belongs to one session.** `ui.panel.open` targets the route's session, and the app
-  closes it on any route change (`app.tsx`). A new panel takes the keyboard. So the tree panel
+  closes it when the route leaves that session (`app.tsx`). A new panel takes the keyboard. So the tree panel
   reopens itself after a route change, and hands the keyboard back with
   `keymap.dispatch("pane.focus.left")` when it did not have it.
 - **A panel splits from 108 columns, less the vertical tabs** (`canSplit`, `context/panel.tsx`;
   `> 80` up to 2.0.29). The plugin cannot read the tabs' width, so it notes the split only at a
   `renderer.width` of 108 or more.
-- **Keys OpenCode takes after `<leader>`:** `a b c e g i l m n q r s t u w x y`, the digits and the
-  arrows (`config/v1/keybind.ts`). The inbox takes `<leader>k`.
+- **Keys OpenCode takes after `<leader>`:** `a b c e g i l m n q r s t u w x y`, the digits, `return`
+  and the arrows (`packages/tui/src/config/keybind.ts`; the legacy names in `config/v1/keybind.ts`). The inbox takes `<leader>k`.
 - **A span's colour is not cleared by `undefined`:** `@opentui/solid` keeps the old `bg` and `fg`,
   and `attributes` only gain bits. Digby's spans are reused through `<Index>`, so every cell gets a
   `bg`, transparent where it has none. A `<box>`'s `backgroundColor` does clear.

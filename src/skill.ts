@@ -9,12 +9,12 @@ export const SKILL_DESCRIPTION =
 export const SKILL_CONTENT = [
   "# How opencode-courier's session tools work",
   "",
-  "If courier_spawn is not among your tools, you cannot split: do the task yourself. How to plan the parts, stage a " +
-    "tightly coupled core or review the merged result is a playbook's: if a skill for that is listed to you, load it too.",
+  "If courier_spawn is not among your tools, you cannot split: do the task yourself. Planning the parts, staging a " +
+    "tightly coupled core and reviewing the merge are not in this skill: if a skill for them is listed to you, load it too.",
   "",
   "## 1. Split or do",
   "",
-  "Split or do by the rule in your brief, the text above your task. At the root, which has no brief: split a task with 2 " +
+  "Split or do by the rule in your brief, the text above your task. At the root, the top session of the tree, which has no brief: split a task with 2 " +
     "or more independent, substantial parts touching separate files or areas, do it yourself when it is small, " +
     "sequential or tightly coupled, or hand a heavy one (long reading, many edits, long runs) whole to one session to " +
     `keep your context. Say which in one line of your reply: ${SPLIT_LINE}, or, at the root only, ${ONE_PART_LINE}. Several whole ` +
@@ -28,14 +28,15 @@ export const SKILL_CONTENT = [
   "- No two parts edit the same files; isolate: true for each part that edits files in parallel with another.",
   "- Write each task so the session can do it without you, since it sees none of your conversation: what to produce " +
     "and where, the context it needs, how to check it, and what to report. Name the skills it should load for its " +
-    "part, from those listed to you: it sees the same list, not your choice.",
-  "- A part that depends on another starts once that one's branch is merged into your checkout.",
+    "part, from those listed to you (an isolated part sees only committed project skills).",
+  "- A part that depends on another starts once that one has reported and its branch, if isolated, is merged into " +
+    "your checkout.",
   "",
   "## 3. End your turn",
   "",
   "- Reply without calling more tools; reports and notices wake you. For a long task or batch, one courier_later " +
     "check-in per group (per session when ungrouped); courier_cancel it when its reports arrive.",
-  "- At the top, a permission request or question from below arrives with its own instructions: follow them, and never " +
+  "- At the root, a permission request or question from below arrives with its own instructions: follow them, and never " +
     "answer for the person.",
   "- When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves " +
     "otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects; if it breaks the " +
@@ -46,12 +47,13 @@ export const SKILL_CONTENT = [
   "## 4. Verify first-hand",
   "",
   "Open the files and run the project's checks yourself. A blocked report: make the decision it asks for and send it " +
-    "with courier_send; if only the person can make it, ask them with your question tool and pass the answer on.",
+    "with courier_send; if only the person can make it, ask them with your question tool and pass the answer on. A " +
+    "partial or failed report: have it finish or retry with courier_send, do the rest yourself, or start a replacement.",
   "",
   "## 5. Integrate",
   "",
-  "Merge each reported branch into your own checkout (git merge courier/<session>), resolve conflicts yourself, run the " +
-    "checks once more, then courier_cleanup the isolated sessions you are done with.",
+  "Merge each isolated part's reported branch into your own checkout (git merge courier/<session>), resolve conflicts " +
+    "yourself and run the checks once more. Then courier_cleanup each session you are done with, isolated or not.",
   "",
   "## 6. Done",
   "",

@@ -256,24 +256,32 @@ order:
    limits, waves, each its own group, or ungrouped, the next started as each report frees a slot. No
    two parts edit the same files, `isolate: true` where they edit in parallel. Each task says what
    to produce, the context, how to check it, what to report and the skills to load from those the
-   parent sees listed. A part that depends on another starts once that one's branch is merged.
+   parent sees listed (an isolated part sees only committed project skills). A part that depends on
+   another starts once that one has reported and its branch, if isolated, is merged.
 3. **End the turn**: reports and notices wake the parent; for a long task or batch, one `courier_later`
    check-in per group (per session when ungrouped), which the model cancels with `courier_cancel` when
    its reports arrive.
-   At the top, a permission request or question from below comes with its own instructions, and the
+   At the root, a permission request or question from below comes with its own instructions, and the
    model never answers for the person. A message that changes what other parts need goes on to the
    children it affects, and only to them; a child's account of what the person told it is the
    person's word ([steering a running tree](#steering-a-running-tree)).
 4. **Verify first-hand**, and answer a blocked report, through the person when only they can decide.
-5. **Integrate**: merge each reported branch, check again, `courier_cleanup`.
+   On a partial or failed report the parent has the child finish or retry, does the rest itself,
+   or starts a replacement.
+5. **Integrate**: merge each isolated part's reported branch, check again, then `courier_cleanup`
+   each session done with, isolated or not ([stopping](#seeing-and-stopping-a-subtree) says which
+   stopped ones still count).
 6. **Done** only when every part is verified and integrated; at the root, one `courier_note` when
    the next tree should know something, none otherwise.
 
-Without the skill, the brief and the role part still carry the split rule, the one group, no
-polling, the limits, verifying, how to report and to send a finding up; the tool descriptions carry
-check-ins, isolation, the model and `native`; the notices carry the relay and what to do about a
-child that fails or goes quiet. The skill alone adds the waves, writing a task, passing findings
-on, merging and the definition of done.
+Without the skill, a child's brief still carries the split rule, the one group, no polling, the
+limits, verifying, how to report and to send a finding or the person's words up. The root has no
+brief: its role line carries the split rule until its first spawn, then only the limits and
+verifying. The tool descriptions carry the one group, no polling, check-ins, isolation, the model
+and `native`; the notices carry the relay and what to do about a child that fails or goes quiet.
+The skill alone adds the root's split rule after its first spawn, that several jobs are that many
+parts, the waves, writing a task, passing findings and the person's word on, answering a blocked,
+partial or failed report, merging, the definition of done and the root's lesson.
 
 Each check a part runs and each skill it loads may ask a permission, and every request below the
 top waits on you: a permission rule that allows the project's check scripts (run through them, not

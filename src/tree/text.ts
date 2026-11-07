@@ -450,7 +450,9 @@ export function silentNotice(title: string, lastText: string | undefined, progre
       : []),
     ...(reply ? ["Its last reply:", defuse(clipText(reply, QUOTED_REPLY_MAX))] : ["It ended without a reply."]),
     "",
-    "Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.",
+    reply
+      ? "Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement."
+      : "Decide what it needs: message it with courier_send to have it carry on; or start a replacement.",
     "Until it reports, it counts toward your limits on the sessions you run at once.",
     ...(group
       ? [

@@ -745,6 +745,8 @@ exports[`envelope and child brief refusals 3`] = `"Not started: 1 session you st
 
 exports[`envelope and child brief refusals 4`] = `"Not started: 20 sessions in this session tree are running or have not reported yet, the most allowed at once (maxTotal 20). Do this part yourself, or end your turn and try again once a report has arrived, not in a loop."`;
 
+exports[`envelope and child brief refusals 5`] = `"Not started: 20 sessions in this session tree are running or have not reported yet, the most allowed at once (maxTotal 20). Do this part yourself: none of the sessions you started is running, so no report will wake you."`;
+
 exports[`envelope and child brief refusals of a model or variant 1`] = `"Not started: model must be provider/model, as OpenCode names them (opencode/gpt-5-nano, anthropic/claude-sonnet-4-5), not "small". Leave it unset to run the session on your own model."`;
 
 exports[`envelope and child brief refusals of a model or variant 2`] = `"Not started: OpenCode lists no model mock/huge here. The models of mock here are chat, small. Leave model unset to run the session on your own model."`;

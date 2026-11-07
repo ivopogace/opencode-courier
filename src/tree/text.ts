@@ -177,9 +177,11 @@ export const childrenRefusal = (running: number, maxChildren: number) =>
   `Not started: ${count(running, "session")} you started ${live(running)}, the most allowed at once ` +
   `(maxChildren ${maxChildren}). Do this part yourself, or end your turn and start it once one of them has reported, not in a loop.`
 
-export const totalRefusal = (running: number, maxTotal: number) =>
-  `Not started: ${count(running, "session")} in this session tree ${live(running)}, the most allowed at once ` +
-  `(maxTotal ${maxTotal}). Do this part yourself, or end your turn and try again once a report has arrived, not in a loop.`
+export const totalRefusal = (running: number, maxTotal: number, yours: number) =>
+  `Not started: ${count(running, "session")} in this session tree ${live(running)}, the most allowed at once (maxTotal ${maxTotal}). ` +
+  (yours === 0
+    ? "Do this part yourself: none of the sessions you started is running, so no report will wake you."
+    : "Do this part yourself, or end your turn and try again once a report has arrived, not in a loop.")
 
 const LISTED_MAX = 12
 

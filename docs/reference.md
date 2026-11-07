@@ -254,7 +254,9 @@ order:
    two parts edit the same files, `isolate: true` where they edit in parallel. Each task says what
    to produce, the context, how to check it, what to report and the skills to load from those the
    parent sees listed. A part that depends on another starts once that one's branch is merged.
-3. **End the turn**: reports and notices wake the parent; one `courier_later` check-in per group.
+3. **End the turn**: reports and notices wake the parent; for a long task or batch, one `courier_later`
+   check-in per group (per session when ungrouped), which the model cancels with `courier_cancel` when
+   its reports arrive.
    At the top, a permission request or question from below comes with its own instructions, and the
    model never answers for the person. A message that changes what other parts need goes on to the
    children it affects, and only to them; a child's account of what the person told it is the
@@ -550,6 +552,8 @@ late. They are queued behind a running turn and survive a restart. A crash betwe
 message and forgetting it can deliver it twice. After a start,
 OpenCode loads plugins when a project is first used, so messages that fell due meanwhile arrive
 then. `delayMinutes` may be a number or a string holding a plain decimal (`"3"`, `"2.5"`).
+A report does not cancel a check-in: only `courier_cancel` does, or
+[`courier_stop`](#seeing-and-stopping-a-subtree) of the session it is for.
 
 A spawned session cannot use OpenCode's own schedules (`schedule_create` and the rest, with
 `experimental.schedules` on): its session's rules deny them. A wake-up of theirs goes round the tree,

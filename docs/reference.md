@@ -160,7 +160,8 @@ A session is live while:
 - a message sent to wake it waits in its inbox, unless it is [stalled](#a-missed-wake);
 - a session below it is live.
 
-So a child that ends its turn without reporting counts until it reports, and a session waiting for
+So a child that ends its turn without reporting counts until it reports or its parent drops it
+with `courier_cleanup`, and a session waiting for
 its own children counts too. So does a session whose turn failed while sessions under it are still
 live: their reports wake it, and its [failure notice](#a-child-that-fails) says so. Renaming, archiving or switching the model of a session does not make
 it live. A child counts from the moment `courier_send` to it returns, so a spawn in the same step
@@ -396,8 +397,7 @@ from="courier" reminder="report">` envelope, naming the session to report to. It
 turn, on the warm prompt cache, and the parent is not woken. One reminder per prompt that reached
 the child: if it still ends its turn without a report, the parent gets a message marked
 `ended="without-report"`, with the child's last reply (its first 2,000 characters). The parent can tell the child to carry on or
-to report, or start a replacement; until the child reports, it counts toward the
-[limits](#session-trees-and-their-limits), unless the parent drops it with `courier_cleanup`. The reminder is not a prompt of its own: the child owes the same
+to report, or start a replacement. The reminder is not a prompt of its own: the child owes the same
 report, and it is not watched as a [missed wake](#a-missed-wake). It needs OpenCode 2.2.4's
 experimental `experimental.idle` hook; an older OpenCode, or one where the hook changed, skips the
 reminder and only tells the parent. A child with an active [`/goal`](#goal-and-courier-children) may get the

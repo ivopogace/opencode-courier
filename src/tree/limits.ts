@@ -15,11 +15,12 @@ async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: s
     ),
     reportOf(childStore(ports.storage), sessionID).catch(() => undefined),
   ])
-  if (time === null) return false
+  if (time === null) return undefined
   const inTurn = report?.reportedAt !== undefined && !(millis(time?.idle) >= report.reportedAt)
   const running = time !== undefined && !report?.ended && !inTurn && (await runs(ports.session, sessionID, time))
   // a waiting inbox item is in no transcript until delivered (api-notes)
-  return running || (report?.owes ?? false) || (await waitsInInbox(ports, sessionID, { stalled: false }).catch(() => true))
+  if (running || report?.owes || (await waitsInInbox(ports, sessionID, { stalled: false }).catch(() => true))) return "live"
+  return report?.blocked ? "blocked" : undefined
 }
 
 export async function admit(ports: LimitPorts, parentID: string) {
@@ -44,7 +45,13 @@ async function check(ports: LimitPorts, parentID: string) {
   const tree = entries.filter((entry) => chains.get(entry.sessionID)!.at(-1)?.parentID === top)
   const counting = await Promise.all(tree.map((entry) => live(ports, entry.sessionID)))
   const active = new Set(
-    tree.filter((_, i) => counting[i]).flatMap((entry) => [entry.sessionID, ...chains.get(entry.sessionID)!.map((above) => above.parentID)]),
+    tree.flatMap((entry, i) =>
+      counting[i] === "live"
+        ? [entry.sessionID, ...chains.get(entry.sessionID)!.map((above) => above.parentID)]
+        : counting[i] === "blocked"
+          ? [entry.sessionID]
+          : [],
+    ),
   )
   const counted = tree.filter((entry) => active.has(entry.sessionID))
   const recorded = new Set(tree.map((entry) => entry.sessionID))
@@ -64,5 +71,5 @@ export async function liveBelow(ports: Pick<LimitPorts, "session" | "storage">, 
     (entry) => entry.sessionID !== sessionID && lineageBy(parents, entry.sessionID).some((above) => above.parentID === sessionID),
   )
   const counting = await Promise.all(below.map((entry) => live(ports, entry.sessionID)))
-  return below.filter((_, i) => counting[i])
+  return below.filter((_, i) => counting[i] === "live")
 }

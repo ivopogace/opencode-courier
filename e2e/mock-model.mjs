@@ -312,6 +312,7 @@ function decide(body) {
   const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
   if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
+  if (recent.includes("COURIER-SPAWN-BLOCKS")) return { tool: "courier_spawn", args: { task: "CHILD-BLOCKS", native: false } }
   if (recent.includes("COURIER-ROLLING")) return { tool: "courier_spawn", args: { task: "CHILD-ROLLING-FIRST", native: false } }
   if (recent.includes("COURIER-OWN-CHECKIN")) return { tool: "courier_spawn", args: { task: "CHILD-CHECKIN-MID", native: false } }
   if (recent.includes("COURIER-EARLY-REPORT")) return { tool: "courier_spawn", args: { task: "CHILD-EARLY-MID", native: false } }

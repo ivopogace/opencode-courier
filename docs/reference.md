@@ -148,11 +148,10 @@ Any spawned session can call `courier_spawn` too, so sessions form a tree. The s
 spawned is its top, at depth 0. `courier_spawn` refuses a spawn, naming the limit and what to do
 instead, when the child would be deeper than `maxDepth`, or when `maxChildren` or `maxTotal`
 sessions are already live; the last two say to do the part itself or start it once one of the
-caller's own children has reported, not in a loop, and that a session that reported still counts
-while sessions it started are live, and one that ended without a report until its parent drops it
-with `courier_cleanup`. When none of the caller's own sessions is live, the `maxTotal` refusal says
-only to do the part itself, since no report will wake it; the `maxChildren` refusal cannot meet
-that case, as it counts only the caller's own.
+caller's own children has reported, not in a loop, and they state what counts, as listed below.
+When none of the caller's own sessions is live, the `maxTotal` refusal says only to do the part
+itself, since only reports already held for a [group](#join-groups) can still wake it; the
+`maxChildren` refusal cannot meet that case, as it counts only the caller's own.
 
 A session is live while:
 
@@ -160,6 +159,8 @@ A session is live while:
   since its last prompt, so a parent woken by a report can start the next session in that same
   turn; a later turn, such as one the person prompts, counts again;
 - it [owes its parent a report](#a-child-that-ends-without-a-report);
+- its last report since its last prompt is `blocked`, as it waits on its parent's answer; this
+  makes no session above it live, since no report of its own will wake them;
 - a message sent to wake it waits in its inbox, unless it is [stalled](#a-missed-wake);
 - a session below it is live.
 

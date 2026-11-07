@@ -508,7 +508,7 @@ describe("admit", () => {
     await expect(admit(ports, "ses_root")).rejects.toThrow(totalRefusal(4, 4, 2))
   })
 
-  test("maxTotal: tells a session with none of its own running that no report will wake it (#479)", async () => {
+  test("maxTotal: tells a session with none of its own running that only reports held for a group can wake it (#479, #526)", async () => {
     const { ports, child } = limitPorts({ ...DEFAULT_LIMITS, maxTotal: 3 })
     await child("ses_root", "ses_a")
     await child("ses_root", "ses_b")
@@ -516,7 +516,7 @@ describe("admit", () => {
 
     const refused = admit(ports, "ses_b")
     await expect(refused).rejects.toThrow(totalRefusal(3, 3, 0))
-    await expect(refused).rejects.toThrow("no report will wake you")
+    await expect(refused).rejects.toThrow("only reports already held for a group can still wake you")
     await expect(admit(ports, "ses_a")).rejects.toThrow(totalRefusal(3, 3, 1))
     await expect(admit(ports, "ses_a")).rejects.toThrow("once one of the sessions you started has reported, not in a loop.")
   })
@@ -563,6 +563,15 @@ describe("a failed session with live sessions under it (#462)", () => {
     const { ports } = await failedOver({ ses_other: FINISHED, ses_cousin: FINISHED })
     await childStore(ports.storage).settled("ses_cousin", "report", 150)
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+  })
+
+  test("names none and is not counted for one under it idle after a blocked report, which counts itself (#524)", async () => {
+    const { ports, storage } = await failedOver({ ses_other: FINISHED, ses_cousin: FINISHED, ses_g: FINISHED, ses_gg: FINISHED })
+    for (const id of ["ses_gg", "ses_cousin"]) await childStore(storage).settled(id, "report", 150)
+    await childStore(storage).settled("ses_g", "report", 150, "blocked")
+    expect(await liveBelow(ports, "ses_a")).toEqual([])
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+    await expect(admit(ports, "ses_a")).rejects.toThrow(childrenRefusal(1, 1))
   })
 
   test("names none and counts no more once nothing under it is live", async () => {
@@ -745,6 +754,16 @@ describe("admit, with children that owe a report", () => {
     storage.scan = async (input: { prefix: string }) => (input.prefix.startsWith("wake/") ? Promise.reject(new Error("db locked")) : scan(input))
 
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+  })
+
+  test("and one idle after a blocked report, until it reports again (#524)", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, { ses_a: FINISHED })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150, "blocked")
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+    await childStore(storage).settled("ses_a", "report", 160)
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
   })
 
   test("but one archived after a blocked report, while its turn runs on between two steps, still counts", async () => {
@@ -1166,9 +1185,9 @@ describe("the context hook", () => {
     expect(brief).not.toContain(forms[2])
   })
 
-  test("the maxChildren and maxTotal refusals say not to retry in a loop, and what still counts (#511)", () => {
-    const counts = "A session that reported still counts while sessions it started are live, and one that ended without a report counts until"
-    expect(childrenRefusal(2, 2)).toContain("2 sessions you started are running or still owe a report")
+  test("the maxChildren and maxTotal refusals say not to retry in a loop, and what still counts (#511, #525)", () => {
+    const counts = "A session also counts while one it started is live, and one whose turn ended without a report, unless it failed or was interrupted, counts until it reports or"
+    expect(childrenRefusal(2, 2)).toContain("2 sessions you started are running, blocked or still owe a report")
     expect(childrenRefusal(2, 2)).toEndWith(
       `start it once one of them has reported, not in a loop. ${counts} you drop it with courier_cleanup.`,
     )
@@ -1181,7 +1200,7 @@ describe("the context hook", () => {
 
   test("the maxTotal refusal to a session with none of its own running says to do the part itself", () => {
     const refusal = totalRefusal(4, 4, 0)
-    expect(refusal).toEndWith("Do this part yourself: none of the sessions you started counts, so no report will wake you.")
+    expect(refusal).toEndWith("Do this part yourself: none of the sessions you started counts, so only reports already held for a group can still wake you.")
     expect(refusal).not.toContain("end your turn")
   })
 

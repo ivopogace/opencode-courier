@@ -64,6 +64,10 @@ function decide(body) {
       return (call.function.arguments ?? "").includes('"background"')
         ? { tool: "subagent", args: { agent: "general", description: "Look it up", prompt: "SUBAGENT-FOREGROUND" } }
         : { text: "MID DONE" }
+    const briefOf = textOf(messages.find((message) => message.role === "user")?.content)
+    const noRoot = briefOf.includes("CHILD-SUBAGENT-NO-ROOT") && briefOf.match(/You were started by session (ses_\w+)/)
+    if (call?.function?.name === "subagent" && noRoot) return { tool: "courier_send", args: { sessionID: noRoot[1], message: "CHILD SAW " + result, status: "done" } }
+    if (call?.function?.name === "courier_send" && noRoot) return { text: "CHILD REPORTED" }
     if (call?.function?.name === "courier_spawn" && prompt.includes("COURIER-STALL")) return { text: "ROOT SPAWNED" }
     // Reads the directory the skill tool named, as a model that looks for the skill's files would.
     const base = call?.function?.name === "skill" && prompt.includes("COURIER-SKILL-READ") ? result.match(/Base directory for this skill: (\S+)/)?.[1] : undefined
@@ -137,6 +141,7 @@ function decide(body) {
   const saying = recent.match(/COURIER-SAY ([^"\n]+)/)
   if (saying) return { text: saying[1] }
   if (textOf(messages.findLast((message) => message.role === "user")?.content).includes("COURIER-HOLD")) return { text: "HOLDING", hold: true }
+  if (recent.includes("SUBAGENT-NO-ROOT-ASK")) return { text: "SUBAGENT NO ROOT DONE" }
   if (recent.includes("You are a subagent spawned by another session.")) return { text: "SUBAGENT HOLDING", hold: true }
   if (/<subagent sessionID="ses_\w+" state=/.test(recent)) return { text: "SAW SUBAGENT END", delayed: true }
   const parent = recent.match(/You were started by session (ses_\w+) through opencode-courier/)
@@ -180,6 +185,8 @@ function decide(body) {
   if (parent && recent.includes("CHILD-DEEPENS"))
     return { calls: [{ tool: "courier_spawn", args: { task: "CHILD-LEAF" } }, { tool: "courier_spawn", args: { task: "CHILD-LEAF CHILD-FORCES" } }] }
   if (parent && recent.includes("CHILD-LEAF")) return { tool: "courier_spawn", args: { task: "CHILD-TOO-DEEP" } }
+  if (parent && recent.includes("CHILD-SUBAGENT-NO-ROOT"))
+    return { tool: "subagent", args: { agent: "general", description: "Answer in one line", prompt: "SUBAGENT-NO-ROOT-ASK" } }
   if (parent && recent.includes("CHILD-SUBAGENT-MID"))
     return { tool: "subagent", args: { agent: "general", description: "Run the checks", prompt: "SUBAGENT-BACKGROUND", background: true } }
   if (parent && recent.includes("CHILD-SUBTREE-MID")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-LEAF" } }
@@ -254,6 +261,7 @@ function decide(body) {
   if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
   if (recent.includes("COURIER-SUBTREE-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-MID" } }
   if (recent.includes("COURIER-SUBAGENT-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBAGENT-MID" } }
+  if (recent.includes("COURIER-SUBAGENT-NO-ROOT")) return { tool: "courier_spawn", args: { task: "CHILD-SUBAGENT-NO-ROOT" } }
   if (recent.includes("COURIER-STALL")) return { tool: "courier_spawn", args: { task: "CHILD-STALL-MID" } }
   if (recent.includes("COURIER-SUBTREE-TREE")) return { tool: "courier_tree", args: {} }
   const stopping = recent.match(/COURIER-SUBTREE-STOP (ses_\w+)/)

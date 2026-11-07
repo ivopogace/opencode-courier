@@ -944,10 +944,12 @@ describe("the context hook", () => {
     const { storage, child } = limitPorts(limits)
     const logged: string[] = []
     const calls: string[] = []
+    const parents = new Map<string, string>()
     const ports: ContextPorts = {
       storage,
       limits,
       roles: new Map(),
+      session: { get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID, ...(parents.has(sessionID) ? { parentID: parents.get(sessionID) } : {}) }) } as any,
       ...(entries ? { instructions: fakeInstructions(entries, calls) as unknown as ContextPorts["instructions"] } : {}),
       log: (message) => void logged.push(message),
     }
@@ -956,7 +958,7 @@ describe("the context hook", () => {
       await shapeContext(ports, event)
       return event
     }
-    return { ports, storage, child, shape, logged, calls }
+    return { ports, storage, child, shape, logged, calls, parents }
   }
 
   // OpenCode renders an entry as a <context> block ending the baseline
@@ -1111,6 +1113,69 @@ describe("the context hook", () => {
 
       expect(event.system).toHaveLength(1)
     }
+  })
+
+  const leafTools = () => ({ ...tools(), courier_recall: {}, courier_note: {} })
+
+  test("gives an OpenCode subagent of a tree's session no role part and, as a leaf, no courier_spawn, courier_recall or courier_note", async () => {
+    const { ports, child, parents } = contextPorts()
+    await chainTo(child, 1)
+    parents.set("ses_sub", "ses_d1")
+    const event = { sessionID: "ses_sub", tools: leafTools() as Record<string, unknown>, system: [{ type: "text" as const, text: "base" }] }
+
+    await shapeContext({ ...ports, hiddenFromLeaf: ["courier_recall", "courier_note"] }, event)
+
+    expect(Object.keys(event.tools)).toEqual(["courier_send", "read"])
+    expect(event.system).toEqual([{ type: "text", text: "base" }])
+    expect(ports.roles.get("ses_sub")).toEqual({ depth: null, entry: false, subagent: true })
+  })
+
+  test("treats as subagents those of the tree's top and of a subagent in the tree, and leaves a native courier child its role", async () => {
+    const { shape, child, parents } = contextPorts()
+    await chainTo(child, 1)
+    parents.set("ses_d1", "ses_root")
+    parents.set("ses_top_sub", "ses_root")
+    parents.set("ses_sub", "ses_d1")
+    parents.set("ses_sub_sub", "ses_sub")
+
+    for (const sessionID of ["ses_top_sub", "ses_sub_sub"]) {
+      const event = await shape(sessionID)
+      expect(Object.keys(event.tools)).toEqual(["courier_send", "read"])
+      expect(event.system).toEqual([{ type: "text", text: "base" }])
+    }
+    expect((await shape("ses_d1")).system).toEqual([{ type: "text", text: "base" }, { type: "text", text: rolePart(1, DEFAULT_LIMITS) }])
+  })
+
+  test("leaves an OpenCode subagent of a session outside any tree a root, and finds it a subagent once its parent spawns", async () => {
+    const { ports, shape, child, parents } = contextPorts()
+    parents.set("ses_sub", "ses_alone")
+
+    const before = await shape("ses_sub")
+    expect(Object.keys(before.tools)).toEqual(["courier_spawn", "courier_send", "read"])
+    expect(before.system.at(-1)).toEqual({ type: "text", text: rolePart(null, DEFAULT_LIMITS) })
+    expect(ports.roles.has("ses_sub")).toBe(false)
+
+    await child("ses_alone", "ses_a")
+    ports.roles.delete("ses_alone")
+    const after = await shape("ses_sub")
+    expect(Object.keys(after.tools)).toEqual(["courier_send", "read"])
+    expect(after.system).toEqual([{ type: "text", text: "base" }])
+  })
+
+  test("ends a loop of OpenCode parents as a root", async () => {
+    const { shape, parents } = contextPorts()
+    parents.set("ses_x", "ses_y")
+    parents.set("ses_y", "ses_x")
+
+    expect((await shape("ses_x")).system.at(-1)).toEqual({ type: "text", text: rolePart(null, DEFAULT_LIMITS) })
+  })
+
+  test("logs a failed session read and leaves the request as it is", async () => {
+    const { ports, shape, logged } = contextPorts()
+    ;(ports.session as any).get = async () => Promise.reject(new Error("gone"))
+
+    expect(await shape("ses_a")).toEqual({ sessionID: "ses_a", tools: tools(), system: [{ type: "text", text: "base" }] })
+    expect(logged).toEqual(["courier: cannot tell the role of session ses_a: Error: gone"])
   })
 
   test("logs a failed lookup and leaves the request as it is", async () => {

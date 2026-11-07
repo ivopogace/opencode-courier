@@ -15,9 +15,10 @@ export interface Shaped {
 
 export async function shapeContext(ports: ContextPorts, event: Shaped) {
   try {
-    const { depth, entry } = await roleOf(ports, event.sessionID)
-    if (depth === null && !event.tools.courier_spawn) return
-    if (depth !== null && depth >= ports.limits.maxDepth) for (const tool of ["courier_spawn", ...(ports.hiddenFromLeaf ?? [])]) delete event.tools[tool]
+    const { depth, entry, subagent } = await roleOf(ports, event.sessionID)
+    const leaf = subagent || (depth !== null && depth >= ports.limits.maxDepth)
+    if (leaf) for (const tool of ["courier_spawn", ...(ports.hiddenFromLeaf ?? [])]) delete event.tools[tool]
+    if (subagent || (depth === null && !event.tools.courier_spawn)) return
     if (entry || event.system.some((part) => ROLE_LINE.test(part.text))) return
     event.system.push({ type: "text", text: rolePart(depth, ports.limits) })
   } catch (error) {
@@ -25,12 +26,22 @@ export async function shapeContext(ports: ContextPorts, event: Shaped) {
   }
 }
 
-async function roleOf(ports: ContextPorts, sessionID: string): Promise<Role> {
+async function roleOf(ports: ContextPorts, sessionID: string, below: ReadonlySet<string> = new Set()): Promise<Role> {
   const known = ports.roles.get(sessionID)
   if (known !== undefined) return known
   const children = childStore(ports.storage)
   const chain = await children.indexedLineage(sessionID)
   const depth = chain.length || ((await children.children(sessionID)).length ? 0 : null)
+  if (depth === null) {
+    const { parentID } = await ports.session.get({ sessionID })
+    if (parentID && !below.has(parentID)) {
+      const above = await roleOf(ports, parentID, new Set([...below, sessionID]))
+      if (above.depth === null && !above.subagent) return { depth: null, entry: false }
+      const role: Role = { depth: null, entry: false, subagent: true }
+      setBounded(ports.roles, sessionID, role, ROLES_MAX)
+      return role
+    }
+  }
   const role = { depth, entry: depth !== null && (await hasEntry(ports, sessionID)) }
   setBounded(ports.roles, sessionID, role, ROLES_MAX)
   return role

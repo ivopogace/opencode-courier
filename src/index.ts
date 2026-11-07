@@ -164,7 +164,7 @@ export const courier = () => Plugin.define({
       .catch((error: unknown) => log(`courier rpc: not registered, the TUI part shows nothing and cannot stop: ${String(error)}`))
     // a host before 2.2.0 has no instructions entries (api-notes)
     const instructions = (ctx.session as Partial<typeof ctx.session>).instructions
-    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, limits, roles, instructions, hiddenFromLeaf: [RECALL_TOOL, NOTE_TOOL], log }, event))
+    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, session: ctx.session, limits, roles, instructions, hiddenFromLeaf: [RECALL_TOOL, NOTE_TOOL], log }, event))
 
     const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
     const swept = sweepRecords(ctx.storage, Date.now()).catch((error: unknown) => log(`courier memory sweep: ${String(error)}`))

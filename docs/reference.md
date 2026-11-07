@@ -269,8 +269,8 @@ order:
    On a partial or failed report the parent has the child finish or retry, does the rest itself,
    or starts a replacement.
 5. **Integrate**: merge each isolated part's reported branch, check again, then `courier_cleanup`
-   each session done with, isolated or not, since a stopped one still counts toward the limits and
-   holds its group.
+   each session done with, isolated or not ([stopping](#seeing-and-stopping-a-subtree) says which
+   stopped ones still count).
 6. **Done** only when every part is verified and integrated; at the root, one `courier_note` when
    the next tree should know something, none otherwise.
 

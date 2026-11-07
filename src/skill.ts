@@ -53,8 +53,7 @@ export const SKILL_CONTENT = [
   "## 5. Integrate",
   "",
   "Merge each isolated part's reported branch into your own checkout (git merge courier/<session>), resolve conflicts " +
-    "yourself and run the checks once more. Then courier_cleanup each session you are done with, isolated or not: until " +
-    "then a stopped one still counts toward the limits and holds its group.",
+    "yourself and run the checks once more. Then courier_cleanup each session you are done with, isolated or not.",
   "",
   "## 6. Done",
   "",

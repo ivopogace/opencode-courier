@@ -17,7 +17,7 @@ older host and branches on it. How the plugin itself answers a trap is in
   through `describeFailure`, with the tag (`_tag`) and the session id. A throw becomes a
   `Tool.Error` the model sees, and the turn goes on.
 - OpenCode decodes tool input with its own `effect`, so checks and transformations in the plugin's
-  schemas are not to be relied on (they broke before 2.0.25). Tool inputs use plain schemas and
+  schemas are not to be relied on. Tool inputs use plain schemas and
   validate values themselves; a unit test keeps it so.
 - `Schema.Number` advertises `"Infinity"`, `"-Infinity"` and `"NaN"`, and some models send numbers
   as strings, so `courier_later` takes `delayMinutes` as either. The host renders that union with
@@ -242,7 +242,7 @@ and would go idle. Its name and shape may still change: a pin bump re-checks bot
   `~/.cache/opencode/npm/`, with the peers at the versions the package names. Neither it nor the
   loader reads `peerDependencies` or `engines`. What that means for users is in
   [reference.md](../reference.md#the-opencode-version).
-- **The host's copies run.** `ensurePluginRuntime` (`packages/plugin/src/runtime.ts`, since 2.0.25)
+- **The host's copies run.** `ensurePluginRuntime` (`packages/plugin/src/runtime.ts`)
   resolves every import of `effect` and `@opencode/plugin*` to OpenCode's own copy. The installed
   peers serve the build, the tests and older hosts. Either way the relay's Effects and the host's
   must compose, so the plugin's `effect` is the host's version.
@@ -321,7 +321,7 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
 
 ## Models and variants
 
-- `session.create` takes `model: { providerID, id, variant? }` (`Model.Ref`) from 2.0.4 on. A
+- `session.create` takes `model: { providerID, id, variant? }` (`Model.Ref`). A
   session that names a model runs on it at its own `variant`; the agent's `model.variant` counts only
   for a session with no model (`session/runner/model.ts`), so the plugin passes the agent's variant
   with its model.
@@ -403,8 +403,7 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   compaction model sees `courier_spawn` (its prompt says to call no tool). The summary must hold a
   line equal to one of the template's headings (`## Objective`, …): a reply without one is nudged
   once ("did not fill in the required summary template"), then the compaction fails
-  (`session.compaction.failed`, no `ended`), as `e2e/mock-model.mjs` found before it answered with
-  a heading.
+  (`session.compaction.failed`, no `ended`).
 - **What inherits it.** `session.fork` copies the parent's entries and baseline; a native child
   (`parentID`) and `session.create` do not. `courier_cleanup` and a forgotten child leave entries
   alone: they belong to the session and go with it.
@@ -469,8 +468,7 @@ courier children are invisible to it ([reference](../reference.md#goal-and-couri
 - `goal.ts` returns early only for a `subagent` or `image` entry of the session itself, and offers
   `wait` only while one of its own shells runs. Otherwise `continue` admits a synthetic continuation
   in the same execution; `MAX_STALLS` (3) rounds in a row with the same reason or no tool call
-  pause the goal. Seen live with a scripted reviewer answering `continue`: three continuations
-  within a second of the spawn, then paused, 25 s before the child reported.
+  pause the goal.
 - An `experimental.idle` hook of the courier's could not change that: `/goal`'s runs first
   ([The idle hook](#the-idle-hook)), so the verdict and its continuation are in before the courier's
   hook runs, and a later hook can add input but not take any back. A fix needs OpenCode to let a

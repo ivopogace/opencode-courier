@@ -174,5 +174,5 @@ Two servers on one data directory share the storage but not the hub. The owner k
   seconds.
 
 A double delivery needs a stall of half a second or more between two storage calls, or a delivery
-running over a minute. Releases up to 0.2.2 deliver on their own schedule beside the owner.
+running over a minute.
 `e2e/two-servers.sh` checks that no message is delivered twice.

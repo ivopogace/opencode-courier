@@ -354,6 +354,9 @@ optionally `from`, `branch`, `directory` and `name` (`packages/core/src/worktree
   works and HEAD is always detached. Uncommitted changes are not carried over.
 - A project's worktrees share one repository, so commits and branches are visible across them.
 
+For a nested isolated child, `courier_spawn` passes the parent's worktree as `from` and its HEAD as
+`branch`, recorded as the roster entry's `base`.
+
 ## Keyed session instructions
 
 `ctx.session.instructions.entry.put({ sessionID, key, value })`, `.list({ sessionID })` and
@@ -375,7 +378,8 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   rendered into one *baseline*: the second system part, after the agent's system prompt and before
   anything a `context` hook pushes. The hook's `event.system` is that pair, so a part the courier
   adds comes after the block. The part also carries each source's text in
-  `metadata.experimental.instructions` (`baseTranscript`, `model-request.ts`); it is experimental,
+  `metadata.experimental.instructions` as `{ key, text }` (`baseTranscript`, `model-request.ts`), an
+  entry under its stored key (`api/role`), not updated when a hook edits `text`; it is experimental,
   so `context.ts` reads the `role` entry through `entry.list`.
 - **The baseline is fixed at the session's first step** (`InstructionState.prepare`, run at every
   step boundary) and moved only by a compaction (`advanceEpoch` on `session.compaction.ended`) or
@@ -387,7 +391,8 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   changed one) or "The context under "<key>" no longer applies. Disregard it." (a removal);
   `message-updater.ts` stores it as a `system` message (`description`
   `Instructions updated: api/<key>`, the keys as stored, every key changed since the last step in
-  one message, sorted; in a turn a courier message starts, the message comes before that message),
+  one message, sorted: `api/lessons, api/role, api/standing` at a root's first spawn, as
+  `e2e/run.sh` checks; in a turn a courier message starts, the message comes before that message),
   which goes to the model at its place in the transcript, after the tool result that put the entry,
   as a **user** message: `<system-update>`, the text with `&`, `<` and `>` escaped,
   `</system-update>` (`wrapSystemUpdate`, `packages/ai/src/protocols/shared.ts`; AI SDK routes do
@@ -497,7 +502,8 @@ is not. What the plugin does about it: [architecture.md](architecture.md#two-ser
   `permission.asked` or `execution.failed`.
 - `courier_answer` reaches a request only from the server where the child waits.
 
-`e2e/two-servers.sh` (not in CI; see its header) checks these and exits 1 when one differs.
+`e2e/two-servers.sh` (not in CI; see its header) checks these and exits 1 when one differs. It
+does not cover the question relay.
 
 ## TUI and RPC packaging
 

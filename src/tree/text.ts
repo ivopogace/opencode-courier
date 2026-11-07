@@ -23,7 +23,7 @@ export function childBrief(parentID: string, task: string, depth: number, limits
       "it on to the sessions it affects. Progress alone is not worth a message.",
     "A message the person writes in your session, outside a <courier> envelope, is for the whole job: before you act on it, " +
       "send it to the parent at once with courier_send without a status, quoting it as the person's, then carry on.",
-    "If you need the person to decide something, use your question tool; it reaches them through the session that started you.",
+    "If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.",
     "",
     ...(branch ? [...isolationRule(branch, depth < limits.maxDepth), ""] : []),
     ...splitRule(parentID, depth, limits),
@@ -246,6 +246,7 @@ export function spawnText(child: {
   readonly fromParent?: boolean
   readonly uncommitted?: boolean
   readonly model?: string
+  readonly belowTop?: boolean
 }) {
   const warning =
     (child.fromParent ? " Its worktree starts from the commit your own worktree is on." : "") +
@@ -254,11 +255,14 @@ export function spawnText(child: {
       : "") +
     (child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : "") +
     (child.groupError ? ` It is in no group, so its report comes on its own: ${child.groupError}` : "")
+  const asks = child.belowTop
+    ? " Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person."
+    : ""
   const reports = child.group
     ? `Its report is held with group "${child.group}": once every session you started in that group has reported and your ` +
-      "turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a question " +
-      "or a failed turn still reaches you at once."
-    : "It will report back with courier_send, which starts a new turn for you."
+      `turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report${child.belowTop ? "" : ", a question"} ` +
+      `or a failed turn still reaches you at once.${asks}`
+    : `It will report back with courier_send, which starts a new turn for you.${asks}`
   const on = child.model ? `, on ${child.model}` : ""
   return (
     `Started session ${child.sessionID} in ${child.directory}${on}. ${reports} Once you have started every session you need, ` +

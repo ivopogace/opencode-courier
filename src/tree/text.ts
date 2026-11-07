@@ -385,17 +385,27 @@ function waitLine(delay: number, at: number | undefined) {
   return `The provider asked to wait about ${wait(delay)} before trying again${until}.`
 }
 
-export function failureNotice(title: string, error: ExecutionError, group?: string, at?: number) {
+function belowLine(below: ReadonlyArray<string>) {
+  const titles = below.map((title) => `"${title}"`).join(", ")
+  return (
+    `It has ${count(below.length, "session")} of its own still running (${titles}), whose reports will wake it, and it still counts ` +
+    "toward your limits: message it rather than replace it, or stop it with courier_stop first, which stops the sessions under it too."
+  )
+}
+
+export function failureNotice(title: string, error: ExecutionError, group?: string, at?: number, below: ReadonlyArray<string> = []) {
   const status = error.status === undefined ? "" : `, status ${error.status}`
   const delay = retryDelay(error)
+  const replace = below.length ? "" : " start a replacement,"
   return [
     `This session, "${title}", which you started with courier_spawn, failed: ${error.message} (${error.type}${status}).`,
     ...(delay === undefined ? [] : [waitLine(delay, at)]),
-    "Its turn ended without finishing, so it will not report back on its own.",
+    below.length ? "Its turn ended without finishing." : "Its turn ended without finishing, so it will not report back on its own.",
     delay === undefined
-      ? "Message it with courier_send to have it try again, start a replacement, or carry on without it."
-      : "Do not message it with courier_send before then, as the turn would fail again. Message it after, start a replacement, or carry on without it; " +
+      ? `Message it with courier_send to have it try again,${replace} or carry on without it.`
+      : `Do not message it with courier_send before then, as the turn would fail again. Message it after,${replace} or carry on without it; ` +
         "courier_later can remind you when the wait is over.",
+    ...(below.length ? [belowLine(below)] : []),
     ...(group
       ? [
           `It is a member of group "${group}", which no longer waits for it: its other members' reports reach you once they have ` +

@@ -4,6 +4,7 @@ import type { EventModule, EventType, HostEvent } from "../platform/events.js"
 import { endsIdle, retryDelay } from "./domain.js"
 import { forgetChild, forgetDeleted } from "./forget.js"
 import { hasCompleteGroup, leave, outIn } from "./group.js"
+import { liveBelow } from "./limits.js"
 import type { ExecutionError, Waits, WatchPorts, WatchState } from "./ports.js"
 import { owedUnwaited } from "./nudge.js"
 import { stoppedSincePrompt } from "./report.js"
@@ -44,11 +45,18 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   const quiet = entries.length > 0 && (await stoppedSincePrompt(children, sessionID).catch(() => false))
   try {
     if (quiet) return []
+    const below = await liveBelow(ports, sessionID).then(
+      (live) => live.map((entry) => entry.title),
+      (error: unknown) => {
+        ports.log(`courier watch: could not read the sessions under ${sessionID}: ${String(error)}`)
+        return []
+      },
+    )
     await Promise.all(
       entries.map((entry, index) =>
         ports.session.synthetic({
           sessionID: entry.parentID,
-          text: envelope(sessionID, failureNotice(entry.title, error, out[index]?.group, at), { failed: error.type }),
+          text: envelope(sessionID, failureNotice(entry.title, error, out[index]?.group, at, below), { failed: error.type }),
           description: `Session ${sessionID} failed`,
           metadata: { source: "courier", from: sessionID, failed: true },
           delivery: "steer",

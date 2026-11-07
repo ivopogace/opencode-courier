@@ -84,6 +84,54 @@ failed `courier_send` or silent-end notice undoes its own note if the key still 
 `pruneExpired` reads `report/` before the roster at load, so a child spawned during the sweep is
 never taken for an orphan. A held report outlives its member's roster entry.
 
+## Missed wakes and session state
+
+The host facts behind this are in [plugin-api-notes.md](plugin-api-notes.md#the-inbox-and-wakes).
+
+- **The wake store** (`wake/`) holds courier messages waiting in an inbox, which the limits and the
+  memory's `finished` count (`waitsInInbox`). `courier_send` writes that row itself once `synthetic`
+  returns (`noteSent`), since the enqueued event is handled apart from the call.
+- **Is it running** (`busy`, `src/tree/domain.ts`; `runs`, `src/tree/running.ts`) reads `time.busy`
+  first: `busy` not later than `idle` is rest at `idle`, with no transcript read and none of the
+  caching below, whatever a rename, an archive, a switch or a waiting inbox item stamped on
+  `updated`; `busy` later than `idle`, or set with no `idle`, goes by the transcript; `busy` absent
+  (a host before 2.2.2) goes by `updated > idle` and then the transcript. A new `busy` is a new
+  stamp for the cache.
+- **The cache.** Each instance caches the answer per session (`ANSWERS_MAX`, 500 per port) until the
+  next stamp. A rest read within `FRESH_MS` (10 seconds) of its stamp is read again; a rest answer
+  is kept `REST_MS` (30 seconds) at most, a running one until the next stamp. An unreadable or empty
+  transcript reads running.
+- **Re-sending** (`wakeAgain`, `src/tree/wake.ts`) reads the session first, in case a turn's
+  `started` came before the subscription: a `busy` at or after the message was last left waiting
+  (enqueued, seen waiting as a turn ended, or sent again) and later than `idle` marks the message as
+  a running turn's to take; an earlier one, or one `idle` has passed (that execution ended, its event
+  missed), re-sends, with no transcript read. Without `busy` only a transcript actually read marks
+  it running, so a failed read re-sends.
+
+## Instruction entries
+
+The courier writes three [keyed session instructions](plugin-api-notes.md#keyed-session-instructions):
+
+- `role`: a spawned session's role part (`spawn.ts`, before the first prompt, so it is in the
+  baseline and moves no cached prefix).
+- `lessons`: the project's lessons, to a session above the deepest level when memory is on and has
+  lessons (`spawn.ts`; `memory/lessons.ts` supplies the text and `courier_note` renews it).
+- `standing`: a parent's children (`tree/standing.ts`, from the tools and events that move a child,
+  removed with the last child).
+
+Each value stays well under 3 KiB. `standing` and `lessons` are `list`ed and compared before a put
+that may be the same, so an unchanged value costs one read and no write. The `context` hook lists a
+session's entries once per instance and session.
+
+## `courier_later`'s scheduler
+
+`courier_later` keeps its own scheduler rather than OpenCode's
+[schedules](plugin-api-notes.md#opencodes-schedules): a plugin cannot reach them, they are a feature
+flag off in release builds, and a firing carries no sender's envelope, does not wait for a running
+turn to end, tells `Waits` nothing and cannot be cancelled by `courier_stop`. The `experimental.idle`
+hook has no clock, so it cannot wake a session later. `e2e/run.sh`'s `schedules` group turns the
+flag on to cover `CHILD_RULES`.
+
 ## Several copies in one process
 
 OpenCode runs one plugin instance per location, all in one process. After an update it loads the
@@ -126,5 +174,5 @@ Two servers on one data directory share the storage but not the hub. The owner k
   seconds.
 
 A double delivery needs a stall of half a second or more between two storage calls, or a delivery
-running over a minute. Releases up to 0.2.2 deliver on their own schedule beside the owner.
+running over a minute.
 `e2e/two-servers.sh` checks that no message is delivered twice.

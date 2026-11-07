@@ -820,6 +820,17 @@ describe("what makes a child owe a report", () => {
     expect(await owesReport(ports.storage, "ses_child")).toBe(true)
   })
 
+  test("its own group's reports delivered after a blocked report do", async () => {
+    const { ports } = fakePorts()
+    await childStore(ports.storage).record(child())
+    const inbox = new Map<string, string>()
+    await notePrompt(ports, delivered("evt_d0", 100))
+    await sendFrom(ports, "ses_child", "ses_parent", 150, "blocked")
+    await noteEnqueued(ports, inbox, enqueued("evt_e", "inb_1", "synthetic", "ses_child", groupMetadata))
+    expect(await notePrompt(ports, delivered("evt_d", 160, "ses_child", "inb_1"), inbox)).toBe(true)
+    expect(await owesReport(ports.storage, "ses_child")).toBe(true)
+  })
+
   test("its own group's reports delivered after a turn interrupted without a report do", async () => {
     const { ports } = fakePorts()
     await childStore(ports.storage).record(child())

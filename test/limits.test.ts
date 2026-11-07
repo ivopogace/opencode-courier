@@ -565,6 +565,15 @@ describe("a failed session with live sessions under it (#462)", () => {
     await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
   })
 
+  test("names none and is not counted for one under it idle after a blocked report, which counts itself (#524)", async () => {
+    const { ports, storage } = await failedOver({ ses_other: FINISHED, ses_cousin: FINISHED, ses_g: FINISHED, ses_gg: FINISHED })
+    for (const id of ["ses_gg", "ses_cousin"]) await childStore(storage).settled(id, "report", 150)
+    await childStore(storage).settled("ses_g", "report", 150, "blocked")
+    expect(await liveBelow(ports, "ses_a")).toEqual([])
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+    await expect(admit(ports, "ses_a")).rejects.toThrow(childrenRefusal(1, 1))
+  })
+
   test("names none and counts no more once nothing under it is live", async () => {
     const { ports, storage } = await failedOver({ ses_other: FINISHED, ses_cousin: FINISHED, ses_g: FINISHED, ses_gg: FINISHED })
     for (const id of ["ses_g", "ses_gg", "ses_cousin"]) await childStore(storage).settled(id, "report", 150)

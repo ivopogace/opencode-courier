@@ -159,7 +159,8 @@ A session is live while:
   since its last prompt, so a parent woken by a report can start the next session in that same
   turn; a later turn, such as one the person prompts, counts again;
 - it [owes its parent a report](#a-child-that-ends-without-a-report);
-- its last report since its last prompt is `blocked`, as it waits on its parent's answer;
+- its last report since its last prompt is `blocked`, as it waits on its parent's answer; this
+  makes no session above it live, since no report of its own will wake them;
 - a message sent to wake it waits in its inbox, unless it is [stalled](#a-missed-wake);
 - a session below it is live.
 

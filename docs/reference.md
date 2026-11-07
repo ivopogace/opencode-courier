@@ -148,7 +148,9 @@ Any spawned session can call `courier_spawn` too, so sessions form a tree. The s
 spawned is its top, at depth 0. `courier_spawn` refuses a spawn, naming the limit and what to do
 instead, when the child would be deeper than `maxDepth`, or when `maxChildren` or `maxTotal`
 sessions are already live; the last two say to do the part itself or start it once a report has
-come in, not in a loop.
+come in, not in a loop. When none of the caller's own sessions is live, the `maxTotal` refusal says
+only to do the part itself, since no report will wake it; the `maxChildren` refusal cannot meet
+that case, as it counts only the caller's own.
 
 A session is live while:
 

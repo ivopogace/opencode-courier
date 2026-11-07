@@ -50,7 +50,7 @@ async function check(ports: LimitPorts, parentID: string) {
   const pending = [...ports.gate.reserved].filter((held) => held.top === top && !(held.sessionID && recorded.has(held.sessionID)))
   const mine = counted.filter((entry) => entry.parentID === parentID).length + pending.filter((held) => held.parentID === parentID).length
   if (mine >= maxChildren) throw new Error(childrenRefusal(mine, maxChildren))
-  if (counted.length + pending.length >= maxTotal) throw new Error(totalRefusal(counted.length + pending.length, maxTotal))
+  if (counted.length + pending.length >= maxTotal) throw new Error(totalRefusal(counted.length + pending.length, maxTotal, mine))
   const reservation: Reservation = { parentID, top }
   ports.gate.reserved.add(reservation)
   return { depth: chain.length + 1, reservation }

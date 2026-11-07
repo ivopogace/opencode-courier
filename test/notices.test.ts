@@ -102,7 +102,8 @@ describe("envelope and child brief", () => {
     expect(tree.depthRefusal(3, 3)).toMatchSnapshot()
     expect(tree.childrenRefusal(5, 5)).toMatchSnapshot()
     expect(tree.childrenRefusal(1, 1)).toMatchSnapshot()
-    expect(tree.totalRefusal(20, 20)).toMatchSnapshot()
+    expect(tree.totalRefusal(20, 20, 2)).toMatchSnapshot()
+    expect(tree.totalRefusal(20, 20, 0)).toMatchSnapshot()
   })
 
   test("refusals of a model or variant", () => {

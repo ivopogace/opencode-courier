@@ -120,6 +120,26 @@ describe("nudgeSilent", () => {
     expect(await nudgeSilent(parents.ports, new Set(), outside, idle())).toBe(true)
   })
 
+  test("leaves a child that reported before its own child's status-less message, but reminds one its parent's message reached", async () => {
+    const enqueued = (inboxID: string, from: string) => ({
+      data: { sessionID: "ses_child", inboxID, item: { type: "synthetic", payload: { metadata: { source: "courier", from } } } },
+    })
+    const own = await prompted()
+    const inbox = new Map<string, string>()
+    await childStore(own.ports.storage).record({ ...child("ses_child"), sessionID: "ses_grandchild" })
+    await reportFrom(own.ports, 150)
+    await noteEnqueued(own.ports, inbox, enqueued("inb_1", "ses_grandchild"))
+    expect(await notePrompt(own.ports, delivered("evt_m", 200, "inb_1"), inbox)).toBe(false)
+    expect(await nudgeSilent(own.ports, new Set(), outside, idle())).toBe(false)
+    expect(own.sent).toEqual([])
+
+    const parents = await prompted()
+    await reportFrom(parents.ports, 150)
+    await noteEnqueued(parents.ports, inbox, enqueued("inb_2", "ses_parent"))
+    expect(await notePrompt(parents.ports, delivered("evt_m", 200, "inb_2"), inbox)).toBe(true)
+    expect(await nudgeSilent(parents.ports, new Set(), outside, idle())).toBe(true)
+  })
+
   test("reminds a child whose own message, scheduled after it reported, reached it (#514)", async () => {
     const enqueued = (inboxID: string, scheduledAt: number) => ({
       data: { sessionID: "ses_child", inboxID, item: { type: "synthetic", payload: { metadata: { source: "courier", from: "ses_child", scheduled: "lat_1", scheduledAt } } } },

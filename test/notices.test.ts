@@ -79,7 +79,7 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).not.toMatch(/\bat the top\b/i)
     expect(skill.SKILL_CONTENT).toContain("Reply without calling more tools; reports and notices wake you")
     expect(skill.SKILL_CONTENT).not.toContain("courier_later")
-    expect(skill.SKILL_CONTENT).toContain("only to the sessions it affects (below the root, to the session that started you as your brief says)")
+    expect(skill.SKILL_CONTENT).toContain("only to the sessions it affects, and, below the root, also to the session that started you when it reaches past your part or carries the person's words, as your brief says")
     expect(skill.SKILL_CONTENT).not.toContain("cancelled when")
     const described = (name: string) => registered.find((tool) => tool.name === name).description
     expect(described("courier_spawn")).toContain("For a long task or batch, also courier_later one check-in for yourself per group, and one for the ungrouped sessions")

@@ -241,8 +241,11 @@ function decide(body) {
   }
   if (/<courier from="ses_\w+" (answered|settled)=/.test(recent) && !/<courier from="ses_\w+" status="/.test(recent)) return { text: "PARENT SETTLED" }
   if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
-  if (startedBy && /<courier from="ses_\w+" status="done">/.test(recent) && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-NOTES-MID"))
-    return { tool: "courier_send", args: { sessionID: startedBy[1], message: `MID GOT ${recent.match(/LEAF GOT [^\n]*/)?.[0] ?? "nothing"}`, status: "done" } }
+  if (startedBy && /<courier from="ses_\w+" status="done">/.test(recent) && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-NOTES-MID")) {
+    const noteID = messages.flatMap((message) => message.tool_calls ?? []).find((item) => item.function?.name === "courier_note")?.id
+    const noted = textOf(messages.find((message) => message.role === "tool" && message.tool_call_id === noteID)?.content)
+    return { tool: "courier_send", args: { sessionID: startedBy[1], message: `MID NOTE ${noted.replace(/\s+/g, " ")} MID GOT ${recent.match(/LEAF GOT [^\n]*/)?.[0] ?? "nothing"}`, status: "done" } }
+  }
   if (/<courier from="[^"]*" group="/.test(recent) && startedBy)
     return { tool: "courier_send", args: { sessionID: startedBy[1], message: "MIDDLE GOT GROUP", status: "done" } }
   if (/<courier from="[^"]*" group="/.test(recent)) return { text: "PARENT GOT GROUP" }

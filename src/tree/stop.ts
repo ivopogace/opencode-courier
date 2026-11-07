@@ -2,10 +2,11 @@ import { isNotFound } from "../platform/json.js"
 import { describeFailure, envelope } from "../kernel/protocol.js"
 import { cleanup } from "./cleanup.js"
 import type { CleanupResult, StopPorts } from "./ports.js"
+import { reportOf } from "./report.js"
 import { syncStanding } from "./standing.js"
 import { childStore } from "./store.js"
 import { subtree, type Below } from "./subtree.js"
-import { stoppedNotice } from "./text.js"
+import { idleStoppedNotice, stoppedNotice } from "./text.js"
 import { forgetWakes } from "./wake.js"
 
 export interface StopInput {
@@ -66,10 +67,7 @@ export async function stop(ports: StopPorts, callerID: string, input: StopInput)
   const parents = new Set(nodes.flatMap((node) => (node.subagent ? [] : [node.entry.parentID])))
   await Promise.all([...parents].map((parentID) => syncStanding(ports.courier, parentID)))
 
-  const told =
-    target.parentID !== callerID && results.find((one) => one.sessionID === sessionID)?.outcome === "interrupted"
-      ? await tell(ports, callerID, target)
-      : undefined
+  const told = target.parentID === callerID ? undefined : await tellParent(ports, callerID, target, results)
   return {
     sessionID,
     stopped: results,
@@ -159,12 +157,20 @@ async function told(ports: StopPorts, parentID: string, ids: ReadonlySet<string>
   return told(ports, parentID, ids, since)
 }
 
-async function tell(ports: StopPorts, callerID: string, target: Below["entry"]) {
+async function tellParent(ports: StopPorts, callerID: string, target: Below["entry"], results: ReadonlyArray<Stopped>) {
+  const outcome = results.find((one) => one.sessionID === target.sessionID)?.outcome
+  if (outcome === "interrupted") return tell(ports, target, stoppedNotice(target.title, callerID))
+  if (outcome !== "idle") return undefined
+  const report = await reportOf(childStore(ports.courier.storage), target.sessionID).catch(() => undefined)
+  return report?.owes ? tell(ports, target, idleStoppedNotice(target.title, callerID)) : undefined
+}
+
+async function tell(ports: StopPorts, target: Below["entry"], notice: string) {
   const { session, log } = ports.courier
   try {
     await session.synthetic({
       sessionID: target.parentID,
-      text: envelope(target.sessionID, stoppedNotice(target.title, callerID), { ended: "stopped" }),
+      text: envelope(target.sessionID, notice, { ended: "stopped" }),
       description: `Session ${target.sessionID} was stopped`,
       metadata: { source: "courier", from: target.sessionID, ended: "stopped" },
       delivery: "steer",

@@ -368,6 +368,13 @@ export const stoppedNotice = (title: string, by: string) =>
     "It was not a failure and it will not report back. Carry on without it, or start a replacement if you still need what it was doing.",
   ].join("\n")
 
+export const idleStoppedNotice = (title: string, by: string) =>
+  [
+    `This session, "${title}", which you started with courier_spawn, was stopped by ${by}, a session above you, together with the sessions under it.`,
+    "It was not running and still owed you a report, so it still counts toward maxChildren and maxTotal, and holds back its join group if it is in one. " +
+      "Drop it with courier_cleanup if you no longer need it, or message it with courier_send to have it carry on.",
+  ].join("\n")
+
 export function keepReason(state: { readonly changes: readonly string[]; readonly commits: readonly string[] }) {
   const reasons = [
     state.changes.length ? `${count(state.changes.length, "uncommitted change")} (${preview(state.changes)})` : "",

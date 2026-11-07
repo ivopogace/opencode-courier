@@ -202,7 +202,7 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
       "Stop a session you started, directly or through others, and every session under it, subagents included: each " +
       "running turn is interrupted, deepest first, and the messages scheduled for them with courier_later are cancelled. Use it when a " +
       "subtree went wrong or is no longer needed. They do not report back, and you are not told of what you stopped; a " +
-      "session between you and the target is. A stopped session can be woken again with courier_send. With " +
+      "session between you and the target is, when the target was running or still owed it a report. A stopped session can be woken again with courier_send. With " +
       "cleanup: true their worktrees are removed too, unless they hold work that is on no branch.",
     input: StopInput,
     execute: async (input, context) => {

@@ -513,8 +513,11 @@ without `report`. Anyone can read any tree.
    says so when a session other than a subagent was `idle`.
 4. With `cleanup: true`, their worktrees are removed by `courier_cleanup`'s rules, without `force`.
 
-The target's parent is told once, `ended="stopped"`, unless it is the caller or the target was not
-running. Sessions under the target are not told. A stopped session stays on the roster and can be
+When the target was interrupted, or was `idle` and still owed a report, its parent is told once,
+`ended="stopped"`, unless the parent is the caller. For an `idle` one the message says it still
+counts toward the limits and holds back its join group if it is in one, and offers
+`courier_cleanup` or messaging it.
+Sessions under the target are not told. A stopped session stays on the roster and can be
 messaged again. Scheduled messages the stopped sessions made for others are left alone. A session
 started by a running turn of the subtree while the stop runs may escape it.
 

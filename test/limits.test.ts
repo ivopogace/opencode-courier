@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { DateTime } from "effect"
 import { send } from "../src/tree/send.js"
 import { spawn } from "../src/tree/spawn.js"
-import { admit } from "../src/tree/limits.js"
+import { admit, liveBelow } from "../src/tree/limits.js"
 import { shapeContext } from "../src/tree/context.js"
 import { busy, DEFAULT_LIMITS, endedAt, endsIdle, nativeRootOf, readLimits, readNativeChildren, turnEnd, type RosterEntry } from "../src/tree/domain.js"
 import { runs, turnOf } from "../src/tree/running.js"
@@ -523,6 +523,39 @@ describe("admit", () => {
     await child("ses_root", "ses_a")
 
     await expect(admit(ports, "ses_a")).rejects.toThrow(depthRefusal(1, 1))
+    expect((await admit(ports, "ses_root")).depth).toBe(1)
+  })
+})
+
+describe("a failed session with live sessions under it (#462)", () => {
+  async function failedOver(times: Record<string, object>) {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, { ses_a: FINISHED, ...times })
+    await child("ses_root", "ses_a")
+    await child("ses_a", "ses_g")
+    await child("ses_g", "ses_gg")
+    await child("ses_root", "ses_other")
+    await child("ses_other", "ses_cousin")
+    for (const id of ["ses_a", "ses_g", "ses_gg", "ses_other", "ses_cousin"]) await childStore(storage).prompted(id, 100)
+    await childStore(storage).settled("ses_a", "failed", 150)
+    await childStore(storage).settled("ses_other", "report", 150)
+    return { ports, storage }
+  }
+
+  test("names every live session under it, at any depth, and none beside it", async () => {
+    const { ports } = await failedOver({ ses_other: FINISHED })
+    expect((await liveBelow(ports, "ses_a")).map((entry) => entry.title)).toEqual(["ses_g", "ses_gg"])
+  })
+
+  test("still counts toward its parent's limits, so a replacement is refused", async () => {
+    const { ports } = await failedOver({ ses_other: FINISHED, ses_cousin: FINISHED })
+    await childStore(ports.storage).settled("ses_cousin", "report", 150)
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+  })
+
+  test("names none and counts no more once nothing under it is live", async () => {
+    const { ports, storage } = await failedOver({ ses_other: FINISHED, ses_cousin: FINISHED, ses_g: FINISHED, ses_gg: FINISHED })
+    for (const id of ["ses_g", "ses_gg", "ses_cousin"]) await childStore(storage).settled(id, "report", 150)
+    expect(await liveBelow(ports, "ses_a")).toEqual([])
     expect((await admit(ports, "ses_root")).depth).toBe(1)
   })
 })

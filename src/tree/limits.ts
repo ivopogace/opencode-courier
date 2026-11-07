@@ -55,3 +55,13 @@ async function check(ports: LimitPorts, parentID: string) {
   ports.gate.reserved.add(reservation)
   return { depth: chain.length + 1, reservation }
 }
+
+export async function liveBelow(ports: Pick<LimitPorts, "session" | "storage">, sessionID: string) {
+  const entries = await childStore(ports.storage).all()
+  const parents = bySession(entries)
+  const below = [...parents.values()].filter(
+    (entry) => entry.sessionID !== sessionID && lineageBy(parents, entry.sessionID).some((above) => above.parentID === sessionID),
+  )
+  const counting = await Promise.all(below.map((entry) => live(ports, entry.sessionID)))
+  return below.filter((_, i) => counting[i])
+}

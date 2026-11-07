@@ -157,7 +157,8 @@ A session is live while:
 - a session below it is live.
 
 So a child that ends its turn without reporting counts until it reports, and a session waiting for
-its own children counts too. Renaming, archiving or switching the model of a session does not make
+its own children counts too. So does a session whose turn failed while sessions under it are still
+live: their reports wake it, and its [failure notice](#a-child-that-fails) says so. Renaming, archiving or switching the model of a session does not make
 it live. A child counts from the moment `courier_send` to it returns, so a spawn in the same step
 counts it. Several spawns made at once cannot get past a limit together.
 
@@ -348,7 +349,10 @@ falls between the two.
 For every failed turn of a spawned session (no model, missing credentials, the provider down), not
 stopped with `courier_stop` since its last prompt, the parent gets a message from that child marked
 `failed="<error type>"`, with the error. It wakes the parent if idle. The parent can message the
-child to try again, start a replacement, or carry on.
+child to try again, start a replacement, or carry on. When sessions under the child are still
+[live](#session-trees-and-their-limits), the message names them, says their reports will wake the
+child and that it still counts toward the limits, and offers messaging it, or stopping it with
+`courier_stop` first, instead of a replacement.
 
 When the failure is a rate or quota limit and the provider says how long to wait (OpenCode 2.1.2 and
 later send `retryAfterMs`), the message says when that is, in minutes and in UTC, and not to

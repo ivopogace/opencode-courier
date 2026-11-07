@@ -252,6 +252,8 @@ describe("turn failures", () => {
     expect(tree.failureNotice("Fix the bug", limited, undefined, Date.UTC(2026, 0, 5, 14, 2))).toMatchSnapshot()
     expect(tree.failureNotice("Fix the bug", { ...limited, retryAfterMs: 7_500_000 }, "reviews", Date.UTC(2026, 0, 5, 23, 0))).toMatchSnapshot()
     expect(tree.failureNotice("Fix the bug", limited)).toMatchSnapshot()
+    expect(tree.failureNotice("Fix the bug", { type: "unknown", message: "boom" }, undefined, undefined, ["Write the tests"])).toMatchSnapshot()
+    expect(tree.failureNotice("Fix the bug", limited, "reviews", Date.UTC(2026, 0, 5, 14, 2), ["Write the tests", "Read the spec"])).toMatchSnapshot()
   })
   test("reportReminder", () => {
     expect(tree.reportReminder("ses_parent")).toMatchSnapshot()

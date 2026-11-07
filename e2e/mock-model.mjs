@@ -58,6 +58,8 @@ function decide(body) {
     const scheduled = result.match(/Scheduled (later_[\w-]+)/)
     if (call?.function?.name === "courier_later" && prompt.includes("COURIER-LATER-CANCEL") && scheduled)
       return { tool: "courier_cancel", args: { id: scheduled[1] } }
+    if (call?.function?.name === "courier_spawn" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-MID-BREAKS"))
+      return { status: 403, error: "This model is not available in your country" }
     if (call?.function?.name === "courier_spawn" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-SUBTREE-MID"))
       return { text: "MID HOLDING", hold: true }
     if (call?.function?.name === "subagent" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-SUBAGENT-MID"))
@@ -191,6 +193,7 @@ function decide(body) {
     return { tool: "subagent", args: { agent: "general", description: "Run the checks", prompt: "SUBAGENT-BACKGROUND", background: true } }
   if (parent && recent.includes("CHILD-SUBTREE-MID")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-LEAF" } }
   if (parent && recent.includes("CHILD-SUBTREE-LEAF")) return { text: "LEAF HOLDING", hold: true }
+  if (parent && recent.includes("CHILD-MID-BREAKS")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-LEAF" } }
   if (parent && recent.includes("CHILD-NESTS")) return { tool: "courier_spawn", args: { task: "CHILD-QUESTION" } }
   const answered = recent.match(/<courier from="ses_\w+" answers="question_[\w-]+"( dismissed="true")?>/)
   const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
@@ -259,6 +262,7 @@ function decide(body) {
   if (recallOf) return { tool: "courier_recall", args: recallOf[1] ? { sessionID: recallOf[1] } : {} }
   const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)
   if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
+  if (recent.includes("COURIER-MID-BREAKS")) return { tool: "courier_spawn", args: { task: "CHILD-MID-BREAKS" } }
   if (recent.includes("COURIER-SUBTREE-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-MID" } }
   if (recent.includes("COURIER-SUBAGENT-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBAGENT-MID" } }
   if (recent.includes("COURIER-SUBAGENT-NO-ROOT")) return { tool: "courier_spawn", args: { task: "CHILD-SUBAGENT-NO-ROOT" } }

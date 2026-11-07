@@ -1009,6 +1009,22 @@ Its turn ended without finishing, so it will not report back on its own.
 Do not message it with courier_send before then, as the turn would fail again. Message it after, start a replacement, or carry on without it; courier_later can remind you when the wait is over."
 `;
 
+exports[`turn failures failureNotice 7`] = `
+"This session, "Fix the bug", which you started with courier_spawn, failed: boom (unknown).
+Its turn ended without finishing.
+Message it with courier_send to have it try again, or carry on without it.
+It has 1 session of its own still running ("Write the tests"), whose reports will wake it, and it still counts toward your limits: message it rather than replace it, or stop it with courier_stop first, which stops the sessions under it too."
+`;
+
+exports[`turn failures failureNotice 8`] = `
+"This session, "Fix the bug", which you started with courier_spawn, failed: Rate limit reached (provider.rate-limit, status 429).
+The provider asked to wait about 30 minutes before trying again, until about 14:32 UTC.
+Its turn ended without finishing.
+Do not message it with courier_send before then, as the turn would fail again. Message it after, or carry on without it; courier_later can remind you when the wait is over.
+It has 2 sessions of its own still running ("Write the tests", "Read the spec"), whose reports will wake it, and it still counts toward your limits: message it rather than replace it, or stop it with courier_stop first, which stops the sessions under it too.
+It is a member of group "reviews", which no longer waits for it: its other members' reports reach you once they have reported and your turn has ended, and if it reports after all before then, its report joins them."
+`;
+
 exports[`turn failures reportReminder 1`] = `
 "You are about to end your turn without reporting to session ses_parent, which started you.
 If you are finished, send your report now: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial, blocked or failed. If work is left, carry on and report when you finish.

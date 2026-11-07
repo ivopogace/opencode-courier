@@ -637,7 +637,7 @@ test("courier_later tells a session scheduling its own check-in to end its turn,
 
   expect(own.content).toContain("It arrives when due, after your current turn if one is running, so do not wait for it")
   expect(own.content).toContain("end your turn by replying without calling more tools")
-  expect(own.content).toContain("If what it checks on reports first, cancel it then with courier_cancel.")
+  expect(own.content).toContain("Once the last report it covers arrives, cancel it with courier_cancel.")
   expect(other.content).toContain("to ses_child. Cancel it with courier_cancel if it is no longer needed.")
   expect(other.content).not.toContain("end your turn")
 })

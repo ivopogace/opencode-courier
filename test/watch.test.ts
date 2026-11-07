@@ -810,6 +810,24 @@ describe("what makes a child owe a report", () => {
     expect(await afterReport([...group, ...later])).toHaveLength(1)
   })
 
+  test("its own check-in delivered after it reported does not, but its parent's scheduled message does", async () => {
+    const scheduled = (from: string) => ({ source: "courier", from, scheduled: "lat_1" })
+    const own = [enqueued("evt_e", "inb_1", "synthetic", "ses_child", scheduled("ses_child")), delivered("evt_d", 160, "ses_child", "inb_1"), succeeded("evt_s", 200)]
+    expect(await afterReport(own)).toEqual([])
+    const parents = [enqueued("evt_e", "inb_1", "synthetic", "ses_child", scheduled("ses_parent")), delivered("evt_d", 160, "ses_child", "inb_1"), succeeded("evt_s", 200)]
+    expect(await afterReport(parents)).toHaveLength(1)
+  })
+
+  test("its own check-in delivered before it reported does, the report still owed", async () => {
+    const { ports } = fakePorts()
+    await childStore(ports.storage).record(child())
+    const inbox = new Map<string, string>()
+    await notePrompt(ports, delivered("evt_d0", 100))
+    await noteEnqueued(ports, inbox, enqueued("evt_e", "inb_1", "synthetic", "ses_child", { source: "courier", from: "ses_child", scheduled: "lat_1" }))
+    expect(await notePrompt(ports, delivered("evt_d", 160, "ses_child", "inb_1"), inbox)).toBe(true)
+    expect(await owesReport(ports.storage, "ses_child")).toBe(true)
+  })
+
   test("its own group's reports delivered before it reported do, the report still owed", async () => {
     const { ports } = fakePorts()
     await childStore(ports.storage).record(child())

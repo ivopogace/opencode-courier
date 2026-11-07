@@ -368,7 +368,7 @@ export const stoppedNotice = (title: string, by: string) =>
 export const idleStoppedNotice = (title: string, by: string) =>
   [
     `This session, "${title}", which you started with courier_spawn, was stopped by ${by}, a session above you, together with the sessions under it.`,
-    "It was not running and still owed you a report, so it stays in its join group and counts toward maxChildren and maxTotal. " +
+    "It was not running and still owed you a report, so it still counts toward maxChildren and maxTotal, and holds back its join group if it is in one. " +
       "Drop it with courier_cleanup if you no longer need it, or message it with courier_send to have it carry on.",
   ].join("\n")
 

@@ -279,7 +279,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 plugin-add:18"
+SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 idle-stop:20 plugin-add:18"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1566,6 +1566,32 @@ run_subtree() {
     "$([ "$handled" = true ] && [ "$(notices_with "$root" ended)" = '[]' ] && [ "$(notices_with "$middle" ended)" = '[]' ] && echo true || echo false)"
   check "the stop is noted for both" "$([ -n "$(kv get "report/$leaf/stopped")" ] && [ -n "$(kv get "report/$middle/stopped")" ] && echo true || echo false)"
   check "a failure notice did not follow either" "$([ "$handled" = true ] && notices_with "$root" failed | jq -r 'length == 0' || echo false)"
+}
+
+# The root stops an idle leaf that still owes the middle session its report (#501): the middle session is told it still counts.
+run_idle_stop() {
+  scenario "courier_stop of an idle session that owes a report tells the session that started it that it still counts (#501)"
+  out=$(prompt "COURIER-IDLE-STOP")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the middle session's leaf ended its turn without a report" "$(has_text "$middle" "PARENT TOLD SILENT" 60)"
+  leaf=$(api "session/$middle/message" | jq -r '[.data[] | .. | strings | capture("Started session (?<id>ses_\\w+)").id] | first // empty')
+  [ -n "$leaf" ] && turn_ended "$leaf"
+  check "the leaf is idle and owes its report" \
+    "$([ -n "$leaf" ] && [ "$(kv get "report/$leaf/prompt" | jq -r '.at | type == "number"')" = true ] && [ -z "$(kv get "report/$leaf/settled")" ] && echo true || echo false)"
+  turn_ended "$root"
+  stopped=$(prompt_in "$root" "COURIER-SUBTREE-STOP $leaf" | tool_state courier_stop)
+  echo "  $(jq -c '.metadata.metadata | {stopped, told}' <<<"$stopped")"
+  check "courier_stop found the leaf idle and told the middle session" \
+    "$(jq -r --arg leaf "$leaf" --arg middle "$middle" '.status == "completed" and (.metadata.metadata.stopped | map([.sessionID, .outcome]) == [[$leaf, "idle"]]) and .metadata.metadata.told == $middle' <<<"$stopped")"
+  check "the middle session woke on the notice" "$(has_text "$middle" "PARENT WOKE" 45)"
+  notices=$(notices_with "$middle" ended | jq -c 'map(select(contains("ended=\"stopped\"")))')
+  echo "  $notices"
+  check "it was told once, from the leaf, that it still counts, and offered courier_cleanup or a message" \
+    "$(jq -r --arg leaf "$leaf" 'length == 1 and (.[0] | contains("<courier from=\"" + $leaf + "\" ended=\"stopped\">") and contains("still owed you a report") and contains("courier_cleanup") and (contains("will not report back") | not))' <<<"$notices")"
+  check "the leaf still owes its report" "$([ -z "$(kv get "report/$leaf/settled")" ] && [ -n "$(kv get "report/$leaf/stopped")" ] && echo true || echo false)"
+  turn_ended "$middle"
+  turn_ended "$root"
 }
 
 # A sub-orchestrator whose turn fails while its leaf runs (#462): the root's failure notice names the leaf, says the failed

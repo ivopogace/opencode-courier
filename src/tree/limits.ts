@@ -19,7 +19,7 @@ async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: s
   const inTurn = report?.reportedAt !== undefined && !(millis(time?.idle) >= report.reportedAt)
   const running = time !== undefined && !report?.ended && !inTurn && (await runs(ports.session, sessionID, time))
   // a waiting inbox item is in no transcript until delivered (api-notes)
-  return running || (report?.owes ?? false) || (await waitsInInbox(ports, sessionID, { stalled: false }).catch(() => true))
+  return running || (report?.owes ?? false) || (report?.blocked ?? false) || (await waitsInInbox(ports, sessionID, { stalled: false }).catch(() => true))
 }
 
 export async function admit(ports: LimitPorts, parentID: string) {

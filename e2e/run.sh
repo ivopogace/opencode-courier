@@ -279,7 +279,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 own-checkin:55 idle-stop:40 rolling-slot:30 person-up:17 plugin-add:18"
+SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 early-report:25 own-checkin:55 idle-stop:40 rolling-slot:45 person-up:17 plugin-add:18"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1713,10 +1713,10 @@ run_failed_live() {
   start_server
 }
 
-# With maxTotal 2, two silent children fill the tree (#479): the second, with none of its own running, is refused with "no
-# report will wake you"; the root, whose children still count, is told to try again once one of them has reported.
+# With maxTotal 2, two silent children fill the tree (#479): the second, with none of its own running, is told only reports
+# held for a group can still wake it; the root, whose children still count, is told to try again once one of them has reported.
 run_total_refusal() {
-  scenario "a maxTotal refusal tells a session with none of its own running that no report will wake it (#479)"
+  scenario "a maxTotal refusal tells a session with none of its own running that only reports held for a group can wake it (#479, #526)"
   stop_server
   jq '.plugins[0].options.maxTotal = 2' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
@@ -1734,13 +1734,13 @@ run_total_refusal() {
   turn_ended "$root"
   refused=$(prompt_in "$second" "COURIER-TEST" | tool_state courier_spawn)
   echo "  $(jq -c '.error' <<<"$refused")"
-  check "the second child, none of its own running, is refused at maxTotal 2 and told no report will wake it" \
-    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself: none of the sessions you started counts, so no report will wake you.")) and (.error | tostring | contains("end your turn") | not)' <<<"$refused")"
+  check "the second child, none of its own running, is refused at maxTotal 2 and told only reports held for a group can wake it" \
+    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself: none of the sessions you started counts, so only reports already held for a group can still wake you.")) and (.error | tostring | contains("end your turn") | not)' <<<"$refused")"
   turn_ended "$second"
   turn_ended "$root"
   refused=$(prompt_in "$root" "COURIER-TEST" | tool_state courier_spawn)
   check "the root, its two children still owing reports, is refused at maxTotal 2 and told to try again once one of them has reported" \
-    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself, or end your turn and try again once one of the sessions you started has reported, not in a loop. A session that reported still counts while sessions it started are live, and one that ended without a report counts until its parent drops it with courier_cleanup."))' <<<"$refused")"
+    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself, or end your turn and try again once one of the sessions you started has reported, not in a loop. A session also counts while one it started is live, and one whose turn ended without a report, unless it failed or was interrupted, counts until it reports or its parent drops it with courier_cleanup."))' <<<"$refused")"
   turn_ended "$root"
   stop_server
   jq 'del(.plugins[0].options.maxTotal)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
@@ -1770,6 +1770,18 @@ run_rolling_slot() {
   second=$(jq -r '.metadata.metadata.sessionID // .metadata.sessionID // empty' <<<"$next")
   [ -n "$second" ] && turn_ended "$second"
   turn_ended "$first"
+  turn_ended "$root"
+  scenario "a child idle after a blocked report still counts toward maxChildren (#524)"
+  out=$(prompt "COURIER-SPAWN-BLOCKS")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  blocked=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the root was woken by its child's blocked report" "$([ -n "$(reply_time "$root" "PARENT BLOCKED" 45)" ] && echo true || echo false)"
+  turn_ended "$blocked"
+  turn_ended "$root"
+  refused=$(prompt_in "$root" "COURIER-TEST" | tool_state courier_spawn)
+  echo "  $(jq -c '.error // .status' <<<"$refused")"
+  check "the root's next spawn is refused at maxChildren 1, its blocked child counted" \
+    "$(jq -r '.status == "error" and (.error | tostring | contains("1 session you started is running, blocked or still owes a report, the most allowed at once (maxChildren 1)"))' <<<"$refused")"
   turn_ended "$root"
   stop_server
   jq 'del(.plugins[0].options.maxChildren)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"

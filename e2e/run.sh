@@ -1465,7 +1465,7 @@ run_failed_live() {
   middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the middle session started its leaf" "$(has_text "$middle" "Started session ses_" 60)"
   check "the middle session's turn failed, waking the root" "$(has_text "$root" "PARENT WOKE" 45)"
-  leaf=$(api "session/$middle/message" | jq -r '[.data[] | .. | strings | capture("Started session (?<id>ses_\w+)").id] | first // empty')
+  leaf=$(api "session/$middle/message" | jq -r '[.data[] | .. | strings | capture("Started session (?<id>ses_\\w+)").id] | first // empty')
   notices=$(notices_with "$root" failed)
   echo "  $notices"
   check "the root was told once, of the middle session's failure" \

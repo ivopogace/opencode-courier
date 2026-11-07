@@ -3,7 +3,7 @@ import { envelope } from "../src/kernel/protocol.js"
 import { asksPermission } from "../src/person/permission.js"
 import { asksQuestion } from "../src/person/question/index.js"
 import { isScheduled } from "../src/scheduling/index.js"
-import { notePrompt, reportSilent, together, waitsOn } from "../src/tree/events.js"
+import { notePrompt, reportSilent, waitsOn } from "../src/tree/events.js"
 import { nudgeSilent, onIdle } from "../src/tree/nudge.js"
 import { reportOf } from "../src/tree/report.js"
 import { send } from "../src/tree/send.js"
@@ -11,10 +11,9 @@ import { childStore, nudgedKey, promptKey } from "../src/tree/store.js"
 import { reportReminder } from "../src/tree/text.js"
 import { watchWake } from "../src/tree/wake.js"
 import type { CourierPorts, WatchPorts } from "../src/tree/ports.js"
-import { subscribedSince } from "../src/webhook/index.js"
 import { child, fakePorts, request } from "./fixtures/events.js"
 
-const outside = waitsOn(asksPermission, asksQuestion, together(isScheduled, subscribedSince))
+const outside = waitsOn(asksPermission, asksQuestion, isScheduled)
 
 const idle = (sessionID = "ses_child", background: { sessionID: string }[] = []) => ({ sessionID, background })
 

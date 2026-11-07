@@ -97,7 +97,7 @@ test("person/ outside person/question/ uses the relay through person/question/in
   expect(reaching).toEqual([])
 })
 
-const MODULES = ["tree", "person", "scheduling", "webhook", "memory"]
+const MODULES = ["tree", "person", "scheduling", "memory"]
 
 const moduleOf = (file: string) => MODULES.find((folder) => file.startsWith(`${folder}/`))
 
@@ -207,7 +207,7 @@ test("skill.ts imports only kernel/", () => {
 
 test("a text.ts imports only kernel/, platform/json.ts and its own module's ports.ts and domain.ts", () => {
   const texts = [...imports()].filter(([module]) => module.endsWith("/text"))
-  expect(texts.map(([module]) => module).sort()).toEqual(["memory/text", "person/text", "scheduling/text", "tree/text", "webhook/text"])
+  expect(texts.map(([module]) => module).sort()).toEqual(["memory/text", "person/text", "scheduling/text", "tree/text"])
   const reaching = texts.flatMap(([module, imported]) => {
     const own = module.slice(0, -"text".length)
     const allowed = (name: string) => name.startsWith("kernel/") || name === "platform/json" || name === `${own}ports` || name === `${own}domain`

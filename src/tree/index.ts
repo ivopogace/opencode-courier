@@ -1,7 +1,7 @@
 export { dirtyOf, headOf, inspectWorktree } from "./cleanup.js"
 export { shapeContext } from "./context.js"
 export { endsIdle, lineageIn, nativeRootOf, readLimits, readNativeChildren } from "./domain.js"
-export { together, treeEvents, waitsOn } from "./events.js"
+export { treeEvents, waitsOn } from "./events.js"
 export { deliverReleased } from "./group.js"
 export { onIdle } from "./nudge.js"
 export { contextOf } from "./panel.js"

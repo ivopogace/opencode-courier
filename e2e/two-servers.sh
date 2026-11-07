@@ -166,7 +166,6 @@ lost() { tr ' ' '\n' <<<"$1" | awk '$1 == 0 { d++ } END { print d + 0 }'; }
 
 mkdir -p "$WORK/project" "$HOME"
 build_plugin
-# No webhook receiver: both servers would bind its port.
 cat >"$WORK/project/opencode.json" <<EOF
 {
   "plugins": [{ "package": "$ROOT/dist" }],

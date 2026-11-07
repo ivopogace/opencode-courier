@@ -48,7 +48,7 @@ d.text((X, TOP + 110), "Multi-session orchestration", font=f("Medium", 50), fill
 d.text((X, TOP + 174), "for OpenCode V2", font=f("Medium", 50), fill="#d0d0da")
 y = TOP + 290
 for line in ["Spawn child sessions.", "Be woken when they report.", "Relay their questions.",
-             "Wake on timers or webhooks.", "No polling."]:
+             "Wake on messages or timers.", "No polling."]:
     d.text((X, y), line, font=f("Regular", 40), fill="#a4a4b4")
     y += 58
 d.rounded_rectangle((X, BOTTOM - 190, 930, BOTTOM), radius=22, fill="#1a1d33", outline="#8b97e0", width=4)

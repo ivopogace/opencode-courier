@@ -60,20 +60,29 @@ stops moving:
 - `probe.log` has one JSON line per event (`at`, `type`, `sessionID`). No events for the session
   after the tool's end means the server did nothing.
 
+### No sleeps
+
+The fan-out and recursive prompts give each command as it is, with no `sleep` standing in for work.
+`recursive-finding` is the exception, for a reason of its own (below). Rows marked "no sleeps" are not
+comparable, on times and request counts, with rows whose prompts put a sleep of 20 s, or the length
+the row names, before each command. A report that reaches a parent while its turn still runs is
+steered into that turn, and the checkers count it as delivered: the first turn may hold reports, and
+one look after each report, in a turn of its own or steered in, is not polling.
+
 ## The fan-out
 
 The default. The parent is asked:
 
 > Have two helper sessions work in parallel and report back to you. One runs the shell command
-> `` `sleep 20; echo $((17 * 23))` ``, the other runs `` `sleep 40; echo $((2 ** 10))` ``, and each
-> reports the number it printed. Start them with courier_spawn and do not run the commands
-> yourself. When both have reported back, reply with one line: RESULTS \<first\> \<second\>
+> `` `echo $((17 * 23))` ``, the other runs `` `echo $((2 ** 10))` ``, and each reports the number it
+> printed. Start them with courier_spawn and do not run the commands yourself. When both have reported back, reply with one line: RESULTS \<first\> \<second\>
 
 Eight checks: two children spawned; the first turn ended after spawning; no polling (a
-`courier_children`, `courier_tree` or `sleep` right after spawning, or more than one in a later
-turn); both children reported to the parent; both reports woke it; each carries a status and its
-answer; the reply holds both. The README's Quickstart prompt is a shorter wording: set
-`COURIER_PROMPT` to it. To check a join group, add *both in one join group named "pair"*.
+`courier_children`, `courier_tree` or `sleep` right after spawning, or more than one after a
+report); both children reported to the parent; both reports reached it, waking it or steered into
+its running turn, and got a reply; each carries a status and its answer; the reply holds both. The
+README's Quickstart prompt is a shorter wording with sleeps, which keep the children busy past the
+parent's first turn so that each report visibly wakes it: set `COURIER_PROMPT` to it. To check a join group, add *both in one join group named "pair"*.
 
 | Model | OpenCode | Result |
 |---|---|---|
@@ -98,8 +107,17 @@ since `opencode run` answers its own session's prompts.
 
 `COURIER_PERSON=other-server` has the person reject the parent's prompt and answer through a second
 server, whose `courier_answer` holds no request; then allow the request in the child's session. With
-`COURIER_NATIVE=1` the script answers the child's request directly, as OpenCode's view of the parent
-would.
+a native child the script answers the child's request directly, as OpenCode's view of the parent
+would, and makes six checks: the parent was told with the `shown="native"` notice; it neither
+answered nor asked again; the request was settled (the parent was told so, or passed `once` on with
+`courier_answer` after the person told it to); the child reported; the reply holds it. A child is
+native with `COURIER_NATIVE=1`, or when the parent spawns it with `native: true` on its own, which
+the checker reads from the spawn or the notice.
+
+`--saved` re-reads a run. What only the live run saw, OpenCode's prompt or form in the parent's
+session, is kept in `summary.json` under `observed`. A `summary.json` without it has it read from the
+transcript, a `courier_answer` proposing `once` in the parent's turn after the notice standing for
+the held prompt.
 
 | Model | OpenCode | Result |
 |---|---|---|
@@ -134,15 +152,15 @@ child reported it; the reply holds it. With `COURIER_NATIVE=1` the script answer
 
 > Have this job done through helper sessions started with courier_spawn, one session per part, and
 > do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the
-> session that gets it hands to two sessions of its own: one runs `` `sleep 20; echo $((17 * 23))` ``
-> and writes the number it printed to numbers/a.txt, the other runs `` `sleep 20; echo $((2 ** 10))` ``
-> and writes the number it printed to numbers/b.txt. Part "count" runs `` `sleep 20; echo $((99 - 57))` ``
-> and writes the number it printed to count/total.txt. When the parts have reported back, read the
+> session that gets it hands to two sessions of its own: one runs `` `echo $((17 * 23))` `` and writes
+> the number it printed to numbers/a.txt, the other runs `` `echo $((2 ** 10))` `` and writes the
+> number it printed to numbers/b.txt. Part "count" runs `` `echo $((99 - 57))` `` and writes the number it printed to count/total.txt. When the parts have reported back, read the
 > three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
 
 The checker (`e2e/real-model-recursive.mjs`) reads every session reached from the root and makes
-nine checks: the root spawned two or more in its first turn and ended it; no orchestrator polled (the
-root's one `courier_recall` before its split is allowed, a sub-orchestrator's is not); a
+nine checks: the root spawned two or more in its first turn and ended it, reports steered into it
+allowed; no orchestrator polled (the root's one `courier_recall` before its split is allowed, a
+sub-orchestrator's is not, and one look after each report); a
 child spawned two or more of its own in one turn, and no sub-orchestrator started exactly one without
 a tool call of its own before it (a heuristic for a verifier that starts one implementor: the
 transcript shows work, not what it was for); no
@@ -184,11 +202,11 @@ its task word for word:
 > Have this job done through helper sessions started with courier_spawn, one session per part, and
 > do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the
 > session that gets it hands to two sessions of its own, doing neither half itself: one runs
-> `` `sleep 20; echo $((17 * 23))` `` and writes the number it printed to numbers/a.txt; the other gets
-> this task, passed on word for word: "Run `` `sleep 20; echo $((2 ** 10))` ``. Do not write any file
+> `` `echo $((17 * 23))` `` and writes the number it printed to numbers/a.txt; the other gets
+> this task, passed on word for word: "Run `` `echo $((2 ** 10))` ``. Do not write any file
 > yet: report status partial with the number it printed, saying that writing it to numbers/b.txt is
 > left, and end your turn. Once the session that started you sends you a message to finish, write the
-> number to numbers/b.txt and report status done." Part "count" runs `` `sleep 20; echo $((99 - 57))` ``
+> number to numbers/b.txt and report status done." Part "count" runs `` `echo $((99 - 57))` ``
 > and writes the number it printed to count/total.txt. When the parts have reported back, read the
 > three files yourself and reply with one line: RESULTS \<a\> \<b\> \<total\>
 
@@ -211,15 +229,15 @@ session does the seed first, then starts the halves together. The prompt does no
 
 > Have this job done through helper sessions started with courier_spawn, one session per part, and
 > do no part yourself. It has two parts. Part "numbers" has a seed and two halves; the session that
-> gets it hands the halves to two sessions of its own. The seed: run `` `sleep 20; echo $((7 * 61))` ``
+> gets it hands the halves to two sessions of its own. The seed: run `` `echo $((7 * 61))` ``
 > and write the number it printed to numbers/seed.txt. The halves each read the seed from
 > numbers/seed.txt: one writes the seed times 17 to numbers/a.txt, the other writes the seed plus 1000
-> to numbers/b.txt. Part "count" runs `` `sleep 20; echo $((99 - 57))` `` and writes the number it
+> to numbers/b.txt. Part "count" runs `` `echo $((99 - 57))` `` and writes the number it
 > printed to count/total.txt. When the parts have reported back, read the four files yourself and
 > reply with one line: RESULTS \<seed\> \<a\> \<b\> \<total\>
 
-The checker runs with `--staged`: the nine checks, then three. A `sleep` before any spawn is the
-core's work, not polling. The core is found by the first write of its file (`write`, `edit`, `patch`,
+The checker runs with `--staged`: the nine checks, then three. A `sleep` before any spawn, in a prompt
+that has one, is the core's work, not polling. The core is found by the first write of its file (`write`, `edit`, `patch`,
 or a shell redirect; `cd numbers && echo … > seed.txt` is not seen). The checks: no half started
 before the seed was written (or its session reported); the session that staged started two or more
 halves together; it reported upward once, `done`.
@@ -243,7 +261,9 @@ bun script/real-model-table.ts $(for n in 1 2 3 4 5; do echo skill=$HOME/courier
 
 ## A finding passed on
 
-`COURIER_SCENARIO=recursive-finding`: the recursive job with halves of `sleep 150`. The checker,
+`COURIER_SCENARIO=recursive-finding`: the recursive job with halves of `sleep 150` and a "count" part
+of `sleep 20`: the "count" session must still be running when the person writes, and the halves when
+the finding has come down two levels. The checker,
 run with `--finding`, plays the person: once the "count" session's turn runs, it prompts that
 session that every file of the job must hold its number followed by ` checked`. Neither the prompt
 nor the person's message says to pass it on; the brief and the skill do.

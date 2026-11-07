@@ -217,10 +217,17 @@ const allowedRecall = (id, turn) => {
   const recalls = tools.flatMap((part, index) => (part.name === RECALL ? [index] : []))
   return recalls.length === 1 && (firstSpawn === -1 || recalls[0] < firstSpawn) ? 1 : 0
 }
+const segmentsOf = (turn) =>
+  turn.reduce((segments, message, index) => {
+    if (index > 0 && sendersOf(message).length) segments.push([])
+    segments.at(-1).push(message)
+    return segments
+  }, [[]])
 const polledIn = (id, list) => {
-  const [firstTurn = [], ...later] = turnsOf(list)
+  const turns = turnsOf(list)
+  const [opening = [], ...woken] = turns.flatMap(segmentsOf)
   const exempt = sleepsBeforeSpawn(list)
-  return looksIn(firstTurn, exempt) - allowedRecall(id, firstTurn) > 0 || later.some((turn) => looksIn(turn, exempt) > 1)
+  return looksIn(opening, exempt) - allowedRecall(id, turns[0] ?? []) > 0 || woken.some((segment) => looksIn(segment, exempt) > 1)
 }
 const pollers = orchestrators.filter(([id, entry]) => polledIn(id, entry.list)).map(([id]) => id)
 const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length
@@ -333,7 +340,10 @@ const findingChecks = [
 
 const checks = [
   ["the root spawned at least two children with courier_spawn in its first turn", spawnsIn(first) >= 2],
-  ["the root ended its first turn after spawning, with no reports in it", ended(first.at(-1)) && !failed(first.at(-1)) && !first.some((message) => reportersOf(message).some((from) => tree.has(from)))],
+  [
+    "the root ended its first turn after spawning, without waiting for the reports (one steered into it while it ran is delivered)",
+    spawnsIn(first) > 0 && ended(first.at(-1)) && !failed(first.at(-1)),
+  ],
   ["no orchestrator polled (courier_children, courier_tree, sleep)", pollers.length === 0],
   [
     "at least one child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all without work of its own first",
@@ -443,6 +453,8 @@ const skillRule = (() => {
   }
 })()
 if (skillRule?.effect === "deny") notes.push(`the project's permissions deny the skill ${SKILL}`)
+const early = first.filter((message) => reportersOf(message).some((from) => tree.has(from))).length
+if (early) notes.push(`${early} report(s) reached the root while its first turn still ran`)
 if (pollers.length) notes.push(`polled: ${pollers.map((id) => (id === rootID ? "the root" : id)).join(", ")}`)
 for (const [id, entry] of spawned) {
   const report = reportOf(id)

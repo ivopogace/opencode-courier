@@ -159,8 +159,15 @@ const looksIn = (turn) =>
   toolsOf(turn).filter(
     (part) => LOOKS.has(part.name) || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))),
   ).length
-const polled = looksIn(first) > 0 || turns.slice(1).some((turn) => looksIn(turn) > 1)
-const laterLooks = turns.slice(1).reduce((sum, turn) => sum + looksIn(turn), 0)
+const segmentsOf = (turn) =>
+  turn.reduce((segments, message, index) => {
+    if (index > 0 && sendersOf(message).length) segments.push([])
+    segments.at(-1).push(message)
+    return segments
+  }, [[]])
+const [opening = [], ...woken] = turns.flatMap(segmentsOf)
+const polled = looksIn(opening) > 0 || woken.some((segment) => looksIn(segment) > 1)
+const laterLooks = woken.reduce((sum, segment) => sum + looksIn(segment), 0)
 const sends = new Map(
   spawned.map((id) => [
     id,
@@ -187,12 +194,15 @@ const firstText = first.filter((message) => message.type === "assistant").map(te
 const checks = [
   ["the parent spawned two children with courier_spawn", firstTools.filter(childOf).length >= 2],
   [
-    "the parent ended its first turn after spawning, with no reports in it",
-    ended(first.at(-1)) && !failed(first.at(-1)) && !first.some(reporterOf),
+    "the parent ended its first turn after spawning, without waiting for the reports (one steered into it while it ran is delivered)",
+    firstTools.some(childOf) && ended(first.at(-1)) && !failed(first.at(-1)),
   ],
   ["the parent did not poll its children (courier_children, courier_tree, sleep)", !polled],
   ["both children called courier_send to the parent", spawned.length >= 2 && spawned.every((id) => sends.get(id).length > 0)],
-  ["both reports woke the parent: each arrived after its first turn and got a reply", spawned.length >= 2 && spawned.every((id) => reportOf(id)?.turn > 1 && reportOf(id)?.answered)],
+  [
+    "both reports reached the parent, each waking it or steered into its running turn, and got a reply",
+    spawned.length >= 2 && spawned.every((id) => reportOf(id)?.answered),
+  ],
   ["each report carries a status, as the brief asks", spawned.length >= 2 && spawned.every((id) => reportOf(id)?.status !== undefined)],
   [
     "each report holds its child's answer",
@@ -221,6 +231,8 @@ const checkIns = parentTools.filter((part) => part.name === "courier_later" && p
 const cancelled = parentTools.filter((part) => part.name === "courier_cancel" && part.state.status === "completed").length
 if (checkIns) notes.push(`the parent scheduled ${checkIns} courier_later check-in(s) and cancelled ${cancelled}`)
 if (laterLooks) notes.push(`the parent looked at its children ${laterLooks} time(s) after being woken`)
+const early = reports.filter((report) => report.turn === 1).length
+if (early) notes.push(`${early} report(s) reached the parent while its first turn still ran`)
 for (const id of spawned)
   if (sends.get(id).length > 1) notes.push(`child ${id} called courier_send ${sends.get(id).length} times`)
 

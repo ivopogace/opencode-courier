@@ -499,3 +499,34 @@ describe("the recursive checker on lone spawns and recalls", () => {
     expect(check(recallRun("sub")).failed).toEqual([POLL])
   })
 })
+
+function steeredRun(look: "none" | "after" | "before"): Run {
+  const tree = transcripts("no-fault")
+  const children = tool("courier_children", {})
+  tree.ses_root = [
+    user("the job"),
+    step("tool-calls", spawn("ses_num", ""), spawn("ses_count", "")),
+    ...(look === "before" ? [step("tool-calls", children)] : []),
+    report("ses_count", "done", "42"),
+    ...(look === "after" ? [step("tool-calls", children)] : []),
+    step("stop", say("split: 2 parts | numbers, count. count is in.")),
+    idle(),
+    report("ses_num", "done", "391 and 1024"),
+    step("tool-calls", tool("read", { path: "numbers/a.txt" })),
+    step("stop", say("RESULTS 391 1024 42")),
+    idle(),
+  ]
+  return { tree, files: FILES }
+}
+
+describe("the recursive checker and a report steered into the root's first turn", () => {
+  test("a report that reaches the root while its first turn runs is delivered, and the turn still ends after spawning", () => {
+    const run = check(steeredRun("none"))
+    expect(run.failed).toEqual([])
+    expect(run.notes).toContain("1 report(s) reached the root while its first turn still ran")
+  })
+  test("one look after the steered report is no poll, one before any report is", () => {
+    expect(check(steeredRun("after")).failed).toEqual([])
+    expect(check(steeredRun("before")).failed).toEqual([POLL])
+  })
+})

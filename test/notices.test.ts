@@ -56,6 +56,7 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain(kernel.SPLIT_LINE)
     expect(skill.SKILL_CONTENT).toContain(`or, at the root only, ${kernel.ONE_PART_LINE}`)
     expect(skill.SKILL_CONTENT).toContain("Below the root, never start one session for the whole task")
+    expect(skill.SKILL_CONTENT).toContain("At the root, which has no brief: split a task with 2 or more independent, substantial parts touching separate files or areas")
     expect(skill.SKILL_CONTENT).toContain("Several whole jobs in one prompt, such as 4 tickets, are that many parts")
     expect(skill.SKILL_CONTENT).toContain("start waves, each its own group, or leave them ungrouped and start the next as each report frees a slot")
     expect(skill.SKILL_CONTENT).toContain("A part that depends on another starts once that one's branch is merged into your checkout")

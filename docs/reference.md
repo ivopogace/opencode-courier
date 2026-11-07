@@ -241,9 +241,12 @@ to report, the relay's instructions and what to do about a failed or silent chil
 brief, the role part, the tool descriptions and the notices, where each is read when it applies. In
 order:
 
-1. **Split or do** by the rule in the brief, or at the root in its role line, and state it in the
-   split line, whose forms the skill repeats, as a brief can be compacted away. Several whole jobs in
-   one prompt are that many parts; below the root, never one session for the whole task.
+1. **Split or do** by the rule in the brief. At the root, which has no brief and whose role line
+   loses the rule at its first spawn, the skill states it: split a task of 2 or more independent,
+   substantial parts, do a small, sequential or tightly coupled one yourself, or hand a heavy one whole
+   to one session. The decision goes in the split line, whose forms the skill repeats, as a brief can
+   be compacted away. Several whole jobs in one prompt are that many parts; below the root, never one
+   session for the whole task.
 2. **Start the parts**: the parts that run at once in one join group; when they do not all fit the
    limits, waves, each its own group, or ungrouped, the next started as each report frees a slot. No
    two parts edit the same files, `isolate: true` where they edit in parallel. Each task says what
@@ -663,9 +666,9 @@ A native child is created with OpenCode's own `parentID`, so OpenCode treats it 
 subagent. The parent chooses per spawn with `courier_spawn`'s `native`: `true` makes that child a
 subagent, `false` keeps it a standalone session, and unset leaves it to the `nativeChildren` option,
 which is off by default and, with `"nativeChildren": true`, makes every child started without
-`isolate` a subagent. A tree may mix both kinds, in one group too. A native child is deleted with
-its parent, so leave it off, with `native: false` when the option is on, for a part the person may
-want to open or that should outlive the parent. Use native children only with OpenCode's TUI or the paired app, which show their prompts;
+`isolate` a subagent. A tree may mix both kinds, in one group too. Leave it off, with `native:
+false` when the option is on, for a part the person may want to open or that should outlive the
+parent (see below). Use native children only with OpenCode's TUI or the paired app, which show their prompts;
 `native`'s own description says so to the model. What changes for a native child:
 
 - **Asks are answered in OpenCode's view.** A native child's permission requests, questions and

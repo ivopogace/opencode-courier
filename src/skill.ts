@@ -14,8 +14,10 @@ export const SKILL_CONTENT = [
   "",
   "## 1. Split or do",
   "",
-  "Split or do by the rule in your brief, the text above your task, or, at the root, in the opencode-courier role line, " +
-    `and say which in one line of your reply: ${SPLIT_LINE}, or, at the root only, ${ONE_PART_LINE}. Several whole ` +
+  "Split or do by the rule in your brief, the text above your task. At the root, which has no brief: split a task with 2 " +
+    "or more independent, substantial parts touching separate files or areas, do it yourself when it is small, " +
+    "sequential or tightly coupled, or hand a heavy one (long reading, many edits, long runs) whole to one session to " +
+    `keep your context. Say which in one line of your reply: ${SPLIT_LINE}, or, at the root only, ${ONE_PART_LINE}. Several whole ` +
     "jobs in one prompt, such as 4 tickets, are that many parts. Below the root, never start one session for the whole " +
     "task: it only adds a hop, and a chain of single hops uses up the tree's depth.",
   "",

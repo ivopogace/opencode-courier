@@ -104,6 +104,7 @@ export interface Sent {
 export interface Role {
   readonly depth: number | null
   readonly entry: boolean
+  readonly subagent?: true
 }
 
 // session.instructions exists since 2.2.0 (api-notes)
@@ -273,6 +274,7 @@ export interface ContextPorts {
   readonly storage: RosterStorage
   readonly limits: Limits
   readonly roles: Map<string, Role>
+  readonly session: Pick<Context["session"], "get">
   readonly instructions?: Context["session"]["instructions"]
   readonly hiddenFromLeaf?: ReadonlyArray<string>
   readonly log: (message: string) => void

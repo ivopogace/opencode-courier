@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 plugin-add:14"
+SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 subagent-role:3 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1556,6 +1556,25 @@ run_subagent() {
   check "the tree's record lists both subagents as parts under the middle session, marked subagent, with duration and cost" \
     "$(jq -r --arg bg "$background" --arg fg "$foreground" '[.parts[] | select(.subagent == true)] | (map(.sessionID) | sort) == ([$bg, $fg] | sort) and
       all(.[]; .depth == 2 and .isolated == false and (.duration | type) == "number" and (.cost | type) == "number" and (.title | length) > 0)' <<<"$record")"
+}
+
+# An OpenCode subagent of a courier child (#463): the child starts one with OpenCode's subagent tool in the foreground and
+# reports its answer. The subagent's requests carry no role line, and the courier's hook leaves them no courier_spawn,
+# courier_recall or courier_note, as for a leaf: it is no root of a tree of its own.
+run_subagent_role() {
+  scenario "an OpenCode subagent of a courier child gets no root role line and no courier_spawn, courier_recall or courier_note (#463)"
+  out=$(prompt "COURIER-SUBAGENT-NO-ROOT")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the child reported its subagent's answer to the root" "$(has_text "$root" "CHILD SAW" 60)"
+  sub=$(jq -sr '[.[] | select(.reply.text? == "SUBAGENT NO ROOT DONE") | .session] | unique | .[0] // empty' "$WORK/model.log")
+  check "the subagent was started by the child, through OpenCode's parentID" "$([ -n "$sub" ] && [ "$(session_info "$sub" | jq -r '.parentID')" = "$child" ] && echo true || echo false)"
+  check "every request of the subagent had no role line, no hook part, and no courier_spawn, courier_recall or courier_note, but courier_send" \
+    "$(jq -sr --arg sub "$sub" '[.[] | select(.session == $sub and (.tools | length > 0))]
+      | length > 0 and all(.role == null and (.rolePart | not) and (.roleEntry | not) and (.tools | index("courier_spawn") | not) and (.tools | index("courier_recall") | not) and (.tools | index("courier_note") | not) and (.tools | index("courier_send")))' "$WORK/model.log" |
+      grep -qx true && jq -sr --arg sub "$sub" '[.[] | select(.type == "probe.context" and .sessionID == $sub)] | length > 0 and all(.role == null and (.tools | index("courier_spawn") | not))' "$WORK/probe.log" | grep -qx true && echo true || echo false)"
+  check "the child kept its role and courier_spawn" \
+    "$(jq -sr --arg child "$child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")))' "$WORK/model.log")"
 }
 
 # With maxChildren 1, a reported child archived, renamed, switched or unarchived reads idle and frees a spawn, one still running or

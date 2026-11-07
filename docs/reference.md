@@ -709,6 +709,11 @@ subagents' own subagents too.
   that wakes it; the stop waits up to two seconds for that notice and interrupts the parent again. A
   subagent cannot be the target itself.
 - **The [record](#the-record)** lists them in `parts`, so its cost is the whole tree's.
+- **No role.** Their requests carry no role line and go without `courier_spawn`, `courier_recall`
+  and `courier_note`, as a leaf's do: a subagent answers its parent's tool call and starts no tree of
+  its own. The plugin tells one by its OpenCode `parentID` and its missing roster entry. A subagent of a
+  session in no tree (one that neither started a session nor was started by one) is a top session
+  like any other and is pointed to the skill, until that session starts one.
 
 They are not counted in the [status entry](#the-status-entry), where OpenCode's own footer counts
 them, nor against the [limits](#session-trees-and-their-limits), since the courier did not start

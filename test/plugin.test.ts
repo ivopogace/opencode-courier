@@ -136,6 +136,7 @@ async function setUp(
     store,
     emit: events.emit,
     location: ctx.location,
+    session: ctx.session,
     cleanup,
     subscriptions: () => events.counted.subscriptions,
     decline: (error?: Error) => void (declines = error),
@@ -317,6 +318,19 @@ test("its context hook points a session nobody spawned, with no children, to the
 
   expect(Object.keys(event.tools)).toEqual(["courier_spawn", "courier_send", "courier_recall", "courier_note"])
   expect(event.system).toEqual([{ type: "text", text: rolePart(null, DEFAULT_LIMITS) }])
+})
+
+test("its context hook gives an OpenCode subagent of a courier child no role part, courier_spawn, courier_recall or courier_note", async () => {
+  const { tools, hooks, session } = await setUp()
+  await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
+  const get = session.get
+  session.get = async (input: any) => ({ ...(await get(input)), ...(input.sessionID === "ses_sub" ? { parentID: "ses_child" } : {}) })
+  const event = { sessionID: "ses_sub", tools: { courier_spawn: {}, courier_send: {}, courier_recall: {}, courier_note: {} }, system: [] as any[] }
+
+  await hooks.get("context")!(event)
+
+  expect(Object.keys(event.tools)).toEqual(["courier_send"])
+  expect(event.system).toEqual([])
 })
 
 test("logs a limit option it cannot use, and keeps that limit's default", async () => {

@@ -342,7 +342,8 @@ permission request, a question and a form, which below it [go to the top](#a-chi
 reports="<n>">`. It counts the reports by status, then lists each in join order, as
 `[i/n] <sessionID> "<title>": <status>` with its text and artifacts, then the members that left
 without a report. The group's name is then free again. A child started into a group that is still
-open joins it. A report after the release is delivered on its own.
+open joins it. A report after the release is delivered on its own. A parent that is itself a child
+and has already reported [owes no new report](#a-child-that-ends-without-a-report) for the release.
 
 **Leaving.** A member leaves without a report when its turn fails or is interrupted, when OpenCode
 deletes it, or when the parent drops it. The group is released once the others have reported. A
@@ -385,7 +386,10 @@ An interrupted turn is not a failure. A failure while the server is down is not 
 
 A spawned session owes its parent a report from the moment a task or message reaches it until it
 reports with a status, or its turn fails or is interrupted. What you type in the child's own session
-does not make it owe one.
+does not make it owe one. Nor does its own [join group](#join-groups)'s release when it has reported
+(`done`, `partial` or `failed`) since its last prompt: a child that started a group, saw its members'
+work done and reported in that same turn is neither reminded nor reported silent when the held
+reports arrive after. A message from its parent or through courier after that makes it owe one again.
 
 Before it goes idle owing a report, the child is reminded once: a message in a `<courier
 from="courier" reminder="report">` envelope, naming the session to report to. It runs in the same

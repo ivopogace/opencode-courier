@@ -24,8 +24,9 @@ export function addSchedulingTools(tools: ToolEditor, later: LaterPorts) {
     options: { codemode: false },
     description:
       "Schedule a message for a session (this one by default), delivered when due and waking it if idle. " +
-      "Use it as a safety net when you start sessions: schedule one check-in, end your turn by replying without " +
-      "calling more tools, and cancel it with courier_cancel if the child reports first. Survives server restarts; " +
+      "Use it as a safety net when you start sessions: schedule one check-in per group (per session " +
+      "when ungrouped), end your turn by replying without calling more tools, and cancel it with courier_cancel " +
+      "when the reports arrive, as a report does not cancel it. Survives server restarts; " +
       "may arrive up to ~15 seconds late.",
     input: LaterInput,
     execute: async (input, context) => {
@@ -41,7 +42,9 @@ export function addSchedulingTools(tools: ToolEditor, later: LaterPorts) {
   tools.add({
     name: "courier_cancel",
     options: { codemode: false },
-    description: "Cancel a message scheduled with courier_later, e.g. because the child it was waiting for reported.",
+    description:
+      "Cancel a message scheduled with courier_later, e.g. a check-in whose reports arrived. Nothing else cancels " +
+      "it but courier_stop of the session it is for.",
     input: CancelInput,
     execute: async (input) => {
       const cancelled = await cancel(later, input.id).catch(rethrow("courier_cancel"))

@@ -137,8 +137,9 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
       "Give a batch of parallel sessions one group name to " +
       "be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_children in a " +
       "loop: once you have started the sessions you need, end your turn by replying without calling more tools; each " +
-      "report, or each group's reports, starts a new turn in which you carry on. For long tasks, also courier_later a " +
-      "check-in for yourself in case it never reports, and courier_cancel it when it does.",
+      "report, or each group's reports, starts a new turn in which you carry on. For a long task or batch, also " +
+      "courier_later one check-in for yourself per group (per session when ungrouped) in case the reports never come, " +
+      "and courier_cancel it when they arrive: a report does not cancel it.",
     input: SpawnInput,
     execute: async (input, context) => {
       const child = await spawn(ports.courier, context.sessionID, input).catch(rethrow("courier_spawn"))

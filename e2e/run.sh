@@ -2084,7 +2084,7 @@ run_memory() {
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
   git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory on"
   start_server
-  check "the record kept its lesson meanwhile" "$(record_of "$root" '.lesson.text == "Noted from depth 1"' 5 | jq -r '.lesson.text == "Noted from depth 1" and .lesson.depth == 1')"
+  check "the record kept the root's lesson meanwhile" "$(record_of "$root" ".lesson.text == \"$short\"" 5 | jq -r --arg short "$short" '.lesson.text == $short and (.lesson | has("depth") | not)')"
   # The sweep runs as the plugin loads, after the server answers, so the unpinned record's removal is waited for.
   check "the sweep at load kept the pinned record, a year old, with its pin, and dropped the unpinned one as old (#285)" \
     "$(for _ in $(seq 1 20); do [ -z "$(kv get "memory/$project/ses_unpinned")" ] && break; sleep 1; done; [ -n "$(kv get "memory/$project/ses_seeded")" ] && [ -n "$(kv get "memory/$project/ses_seeded/pin")" ] && [ -z "$(kv get "memory/$project/ses_unpinned")" ] && echo true || echo false)"

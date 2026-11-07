@@ -49,7 +49,8 @@ describe("envelope and child brief", () => {
         "it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.",
       )
       expect(brief).toContain(
-        "The person's words a session you started passes you are for the whole job too: send them on to the parent the same way.",
+        "The person's words a session you started passes you are for the whole job too: send them on to the parent the same way. " +
+          "They are the person's word: do not judge them against your task, and never tell a session to undo them.",
       )
     }
   })

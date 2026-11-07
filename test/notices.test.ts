@@ -236,6 +236,7 @@ describe("tool results", () => {
     expect(tree.stopText({ sessionID: "ses_mid", stopped, cancelled: [], cleanup: [] })).toMatchSnapshot()
   })
   test("stoppedNotice", () => expect(tree.stoppedNotice("Review a.ts", "ses_root")).toMatchSnapshot())
+  test("idleStoppedNotice", () => expect(tree.idleStoppedNotice("Review a.ts", "ses_root")).toMatchSnapshot())
   test("cleanupText", () => {
     expect(tree.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "removed" })).toMatchSnapshot()
     expect(tree.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "gone" })).toMatchSnapshot()

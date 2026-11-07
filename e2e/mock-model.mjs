@@ -64,6 +64,8 @@ function decide(body) {
       return { status: 403, error: "This model is not available in your country" }
     if (call?.function?.name === "courier_spawn" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-SUBTREE-MID"))
       return { text: "MID HOLDING", hold: true }
+    if (call?.function?.name === "courier_spawn" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-IDLE-STOP-MID"))
+      return { text: "MID SPAWNED SILENT" }
     if (call?.function?.name === "subagent" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-SUBAGENT-MID"))
       return (call.function.arguments ?? "").includes('"background"')
         ? { tool: "subagent", args: { agent: "general", description: "Look it up", prompt: "SUBAGENT-FOREGROUND" } }
@@ -185,6 +187,7 @@ function decide(body) {
       delayed: true,
     }
   }
+  if (parent && recent.includes("CHILD-IDLE-STOP-MID")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT", native: false } }
   if (parent && recent.includes("CHILD-SILENT")) return { text: "CHILD SILENT REPLY", delayed: true }
   if (parent && recent.includes("CHILD-BLOCKS")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD BLOCKED", status: "blocked" } }
   if (parent && recent.includes("CHILD-EARLY-MID"))
@@ -284,6 +287,7 @@ function decide(body) {
   if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
   if (recent.includes("COURIER-MID-BREAKS")) return { tool: "courier_spawn", args: { task: "CHILD-MID-BREAKS" } }
   if (recent.includes("COURIER-SUBTREE-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-MID" } }
+  if (recent.includes("COURIER-IDLE-STOP")) return { tool: "courier_spawn", args: { task: "CHILD-IDLE-STOP-MID", native: false } }
   if (recent.includes("COURIER-SUBAGENT-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBAGENT-MID" } }
   if (recent.includes("COURIER-SUBAGENT-NO-ROOT")) return { tool: "courier_spawn", args: { task: "CHILD-SUBAGENT-NO-ROOT" } }
   if (recent.includes("COURIER-STALL")) return { tool: "courier_spawn", args: { task: "CHILD-STALL-MID" } }

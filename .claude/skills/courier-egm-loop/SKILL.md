@@ -15,12 +15,26 @@ one wave of fix sessions; the orchestrator verifies, files, merges and decides w
 
 ## The go
 
-Invoking this skill is the owner's go, for this run only, to file each finding the orchestrator
-confirmed as an issue, and to merge each fix PR that meets courier-wave's merge bar. Record the
-invocation verbatim with its time in the roster. It covers nothing else: a release, a post
-outside this repository, anything that costs money, and every `NEEDS USER DECISION` that
-courier-wave gives the owner stay the owner's. Children cannot file or merge on a relayed go;
-the orchestrator does both itself.
+Invoking this skill is the owner's go, for this run only, to run every round without them: file
+each finding the orchestrator confirmed as an issue, merge each fix PR that meets courier-wave's
+merge bar, run the real-model check, and start the next round. Record the invocation verbatim
+with its time in the roster. Ask the owner only for what the go does not cover: a release, a
+post outside this repository, anything that costs money, and a `NEEDS USER DECISION` on how the
+owner runs or exposes the plugin. Decide every other `NEEDS USER DECISION` yourself from the
+code, README.md and CLAUDE.md, and record the decision in the roster. Children cannot file or
+merge on a relayed go; the orchestrator does both itself.
+
+## Starting sessions
+
+Most turns of a run start from a child's note or a background task, not from the owner, and in
+the desktop app such a turn cannot call `start_session`. Start the round's sessions as the
+turn allows:
+
+- In a turn the owner sent: `start_session` (`user_asked`, `fresh`, a worktree cut from
+  `origin/main`), and follow-ups by `SendMessage`.
+- In any other turn: the `Agent` tool with `isolation: "worktree"` and `run_in_background`,
+  given the same prompt (its worktree branches from `origin/main` by its own `git` commands).
+  Its final message is its report; continue it with `SendMessage` to its agent id.
 
 ## The roster
 
@@ -31,8 +45,8 @@ with the reason, so later rounds don't raise it again.
 
 ## A round
 
-1. **Review.** Start one review session (local: `start_session` `user_asked`, `fresh`, its own
-   worktree cut from `origin/main`) with `references/review-prompt.md`, every bracket filled.
+1. **Review.** Start one review session, as Starting sessions says, with
+   `references/review-prompt.md`, every bracket filled.
    Wait for its final message without polling; it reports each finding with file:line evidence
    and a severity, and proposes an issue per finding.
 2. **Verify.** Check every proposed finding against the code yourself, never from the
@@ -47,14 +61,13 @@ with the reason, so later rounds don't raise it again.
 4. **File.** One issue per confirmed finding with `gh issue create`, the session's evidence and
    suggested placement in its body, titled as the repo's issues are. Assign them to the owner.
 5. **Fix.** Run the issues as a wave with the `courier-wave` skill: its planning, its child
-   prompt, its merge bar and loop. In this desktop app the children are local worktree sessions
-   (`start_session` `user_asked`, worktree from `origin/main`, follow-ups by `SendMessage`).
+   prompt, its merge bar and loop, with the children started as Starting sessions says.
 6. **Close the review PR** with a comment that lists the issues filed and the PRs that fixed
    them; it was a reference, never for merging.
 7. **Real-model check.** When the wave changed a model-facing string, CLAUDE.md asks for
    `e2e/real-model.sh` and a row in `docs/maintainers/real-model.md`. Run it where the owner runs
-   real models; if that place isn't known yet, ask once and record the answer in the roster. A
-   failed check is a finding of the next round.
+   real models (a memory or the roster names it); ask only if nothing does. A failed check is a
+   finding of the next round.
 8. Tell the owner in three lines: the round, what was found and fixed, and what's next. Then
    start the next round.
 

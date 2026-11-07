@@ -76,3 +76,4 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
 - No TSDoc. A comment only for a fact about OpenCode or the host the code cannot say: one line of
   at most 80 characters; the long form goes in docs/maintainers/plugin-api-notes.md.
 - Running several issues at once in child sessions: the `courier-wave` skill.
+- Repeating the EGM review of the skill until it finds nothing: the `courier-egm-loop` skill.

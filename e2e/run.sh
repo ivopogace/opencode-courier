@@ -2574,7 +2574,13 @@ run_epilogue() {
     "$(grep -qE "courier roster prune:|courier question: stored questions:|courier watch: could not relay pending requests:" "$WORK/server.log" && echo false || echo true)"
 }
 
-for group in $GROUP_LIST; do "run_${group//-/_}"; done
+# Each group's seconds, its weight in SUITE.
+for group in $GROUP_LIST; do
+  group_start=$SECONDS
+  "run_${group//-/_}"
+  end_scenario
+  echo "group $group: $((SECONDS - group_start)) s"
+done
 run_epilogue
 
 if [ "$failures" -gt 0 ]; then

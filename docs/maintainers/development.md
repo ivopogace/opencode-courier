@@ -36,7 +36,7 @@ and openssl. New behaviour gets a scenario there.
 - Scenarios live in groups, each a `run_<name>` function that starts its own sessions and relies on
   no other group's state. A new scenario goes into its group, or a new one.
 - `E2E_SHARD=k/n` deals the groups to shards by the seconds each took in CI (the weights in
-  `SUITE`; update them when a group changes much). `restart-question` and `roster` restart the server
+  `SUITE`, which the run log prints as `group <name>: N s`; update them when a group changes much). `restart-question` and `roster` restart the server
   and share a shard. `epilogue`, the server log check, runs last in every shard. `E2E_PLAN=1` prints
   what a run would do.
 - The mock model holds a child's reply back 5 s (`CHILD_DELAY_MS`), so the parent is idle when it

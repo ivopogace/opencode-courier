@@ -5,7 +5,7 @@ import { endsIdle, retryDelay } from "./domain.js"
 import { forgetChild, forgetDeleted } from "./forget.js"
 import { hasCompleteGroup, leave, outIn } from "./group.js"
 import { liveBelow } from "./limits.js"
-import type { ExecutionError, Waits, WatchPorts, WatchState } from "./ports.js"
+import type { ChildStore, ExecutionError, Waits, WatchPorts, WatchState } from "./ports.js"
 import { owedUnwaited } from "./nudge.js"
 import { reportedSincePrompt, stoppedSincePrompt } from "./report.js"
 import { syncStanding } from "./standing.js"
@@ -81,12 +81,20 @@ export interface InboxEnqueued {
 // only inbox.enqueued carries the item's type (api-notes)
 const UNOWED = new Set(["user", "compaction", "move"])
 const OWN = "own"
+const OWN_SCHEDULED = "own-scheduled:"
 
 function kindOf(sessionID: string, item: InboxEnqueued["data"]["item"]) {
   const metadata = item.payload?.metadata
   if (item.type !== "synthetic" || metadata?.source !== "courier") return item.type
-  const ownCheckIn = typeof metadata.scheduled === "string" && metadata.from === sessionID
-  return typeof metadata.group === "string" || ownCheckIn ? OWN : item.type
+  if (typeof metadata.group === "string") return OWN
+  const ownCheckIn = typeof metadata.scheduled === "string" && metadata.from === sessionID && typeof metadata.scheduledAt === "number"
+  return ownCheckIn ? `${OWN_SCHEDULED}${metadata.scheduledAt}` : item.type
+}
+
+async function ownAfterReport(children: Pick<ChildStore, "notes">, sessionID: string, kind: string | undefined) {
+  if (kind === OWN) return reportedSincePrompt(children, sessionID)
+  if (!kind?.startsWith(OWN_SCHEDULED)) return false
+  return reportedSincePrompt(children, sessionID, Number(kind.slice(OWN_SCHEDULED.length)))
 }
 
 export async function noteEnqueued(ports: WatchPorts, inbox: Map<string, string>, event: InboxEnqueued) {
@@ -107,7 +115,7 @@ export async function notePrompt(
   const children = childStore(ports.storage)
   const parentID = await children.indexedParent(sessionID)
   if (parentID === undefined) return false
-  if (kind === OWN && (await reportedSincePrompt(children, sessionID))) return false
+  if (await ownAfterReport(children, sessionID, kind)) return false
   // the idle hook's reminder still publishes inbox.delivered (api-notes)
   if (inboxID !== undefined && (await children.nudgeOf(sessionID)).inboxID === inboxID) return false
   await children.prompted(sessionID, event.created ?? ports.now())

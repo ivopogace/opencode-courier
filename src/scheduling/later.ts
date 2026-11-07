@@ -105,7 +105,7 @@ export async function deliverDue(ports: LaterPorts, claimed: Set<string>) {
           sessionID: due.sessionID,
           text: envelope(due.from, due.message, { scheduled: new Date(due.createdAt).toISOString() }),
           description: `Scheduled message from ${due.from}`,
-          metadata: { source: "courier", from: due.from, scheduled: due.id },
+          metadata: { source: "courier", from: due.from, scheduled: due.id, scheduledAt: due.createdAt },
           delivery: "queue",
         })
         .catch((error: unknown) => ports.log(`courier_later ${due.id} to ${due.sessionID} not delivered: ${String(error)}`))

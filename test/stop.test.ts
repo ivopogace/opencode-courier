@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { DEFAULT_LIMITS } from "../src/tree/domain.js"
 import { joinGroup } from "../src/tree/group.js"
 import { cancelScheduled, schedule, type LaterPorts } from "../src/scheduling/index.js"
-import { idleStoppedNotice, stoppedNotice, stopText, treeText } from "../src/tree/text.js"
+import { blockedStoppedNotice, idleStoppedNotice, stoppedNotice, stopText, treeText } from "../src/tree/text.js"
 import { stoppedSincePrompt } from "../src/tree/report.js"
 import { childStore, groupStore, memberKey, progressKey, promptKey, settledKey, stoppedKey, wakeStore } from "../src/tree/store.js"
 import type { RosterEntry, StopPorts } from "../src/tree/ports.js"
@@ -440,6 +440,45 @@ describe("stop", () => {
     expect(result.told).toBe("mid")
     expect(stopText(result)).toContain("Told mid, which started leaf1, that it was stopped.")
     expect(store.has(settledKey("leaf1"))).toBe(false)
+  })
+
+  test("tells the parent of a target that was not running and waited on its answer to a blocked report (#512)", async () => {
+    const { ports, store, calls } = await fixture({ idle: ["leaf1"] })
+    store.set(promptKey("leaf1"), { at: 1_000 })
+    store.set(settledKey("leaf1"), { at: 2_000, by: "report", status: "blocked" })
+
+    const result = await stop(ports, "root", { sessionID: "leaf1" })
+
+    const told = calls.filter((call) => call.method === "synthetic")
+    expect(told).toHaveLength(1)
+    expect(told[0]!.input).toMatchObject({ sessionID: "mid", delivery: "steer", metadata: { source: "courier", from: "leaf1", ended: "stopped" } })
+    expect(told[0]!.input.text).toContain('<courier from="leaf1" ended="stopped">')
+    expect(told[0]!.input.text).toContain(blockedStoppedNotice("title leaf1", "root"))
+    expect(told[0]!.input.text).not.toContain("still owed you a report")
+    expect(result.told).toBe("mid")
+    expect(store.get(settledKey("leaf1"))).toMatchObject({ status: "blocked" })
+  })
+
+  test("tells no one of an idle target whose blocked report its parent answered and that then reported done", async () => {
+    const { ports, store, calls } = await fixture({ idle: ["leaf1"] })
+    store.set(promptKey("leaf1"), { at: 3_000 })
+    store.set(settledKey("leaf1"), { at: 4_000, by: "report", status: "done" })
+
+    const result = await stop(ports, "root", { sessionID: "leaf1" })
+
+    expect(calls.some((call) => call.method === "synthetic")).toBe(false)
+    expect(result.told).toBeUndefined()
+  })
+
+  test("tells no one of an idle blocked target when the caller started it", async () => {
+    const { ports, store, calls } = await fixture({ idle: ["mid"] })
+    store.set(promptKey("mid"), { at: 1_000 })
+    store.set(settledKey("mid"), { at: 2_000, by: "report", status: "blocked" })
+
+    const result = await stop(ports, "root", { sessionID: "mid" })
+
+    expect(calls.some((call) => call.method === "synthetic")).toBe(false)
+    expect(result.told).toBeUndefined()
   })
 
   test("tells no one of an idle target that owed a report when the caller started it", async () => {

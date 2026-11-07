@@ -72,6 +72,26 @@ describe("reportFailure", () => {
     expect(sent[0].text).toContain("will not report back on its own")
   })
 
+  test("names the sessions still running under the failed one, which still counts, and offers no replacement (#462)", async () => {
+    const { ports, sent } = fakePorts()
+    ;(ports.session as any).get = async ({ sessionID }: { sessionID: string }) => ({
+      time: sessionID === "ses_done" ? { created: 1, updated: 5, idle: 5 } : { created: 1, updated: 5 },
+    })
+    const children = childStore(ports.storage)
+    await children.record(child())
+    await children.record({ ...child("ses_child"), sessionID: "ses_grand", title: "Write the tests" })
+    await children.record({ ...child("ses_grand"), sessionID: "ses_done", title: "Read the spec" })
+    await children.settled("ses_done", "report", 2)
+
+    await reportFailure(ports, new Set(), failed())
+
+    expect(sent[0].text).toBe(envelope("ses_child", failureNotice("Fix the bug", blocked, undefined, 1_000_000, ["Write the tests"]), { failed: "provider.auth" }))
+    expect(sent[0].text).toContain('It has 1 session of its own still running ("Write the tests"), whose reports will wake it')
+    expect(sent[0].text).toContain("still counts toward your limits")
+    expect(sent[0].text).not.toContain("start a replacement")
+    expect(sent[0].text).not.toContain("will not report back on its own")
+  })
+
   test("leaves out a status the error does not carry", () => {
     expect(failureNotice("t", { type: "unknown", message: "boom" })).toContain("failed: boom (unknown).")
   })

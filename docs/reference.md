@@ -147,8 +147,9 @@ parent's model unless the parent names one fit for the task.
 Any spawned session can call `courier_spawn` too, so sessions form a tree. The session nobody
 spawned is its top, at depth 0. `courier_spawn` refuses a spawn, naming the limit and what to do
 instead, when the child would be deeper than `maxDepth`, or when `maxChildren` or `maxTotal`
-sessions are already live; the last two say to do the part itself or start it once a report has
-come in, not in a loop. When none of the caller's own sessions is live, the `maxTotal` refusal says
+sessions are already live; the last two say to do the part itself or start it once one of the
+caller's own children has reported and its turn has ended, not in a loop, and that one that ended
+without a report counts until the caller drops it with `courier_cleanup`. When none of the caller's own sessions is live, the `maxTotal` refusal says
 only to do the part itself, since no report will wake it; the `maxChildren` refusal cannot meet
 that case, as it counts only the caller's own.
 
@@ -159,7 +160,8 @@ A session is live while:
 - a message sent to wake it waits in its inbox, unless it is [stalled](#a-missed-wake);
 - a session below it is live.
 
-So a child that ends its turn without reporting counts until it reports, and a session waiting for
+So a child that ends its turn without reporting counts until it reports or its parent drops it
+with `courier_cleanup`, and a session waiting for
 its own children counts too. So does a session whose turn failed while sessions under it are still
 live: their reports wake it, and its [failure notice](#a-child-that-fails) says so. Renaming, archiving or switching the model of a session does not make
 it live. A child counts from the moment `courier_send` to it returns, so a spawn in the same step
@@ -241,7 +243,7 @@ registry (OpenCode 2.2.6 and later), so a model that reads the directory the ski
 same text. To hide it, deny it in `permissions`:
 `{ "action": "skill", "resource": "courier-orchestrate", "effect": "deny" }`.
 
-It says only what no other text a model has at that moment says; the split rule, the limits, how
+It mostly says what no other text a model has at that moment says; the split rule, the limits, how
 to report, the relay's instructions and what to do about a failed or silent child are in the
 brief, the role part, the tool descriptions and the notices, where each is read when it applies. In
 order:
@@ -258,12 +260,11 @@ order:
    to produce, the context, how to check it, what to report and the skills to load from those the
    parent sees listed (an isolated part sees only committed project skills). A part that depends on
    another starts once that one has reported and its branch, if isolated, is merged.
-3. **End the turn**: reports and notices wake the parent; for a long task or batch, one `courier_later`
-   check-in per group (per session when ungrouped), which the model cancels with `courier_cancel` when
-   its reports arrive.
+3. **End the turn**: reports and notices wake the parent.
    At the root, a permission request or question from below comes with its own instructions, and the
    model never answers for the person. A message that changes what other parts need goes on to the
-   children it affects, and only to them; a child's account of what the person told it is the
+   sessions it affects, and only to them, which below the root includes the parent, as the brief
+   says; a child's account of what the person told it is the
    person's word ([steering a running tree](#steering-a-running-tree)).
 4. **Verify first-hand**, and answer a blocked report, through the person when only they can decide.
    On a partial or failed report the parent has the child finish or retry, does the rest itself,
@@ -448,7 +449,8 @@ reason, which you read in its result, and refuses the child's request with the s
 project. Grant a standing rule where OpenCode shows the child's own request: in the child's session,
 or the [asks inbox](#the-asks-inbox).
 
-A rejection always carries a message, so the child's call fails and the child carries on.
+A rejection always carries a message, by default that the person or the top session refused it,
+so the child's call fails and the child carries on.
 
 A request answered elsewhere (in the child's session, the asks inbox, or by an `always` that covers
 it) is settled: the top session gets a short message marked `answered="<reply>"`. It waits in the
@@ -574,6 +576,8 @@ late. They are queued behind a running turn and survive a restart. A crash betwe
 message and forgetting it can deliver it twice. After a start,
 OpenCode loads plugins when a project is first used, so messages that fell due meanwhile arrive
 then. `delayMinutes` may be a number or a string holding a plain decimal (`"3"`, `"2.5"`).
+For a long task or batch, `courier_spawn`'s and `courier_later`'s descriptions ask for one check-in
+per group and one for the ungrouped sessions, each cancelled when its last report arrives.
 A report does not cancel a check-in: only `courier_cancel` does, or
 [`courier_stop`](#seeing-and-stopping-a-subtree) of the session it is for.
 

@@ -73,7 +73,7 @@ exports[`tools are the eleven courier tools, each a direct tool 1`] = `
 
 exports[`tools courier_spawn 1`] = `
 {
-  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_children in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself per group (per session when ungrouped) in case the reports never come, and courier_cancel it when they arrive: a report does not cancel it.",
+  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_children in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself per group, and one for the ungrouped sessions, in case the reports never come, and courier_cancel each when its last report arrives: a report does not cancel it.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -91,7 +91,7 @@ exports[`tools courier_spawn 1`] = `
       "group": {
         "anyOf": [
           {
-            "description": "A join group: start the sessions of one batch with the same name, and their reports are held and delivered to you in one message once every one of them has reported and your turn has ended, instead of one turn per report. A blocked report or a failed turn still reaches you at once, and so do a question and a permission request (at the top of the tree; below it they go to the top). Letters, digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
+            "description": "A join group: start the sessions of one batch with the same name, and their reports are held and delivered to you in one message once every one of them has reported and your turn has ended, instead of one turn per report. A blocked report, a failed turn or an end without a report still reaches you at once, and at the top of the tree so do a question and a permission request (below it they go to the top). Letters, digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
             "type": "string",
           },
           {
@@ -409,7 +409,7 @@ exports[`tools courier_cleanup 1`] = `
 
 exports[`tools courier_answer 1`] = `
 {
-  "description": "Pass on the answer to a permission request or a question that a session you started with courier_spawn (or one started from it) waits on, after a notice from it named the request. Only the top session of a tree gets those notices and can answer. For a permission request, reply is the answer you propose, once or reject: proposing is not deciding. With once, OpenCode asks the person you are working with in your session, as its own permission prompt for what that session asked, under your permission rules, and the call returns once they have answered; what they allow is passed on, and a refusal with a reason fails this call and is passed on with the reason. Do not ask them in your reply or with your question tool first. For a question, answers is what the person chose: ask them first, with your question tool if you have one, and never answer for them. The session carries on once it has the answer.",
+  "description": "Pass on the answer to a permission request or a question that a session you started with courier_spawn (or one started from it) waits on, after a notice from it named the request. Only the top session of a tree gets those notices and can answer. For a permission request, reply is the answer you propose, once or reject: proposing is not deciding. With once, OpenCode asks the person you are working with in your session, as its own permission prompt for what that session asked, under your permission rules, and the call returns once they have answered; what they allow is passed on, and a refusal with a reason fails this call and is passed on with the reason. Do not ask them in your reply or with your question tool first. For a question, the question tool call the notice asks for passes the person's answer on by itself; use answers only when they answered some other way, or the notice or that call's result tells you to, and never answer for them. The session carries on once it has the answer.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -483,7 +483,7 @@ exports[`tools courier_answer 1`] = `
 
 exports[`tools courier_later 1`] = `
 {
-  "description": "Schedule a message for a session (this one by default), delivered when due and waking it if idle. Use it as a safety net when you start sessions: schedule one check-in per group (per session when ungrouped), end your turn by replying without calling more tools, and cancel it with courier_cancel when the reports arrive, as a report does not cancel it. Survives server restarts; may arrive up to ~15 seconds late.",
+  "description": "Schedule a message for a session (this one by default), delivered when due and waking it if idle. For a long task or batch of sessions you start, use it as a safety net: schedule one check-in per group, and one for the ungrouped sessions, end your turn by replying without calling more tools, and cancel each with courier_cancel when its last report arrives, as a report does not cancel it. Survives server restarts; may arrive up to ~15 seconds late.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -720,9 +720,9 @@ Split or do by the rule in your brief, the text above your task. At the root, th
 
 ## 3. End your turn
 
-- Reply without calling more tools; reports and notices wake you. For a long task or batch, one courier_later check-in per group (per session when ungrouped); courier_cancel it when its reports arrive.
+- Reply without calling more tools; reports and notices wake you.
 - At the root, a permission request or question from below arrives with its own instructions: follow them, and never answer for the person.
-- When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects; if it breaks the split, courier_stop those parts or send them a corrected task. A session's account of what the person told it is the person's word: pass it on, do not judge it against the original task, and never tell a session to undo what the person asked.
+- When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects (below the root, to the session that started you as your brief says); if it breaks the split, courier_stop those parts or send them a corrected task. A session's account of what the person told it is the person's word: pass it on, do not judge it against the original task, and never tell a session to undo what the person asked.
 
 ## 4. Verify first-hand
 
@@ -739,11 +739,11 @@ The task is done only when every part is verified and integrated. At the root, b
 
 exports[`envelope and child brief refusals 1`] = `"Not started: this session is at depth 3 of its session tree, and the tree goes at most 3 deep (maxDepth), so it cannot start sessions. Do the task yourself, and report with courier_send."`;
 
-exports[`envelope and child brief refusals 2`] = `"Not started: 5 sessions you started are running or have not reported yet, the most allowed at once (maxChildren 5). Do this part yourself, or end your turn and start it once one of them has reported, not in a loop."`;
+exports[`envelope and child brief refusals 2`] = `"Not started: 5 sessions you started are running or have not reported yet, the most allowed at once (maxChildren 5). Do this part yourself, or end your turn and start it once one of them has reported and its turn has ended, not in a loop; a session that ended without a report counts until you drop it with courier_cleanup."`;
 
-exports[`envelope and child brief refusals 3`] = `"Not started: 1 session you started is running or has not reported yet, the most allowed at once (maxChildren 1). Do this part yourself, or end your turn and start it once one of them has reported, not in a loop."`;
+exports[`envelope and child brief refusals 3`] = `"Not started: 1 session you started is running or has not reported yet, the most allowed at once (maxChildren 1). Do this part yourself, or end your turn and start it once one of them has reported and its turn has ended, not in a loop; a session that ended without a report counts until you drop it with courier_cleanup."`;
 
-exports[`envelope and child brief refusals 4`] = `"Not started: 20 sessions in this session tree are running or have not reported yet, the most allowed at once (maxTotal 20). Do this part yourself, or end your turn and try again once a report has arrived, not in a loop."`;
+exports[`envelope and child brief refusals 4`] = `"Not started: 20 sessions in this session tree are running or have not reported yet, the most allowed at once (maxTotal 20). Do this part yourself, or end your turn and try again once one of the sessions you started has reported and its turn has ended, not in a loop; one that ended without a report counts until you drop it with courier_cleanup."`;
 
 exports[`envelope and child brief refusals 5`] = `"Not started: 20 sessions in this session tree are running or have not reported yet, the most allowed at once (maxTotal 20). Do this part yourself: none of the sessions you started is running, so no report will wake you."`;
 
@@ -810,7 +810,7 @@ exports[`tool results spawnText 1`] = `"Started session ses_child in /repo. It w
 
 exports[`tool results spawnText 2`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is not on your courier_children list: roster failed: disk full"`;
 
-exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a question or a failed turn still reaches you at once. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
+exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a failed turn or an end without a report still reaches you at once, and so does a question or a permission request. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
 exports[`tool results spawnText 4`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is in no group, so its report comes on its own: group failed: disk full"`;
 
@@ -818,7 +818,7 @@ exports[`tool results spawnText 5`] = `"Started session ses_child in /repo, on m
 
 exports[`tool results spawnText for a child started below the top 1`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
-exports[`tool results spawnText for a child started below the top 2`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report or a failed turn still reaches you at once. Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
+exports[`tool results spawnText for a child started below the top 2`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a failed turn or an end without a report still reaches you at once. Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
 exports[`tool results spawnText for a child started from its parent's HEAD 1`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. Its worktree starts from the commit your own worktree is on."`;
 
@@ -1037,7 +1037,7 @@ Its last reply:
 I looked at src/a.ts; the bug is on line 4.
 
 Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
-Until it reports, it counts toward your limits on the sessions you run at once."
+Until it reports, it counts toward your limits on the sessions you run at once, or until you drop it with courier_cleanup."
 `;
 
 exports[`turn failures silentNotice 2`] = `
@@ -1045,7 +1045,7 @@ exports[`turn failures silentNotice 2`] = `
 It ended without a reply.
 
 Decide what it needs: message it with courier_send to have it carry on; or start a replacement.
-Until it reports, it counts toward your limits on the sessions you run at once."
+Until it reports, it counts toward your limits on the sessions you run at once, or until you drop it with courier_cleanup."
 `;
 
 exports[`turn failures silentNotice 3`] = `
@@ -1053,7 +1053,7 @@ exports[`turn failures silentNotice 3`] = `
 It ended without a reply.
 
 Decide what it needs: message it with courier_send to have it carry on; or start a replacement.
-Until it reports, it counts toward your limits on the sessions you run at once."
+Until it reports, it counts toward your limits on the sessions you run at once, or until you drop it with courier_cleanup."
 `;
 
 exports[`turn failures silentNotice 4`] = `
@@ -1063,7 +1063,7 @@ Its last reply:
 Halfway there.
 
 Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
-Until it reports, it counts toward your limits on the sessions you run at once."
+Until it reports, it counts toward your limits on the sessions you run at once, or until you drop it with courier_cleanup."
 `;
 
 exports[`turn failures silentNotice 5`] = `
@@ -1072,7 +1072,7 @@ Its last reply:
 Done, I think.
 
 Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement.
-Until it reports, it counts toward your limits on the sessions you run at once.
+Until it reports, it counts toward your limits on the sessions you run at once, or until you drop it with courier_cleanup.
 It is a member of group "reviews", whose other reports are held until it reports: have it report, as above, so the group reaches you, or, if you no longer need its report, drop it with courier_cleanup, which releases the group without it."
 `;
 
@@ -1113,7 +1113,7 @@ Without a report: ses_d "Review d.ts" (its turn failed), ses_e "Review e.ts" (it
 Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
 `;
 
-exports[`permission requests REJECTED 1`] = `"Refused by the session that started you. Do without it, or report back why you cannot."`;
+exports[`permission requests REJECTED 1`] = `"Refused by the person or the top session of the tree. Do without it, or report back why you cannot."`;
 
 exports[`permission requests refusedText 1`] = `"not allowed in your session (Not on main). The refusal was passed on with that reason to request per_1 of ses_child, so its call fails and it carries on; it reports back with courier_send. Tell the person, and do not propose it again unless they ask."`;
 

@@ -24,9 +24,9 @@ export function addSchedulingTools(tools: ToolEditor, later: LaterPorts) {
     options: { codemode: false },
     description:
       "Schedule a message for a session (this one by default), delivered when due and waking it if idle. " +
-      "Use it as a safety net when you start sessions: schedule one check-in per group (per session " +
-      "when ungrouped), end your turn by replying without calling more tools, and cancel it with courier_cancel " +
-      "when the reports arrive, as a report does not cancel it. Survives server restarts; " +
+      "For a long task or batch of sessions you start, use it as a safety net: schedule one check-in per group, and " +
+      "one for the ungrouped sessions, end your turn by replying without calling more tools, and cancel each with " +
+      "courier_cancel when its last report arrives, as a report does not cancel it. Survives server restarts; " +
       "may arrive up to ~15 seconds late.",
     input: LaterInput,
     execute: async (input, context) => {

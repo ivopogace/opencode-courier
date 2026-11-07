@@ -177,13 +177,15 @@ const live = (n: number) => (n === 1 ? "is running or has not reported yet" : "a
 
 export const childrenRefusal = (running: number, maxChildren: number) =>
   `Not started: ${count(running, "session")} you started ${live(running)}, the most allowed at once ` +
-  `(maxChildren ${maxChildren}). Do this part yourself, or end your turn and start it once one of them has reported, not in a loop.`
+  `(maxChildren ${maxChildren}). Do this part yourself, or end your turn and start it once one of them has reported and its turn has ended, ` +
+  "not in a loop; a session that ended without a report counts until you drop it with courier_cleanup."
 
 export const totalRefusal = (running: number, maxTotal: number, yours: number) =>
   `Not started: ${count(running, "session")} in this session tree ${live(running)}, the most allowed at once (maxTotal ${maxTotal}). ` +
   (yours === 0
     ? "Do this part yourself: none of the sessions you started is running, so no report will wake you."
-    : "Do this part yourself, or end your turn and try again once a report has arrived, not in a loop.")
+    : "Do this part yourself, or end your turn and try again once one of the sessions you started has reported and its turn has ended, " +
+      "not in a loop; one that ended without a report counts until you drop it with courier_cleanup.")
 
 const LISTED_MAX = 12
 
@@ -262,10 +264,11 @@ export function spawnText(child: {
   const asks = child.belowTop
     ? " Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person."
     : ""
+  const topAsks = child.belowTop ? "" : ", and so does a question or a permission request"
   const reports = child.group
     ? `Its report is held with group "${child.group}": once every session you started in that group has reported and your ` +
-      `turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report${child.belowTop ? "" : ", a question"} ` +
-      `or a failed turn still reaches you at once.${asks}`
+      `turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a failed turn ` +
+      `or an end without a report still reaches you at once${topAsks}.${asks}`
     : `It will report back with courier_send, which starts a new turn for you.${asks}`
   const on = child.model ? `, on ${child.model}` : ""
   return (
@@ -460,7 +463,7 @@ export function silentNotice(title: string, lastText: string | undefined, progre
     reply
       ? "Decide what it needs: message it with courier_send to have it carry on, or to report if its last reply is what you needed; or start a replacement."
       : "Decide what it needs: message it with courier_send to have it carry on; or start a replacement.",
-    "Until it reports, it counts toward your limits on the sessions you run at once.",
+    "Until it reports, it counts toward your limits on the sessions you run at once, or until you drop it with courier_cleanup.",
     ...(group
       ? [
           `It is a member of group "${group}", whose other reports are held until it reports: have it report, as above, so the group ` +

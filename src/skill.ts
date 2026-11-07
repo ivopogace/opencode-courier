@@ -34,15 +34,14 @@ export const SKILL_CONTENT = [
   "",
   "## 3. End your turn",
   "",
-  "- Reply without calling more tools; reports and notices wake you. For a long task or batch, one courier_later " +
-    "check-in per group (per session when ungrouped); courier_cancel it when its reports arrive.",
+  "- Reply without calling more tools; reports and notices wake you.",
   "- At the root, a permission request or question from below arrives with its own instructions: follow them, and never " +
     "answer for the person.",
   "- When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves " +
-    "otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects; if it breaks the " +
-    "split, courier_stop those parts or send them a corrected task. A session's account of what the person told it is " +
-    "the person's word: pass it on, do not judge it against the original task, and never tell a session to undo what " +
-    "the person asked.",
+    "otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects (below the root, " +
+    "to the session that started you as your brief says); if it breaks the split, courier_stop those parts or send " +
+    "them a corrected task. A session's account of what the person told it is the person's word: pass it on, do not " +
+    "judge it against the original task, and never tell a session to undo what the person asked.",
   "",
   "## 4. Verify first-hand",
   "",

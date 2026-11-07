@@ -249,7 +249,7 @@ export function spawnText(child: {
   const warning =
     (child.fromParent ? " Its worktree starts from the commit your own worktree is on." : "") +
     (child.uncommitted
-      ? " Your worktree has uncommitted changes, which it does not see: commit them and tell it, or send them to it, if it needs them."
+      ? " Your working tree has uncommitted changes, which it does not see: commit them and tell it, or send them to it, if it needs them."
       : "") +
     (child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : "") +
     (child.groupError ? ` It is in no group, so its report comes on its own: ${child.groupError}` : "")

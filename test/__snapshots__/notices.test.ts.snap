@@ -102,7 +102,7 @@ exports[`tools courier_spawn 1`] = `
       "isolate": {
         "anyOf": [
           {
-            "description": "Run the session in its own git worktree so parallel sessions don't share files. From a session that is itself isolated, the worktree starts from your current commit, not your uncommitted changes: commit first. The session commits on a branch named courier/<its session ID> and names it in its report; merge that branch yourself.",
+            "description": "Run the session in its own git worktree so parallel sessions don't share files. Commit first: its worktree starts from your last commit and sees only committed files and project skills, not your uncommitted changes. The session commits on a branch named courier/<its session ID> and names it in its report; merge that branch yourself.",
             "type": "boolean",
           },
           {
@@ -831,7 +831,7 @@ exports[`tool results spawnText 5`] = `"Started session ses_child in /repo, on m
 
 exports[`tool results spawnText for a child started from its parent's HEAD 1`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. Its worktree starts from the commit your own worktree is on."`;
 
-exports[`tool results spawnText for a child started from its parent's HEAD 2`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. Its worktree starts from the commit your own worktree is on. Your worktree has uncommitted changes, which it does not see: commit them and tell it, or send them to it, if it needs them."`;
+exports[`tool results spawnText for a child started from its parent's HEAD 2`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. Its worktree starts from the commit your own worktree is on. Your working tree has uncommitted changes, which it does not see: commit them and tell it, or send them to it, if it needs them."`;
 
 exports[`tool results sendText 1`] = `"Delivered to ses_parent."`;
 

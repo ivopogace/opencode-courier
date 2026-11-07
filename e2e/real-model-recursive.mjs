@@ -271,13 +271,17 @@ const handling = faulty.map(([id, entry]) => {
   const parent = tree.get(entry.parentID)
   const [first, ...later] = deliveriesOf(id)
   const upward = reportsTo(parent.list, parent.parentID)
-  const nudge = sendsTo(parent.list, id).find((send) => send.index > first.index && (upward[0] === undefined || sentBefore(send, upward[0])))
+  const opening = sendsTo(entry.list, entry.parentID).find((send) => send.status !== "done")
+  const openedAt = opening ? sendEnd(entry.list, opening) : Infinity
+  const nudge = sendsTo(parent.list, id).find(
+    (send) => (send.index > first.index || sendStart(parent.list, send) >= openedAt) && (upward[0] === undefined || sentBefore(send, upward[0])),
+  )
   const finished = nudge && later.find((delivery) => delivery.index > nudge.index && delivery.status === "done")
   return { id, entry, parent, first, statuses: [first, ...later].map((delivery) => delivery.status), nudge, finished, upward }
 })
 const faultChecks = [
   ["the fault reached a leaf: a session below a sub-orchestrator first reported a status other than done", faulty.length > 0],
-  ["its parent messaged it with courier_send after that report and before reporting upward", handling.length > 0 && handling.every((one) => one.nudge)],
+  ["its parent messaged it with courier_send after its first message that was not done, and before reporting upward",handling.length > 0 && handling.every((one) => one.nudge)],
   ["it then reported done", handling.length > 0 && handling.every((one) => one.finished)],
   [
     "its parent reported upward once, after that done report, with status done",
@@ -415,7 +419,7 @@ if (fault)
     notes.push(`fault: session ${one.id} (depth ${one.entry.depth}) reported ${one.statuses.join(", then ")}`)
     notes.push(
       `fault: its parent ${one.entry.parentID} ${loaded !== -1 && loaded < one.first.index ? "had" : "had not"} loaded ${SKILL} when the ${one.first.status} report reached it, ` +
-        (one.nudge ? `and messaged it: ${short(one.nudge.message ?? "", 200)}` : "and did not message it between that report and its own upward"),
+        (one.nudge ? `and messaged it: ${short(one.nudge.message ?? "", 200)}` : "and did not message it between its first message that was not done and its own upward"),
     )
     if (one.upward.length) notes.push(`fault: its parent reported upward ${one.upward.map((report) => report.status).join(", then ")}`)
   }

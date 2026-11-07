@@ -136,22 +136,58 @@ describe("the recursive checker with --fault", () => {
   test("a sub-orchestrator that does the half itself sends no message, and the leaf never reports done", () => {
     const run = check("does-it-itself", ["--fault"])
     expect(run.failed).toEqual([
-      "its parent messaged it with courier_send after that report and before reporting upward",
+      "its parent messaged it with courier_send after its first message that was not done, and before reporting upward",
       "it then reported done",
       "its parent reported upward once, after that done report, with status done",
     ])
-    expect(run.notes.some((note) => note.endsWith("and did not message it between that report and its own upward"))).toBe(true)
+    expect(run.notes.some((note) => note.endsWith("and did not message it between its first message that was not done and its own upward"))).toBe(true)
   })
 
   test("a fault that never reached a leaf fails the first fault check and the rest with it", () => {
     const run = check("no-fault", ["--fault"])
     expect(run.failed).toEqual([
       "the fault reached a leaf: a session below a sub-orchestrator first reported a status other than done",
-      "its parent messaged it with courier_send after that report and before reporting upward",
+      "its parent messaged it with courier_send after its first message that was not done, and before reporting upward",
       "it then reported done",
       "its parent reported upward once, after that done report, with status done",
     ])
     expect(run.notes).toContain("fault: every session below a sub-orchestrator first reported done; the fault did not reach a leaf")
+  })
+
+  const FINISH = "Finish: write numbers/b.txt and report done."
+  function nudgedBeforeTheGroup(opening: "partial" | "progress", nudgeFirst = false): Run {
+    const { ses_root, ses_a, ses_count } = transcripts("handled")
+    const num = [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves"))]
+    if (nudgeFirst) num.push(step("tool-calls", send("ses_b", FINISH)))
+    const progress = opening === "progress" ? [send("ses_num", "1024; no file written yet")] : []
+    const b = [user("half b"), step("tool-calls", tool("shell", { command: "echo 1024" }), ...progress, send("ses_num", "1024; writing numbers/b.txt is left", "partial")), step("stop", say("Reported.")), idle()]
+    if (opening === "progress") num.push(synthetic('<courier from="ses_b">\n1024; no file written yet\n</courier>'))
+    if (!nudgeFirst) num.push(step("tool-calls", send("ses_b", FINISH)))
+    num.push(step("stop", say("Told b to finish.")), idle())
+    b.push(synthetic(`<courier from="ses_num">\n${FINISH}\n</courier>`), step("tool-calls", write("numbers/b.txt"), send("ses_num", "Wrote numbers/b.txt.", "done")), step("stop", say("Done.")), idle())
+    num.push(released("halves", [["ses_a", "done"], ["ses_b", "partial"]]), step("stop", say("b was told already.")), idle())
+    num.push(report("ses_b", "done", "Wrote numbers/b.txt."), step("tool-calls", tool("read", { path: "numbers/b.txt" }), send("ses_root", "391 and 1024", "done")), step("stop", say("Reported.")), idle())
+    return { tree: { ses_root: ses_root!, ses_a: ses_a!, ses_count: ses_count!, ses_num: num, ses_b: b }, files: FILES }
+  }
+
+  test("a message to the leaf after its partial report was sent, before its group brought the report, passes every check", () => {
+    const run = check(nudgedBeforeTheGroup("partial"), ["--fault"])
+    expect(run.failed).toEqual([])
+    expect(run.notes.some((note) => note.endsWith(`and messaged it: ${FINISH}`))).toBe(true)
+  })
+
+  test("a message to the leaf after its progress message without a status, before its partial report, passes every check", () => {
+    const run = check(nudgedBeforeTheGroup("progress"), ["--fault"])
+    expect(run.failed).toEqual([])
+  })
+
+  test("a message to the leaf before it sent anything does not count", () => {
+    const run = check(nudgedBeforeTheGroup("partial", true), ["--fault"])
+    expect(run.failed).toEqual([
+      "its parent messaged it with courier_send after its first message that was not done, and before reporting upward",
+      "it then reported done",
+      "its parent reported upward once, after that done report, with status done",
+    ])
   })
 })
 

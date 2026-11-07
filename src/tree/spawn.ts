@@ -73,7 +73,7 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     ...(group && !rosterError && !groupError ? { group } : {}),
     ...(rosterError ? { rosterError } : {}),
     ...(groupError ? { groupError } : {}),
-    ...(handedDown ? { fromParent: true } : {}),
+    ...(handedDown?.from ? { fromParent: true } : {}),
     ...(handedDown?.uncommitted ? { uncommitted: true } : {}),
     ...(model ? { model } : {}),
     ...(entry.native ? { native: true } : {}),
@@ -84,7 +84,7 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
   const { model, parent } = await chooseModel(ports, parentID, input, input.agent)
   const handedDown = input.isolate ? await parentWork(ports, parentID) : undefined
   const worktree = input.isolate
-    ? (await ports.worktree.create({ projectID: ports.projectID, ...(handedDown ? { from: handedDown.directory, branch: handedDown.head } : {}) })).directory
+    ? (await ports.worktree.create({ projectID: ports.projectID, ...(handedDown?.from ? { from: handedDown.from.directory, branch: handedDown.from.head } : {}) })).directory
     : undefined
   const base = worktree ? await ports.head(worktree) : undefined
   const title = input.title ?? titleOf(input.task)
@@ -118,14 +118,14 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
 
 async function parentWork(ports: CourierPorts, parentID: string) {
   const parent = await childStore(ports.storage).indexedEntry(parentID)
-  if (!parent?.isolated) return undefined
-  const head = await ports.head(parent.directory)
-  if (!head)
+  const directory = parent?.directory ?? ports.directory
+  const head = parent?.isolated ? await ports.head(directory) : undefined
+  if (parent?.isolated && !head)
     throw new Error(
-      `the HEAD of your worktree ${parent.directory} could not be read, so an isolated session cannot start from it; nothing was started. Start it without isolate, or fix the worktree.`,
+      `the HEAD of your worktree ${directory} could not be read, so an isolated session cannot start from it; nothing was started. Start it without isolate, or fix the worktree.`,
     )
-  const uncommitted = (await ports.dirty(parent.directory).catch(() => undefined)) === true
-  return { directory: parent.directory, head, uncommitted }
+  const uncommitted = (await ports.dirty(directory).catch(() => undefined)) === true
+  return { ...(head ? { from: { directory, head } } : {}), uncommitted }
 }
 
 async function enrol(ports: CourierPorts, entry: RosterEntry, group: string | undefined) {

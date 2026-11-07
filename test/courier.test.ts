@@ -332,6 +332,48 @@ describe("spawn", () => {
       expect(await spawn(unknown.ports, "ses_parent", { task: "t", isolate: true })).not.toHaveProperty("uncommitted")
     })
 
+    test("warns a root with uncommitted changes in its own directory, starting the worktree from the project (#461)", async () => {
+      const { ports, calls } = fakePorts()
+      const read: string[] = []
+      ;(ports as any).dirty = async (directory: string) => (read.push(directory), true)
+      ;(ports as any).head = async (directory: string) => (directory === "/repo" ? "root999" : "wt000")
+
+      const child = await spawn(ports, "ses_root", { task: "t", isolate: true })
+
+      expect(read).toEqual(["/repo"])
+      expect(afterLookups(calls)[0]!.input).toEqual({ projectID: "proj_1" })
+      expect(child).toMatchObject({ uncommitted: true })
+      expect(child).not.toHaveProperty("fromParent")
+    })
+
+    test("warns a parent that is not isolated about uncommitted changes in its recorded directory", async () => {
+      const { ports } = fakePorts()
+      await childStore(ports.storage).record({ sessionID: "ses_parent", parentID: "ses_root", title: "P", directory: "/repo/sub", isolated: false, createdAt: 1 })
+      const read: string[] = []
+      ;(ports as any).dirty = async (directory: string) => (read.push(directory), true)
+
+      expect(await spawn(ports, "ses_parent", { task: "t", isolate: true })).toMatchObject({ uncommitted: true })
+      expect(read).toEqual(["/repo/sub"])
+    })
+
+    test("starts a root's isolated child without a warning when git fails or the directory is no repository", async () => {
+      for (const dirty of [async () => undefined, async () => Promise.reject(new Error("git: not found"))]) {
+        const { ports, calls } = fakePorts()
+        ;(ports as any).dirty = dirty
+        const child = await spawn(ports, "ses_root", { task: "t", isolate: true })
+        expect(child).not.toHaveProperty("uncommitted")
+        expect(afterLookups(calls).map((call) => call.method)).toContain("session.prompt")
+      }
+    })
+
+    test("a child that is not isolated does not read the parent's working tree", async () => {
+      const { ports } = fakePorts()
+      const read: string[] = []
+      ;(ports as any).dirty = async (directory: string) => (read.push(directory), true)
+      expect(await spawn(ports, "ses_root", { task: "t" })).not.toHaveProperty("uncommitted")
+      expect(read).toEqual([])
+    })
+
     test("briefs an isolated child with its branch, and a plain one without", async () => {
       const { ports, calls } = fakePorts()
       await spawn(ports, "ses_parent", { task: "t", isolate: true })

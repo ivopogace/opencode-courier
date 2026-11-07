@@ -31,7 +31,7 @@ export async function reportOf(children: Notes, sessionID: string) {
     owes: !done,
     progressed: since(progress.at, promptAt),
     ended: done && settled.by !== "report",
-    reported: done && settled.by === "report" && settled.status !== "blocked",
+    ...(done && settled.by === "report" && settled.status !== "blocked" ? { reportedAt: settled.at } : {}),
     ...(resumesAt === undefined ? {} : { resumesAt }),
   }
 }

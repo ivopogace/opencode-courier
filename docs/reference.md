@@ -156,8 +156,9 @@ that case, as it counts only the caller's own.
 
 A session is live while:
 
-- its turn runs, unless it has sent its parent a report that is not `blocked` since its last
-  prompt, so a parent woken by a report can start the next session in that same turn;
+- its turn runs, unless it has sent its parent a report that is not `blocked` in that turn and
+  since its last prompt, so a parent woken by a report can start the next session in that same
+  turn; a later turn, such as one the person prompts, counts again;
 - it [owes its parent a report](#a-child-that-ends-without-a-report);
 - a message sent to wake it waits in its inbox, unless it is [stalled](#a-missed-wake);
 - a session below it is live.

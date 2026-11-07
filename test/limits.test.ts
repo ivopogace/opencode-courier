@@ -631,6 +631,14 @@ describe("admit, with children that owe a report", () => {
     expect(admitted).toEqual([1])
   })
 
+  test("but one whose turn ended after its report and that runs a new turn, such as one the person prompted (#511)", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, { ses_a: { created: 1, updated: 300, idle: 200, busy: 300 } }, ["ses_a"])
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150)
+    await expect(admit(ports, "ses_root")).rejects.toThrow(childrenRefusal(1, 1))
+  })
+
   test("but one whose report is blocked while its turn still runs (#511)", async () => {
     const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, {}, ["ses_a"])
     await child("ses_root", "ses_a")

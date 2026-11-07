@@ -39,7 +39,7 @@ export function answerText(result: AnswerResult) {
 }
 
 // a bare rejection ends the child's turn (api-notes)
-export const REJECTED = "Refused by the session that started you. Do without it, or report back why you cannot."
+export const REJECTED = "Refused by the person or the top session of the tree. Do without it, or report back why you cannot."
 
 export function refusedText(sessionID: string, requestID: string, reason: string) {
   return `not allowed in your session (${reason}). The refusal was passed on with that reason to request ${requestID} of ${sessionID}, so its call fails and it carries on; it reports back with courier_send. Tell the person, and do not propose it again unless they ask.`

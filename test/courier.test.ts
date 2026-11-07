@@ -105,8 +105,8 @@ describe("spawn", () => {
     expect(child).toEqual({ sessionID: "ses_child", directory: "/repo", group: "pair", belowTop: true })
     const text = spawnText(child)
     expect(text).toContain("Its permission requests and questions go to the top session of the tree, not to you")
-    expect(text).toContain("a blocked report or a failed turn still reaches you at once")
-    expect(text).not.toContain("a question or a failed turn")
+    expect(text).toContain("a blocked report, a failed turn or an end without a report still reaches you at once.")
+    expect(text).not.toContain("a question or a permission request")
   })
 
   test("a child of the top is not marked, and its result says a question reaches the parent", async () => {
@@ -114,7 +114,7 @@ describe("spawn", () => {
     const child = await spawn(ports, "ses_parent", { task: "t", group: "pair" })
     expect(child).not.toHaveProperty("belowTop")
     const text = spawnText(child)
-    expect(text).toContain("a blocked report, a question or a failed turn still reaches you at once")
+    expect(text).toContain("a blocked report, a failed turn or an end without a report still reaches you at once, and so does a question or a permission request.")
     expect(text).not.toContain("top session")
   })
 

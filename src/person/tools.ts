@@ -64,8 +64,9 @@ export function addPersonTools(tools: ToolEditor, ports: PersonToolPorts) {
       "working with in your session, as its own permission prompt for what that session asked, under your permission " +
       "rules, and the call returns once they have answered; what they allow is passed on, and a refusal with a reason " +
       "fails this call and is passed on with the reason. Do not ask them in your reply or with your question tool first. " +
-      "For a question, answers is what the person chose: ask them first, with your question tool if you have one, and " +
-      "never answer for them. The session carries on once it has the answer.",
+      "For a question, the question tool call the notice asks for passes the person's answer on by itself; use answers " +
+      "only when they answered some other way, or the notice or that call's result tells you to, and never answer for " +
+      "them. The session carries on once it has the answer.",
     input: AnswerInput,
     execute: async (input, context) => {
       const call: AnswerCall = { messageID: context.messageID, callID: context.id }

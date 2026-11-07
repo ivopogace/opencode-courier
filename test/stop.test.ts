@@ -274,6 +274,7 @@ describe("stop", () => {
     expect([...store.keys()].filter((key) => key.includes("standing"))).toEqual([])
     expect(stopText(result)).toContain("- sub2a (subagent): interrupted")
     expect(stopText(result)).toContain("- leaf2: interrupted")
+    expect(stopText(result)).not.toContain("Stopping an idle session")
   })
 
   test("interrupts a parent again once OpenCode's notice that its background subagent ended has woken it, not for a foreground one (#438)", async () => {
@@ -402,6 +403,9 @@ describe("stop", () => {
     const result = await stop(ports, "root", { sessionID: "leaf1" })
 
     expect(result.stopped).toMatchObject([{ sessionID: "leaf1", outcome: "idle" }])
+    expect(stopText(result)).toContain(
+      "Stopping an idle session does not settle it: one that owed a report still owes it, stays in its join group and counts toward maxChildren and maxTotal until the session that started it drops it with courier_cleanup.",
+    )
     expect(calls.some((call) => call.method === "synthetic")).toBe(false)
   })
 

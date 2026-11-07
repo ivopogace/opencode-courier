@@ -74,7 +74,7 @@ bounded_run() {
   shift
   out=$(cd "$directory" && timeout -k 5 "$PROMPT_LIMIT" "$OPENCODE" run --server "$SERVER" --auto --format json "$@" </dev/null) || status=$?
   if [ "$status" = 124 ] || [ "$status" = 137 ]; then
-    session=$(jq -r 'select(.sessionID? != null) | .sessionID' <<<"$out" 2>/dev/null | head -1)
+    session=$(jq -r 'select(.sessionID? != null) | .sessionID' <<<"$out" 2>/dev/null | head -1) || true
     echo "  FAIL $SCENARIO: opencode run did not end in $PROMPT_LIMIT s (session ${session:-unknown}); killed it" >&2
     echo "$SCENARIO" >>"$WORK/stalled"
     status=0

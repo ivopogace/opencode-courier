@@ -82,17 +82,22 @@ export interface InboxEnqueued {
 const UNOWED = new Set(["user", "compaction", "move"])
 const OWN = "own"
 const OWN_SCHEDULED = "own-scheduled:"
+const MESSAGE_FROM = "from:"
 
 function kindOf(sessionID: string, item: InboxEnqueued["data"]["item"]) {
   const metadata = item.payload?.metadata
   if (item.type !== "synthetic" || metadata?.source !== "courier") return item.type
   if (typeof metadata.group === "string") return OWN
   const ownCheckIn = typeof metadata.scheduled === "string" && metadata.from === sessionID && typeof metadata.scheduledAt === "number"
-  return ownCheckIn ? `${OWN_SCHEDULED}${metadata.scheduledAt}` : item.type
+  if (ownCheckIn) return `${OWN_SCHEDULED}${metadata.scheduledAt}`
+  const statusless = typeof metadata.from === "string" && Object.keys(metadata).length === 2
+  return statusless ? `${MESSAGE_FROM}${metadata.from}` : item.type
 }
 
-async function ownAfterReport(children: Pick<ChildStore, "notes">, sessionID: string, kind: string | undefined) {
+async function ownAfterReport(children: Pick<ChildStore, "notes" | "indexedParent">, sessionID: string, kind: string | undefined) {
   if (kind === OWN) return reportedSincePrompt(children, sessionID)
+  if (kind?.startsWith(MESSAGE_FROM))
+    return (await children.indexedParent(kind.slice(MESSAGE_FROM.length))) === sessionID && reportedSincePrompt(children, sessionID)
   if (!kind?.startsWith(OWN_SCHEDULED)) return false
   return reportedSincePrompt(children, sessionID, Number(kind.slice(OWN_SCHEDULED.length)))
 }

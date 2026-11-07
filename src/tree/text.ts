@@ -264,10 +264,11 @@ export function spawnText(child: {
   const asks = child.belowTop
     ? " Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person."
     : ""
+  const topAsks = child.belowTop ? "" : ", and so does a question or a permission request"
   const reports = child.group
     ? `Its report is held with group "${child.group}": once every session you started in that group has reported and your ` +
       `turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a failed turn ` +
-      `or an end without a report still reaches you at once${child.belowTop ? "" : ", and so does a question or a permission request"}.${asks}`
+      `or an end without a report still reaches you at once${topAsks}.${asks}`
     : `It will report back with courier_send, which starts a new turn for you.${asks}`
   const on = child.model ? `, on ${child.model}` : ""
   return (

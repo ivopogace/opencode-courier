@@ -312,7 +312,9 @@ progress and settles nothing.
 
 Each report wakes the parent separately. Give a batch of children the same `group` in
 `courier_spawn`, and their reports are held until every member has reported and the parent's turn
-that started them has ended. Then they reach the parent in one message. A group name is 1 to 60
+that started them has ended, by an idle time at or after the last member joined or, since a plain
+decline of a permission prompt stamps none, by the parent's transcript ending on that declined step.
+Then they reach the parent in one message. A group name is 1 to 60
 letters, digits, dots, dashes or underscores, scoped to the parent.
 
 **What is held.** A `done`, `partial` or `failed` report is held. A later report from the same member

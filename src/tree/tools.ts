@@ -31,8 +31,8 @@ export const SpawnInput = Schema.Struct({
   ),
   isolate: Schema.optional(
     Schema.Boolean.annotate({ description:
-        "Run the session in its own git worktree so parallel sessions don't share files. From a session that is itself " +
-        "isolated, the worktree starts from your current commit, not your uncommitted changes: commit first. The session " +
+        "Run the session in its own git worktree so parallel sessions don't share files. Commit first: its worktree " +
+        "starts from your last commit and sees only committed files and project skills, not your uncommitted changes. The session " +
         "commits on a branch named courier/<its session ID> and names it in its report; merge that branch yourself.",
     }),
   ),

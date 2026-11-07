@@ -241,7 +241,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 subagent:8 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
+SUITE="reports:81 reports-groups:91 reminder:20 finding:11 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 plugin-add:14"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -1464,6 +1464,45 @@ run_subtree() {
     "$([ "$(notices_with "$root" ended)" = '[]' ] && [ "$(notices_with "$middle" ended)" = '[]' ] && echo true || echo false)"
   check "the stop is noted for both" "$([ -n "$(kv get "report/$leaf/stopped")" ] && [ -n "$(kv get "report/$middle/stopped")" ] && echo true || echo false)"
   check "a failure notice did not follow either" "$(notices_with "$root" failed | jq -r 'length == 0')"
+}
+
+# A sub-orchestrator whose turn fails while its leaf runs (#462): the root's failure notice names the leaf, says the failed
+# session still counts, and offers no replacement; with maxChildren 1, a replacement spawn is refused.
+run_failed_live() {
+  scenario "a failed session with a live session under it still counts, and its parent's notice says so (#462)"
+  stop_server
+  jq '.plugins[0].options.maxChildren = 1' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "maxChildren 1"
+  start_server
+  out=$(prompt "COURIER-MID-BREAKS")
+  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the middle session started its leaf" "$(has_text "$middle" "Started session ses_" 60)"
+  check "the middle session's turn failed, waking the root" "$(has_text "$root" "PARENT WOKE" 45)"
+  leaf=$(api "session/$middle/message" | jq -r '[.data[] | .. | strings | capture("Started session (?<id>ses_\\w+)").id] | first // empty')
+  notices=$(notices_with "$root" failed)
+  echo "  $notices"
+  check "the root was told once, of the middle session's failure" \
+    "$(jq -r --arg middle "$middle" 'length == 1 and (.[0] | contains("<courier from=\"" + $middle + "\" failed="))' <<<"$notices")"
+  check "the notice names the leaf still running, whose report will wake the middle session, and says it still counts" \
+    "$(jq -r '.[0] | contains("It has 1 session of its own still running (\"") and contains("whose reports will wake it") and contains("still counts toward your limits")' <<<"$notices")"
+  check "and offers messaging or stopping it, not a replacement" \
+    "$(jq -r '.[0] | contains("message it rather than replace it, or stop it with courier_stop first") and (contains("start a replacement") | not)' <<<"$notices")"
+  turn_ended "$root"
+  refused=$(prompt_in "$root" "COURIER-TEST" | tool_state courier_spawn)
+  check "with maxChildren 1, the root's replacement spawn is refused, naming maxChildren 1" \
+    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxChildren 1)"))' <<<"$refused")"
+  stopped=$(prompt_in "$root" "COURIER-SUBTREE-STOP $middle" | tool_state courier_stop)
+  check "courier_stop stops the middle session and its leaf" \
+    "$(jq -r --arg leaf "$leaf" '.status == "completed" and (.metadata.metadata.stopped | map(.sessionID) | index($leaf) != null)' <<<"$stopped")"
+  [ -n "$leaf" ] && turn_ended "$leaf"
+  turn_ended "$root"
+  stop_server
+  jq 'del(.plugins[0].options.maxChildren)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
+  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
+  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "maxChildren default"
+  start_server
 }
 
 # OpenCode's subagents in a courier tree (#438): a session courier_spawn started starts one with OpenCode's subagent tool in the

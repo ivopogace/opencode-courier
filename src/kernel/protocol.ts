@@ -6,9 +6,9 @@ export type Status = (typeof STATUSES)[number]
 export const isStatus = (value: unknown): value is Status => typeof value === "string" && (STATUSES as readonly string[]).includes(value)
 
 export const SPLIT_LINE =
-  "split: no, because …; considered: <the parts you weighed> or split: <n> parts: … (one phrase per part)"
+  "`split: no, because …; considered: <the parts you weighed>` or `split: <n> parts: …` (one phrase per part)"
 
-export const ONE_PART_LINE = "split: 1 part: <the task>, to keep my context"
+export const ONE_PART_LINE = "`split: 1 part: <the task>, to keep my context`"
 
 export const ROOT_SPLIT_LINE = `${SPLIT_LINE} or ${ONE_PART_LINE}`
 

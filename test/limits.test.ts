@@ -1084,6 +1084,25 @@ describe("the context hook", () => {
     }
   })
 
+  test("tells the root orchestrator to load the skill if it is not in its context, as the other orchestrators are told", () => {
+    expect(rolePart(0, DEFAULT_LIMITS)).toEndWith(`Load the ${SKILL_ID} skill if it is not in your context.`)
+    expect(rolePart(1, DEFAULT_LIMITS)).toContain(`load the ${SKILL_ID} skill`)
+    expect(rolePart(null, DEFAULT_LIMITS)).toContain(`${SKILL_ID} skill`)
+  })
+
+  test("sets each split-line form in backticks, in the root's role line and the brief", () => {
+    const forms = ["`split: no, because …; considered: <the parts you weighed>`", "`split: <n> parts: …`", "`split: 1 part: <the task>, to keep my context`"]
+    expect(rolePart(null, DEFAULT_LIMITS)).toEndWith(`${forms[0]} or ${forms[1]} (one phrase per part) or ${forms[2]}.`)
+    const brief = childBrief("ses_root", "t", 1, DEFAULT_LIMITS)
+    expect(brief).toContain(`${forms[0]} or ${forms[1]} (one phrase per part).`)
+    expect(brief).not.toContain(forms[2])
+  })
+
+  test("the maxChildren and maxTotal refusals say not to retry in a loop", () => {
+    expect(childrenRefusal(2, 2)).toEndWith("start it once one of them has reported, not in a loop.")
+    expect(totalRefusal(4, 4)).toEndWith("try again once a report has arrived, not in a loop.")
+  })
+
   test("hides courier_spawn at maxDepth and keeps it above", async () => {
     const { shape, child } = contextPorts({ ...DEFAULT_LIMITS, maxDepth: 2 })
     await chainTo(child, 2)

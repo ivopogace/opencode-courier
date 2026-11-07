@@ -147,7 +147,8 @@ unset unless the part plainly calls for a cheaper or a stronger model.
 Any spawned session can call `courier_spawn` too, so sessions form a tree. The session nobody
 spawned is its top, at depth 0. `courier_spawn` refuses a spawn, naming the limit and what to do
 instead, when the child would be deeper than `maxDepth`, or when `maxChildren` or `maxTotal`
-sessions are already live.
+sessions are already live; the last two say to do the part itself or start it once a report has
+come in, not in a loop.
 
 A session is live while:
 
@@ -193,8 +194,12 @@ written as it is started; a root gets its own at its first spawn, which its tran
 On an older OpenCode the plugin adds the line as a system part on each
 model request instead. A session below `maxDepth` is a `sub-orchestrator`. One at `maxDepth` is a
 `leaf`, and its requests go without `courier_spawn`, `courier_recall` and `courier_note`. A top
-session that has started no session yet is pointed to the skill. The root may also hand a heavy task
-whole to one session, to keep its own context: `split: 1 part: <the task>, to keep my context`.
+session that has started no session yet is pointed to the skill; once it has, it is the `root
+orchestrator`, told to load the skill if the skill is not in its context (after a compaction, say).
+The root may also hand a heavy task whole to one session, to keep its own context:
+`split: 1 part: <the task>, to keep my context`. The brief, the role line and the skill set each
+split-line form in backticks, so its own semicolon and comma read as part of the form; the plugin
+reads the line with or without them.
 
 **The lessons.** Beside its role, every spawned session below `maxDepth` gets the project's lessons
 in a `lessons` entry, written as it is started: the [lessons](#the-lesson) of the project's tree
@@ -482,7 +487,10 @@ without `report`. Anyone can read any tree.
 2. The `courier_later` messages scheduled for them are cancelled.
 3. They are interrupted deepest first, [OpenCode's subagents](#opencodes-subagents) among them,
    marked `subagent: true`. Each says `interrupted`, `idle` (it was not running), `gone` (OpenCode
-   no longer has it) or `failed` (it may still run).
+   no longer has it) or `failed` (it may still run). Only an interrupted turn settles a session: an
+   `idle` one that owed its report still owes it, stays in its [join group](#join-groups) and counts
+   toward `maxChildren` and `maxTotal` until its parent drops it with `courier_cleanup`. The result
+   says so when a session other than a subagent was `idle`.
 4. With `cleanup: true`, their worktrees are removed by `courier_cleanup`'s rules, without `force`.
 
 The target's parent is told once, `ended="stopped"`, unless it is the caller or the target was not
@@ -666,8 +674,8 @@ which is off by default and, with `"nativeChildren": true`, makes every child st
 `isolate` a subagent. A tree may mix both kinds, in one group too; the skill has a parent make a
 part native when nobody needs to open it on its own (it reads, checks or looks something up, reports
 once and is done), and leave it off for a part the person may want to open or that should outlive
-the parent. Use native children only with OpenCode's TUI or the paired app, which show their prompts.
-What changes for a native child:
+the parent. Use native children only with OpenCode's TUI or the paired app, which show their prompts;
+`native`'s own description says so to the model. What changes for a native child:
 
 - **Asks are answered in OpenCode's view.** A native child's permission requests, questions and
   forms show in the TUI's view, and the paired app's request dock, of its nearest ancestor that is

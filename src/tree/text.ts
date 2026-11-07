@@ -78,12 +78,13 @@ export function rolePart(depth: number | null, limits: Limits) {
       `${SKILL_ID} skill, call courier_recall once for how earlier trees in this project were split and how they went, ` +
       `and decide whether to split it across sessions (doing it yourself is fine; so is handing a heavy task, with long ` +
       `reading, many edits or long runs, whole to one session to keep your context, but never a small one), and say ` +
-      `which in one line of your reply: ${ROOT_SPLIT_LINE}`
+      `which in one line of your reply: ${ROOT_SPLIT_LINE}.`
     )
   if (depth === 0)
     return (
       `${ROLE_PREFIX} root orchestrator. You started sessions with courier_spawn, and they may start their own, ` +
-      `down to ${maxDepth} levels below you. ${budget} Check and integrate what each one reports yourself.`
+      `down to ${maxDepth} levels below you. ${budget} Check and integrate what each one reports yourself. ` +
+      `Load the ${SKILL_ID} skill if it is not in your context.`
     )
   if (depth < maxDepth)
     return (
@@ -174,11 +175,11 @@ const live = (n: number) => (n === 1 ? "is running or has not reported yet" : "a
 
 export const childrenRefusal = (running: number, maxChildren: number) =>
   `Not started: ${count(running, "session")} you started ${live(running)}, the most allowed at once ` +
-  `(maxChildren ${maxChildren}). Do this part yourself, or end your turn and start it once one of them has reported.`
+  `(maxChildren ${maxChildren}). Do this part yourself, or end your turn and start it once one of them has reported, not in a loop.`
 
 export const totalRefusal = (running: number, maxTotal: number) =>
   `Not started: ${count(running, "session")} in this session tree ${live(running)}, the most allowed at once ` +
-  `(maxTotal ${maxTotal}). Do this part yourself, or end your turn and try again once a report has arrived.`
+  `(maxTotal ${maxTotal}). Do this part yourself, or end your turn and try again once a report has arrived, not in a loop.`
 
 const LISTED_MAX = 12
 
@@ -311,6 +312,10 @@ export function treeText(tree: { readonly sessions: ReadonlyArray<unknown>; read
   return JSON.stringify(tree, null, 2) + note
 }
 
+const IDLE_STOPPED =
+  "Stopping an idle session does not settle it: one that owed a report still owes it, stays in its join group and " +
+  "counts toward maxChildren and maxTotal until the session that started it drops it with courier_cleanup."
+
 export function stopText(result: {
   readonly sessionID: string
   readonly stopped: ReadonlyArray<{ readonly sessionID: string; readonly outcome: string; readonly error?: string; readonly subagent?: true }>
@@ -320,11 +325,13 @@ export function stopText(result: {
 }) {
   const interrupted = result.stopped.filter((one) => one.outcome === "interrupted").length
   const failed = result.stopped.filter((one) => one.outcome === "failed")
+  const idle = result.stopped.some((one) => one.outcome === "idle" && !one.subagent)
   return [
     `Stopped ${result.sessionID} and ${count(result.stopped.length - 1, "session")} under it, deepest first: ${interrupted} had a turn running and was interrupted, ` +
       `${result.stopped.filter((one) => one.outcome === "idle" || one.outcome === "gone").length} did not run.`,
     ...result.stopped.map((one) => `- ${one.sessionID}${one.subagent ? " (subagent)" : ""}: ${one.outcome}${one.error ? " (" + one.error + ")" : ""}`),
     ...(failed.length ? ["Those that failed may still run: try courier_stop again."] : []),
+    ...(idle ? [IDLE_STOPPED] : []),
     result.cancelled.length
       ? `Cancelled ${count(result.cancelled.length, "scheduled message")}: ${result.cancelled.join(", ")}.`
       : "No scheduled messages were pending for them.",

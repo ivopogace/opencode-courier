@@ -664,7 +664,6 @@ run_finding() {
 }
 
 run_finding_up() {
-  # The mock shows the plumbing only: whether a real model passes a finding up is for real-model.sh.
   scenario "a grandchild's finding reaches the root: its parent, told so by its brief, passes it up without a status"
   out=$(prompt "COURIER-RELAY-UP")
   turn_ended=$(now_ms)

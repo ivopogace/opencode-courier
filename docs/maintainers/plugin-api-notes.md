@@ -1,8 +1,8 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.2.5` and OpenCode 2.2.5. A pin bump re-checks each trap. OpenCode's source is on
-the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.5`); paths
+`@opencode/plugin@2.2.6` and OpenCode 2.2.6. A pin bump re-checks each trap. OpenCode's source is on
+the `v2` branch of https://github.com/anomalyco/opencode, each release tagged (`v2.2.6`); paths
 below are in it.
 
 ## Tools
@@ -18,17 +18,19 @@ below are in it.
   transformations of the plugin's copy broke (`Schema.Finite` refused `2`). Tool inputs use plain
   schemas and validate values themselves; a unit test keeps it so.
 - `Schema.Number` advertises `"Infinity"`, `"-Infinity"` and `"NaN"`, and some models send numbers
-  as strings, so `courier_later` takes `delayMinutes` as either. `effect` 4.0.6 renders that union
-  as one flat `anyOf` (the number, the sentinel enum, the string) where 4.0.1 nested the number's
+  as strings, so `courier_later` takes `delayMinutes` as either. `effect` 4.1.0, as 4.0.6, renders that
+  union as one flat `anyOf` (the number, the sentinel enum, the string) where 4.0.1 nested the number's
   own `anyOf` inside it; same meaning, and the host renders with its own `effect`, so a host from
   2.2.2 on shows the flat shape whatever the plugin's pin. The snapshot pins the flat one.
-- `effect` 4.0.6 bounds `Schema.Int`'s JSON Schema by the safe-integer range; the runtime's
+- `effect` 4.0.6 and 4.1.0 bound `Schema.Int`'s JSON Schema by the safe-integer range; the runtime's
   `flattenAllOf` drops those `minimum` and `maximum` so the schema sent to the model, and the
   prompt cache, stay as before. The plugin's inputs use `Schema.Number` and check the value
   themselves either way.
 - Tool schemas are converted once and shared across steps, so a `context` hook may delete tools from
   the map but must never edit a tool's schema in place. The runner waits for plugin reloads before
-  each step.
+  each step. Since 2.2.6 registration takes a missing `input` as `{}` and refuses one that is neither
+  an object nor a function (`commit` in `packages/core/src/tool.ts`); the courier's tools all declare
+  a schema.
 - OpenCode renders every tool's schema closed (`onExcessProperty: "error"` in
   `packages/core/src/tool/runtime.ts`). `test/notices.test.ts` renders them the same way.
 - An undeclared key never reaches a tool: `tool-input-repair` (`packages/core/src/plugin/`) deletes
@@ -143,7 +145,9 @@ below are in it.
   seconds to tell the two apart.
 - `GET /api/plugin?directory=<worktree>` does not boot that location; a session there does. A
   session whose location's directory is gone answers 404 `LocationNotFoundError` on some routes
-  (not the instruction-entry, interrupt, rename and archive ones, which no longer boot the location),
+  (not the instruction-entry, interrupt, rename and archive ones, which no longer boot the location,
+  nor, since 2.2.6, `synthetic` and `compact`, anomalyco/opencode#60801; the plugin API's
+  `session.synthetic` is the global session service's, `packages/core/src/plugin/host.ts`),
   which a test for a deleted session by an error tag with `NotFound` would match too. The
   health route is `/api/info`.
 - Directories that differ by a trailing slash or `..` are one location, and `session.create` stores
@@ -209,7 +213,8 @@ each `background` item's `sessionID`.
   tool rethrows it untouched, not through `describeFailure`.
   `Permission.Unattended` (2.2.2) is a core-internal reference that settles an `ask` when nobody is
   present to answer; only the experimental schedule route provides it, and the plugin API does not
-  expose it.
+  expose it. 2.2.6's `Permission.invocation(context)` only names a tool call's `sessionID`, `agent`
+  and `source` for the built-in tools' asserts; the request they make is the same.
 - That plain decline sets no `time.idle` and no `idle` message. The execution ends as
   `interrupted` with `reason: "shutdown"` (`terminal` in `session/execution.ts`), keeping its claim,
   so the next boot resumes the turn ("The server restarted while you were working",
@@ -287,7 +292,8 @@ as `e2e/search-plugin` does.
 - The loader refuses a plugin the organisation's managed policy denies: since 2.2.3 `plugin.use` on
   the plugin's target (`packages/core/src/plugin/module.ts`), before `integration.use` on
   `plugin:<name>`. The policy schema (`packages/schema/src/config/policy.ts`) adds `plugin.use`,
-  `skill.use`, `mcp.use` and `integration.connect`, and decodes a legacy `integration.use` whose
+  `skill.use`, `mcp.use` and `integration.connect` (and `websearch.use`, a web search provider id,
+  since 2.2.6), and decodes a legacy `integration.use` whose
   resource starts `plugin:`, `skill:` or `mcp:` into the new action, so old policies still apply.
 
 ## Two servers on one data directory
@@ -311,8 +317,9 @@ relay.
 
 ## OpenCode's schedules
 
-With `experimental.schedules` on (off by default; added in 2.2.3, run under `opencode serve` too
-since 2.2.4, by one server per database through the `schedule:leader` row of the `kv` table), the
+With `experimental.schedules` on (off by default in a release; added in 2.2.3, run under
+`opencode serve` too since 2.2.4, by one server per database through the `schedule:leader` row of
+the `kv` table; since 2.2.6 a feature flag, below), the
 `opencode_schedule_*` tools (`packages/core/src/tool/plugin/schedule.ts`) let a session prompt itself
 later. The plugin API has no schedule domain and schedules publish no events, so no `Waits` supplier
 can see one, and a child that schedules a wake and ends its turn would read as ended without a report.
@@ -323,10 +330,14 @@ can see one, and a child that schedules a wake and ends its turn would read as e
   own, so the `context` hook cannot drop them. `Tool.snapshot` (`packages/core/src/tool.ts`) drops a
   tool whose action, its id (`opencode_` and the name), a rule wholly denies, from the direct tools
   and the catalog alike; the session's rules come after the agent's (`session/context.ts`).
-- `courier_later` keeps its own scheduler (checked at 2.2.5). Schedules are unreachable: no schedule
+- `courier_later` keeps its own scheduler (checked at 2.2.6). Schedules are unreachable: no schedule
   domain, not under `ctx.experimental` either, no events, and the plugin is not given the server's
   address or password for its HTTP routes. They are off by default (`experimental.schedules: true`
-  is opt-in), so the courier would need two delivery paths. A firing is a plain steered prompt
+  is opt-in), so the courier would need two delivery paths. Since 2.2.6 `schedules` is one of the
+  feature flags (`packages/schema/src/config/flag.ts`, with `todo`, `background_compaction`,
+  `media_blob` and `artifacts`): off in a release build, on in local and dev builds, turned on by
+  `experimental.<key>: true`, `experimental.all_flags: true` or `OPENCODE_FLAGS=all` (`-key` turns
+  one off). `e2e/run.sh`'s `schedules` group sets `experimental.schedules: true`, which still works. A firing is a plain steered prompt
   (`admitWake`, `packages/core/src/schedule.ts`: `delivery: "steer"`, `metadata: { schedule }`),
   without the sender's envelope, waiting for a running turn to end, telling `Waits` the session
   waits, or cancelling by `courier_stop`. And `Waits` cannot see it, hence `CHILD_RULES`. The
@@ -354,6 +365,10 @@ courier children are invisible to it ([reference](../reference.md#goal-and-couri
   let a plugin declare background work, which [an upstream request](https://github.com/anomalyco/opencode/issues/60860) asks for.
 - Seen live at 2.2.4, with a scripted reviewer answering `continue`: three continuations within a
   second of the spawn, then paused, 25 s before the child reported; the same with a native child.
+- Unchanged at 2.2.6: `goal.ts`, `hooks.ts` and `outstanding` are as at 2.2.5. 2.2.6 adds
+  `GET /api/experimental/job` (`packages/protocol/src/groups/job.ts`, `SessionBackground.list`),
+  which lists the same shell, subagent and image jobs, by session and with `descendants`; it is an
+  HTTP route with no plugin domain, and nothing lets a plugin add a job of its own.
 
 ## Creating a worktree from a given commit
 
@@ -374,8 +389,12 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
 
 - **Registering:** `ctx.skill.transform((editor) => editor.add(info))` with `id`, `name`,
   `description`, `autoinvoke`, `path` and `content`. `path`'s directory is named to the model, so a
-  skill without files gives its own path, as the built-ins do (`/builtin/opencode.md`). The same id
-  from several locations is one entry.
+  skill without files gives its own path; the courier's is `/opencode-courier/courier-orchestrate.md`.
+  The built-ins' was `/builtin/opencode.md` and is `skill://opencode/SKILL.md` since 2.2.6
+  (anomalyco/opencode#60921): a `skill://<id>/…` path names `skill://<id>` as the directory, and the
+  `read` tool serves `skill://<id>/SKILL.md` from the registry, after the `skill` and `read`
+  permissions. The host's editor takes extra in-memory files beside such a skill; the plugin API's
+  `SkillEditor.add` passes none. The same id from several locations is one entry.
 - **Listing:** every skill with a `description`, `autoinvoke` not `false` and not denied by a `skill`
   rule is listed in every system prompt (`core/skill-guidance`, `<available_skills>`, sorted by id).
   A change reaches a running session as a delta. `GET /api/skill?directory=…` lists them.
@@ -402,14 +421,15 @@ For a nested isolated child, `courier_spawn` passes the parent's worktree as `fr
 (`packages/protocol/src/groups/session.ts`; the plugin API's path has no `experimental`). Since 2.2.1
 its type is the client's `ExperimentalSessionApi` (anomalyco/opencode#59072), and the SDK's
 `client.session.instructions` is a deprecated alias of `client.experimental.session.instructions`,
-removed in the next minor; the plugin context's path may move with it, so a pin bump checks. The
+removed in the next minor (still deprecated, not removed, at 2.2.6); the plugin context's path may
+move with it, so a pin bump checks (`ctx.session.instructions.entry` at 2.2.6). The
 courier writes three entries: a spawned session's role part to `role` and the project's lessons to `lessons`
 (`spawn.ts`, before the prompt; `memory/lessons.ts` supplies the text and `courier_note` renews it),
 and a parent's children to `standing` (`tree/standing.ts`, from the tools and events that move a
 child, put only when the text changed, removed with the last child). Each value stays well under
 3 KiB. Read in
 `packages/core/src/session/instruction-entry.ts`, `instructions/index.ts`, `instruction-state.ts`,
-`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.5`:
+`context.ts`, `model-request.ts` and `runner/llm.ts` at `v2.2.6`:
 
 - **Rendering.** An entry is one block, `<context key="<key>">`, the value, `</context>`: a string
   as it is, any other JSON pretty-printed. The key matches `^[a-z0-9][a-z0-9._-]*$` (stored as
@@ -542,10 +562,10 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
   `@opencode/theme`) must not be imported at runtime. OpenCode patches its `solid-js`; unit tests
   run the unpatched one.
 - **No peers for them.** An exact optional peer `@opentui/core` broke `opencode plugin add` with
-  ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.8.0`,
-  `solid-js` `1.9.17` at `v2.2.5`, unchanged since `v2.2.3`), and `@opencode/theme` at the pin.
-  `@opencode/plugin`'s own optional `@opentui/core` and `@opentui/solid` peers are ranges since 2.2.3
-  (`>=0.8.0`); the plugin's stay devDependencies.
+  ERESOLVE. They are devDependencies at the versions of OpenCode's catalog (`@opentui/*` `0.8.1` at
+  `v2.2.6`, `0.8.0` from `v2.2.3` to `v2.2.5`; `solid-js` `1.9.17`, unchanged since `v2.2.3`), and
+  `@opencode/theme` at the pin. `@opencode/plugin`'s own optional `@opentui/core` and `@opentui/solid`
+  peers are ranges since 2.2.3 (`>=0.8.1` at 2.2.6); the plugin's stay devDependencies.
 - **JSX must be compiled before publishing.** The host transforms `.tsx` only outside
   `node_modules`, so `script/build-tui.ts` bundles with `createSolidTransformPlugin()` and
   `packages: "external"`. `@arethetypeswrong/cli` flags an export without types, hence
@@ -565,7 +585,8 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
   resolves only once the form is gone. The client throws an RPC error as a plain `{ type, message }`. OpenCode sounds `permission` and
   `question` for every request and form itself.
 - **A slot that renders bare text** shows a crash toast, no longer taking the TUI down; a slot still
-  renders only elements.
+  renders only elements. Since 2.2.6 a dialog that throws while rendering is contained the same way
+  and closed (anomalyco/opencode#62110).
 - **A dialog replaces the one open** (`createDialogApi`, `packages/tui/src/plugin/api.tsx`): the open
   `select` resolves `undefined`, as on `esc`. `select` takes no starting query, so a changed list
   means a new `select` with an empty search. `current` matches by deep equality

@@ -23,7 +23,7 @@ A narrated tour of the terminal UI: the tree panel, the asks inbox, failing chil
 ## Quickstart
 
 ```bash
-npm install -g @opencode/cli@2.2.5   # OpenCode V2, the version courier is tested on
+npm install -g @opencode/cli@2.2.6   # OpenCode V2, the version courier is tested on
 opencode plugin add opencode-courier
 opencode
 ```
@@ -40,7 +40,7 @@ prompt again.
 
 ## Why courier
 
-OpenCode's own [`subagent` tool](https://opencode.ai/v2/docs/agents) hands back a child's final
+OpenCode's own [`subagent` tool](https://opencode.ai/docs/agents) hands back a child's final
 answer. Use it when one result is all you need. Use courier for more:
 
 - **Messages mid-run.** A child reports progress or asks its parent at any time, and its parent
@@ -69,10 +69,10 @@ your own skills. Every detail: [the reference](docs/reference.md).
 ## Install
 
 Requires OpenCode V2: the `opencode` command from `@opencode/cli`. Each release is tested against
-one OpenCode version; this one is tested on **OpenCode 2.2.5** (check with `opencode --version`).
+one OpenCode version; this one is tested on **OpenCode 2.2.6** (check with `opencode --version`).
 
 ```bash
-npm install -g @opencode/cli@2.2.5
+npm install -g @opencode/cli@2.2.6
 opencode plugin add opencode-courier
 ```
 
@@ -91,7 +91,7 @@ name, without a version: OpenCode offers updates only for an entry without an ex
 <!-- compat-table:end -->
 
 Every release: [the full table](docs/reference.md#the-opencode-version). The server part loads on
-any V2 host from 2.0.4 on. The terminal part is tested on OpenCode 2.2.5 only.
+any V2 host from 2.0.4 on. The terminal part is tested on OpenCode 2.2.6 only.
 
 ## Options
 

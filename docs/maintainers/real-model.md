@@ -105,6 +105,7 @@ would.
 |---|---|---|
 | `longcat-2.5-preview-free` | 2.0.29 | 7/7: proposed `once` at once; the person allowed it in OpenCode's prompt; `RESULT courier-permission-42`. |
 | `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.29 | 6/6: told with the `shown="native"` notice, the parent wrote one line and ended its turn; told `answered="once"`, it replied. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 15b9314, the skill shrunk (#467), skill listed | 2.2.6 | 2 of 3 passed, 7/7 twice; every child reported `courier-permission-42`. The third parent spawned the child with `native: true` on its own, so it got the `shown="native"` notice and did as it says: one line to the person, then `courier_answer` once the person told it to. The checker expects the plain path without `COURIER_NATIVE=1` and scored it 5/7. |
 
 ## The question relay
 
@@ -125,6 +126,7 @@ child reported it; the reply holds it. With `COURIER_NATIVE=1` the script answer
 |---|---|---|
 | `longcat-2.5-preview-free` | 2.0.28 | 6/6: the parent asked with the child's three options, `Hi` went on through the linked question, `GREETING Hi`. |
 | `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 6/6: the parent wrote one line; told `answered="elsewhere"`, it replied `GREETING Hi`. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 15b9314, the skill shrunk (#467), skill listed | 2.2.6 | 3 of 3 passed, 6/6 each. |
 
 ## Recursive orchestration
 
@@ -199,6 +201,8 @@ upward once, `done`. "Session … reported 2 times" is expected for it.
 |---|---|---|
 | `deepseek-v4.1-flash-free`, catalog, 1dbebb3, skill listed | 2.1.2 | 4 of 5 passed. Every run handled the `partial` report: one message to finish, then `done`. The lost point was a root calling `courier_children`. |
 | `deepseek-v4.1-flash-free`, catalog, 1dbebb3, `COURIER_SKILL=deny` | 2.1.2 | 5 of 5 passed, 13/13 each. Without the skill, the `partial` report was handled no worse. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 15b9314, the skill shrunk (#467), which no longer says what to do with a `partial` report, skill listed | 2.2.6 | 3 of 3 passed, 13/13 each, mean 34 requests (33 to 35). Every parent of the faulty half messaged it to finish before reporting upward once, `done`. The sleeps are the prompt's 20 s. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 15b9314, `COURIER_SKILL=deny` | 2.2.6 | 3 of 3 passed, 13/13 each, mean 34 requests (33 to 37). Run alternating with the row above and the two relays on one day. |
 
 ## A part with a core
 

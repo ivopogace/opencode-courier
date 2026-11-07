@@ -811,11 +811,19 @@ describe("what makes a child owe a report", () => {
   })
 
   test("its own check-in delivered after it reported does not, but its parent's scheduled message does", async () => {
-    const scheduled = (from: string) => ({ source: "courier", from, scheduled: "lat_1" })
+    const scheduled = (from: string) => ({ source: "courier", from, scheduled: "lat_1", scheduledAt: 120 })
     const own = [enqueued("evt_e", "inb_1", "synthetic", "ses_child", scheduled("ses_child")), delivered("evt_d", 160, "ses_child", "inb_1"), succeeded("evt_s", 200)]
     expect(await afterReport(own)).toEqual([])
     const parents = [enqueued("evt_e", "inb_1", "synthetic", "ses_child", scheduled("ses_parent")), delivered("evt_d", 160, "ses_child", "inb_1"), succeeded("evt_s", 200)]
     expect(await afterReport(parents)).toHaveLength(1)
+  })
+
+  test("its own message scheduled after it reported does, delivered after it too (#514)", async () => {
+    const scheduled = (scheduledAt: number) => ({ source: "courier", from: "ses_child", scheduled: "lat_1", scheduledAt })
+    const after = [enqueued("evt_e", "inb_1", "synthetic", "ses_child", scheduled(155)), delivered("evt_d", 160, "ses_child", "inb_1"), succeeded("evt_s", 200)]
+    expect(await afterReport(after)).toHaveLength(1)
+    const sameTime = [enqueued("evt_e", "inb_1", "synthetic", "ses_child", scheduled(150)), delivered("evt_d", 160, "ses_child", "inb_1"), succeeded("evt_s", 200)]
+    expect(await afterReport(sameTime)).toHaveLength(1)
   })
 
   test("its own check-in delivered before it reported does, the report still owed", async () => {

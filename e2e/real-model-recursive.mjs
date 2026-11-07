@@ -240,10 +240,21 @@ const notOneInAll = (list) => {
 }
 const finalText = textOf(root.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
 const reportOf = (id) => deliveriesFrom(tree.get(tree.get(id).parentID).list, id)[0]
+const partStart = (part, message) => part.time?.created ?? message.time.created
+const partEnd = (part, message) => part.time?.completed ?? message.time.completed ?? message.time.created
+const sendStart = (list, send) => partStart(list[send.index].content[send.place], list[send.index])
+const sendEnd = (list, send) => partEnd(list[send.index].content[send.place], list[send.index])
+const reportedBy = (child, to, at) => {
+  const list = tree.get(child)?.list ?? []
+  return reportsTo(list, to).some((send) => sendEnd(list, send) <= at)
+}
 const reportedAfterChildren = ([id, entry]) => {
   const own = reportsTo(entry.list, entry.parentID)
-  const children = spawnsOf(entry.list)
-  return own.length === 1 && children.every((child) => deliveriesFrom(entry.list, child).some((delivery) => delivery.index < own[0].index))
+  if (own.length !== 1) return false
+  const at = sendStart(entry.list, own[0])
+  return spawnsOf(entry.list).every(
+    (child) => deliveriesFrom(entry.list, child).some((delivery) => delivery.index < own[0].index) || reportedBy(child, id, at),
+  )
 }
 const fileText = (file) => {
   try {
@@ -282,8 +293,6 @@ const writesCore = (part) =>
   part.state.status === "completed" &&
   coreFile !== "" &&
   (part.name === "shell" ? redirects.test(part.state.input?.command ?? "") : ["write", "edit", "patch"].includes(part.name) && JSON.stringify(part.state.input ?? {}).includes(coreFile))
-const partStart = (part, message) => part.time?.created ?? message.time.created
-const partEnd = (part, message) => part.time?.completed ?? message.time.completed ?? message.time.created
 const coreWrite = [...tree]
   .flatMap(([id, entry]) => entry.list.flatMap((message) => (message.type === "assistant" ? message.content.filter(writesCore).map((part) => ({ id, part, at: partEnd(part, message) })) : [])))
   .sort((one, other) => one.at - other.at)[0]

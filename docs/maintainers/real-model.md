@@ -167,7 +167,8 @@ child spawned two or more of its own in one turn, and no sub-orchestrator starte
 a tool call of its own before it (a heuristic for a verifier that starts one implementor: the
 transcript shows work, not what it was for); no
 session went past `maxDepth`; every session reported with a status; each sub-orchestrator reported
-once, after its children; the files and the reply hold the values. Its notes say who loaded the skill
+once, after its children (a child whose report was sent but held in a group still counts, so one
+that reports in the turn that started its group passes); the files and the reply hold the values. Its notes say who loaded the skill
 and when, who used a group, a check-in or had a spawn refused.
 
 `e2e/real-model-prompt-open.txt` leaves the split to the root. With it, the "two or more children"

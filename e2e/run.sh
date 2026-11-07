@@ -7,7 +7,7 @@
 #
 # E2E_WORK picks the working directory (CI points it somewhere it can upload the logs from).
 #
-# Needs node and npm, bun (for the build), git, curl, jq and openssl.
+# Needs node and npm, bun (for the build), git, curl, jq, openssl and timeout (GNU coreutils).
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -65,9 +65,26 @@ print_timings() {
   sort -t$'\t' -k1,1nr "$TIMINGS" | awk -F'\t' '{ printf "%5d s  %s\n", $1, $2 }'
 }
 
-prompt() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json "$1" </dev/null); }
+# `opencode run` in directory $1 with the rest as its arguments, killed after PROMPT_LIMIT s (a turn here takes at most about
+# 60): a stalled client fails the scenario, named with its session, and the run goes on. The helpers run in command
+# substitutions, so a stall is counted from $WORK/stalled as the run ends.
+PROMPT_LIMIT=${PROMPT_LIMIT:-240}
+bounded_run() {
+  local directory=$1 out status=0 session
+  shift
+  out=$(cd "$directory" && timeout -k 5 "$PROMPT_LIMIT" "$OPENCODE" run --server "$SERVER" --auto --format json "$@" </dev/null) || status=$?
+  if [ "$status" = 124 ] || [ "$status" = 137 ]; then
+    session=$(jq -r 'select(.sessionID? != null) | .sessionID' <<<"$out" 2>/dev/null | head -1) || true
+    echo "  FAIL $SCENARIO: opencode run did not end in $PROMPT_LIMIT s (session ${session:-unknown}); killed it" >&2
+    echo "$SCENARIO" >>"$WORK/stalled"
+    status=0
+  fi
+  printf '%s\n' "$out"
+  return "$status"
+}
+prompt() { bounded_run "$WORK/project" "$1"; }
 # Like prompt, but a new turn in the existing session $1.
-prompt_in() { (cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --session "$1" "$2" </dev/null); }
+prompt_in() { bounded_run "$WORK/project" --session "$1" "$2"; }
 now_ms() { node -e 'console.log(Date.now())'; }
 failures=0
 check() {
@@ -95,7 +112,7 @@ texts() {
       (.state.output? // empty | if type == "string" then . else tojson end))'
 }
 # Waits up to $2 (default 30) s until session $1's turn has ended, and checks again a second later, as a message sent it just
-# before may yet start another turn; that second also lets the plugin handle the end before a "was not told" check.
+# before may yet start another turn.
 turn_ended() {
   for _ in $(seq 1 $((${2:-30} * 2))); do
     [ "$(finished "$1")" = true ] && { sleep 1; [ "$(finished "$1")" = true ] && return 0; }
@@ -103,6 +120,24 @@ turn_ended() {
   done
   echo "turn_ended: session $1 did not end its turn in ${2:-30} s" >&2
   sleep 1
+}
+# The barrier before a check that nothing followed session $1's last turn end, once turn_ended has seen it: waits up to $3
+# (default 30) s until the courier has handled that end. $2 is the top of $1's tree. The courier handles each event in turn,
+# its tree module first, then its memory module, which records the tree stamped with the end's `created`; OpenCode stamps the
+# session's idle time with the same, or a millisecond past the idle before when two ends share one. A tree followed through
+# two locations has a second watcher, which may record the end before the first has told what it would.
+end_handled() {
+  local idle project
+  idle=$(session_info "$1" | jq -r '.time.idle // empty')
+  project=$(session_info "$2" | jq -r '.projectID // empty')
+  if [ -n "$idle" ] && [ -n "$project" ]; then
+    for _ in $(seq 1 $((${3:-30} * 2))); do
+      [ "$(kv get "memory/$project/$2" | jq -r --argjson idle "$idle" '.movedAt >= $idle - 1' 2>/dev/null)" = true ] && return 0
+      sleep 0.5
+    done
+  fi
+  echo "end_handled: the courier did not handle the turn end of $1 (idle ${idle:-none}) in ${3:-30} s" >&2
+  return 1
 }
 # Whether session $1 has a text containing $2, waiting up to $3 (default 30) s.
 has_text() {
@@ -146,8 +181,11 @@ person() {
 }
 api_post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
 # A turn of session $1 with text $2 through the API: `opencode run --auto` answers a request in its own session itself,
-# and takes a native child's asks for its own and answers them.
-api_prompt() { api_post "session/$1/prompt" "{\"text\":\"$2\"}" >/dev/null; }
+# and takes a native child's asks for its own and answers them. The call returns as the turn is admitted: 30 s bound it.
+api_prompt() {
+  curl -sf -m 30 -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "{\"text\":\"$2\"}" \
+    "$SERVER/api/session/$1/prompt" >/dev/null || echo "  api_prompt: session $1 was not prompted in $SCENARIO" >&2
+}
 # The person dismisses form $2 of session $1, as the TUI does; prints the HTTP status.
 dismiss_form() {
   curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$1/form/$2"
@@ -241,7 +279,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:81 reports-groups:91 reminder:20 finding:11 finding-up:12 person-message:9 permission:35 depth:4 role-entry:8 entries:40 spawn-model:12 answer:37 search:11 questions:65 questions-more:75 restart-question:13 probe:10 skill:3 later:23 schedules:20 wake:70 roster:36 webhook:1 cleanup:4 dirty-root:3 subtree:2 failed-live:30 subagent:8 subagent-role:3 archive:100 nest:6 stall:150 inbox:37 memory:15 busy:90 spawn-native:14 native:41 decline-seal:35 total-refusal:40 plugin-add:14"
+SUITE="reports:88 reports-groups:98 reminder:19 finding:10 finding-up:17 person-message:7 permission:34 depth:3 role-entry:5 entries:12 spawn-model:5 answer:35 search:11 questions:64 questions-more:75 restart-question:13 probe:22 skill:1 later:20 schedules:5 wake:45 roster:35 webhook:1 cleanup:4 dirty-root:2 subtree:2 failed-live:12 subagent:2 subagent-role:5 archive:113 nest:7 stall:91 inbox:37 memory:24 busy:80 spawn-native:15 native:40 decline-seal:16 total-refusal:21 plugin-add:18"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard
@@ -367,7 +405,7 @@ run_reports() {
   check "and lists none for an unknown session" "$(prompt "COURIER-CHILDREN ses_missing" | tool_state courier_children | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
 
   scenario "a child runs on its parent's model, not the default one"
-  out=$(cd "$WORK/project" && "$OPENCODE" run --server "$SERVER" --auto --format json --model mock/other "COURIER-TEST" </dev/null)
+  out=$(bounded_run "$WORK/project" --model mock/other "COURIER-TEST")
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
@@ -428,7 +466,7 @@ run_reports() {
   check "told to report, the child did" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
   check "which settled its report" "$(kv get "report/$child/settled" | jq -r '.by == "report"')"
   check "and its reported turn was not told as one without a report" \
-    "$(turn_ended "$child"; notices_with "$parent" ended | jq -r 'length == 1')"
+    "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 1' || echo false)"
 
   scenario "a message without a status is progress: a child that then ends its turn is reported, and the notice says so"
   out=$(prompt "COURIER-PROGRESS")
@@ -448,7 +486,7 @@ run_reports() {
   prompt_in "$parent" "COURIER-NUDGE $child" >/dev/null
   check "told to report, the child did, with a status" "$(has_text "$parent" "<courier from=\"$child\" status=\"done\">" 45)"
   check "which settled its report, with the status" "$(kv get "report/$child/settled" | jq -r '.by == "report" and .status == "done"')"
-  check "and its reported turn was not told as one without a report" "$(turn_ended "$child"; notices_with "$parent" ended | jq -r 'length == 1')"
+  check "and its reported turn was not told as one without a report" "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 1' || echo false)"
 
   scenario "a child an older release briefed, whose roster entry says nothing of statuses, reports without one, as before"
   out=$(prompt "COURIER-SILENT")
@@ -461,7 +499,7 @@ run_reports() {
   prompt_in "$parent" "COURIER-NUDGE-PLAIN $child" >/dev/null
   check "told to report, the child did, without a status" "$(has_text "$parent" "CHILD DONE WITHOUT STATUS" 45)"
   check "which settled its report, with no status" "$(kv get "report/$child/settled" | jq -r '.by == "report" and (has("status") | not)')"
-  check "and its parent was not told again" "$(turn_ended "$child"; notices_with "$parent" ended | jq -r 'length == 1')"
+  check "and its parent was not told again" "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 1' || echo false)"
 
   scenario "what the person types in a child that has reported does not make it owe a report"
   out=$(prompt "COURIER-TEST")
@@ -470,7 +508,7 @@ run_reports() {
   check "the child reported" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
   prompt_in "$child" "PERSON-ASKS" >/dev/null
   check "the child answered the person in its own session" "$([ -n "$(reply_time "$child" "CHILD ANSWERS PERSON")" ] && echo true || echo false)"
-  check "and its parent was not told it ended without a report" "$(turn_ended "$child"; notices_with "$parent" ended | jq -r 'length == 0')"
+  check "and its parent was not told it ended without a report" "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 0' || echo false)"
 
 }
 
@@ -564,8 +602,11 @@ run_reports_groups() {
   ended=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "idle") | .time.created] | min // empty')
   check "the group's reports started a new turn within 3 s of the parent's turn ending, not at the next tick" \
     "$([ -n "$woke" ] && [ -n "$ended" ] && [ "$woke" -gt "$ended" ] && [ $((woke - ended)) -lt 3000 ] && echo true || echo false)"
-  check "the parent got exactly one message, with both reports" "$(sleep 2; api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] |
-    length == 1 and (.[0] | contains("reports=\"2\"") and (split("CHILD DONE QUICKLY") | length == 3))')"
+  # A release drops the group's members after its message, and another needs them, so none can follow once they are gone.
+  check "the parent got exactly one message, with both reports" \
+    "$(for _ in $(seq 1 20); do [ -z "$(kv get "group/$parent/pair/$first")$(kv get "group/$parent/pair/$second")" ] && break; sleep 0.5; done
+      [ -z "$(kv get "group/$parent/pair/$first")$(kv get "group/$parent/pair/$second")" ] && api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] |
+      length == 1 and (.[0] | contains("reports=\"2\"") and (split("CHILD DONE QUICKLY") | length == 3))' || echo false)"
 
   scenario "a sub-orchestrator whose group reports during its turn gets it once that turn ends, and is not told of as silent"
   out=$(prompt "COURIER-GROUP-NESTED")
@@ -574,7 +615,7 @@ run_reports_groups() {
   check "the middle session reported its group's message on to the root" "$(has_text "$root" "MIDDLE GOT GROUP" 60)"
   check "it got exactly one message, with both of its leaves' reports" "$(api "session/$middle/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] |
     length == 1 and (.[0] | contains("reports=\"2\"") and (split("CHILD DONE QUICKLY") | length == 3))')"
-  check "and the root was not told it ended without a report" "$(turn_ended "$middle"; notices_with "$root" ended | jq -r 'length == 0')"
+  check "and the root was not told it ended without a report" "$(turn_ended "$middle"; end_handled "$middle" "$root" && notices_with "$root" ended | jq -r 'length == 0' || echo false)"
 
   scenario "a deleted child that owes a report is forgotten"
   out=$(prompt "COURIER-SILENT")
@@ -591,7 +632,9 @@ run_reports_groups() {
   child_delay 1000
   spawn_isolated
   check "the isolated child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
-  check "it is still listed" "$(sleep 3; [ "$(child_listing "$parent" "$child")" = listed ] && echo true || echo false)"
+  # A turn of the parent, published after the deletion, whose end the courier handles after it, on every watcher.
+  check "it is still listed" "$(prompt_in "$parent" "COURIER-CHILDREN $parent" >/dev/null; turn_ended "$parent"
+    end_handled "$parent" "$parent" && [ "$(child_listing "$parent" "$child")" = listed ] && echo true || echo false)"
   check "and its worktree is still there for courier_cleanup" "$([ -d "$directory" ] && echo true || echo false)"
 
   scenario "a child that ends its turn to wait for a message it scheduled is not reported, and reports once woken"
@@ -599,7 +642,7 @@ run_reports_groups() {
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the scheduled message woke the child, which reported" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 75)" ] && echo true || echo false)"
-  check "the child's first turn, which ended waiting, was not told" "$(turn_ended "$child"; notices_with "$parent" ended | jq -r 'length == 0')"
+  check "the child's first turn, which ended waiting, was not told" "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 0' || echo false)"
   check "the child scheduled the message in its first turn" \
     "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_later")] | length == 1')"
 }
@@ -627,7 +670,7 @@ run_reminder() {
       '[.data[] | select(.type == "synthetic" and (.text | contains("reminder=\"report\""))) | .id] == [$nudged.inboxID] and $prompt.at <= $nudged.at')"
   check "its report settled what it owed" "$(kv get "report/$child/settled" | jq -r '.by == "report" and .status == "done"')"
   check "the parent was not told of a turn without a report, and no wake was watched for the reminder" \
-    "$([ "$(notices_with "$parent" ended | jq -r 'length')" = 0 ] && [ -z "$(kv get "wake/$child/$(jq -r .inboxID <<<"$nudged")")" ] && echo true || echo false)"
+    "$(end_handled "$child" "$parent" && [ "$(notices_with "$parent" ended | jq -r 'length')" = 0 ] && [ -z "$(kv get "wake/$child/$(jq -r .inboxID <<<"$nudged")")" ] && echo true || echo false)"
 
   scenario "a child that ignores its reminder ends its turn, and the parent is told as before"
   out=$(prompt "COURIER-SILENT")
@@ -760,7 +803,7 @@ run_depth() {
   check "two leaves tried" "$(jq -r 'length == 2' <<<"$leaves")"
   # The child in between never reports: its turns end while its leaves owe it reports, and once more after.
   check "the root was told once that the child in between ended without a report, once its leaves had reported" \
-    "$(has_text "$root" "PARENT TOLD SILENT" 60 >/dev/null; turn_ended "$middle"; notices_with "$root" ended | jq -r --arg middle "$middle" 'length == 1 and (.[0] | contains("<courier from=\"" + $middle + "\" ended="))')"
+    "$(has_text "$root" "PARENT TOLD SILENT" 60 >/dev/null; turn_ended "$middle"; end_handled "$middle" "$root" && notices_with "$root" ended | jq -r --arg middle "$middle" 'length == 1 and (.[0] | contains("<courier from=\"" + $middle + "\" ended="))' || echo false)"
   check "every request of a leaf was named a leaf, and the courier's hook left it no courier_spawn, courier_recall or courier_note" \
     "$(jq -sr --argjson leaves "$leaves" '[.[] | select(.type == "probe.context" and (.sessionID | IN($leaves[])))]
       | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_recall") | not) and (.tools | index("courier_note") | not) and (.tools | index("courier_send")))' "$WORK/probe.log")"
@@ -1002,7 +1045,7 @@ run_answer() {
     "$([ "$(person "session/$child/permission/$request/reply" '{"decision":"once"}')" = 204 ] && [ "$(has_text "$parent" "CHILD DONE shell" 45)" = true ] && echo true || echo false)"
   check "which the parent was told once, and its model got no courier_answer result meanwhile" \
     "$(reply_time "$parent" "PARENT WOKE" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"once\""))')" = true ] &&
-      [ "$(has_text "$parent" "TOOL DONE courier_answer" 1)" != true ] && echo true || echo false)"
+      ! texts "$parent" | grep -qF "TOOL DONE courier_answer" && echo true || echo false)"
 }
 
 run_search() {
@@ -1179,7 +1222,7 @@ run_probe() {
   # first one listed is the project itself), opened by a session of its own, which loads the plugins there.
   bystander=$(git -C "$WORK/project" worktree list --porcelain | sed -n 's/^worktree //p' | sed -n 2p)
   check "a third location is open" "$([ -n "$bystander" ] &&
-    (cd "$bystander" && "$OPENCODE" run --server "$SERVER" --auto --format json "hello" </dev/null >/dev/null) && echo true || echo false)"
+    bounded_run "$bystander" "hello" >/dev/null && echo true || echo false)"
   out=$(prompt "COURIER-PROBE")
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
@@ -1292,10 +1335,12 @@ run_wake() {
     jq -r '.data.id // empty')
   check "a courier message was enqueued for the idle parent ($inbox)" "$([ -n "$inbox" ] && echo true || echo false)"
   delivered() { api "session/$parent/message" | jq -r --arg id "$inbox" '[.data[] | select(.id == $id)] | length'; }
-  sleep 5
-  check "no turn took it: it waits in the parent's inbox" \
-    "$([ "$(delivered)" = 0 ] && api "session/$parent/inbox" | jq -e --arg id "$inbox" 'any(.data[]; .id == $id)' >/dev/null && echo true || echo false)"
+  # The courier notes the message as OpenCode enqueues it. That it kept waiting the scheduler shows below: it wakes a session
+  # only for a message left waiting while the session is idle, and logs it.
+  for _ in $(seq 1 20); do [ -n "$(kv get "wake/$parent/$inbox")" ] && break; sleep 0.5; done
   check "the courier watches it, waiting in an idle session" "$(kv get "wake/$parent/$inbox" | jq -r '.running == false')"
+  check "no turn took it: it waits in the parent's inbox" \
+    "$([ "$(delivered)" = 0 ] && [ "$(finished "$parent")" = true ] && api "session/$parent/inbox" | jq -e --arg id "$inbox" 'any(.data[]; .id == $id)' >/dev/null && echo true || echo false)"
   # Missed after WAKE_MS (30 s), found at the scheduler's next tick, up to 15 s later.
   for _ in $(seq 1 75); do [ "$(delivered)" = 1 ] && break; sleep 1; done
   check "the scheduler woke the parent again, which took the message once" "$([ "$(delivered)" = 1 ] && echo true || echo false)"
@@ -1318,14 +1363,16 @@ run_later() {
   scenario "courier_cancel stops a scheduled message"
   out=$(prompt "COURIER-LATER-CANCEL 0.05")
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  scheduled=$(tool_state courier_later <<<"$out" | jq -r '.metadata.metadata.id // empty')
   check "courier_cancel cancelled it" "$(tool_state courier_cancel <<<"$out" | jq -r '.status == "completed" and (.output | startswith("Cancelled"))')"
   # Messages are delivered at the scheduler's tick, up to 15 s after they are due: a second, uncancelled one in
   # another session shows a tick came after the first was due, and delivered what was due then.
   witness=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$(prompt "COURIER-LATER 0.05")" | head -1)
   check "an uncancelled message, scheduled next, was delivered at the tick" "$([ -n "$(reply_time "$witness" "PARENT WOKE" 45)" ] && echo true || echo false)"
-  sleep 2
-  woke=$(reply_time "$parent" "PARENT WOKE" 1)
-  check "the cancelled message never arrived" "$([ -z "$woke" ] && echo true || echo false)"
+  # The scheduler sends a message only while its row is stored, and drops the row once sent: with no row, none is on its way.
+  check "the cancelled message never arrived" \
+    "$([ -n "$scheduled" ] && [ -z "$(kv get "later/$scheduled")" ] && [ "$(notices_with "$parent" scheduled)" = '[]' ] &&
+      api "session/$parent/inbox" | jq -e '.data | length == 0' >/dev/null && echo true || echo false)"
 }
 
 run_schedules() {
@@ -1486,13 +1533,11 @@ run_subtree() {
     "$(jq -r --arg middle "$middle" --arg leaf "$leaf" '.status == "completed" and (.metadata.metadata.stopped | map([.sessionID, .outcome]) == [[$leaf, "interrupted"], [$middle, "interrupted"]])' <<<"$stopped")"
   ended() { for _ in $(seq 1 30); do [ "$(api "session/$1" | jq -r '(.data // .) | .outcome')" = interrupted ] && { echo true; return; }; sleep 1; done; echo false; }
   check "both sessions ended interrupted" "$([ "$(ended "$leaf")" = true ] && [ "$(ended "$middle")" = true ] && echo true || echo false)"
-  # The probe plugin logs each event the plugins get: both interrupts reached them, where a failure or a silent end would follow.
-  for _ in $(seq 1 30); do [ "$(jq -sr --arg a "$leaf" --arg b "$middle" '[.[] | select(.type == "session.execution.interrupted" and (.sessionID == $a or .sessionID == $b)) | .sessionID] | unique | length == 2' "$WORK/probe.log")" = true ] && break; sleep 1; done
-  sleep 1
+  handled=$(end_handled "$leaf" "$root" && end_handled "$middle" "$root" && echo true || echo false)
   check "neither parent was told of the stop, nor that a session ended without a report" \
-    "$([ "$(notices_with "$root" ended)" = '[]' ] && [ "$(notices_with "$middle" ended)" = '[]' ] && echo true || echo false)"
+    "$([ "$handled" = true ] && [ "$(notices_with "$root" ended)" = '[]' ] && [ "$(notices_with "$middle" ended)" = '[]' ] && echo true || echo false)"
   check "the stop is noted for both" "$([ -n "$(kv get "report/$leaf/stopped")" ] && [ -n "$(kv get "report/$middle/stopped")" ] && echo true || echo false)"
-  check "a failure notice did not follow either" "$(notices_with "$root" failed | jq -r 'length == 0')"
+  check "a failure notice did not follow either" "$([ "$handled" = true ] && notices_with "$root" failed | jq -r 'length == 0' || echo false)"
 }
 
 # A sub-orchestrator whose turn fails while its leaf runs (#462): the root's failure notice names the leaf, says the failed
@@ -1611,11 +1656,13 @@ run_subagent() {
       ($s[0:2] | sort) == ([[$bg, "interrupted", true], [$fg, "interrupted", true]] | sort) and $s[2] == [$middle, "interrupted", false] and ($s | length == 3))' <<<"$stopped")"
   ended() { for _ in $(seq 1 30); do [ "$(api "session/$1" | jq -r '(.data // .) | .outcome')" = interrupted ] && { echo true; return; }; sleep 1; done; echo false; }
   check "all three ended interrupted" "$([ "$(ended "$background")" = true ] && [ "$(ended "$foreground")" = true ] && [ "$(ended "$middle")" = true ] && echo true || echo false)"
-  sleep 3
-  check "OpenCode told the middle session that its background subagent ended" \
-    "$(api "session/$middle/message" | jq -r --arg bg "$background" '[.data[] | select(.type == "synthetic") | .text | select(startswith("<subagent sessionID=\"" + $bg + "\""))] | length >= 1')"
+  told() { api "session/$middle/message" | jq -r --arg bg "$background" '[.data[] | select(.type == "synthetic") | .text | select(startswith("<subagent sessionID=\"" + $bg + "\""))] | length >= 1'; }
+  # The message about the subagent is taken by a turn of the middle session, which courier_stop interrupts again: once the
+  # message is in its transcript and the session is at rest, interrupted, that turn is over.
+  for _ in $(seq 1 30); do [ "$(told)" = true ] && [ "$(finished "$middle")" = true ] && [ "$(session_info "$middle" | jq -r '.outcome')" = interrupted ] && break; sleep 0.5; done
+  check "OpenCode told the middle session that its background subagent ended" "$(told)"
   check "the background subagent's end did not wake the stopped middle session again" \
-    "$([ "$(has_text "$middle" "SAW SUBAGENT END" 1)" = false ] && [ "$(session_info "$middle" | jq -r '.outcome')" = interrupted ] && echo true || echo false)"
+    "$([ "$(finished "$middle")" = true ] && ! texts "$middle" | grep -qF "SAW SUBAGENT END" && [ "$(session_info "$middle" | jq -r '.outcome')" = interrupted ] && echo true || echo false)"
   check "no courier report state was noted for the subagents" "$([ -z "$(kv get "report/$background/stopped")" ] && [ -z "$(kv get "report/$foreground/settled")" ] && echo true || echo false)"
   project=$(session_info "$root" | jq -r '.projectID')
   record=$(record_of "$root" '[.parts[] | select(.subagent == true)] | length == 2')
@@ -2547,9 +2594,16 @@ run_epilogue() {
     "$(grep -qE "courier roster prune:|courier question: stored questions:|courier watch: could not relay pending requests:" "$WORK/server.log" && echo false || echo true)"
 }
 
-for group in $GROUP_LIST; do "run_${group//-/_}"; done
+# Each group's seconds, its weight in SUITE.
+for group in $GROUP_LIST; do
+  group_start=$SECONDS
+  "run_${group//-/_}"
+  end_scenario
+  echo "group $group: $((SECONDS - group_start)) s"
+done
 run_epilogue
 
+[ -s "$WORK/stalled" ] && failures=$((failures + $(wc -l <"$WORK/stalled")))
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) failed; rerun with KEEP=1 to keep the server and model logs"
   exit 1

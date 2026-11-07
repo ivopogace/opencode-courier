@@ -124,7 +124,7 @@ exports[`tools courier_spawn 1`] = `
       "native": {
         "anyOf": [
           {
-            "description": "true starts the session as your OpenCode subagent: it leaves OpenCode's session lists for your subagent tab, the person answers its permission requests and questions in the view of the nearest session above it that is not a subagent, usually the top one, and deleting your session deletes it. false starts a standalone session, whatever the plugin's nativeChildren option says; unset, that option decides. Refused with isolate: true, as a subagent runs in its parent's directory.",
+            "description": "true starts the session as your OpenCode subagent: it leaves OpenCode's session lists for your subagent tab, the person answers its permission requests and questions in the view of the nearest session above it that is not a subagent, usually the top one (only OpenCode's TUI or paired app shows them; under opencode run without --auto or a bare API client they are rejected or wait unseen), and deleting your session deletes it. false starts a standalone session, whatever the plugin's nativeChildren option says; unset, that option decides. Refused with isolate: true, as a subagent runs in its parent's directory.",
             "type": "boolean",
           },
           {
@@ -624,7 +624,7 @@ If you need the person to decide something, use your question tool; it reaches t
 You are at depth 1 of a session tree that goes at most 3 deep. Split your task or do it yourself:
 - Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
 - Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.
-- Say which in one line of your reply: split: no, because …; considered: <the parts you weighed> or split: <n> parts: … (one phrase per part).
+- Say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part).
 - If you split, you orchestrate: start the parts that run at once in one group, with the same group name for each, then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: the group's reports wake you. Check and integrate each part yourself when it reports (never hand that checking to another session), then send ses_parent one combined report.
 
 Task:
@@ -665,7 +665,7 @@ If you split your task and start a session with isolate: true, commit first: its
 You are at depth 1 of a session tree that goes at most 3 deep. Split your task or do it yourself:
 - Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
 - Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.
-- Say which in one line of your reply: split: no, because …; considered: <the parts you weighed> or split: <n> parts: … (one phrase per part).
+- Say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part).
 - If you split, you orchestrate: start the parts that run at once in one group, with the same group name for each, then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: the group's reports wake you. Check and integrate each part yourself when it reports (never hand that checking to another session), then send ses_parent one combined report.
 
 Task:
@@ -690,7 +690,7 @@ Task:
 Fix the bug"
 `;
 
-exports[`envelope and child brief rolePart 1`] = `"opencode-courier role: root orchestrator. You started sessions with courier_spawn, and they may start their own, down to 3 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree. Check and integrate what each one reports yourself."`;
+exports[`envelope and child brief rolePart 1`] = `"opencode-courier role: root orchestrator. You started sessions with courier_spawn, and they may start their own, down to 3 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree. Check and integrate what each one reports yourself. Load the courier-orchestrate skill if it is not in your context."`;
 
 exports[`envelope and child brief rolePart 2`] = `"opencode-courier role: sub-orchestrator, at depth 1 of at most 3. Before you split, load the courier-orchestrate skill. Split your task with courier_spawn or do it yourself, as your brief says; sessions can be started 2 levels below you. At most 5 of the sessions you start run at once, and 20 in the whole tree."`;
 
@@ -698,7 +698,7 @@ exports[`envelope and child brief rolePart 3`] = `"opencode-courier role: sub-or
 
 exports[`envelope and child brief rolePart 4`] = `"opencode-courier role: leaf, at depth 3, the deepest the session tree goes. You cannot start sessions: do your task yourself and report with courier_send to the session that started you."`;
 
-exports[`envelope and child brief rolePart 5`] = `"opencode-courier role: root, no sessions started yet. Before a task with 2 or more independent, substantial parts touching separate files or areas, load the courier-orchestrate skill, call courier_recall once for how earlier trees in this project were split and how they went, and decide whether to split it across sessions (doing it yourself is fine; so is handing a heavy task, with long reading, many edits or long runs, whole to one session to keep your context, but never a small one), and say which in one line of your reply: split: no, because …; considered: <the parts you weighed> or split: <n> parts: … (one phrase per part) or split: 1 part: <the task>, to keep my context"`;
+exports[`envelope and child brief rolePart 5`] = `"opencode-courier role: root, no sessions started yet. Before a task with 2 or more independent, substantial parts touching separate files or areas, load the courier-orchestrate skill, call courier_recall once for how earlier trees in this project were split and how they went, and decide whether to split it across sessions (doing it yourself is fine; so is handing a heavy task, with long reading, many edits or long runs, whole to one session to keep your context, but never a small one), and say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part) or \`split: 1 part: <the task>, to keep my context\`."`;
 
 exports[`envelope and child brief the courier-orchestrate skill 1`] = `"How opencode-courier's session tools work. Load before you split a task with courier_spawn: when it has 2 or more independent, substantial parts touching separate files or areas. Starting the parts, waiting without polling, relaying questions and permissions, reading reports, merging and reporting upward."`;
 
@@ -714,7 +714,7 @@ This skill says how the tools behave. How to plan the parts, stage a tightly cou
 - At the root, first call courier_recall once, before you decide and never in a loop: it lists how earlier trees in this project were split and how each part went. Below the root, read none: the records describe whole trees, which the root weighed before it split.
 - Split when the task has 2 or more independent, substantial parts touching separate files or areas; do it yourself when it is small, sequential or tightly coupled. Several whole jobs in one prompt, such as 4 tickets, are that many parts: each session runs this skill for its job, so the tree below you repeats its shape once per job.
 - Only the root, the session nobody started, may start exactly one session for the whole task, and only when the task is heavy (long reading, many edits, long runs) and its own context is worth keeping; it still verifies and integrates that session's report itself. Every other session never starts exactly one session for the whole task: it only adds a hop, and a chain of single hops uses up the tree's depth. One session for one stage is a part, not the whole, as your brief says: a core you stage before the rest, when 2 or more parts follow it, or a review of the parts once you have merged them.
-- Say which in one line of your reply, before you start: split: no, because …; considered: <the parts you weighed> or split: <n> parts: … (one phrase per part); the root has a third form, split: 1 part: <the task>, to keep my context.
+- Say which in one line of your reply, before you start: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part); the root has a third form, \`split: 1 part: <the task>, to keep my context\`.
 
 ## 2. Start the parts
 
@@ -754,11 +754,11 @@ Merge each reported branch into your own checkout (git merge courier/<session>),
 
 exports[`envelope and child brief refusals 1`] = `"Not started: this session is at depth 3 of its session tree, and the tree goes at most 3 deep (maxDepth), so it cannot start sessions. Do the task yourself, and report with courier_send."`;
 
-exports[`envelope and child brief refusals 2`] = `"Not started: 5 sessions you started are running or have not reported yet, the most allowed at once (maxChildren 5). Do this part yourself, or end your turn and start it once one of them has reported."`;
+exports[`envelope and child brief refusals 2`] = `"Not started: 5 sessions you started are running or have not reported yet, the most allowed at once (maxChildren 5). Do this part yourself, or end your turn and start it once one of them has reported, not in a loop."`;
 
-exports[`envelope and child brief refusals 3`] = `"Not started: 1 session you started is running or has not reported yet, the most allowed at once (maxChildren 1). Do this part yourself, or end your turn and start it once one of them has reported."`;
+exports[`envelope and child brief refusals 3`] = `"Not started: 1 session you started is running or has not reported yet, the most allowed at once (maxChildren 1). Do this part yourself, or end your turn and start it once one of them has reported, not in a loop."`;
 
-exports[`envelope and child brief refusals 4`] = `"Not started: 20 sessions in this session tree are running or have not reported yet, the most allowed at once (maxTotal 20). Do this part yourself, or end your turn and try again once a report has arrived."`;
+exports[`envelope and child brief refusals 4`] = `"Not started: 20 sessions in this session tree are running or have not reported yet, the most allowed at once (maxTotal 20). Do this part yourself, or end your turn and try again once a report has arrived, not in a loop."`;
 
 exports[`envelope and child brief refusals of a model or variant 1`] = `"Not started: model must be provider/model, as OpenCode names them (opencode/gpt-5-nano, anthropic/claude-sonnet-4-5), not "small". Leave it unset to run the session on your own model."`;
 
@@ -894,6 +894,7 @@ exports[`tool results stopText 1`] = `
 - ses_mid: idle
 - ses_odd: failed (session.interrupt failed: boom)
 Those that failed may still run: try courier_stop again.
+Stopping an idle session does not settle it: one that owed a report still owes it, stays in its join group and counts toward maxChildren and maxTotal until the session that started it drops it with courier_cleanup.
 No scheduled messages were pending for them."
 `;
 
@@ -903,6 +904,7 @@ exports[`tool results stopText 2`] = `
 - ses_mid: idle
 - ses_odd: failed (session.interrupt failed: boom)
 Those that failed may still run: try courier_stop again.
+Stopping an idle session does not settle it: one that owed a report still owes it, stays in its join group and counts toward maxChildren and maxTotal until the session that started it drops it with courier_cleanup.
 Cancelled 2 scheduled messages: later_1, later_2.
 Told ses_top, which started ses_mid, that it was stopped."
 `;
@@ -913,6 +915,7 @@ exports[`tool results stopText 3`] = `
 - ses_mid: idle
 - ses_odd: failed (session.interrupt failed: boom)
 Those that failed may still run: try courier_stop again.
+Stopping an idle session does not settle it: one that owed a report still owes it, stays in its join group and counts toward maxChildren and maxTotal until the session that started it drops it with courier_cleanup.
 No scheduled messages were pending for them.
 Removed the worktree /wt/leaf of ses_leaf.
 Kept the worktree /wt/mid of ses_mid: it has 1 uncommitted change (a.ts). Kept; courier_cleanup with force: true discards it.
@@ -925,6 +928,7 @@ exports[`tool results stopText 4`] = `
 - ses_mid: idle
 - ses_odd: failed (session.interrupt failed: boom)
 Those that failed may still run: try courier_stop again.
+Stopping an idle session does not settle it: one that owed a report still owes it, stays in its join group and counts toward maxChildren and maxTotal until the session that started it drops it with courier_cleanup.
 No scheduled messages were pending for them.
 None of them ran in a worktree of its own."
 `;

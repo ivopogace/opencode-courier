@@ -312,7 +312,7 @@ const keptLine = (result: Extract<CleanupResult, { readonly outcome: "kept" }>) 
 
 export function cleanupText(result: CleanupResult) {
   if (result.outcome === "kept")
-    return `${keptLine(result)} ${result.sessionID} is not dropped yet: commit or branch what you want to keep, then call courier_cleanup again, or call it now with force: true to discard it. Either call drops ${result.sessionID}.`
+    return `${keptLine(result)} ${result.sessionID} is not dropped yet: commit what you want to keep to a branch, then call courier_cleanup again, or call it now with force: true to discard it. Either call drops ${result.sessionID}.`
   const done = {
     removed: `Removed the worktree ${result.directory} of ${result.sessionID}.`,
     gone: `The worktree ${result.directory} of ${result.sessionID} was already gone; dropped it from courier_children.`,

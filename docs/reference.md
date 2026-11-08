@@ -362,7 +362,7 @@ release, rejoins.
 silently, one whose failure the plugin missed (the server was down), or one you gave up on. Drop it
 with `courier_cleanup { sessionID }`: with the parent's turn ended, the held reports arrive at once.
 An isolated member whose worktree holds unsaved work is kept, and stays in the group, until you
-commit that work and call again, or call with `force: true`.
+commit that work to a branch and call again, or call with `force: true`.
 
 `courier_children` shows each member's `group: { name, report }`, with `report` one of `held`,
 `out`, `failed`, `interrupted`, `deleted`, `released` (the group was delivered) or `unknown`; the
@@ -575,7 +575,7 @@ Nothing removes a worktree on its own. When the parent has what it needs, it cal
 `courier_cleanup { sessionID }`. The worktree is kept, and the result says why, when it holds
 uncommitted changes (untracked files included, ignored ones not), or commits on no branch, tag or
 remote, and the child is not dropped: it stays on `courier_children` and counts toward the limits.
-Commit or branch what you want to keep and call again, or call with `force: true` to discard it. A
+Commit what you want to keep to a branch and call again, or call with `force: true` to discard it. A
 child without `isolate` has no worktree: `courier_cleanup` only forgets it. `courier_cleanup` never
 deletes a session. Call it after the child has reported.
 

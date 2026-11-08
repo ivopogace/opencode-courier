@@ -6,7 +6,7 @@ polling, each child reports with a status, and each report wakes the parent. It 
 Re-run it after any change to a model-facing string: `src/**/text.ts`, `src/kernel/protocol.ts`,
 `src/skill.ts` or a tool description.
 
-The tables below are one batch, measured at 92b283d on OpenCode 2.2.6 with a self-hosted model behind
+The tables below are one batch, measured at a45369a on OpenCode 2.2.6 with a self-hosted model behind
 an OpenAI-compatible endpoint and `COURIER_TIMEOUT=600`. A new batch replaces them. A scenario with
 no table has no result in this batch.
 
@@ -170,8 +170,8 @@ with a seeded record can.
 
 | Condition | Result |
 |---|---|
-| skill listed | 3 of 3 passed, 9/9 each, mean 30 requests (27 to 33). |
-| `COURIER_SKILL=deny` | 6 of 8 passed, 9/9 six times and 8/9 twice, mean 30 requests (25 to 41): three runs in the batch and five re-runs. Each 8/9 is the root looking with `courier_children` after spawning, once in one run and twice in the other. The files and the reply were right in all eight. |
+| skill listed | 3 of 3 passed, 9/9 each, mean 30 requests (27 to 32). |
+| `COURIER_SKILL=deny` | 3 of 3 passed, 9/9 each, mean 30 requests (28 to 32). |
 
 ## A part that goes wrong
 
@@ -200,8 +200,8 @@ reported 2 times" is expected for it.
 
 | Condition | Result |
 |---|---|
-| `recursive-fault`, skill listed, measured at 2774df2 | 5 of 5 passed, 13/13 each, mean 32 requests (31 to 35). |
-| `recursive-fault`, `COURIER_SKILL=deny` | 3 of 3 passed, 13/13 each, mean 32 requests (30 to 34). |
+| `recursive-fault`, skill listed | 3 of 3 passed, 13/13 each, mean 35 requests (34 to 37). |
+| `recursive-fault`, `COURIER_SKILL=deny` | 2 of 3 passed, 13/13 twice and 12/13 once, mean 34 requests (31 to 39). The 12/13 is the root looking with `courier_children` and `courier_tree` after spawning, in its first turn. Its files and reply were right. |
 
 ## A part with a core
 
@@ -271,7 +271,7 @@ a sub-orchestrator's wake turn still runs.
 
 | Condition | Result |
 |---|---|
-| skill listed, measured at 2774df2 | 5 of 5 passed, 13/13 each, mean 33 requests (30 to 37), 117 to 149 s. No session touched the wait files. |
+| skill listed | 2 of 2 passed, 13/13 each, 34 and 35 requests. |
 
 ## A change and its review
 

@@ -574,9 +574,8 @@ the spawn fails and starts nothing; start it without `isolate`.
 Nothing removes a worktree on its own. When the parent has what it needs, it calls
 `courier_cleanup { sessionID }`. The worktree is kept, and the result says why, when it holds
 uncommitted changes (untracked files included, ignored ones not), or commits on no branch, tag or
-remote. The child is then not dropped: it stays on `courier_children`, counts toward the limits and
-holds back its join group. Commit or branch what you want to keep and call again, or call with
-`force: true` to discard it. A
+remote, and the child is not dropped: it stays on `courier_children` and counts toward the limits.
+Commit or branch what you want to keep and call again, or call with `force: true` to discard it. A
 child without `isolate` has no worktree: `courier_cleanup` only forgets it. `courier_cleanup` never
 deletes a session. Call it after the child has reported.
 

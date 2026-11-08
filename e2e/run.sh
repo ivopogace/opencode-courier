@@ -1724,7 +1724,7 @@ run_failed_live() {
 }
 
 # With maxTotal 2, two silent children fill the tree (#479): the second, with none of its own running, is told only reports
-# held for a group can still wake it; the root, whose children still count, is told to try again once one of them has reported.
+# held for a group can still wake it; the root, whose children still count, is told to answer a blocked one and try again once one of them has reported.
 run_total_refusal() {
   scenario "a maxTotal refusal tells a session with none of its own running that only reports held for a group can wake it (#479, #526)"
   stop_server
@@ -1750,7 +1750,7 @@ run_total_refusal() {
   turn_ended "$root"
   refused=$(prompt_in "$root" "COURIER-TEST" | tool_state courier_spawn)
   check "the root, its two children still owing reports, is refused at maxTotal 2 and told to try again once one of them has reported" \
-    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself, or end your turn and try again once one of the sessions you started has reported, not in a loop. A session also counts while one it started is live, and one whose turn ended without a report, unless it failed or was interrupted, counts until it reports or its parent drops it with courier_cleanup."))' <<<"$refused")"
+    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself, or answer any session you started that is blocked, end your turn and try again once one of them has reported, not in a loop. A session also counts while one it started is live, and one whose turn ended without a report, unless it failed or was interrupted, counts until it reports or its parent drops it with courier_cleanup."))' <<<"$refused")"
   turn_ended "$root"
   stop_server
   jq 'del(.plugins[0].options.maxTotal)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"

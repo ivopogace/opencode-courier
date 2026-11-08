@@ -242,7 +242,8 @@ print: the "count" session must still be running when the person writes, and the
 finding has come down two levels. The checker, run with `--finding`, plays the person: once the
 "count" session's turn runs, it prompts that session that every file of the job must hold its number
 followed by ` checked`, then creates `.go-count`, which lets that part go on. Once each session the
-other part started has been sent a message without a status after the finding reached that part, it
+other part started has been sent a message without a status after the finding reached that part, or
+was started after it with the finding in its task, it
 creates `.go-halves`, which lets the halves go on. Each wait ends after 150 s if its file never
 comes. The prompt says another process creates those files and no session touches them, so a run's
 timeline shows whether one did. Neither the prompt nor the person's message says to pass the finding on; the brief and the
@@ -251,7 +252,8 @@ skill do.
 The checks: the nine, with each file holding `<number> checked`, then four. The person's message
 reached the "count" session; that session sent it to the root with a `courier_send` without a
 status, before its report; the root passed it on, without a status, to the other part; that part's
-session passed it on to each of its halves. Notes quote what was sent up, and say when the root also
+session passed it on to each of its halves, by message or in the task of a half started after it
+arrived. Notes quote what was sent up, and say when the root also
 messaged the "count" session.
 
 ```bash
@@ -269,7 +271,7 @@ a sub-orchestrator's wake turn still runs.
 
 | Condition | Result |
 |---|---|
-| skill listed | The halves slept 150 s and the "count" part 20 s. 5 of 7 passed, 13/13 five times, 12/13 and 11/13, mean 39 requests (30 to 67): two runs in the batch and five re-runs. In the 12/13 the root sent the person's change to the halves itself, so the "numbers" session had nothing left to pass on. In the 11/13 the "numbers" session looked with `courier_children`, found a file a half had reported missing, had it redone and sent the root a message about it before its report, in 67 requests. Every file held the change in all seven. |
+| skill listed, measured at 9d31231 | 5 of 5 passed, 13/13 each, mean 35 requests (32 to 38), 128 to 337 s. No session touched the wait files. The 337 s is the run whose finding reached the "numbers" session before it started its halves: read with `--saved`, since it ran with a checker that waited for a message to them, so the halves waited out the 150 s limit. Every file held the change in all five. |
 
 ## A change and its review
 

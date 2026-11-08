@@ -420,7 +420,7 @@ const PERSON_NOTE =
   "A change from the person for the whole job, not only for your part: every file this job writes must hold its number " +
   "followed by a space and the word checked, such as 7 checked. Write yours that way."
 const FINDING = "Every file of the job must hold its number followed by the word checked."
-type Finding = "passed" | "not-down" | "in-report"
+type Finding = "passed" | "not-down" | "in-report" | "in-spawn" | "spawn-silent"
 
 function findingRun(variant: Finding): Run {
   const plain = variant !== "in-report"
@@ -440,8 +440,12 @@ function findingRun(variant: Finding): Run {
     step("stop", say("Reported.")),
     idle(),
   ]
-  const num = [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves")), step("stop", say("split: 2 halves")), idle()]
-  if (plain)
+  const early = variant === "in-spawn" || variant === "spawn-silent"
+  const halfTask = (sessionID: string) => tool("courier_spawn", { task: variant === "in-spawn" ? `the half. ${FINDING}` : "the half", group: "halves" }, { sessionID })
+  const num = early
+    ? [user("numbers"), synthetic(`<courier from="ses_root">\n${FINDING}\n</courier>`), step("tool-calls", halfTask("ses_a"), halfTask("ses_b")), step("stop", say("split: 2 halves")), idle()]
+    : [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves")), step("stop", say("split: 2 halves")), idle()]
+  if (plain && !early)
     num.push(
       synthetic(`<courier from="ses_root">\n${FINDING}\n</courier>`),
       step("tool-calls", send("ses_a", FINDING), ...(variant === "not-down" ? [] : [send("ses_b", FINDING)])),
@@ -472,6 +476,14 @@ describe("the recursive checker with --finding", () => {
 
   test("a part's session that passes it on to one half of two fails only that check", () => {
     expect(check(findingRun("not-down"), ["--finding"]).failed).toEqual([F4])
+  })
+
+  test("halves started after the finding arrived, with it in their tasks, passes every check", () => {
+    expect(check(findingRun("in-spawn"), ["--finding"]).failed).toEqual([])
+  })
+
+  test("halves started after the finding arrived, without it in their tasks, fails only that check", () => {
+    expect(check(findingRun("spawn-silent"), ["--finding"]).failed).toEqual([F4])
   })
 
   test("a finding sent up only inside the report reaches no one in time: the last three checks fail", () => {
@@ -601,7 +613,7 @@ describe("the recursive checker and a sub-orchestrator that reports in the turn 
   })
 })
 
-async function liveFinding(variant: "passed" | "not-down") {
+async function liveFinding(variant: Finding) {
   const { tree, files, expect: expected } = findingRun(variant)
   const running = tree.ses_count!.slice(0, 2)
   let told = false
@@ -634,8 +646,10 @@ async function liveFinding(variant: "passed" | "not-down") {
   }
 }
 
-test("run live with --finding, the checker lets the count part go once it has written as the person, and the halves once each was sent the finding", async () => {
-  const [passed, notDown] = await Promise.all([liveFinding("passed"), liveFinding("not-down")])
+test("run live with --finding, the checker lets the count part go once it has written as the person, and the halves once each was sent the finding or started with it", async () => {
+  const [passed, notDown, inSpawn, silent] = await Promise.all([liveFinding("passed"), liveFinding("not-down"), liveFinding("in-spawn"), liveFinding("spawn-silent")])
   expect(passed).toEqual({ told: true, count: true, halves: true })
   expect(notDown).toEqual({ told: true, count: true, halves: false })
+  expect(inSpawn).toEqual({ told: true, count: true, halves: true })
+  expect(silent).toEqual({ told: true, count: true, halves: false })
 }, 20_000)

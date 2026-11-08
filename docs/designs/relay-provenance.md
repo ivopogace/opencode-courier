@@ -53,18 +53,23 @@ tell a session to undo it.
 
 That account is free text with no provenance, and the rule binds every ancestor to it. A session
 misled by a file, a tool result or a web page can put words under it. A session can also invent it
-with no injection: in one real-model run of `recursive-fault` with the skill denied
-([real-model.md](../maintainers/real-model.md#a-part-that-goes-wrong)), a sub-orchestrator's child
-reported that "the person wrote to me directly (outside a courier envelope)" and refused the second
-half of its task, when no message from the person existed. Its parent refused the claim, and the
-rule says parents must not.
+with no injection. In one real-model run of `recursive-fault` with the skill denied (the owner's
+sandbox, plugin commit 476df67, the half for `numbers/b.txt`), a sub-orchestrator's child sent its
+parent, right after its `partial` report, a "status correction, on instruction of the person",
+saying it should write no file; after the parent told it to finish, it reported `blocked`, saying
+"the person wrote to me directly (outside a courier envelope)". The saved transcripts and the event
+log of that run hold no message from the person: the session's inbox received its task and two
+courier messages, nothing else. Its parent refused the claim, and the rule says parents must not.
 
 Two facts let the plugin do more than prose. `session.inbox.enqueued` carries each inbox item's
 type and, for a `user` item, its text and metadata, and OpenCode copies a prompt's `metadata` into
 that item, so the plugin can mark its own task prompt and tell it from every other `user` item. And
 in ten real-model runs of `recursive-finding` in which the words reached the root only through
 such an envelope, with no instruction in the brief or skill to send them up, they reached every
-part in every run ([real-model.md](../maintainers/real-model.md#a-finding-passed-on)). What the
+part in every run: five runs with a rule line in the envelope and five without, six on a
+self-hosted model behind an OpenAI-compatible endpoint and four on OpenCode's free tier, three and
+two per arm, all three files holding the change in each run, and no session telling another to undo
+the words. What the
 plugin cannot do is tell who typed: the person at the TUI, an API client, another plugin, a
 session above through the `subagent` tool and a shell holding the server's password all arrive
 alike. So the envelope attests the route and the session, not the person.
@@ -94,28 +99,36 @@ alike. So the envelope attests the route and the session, not the person.
   and prove nothing more.
 * Relaying attached files, agents or skills, or the typed-in session's own reading of the words.
 * A private channel to one session, a rate limit, or an option to turn the fan-up off.
-* Telling the plugin's prompts from other `user` items by anything but the plugin's own metadata.
+* Telling the plugin's prompts from other `user` items by anything but the plugin's own metadata
+  and the brief's fixed first line, or skipping other items by anything but OpenCode's own
+  `schedule` metadata.
 
 ## Open Questions
 
 * **The "undo" clause.** The envelope says that the named session has the text and acts on it. The
   slot after that sentence is open:
-  1. "Do not tell it to undo what the text asks unless the person says so."
-  2. "It decides what the text means for its part."
-  3. Nothing: the text is information, and the sessions above decide.
+  1. "It decides what the text means for its part."
+  2. Nothing: the text is information, and the sessions above decide.
+
+  A clause that forbids telling the named session to undo the text "unless the person says so" is
+  not a candidate: the envelope says the plugin cannot tell who typed, a session can cause one
+  through `subagent` on a native child or a shell holding the password, and such a clause would
+  shield that text from correction on a condition the plugin cannot verify.
 
   The premise for choosing: for text the plugin relayed, a session above telling the named session
   to drop it and do its task as given is the failure the wording is chosen to avoid; a session
   above stays free to report the conflict to its own parent or to the person. A session's own claim
   about the person arrives in no such envelope and binds nobody, so the clause never applies to it.
-  Ten runs of `recursive-finding`, five with a line like candidate 1 and five with the slot empty,
+  The ten runs of `recursive-finding` above, five with a rule line and five with the slot empty,
   could not separate the two, because that scenario's words contradict no session's task and
-  nothing provoked a pushback. [Settling the undo clause](#settling-the-undo-clause) describes a
-  scenario built to provoke one. While the question is open, the slot is empty (candidate 3), and
-  with the slot empty the envelope asks nothing that binds a receiver to the text.
+  nothing provoked a pushback, and the three points the slot-empty arm lost were a repeated message,
+  a heads-up about wiped files and a tree-shape miss, none about the words.
+  [Settling the undo clause](#settling-the-undo-clause) describes a scenario built to provoke a
+  pushback. While the question is open, the slot is empty (candidate 2), and with the slot empty
+  the envelope asks nothing that binds a receiver to the text.
 
-  Decided by the author: the scenario runs in three arms, one per candidate, fifteen runs and about
-  525 model requests in all, before the wording is final.
+  Decided by the author: the scenario runs in two arms, one per candidate, ten runs and about 350
+  model requests in all, before the wording is final.
 
 ## Critical User Journeys (CUJs)
 
@@ -411,11 +424,12 @@ numbers/b.txt") matches the first pattern too. A person reads the quoted message
 count of countermands per run in `real-model.md`; that count, not the regex marks, is what the
 arms are compared on.
 
-Arms: three commits on the implementation branch that differ only in the clause sentence of
-`typedNotice`; `e2e/real-model.sh` exports `COURIER_COMMIT` from `git rev-parse --short HEAD` and
-the checker writes it into `summary.json`. Five runs per arm, about 35 requests each. An arm is
-chosen when its total of recorded countermands and `numbers/b.txt` replacements is at least two
-below each other arm's; otherwise candidate 3. No option or variable selects the arm, so nothing of the
+Arms: two commits on the implementation branch that differ only in the clause sentence of
+`typedNotice`, one with candidate 1 and one with the slot empty; `e2e/real-model.sh` exports
+`COURIER_COMMIT` from `git rev-parse --short HEAD` and the checker writes it into `summary.json`.
+Five runs per arm, about 35 requests each, about 350 in all. Candidate 1 is chosen when its total
+of recorded countermands and `numbers/b.txt` replacements is at least two below the empty slot's;
+otherwise the slot stays empty. No option or variable selects the arm, so nothing of the
 measurement ships.
 
 ### Risks and mitigations
@@ -512,7 +526,8 @@ measurement ships.
   lacked it ([real-model.md](../maintainers/real-model.md#a-finding-passed-on)). Route attestation
   is lost: a session above cannot tell relayed words from a session's own claim.
 * **Reason for Rejection**: The fan-up does not depend on a model's memory, and the one run in ten
-  is the case it exists for. The prose change can still land first.
+  is the case it exists for. The prose change lands first, as [phase 0](#phase-0-the-prose-patch)
+  of the plan, so the binding sentences do not wait for the fan-up.
 
 ### Alternative I: Keep the text in the in-process inbox map instead of storage
 
@@ -588,7 +603,51 @@ measurement ships.
 
 ## Detailed Implementation Plan
 
-Five phases; each leaves the tree building and its tests passing.
+Six phases; each leaves the tree building and its tests passing. Phase 0 is its own patch and
+release; phases 1 to 4 are one pull request; phase 5 runs in the owner's sandbox.
+
+### Phase 0: the prose patch
+
+Removes the sentences that make a session's account of the person's words binding, and keeps the
+model-composed upward relay until the fan-up lands. Proves itself with `bun test
+--update-snapshots` once, then `bun test`, and a targeted real-model set in the owner's sandbox:
+`recursive-finding` and `recursive-fault`, five runs each, their rows replaced in `real-model.md`.
+
+#### 0.1. `src/skill.ts` (Modify)
+
+* **Proposed Changes**: Step 3's third bullet loses its last sentence, "A session's account of what
+  the person told it is the person's word: pass it on, do not judge it against the original task,
+  and never tell a session to undo what the person asked." The rest of the bullet, including "or
+  carries the person's words, as your brief says", stays until phase 3.
+
+#### 0.2. `src/tree/text.ts` (Modify)
+
+* **Proposed Changes**: `childBrief`'s person paragraph loses its last sentence, "They are the
+  person's word: do not judge them against your task, and never tell a session to undo them." The
+  instruction to send the person's words to the parent, quoted as the person's, stays until phase 3.
+
+#### 0.3. `docs/reference.md` (Modify)
+
+* **Proposed Changes**: The brief paragraph under "Session trees and their limits" and step 3 and
+  the "Without the skill" paragraph under "The courier-orchestrate skill" lose the matching
+  sentences ("They are the person's word: …", "a child's account of what the person told it is the
+  person's word", "never judging or undoing the person's words").
+
+#### 0.4. `test/notices.test.ts` (Modify)
+
+* **Proposed Changes**: The brief and skill assertions drop the removed sentences and assert their
+  absence; the snapshot is updated.
+
+#### 0.5. `e2e/run.sh` (Modify)
+
+* **Proposed Changes**: `run_person_up`'s check of the brief sentence "They are the person's word:
+  …" and its scenario line are changed to the sentence that remains; `run_person_message` is
+  unchanged.
+
+#### 0.6. `e2e/mock-model.mjs` (Modify)
+
+* **Proposed Changes**: `relayPersonWords`'s middle passes the words up on the remaining brief
+  sentence instead of the removed one.
 
 ### Phase 1: the storage row
 
@@ -628,7 +687,11 @@ Proves itself with `bun run typecheck && bun test`.
 
 ### Phase 2: the fan-up
 
-Proves itself with `bun run typecheck && bun test`.
+Proves itself with `bun run typecheck && bun test`. Before it starts, one check on a real server
+in the owner's sandbox, on the `probe-prompts` branch, whose probe plugin logs each inbox item's
+metadata: `handOver` there sends `metadata: { source: "courier", task: true }` on the task prompt,
+and the item's `metadata` must show it. The result goes into `docs/maintainers/plugin-api-notes.md`
+(item 20). The pin-bump re-check in the risks stays as written.
 
 #### 6. `src/tree/relay.ts` (Create)
 
@@ -743,8 +806,9 @@ Proves itself with `bun test --update-snapshots` once, then `bun test`, and `tes
 #### 20. `docs/maintainers/plugin-api-notes.md` (Modify)
 
 * **Proposed Changes**: Under "The inbox and wakes": a prompt's `metadata` is copied into the inbox
-  item's user payload by `SessionPrompt.prepare` (`packages/core/src/session/prompt.ts`), which is
-  how the plugin tells its task prompt from other `user` items; a `user` item says nothing about
+  item's user payload by `SessionPrompt.prepare` (`packages/core/src/session/prompt.ts`), as the
+  check before phase 2 showed on a real server, which is how the plugin tells its task prompt from
+  other `user` items; a `user` item says nothing about
   its origin, and prompts through `opencode run` and the API arrive with `metadata: null`;
   `/goal`'s kickoff carries `source: "goal"`; `session.inbox.cancelled` is published for an item
   withdrawn before delivery; what the TUI sends, once confirmed. Under "OpenCode's subagent tool":
@@ -803,7 +867,10 @@ full suite; `e2e/tui.sh` for the panel check.
 
 ### Phase 5: the real model
 
-Runs in the owner's sandbox only, after phases 1 to 4 are merged.
+Runs in the owner's sandbox only. Before the pull request of phases 1 to 4 is merged: five
+`recursive-finding` runs on its branch with the final envelope body, since the ten runs above used
+a shorter body with a different attribute. After it is merged: every scenario, and the two arms of
+`recursive-conflict`.
 
 #### 26. `e2e/real-model.sh` (Modify)
 
@@ -839,13 +906,17 @@ Runs in the owner's sandbox only, after phases 1 to 4 are merged.
 ### Verification Plan
 
 * **Compilation/Build**: `bun run typecheck`, `bun run build`.
-* **Unit Tests**: `bun test`; items 4, 5, 11, 12, 13, 16 and 28 above; `bun test
-  --update-snapshots` once in phase 3.
+* **Unit Tests**: `bun test`; items 0.4, 4, 5, 11, 12, 13, 16 and 28 above; `bun test
+  --update-snapshots` once in phase 0 and once in phase 3.
 * **Static Analysis**: SonarCloud in CI.
 * **Test Coverage Requirement**: none beyond the tests named.
 * **E2E/Integration**: the live suite's four shards, `e2e/tui.sh` and `e2e/two-servers.sh` in the
-  sandbox; `e2e/real-model.sh` on every scenario (about 20 runs, 700 requests, in batches on the
-  free tier or on a paid key), and `recursive-conflict` in three arms, five runs each.
+  sandbox. Real model, in the owner's sandbox: after phase 0, `recursive-finding` and
+  `recursive-fault`, five runs each (about 350 requests); before phase 2, the metadata check on the
+  `probe-prompts` branch; before the merge of phases 1 to 4, five `recursive-finding` runs on that
+  branch (about 175 requests); after it, `e2e/real-model.sh` on every scenario (about 20 runs, 700
+  requests, in batches on the free tier or on a paid key) and `recursive-conflict` in two arms,
+  five runs each (about 350 requests).
 
 --------------------------------------------------------------------------------
 

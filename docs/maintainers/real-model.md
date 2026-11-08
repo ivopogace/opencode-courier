@@ -67,7 +67,7 @@ stops moving:
 ### No sleeps
 
 The fan-out and recursive prompts give each command as it is, with no `sleep` standing in for work.
-`recursive-finding` is the exception, for a reason of its own (below).
+`recursive-finding`'s parts wait on files the checker creates (below).
 A report that reaches a parent while its turn still runs is
 steered into that turn, and the checkers count it as delivered: the first turn may hold reports, and
 one look after each report, in a turn of its own or steered in, is not polling.
@@ -237,12 +237,15 @@ bun script/real-model-table.ts $(for n in 1 2 3 4 5; do echo skill=$HOME/courier
 
 ## A finding passed on
 
-`COURIER_SCENARIO=recursive-finding`: the recursive job with halves of `sleep 150` and a "count" part
-of `sleep 20`: the "count" session must still be running when the person writes, and the halves when
-the finding has come down two levels. The checker,
-run with `--finding`, plays the person: once the "count" session's turn runs, it prompts that
-session that every file of the job must hold its number followed by ` checked`. Neither the prompt
-nor the person's message says to pass it on; the brief and the skill do.
+`COURIER_SCENARIO=recursive-finding`: the recursive job with parts that wait on files before they
+print: the "count" session must still be running when the person writes, and the halves when the
+finding has come down two levels. The checker, run with `--finding`, plays the person: once the
+"count" session's turn runs, it prompts that session that every file of the job must hold its number
+followed by ` checked`, then creates `.go-count`, which lets that part go on. Once each session the
+other part started has been sent a message without a status after the finding reached that part, it
+creates `.go-halves`, which lets the halves go on. Each wait ends after 150 s if its file never
+comes. Neither the prompt nor the person's message says to pass the finding on; the brief and the
+skill do.
 
 The checks: the nine, with each file holding `<number> checked`, then four. The person's message
 reached the "count" session; that session sent it to the root with a `courier_send` without a
@@ -260,8 +263,8 @@ for n in 1 2 3; do run finding-skill-$n; run finding-noskill-$n COURIER_SKILL=de
 bun script/real-model-table.ts $(for n in 1 2 3; do echo skill=$HOME/courier-runs/finding-skill-$n noskill=$HOME/courier-runs/finding-noskill-$n; done)
 ```
 
-A slow model needs `COURIER_TIMEOUT=600`: the halves sleep 150 s, and with steps of 20 s or more
-the default wait gives up while a sub-orchestrator's wake turn still runs.
+A slow model needs `COURIER_TIMEOUT=600`: with steps of 20 s or more the default wait gives up while
+a sub-orchestrator's wake turn still runs.
 
 | Condition | Result |
 |---|---|

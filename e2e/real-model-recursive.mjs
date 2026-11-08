@@ -115,6 +115,14 @@ const sendsTo = (list, to) =>
   )
 const sentBefore = (one, other) => one.index < other.index || (one.index === other.index && one.place < other.place)
 const reportsTo = (list, parentID) => sendsTo(list, parentID).filter((send) => send.status)
+const delivered = (list, from, after = -1) => list.findIndex((message, index) => index > after && sendersOf(message).includes(from) && !groupOf(message) && !statusOf(message, from))
+const plainAfter = (list, to, after) => sendsTo(list, to).find((send) => send.index > after && !send.status)
+const passedDown = (entry) => {
+  const reached = delivered(entry.list, rootID)
+  const below = spawnsOf(entry.list)
+  return reached !== -1 && below.length > 0 && below.every((child) => plainAfter(entry.list, child, reached))
+}
+const go = (name) => writeFileSync(join(work, "project", name), "")
 
 async function readTree() {
   const sessions = new Map([[rootID, { parentID: undefined, depth: 0, list: await messages(rootID) }]])
@@ -145,7 +153,10 @@ for (;;) {
       if (!response.ok) throw new Error(`the person's message to ${count[0]}: HTTP ${response.status}`)
       told = true
       console.log(`  (told ${count[0]}, the "count" session, as the person: ${PERSON_NOTE})`)
+      go(".go-count")
     }
+    const parts = [...tree.values()].filter((entry) => entry.depth === 1 && !isCount(entry.list))
+    if (told && parts.length > 0 && parts.every(passedDown)) go(".go-halves")
     const spawned = [...tree].filter(([id]) => id !== rootID)
     const reported = spawned.filter(([id, entry]) => deliveriesFrom(tree.get(entry.parentID).list, id).length > 0)
     const quiet = [...tree.values()].every((entry) => settled(entry.list))
@@ -326,8 +337,6 @@ const stagedChecks = [
   ["the session that staged reported upward once, with status done", stagerUpward.length === 1 && stagerUpward[0].status === "done"],
 ]
 
-const delivered = (list, from, after = -1) => list.findIndex((message, index) => index > after && sendersOf(message).includes(from) && !groupOf(message) && !statusOf(message, from))
-const plainAfter = (list, to, after) => sendsTo(list, to).find((send) => send.index > after && !send.status)
 const [countID, countEntry] = [...tree].find(([, entry]) => entry.depth === 1 && isCount(entry.list)) ?? []
 const noteAt = countEntry ? countEntry.list.findIndex((message) => message.type === "user" && message.text?.includes(PERSON_NOTE)) : -1
 const up = countEntry && noteAt !== -1 ? plainAfter(countEntry.list, rootID, noteAt) : undefined

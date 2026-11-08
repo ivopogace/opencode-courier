@@ -127,10 +127,10 @@ case $SCENARIO in
     CHECKER_FLAGS=--staged
     ;;
   recursive-finding)
-    # The recursive job, with halves long enough for what the person tells the "count" session mid-run to reach them;
-    # the checker plays the person, so the prompt says nothing of it. It has sleeps, as no other: the "count" session must be
-    # running when the person writes, and the halves when the finding has come down two levels.
-    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `sleep 150; echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `sleep 150; echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `sleep 20; echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
+    # The recursive job, with parts that wait on files the checker creates, so that what the person tells the "count" session
+    # mid-run reaches the halves; the checker plays the person, so the prompt says nothing of it. The "count" session must be
+    # running when the person writes, and the halves when the finding has come down two levels; 150 s bounds a file that never comes.
+    PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `for i in $(seq 150); do [ -e .go-halves ] && break; sleep 1; done; echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `for i in $(seq 150); do [ -e .go-halves ] && break; sleep 1; done; echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `for i in $(seq 150); do [ -e .go-count ] && break; sleep 1; done; echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
     export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
     CHECKER=real-model-recursive.mjs

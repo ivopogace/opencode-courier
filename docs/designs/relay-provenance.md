@@ -114,9 +114,8 @@ alike. So the envelope attests the route and the session, not the person.
   scenario built to provoke one. While the question is open, the slot is empty (candidate 3), and
   with the slot empty the envelope asks nothing that binds a receiver to the text.
 
-  Owner's decision, with the scenario: run three arms, one per candidate (fifteen runs, about 525
-  model requests), or ship candidate 3 and run the scenario once as a five-run regression, adding a
-  clause only if a countermand appears.
+  Decided by the author: the scenario runs in three arms, one per candidate, fifteen runs and about
+  525 model requests in all, before the wording is final.
 
 ## Critical User Journeys (CUJs)
 
@@ -405,7 +404,7 @@ Arms: three commits on the implementation branch that differ only in the clause 
 the checker writes it into `summary.json`. Five runs per arm, about 35 requests each. An arm is
 chosen when its total of countermands and `numbers/b.txt` replacements is at least two below each
 other arm's; otherwise candidate 3. No option or variable selects the arm, so nothing of the
-measurement ships. The owner's cheaper form is in [Open Questions](#open-questions).
+measurement ships.
 
 ### Risks and mitigations
 
@@ -827,8 +826,7 @@ Runs in the owner's sandbox only, after phases 1 to 4 are merged.
 * **Test Coverage Requirement**: none beyond the tests named.
 * **E2E/Integration**: the live suite's four shards, `e2e/tui.sh` and `e2e/two-servers.sh` in the
   sandbox; `e2e/real-model.sh` on every scenario (about 20 runs, 700 requests, in batches on the
-  free tier or on a paid key), and `recursive-conflict` as the owner decides in
-  [Open Questions](#open-questions).
+  free tier or on a paid key), and `recursive-conflict` in three arms, five runs each.
 
 --------------------------------------------------------------------------------
 

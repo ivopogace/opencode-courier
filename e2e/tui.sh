@@ -455,18 +455,18 @@ submit "/courier tree"
 check "the panel lists the asking child and says one older session is left out" \
   "$([ "$(shows "1 older left out" 30 tui-past-panel)" = true ] && grep -qF "CHILD-ASKS  waiting on you · owes a report" "$WORK/tui-past-panel.txt" && echo true || echo false)"
 # A line typed into a child opened from the panel reaches the root as a route="prompt" envelope: the third child
-# is live, so the tree is at work.
+# is live, so the tree is at work. The panel has the keyboard while it is open, so q closes it first.
 tmux send-keys -t "$TMUX_SESSION" Down
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "enter on the idle child's row opens it, the panel following" "$(shows "(on screen)  idle · reported done" 30 tui-past-child)"
+tmux send-keys -t "$TMUX_SESSION" q
+check "q closes the panel" "$(hides "courier tree" 10 tui-past-panel-closed)"
 submit "TYPED-INTO-CHILD"
 typed_envelopes() {
   api "session/$asker_parent/message" | jq -r --arg id "$second" '[.data[] | select(.type == "synthetic") | .text | select(startswith("<courier from=\"courier\" route=\"prompt\" in=\"" + $id + "\">"))] | length'
 }
 check "the root holds exactly one route=\"prompt\" envelope for the line typed into the child" \
   "$(for _ in $(seq 1 30); do [ "$(typed_envelopes)" = 1 ] && { echo true; exit; }; sleep 1; done; echo false)"
-tmux send-keys -t "$TMUX_SESSION" q
-check "q closes the panel" "$(hides "courier tree" 10 tui-past-panel-closed)"
 
 # The top session's own permission request (#185): courier_answer's once asks the person in the parent's session, and
 # the inbox, opened from the asking child, lists that prompt first and allows it, which passes the child's answer on.

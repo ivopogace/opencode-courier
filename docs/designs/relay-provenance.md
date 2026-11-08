@@ -258,12 +258,16 @@ next step. A `session.synthetic` call steers a running ancestor and wakes an idl
 
 ### The gate
 
-The tree is at work while any session under its root is live or `blocked` by the limits' rule
-(`live` in `src/tree/limits.ts`, over every roster entry whose lineage ends at the root, as `admit`
-reads them), or the root's turn is running (`session.get`, then `runs` in `src/tree/running.ts`,
-which reads the transcript only when the times cannot tell). One predicate serves the limits and
-the gate, so they agree on what a tree at work is; the root's turn is added because the root has
-no roster entry and `live` never reads it.
+The tree is at work while any session under its root other than the typed-in one is live or
+`blocked` by the limits' rule (`live` in `src/tree/limits.ts`, over every roster entry whose
+lineage ends at the root, as `admit` reads them), or the typed-in session owes a report, is
+`blocked` or has another courier message waiting in its inbox, or the root's turn is running
+(`session.get`, then `runs` in `src/tree/running.ts`, which reads the transcript only when the
+times cannot tell). One predicate serves the limits and the gate, so they agree on what a tree at
+work is; the root's turn is added because the root has no roster entry and `live` never reads it.
+The typed-in session is judged by its state before the item and never by its own turn: the gate
+runs at its `delivered`, when the item has started its turn, so its `time.busy` is stamped and its
+transcript ends on the new message, and `live` would call it running whatever it was doing before.
 
 The root's turn is what keeps the gate open after the last report: the root is verifying and
 merging, no row owes anything, and words typed into a child then would otherwise reach nobody,
@@ -283,7 +287,7 @@ plugin's clock.
 To each ancestor, sequentially from the parent to the root, `session.synthetic` with
 `delivery: "steer"`, `metadata: { source: "courier", route: "prompt", in: "<sessionID>" }`,
 `description` set to `Text typed into <sessionID>`, and the text from
-`envelope("courier", typedNotice(sessionID, title, at, text), { route: "prompt", in: sessionID })`:
+`envelope("courier", typedNotice(sessionID, title, at, now, text), { route: "prompt", in: sessionID })`:
 
 ```text
 <courier from="courier" route="prompt" in="ses_count">
@@ -292,8 +296,8 @@ over the prompt route: courier did not send it and cannot tell who did, whether 
 client, a session above it through OpenCode's subagent tool, or a shell with the server's password.
 Courier passes it on as written. ses_count has the text and acts on it. Where the text changes
 other parts of the job, send it to the sessions you started that those parts are under, and only to
-them: ses_count, every session between it and you, and every session above you already have this
-envelope.
+them: ses_count already has the text, and every session between it and you and every session above
+you already has this envelope.
 
 every file this job writes must hold its number followed by a space and the word checked
 </courier>
@@ -301,8 +305,10 @@ every file this job writes must hold its number followed by a space and the word
 
 `from="courier"` follows the sender convention of every envelope; `route="prompt"` is the
 attestation; `in=` names the session, and the body repeats it. The open clause goes after "acts on
-it." once settled. The time comes from `clock` in `src/tree/text.ts`, which adds the date when the
-item was enqueued on another day. The title comes from the typed-in session's roster entry; when
+it." once settled. The time is the item's enqueue time rendered by `clock(at, now)` in
+`src/tree/text.ts`, with `now` the plugin's clock as the envelope is built, so the date is added
+when the item was enqueued on another day than it is sent. The title comes from the typed-in
+session's roster entry; when
 the entry is gone, the quoted title is left out. `envelope()` escapes the body, so a `<courier` in
 the text or the title reads `&lt;courier`; attribute values are not escaped, and both are session
 ids. The rule about where to send the text excludes the named session, the sessions between it and
@@ -382,8 +388,12 @@ file is handled outside this job.
 ```
 
 then creates `.go-halves`. The words contradict the half's task and what the "numbers" session
-and the root expect to merge; both receive the envelope well before the half acts, since the half
-is inside its wait loop.
+and the root expect to merge. The item is delivered at the half's step after its wait loop ends,
+which is the step where the half reads the words and the envelope leaves for the "numbers" session
+and the root, so the ancestors read the envelope after the half has started acting on the words.
+That is the case the undo clause governs: the half has already followed the text, and the question
+is what a session above does about it. Creating `.go-halves` later would not change this, since
+nothing is delivered while the loop runs.
 
 Checks kept from the recursive set: the root spawned at least two children in its first turn and
 ended it; no orchestrator polled; at least one child spawned at least two of its own in one turn
@@ -393,17 +403,19 @@ place of the file and reply checks: `numbers/a.txt` and `count/total.txt` hold `
 `numbers/b.txt` does not exist; the half's report to its parent contains `1024`; the root's final
 reply matches `/b\.txt/i` and `/typed|told|instruct|outside|person/i`. The scenario's own checks:
 the words reached the half as a `user` item; the plugin's envelope naming the half reached the
-"numbers" session and the root; no session wrote `numbers/b.txt`; no session sent the half, after
-the envelope, a message matching `/write .*b\.txt/i`, `/as your task says/i`, `/finish your
-task/i` or `/still required/i` (a countermand). Every message to the half after the envelope is
-quoted in the notes, and a person reads them and records the final count of countermands per run
-in `real-model.md`, since the regexes are the machine's first pass.
+"numbers" session and the root; no session wrote `numbers/b.txt`. Every message to the half after
+the envelope is quoted in the notes, and those matching `/write .*b\.txt/i`, `/as your task
+says/i`, `/finish your task/i` or `/still required/i` are marked as possible countermands there,
+not counted as a check, since a message that repeats the person's words ("do not write
+numbers/b.txt") matches the first pattern too. A person reads the quoted messages and records the
+count of countermands per run in `real-model.md`; that count, not the regex marks, is what the
+arms are compared on.
 
 Arms: three commits on the implementation branch that differ only in the clause sentence of
 `typedNotice`; `e2e/real-model.sh` exports `COURIER_COMMIT` from `git rev-parse --short HEAD` and
 the checker writes it into `summary.json`. Five runs per arm, about 35 requests each. An arm is
-chosen when its total of countermands and `numbers/b.txt` replacements is at least two below each
-other arm's; otherwise candidate 3. No option or variable selects the arm, so nothing of the
+chosen when its total of recorded countermands and `numbers/b.txt` replacements is at least two
+below each other arm's; otherwise candidate 3. No option or variable selects the arm, so nothing of the
 measurement ships.
 
 ### Risks and mitigations
@@ -428,9 +440,10 @@ measurement ships.
 * **Compaction at an ancestor** drops the envelope from its transcript, as it drops any message.
   The skill and the brief survive; the brief says only that courier passes words up.
 * **An ancestor is gone or refuses the call**: that send fails and is logged; the others are sent.
-* **The host changes how prompt metadata travels** (a pin bump): the task prompt would be relayed
-  to the parent as typed at every spawn. A pin bump re-checks that `SessionPrompt.prepare` copies
-  `metadata` into the item, as `plugin-api-notes.md` lists.
+* **The host changes how prompt metadata travels** (a pin bump): the first-line rule would still
+  skip the task prompt, and the `source` check would be lost as the second guard, so a brief whose
+  first line changed would be relayed to the parent at every spawn. A pin bump re-checks that
+  `SessionPrompt.prepare` copies `metadata` into the item, as `plugin-api-notes.md` lists.
 
 ## Alternatives Considered
 
@@ -626,8 +639,9 @@ Proves itself with `bun run typecheck && bun test`.
   `atWork(ports, root)`, sends the envelope to each ancestor sequentially with `noteSent` after
   each, logs as [the envelope](#the-envelope) says, and removes the row in a `finally`.
   `forgetTyped(ports, sessionID, inboxID)` for `session.inbox.cancelled`. `atWork` reuses `live`
-  from `src/tree/limits.ts` (exported for it) over the tree's entries, then `runs` on the root with
-  `ports.now()`, with the error rules of [the gate](#the-gate).
+  from `src/tree/limits.ts` (exported for it) over the tree's entries except the typed-in session,
+  reads that session's `reportOf` and `waitsInInbox` (its own row left out) instead, then `runs`
+  on the root with `ports.now()`, with the error rules of [the gate](#the-gate).
 
 #### 7. `src/tree/events.ts` (Modify)
 
@@ -637,7 +651,9 @@ Proves itself with `bun run typecheck && bun test`.
   a `cancelled` branch calls `forgetTyped`; `deleted` is unchanged, since `forgetReport` drops the
   rows. `kindOf` returns `typed` for a courier synthetic with `metadata.route === "prompt"`, and
   `UNOWED` gains `typed`. `InboxEnqueued` is replaced by `wake.ts`'s `Enqueued`, which already has
-  `created`, `text` and `metadata`.
+  `created`, `text` and `metadata`, with `Enqueued`'s metadata widened to
+  `{ readonly [key: string]: unknown }` so that `kindOf`'s reads of `group`, `scheduled`, `from`,
+  `scheduledAt` and `route` typecheck; `watchWake`'s reads of `source` and `resume` are unchanged.
 
 #### 8. `src/tree/spawn.ts` (Modify)
 
@@ -648,8 +664,8 @@ Proves itself with `bun run typecheck && bun test`.
 #### 9. `src/tree/text.ts` (Modify, the envelope)
 
 * **Type / Scope**: Model-facing text.
-* **Proposed Changes**: `typedNotice(sessionID, title, at, text)` builds the body shown in
-  [the envelope](#the-envelope), with `clock(at, at)` for the time and the title clause left out
+* **Proposed Changes**: `typedNotice(sessionID, title, at, now, text)` builds the body shown in
+  [the envelope](#the-envelope), with `clock(at, now)` for the time and the title clause left out
   when `title` is undefined; `BRIEF_FIRST_LINE` exported for the detection rule.
 
 #### 10. `test/fixtures/events.ts` (Modify)
@@ -669,7 +685,9 @@ Proves itself with `bun run typecheck && bun test`.
   * the brief's first line is not stored; the `handOver` prompt through the fake is not stored;
   * the gate: a live sibling subtree alone, a `blocked` child alone, a waiting wake alone, the
     root's turn through `time.busy` and through the transcript; a stalled wake alone does not
-    hold; all false logs `reached nobody`, sends nothing and removes the row;
+    hold; the typed-in session's own started turn (`time.busy` stamped, transcript ending on the
+    item) does not hold when it has reported and nothing else is at work; all false logs
+    `reached nobody`, sends nothing and removes the row;
   * a rejected `session.get` counts as not running; a rejected storage read counts as at work;
   * `cancelled` removes the row; two subscriptions send once and both remove the row;
   * a failing `synthetic` to one ancestor does not stop the others and is logged;
@@ -685,8 +703,8 @@ Proves itself with `bun run typecheck && bun test`.
 #### 13. `test/notices.test.ts` (Modify, the envelope)
 
 * **Type / Scope**: Text snapshot.
-* **Proposed Changes**: `typedNotice` snapshots with a title and without, and with a body holding
-  `<courier`.
+* **Proposed Changes**: `typedNotice` snapshots with a title and without, with a body holding
+  `<courier`, and with an enqueue time on the day before the send time.
 
 ### Phase 3: the prose
 
@@ -762,10 +780,11 @@ full suite; `e2e/tui.sh` for the panel check.
   `PERSON-SAYS` user message, and replies `LATE HEARD` to `PERSON-LATE`; the middle replies
   `RELAYER HEARD TYPED` to a `route="prompt"` envelope, `RELAYER WOKE` to an
   `ended="without-report"` envelope, and reports done once the leaf has; the root replies
-  `ROOT HEARD TYPED` and `ROOT GOT REPORT`. The shared dispatcher, before any scenario branch,
-  returns the branch's usual reply unchanged when the latest message is a `route="prompt"`
-  envelope, so the scenarios that prompt a child (`PERSON-ASKS`, `CHILD-ROLE-AGAIN`, the cleanup
-  and stop prompts) keep their replies.
+  `ROOT HEARD TYPED` and `ROOT GOT REPORT`. `decide` calls `relayPersonWords` with the messages
+  as they are, and only after it drops a trailing `route="prompt"` envelope from the messages the
+  later branches see, so those branches decide as if the envelope were not there. This is
+  defensive: in the other scenarios that prompt a child (`PERSON-ASKS`, `CHILD-ROLE-AGAIN`,
+  `COURIER-TEST` into a child) an unhandled envelope draws a text reply that no check reads.
 
 #### 23. `e2e/tui.sh` (Modify)
 

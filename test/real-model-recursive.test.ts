@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -600,3 +600,42 @@ describe("the recursive checker and a sub-orchestrator that reports in the turn 
     expect(check(earlyRun("twice")).failed).toEqual([UPWARD])
   })
 })
+
+async function liveFinding(variant: "passed" | "not-down") {
+  const { tree, files, expect: expected } = findingRun(variant)
+  const running = tree.ses_count!.slice(0, 2)
+  let told = false
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname
+      if (request.method === "POST" && path === "/api/session/ses_count/prompt") {
+        told = true
+        return Response.json({})
+      }
+      const id = path.split("/")[3] ?? ""
+      return Response.json({ data: id === "ses_count" && !told ? running : tree[id] })
+    },
+  })
+  const work = mkdtempSync(join(tmpdir(), "rmr-"))
+  mkdirSync(join(work, "project"))
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("COURIER_")))
+  try {
+    const run = Bun.spawn([process.execPath, CHECKER, "ses_root", "--finding"], {
+      env: { ...env, WORK: work, SERVER: server.url.origin, OPENCODE_PASSWORD: "test", COURIER_EXPECT: expected ?? "", COURIER_FILES: Object.keys(files).join(" ") },
+      stdout: "ignore",
+      stderr: "ignore",
+    })
+    await run.exited
+    return { told, count: existsSync(join(work, "project", ".go-count")), halves: existsSync(join(work, "project", ".go-halves")) }
+  } finally {
+    await server.stop(true)
+    rmSync(work, { recursive: true, force: true })
+  }
+}
+
+test("run live with --finding, the checker lets the count part go once it has written as the person, and the halves once each was sent the finding", async () => {
+  const [passed, notDown] = await Promise.all([liveFinding("passed"), liveFinding("not-down")])
+  expect(passed).toEqual({ told: true, count: true, halves: true })
+  expect(notDown).toEqual({ told: true, count: true, halves: false })
+}, 20_000)

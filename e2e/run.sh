@@ -119,7 +119,6 @@ turn_ended() {
     sleep 0.5
   done
   echo "turn_ended: session $1 did not end its turn in ${2:-30} s" >&2
-  sleep 1
 }
 # The barrier before a check that nothing followed session $1's last turn end, once turn_ended has seen it: waits up to $3
 # (default 30) s until the courier has handled that end. $2 is the top of $1's tree. The courier handles each event in turn,
@@ -2184,7 +2183,7 @@ run_inbox() {
   check "the parent's own question was withdrawn, saying it is settled: no second ask" \
     "$(has_text "$parent" "Session $child no longer waits on this question: it was answered by the person (" 30)"
   check "both forms are gone" "$([ "$(forms_of "$parent")" = 0 ] && [ "$(forms_of "$child")" = 0 ] && echo true || echo false)"
-  check "and no notice besides" "$(sleep 2; notices_with "$parent" answered | jq -r 'length == 0')"
+  check "and no notice besides" "$(turn_ended "$parent"; end_handled "$parent" "$parent" && notices_with "$parent" answered | jq -r 'length == 0' || echo false)"
   check "answering it again passes nothing on" \
     "$(inbox answer "{\"sessionID\":\"$child\",\"requestID\":\"$question\",\"answers\":[[\"Hey\"]]}" | jq -r '.output == {answered: false}')"
 
@@ -2198,7 +2197,7 @@ run_inbox() {
   check "the answer went to the child's waiting call" "$([ "$answered" = '{"answered":true,"by":"result"}' ] && echo true || echo false)"
   check "the child got it and reported" "$(has_text "$parent" 'CHILD GOT [["Hey"]]' 45)"
   check "the parent was told once that the person answered it, not its own session" \
-    "$(sleep 2; notices_with "$parent" answered | jq -r --arg question "$question" 'length == 1 and (.[0] | contains("request=\"" + $question + "\"") and contains("was answered by the person (") and (contains("in its own session") | not))')"
+    "$(turn_ended "$parent"; end_handled "$parent" "$parent" && notices_with "$parent" answered | jq -r --arg question "$question" 'length == 1 and (.[0] | contains("request=\"" + $question + "\"") and contains("was answered by the person (") and (contains("in its own session") | not))' || echo false)"
 }
 
 # A tree's record (#260): written as turns end in it, under memory/<projectID>/<topSessionID>, read back with courier_recall;

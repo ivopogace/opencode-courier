@@ -102,6 +102,12 @@ shows_with() {
   done
   echo "$shown"
 }
+# Types $1 into the prompt and presses Enter once the prompt shows it.
+submit() {
+  tmux send-keys -t "$TMUX_SESSION" "$1"
+  shows "$1" 10 submit >/dev/null
+  tmux send-keys -t "$TMUX_SESSION" Enter
+}
 kv() { XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" "$@"; }
 # Whether the line $1 is gone from the TUI's screen within $2 s; the screen is kept in $WORK/$3.txt.
 hides() {
@@ -274,9 +280,7 @@ contexts=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[].conte
 echo "  $contexts"
 check "the RPC's tree carries a mock-model child's context use: a fraction of the model's window" \
   "$(jq -r 'map(select(. != null)) | length > 0 and all(. > 0 and . <= 1)' <<<"$contexts")"
-tmux send-keys -t "$TMUX_SESSION" "/courier tree"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier tree"
 check "the panel opens with the bar: 1 of 2 parts reported" "$(shows "courier tree  [█████░░░░░] 1/2 reported" 30 tui-panel)"
 check "its first row is the parent, on screen and selected (#395)" "$(grep -qE '▸ . .*\(on screen\)' "$WORK/tui-panel.txt" && echo true || echo false)"
 check "it has the reported child's row" "$(grep -qF "✓ Report back to your parent.  idle · reported done · group pair held" "$WORK/tui-panel.txt" && echo true || echo false)"
@@ -310,9 +314,7 @@ check "the footer follows it" "$(shows "courier 2 idle" 30 tui-released)"
 echo "  $(footer tui-released)"
 check "and the group is gone from it" "$([[ $(footer tui-released) != *"group pair"* ]] && echo true || echo false)"
 # Reopened, down and enter open the first child; the panel follows it there, with the parent's tree and the child marked (#158).
-tmux send-keys -t "$TMUX_SESSION" "/courier tree"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier tree"
 check "the panel opens again" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-again)"
 # The parent's own row is selected first, marked: down selects its first child.
 check "the parent's own row is selected first" "$(grep -qE '▸ +[^✓].*\(on screen\)' "$WORK/tui-panel-again.txt" && echo true || echo false)"
@@ -347,9 +349,7 @@ check "q closes it there" "$(hides "courier tree" 10 tui-panel-followed-closed)"
 echo "a panel opened at 100 columns splits once the terminal is widened and the panel followed"
 COLS=100 open_tui tui-narrow "$parent"
 check "the TUI is open at 100 columns" "$(shows "courier 2 idle" 60 tui-narrow-footer)"
-tmux send-keys -t "$TMUX_SESSION" "/courier tree"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier tree"
 check "the panel opens" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-narrow-panel)"
 tmux resize-window -t "$TMUX_SESSION" -x 160 -y 40
 sleep 1
@@ -365,9 +365,7 @@ echo "/courier stop stops a child after a confirm, through courier_stop's path"
 refused=$(rpc stop "{\"sessionID\":\"$asking\",\"by\":\"$asking\"}")
 echo "  $refused"
 check "the RPC refuses a stop from a session not above the target" "$(jq -r '.type == "refused"' <<<"$refused")"
-tmux send-keys -t "$TMUX_SESSION" "/courier stop $asking"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier stop $asking"
 check "a confirm names the child" "$(shows "Stop \"CHILD-ASKS\"" 30 tui-stop-confirm)"
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "once confirmed, a toast says what was stopped" "$(shows "Stopped 1 session: 0 interrupted" 30 tui-stopped)"
@@ -395,9 +393,7 @@ check "its key opens the inbox over the prompt, listing the request" \
   "$([ "$(shows "Waiting on you (1)" 20 tui-prompt-inbox)" = true ] && grep -qF "Permission: shell echo courier-asks" "$WORK/tui-prompt-inbox.txt" && echo true || echo false)"
 open_tui tui-inbox "$asker_parent"
 check "the footer says one waits on the person" "$(shows "courier 1 waiting on you" 60 tui-inbox-footer)"
-tmux send-keys -t "$TMUX_SESSION" "/asks"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/asks"
 check "/asks typed into the prompt opens the inbox" "$(shows "Waiting on you (1)" 20 tui-inbox-slash)"
 tmux send-keys -t "$TMUX_SESSION" Escape
 check "Escape closes it" "$(hides "Waiting on you" 10 tui-inbox-slash-closed)"
@@ -412,10 +408,9 @@ check "the request was answered" "$([ "$(api "session/$asker/permission" | jq -r
 settled_notices() {
   api "session/$asker_parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains(" answered=\"once\""))] | length'
 }
-for _ in $(seq 1 30); do [ "$(settled_notices)" = 1 ] && break; sleep 1; done
-check "the parent was told once that it is settled" "$(sleep 2; [ "$(settled_notices)" = 1 ] && echo true || echo false)"
 check "the child carried on and reported" \
   "$(for _ in $(seq 1 45); do api "session/$asker_parent/message" | jq -e '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD DONE"))] | length > 0' >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
+check "the parent was told once that it is settled" "$([ "$(settled_notices)" = 1 ] && echo true || echo false)"
 
 # A tree past maxTotal (#188): the limit counts live sessions, so children started one after another outgrow it; every
 # read looks every one up, and a listing keeps the live ones first, then the newest, saying how many older are left out.
@@ -456,9 +451,7 @@ check "the inbox lists the request" \
   "$([ "$(shows "Waiting on you (1)" 20 tui-past-inbox)" = true ] && grep -qF "Permission: shell echo courier-asks" "$WORK/tui-past-inbox.txt" && echo true || echo false)"
 tmux send-keys -t "$TMUX_SESSION" Escape
 check "Escape closes it" "$(hides "Waiting on you" 10 tui-past-inbox-closed)"
-tmux send-keys -t "$TMUX_SESSION" "/courier tree"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier tree"
 check "the panel lists the asking child and says one older session is left out" \
   "$([ "$(shows "1 older left out" 30 tui-past-panel)" = true ] && grep -qF "CHILD-ASKS  waiting on you · owes a report" "$WORK/tui-past-panel.txt" && echo true || echo false)"
 tmux send-keys -t "$TMUX_SESSION" q
@@ -515,9 +508,7 @@ check "the tree's row waits, on the form" "$(jq -r '. == [{state: "waiting", wai
 open_tui tui-form "$searcher_parent"
 check "the footer says one waits on the person" "$(shows "courier 1 waiting on you" 20 tui-form)"
 echo "  $(footer tui-form)"
-tmux send-keys -t "$TMUX_SESSION" "/courier tree"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier tree"
 check "the panel's row says the child waits, and on what" \
   "$([ "$(shows "shows a form: Web Search" 15 tui-form-panel)" = true ] && grep -qF "CHILD-SEARCHES  waiting on you" "$WORK/tui-form-panel.txt" && echo true || echo false)"
 tmux send-keys -t "$TMUX_SESSION" q
@@ -548,9 +539,7 @@ check "the child is deleted over HTTP" \
 gone_row() { rpc tree "{\"sessionID\":\"$forget_parent\"}" | jq -r --arg id "$forget_child" '.output.rows[] | select(.sessionID == $id) | .state'; }
 check "the panel's tree reads it as gone" "$(for _ in $(seq 1 20); do [ "$(gone_row)" = gone ] && { echo true; exit; }; sleep 1; done; echo false)"
 check "the footer no longer counts it" "$(hides "courier 1 idle" 30 tui-forget)"
-tmux send-keys -t "$TMUX_SESSION" "/courier tree"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier tree"
 check "the panel shows the gone row and the x key" \
   "$([ "$(shows "x forget" 30 tui-forget-panel)" = true ] && grep -qF "Report back to your parent.  gone" "$WORK/tui-forget-panel.txt" && echo true || echo false)"
 tmux send-keys -t "$TMUX_SESSION" Down
@@ -587,9 +576,7 @@ index=$(jq -r --arg parent "$parent" '.output.records | map(.sessionID) | index(
 today=$(date +%F)
 open_tui tui-memory "$parent"
 check "the TUI is on the parent" "$(shows "courier 2 idle" 60 tui-memory-footer)"
-tmux send-keys -t "$TMUX_SESSION" "/courier memory"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier memory"
 check "/courier memory opens the view with every record of the project" "$(shows "Memory ($total)" 30 tui-memory-list)"
 # Every record is from this run, so "Today" heads the list and no date heads a group; the seeded lesson sits below it.
 # The dialog is drawn over the transcript, so a header shares its screen line with whatever is behind it.
@@ -625,9 +612,7 @@ tmux send-keys -t "$TMUX_SESSION" Escape
 check "esc closes the list" "$(hides "Memory ($total)" 10 tui-memory-closed)"
 # The pin (#285): p on the tree's row pins it, with no confirm; the list is read again with the record under Pinned, the
 # cursor on it, and the pin lies beside the record, which is not written; p again unpins it.
-tmux send-keys -t "$TMUX_SESSION" "/courier memory"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier memory"
 check "the view opens again, for the pin" "$(shows "Memory ($total)" 30 tui-memory-pin-open)"
 for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done
 tmux send-keys -t "$TMUX_SESSION" p
@@ -650,9 +635,7 @@ for n in 1 2 3; do
     '.sessionID = $id | .title = $title | .movedAt = $at | .startedAt = ($at - 60000) | del(.lesson)' <<<"$record")" "memory/$project/$parent"
 done
 total=$((total + 3))
-tmux send-keys -t "$TMUX_SESSION" "/courier memory"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier memory"
 check "the view opens again" "$(shows "Memory ($total)" 30 tui-memory-again)"
 tmux send-keys -t "$TMUX_SESSION" Down x
 check "x on the second row asks to forget it" "$(shows "of \"Cursor seed 2\"" 15 tui-memory-cursor-confirm)"
@@ -685,9 +668,7 @@ start_server
 check "the RPC says memory is off and lists nothing" "$(memory_rpc records '{}' | jq -r '.output.memory == false and .output.records == []')"
 open_tui tui-memory-off "$parent"
 check "the TUI is back on the parent" "$(shows "courier 2 idle" 60 tui-memory-off-footer)"
-tmux send-keys -t "$TMUX_SESSION" "/courier memory"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier memory"
 check "/courier memory says memory is off" "$([ "$(shows "Memory is off" 30 tui-memory-off)" = true ] && ! grep -qF "Memory (" "$WORK/tui-memory-off.txt" && echo true || echo false)"
 tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
 stop_server
@@ -705,9 +686,7 @@ check "the RPC's tree has a subagent row under the middle session" \
   "$(rpc tree "{\"sessionID\":\"$sub_root\"}" | jq -r --arg mid "$sub_mid" '[.output.rows[] | select(.subagent == true)] | length >= 1 and all(.parentID == $mid and .depth == 2)')"
 open_tui tui-subagent "$sub_root"
 check "the TUI is on the session" "$(shows "courier 1 running" 60 tui-subagent-footer)"
-tmux send-keys -t "$TMUX_SESSION" "/courier tree"
-sleep 1
-tmux send-keys -t "$TMUX_SESSION" Enter
+submit "/courier tree"
 check "the panel has the subagent's row, running and marked subagent" "$(shows "running · subagent" 30 tui-subagent-panel)"
 check "the middle session's bar counts no subagent as a part owed" "$(grep -qF "0/0 reported" "$WORK/tui-subagent-panel.txt" && echo false || echo true)"
 rpc stop "{\"sessionID\":\"$sub_mid\",\"by\":\"$sub_root\"}" >/dev/null || true

@@ -835,9 +835,9 @@ run_person_message() {
     .metadata.metadata.dropped == "blocked" and (.metadata.metadata | has("status") | not) and (.output | contains("without the status blocked"))')"
   check "the child got the message without a status" \
     "$([ "$(has_text "$child" "<courier from=\"$parent\">" 30)" = true ] && ! texts "$child" | grep -qF "<courier from=\"$parent\" status=" && echo true || echo false)"
-  check "the child heard it and reported" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 60)" ] &&
-    api "session/$parent/message" | jq -r --arg heard "HEARD <courier from=\"$parent\"> STEER: undo it" \
-      '[.data[] | select(.type == "synthetic") | .text | select(contains($heard))] | length == 1')"
+  check "the child heard it and reported, the tag it echoed escaped so the parent read one envelope" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 60)" ] &&
+    api "session/$parent/message" | jq -r --arg heard "HEARD &lt;courier from=\"$parent\"> STEER: undo it" \
+      '[.data[] | select(.type == "synthetic") | .text | select(contains($heard)) | select([match("</?courier"; "g")] | length == 2)] | length == 1')"
 }
 
 run_permission() {

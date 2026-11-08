@@ -18,7 +18,7 @@ export function envelope(from: string, message: string, attributes: Record<strin
   const extra = Object.entries(attributes)
     .map(([name, value]) => ` ${name}="${value}"`)
     .join("")
-  return `<courier from="${from}"${extra}>\n${message}\n</courier>`
+  return `<courier from="${from}"${extra}>\n${defuse(message)}\n</courier>`
 }
 
 const MAX_TEXT = 1500

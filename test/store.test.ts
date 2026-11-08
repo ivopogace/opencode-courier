@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { forgetChild } from "../src/tree/forget.js"
 import { holdReport, joinGroup, membershipOf } from "../src/tree/group.js"
 import type { RosterStorage } from "../src/tree/ports.js"
+import { pruneExpired } from "../src/tree/roster.js"
 import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
 import { memoryStore } from "../src/memory/store.js"
 
@@ -86,6 +87,39 @@ test("the stores write a child's roster entry, reverse key, report state and gro
     "remove report/ses_child/nudged",
   ])
   expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_child"])
+})
+
+test("a typed row is kept under typed/<sessionID>/<inboxID> and goes with the child's other rows", async () => {
+  const { storage, store, writes } = loggingStorage()
+  const children = childStore(storage)
+  await children.record({ sessionID: "ses_child", parentID: "ses_parent", title: "Child", directory: "/repo", isolated: false, createdAt: 1, reports: "status" })
+  writes.length = 0
+  await children.typed("ses_child", "msg_1", 10, "typed words")
+  await children.typed("ses_child", "msg_2", 11, "more")
+  expect(writes).toEqual(['set typed/ses_child/msg_1 {"at":10,"text":"typed words"}', 'set typed/ses_child/msg_2 {"at":11,"text":"more"}'])
+  expect(await children.typedOf("ses_child", "msg_1")).toEqual({ at: 10, text: "typed words" })
+  expect(await children.typedOf("ses_child", "msg_9")).toBeUndefined()
+  expect(await children.typedSessions()).toEqual(new Set(["ses_child"]))
+
+  await children.forgetTyped("ses_child", "msg_1")
+  expect(store.has("typed/ses_child/msg_1")).toBe(false)
+  expect(store.has("typed/ses_child/msg_2")).toBe(true)
+
+  await forgetChild(storage, "ses_parent", "ses_child")
+  expect(await children.typedSessions()).toEqual(new Set())
+})
+
+test("the load sweep drops the typed rows of sessions with no roster entry", async () => {
+  const { storage, store } = loggingStorage()
+  const children = childStore(storage)
+  await children.record({ sessionID: "ses_child", parentID: "ses_parent", title: "Child", directory: "/repo", isolated: false, createdAt: Date.now(), reports: "status" })
+  await children.typed("ses_child", "msg_1", 10, "kept")
+  await children.typed("ses_gone", "msg_2", 10, "dropped")
+
+  await pruneExpired(storage, Date.now(), () => true)
+
+  expect(store.has("typed/ses_child/msg_1")).toBe(true)
+  expect(store.has("typed/ses_gone/msg_2")).toBe(false)
 })
 
 test("the wake store keeps a watched message under wake/<sessionID>/<inboxID>, without its key's ids, and reads back what it wrote", async () => {

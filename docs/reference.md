@@ -193,11 +193,10 @@ without polling, checks each part and sends one combined report. At `maxDepth` i
 task itself. Any spawned session is told to send its parent a finding the other parts need (an
 assumption of the split that is wrong, a shared file or API that behaves otherwise) at once, without
 a status, and carry on; progress alone is not worth a message. A finding that a session it started
-sends it goes on to its parent the same way when it reaches past its own part. A message the person
-writes in its session, outside a `<courier>` envelope, is for the whole job: it sends it to its
-parent at once, without a status and quoted as the person's, before it acts on it, then carries on.
-The person's words that a session it started passes it go on to its parent the same way, always,
-so they climb the whole tree to the top.
+sends it goes on to its parent the same way when it reaches past its own part. Courier passes what the person
+writes in its session, outside a `<courier>` envelope, to the sessions above it, in an envelope
+marked `route="prompt"` ([steering](#steering-a-running-tree)). The session is told not to send it up
+itself: it acts on it and says in its report what it did because of it.
 
 **The role.** Every spawned session carries one line in its system prompt, `opencode-courier role: …`,
 in the `role` entry of its session instructions (OpenCode 2.2.0's `<context key="role">` block),
@@ -269,7 +268,10 @@ order:
    At the root, a permission request or question from below comes with its own instructions, and the
    model never answers for the person. A message that changes what other parts need goes on to the
    sessions it affects, and only to them, and below the root also to the parent when it reaches
-   past the session's own part or carries the person's words, as the brief says.
+   past the session's own part, as the brief says. Text typed into a session under it arrives in a
+   `route="prompt"` envelope that every session above it also has: it passes it only to the sessions
+   it started that it changes, and says that it arrived over the prompt route, so it is not read as
+   its own instruction ([steering](#steering-a-running-tree)).
 4. **Verify first-hand**, and answer a blocked report, through the person when only they can decide.
    On a partial or failed report the parent has the child finish or retry, does the rest itself,
    or starts a replacement.
@@ -280,12 +282,13 @@ order:
    the next tree should know something, none otherwise.
 
 Without the skill, a child's brief still carries the split rule, the one group, no polling, the
-limits, verifying, how to report and to send a finding or the person's words up. The root has no
+limits, verifying, how to report and to send a finding up, and that text typed into its session reaches the sessions above it
+by itself ([steering](#steering-a-running-tree)). The root has no
 brief: its role line carries the split rule until its first spawn, then only the limits and
 verifying. The tool descriptions carry the one group, no polling, check-ins, isolation, the model
 and `native`; the notices carry the relay and what to do about a child that fails or goes quiet.
 The skill alone adds the root's split rule after its first spawn, that several jobs are that many
-parts, the waves, writing a task, passing findings and the person's words on, answering a blocked,
+parts, the waves, writing a task, passing findings and prompt-route text on, answering a blocked,
 partial or failed report, merging, the definition of done and the root's lesson.
 
 Each check a part runs and each skill it loads may ask a permission, and every request below the
@@ -533,23 +536,87 @@ started by a running turn of the subtree while the stop runs may escape it.
 
 ## Steering a running tree
 
-The person steers a running tree by talking to any session in it:
+The person steers a running tree by talking to any session in it. In the `/courier tree` panel
+([In the terminal](#in-the-terminal)), `enter` opens any session, and what the person types goes to
+it like in any chat. A running session takes it into its current turn. Courier passes the text on to
+every session above it, so the tree's top sees it too, and a parent with the skill passes it to the
+parts it changes.
 
-- In the `/courier tree` panel ([In the terminal](#in-the-terminal)), `enter` opens any session, and what
-  the person types goes to it like in any chat. A running session takes it into its current turn.
-- To reach the rest of the tree, the person asks that session to tell its parent, or messages the
-  parent directly.
-- `courier_send` without a `status` is an ordinary message, not a report. It is delivered as `steer`
-  (or after the current turn with `queue: true`) and wakes the target if it is idle. It has no target
-  restriction, so a parent that got a finding can pass it on to its other children, which steers their
-  running turns. A `status` belongs on a report upward: on a message to a session below the sender
-  it is dropped, the message goes without it, and the result says so.
+**What is passed.** A session that has a roster parent passes up the text of a `user` item that
+reached it, once the session starts the item's turn. The text goes in a `session.synthetic` message
+to each ancestor, the parent first and the top last, steered into a running one and waking an idle
+one. An item counts when its text has something other than whitespace, its metadata has no
+`source` equal to `courier` and no `schedule`, and the text does not begin with the brief's first
+line. Only the text travels: files, agents and skills attached to the item do not, and the text is
+cut at 4000 characters with a note of how many were cut. A `user` item says nothing of its origin
+(see [the inbox](maintainers/plugin-api-notes.md#the-inbox-and-wakes)), so what is passed is judged
+by the item's kind:
 
-A child that finds something the other parts need, or is told it, sends it to its parent without a
-status, and a parent below the top passes it on up when it reaches past its own part
-([the brief](#session-trees-and-their-limits)); the skill has a parent pass such a message on to the
-children it affects ([the skill](#the-courier-orchestrate-skill)). Without the skill, ask
-the parent to pass it on.
+| `user` item | Passed up |
+|---|---|
+| Typing at the TUI, `opencode run --session`, a POST to the prompt route | yes |
+| A slash command's template (`/init`, `/review`, a project command): the whole template | yes |
+| A prompt with a skill attached: the typed text, not the skill's | yes |
+| A `/goal` kickoff that has attachments (`source: "goal"`) | yes |
+| A parent's `subagent` call with its native child's session id | yes, to that parent too |
+| A POST from a child's own shell, where the shell has the server's password | yes |
+| The TUI's `!` shell command | no: the TUI calls `session.shell`, which runs the command and records its start, its end and a `synthetic` notice of the result; it admits no `user` item |
+| A `/goal` kickoff without attachments | no: a `synthetic` item |
+| The plugin's own task prompt (`source: "courier"`) | no |
+| OpenCode's schedules (`metadata.schedule`) | no |
+
+No text heuristic recognises a command template: a project command says anything, and a wrong match
+would silence the person.
+
+**The gate.** The text is passed only while the tree is at work: another session under the top is
+running or `blocked` by the rule of [the limits](#session-trees-and-their-limits), or the session it
+was typed into owes a report, is `blocked` or has another courier message waiting in its inbox, or
+the top session's turn is running. The typed-in session is judged by its state before the item, since
+the item has started its turn. The top session's turn keeps the gate open after the last report, while
+it verifies and merges. What the gate silences: the top has ended its turn, every session has
+reported, nothing waits in any inbox, and the person then types into a session under it. A held group
+report does not keep the gate open by itself, and a stalled wake does not count. A tree the plugin
+cannot read counts as at work, so a failure never silences the person; the log has a line for each
+send that failed and one for the total.
+
+**The envelope.** Each ancestor gets the text in a courier envelope that names the route, not the
+person:
+
+```text
+<courier from="courier" route="prompt" in="ses_count">
+At 14:32 UTC this text arrived in session ses_count ("count the lines"), a session under yours,
+over the prompt route: courier did not send it and cannot tell who did, whether the person, a
+client, a session above it through OpenCode's subagent tool, or a shell with the server's password.
+Courier passes it on as written. ses_count has the text and acts on it. Where the text changes
+other parts of the job, send it to the sessions you started that those parts are under, and only to
+them: ses_count already has the text, and every session between it and you and every session above
+you already has this envelope.
+
+every file this job writes must hold its number followed by a space and the word checked
+</courier>
+```
+
+A slash command's template and a parent's `subagent` follow-up arrive with this same envelope as
+typed text, because a `user` item says nothing of its origin, and the envelope names the route, not
+the person. The follow-up a parent sends into its native child comes back to that parent as
+`route="prompt"`. A `<courier` tag in the text or the title is escaped. The envelope is progress for
+the session above, not a prompt: it owes no report, and a missed wake of it is re-sent like any
+courier message. A session's own account of what the person said is a message like any other; only
+an envelope the plugin wrote binds a receiver, as far as its text says.
+
+**Other ways to reach the tree.** `courier_send` without a `status` is an ordinary message, not a
+report. It is delivered as `steer` (or after the current turn with `queue: true`) and wakes the
+target if it is idle. It has no target restriction, so a parent that got a finding can pass it on to
+its other children, which steers their running turns. A `status` belongs on a report upward: on a
+message to a session below the sender it is dropped, the message goes without it, and the result says
+so.
+
+A child that finds something the other parts need sends it to its parent without a status, and a
+parent below the top passes it on up when it reaches past its own part
+([the brief](#session-trees-and-their-limits)). A parent with the skill passes a finding, and text
+that arrived over the prompt route, to the children it affects, and only to them
+([the skill](#the-courier-orchestrate-skill)). Without the skill, the envelope's own sentence says the
+same.
 
 ## Roster
 
@@ -756,6 +823,10 @@ subagents' own subagents too.
   that wakes it; the stop waits up to two seconds for that notice and interrupts the parent again. A
   subagent cannot be the target itself.
 - **The [record](#the-record)** lists them in `parts`, so its cost is the whole tree's.
+- **A follow-up into a native child.** A parent's `subagent` call with its native child's session id
+  prompts that child as a plain `user` item, which courier passes up to the parent too, as
+  `route="prompt"` ([steering](#steering-a-running-tree)). A plain subagent has no roster parent,
+  so a follow-up into it is passed to nobody.
 - **No role.** Their requests carry no role line and go without `courier_spawn`, `courier_recall`
   and `courier_note`, as a leaf's do: a subagent answers its parent's tool call and starts no tree of
   its own. The plugin tells one by its OpenCode `parentID` and its missing roster entry. A subagent of a

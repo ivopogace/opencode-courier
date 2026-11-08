@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { envelope } from "../src/kernel/protocol.js"
-import { failureNotice, silentNotice } from "../src/tree/text.js"
+import { BRIEF_FIRST_LINE, failureNotice, silentNotice, typedNotice } from "../src/tree/text.js"
 import { formNotice, formSettledNotice, permissionNotice, permissionSettledNotice as settledNotice } from "../src/person/text.js"
 import { personEvents } from "../src/person/events.js"
 import type { PersonState } from "../src/person/index.js"
@@ -13,7 +13,7 @@ import { send } from "../src/tree/send.js"
 import { joinGroup } from "../src/tree/group.js"
 import { awaited, reportOf } from "../src/tree/report.js"
 import { forgetChild } from "../src/tree/forget.js"
-import { childStore, groupStore, memberKey, promptKey, settledKey, toldKey } from "../src/tree/store.js"
+import { childStore, groupStore, memberKey, promptKey, settledKey, toldKey, typedKey, wakeStore } from "../src/tree/store.js"
 import {
   noteDeleted,
   noteInterrupted,
@@ -1389,5 +1389,310 @@ describe("the hub's subscriptions: one active, one standby", () => {
     expect(watchingThrough(opened.hub)).toHaveLength(2)
     for (const reload of reloads) await reload()
     resetHub()
+  })
+})
+
+describe("the fan-up of text typed into a spawned session", () => {
+  const REST = { created: 1, updated: 30, idle: 30 }
+  const entry = (sessionID: string, parentID: string, title: string) => ({ ...child(parentID), sessionID, title })
+  const item = (inboxID: string, text: string, metadata: Record<string, unknown> | null = null, sessionID = "ses_leaf", extra: Record<string, unknown> = {}) => ({
+    id: `evt_e_${inboxID}`,
+    type: "session.inbox.enqueued",
+    created: 500,
+    data: { sessionID, inboxID, item: { type: "user", payload: { text, metadata, ...extra }, delivery: "steer" } },
+  })
+  const taken = (inboxID: string, sessionID = "ses_leaf") => ({ id: `evt_d_${inboxID}`, type: "session.inbox.delivered", created: 600, data: { sessionID, inboxID } })
+  const envelopeOf = (text: string) => envelope("courier", typedNotice("ses_leaf", "Leaf", 500, 1_000_000, text), { route: "prompt", in: "ses_leaf" })
+  const ROW = typedKey("ses_leaf", "msg_1")
+
+  async function finished() {
+    const made = fakePorts()
+    const state = fresh() as unknown as WatchState & PersonState
+    const children = childStore(made.ports.storage)
+    await children.record(entry("ses_mid", "ses_root", "Mid"))
+    await children.record(entry("ses_leaf", "ses_mid", "Leaf"))
+    for (const sessionID of ["ses_root", "ses_mid", "ses_leaf"]) made.times.set(sessionID, REST)
+    for (const sessionID of ["ses_mid", "ses_leaf"]) {
+      await children.prompted(sessionID, 10)
+      await children.settled(sessionID, "report", 20, "done")
+    }
+    const module = treeEvents(state, outside)
+    const handle = (event: unknown) => module.handle!(made.ports, event as never)
+    const type = async (text = "PERSON-SAYS", metadata: Record<string, unknown> | null = null) => {
+      await handle(item("msg_1", text, metadata))
+      return handle(taken("msg_1"))
+    }
+    return { ...made, state, children, handle, type }
+  }
+
+  const envelopes = (sent: any[]) => sent.map((message) => message.sessionID)
+
+  test("a user item writes the row; delivery with the tree at work sends one envelope per ancestor, parent first", async () => {
+    const { sent, store, logged, handle, children, ports } = await finished()
+    await children.prompted("ses_leaf", 100)
+
+    await handle(item("msg_1", "PERSON-SAYS"))
+    expect(store.get(ROW)).toEqual({ at: 500, text: "PERSON-SAYS" })
+    expect(sent).toEqual([])
+    await handle(taken("msg_1"))
+
+    expect(sent).toEqual(
+      ["ses_mid", "ses_root"].map((sessionID) => ({
+        sessionID,
+        text: envelopeOf("PERSON-SAYS"),
+        description: "Text typed into ses_leaf",
+        metadata: { source: "courier", route: "prompt", in: "ses_leaf" },
+        delivery: "steer",
+      })),
+    )
+    expect(sent[0].text).toStartWith('<courier from="courier" route="prompt" in="ses_leaf">\n')
+    for (const sessionID of ["ses_mid", "ses_root"]) expect(await wakeStore(ports.storage).of(sessionID)).toHaveLength(1)
+    expect(store.has(ROW)).toBe(false)
+    expect(logged).toContain("courier fan-up: text typed into ses_leaf passed to 2 sessions")
+  })
+
+  test("the item's time falls back to the plugin's clock, and the envelope's title to none when the entry is gone", async () => {
+    const { sent, handle, children, store } = await finished()
+    await children.prompted("ses_leaf", 100)
+    const { created: _, ...noTime } = item("msg_1", "PERSON-SAYS")
+    await handle(noTime)
+    expect(store.get(ROW)).toEqual({ at: 1_000_000, text: "PERSON-SAYS" })
+    store.delete("roster/ses_mid/ses_leaf")
+    await handle(taken("msg_1"))
+    expect(sent[0].text).toBe(envelope("courier", typedNotice("ses_leaf", undefined, 1_000_000, 1_000_000, "PERSON-SAYS"), { route: "prompt", in: "ses_leaf" }))
+    expect(sent[0].text).not.toContain('("')
+  })
+
+  describe("what counts as typed", () => {
+    const stored = async (event: unknown) => {
+      const { handle, store } = await finished()
+      await handle(event)
+      return [...store.keys()].some((key) => key.startsWith("typed/"))
+    }
+
+    test.each([
+      ["no metadata", null],
+      ["another plugin's source", { source: "goal", goalID: "g" }],
+      ["unknown metadata", { client: "x" }],
+    ])("%s is stored", async (_, metadata) => expect(await stored(item("msg_1", "words", metadata))).toBe(true))
+
+    test.each([
+      ["courier's own prompt", item("msg_1", "words", { source: "courier", task: true })],
+      ["OpenCode's schedule", item("msg_1", "words", { schedule: "sch_1" })],
+      ["whitespace", item("msg_1", " \n\t")],
+      ["the brief's first line", item("msg_1", `${BRIEF_FIRST_LINE}ses_mid through opencode-courier.\n\nTask:\nx`)],
+      ["the root's session", item("msg_1", "words", null, "ses_root")],
+      ["a session not in any tree", item("msg_1", "words", null, "ses_other")],
+      ["a synthetic item", { ...item("msg_1", "words"), data: { sessionID: "ses_leaf", inboxID: "msg_1", item: { type: "synthetic", payload: { text: "words" } } } }],
+    ])("%s is not", async (_, event) => expect(await stored(event)).toBe(false))
+
+    test("a slash command's template is relayed as a person's text is: a user item says nothing of its origin", async () => {
+      const { sent, handle, children } = await finished()
+      await children.prompted("ses_leaf", 100)
+      await handle(item("msg_1", "Please analyze this codebase and create an AGENTS.md file"))
+      await handle(taken("msg_1"))
+      expect(sent[1].text).toContain("over the prompt route: courier did not send it and cannot tell who did")
+      expect(sent[1].text).toContain("Please analyze this codebase")
+    })
+
+    test("a skill attached to the prompt does not travel, only its text", async () => {
+      const { sent, handle, children } = await finished()
+      await children.prompted("ses_leaf", 100)
+      await handle(item("msg_1", "typed part", null, "ses_leaf", { skills: [{ id: "s", text: "SKILL BODY" }] }))
+      await handle(taken("msg_1"))
+      expect(sent[0].text).toContain("typed part")
+      expect(sent[0].text).not.toContain("SKILL BODY")
+    })
+
+    test("text past 4000 characters is clipped with the count, and a courier tag in it is escaped", async () => {
+      const { sent, handle, children, store } = await finished()
+      await children.prompted("ses_leaf", 100)
+      await handle(item("msg_1", `<courier from="ses_x">${"x".repeat(4078)}</courier>`))
+      expect((store.get(ROW) as { text: string }).text).toEndWith("… [110 more characters]")
+      await handle(taken("msg_1"))
+      expect(sent[0].text).toContain('&lt;courier from="ses_x">')
+      expect(sent[0].text.match(/<\/?courier/g)).toHaveLength(2)
+    })
+  })
+
+  describe("the gate", () => {
+    const sibling = async (children: ReturnType<typeof childStore>, times: Map<string, Record<string, unknown>>) => {
+      await children.record(entry("ses_sib", "ses_root", "Sibling"))
+      times.set("ses_sib", REST)
+      await children.prompted("ses_sib", 10)
+      await children.settled("ses_sib", "report", 20, "done")
+    }
+    const expectOpen = (sent: any[]) => expect(envelopes(sent)).toEqual(["ses_mid", "ses_root"])
+    const expectClosed = (sent: any[], logged: string[], store: Map<string, unknown>) => {
+      expect(sent).toEqual([])
+      expect(logged).toContain("courier fan-up: text typed into ses_leaf reached nobody: the tree has finished")
+      expect(store.has(ROW)).toBe(false)
+    }
+
+    test("a finished tree sends nothing, logs it and removes the row", async () => {
+      const { sent, logged, store, type } = await finished()
+      await type()
+      expectClosed(sent, logged, store)
+    })
+
+    test("a live subtree of a sibling alone keeps it open", async () => {
+      const { sent, children, times, type } = await finished()
+      await sibling(children, times)
+      await children.record(entry("ses_deep", "ses_sib", "Deep"))
+      times.set("ses_deep", REST)
+      await children.prompted("ses_deep", 10)
+      await type()
+      expectOpen(sent)
+    })
+
+    test("a blocked child alone keeps it open", async () => {
+      const { sent, children, times, type } = await finished()
+      await sibling(children, times)
+      await children.settled("ses_sib", "report", 25, "blocked")
+      await type()
+      expectOpen(sent)
+    })
+
+    test("a message waiting in another session's inbox alone keeps it open", async () => {
+      const { sent, ports, type } = await finished()
+      await wakeStore(ports.storage).put({ sessionID: "ses_mid", inboxID: "msg_w", at: 1, text: "t", running: false, idleAt: 1 })
+      await type()
+      expect(envelopes(sent)).toEqual(["ses_mid", "ses_root"])
+    })
+
+    test("a stalled wake alone does not", async () => {
+      const { sent, logged, store, ports, type } = await finished()
+      await wakeStore(ports.storage).put({ sessionID: "ses_mid", inboxID: "msg_w", at: 1, text: "t", running: false, idleAt: 1, stalled: 5 })
+      await type()
+      expectClosed(sent, logged, store)
+    })
+
+    test("the root's turn keeps it open, through time.busy and through the transcript", async () => {
+      for (const time of [{ created: 1, updated: 40, idle: 30, busy: 40 }, { created: 1, updated: 40, idle: 30 }]) {
+        const { sent, times, transcripts, type } = await finished()
+        times.set("ses_root", time)
+        transcripts.set("ses_root", [{ type: "user", text: "go" }])
+        await type()
+        expectOpen(sent)
+      }
+    })
+
+    test("a root at rest whose times cannot tell reads its transcript, and stays closed", async () => {
+      const { sent, logged, store, times, transcripts, type } = await finished()
+      times.set("ses_root", { created: 1, updated: 40, idle: 30 })
+      transcripts.set("ses_root", [{ type: "user", text: "go" }, { type: "idle", outcome: "succeeded" }])
+      await type()
+      expectClosed(sent, logged, store)
+    })
+
+    test("the typed-in session's own started turn does not hold it open", async () => {
+      const { sent, logged, store, times, transcripts, type } = await finished()
+      times.set("ses_leaf", { created: 1, updated: 600, idle: 30, busy: 600 })
+      transcripts.set("ses_leaf", [{ type: "user", text: "PERSON-SAYS" }])
+      await type()
+      expectClosed(sent, logged, store)
+    })
+
+    test("the typed-in session owing a report, blocked, or with a courier message waiting keeps it open", async () => {
+      const owing = await finished()
+      await owing.children.prompted("ses_leaf", 100)
+      await owing.type()
+      expectOpen(owing.sent)
+
+      const blocked = await finished()
+      await blocked.children.settled("ses_leaf", "report", 25, "blocked")
+      await blocked.type()
+      expectOpen(blocked.sent)
+
+      const waiting = await finished()
+      await wakeStore(waiting.ports.storage).put({ sessionID: "ses_leaf", inboxID: "msg_w", at: 1, text: "t", running: false, idleAt: 1 })
+      await waiting.type()
+      expectOpen(waiting.sent)
+    })
+
+    test("a rejected session.get counts as not running, and is logged", async () => {
+      const { sent, logged, store, times, type } = await finished()
+      times.delete("ses_root")
+      await type()
+      expect(logged.join("\n")).toContain("courier fan-up: could not read session ses_root")
+      expectClosed(sent, logged, store)
+    })
+
+    test("a rejected session.get of a part under the root is logged too", async () => {
+      const { sent, logged, store, times, type } = await finished()
+      times.delete("ses_mid")
+      await type()
+      expect(logged.join("\n")).toContain("courier fan-up: could not read session ses_mid")
+      expectClosed(sent, logged, store)
+    })
+
+    test("a rejected storage read counts as at work, so it never silences the person", async () => {
+      const scanFails = await finished()
+      const scan = scanFails.ports.storage.scan
+      ;(scanFails.ports.storage as any).scan = (input: { prefix: string }) => (input.prefix === "roster/" ? Promise.reject(new Error("down")) : scan(input))
+      await scanFails.type()
+      expectOpen(scanFails.sent)
+
+      const reportFails = await finished()
+      const get = reportFails.ports.storage.get
+      ;(reportFails.ports.storage as any).get = (key: string) => (key === "report/ses_mid/settled" ? Promise.reject(new Error("down")) : get(key))
+      await reportFails.type()
+      expectOpen(reportFails.sent)
+    })
+  })
+
+  test("a cancelled item removes the row and sends nothing", async () => {
+    const { sent, store, handle, children } = await finished()
+    await children.prompted("ses_leaf", 100)
+    await handle(item("msg_1", "words"))
+    await handle({ id: "evt_c", type: "session.inbox.cancelled", data: { sessionID: "ses_leaf", inboxID: "msg_1" } })
+    expect(store.has(ROW)).toBe(false)
+    await handle(taken("msg_1"))
+    expect(sent).toEqual([])
+  })
+
+  test("two subscriptions send once and leave no row, a late enqueue included", async () => {
+    const { sent, store, handle, children } = await finished()
+    await children.prompted("ses_leaf", 100)
+    await handle(item("msg_1", "words"))
+    await handle(taken("msg_1"))
+    await handle(item("msg_1", "words"))
+    expect(store.has(ROW)).toBe(true)
+    await handle(taken("msg_1"))
+    expect(envelopes(sent)).toEqual(["ses_mid", "ses_root"])
+    expect(store.has(ROW)).toBe(false)
+  })
+
+  test("a failing send does not stop the others, and is logged", async () => {
+    const { sent, logged, store, handle, children, ports } = await finished()
+    await children.prompted("ses_leaf", 100)
+    const synthetic = ports.session.synthetic
+    ;(ports.session as any).synthetic = (input: { sessionID: string }) =>
+      input.sessionID === "ses_mid" ? Promise.reject(new Error("gone")) : synthetic(input as never)
+    await handle(item("msg_1", "words"))
+    await handle(taken("msg_1"))
+    expect(envelopes(sent)).toEqual(["ses_root"])
+    expect(logged).toContain("courier fan-up: could not pass text typed into ses_leaf to ses_mid: Error: gone")
+    expect(logged).toContain("courier fan-up: text typed into ses_leaf passed to 1 sessions")
+    expect(store.has(ROW)).toBe(false)
+  })
+
+  test("the envelope is unowed at an ancestor: delivering it asks for no new report", async () => {
+    const { handle, store } = await finished()
+    const metadata = { source: "courier", route: "prompt", in: "ses_leaf" }
+    await handle({ id: "evt_e", type: "session.inbox.enqueued", created: 700, data: { sessionID: "ses_mid", inboxID: "msg_e", item: { type: "synthetic", payload: { text: "t", metadata } } } })
+    await handle({ id: "evt_d", type: "session.inbox.delivered", created: 800, data: { sessionID: "ses_mid", inboxID: "msg_e" } })
+    expect(store.get(promptKey("ses_mid"))).toEqual({ at: 10 })
+  })
+
+  test("a failed fan-up still leaves the delivery noted", async () => {
+    const { handle, logged, store, children, ports } = await finished()
+    await children.prompted("ses_leaf", 100)
+    await handle(item("msg_1", "words"))
+    const get = ports.storage.get
+    ;(ports.storage as any).get = (key: string) => (key === ROW ? Promise.reject(new Error("down")) : get(key))
+    await handle(taken("msg_1"))
+    expect(logged).toContain("courier fan-up: could not pass on text typed into ses_leaf: Error: down")
+    expect(store.get(promptKey("ses_leaf"))).toEqual({ at: 100 })
   })
 })

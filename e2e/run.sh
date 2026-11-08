@@ -139,6 +139,15 @@ end_handled() {
   return 1
 }
 # Whether session $1 has a text containing $2, waiting up to $3 (default 30) s.
+# Waits up to $2 (default 30) s until the server log holds line $1.
+wait_log() {
+  for _ in $(seq 1 "${2:-30}"); do
+    if grep -qF -- "$1" "$WORK/server.log"; then echo true; return; fi
+    sleep 1
+  done
+  echo false
+}
+
 has_text() {
   for _ in $(seq 1 "${3:-30}"); do
     if texts "$1" | grep -qF -- "$2"; then echo true; return; fi
@@ -808,29 +817,40 @@ run_finding_up() {
 }
 
 run_person_up() {
-  scenario "the person's words a grandchild relays reach the root: its parent, told so by its brief, passes them up"
+  scenario "text typed into a spawned session reaches every session above it from the plugin, and not once the tree has finished"
   out=$(prompt "COURIER-RELAY-PERSON")
   root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
-  check "the child's brief says to send the person's words on to its parent" \
-    "$(has_text "$mid" "The person's words a session you started passes you are for the whole job too: send them on to the parent the same way." 10)"
-  deep=$(spawned_by "$mid")
-  check "the child started a grandchild" "$([ -n "$deep" ] && echo true || echo false)"
-  check "the person's words reached the root once, without a status, naming the grandchild" \
-    "$([ -n "$(reply_time "$root" "ROOT HEARD PERSON" 45)" ] && api "session/$root/message" | jq -r --arg mid "$mid" --arg deep "$deep" '[.data[] | select(.type == "synthetic") | .text |
-      select(startswith("<courier from=\"" + $mid + "\">") and contains("Passed up from " + $deep + ": PERSON-SAYS: print the number, do not write a file"))] | length == 1')"
-  check "the child reported to the root" "$([ -n "$(reply_time "$root" "ROOT GOT REPORT" 60)" ] && echo true || echo false)"
-  check "and it sent the grandchild nothing, so nothing told it to undo the person's words" \
-    "$(api "session/$deep/message" | jq -r --arg mid "$mid" '[.data[] | select(.type == "synthetic") | .text | select(startswith("<courier from=\"" + $mid + "\""))] | length == 0')"
+  leaf=$(spawned_by "$mid")
+  check "the child started a grandchild" "$([ -n "$leaf" ] && echo true || echo false)"
+  check "the grandchild ended a turn without a report, so the tree is at work" "$([ -n "$(reply_time "$leaf" "LEAF WAITS" 30)" ] && echo true || echo false)"
+  check "the grandchild's brief says courier passes it up, and does not ask it to" \
+    "$([ "$(has_text "$leaf" "Do not send it up yourself" 10)" = true ] && ! texts "$leaf" | grep -qF "the person's word" && echo true || echo false)"
+  check "the grandchild's task prompt reached its inbox marked as courier's" \
+    "$(jq -sr --arg leaf "$leaf" '[.[] | select(.type == "session.inbox.enqueued" and .sessionID == $leaf and .item.type == "user")] | first | .item.metadata.source == "courier" and .item.metadata.task == true' "$WORK/probe.log")"
+  prompt_in "$leaf" "PERSON-SAYS: print the number, do not write a file" >/dev/null
+  check "the root replied to the envelope" "$([ -n "$(reply_time "$root" "ROOT HEARD TYPED" 45)" ] && echo true || echo false)"
+  check "the middle replied to the envelope" "$([ -n "$(reply_time "$mid" "RELAYER HEARD TYPED" 45)" ] && echo true || echo false)"
+  for session in "$root" "$mid"; do
+    check "$([ "$session" = "$root" ] && echo root || echo middle) holds exactly one envelope, naming the session and the route" \
+      "$(api "session/$session/message" | jq -r --arg open "<courier from=\"courier\" route=\"prompt\" in=\"$leaf\">" '[.data[] | select(.type == "synthetic") | .text | select(startswith($open) and contains("PERSON-SAYS"))] | length == 1')"
+  done
+  check "the middle reported, once the grandchild had" "$([ -n "$(reply_time "$root" "ROOT GOT REPORT" 60)" ] && echo true || echo false)"
+  check "the grandchild heard nothing from the middle" \
+    "$(api "session/$leaf/message" | jq -r --arg mid "$mid" '[.data[] | select(.type == "synthetic") | .text | select(startswith("<courier from=\"" + $mid + "\""))] | length == 0')"
+  turn_ended "$root"
+  prompt_in "$leaf" "PERSON-LATE" >/dev/null
+  check "text typed into the finished tree is logged as reaching nobody" "$(wait_log "courier fan-up: text typed into $leaf reached nobody: the tree has finished" 30)"
+  check "and the root holds no envelope for it" "$(api "session/$root/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains("PERSON-LATE"))] | length == 0')"
 }
 
 run_person_message() {
-  scenario "a parent's message with a status to its child goes without the status, and the child's brief says to pass the person's word up"
+  scenario "a parent's message with a status to its child goes without the status, and the child's brief says courier passes the person's words up"
   out=$(prompt "COURIER-STATUS-DOWN")
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the child's brief has the person's message sentence" \
-    "$(has_text "$child" "A message the person writes in your session, outside a <courier> envelope, is for the whole job" 10)"
+    "$(has_text "$child" "Do not send it up yourself" 10)"
   check "courier_send dropped the status and said so" "$(tool_state courier_send <<<"$out" | jq -r '.status == "completed" and
     .metadata.metadata.dropped == "blocked" and (.metadata.metadata | has("status") | not) and (.output | contains("without the status blocked"))')"
   check "the child got the message without a status" \

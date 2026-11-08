@@ -123,6 +123,9 @@ const carriedInSpawn = (list, child, after) =>
       index > after && message.type === "assistant" && message.content.some((part) => childOf(part) === child && /\bchecked\b/i.test(part.state.input?.task ?? "")),
   )
 const toldAfter = (list, child, after) => plainAfter(list, child, after) ?? (carriedInSpawn(list, child, after) ? { spawned: true } : undefined)
+// the plugin's envelope for text typed into a session under the root
+const typedAt = (list, sessionID) =>
+  list.findIndex((message) => message.type === "synthetic" && message.text?.startsWith(`<courier from="courier" route="prompt" in="${sessionID}">`))
 const passedDown = (entry) => {
   const reached = delivered(entry.list, rootID)
   const below = spawnsOf(entry.list)
@@ -347,22 +350,25 @@ const [countID, countEntry] = [...tree].find(([, entry]) => entry.depth === 1 &&
 const noteAt = countEntry ? countEntry.list.findIndex((message) => message.type === "user" && message.text?.includes(PERSON_NOTE)) : -1
 const up = countEntry && noteAt !== -1 ? plainAfter(countEntry.list, rootID, noteAt) : undefined
 const countReport = countEntry ? reportsTo(countEntry.list, rootID)[0] : undefined
-const atRoot = countID ? delivered(root, countID) : -1
+const envelopeAt = countID ? typedAt(root, countID) : -1
 const others = [...tree].filter(([id, entry]) => entry.depth === 1 && id !== countID)
 const onward = others.map(([id, entry]) => {
-  const sent = atRoot === -1 ? undefined : plainAfter(root, id, atRoot)
+  const sent = envelopeAt === -1 ? undefined : plainAfter(root, id, envelopeAt)
   const reached = sent ? delivered(entry.list, rootID) : -1
   const below = spawnsOf(entry.list).filter((child) => tree.has(child))
   const down = below.map((child) => ({ child, sent: reached === -1 ? undefined : toldAfter(entry.list, child, reached) }))
   return { id, sent, reached, below, down }
 })
+const toCount = !countID
+  ? []
+  : [...tree].flatMap(([id, entry]) => {
+      const after = id === rootID ? envelopeAt : (onward.find((one) => one.id === id)?.reached ?? -1)
+      return after === -1 ? [] : sendsTo(entry.list, countID).filter((send) => send.index > after).map((send) => ({ id, message: send.message ?? "" }))
+    })
 const findingChecks = [
-  ['the person\'s message reached the "count" session', noteAt !== -1],
-  [
-    "that session sent it up to the root with courier_send, without a status, before its report",
-    up !== undefined && (countReport === undefined || sentBefore(up, countReport)),
-  ],
-  ["the root passed it on to the other part, without a status, once it arrived", atRoot !== -1 && onward.length > 0 && onward.every((one) => one.sent && one.reached !== -1)],
+  ["the person's message reached the \"count\" session", noteAt !== -1],
+  ["the root got the plugin's envelope for it", envelopeAt !== -1],
+  ["the root passed it on to the other part, without a status, once the envelope arrived", envelopeAt !== -1 && onward.length > 0 && onward.every((one) => one.sent && one.reached !== -1)],
   ["that part's session passed it on to each of its own sessions, once it arrived", onward.length > 0 && onward.every((one) => one.below.length > 0 && one.down.every((down) => down.sent))],
 ]
 
@@ -439,9 +445,9 @@ if (fault)
     if (one.upward.length) notes.push(`fault: its parent reported upward ${one.upward.map((report) => report.status).join(", then ")}`)
   }
 if (finding) {
-  if (up) notes.push(`finding: the "count" session sent up: ${short(up.message ?? "", 200)}`)
-  else if (countReport) notes.push(`finding: the "count" session sent nothing up without a status; its report: ${short(countReport.message ?? "", 200)}`)
-  if (countID && plainAfter(root, countID, atRoot)) notes.push(`finding: the root also messaged the "count" session after the finding arrived`)
+  if (up) notes.push(`finding: the "count" session also sent the words up itself: ${short(up.message ?? "", 200)}`)
+  else notes.push(`finding: the "count" session did not send the words up itself${countReport ? `; its report: ${short(countReport.message ?? "", 200)}` : ""}`)
+  for (const send of toCount) notes.push(`finding: ${send.id === rootID ? "the root" : `session ${send.id}`} messaged the "count" session after the envelope: ${short(send.message, 200)}`)
 }
 if (fault && !faulty.length) notes.push("fault: every session below a sub-orchestrator first reported done; the fault did not reach a leaf")
 if (staged) {

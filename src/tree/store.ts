@@ -2,7 +2,7 @@ import { num, obj, str } from "../platform/json.js"
 import { isStatus, type Status } from "../kernel/protocol.js"
 import { scanAll, scanEntries, type Storage } from "../platform/storage.js"
 import { lineageIn, type Artifacts, type HeldReport, type Member, type RosterEntry } from "./domain.js"
-import type { ChildStore, GroupStore, Membership, ReportField, ReportNote, Settled, Stored, Wake, WakeStore } from "./ports.js"
+import type { ChildStore, GroupStore, Membership, ReportField, ReportNote, Settled, Stored, Typed, Wake, WakeStore } from "./ports.js"
 
 const ROSTER_PREFIX = "roster/"
 const BY_CHILD = "roster-by-child/"
@@ -47,6 +47,16 @@ export const groupPrefix = (parentID: string, group: string) => `${groupsPrefix(
 const WAKE_PREFIX = "wake/"
 
 export const wakeKey = (sessionID: string, inboxID: string) => `${WAKE_PREFIX}${sessionID}/${inboxID}`
+
+const TYPED_PREFIX = "typed/"
+
+export const typedKey = (sessionID: string, inboxID: string) => `${TYPED_PREFIX}${sessionID}/${inboxID}`
+
+function readTyped(value: unknown): Typed | undefined {
+  const at = num(obj(value).at)
+  const text = str(obj(value).text)
+  return at === undefined || text === undefined ? undefined : { at, text }
+}
 
 function isReverse(value: unknown): value is ReverseEntry {
   const ancestors = (value as { ancestors?: unknown } | undefined)?.ancestors
@@ -114,8 +124,14 @@ export function childStore(storage: Storage): ChildStore {
     await storage.remove(reverseKey(sessionID))
   }
 
+  const forgetTyped = async (sessionID: string, inboxID?: string) => {
+    if (inboxID !== undefined) return storage.remove(typedKey(sessionID, inboxID))
+    const rows = await scanEntries<unknown>(storage, `${TYPED_PREFIX}${sessionID}/`)
+    await Promise.all(rows.map(({ key }) => storage.remove(typedKey(sessionID, key))))
+  }
+
   const forgetReport = async (sessionID: string) => {
-    await Promise.all(Object.values(REPORT_KEYS).map((key) => storage.remove(key(sessionID))))
+    await Promise.all([...Object.values(REPORT_KEYS).map((key) => storage.remove(key(sessionID))), forgetTyped(sessionID)])
   }
 
   return {
@@ -219,6 +235,15 @@ export function childStore(storage: Storage): ChildStore {
     },
     async dropReported(keys) {
       await Promise.all(keys.map((key) => storage.remove(key).catch(() => undefined)))
+    },
+    async typed(sessionID, inboxID, at, text) {
+      await storage.set(typedKey(sessionID, inboxID), { at, text })
+    },
+    typedOf: async (sessionID, inboxID) => readTyped(await storage.get(typedKey(sessionID, inboxID))),
+    forgetTyped,
+    async typedSessions() {
+      const rows = await scanEntries<unknown>(storage, TYPED_PREFIX)
+      return new Set(rows.map(({ key }) => key.slice(0, key.indexOf("/"))))
     },
   }
 }

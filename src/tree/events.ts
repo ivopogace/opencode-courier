@@ -10,6 +10,7 @@ import { owedUnwaited } from "./nudge.js"
 import { reportedSincePrompt, stoppedSincePrompt } from "./report.js"
 import { syncStanding } from "./standing.js"
 import { childStore, groupStore } from "./store.js"
+import { forgetTyped, noteTyped, relayTyped } from "./relay.js"
 import { lastReply } from "./status.js"
 import { failureNotice, silentNotice } from "./text.js"
 import { forgetWakes, settleWake, wakeEnded, wakeStarted, watchWake, type Enqueued, type Execution, type InboxSettled } from "./wake.js"
@@ -70,23 +71,17 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   return entries.map((entry) => entry.parentID)
 }
 
-export interface InboxEnqueued {
-  readonly data: {
-    readonly sessionID: string
-    readonly inboxID: string
-    readonly item: { readonly type: string; readonly payload?: { readonly metadata?: { readonly [key: string]: unknown } } }
-  }
-}
-
 // only inbox.enqueued carries the item's type (api-notes)
-const UNOWED = new Set(["user", "compaction", "move"])
+const TYPED = "typed"
+const UNOWED = new Set(["user", "compaction", "move", TYPED])
 const OWN = "own"
 const OWN_SCHEDULED = "own-scheduled:"
 const MESSAGE_FROM = "from:"
 
-function kindOf(sessionID: string, item: InboxEnqueued["data"]["item"]) {
+function kindOf(sessionID: string, item: Enqueued["data"]["item"]) {
   const metadata = item.payload?.metadata
   if (item.type !== "synthetic" || metadata?.source !== "courier") return item.type
+  if (metadata.route === "prompt") return TYPED
   if (typeof metadata.group === "string") return OWN
   const ownCheckIn = typeof metadata.scheduled === "string" && metadata.from === sessionID && typeof metadata.scheduledAt === "number"
   if (ownCheckIn) return `${OWN_SCHEDULED}${metadata.scheduledAt}`
@@ -102,7 +97,7 @@ async function ownAfterReport(children: Pick<ChildStore, "notes" | "indexedParen
   return reportedSincePrompt(children, sessionID, Number(kind.slice(OWN_SCHEDULED.length)))
 }
 
-export async function noteEnqueued(ports: WatchPorts, inbox: Map<string, string>, event: InboxEnqueued) {
+export async function noteEnqueued(ports: WatchPorts, inbox: Map<string, string>, event: Enqueued) {
   const { sessionID, inboxID, item } = event.data
   if ((await childStore(ports.storage).indexedParent(sessionID)) === undefined) return false
   setBounded(inbox, inboxID, kindOf(sessionID, item), SEEN_MAX)
@@ -221,6 +216,17 @@ async function sealGroups(ports: WatchPorts, event: SessionEvent) {
   }
 }
 
+async function inboxEnqueued(ports: WatchPorts, state: WatchState, event: Enqueued) {
+  const noted = await noteEnqueued(ports, state.inbox, event)
+  await noteTyped(ports, event).catch((error: unknown) => ports.log(`courier fan-up: could not note text typed into ${event.data.sessionID}: ${String(error)}`))
+  return noted
+}
+
+async function inboxDelivered(ports: WatchPorts, state: WatchState, event: SessionEvent & InboxSettled) {
+  await relayTyped(ports, state.seen, event).catch((error: unknown) => ports.log(`courier fan-up: could not pass on text typed into ${event.data.sessionID}: ${String(error)}`))
+  return notePrompt(ports, event, state.inbox)
+}
+
 function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: HostEvent) {
   if (event.type === "session.execution.failed") return reportFailure(ports, state.seen, event as unknown as ExecutionFailed)
   if (event.type === "session.execution.succeeded") return reportSilent(ports, state.seen, event as unknown as SessionEvent, outside)
@@ -228,8 +234,9 @@ function routeTree(ports: WatchPorts, state: WatchState, outside: Waits, event: 
     const interrupted = event as unknown as SessionEvent
     return interrupted.data.reason === "shutdown" ? reportDeclined(ports, state.seen, interrupted, outside) : noteInterrupted(ports, interrupted)
   }
-  if (event.type === "session.inbox.enqueued") return noteEnqueued(ports, state.inbox, event as unknown as InboxEnqueued)
-  if (event.type === "session.inbox.delivered") return notePrompt(ports, event as unknown as SessionEvent, state.inbox)
+  if (event.type === "session.inbox.enqueued") return inboxEnqueued(ports, state, event as unknown as Enqueued)
+  if (event.type === "session.inbox.delivered") return inboxDelivered(ports, state, event as unknown as SessionEvent & InboxSettled)
+  if (event.type === "session.inbox.cancelled") return forgetTyped(ports, event as unknown as InboxSettled)
   if (event.type === "session.deleted") return noteDeleted(ports, event as unknown as SessionEvent)
   return undefined
 }

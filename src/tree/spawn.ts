@@ -143,7 +143,7 @@ async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, 
   const children = childStore(ports.storage)
   if (rostered) await children.prompted(entry.sessionID, ports.now()).catch(() => undefined)
   try {
-    await ports.session.prompt({ sessionID: entry.sessionID, text: childBrief(entry.parentID, task, depth, ports.limits, entry.isolated ? childBranch(entry.sessionID) : undefined) })
+    await ports.session.prompt({ sessionID: entry.sessionID, text: childBrief(entry.parentID, task, depth, ports.limits, entry.isolated ? childBranch(entry.sessionID) : undefined), metadata: { source: "courier", task: true } })
   } catch (error) {
     if (rostered) await children.settled(entry.sessionID, "failed", ports.now()).catch(() => undefined)
     if (grouped && entry.group)

@@ -7,15 +7,16 @@ import { childStore } from "./store.js"
 import { childrenRefusal, depthRefusal, totalRefusal } from "./text.js"
 import { waitsInInbox } from "./wake.js"
 
-async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: string) {
+export async function live(ports: Pick<LimitPorts, "session" | "storage">, sessionID: string, unread?: "live") {
   const [time, report] = await Promise.all([
     ports.session.get({ sessionID }).then(
       (info) => info.time,
       (error: unknown) => (isNotFound(error) ? null : undefined),
     ),
-    reportOf(childStore(ports.storage), sessionID).catch(() => undefined),
+    reportOf(childStore(ports.storage), sessionID).catch(() => null),
   ])
   if (time === null) return undefined
+  if (report === null && unread) return unread
   const inTurn = report?.reportedAt !== undefined && !(millis(time?.idle) >= report.reportedAt)
   const running = time !== undefined && !report?.ended && !inTurn && (await runs(ports.session, sessionID, time))
   // a waiting inbox item is in no transcript until delivered (api-notes)

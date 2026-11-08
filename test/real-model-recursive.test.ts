@@ -420,15 +420,16 @@ const PERSON_NOTE =
   "A change from the person for the whole job, not only for your part: every file this job writes must hold its number " +
   "followed by a space and the word checked, such as 7 checked. Write yours that way."
 const FINDING = "Every file of the job must hold its number followed by the word checked."
-type Finding = "passed" | "not-down" | "in-report" | "in-spawn" | "spawn-silent"
+const typed = (sessionID: string) => synthetic(`<courier from="courier" route="prompt" in="${sessionID}">\nAt 10:00 UTC this text arrived in session ${sessionID}, a session under yours.\n\n${FINDING}\n</courier>`)
+type Finding = "passed" | "not-down" | "root-silent" | "in-spawn" | "spawn-silent"
 
 function findingRun(variant: Finding): Run {
-  const plain = variant !== "in-report"
+  const silent = variant === "root-silent"
   const count = [
     user("count: run `sleep 20; echo $((99 - 57))`, write it to count/total.txt"),
     step("tool-calls", tool("shell", { command: "sleep 20; echo $((99 - 57))" })),
     user(PERSON_NOTE),
-    step("tool-calls", write("count/total.txt"), ...(plain ? [send("ses_root", FINDING)] : []), send("ses_root", plain ? "42 checked" : `42 checked. ${FINDING}`, "done")),
+    step("tool-calls", write("count/total.txt"), send("ses_root", "42 checked", "done")),
     step("stop", say("Reported.")),
     idle(),
   ]
@@ -445,7 +446,7 @@ function findingRun(variant: Finding): Run {
   const num = early
     ? [user("numbers"), synthetic(`<courier from="ses_root">\n${FINDING}\n</courier>`), step("tool-calls", halfTask("ses_a"), halfTask("ses_b")), step("stop", say("split: 2 halves")), idle()]
     : [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves")), step("stop", say("split: 2 halves")), idle()]
-  if (plain && !early)
+  if (!silent && !early)
     num.push(
       synthetic(`<courier from="ses_root">\n${FINDING}\n</courier>`),
       step("tool-calls", send("ses_a", FINDING), ...(variant === "not-down" ? [] : [send("ses_b", FINDING)])),
@@ -454,24 +455,45 @@ function findingRun(variant: Finding): Run {
     )
   num.push(released("halves", [["ses_a", "done"], ["ses_b", "done"]]), step("tool-calls", send("ses_root", "391 checked and 1024 checked", "done")), step("stop", say("Reported.")), idle())
   const root = [user("the job"), step("tool-calls", loadSkill(), spawn("ses_num", "parts"), spawn("ses_count", "parts")), step("stop", say("split: 2 parts | numbers, count")), idle()]
-  if (plain) root.push(synthetic(`<courier from="ses_count">\n${FINDING}\n</courier>`), step("tool-calls", send("ses_num", FINDING)), step("stop", say("Passed on.")), idle())
+  root.push(typed("ses_count"))
+  if (silent) root.push(step("stop", say("Noted.")), idle())
+  else root.push(step("tool-calls", send("ses_num", FINDING)), step("stop", say("Passed on.")), idle())
   root.push(released("parts", [["ses_num", "done"], ["ses_count", "done"]]), step("tool-calls", tool("read", { path: "numbers/a.txt" })), step("stop", say("RESULTS 391 1024 42")), idle())
   const told = variant === "passed" || variant === "not-down"
   const files = Object.fromEntries(Object.entries(FILES).map(([file, value]) => [file, `${value} checked`]))
   return { tree: { ses_root: root, ses_num: num, ses_a: half("a", "391", told), ses_b: half("b", "1024", variant === "passed"), ses_count: count }, files, expect: Object.values(FILES).join(" ") }
 }
 
-const F2 = "that session sent it up to the root with courier_send, without a status, before its report"
-const F3 = "the root passed it on to the other part, without a status, once it arrived"
+const F2 = "the root got the plugin's envelope for it"
+const F3 = "the root passed it on to the other part, without a status, once the envelope arrived"
 const F4 = "that part's session passed it on to each of its own sessions, once it arrived"
 
 describe("the recursive checker with --finding", () => {
-  test("a finding sent up without a status and passed on down to every half passes every check", () => {
+  test("the plugin's envelope at the root, no message from the count session, and the words passed down to every half pass every check", () => {
     const run = check(findingRun("passed"), ["--finding"])
     expect(run.failed).toEqual([])
     expect(Object.keys(run.checks)).toHaveLength(13)
     expect(run.exitCode).toBe(0)
-    expect(run.notes).toContain(`finding: the "count" session sent up: ${FINDING}`)
+    expect(run.notes).toContain('finding: the "count" session did not send the words up itself; its report: 42 checked')
+  })
+
+  test("the count session that also sends the words up, and a message to it after the envelope, are quoted in the notes", () => {
+    const run = findingRun("passed")
+    const count = run.tree.ses_count!
+    count.splice(3, 0, step("tool-calls", send("ses_root", FINDING)))
+    const root = run.tree.ses_root!
+    root.splice(root.findIndex((message) => message.type === "synthetic" && (message.text as string).startsWith('<courier from="courier"')) + 1, 0, step("tool-calls", send("ses_count", "Write it as your task says.")))
+    const result = check(run, ["--finding"])
+    expect(result.failed).toEqual([])
+    expect(result.notes).toContain(`finding: the "count" session also sent the words up itself: ${FINDING}`)
+    expect(result.notes).toContain('finding: the root messaged the "count" session after the envelope: Write it as your task says.')
+  })
+
+  test("a message from the count session instead of the envelope is no envelope", () => {
+    const run = findingRun("passed")
+    const root = run.tree.ses_root!
+    root[root.findIndex((message) => message.type === "synthetic" && (message.text as string).startsWith('<courier from="courier"'))] = synthetic(`<courier from="ses_count">\n${FINDING}\n</courier>`)
+    expect(check(run, ["--finding"]).failed).toEqual([F2, F3, F4])
   })
 
   test("a part's session that passes it on to one half of two fails only that check", () => {
@@ -486,10 +508,8 @@ describe("the recursive checker with --finding", () => {
     expect(check(findingRun("spawn-silent"), ["--finding"]).failed).toEqual([F4])
   })
 
-  test("a finding sent up only inside the report reaches no one in time: the last three checks fail", () => {
-    const run = check(findingRun("in-report"), ["--finding"])
-    expect(run.failed).toEqual([F2, F3, F4])
-    expect(run.notes.some((note) => note.startsWith('finding: the "count" session sent nothing up without a status'))).toBe(true)
+  test("a root that holds the envelope and never passes the words on fails the checks that follow it", () => {
+    expect(check(findingRun("root-silent"), ["--finding"]).failed).toEqual([F3, F4])
   })
 
   test("the files must hold each number with the suffix, and a re-read with --saved keeps the finding checks", () => {

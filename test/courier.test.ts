@@ -95,7 +95,7 @@ describe("spawn", () => {
     expect(child).toEqual({ sessionID: "ses_child", directory: "/repo" })
     expect(calls.map((call) => call.method)).toEqual(["session.create", "session.prompt"])
     expect(calls[0]!.input).toEqual({ title: "Fix the bug", permissions: CHILD_RULES, metadata: { courier: { parentID: "ses_parent" } } })
-    expect(calls[1]!.input).toEqual({ sessionID: "ses_child", text: childBrief("ses_parent", "Fix the bug\nin checkout", 1, DEFAULT_LIMITS) })
+    expect(calls[1]!.input).toEqual({ sessionID: "ses_child", text: childBrief("ses_parent", "Fix the bug\nin checkout", 1, DEFAULT_LIMITS), metadata: { source: "courier", task: true } })
   })
 
   test("a child started below the top is marked so, and its result says its asks go to the top", async () => {

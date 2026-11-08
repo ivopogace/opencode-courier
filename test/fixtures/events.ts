@@ -25,6 +25,8 @@ export function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["d
   const scanned: string[] = []
   const nudges: number[] = []
   const options: { types?: readonly string[] }[] = []
+  const times = new Map<string, Record<string, unknown>>()
+  const transcripts = new Map<string, unknown[]>()
   let subscriptions = 0
   const ports = {
     storage: {
@@ -41,10 +43,16 @@ export function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["d
         sent.push(input)
         return { id: "msg_1" }
       },
-      context: async () => [
-        { type: "user", text: "Fix the bug" },
-        { type: "assistant", content: [{ type: "text", text: "Looked at it; " }, { type: "text", text: "line 4 is wrong." }] },
-      ],
+      get: async ({ sessionID }: { sessionID: string }) => {
+        const time = times.get(sessionID)
+        if (!time) throw new Error(`no times for ${sessionID}`)
+        return { time }
+      },
+      context: async ({ sessionID }: { sessionID: string }) =>
+        transcripts.get(sessionID) ?? [
+          { type: "user", text: "Fix the bug" },
+          { type: "assistant", content: [{ type: "text", text: "Looked at it; " }, { type: "text", text: "line 4 is wrong." }] },
+        ],
     },
     event: {
       subscribe: async function* (given: (typeof options)[number]) {
@@ -61,7 +69,7 @@ export function fakePorts(streams: unknown[][] = [], pending: PermissionAsked["d
     log: (message: string) => void logged.push(message),
     nudge: () => void nudges.push(sent.length),
   } as unknown as WatchPorts
-  return { ports, sent, logged, store, scanned, nudges, subscriptions: () => subscriptions, options }
+  return { ports, sent, logged, store, scanned, nudges, times, transcripts, subscriptions: () => subscriptions, options }
 }
 
 export const child = (parentID = "ses_parent") => ({

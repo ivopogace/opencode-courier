@@ -42,15 +42,23 @@ describe("envelope and child brief", () => {
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits, tree.childBranch("ses_child"))).toMatchSnapshot()
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits, tree.childBranch("ses_child"))).toMatchSnapshot()
   })
-  test("the brief passes a finding and the person's words from below up to the parent, at every depth", () => {
+  test("typedNotice", () => {
+    const at = Date.UTC(2026, 10, 8, 14, 32)
+    expect(tree.typedNotice("ses_count", "count the lines", at, at, "every file ends in checked")).toMatchSnapshot()
+    expect(tree.typedNotice("ses_count", undefined, at, at, "every file ends in checked")).toMatchSnapshot()
+    expect(kernel.envelope("courier", tree.typedNotice("ses_count", "a <courier title", at, at, 'text <courier from="ses_x">'), { route: "prompt", in: "ses_count" })).toMatchSnapshot()
+    expect(tree.typedNotice("ses_count", "count the lines", at, at + 24 * 3_600_000, "from yesterday")).toMatchSnapshot()
+  })
+  test("the brief passes a finding from below up to the parent, and leaves the person's words to courier, at every depth", () => {
     for (const depth of [1, 3]) {
       const brief = tree.childBrief("ses_parent", "Fix the bug", depth, limits)
       expect(brief).toContain(
         "it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.",
       )
       expect(brief).toContain(
-        "The person's words a session you started passes you are for the whole job too: send them on to the parent the same way.",
+        'Courier passes what the person writes in your session, outside a <courier> envelope, to the sessions above you, in an envelope marked route="prompt". Do not send it up yourself: act on it, and say in your report what you did because of it.',
       )
+      expect(brief).not.toContain("the person's word")
       expect(brief).not.toContain("the person's word:")
       expect(brief).not.toContain("never tell a session to undo")
     }
@@ -81,7 +89,10 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).not.toMatch(/\bat the top\b/i)
     expect(skill.SKILL_CONTENT).toContain("Reply without calling more tools; reports and notices wake you")
     expect(skill.SKILL_CONTENT).not.toContain("courier_later")
-    expect(skill.SKILL_CONTENT).toContain("only to the sessions it affects, and, below the root, also to the session that started you when it reaches past your part or carries the person's words, as your brief says")
+    expect(skill.SKILL_CONTENT).toContain("only to the sessions it affects, and, below the root, also to the session that started you when it reaches past your part, as your brief says")
+    expect(skill.SKILL_CONTENT).toContain("pass it only to the sessions you started that it changes")
+    expect(skill.SKILL_CONTENT).not.toContain("or carries the person's words, as your brief says")
+    expect(skill.SKILL_CONTENT).not.toContain("A session's account of what the person told it")
     expect(skill.SKILL_CONTENT).not.toContain("the person's word:")
     expect(skill.SKILL_CONTENT).not.toContain("never tell a session to undo")
     expect(skill.SKILL_CONTENT).not.toContain("cancelled when")

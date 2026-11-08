@@ -22,7 +22,9 @@
 # halves need, a seed in numbers/seed.txt, checked by the same script with --staged for whether the
 # halves started only after it. COURIER_SCENARIO=recursive-finding is the recursive job with longer halves, and the
 # checker, run with --finding, as the person telling the "count" session mid-run that every file must hold its number
-# followed by " checked": whether that session sends it up, and its parents pass it on down to the halves, is the test.
+# followed by " checked": whether its parents pass it on down to the halves is the test. COURIER_SCENARIO=recursive-conflict
+# runs the same job with --conflict: the checker, as the person, tells the half for numbers/b.txt not to write that file, and
+# the messages it gets from the sessions above are quoted for a person to read.
 # COURIER_SCENARIO=review runs a change and its review: the project in e2e/fixtures/review-project, committed, and
 # a job of one function with tests, done by one session, read by a review session with fresh context that changes
 # nothing, fixed where the review holds, and checked by the root with the project's tests, which the checker
@@ -40,9 +42,9 @@
 #   COURIER_API_KEY_ENV              for a declared provider, the variable holding its key. The
 #                                     config refers to it as {env:NAME}; the key is never written.
 #   COURIER_PROMPT, COURIER_EXPECT   the parent's prompt and the values the reports must hold.
-#   COURIER_FILES                    recursive(-fault, -staged, -finding): the files, relative to the project, that must hold
+#   COURIER_FILES                    recursive(-fault, -staged, -finding, -conflict): the files, relative to the project, that must hold
 #                                     them; with recursive-staged the first is the core's.
-#   COURIER_MAX_DEPTH                recursive(-fault, -staged, -finding): the maxDepth the checker holds the tree to (default 5).
+#   COURIER_MAX_DEPTH                recursive(-fault, -staged, -finding, -conflict): the maxDepth the checker holds the tree to (default 5).
 #   COURIER_TEST_COMMAND             review: the command the checker runs the project's tests with (default npm test).
 #   COURIER_TESTS                    review: how many tests must pass in the root's checkout (default 5: the fixture's 2
 #                                     and the 3 the job asks for).
@@ -126,15 +128,21 @@ case $SCENARIO in
     CHECKER=real-model-recursive.mjs
     CHECKER_FLAGS=--staged
     ;;
-  recursive-finding)
+  recursive-finding | recursive-conflict)
     # The recursive job, with parts that wait on files the checker creates, so that what the person tells the "count" session
     # mid-run reaches the halves; the checker plays the person, so the prompt says nothing of it. The "count" session must be
     # running when the person writes, and the halves when the finding has come down two levels; 150 s bounds a file that never comes.
     PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `for i in $(seq 150); do [ -e .go-halves ] && break; sleep 1; done; echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `for i in $(seq 150); do [ -e .go-halves ] && break; sleep 1; done; echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `for i in $(seq 150); do [ -e .go-count ] && break; sleep 1; done; echo $((99 - 57))` and writes the number it printed to count/total.txt. Another process, outside this job, creates .go-halves and .go-count when those commands may go on: no session creates, removes or looks at those files, and each command is run exactly as written. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
-    export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
-    export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
+    if [ "$SCENARIO" = recursive-conflict ]; then
+      export COURIER_EXPECT=${COURIER_EXPECT:-"391 42"}
+      export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt count/total.txt"}
+      CHECKER_FLAGS=--conflict
+    else
+      export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
+      export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
+      CHECKER_FLAGS=--finding
+    fi
     CHECKER=real-model-recursive.mjs
-    CHECKER_FLAGS=--finding
     ;;
   review)
     # A change and its review: the shape is in the prompt, so the plugin's tools are under test, not a playbook; which
@@ -146,7 +154,7 @@ case $SCENARIO in
     export COURIER_TESTS=${COURIER_TESTS:-5}
     CHECKER=real-model-review.mjs
     ;;
-  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, recursive-staged, recursive-finding, review, permission or question"; exit 1 ;;
+  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, recursive-staged, recursive-finding, recursive-conflict, review, permission or question"; exit 1 ;;
 esac
 case ${COURIER_SKILL:-} in
   "") ;;
@@ -241,7 +249,7 @@ fi
 echo "parent prompt: $PROMPT"
 
 post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
-if [ "$SCENARIO" != fanout ] && [ "$SCENARIO" != recursive ] && [ "$SCENARIO" != recursive-fault ] && [ "$SCENARIO" != recursive-staged ] && [ "$SCENARIO" != recursive-finding ]; then
+if [ "$SCENARIO" != fanout ] && [ "$SCENARIO" != recursive ] && [ "$SCENARIO" != recursive-fault ] && [ "$SCENARIO" != recursive-staged ] && [ "$SCENARIO" != recursive-finding ] && [ "$SCENARIO" != recursive-conflict ]; then
   # Started through the API, as a session in the TUI would be, not with opencode run: run cancels
   # any question form opened in its session while it is attached, and the child's request can wake
   # the parent before run has let go. The checker waits for the turns.

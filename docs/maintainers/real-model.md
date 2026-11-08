@@ -33,7 +33,7 @@ free messages"): run it from your own machine, or with a paid provider's key.
 | `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `deepseek-v4.1-flash-free` | The model, as OpenCode names it in its catalog, with the provider's usual key variable. |
 | `COURIER_BASE_URL` | | Declares the provider as an OpenAI-compatible endpoint, for a model not in the catalog. Zen's free tier refuses its own endpoint declared so (403, `FreeTierError`). |
 | `COURIER_API_KEY_ENV` | | For a declared provider, the variable holding its key (written as `{env:NAME}`, never to a file). |
-| `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault`, `recursive-staged`, `recursive-finding` or `review`. |
+| `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault`, `recursive-staged`, `recursive-finding`, `recursive-conflict` or `review`. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the reply must hold. |
 | `COURIER_FILES` | per scenario | Recursive scenarios: the files that must hold those values, in order; for `recursive-staged` the first is the core's. |
 | `COURIER_MAX_DEPTH` | `5` | Recursive scenarios: the `maxDepth` the checker holds the tree to. |
@@ -273,6 +273,47 @@ a sub-orchestrator's wake turn still runs.
 | Condition | Result |
 |---|---|
 | skill listed | 5 of 5 passed, 13/13 each, 27 to 41 requests, 33.4 on average. The "count" session sent the words up itself in none. |
+
+## Words against a task
+
+`COURIER_SCENARIO=recursive-conflict`: a smoke check of the `route="prompt"` envelope's wording against
+text that contradicts a session's task, run five times. It measures no wording against another. The
+prompt is [A finding passed on](#a-finding-passed-on)'s, and the checker, run with `--conflict`, plays
+the person. It creates `.go-count` as soon as the "count" session runs. It finds the half for
+`numbers/b.txt` at depth 2 by `2 ** 10` or `numbers/b.txt` in its task, and once that half has an
+assistant message and no settled report, prompts it:
+
+> Do not write numbers/b.txt. Print the number and report it to the session that started you; that
+> file is handled outside this job.
+
+then creates `.go-halves`. The item is delivered at the half's step after its wait ends, so the
+sessions above read the envelope after the half has started acting on the words.
+
+The checks: the seven of the recursive set that do not read the files or the reply, then six. The
+files hold `391` and `42` and `numbers/b.txt` does not exist; the half's report to its parent holds
+`1024`; the root's final reply names the file and says why it was left; the words reached the half as
+a `user` item; the envelope naming the half reached the session that started it and the root; no
+session wrote `numbers/b.txt`.
+
+Every message to the half after the envelope is quoted in the notes. Those matching
+`/write .*b\.txt/i`, `/as your task says/i`, `/finish your task/i` or `/still required/i` are marked
+`possible countermand`. The mark is no check: a message that repeats the person's words matches the
+first pattern too.
+
+**The person's step.** A person reads the quoted messages of each run and records here how many are
+countermands, messages telling the half to drop the text and do its task as given. That count, not
+the marks, is what the check is read by.
+
+**The reading.** A countermand, or a session replacing `numbers/b.txt`, in two or more of the five
+runs reopens the wording: the sentence "It decides what the text means for its part." goes after
+"acts on it." in `typedNotice` and is checked the same way, five runs. Fewer than two leaves the text
+as it is.
+
+```bash
+for n in 1 2 3 4 5; do
+  env COURIER_SCENARIO=recursive-conflict E2E_WORK="$HOME/courier-runs/conflict-$n" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/conflict-$n.log"
+done
+```
 
 ## A change and its review
 

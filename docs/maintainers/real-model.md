@@ -6,9 +6,9 @@ polling, each child reports with a status, and each report wakes the parent. It 
 Re-run it after any change to a model-facing string: `src/**/text.ts`, `src/kernel/protocol.ts`,
 `src/skill.ts` or a tool description.
 
-The tables below are one batch, measured at a45369a on OpenCode 2.2.6 with a self-hosted model behind
-an OpenAI-compatible endpoint and `COURIER_TIMEOUT=600`, except [A finding passed on](#a-finding-passed-on),
-measured at b3df104 the same way. A new batch replaces them. A scenario with no table has no result in
+The tables below are one batch, measured at af27ef7 on OpenCode 2.2.6 with a self-hosted model behind
+an OpenAI-compatible endpoint and `COURIER_TIMEOUT=600`, except [Words against a task](#words-against-a-task),
+measured at e4addb9 the same way. A new batch replaces them. A scenario with no table has no result in
 this batch.
 
 ## Running it
@@ -171,8 +171,8 @@ with a seeded record can.
 
 | Condition | Result |
 |---|---|
-| skill listed | 3 of 3 passed, 9/9 each, mean 30 requests (27 to 32). |
-| `COURIER_SKILL=deny` | 3 of 3 passed, 9/9 each, mean 30 requests (28 to 32). |
+| skill listed | 3 of 3 passed, 9/9 each, mean 31 requests (31 to 32). |
+| `COURIER_SKILL=deny` | 3 of 3 passed, 9/9 each, mean 27 requests (26 to 28). |
 
 ## A part that goes wrong
 
@@ -201,8 +201,8 @@ reported 2 times" is expected for it.
 
 | Condition | Result |
 |---|---|
-| `recursive-fault`, skill listed | 3 of 3 passed, 13/13 each, mean 35 requests (34 to 37). |
-| `recursive-fault`, `COURIER_SKILL=deny` | 2 of 3 passed, 13/13 twice and 12/13 once, mean 34 requests (31 to 39). The 12/13 is the root looking with `courier_children` and `courier_tree` after spawning, in its first turn. Its files and reply were right. |
+| `recursive-fault`, skill listed | 3 of 3 passed, 13/13 each, mean 33 requests (32 to 34). |
+| `recursive-fault`, `COURIER_SKILL=deny` | 3 of 3 passed, 13/13 each, mean 31 requests (30 to 32). |
 
 ## A part with a core
 
@@ -272,7 +272,7 @@ a sub-orchestrator's wake turn still runs.
 
 | Condition | Result |
 |---|---|
-| skill listed | 5 of 5 passed, 13/13 each, 27 to 41 requests, 33.4 on average. The "count" session sent the words up itself in none. |
+| skill listed | 3 of 3 passed, 13/13 each, mean 34 requests (31 to 39). |
 
 ## Words against a task
 
@@ -314,6 +314,10 @@ for n in 1 2 3 4 5; do
   env COURIER_SCENARIO=recursive-conflict E2E_WORK="$HOME/courier-runs/conflict-$n" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/conflict-$n.log"
 done
 ```
+
+| Condition | Result |
+|---|---|
+| skill listed | 3 of 5 passed, 13/13 three times, 12/13 and 5/13 once each, mean 30 requests (25 to 33). No countermand and no replaced file in the four runs that reached the conflict, so the text stays as it is. The 12/13 is the check that every session reported with a status. In the 5/13 the root started the halves itself, so the words never reached a half at depth 2. |
 
 ## A change and its review
 

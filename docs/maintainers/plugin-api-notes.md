@@ -75,6 +75,11 @@ older host and branches on it. How the plugin itself answers a trap is in
   `scheduledAt`, the time it was scheduled, to compare with its report) and a status-less message
   (only `source` and `from`, checked against the child store) from other courier messages; the `synthetic` call's returned id may arrive after the `delivered` event, so it is not
   used.
+- A prompt's `metadata` is copied into the inbox item's user payload by `SessionPrompt.prepare`
+  (`packages/core/src/session/prompt.ts`), and `session.inbox.enqueued` carries it. A `user` item
+  says nothing else about its origin: a prompt through the API or `opencode run`, the slash
+  commands `/init` and `/review`, a prompt with a skill attached and a `subagent` follow-up all
+  arrive with `metadata: null`.
 - A synthetic message steered to an idle session: `session.synthetic` admits it
   (`inbox.enqueued`, a pending inbox row), then rings the run coordinator
   (`packages/core/src/session/run-coordinator.ts`), which publishes `execution.started` and drains:

@@ -138,7 +138,6 @@ end_handled() {
   echo "end_handled: the courier did not handle the turn end of $1 (idle ${idle:-none}) in ${3:-30} s" >&2
   return 1
 }
-# Whether session $1 has a text containing $2, waiting up to $3 (default 30) s.
 # Waits up to $2 (default 30) s until the server log holds line $1.
 wait_log() {
   for _ in $(seq 1 "${2:-30}"); do
@@ -148,6 +147,7 @@ wait_log() {
   echo false
 }
 
+# Whether session $1 has a text containing $2, waiting up to $3 (default 30) s.
 has_text() {
   for _ in $(seq 1 "${3:-30}"); do
     if texts "$1" | grep -qF -- "$2"; then echo true; return; fi
@@ -287,7 +287,7 @@ spawned_by() {
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
 # Each group is a function `run_<name>` that needs no other; the weight is the seconds it took in CI. `restart-question`
 # and `roster` restart the server and share a shard (others restart it for an option or the plugin); `epilogue` ends every run.
-SUITE="reports:89 reports-groups:97 reminder:18 finding:11 finding-up:16 person-message:7 permission:36 depth:4 role-entry:6 entries:11 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:1 later:20 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 memory:27 busy:77 spawn-native:15 native:39 decline-seal:17 total-refusal:23 early-report:23 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:16 plugin-add:16"
+SUITE="reports:89 reports-groups:97 reminder:18 finding:11 finding-up:16 person-message:7 permission:36 depth:4 role-entry:6 entries:11 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:1 later:20 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 memory:27 busy:77 spawn-native:15 native:39 decline-seal:17 total-refusal:23 early-report:23 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
 BOUND="restart-question roster"
 
 # The groups of shard $1 of $2: the heaviest unit (a group, or the bound pair) goes to the lightest shard

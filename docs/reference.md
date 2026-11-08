@@ -575,9 +575,9 @@ the top session's turn is running. The typed-in session is judged by its state b
 the item has started its turn. The top session's turn keeps the gate open after the last report, while
 it verifies and merges. What the gate silences: the top has ended its turn, every session has
 reported, nothing waits in any inbox, and the person then types into a session under it. A held group
-report does not keep the gate open by itself, and a stalled wake does not count. A tree the plugin
-cannot read counts as at work, so a failure never silences the person; the log has a line for each
-send that failed and one for the total.
+report does not keep the gate open by itself, and a stalled wake does not count. A storage read that
+fails counts as at work, so it never silences the person; a `session.get` that fails counts that
+session as not running. The log has a line for each failed read and send, and one for the total.
 
 **The envelope.** Each ancestor gets the text in a courier envelope that names the route, not the
 person:

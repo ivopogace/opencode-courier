@@ -117,10 +117,16 @@ const sentBefore = (one, other) => one.index < other.index || (one.index === oth
 const reportsTo = (list, parentID) => sendsTo(list, parentID).filter((send) => send.status)
 const delivered = (list, from, after = -1) => list.findIndex((message, index) => index > after && sendersOf(message).includes(from) && !groupOf(message) && !statusOf(message, from))
 const plainAfter = (list, to, after) => sendsTo(list, to).find((send) => send.index > after && !send.status)
+const carriedInSpawn = (list, child, after) =>
+  list.some(
+    (message, index) =>
+      index > after && message.type === "assistant" && message.content.some((part) => childOf(part) === child && /\bchecked\b/i.test(part.state.input?.task ?? "")),
+  )
+const toldAfter = (list, child, after) => plainAfter(list, child, after) ?? (carriedInSpawn(list, child, after) ? { spawned: true } : undefined)
 const passedDown = (entry) => {
   const reached = delivered(entry.list, rootID)
   const below = spawnsOf(entry.list)
-  return reached !== -1 && below.length > 0 && below.every((child) => plainAfter(entry.list, child, reached))
+  return reached !== -1 && below.length > 0 && below.every((child) => toldAfter(entry.list, child, reached))
 }
 const go = (name) => writeFileSync(join(work, "project", name), "")
 
@@ -347,7 +353,7 @@ const onward = others.map(([id, entry]) => {
   const sent = atRoot === -1 ? undefined : plainAfter(root, id, atRoot)
   const reached = sent ? delivered(entry.list, rootID) : -1
   const below = spawnsOf(entry.list).filter((child) => tree.has(child))
-  const down = below.map((child) => ({ child, sent: reached === -1 ? undefined : plainAfter(entry.list, child, reached) }))
+  const down = below.map((child) => ({ child, sent: reached === -1 ? undefined : toldAfter(entry.list, child, reached) }))
   return { id, sent, reached, below, down }
 })
 const findingChecks = [

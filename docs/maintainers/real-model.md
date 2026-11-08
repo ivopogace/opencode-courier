@@ -125,6 +125,8 @@ the held prompt.
 | `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.29 | 6/6: told with the `shown="native"` notice, the parent wrote one line and ended its turn; told `answered="once"`, it replied. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 15b9314, the skill shrunk (#467), skill listed | 2.2.6 | 2 of 3 passed, 7/7 twice; every child reported `courier-permission-42`. The third parent spawned the child with `native: true` on its own, so it got the `shown="native"` notice and did as it says: one line to the person, then `courier_answer` once the person told it to. The checker expects the plain path without `COURIER_NATIVE=1` and scored it 5/7. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 6e684f3, no sleeps, skill listed | 2.2.6 | 3 of 3 passed, 7/7 each, scored by the checker that reads a native child the model chose. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 476df67, no sleeps (after EGM loop round 1, #500 to #506), skill listed | 2.2.6 | 3 of 3 passed, 7/7 each. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 2dacfe4, no sleeps (after EGM loop round 2, #511 to #515 and #520), skill listed | 2.2.6 | 3 of 3 passed, 7/7 twice and 6/6 once: that parent spawned its child with `native: true` on its own and was scored on the native path. |
 
 ## The question relay
 
@@ -147,6 +149,8 @@ child reported it; the reply holds it. With `COURIER_NATIVE=1` the script answer
 | `longcat-2.5-preview-free`, `COURIER_NATIVE=1` | 2.0.28 | 6/6: the parent wrote one line; told `answered="elsewhere"`, it replied `GREETING Hi`. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 15b9314, the skill shrunk (#467), skill listed | 2.2.6 | 3 of 3 passed, 6/6 each. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 6e684f3, no sleeps, skill listed | 2.2.6 | 3 of 3 passed, 6/6 each. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 476df67, no sleeps (after EGM loop round 1, #500 to #506), skill listed | 2.2.6 | 3 of 3 passed, 6/6 each. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 2dacfe4, no sleeps (after EGM loop round 2, #511 to #515 and #520), skill listed | 2.2.6 | 3 of 3 passed, 6/6 each. |
 
 ## Recursive orchestration
 
@@ -197,6 +201,10 @@ with a seeded record can.
 | a self-hosted model behind an OpenAI-compatible endpoint, 6c767f4, `COURIER_SKILL=deny` | 2.2.6 | 3 of 3 passed, 9/9, mean 30 requests (28 to 32), 102 to 121 s, 12277 uncached input tokens per request; two join groups in every tree; no polling. Run alternating with the row above on one day. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 6e684f3, no sleeps (after #477 to #482), skill listed | 2.2.6 | 2 of 3 passed, 9/9 twice and 7/9 once, mean 34 requests (31 to 37). In the 7/9 the halves reported during the "numbers" session's first turn, while their group was still held: it looked once with `courier_children`, checked the files and reported `done` before the group reached it. Every root and "numbers" session loaded the skill; every check-in was cancelled. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 6e684f3, no sleeps, `COURIER_SKILL=deny` | 2.2.6 | 2 of 3 passed, 9/9 twice and 8/9 once, mean 33 requests (26 to 42). In the 8/9 the "numbers" session checked its halves' files and reported `done` before their held group reached it; the group's delivery then ended without a report, the report reminder fired, and it reported a second time. Run alternating with the row above and the rows below on one day. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 476df67, no sleeps (after EGM loop round 1, #500 to #506), skill listed | 2.2.6 | 3 of 3 passed, 9/9, mean 33 requests (29 to 37), 83 to 164 s. Every root and "numbers" session loaded the skill; two join groups in every tree; no polling. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 476df67, no sleeps (after EGM loop round 1, #500 to #506), `COURIER_SKILL=deny` | 2.2.6 | 3 of 3 passed, 9/9, mean 26 requests (24 to 29), 71 to 126 s; two join groups in every tree; no polling. Run alternating with the row above and the other rows of this batch on one day. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 2dacfe4, no sleeps (after EGM loop round 2, #511 to #515 and #520), skill listed | 2.2.6 | 3 of 3 passed, 9/9, mean 30 requests (27 to 35), 95 to 176 s. Every root and "numbers" session loaded the skill; two join groups in every tree; no polling. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 2dacfe4, no sleeps (after EGM loop round 2, #511 to #515 and #520), `COURIER_SKILL=deny` | 2.2.6 | 2 of 3 passed, 9/9 twice and 8/9 once, mean 31 requests (27 to 36). In the 8/9 the "numbers" session reported upward a second time after a half's message without a status (#528, fixed by #530). Run alternating with the row above and the other rows of this batch on one day. |
 
 ## A part that goes wrong
 
@@ -217,8 +225,11 @@ its task word for word:
 
 The checker runs with `--fault` (recorded in `summary.json`, so `--saved` repeats it): the nine
 checks, then four. The faulty session is found by its first non-`done` report: the fault reached a
-leaf; its parent messaged it before reporting upward; it then reported `done`; its parent reported
-upward once, `done`. "Session … reported 2 times" is expected for it.
+leaf; its parent messaged it after the leaf's first message that was not `done` and before reporting
+upward; it then reported `done`; its parent reported upward once, `done`. That first message is a
+report or a message without a status, counted from when the leaf sent it, so a parent that reads a
+report held in a group from its standing and answers before the group delivers it passes. "Session …
+reported 2 times" is expected for it.
 
 | Model | OpenCode | Result |
 |---|---|---|
@@ -228,6 +239,10 @@ upward once, `done`. "Session … reported 2 times" is expected for it.
 | a self-hosted model behind an OpenAI-compatible endpoint, 15b9314, `COURIER_SKILL=deny` | 2.2.6 | 3 of 3 passed, 13/13 each, mean 34 requests (33 to 37). Run alternating with the row above and the two relays on one day. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 6e684f3, no sleeps, `recursive-fault`, skill listed | 2.2.6 | 3 of 3 passed, 13/13 each, mean 35 requests (33 to 36). |
 | a self-hosted model behind an OpenAI-compatible endpoint, 6e684f3, no sleeps, `recursive-fault`, `COURIER_SKILL=deny` | 2.2.6 | 3 of 3 passed, 13/13 each, mean 31 requests (29 to 33). Every scheduled check-in was cancelled with `courier_cancel`, here and in the row above. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 476df67, no sleeps (after EGM loop round 1, #500 to #506), `recursive-fault`, skill listed | 2.2.6 | 3 of 3 passed, 13/13 each, mean 31 requests (30 to 33). |
+| a self-hosted model behind an OpenAI-compatible endpoint, 476df67, no sleeps (after EGM loop round 1, #500 to #506), `recursive-fault`, `COURIER_SKILL=deny` | 2.2.6 | 2 of 3 passed, 13/13 twice and 7/13 once, mean 29 requests (27 to 32). In the 7/13 the "numbers" session, with the skill denied, countermanded the person's words its half relayed: the half reported `partial`, then `blocked`, numbers/b.txt was never written and the wait gave up (#520, fixed by #521). |
+| a self-hosted model behind an OpenAI-compatible endpoint, 2dacfe4, no sleeps (after EGM loop round 2, #511 to #515 and #520), `recursive-fault`, skill listed | 2.2.6 | 3 of 3 passed, 13/13 each, mean 38 requests (34 to 44). |
+| a self-hosted model behind an OpenAI-compatible endpoint, 2dacfe4, no sleeps (after EGM loop round 2, #511 to #515 and #520), `recursive-fault`, `COURIER_SKILL=deny` | 2.2.6 | 3 of 3 passed, 13/13 each, mean 34 requests (33 to 34), scored by the checker with the ordering relaxed in the PR that adds these rows. One run scored 10/13 before: the half's `partial` report was held with its group, the "numbers" session read it in its standing and told the half to finish before the group brought the report, and the checker then counted only a message after the report's delivery. The files and the reply were right. |
 
 ## A part with a core
 
@@ -299,6 +314,8 @@ the default wait gives up while a sub-orchestrator's wake turn still runs.
 | a self-hosted model behind an OpenAI-compatible endpoint, 63f7463 (#380: the person's message in a sentence of its own, skill step 4, a status sent downward dropped), skill listed, `COURIER_TIMEOUT=600` | 2.2.0 | 0 of 2 passed, 12/13 and 9/13; the four finding checks passed in one and three of four in the other. In both the "count" session sent the person's message up at once, quoted as the person's and without a status, before its report; the root passed it on and nobody reverted it; every file held `checked`. In the 12/13 the root sent the change to the halves itself, after one `courier_tree` look, so the "numbers" session had nothing left to pass on. In the 9/13 a half's turn failed or ended without a report during its `sleep 150`; the "numbers" session looked with `courier_children` and had the halves run again, and the wait gave up before the root's final reply. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 63f7463, `COURIER_SKILL=deny`, `COURIER_TIMEOUT=600` | 2.2.0 | 1 of 2 passed, 13/13 and 10/13; the four finding checks passed in both. The 10/13 lost the same three points as the 9/13 above, the same way. Two runs per condition, short of the three the issue asked for: an observation, but against 0 of 12 at 646112c (in this file's history) the leaf's miss is gone in all four. |
 | a self-hosted model behind an OpenAI-compatible endpoint, 6e684f3, no sleeps, skill listed, `COURIER_TIMEOUT=600` | 2.2.6 | 2 of 2 passed, 13/13 each, 49 and 35 requests; the four finding checks passed in both. This scenario keeps its own sleeps (150 s halves, 20 s count). |
+| a self-hosted model behind an OpenAI-compatible endpoint, 476df67, no sleeps (after EGM loop round 1, #500 to #506), skill listed, `COURIER_TIMEOUT=600` | 2.2.6 | 2 of 2 passed, 13/13 each, 38 and 33 requests; the four finding checks passed in both. |
+| a self-hosted model behind an OpenAI-compatible endpoint, 2dacfe4, no sleeps (after EGM loop round 2, #511 to #515 and #520), skill listed, `COURIER_TIMEOUT=600` | 2.2.6 | 2 of 2 passed, 13/13 each, 32 and 38 requests; the four finding checks passed in both. |
 
 ## A change and its review
 
@@ -389,7 +406,7 @@ This is a smoke test, not a benchmark: a few runs on free models that change wit
 model that passes here can still poll or forget to report on a harder task, so a `courier_later`
 check-in still pays. Which session loads the skill varies from run to run; on one-result tasks,
 models do not load it. No row reaches the five-run floor on two models. Not re-run since the skill
-was cut to the tools' mechanics (#433): the fan-out, `permission` (`COURIER_PERSON=other-server`
-included), `question`, `recursive-fault`, `recursive-staged` and `recursive-finding`. Each table
+was cut to the tools' mechanics (#433): the fan-out, `permission` with
+`COURIER_PERSON=other-server`, and `recursive-staged`. Each table
 keeps its rows on OpenCode 2.2, or its latest where it has none; earlier rows are in this file's
 history and at the release tags.

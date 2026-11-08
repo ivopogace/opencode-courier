@@ -177,7 +177,7 @@ export const depthRefusal = (depth: number, maxDepth: number) =>
 const live = (n: number) => (n === 1 ? "is running, blocked or still owes a report" : "are running, blocked or still owe a report")
 
 const stillCounts = (whoDrops: string) =>
-  `A session also counts while one it started is live, and one whose turn ended without a report, unless it failed or was interrupted, counts until it reports or ${whoDrops} it with courier_cleanup.`
+  `A session also counts while one it started is live, and one that is blocked, or whose turn ended without a report unless it failed or was interrupted, counts until it reports or ${whoDrops} it with courier_cleanup.`
 
 export const childrenRefusal = (running: number, maxChildren: number) =>
   `Not started: ${count(running, "session")} you started ${live(running)}, the most allowed at once ` +

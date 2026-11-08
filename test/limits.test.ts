@@ -766,6 +766,14 @@ describe("admit, with children that owe a report", () => {
     expect((await admit(ports, "ses_root")).depth).toBe(1)
   })
 
+  test("and the refusal for one idle after a blocked report names courier_cleanup for it (#537)", async () => {
+    const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, { ses_a: FINISHED })
+    await child("ses_root", "ses_a")
+    await childStore(storage).prompted("ses_a", 100)
+    await childStore(storage).settled("ses_a", "report", 150, "blocked")
+    await expect(admit(ports, "ses_root")).rejects.toThrow(/one that is blocked, .* counts until it reports or you drop it with courier_cleanup\.$/)
+  })
+
   test("but one archived after a blocked report, while its turn runs on between two steps, still counts", async () => {
     const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1 }, { ses_a: { ...FINISHED, updated: 9, archived: 9 } }, ["ses_a"])
     await child("ses_root", "ses_a")
@@ -1186,7 +1194,7 @@ describe("the context hook", () => {
   })
 
   test("the maxChildren and maxTotal refusals say not to retry in a loop, and what still counts (#511, #525)", () => {
-    const counts = "A session also counts while one it started is live, and one whose turn ended without a report, unless it failed or was interrupted, counts until it reports or"
+    const counts = "A session also counts while one it started is live, and one that is blocked, or whose turn ended without a report unless it failed or was interrupted, counts until it reports or"
     expect(childrenRefusal(2, 2)).toContain("2 sessions you started are running, blocked or still owe a report")
     expect(childrenRefusal(2, 2)).toEndWith(
       `start it once one of them has reported, not in a loop. ${counts} you drop it with courier_cleanup.`,

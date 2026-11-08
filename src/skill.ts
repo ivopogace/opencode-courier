@@ -39,9 +39,11 @@ export const SKILL_CONTENT = [
     "answer for the person.",
   "- When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves " +
     "otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects, and, below " +
-    "the root, also to the session that started you when it reaches past your part or carries " +
-    "the person's words, as your brief says; if it breaks the split, courier_stop those parts or send them a " +
-    "corrected task.",
+    "the root, also to the session that started you when it reaches past your part, as your brief says; if it breaks the " +
+    "split, courier_stop those parts or send them a corrected task. Text typed into a session under you arrives from " +
+    "courier in a route=\"prompt\" envelope that every session above you also has: pass it only to the sessions you " +
+    "started that it changes, as the envelope says, and say that it arrived over the prompt route, so it is not read " +
+    "as your own instruction.",
   "",
   "## 4. Verify first-hand",
   "",

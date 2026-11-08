@@ -80,6 +80,17 @@ older host and branches on it. How the plugin itself answers a trap is in
   says nothing else about its origin: a prompt through the API or `opencode run`, the slash
   commands `/init` and `/review`, a prompt with a skill attached and a `subagent` follow-up all
   arrive with `metadata: null`.
+- **What the TUI sends** (`packages/tui/src/component/prompt/index.tsx`): typed text goes through
+  `data.session.prompt` with no metadata, and a slash command through `session.command`; the `!`
+  shell mode calls `session.shell`, which admits no `user` item (it records the shell's start and
+  end and a `synthetic` result with `resume: false`). A pin bump re-checks each, since the fan-up
+  of typed text reads `user` items.
+- **`/goal`'s kickoff carries `source: "goal"`** (`packages/core/src/plugin/goal.ts`). It is a
+  `synthetic` item unless the prompt has attachments, then a `user` prompt, which the fan-up
+  passes up. A pin bump re-checks which one it is.
+- **`session.inbox.cancelled`** (`packages/core/src/session/inbox.ts`) is published for an item
+  withdrawn before delivery; the plugin drops the stored text of a typed-in item on it. A pin bump
+  re-checks that it still comes.
 - A synthetic message steered to an idle session: `session.synthetic` admits it
   (`inbox.enqueued`, a pending inbox row), then rings the run coordinator
   (`packages/core/src/session/run-coordinator.ts`), which publishes `execution.started` and drains:
@@ -333,6 +344,9 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
   sends the parent a synthetic `<subagent sessionID=… state=…>` with `metadata.childID`, without
   `resume: false`, which wakes an idle parent, or one still stopping. `courier_stop` waits for it
   (`SETTLE_MS`) and interrupts the parent again.
+- **An existing session is accepted.** `subagent` takes the id of a session whose `parentID` is
+  the caller and prompts it as a plain `user` item, so a parent's follow-up into its native child
+  is a `user` item like typed text, and the fan-up passes it up. A pin bump re-checks it.
 - **A completed background call's content** names the child's id (`working in the background
   (sessionID: …)`); a foreground call's stays `running` until the child ends.
 
@@ -518,6 +532,8 @@ is not. What the plugin does about it: [architecture.md](architecture.md#two-ser
 - A child's turn runs in the server that queued its prompt, and only that server sees its
   `permission.asked` or `execution.failed`.
 - `courier_answer` reaches a request only from the server where the child waits.
+- A session's inbox events (`enqueued`, `delivered`, `cancelled`) are seen by the server that
+  queued its prompt only, so the fan-up of typed text happens in that server.
 
 `e2e/two-servers.sh` (not in CI; see its header) checks these and exits 1 when one differs. It
 does not cover the question relay.

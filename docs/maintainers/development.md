@@ -48,7 +48,7 @@ and openssl. New behaviour gets a scenario there.
   ordered after the point where the unwanted thing would have happened, then checks once:
   `end_handled` after `turn_ended` for what the courier does at a turn's end (its memory module
   records the tree after the tree module has handled the end), a message delivered at the same tick,
-  a storage key the path removes last. A wait that fails after N seconds when the event never comes
+  a storage key the path removes last, `wait_log` for a server log line. A wait that fails after N seconds when the event never comes
   is fine.
 
 `e2e/kv.ts` reads, removes or sets the plugin's storage keys (`bun e2e/kv.ts get|remove <key>`, or

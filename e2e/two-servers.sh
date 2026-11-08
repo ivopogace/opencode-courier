@@ -212,14 +212,21 @@ owner_in_step=$(owner)
 echo "a child asks for a permission"
 out=$(prompt_on "$SERVER" "COURIER-ASK")
 parent=$(parent_of <<<"$out")
+child=$(jq -r 'select(.type == "tool_use" and .part.tool == "courier_spawn") | .part.state.metadata.metadata.sessionID' <<<"$out" | head -1)
 wait_for "$parent" 'asks="permission"' || true
 sleep 15
 asked=$(count "$parent" 'asks="permission"')
+echo "  a line typed into the asking child, through server A, queues behind its request"
+curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data '{"text":"TYPED-INTO-CHILD"}' \
+  "$SERVER/api/session/$child/prompt" >/dev/null
 echo "  the parent answers it with courier_answer in a turn on server B, then on server A"
 answered_b=$(prompt_in_on "$OTHER" "$parent" "COURIER-ANSWER once" | tool_state courier_answer)
 answer_b=$(jq -r '.metadata.metadata.answered' <<<"$answered_b")
 elsewhere_b=$(jq -r '.output | contains("another OpenCode server on the same data directory")' <<<"$answered_b")
 answer_a=$(prompt_in_on "$SERVER" "$parent" "COURIER-ANSWER once" | tool_state courier_answer | jq -r '.metadata.metadata.answered')
+# The line is delivered once the child carries on; the envelope is the barrier, the count is read once.
+wait_for "$parent" "route=\"prompt\" in=\"$child\"" || true
+typed=$(count "$parent" "route=\"prompt\" in=\"$child\"")
 
 echo "a child's turn fails"
 out=$(prompt_on "$SERVER" "COURIER-FAIL")
@@ -261,6 +268,7 @@ result "notices of the permission request" "$asked" 1
 result "courier_answer in a turn on server B reached the request" "$answer_b" false
 result "and said the request may wait in another server" "$elsewhere_b" true
 result "courier_answer in a turn on server A reached the request" "$answer_a" true
+result "envelopes of the line typed into the child" "$typed" 1
 result "notices of the failed turn" "$failed" 1
 [ "$failures" -eq 0 ] || { echo "$failures result(s) differ from the pinned version's; rerun with KEEP=1 to keep the logs"; exit 1; }
 echo "every result is as seen at the pinned version"

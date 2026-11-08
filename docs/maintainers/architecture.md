@@ -66,6 +66,7 @@ the tree's and the memory's keys.
 | `group/<parentID>/<name>/<sessionID>` | A member: title, `joinedAt`, its held report, or `left: { at, by }`. |
 | `later/<id>` | A pending `courier_later` message. |
 | `question/<requestID>` | A relayed question, until answered (the 100 newest). |
+| `typed/<sessionID>/<inboxID>` | `{ at, text }`: a `user` item typed into a spawned session, from its enqueue until its fan-up is sent or skipped. |
 | `wake/<sessionID>/<inboxID>` | A courier message waiting in an inbox: `at`, `text`, `description`, `running`, `idleAt`, `rewoken`, `stalled`. |
 | `scheduler/owner` | `{ server, at }`: the server whose scheduler delivers. |
 | `memory/<projectID>/<topSessionID>` | A tree's record. |

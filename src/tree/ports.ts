@@ -24,6 +24,11 @@ export type Stored = Parameters<Storage["set"]>[1]
 
 export type ReportKeys = ReadonlyMap<string, ReadonlyArray<string>>
 
+export interface Typed {
+  readonly at: number
+  readonly text: string
+}
+
 export interface ChildStore {
   record(entry: RosterEntry): Promise<void>
   remove(parentID: string, sessionID: string): Promise<void>
@@ -51,6 +56,10 @@ export interface ChildStore {
   forgetReport(sessionID: string): Promise<void>
   reported(): Promise<ReportKeys>
   dropReported(keys: ReadonlyArray<string>): Promise<void>
+  typed(sessionID: string, inboxID: string, at: number, text: string): Promise<void>
+  typedOf(sessionID: string, inboxID: string): Promise<Typed | undefined>
+  forgetTyped(sessionID: string, inboxID?: string): Promise<void>
+  typedSessions(): Promise<ReadonlySet<string>>
 }
 
 export interface Wake {

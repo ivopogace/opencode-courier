@@ -72,9 +72,18 @@ export async function current(storage: RosterStorage, parentID: string, now: num
 
 export async function pruneExpired(storage: RosterStorage, now: number, exists: Exists = existsSync) {
   const children = childStore(storage)
-  const reported = await children.reported().catch((): ReportKeys => new Map<string, string[]>())
+  const [reported, typed] = await Promise.all([
+    children.reported().catch((): ReportKeys => new Map<string, string[]>()),
+    children.typedSessions().catch((): ReadonlySet<string> => new Set<string>()),
+  ])
   const entries = await dropExpired(storage, await children.all(), now, exists)
-  await Promise.all([children.backfill(entries), dropOrphanedReports(storage, reported, entries)])
+  await Promise.all([children.backfill(entries), dropOrphanedReports(storage, reported, entries), dropOrphanedTyped(storage, typed, entries)])
+}
+
+async function dropOrphanedTyped(storage: RosterStorage, typed: ReadonlySet<string>, entries: ReadonlyArray<RosterEntry>) {
+  const children = childStore(storage)
+  const sessions = new Set(entries.map((entry) => entry.sessionID))
+  await Promise.all([...typed].filter((sessionID) => !sessions.has(sessionID)).map((sessionID) => children.forgetTyped(sessionID).catch(() => undefined)))
 }
 
 async function dropOrphanedReports(storage: RosterStorage, reported: ReportKeys, entries: ReadonlyArray<RosterEntry>) {

@@ -14,7 +14,7 @@ export interface Enqueued {
     readonly inboxID: string
     readonly item: {
       readonly type: string
-      readonly payload?: { readonly text?: unknown; readonly description?: unknown; readonly metadata?: { readonly source?: unknown; readonly resume?: unknown } }
+      readonly payload?: { readonly text?: unknown; readonly description?: unknown; readonly metadata?: { readonly [key: string]: unknown } | null }
     }
   }
 }

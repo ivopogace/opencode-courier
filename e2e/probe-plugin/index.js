@@ -49,7 +49,25 @@ export default {
         if (!following.signal.aborted) await new Promise((resolve) => setTimeout(resolve, 1_000))
       }
     })()
-    void follow({}, (event) => ({ type: event.type, id: event.id, sessionID: sessionOf(event.data) }))
+    // an enqueued item is logged with its delivery, metadata and start of text
+    const itemOf = (event) => {
+      if (event.type !== "session.inbox.enqueued" || !event.data?.item) return {}
+      const { type, delivery, payload } = event.data.item
+      const text = typeof payload?.text === "string" ? payload.text : undefined
+      return {
+        item: {
+          type,
+          delivery: delivery ?? null,
+          metadata: payload?.metadata ?? null,
+          text: text === undefined ? null : text.slice(0, 200),
+          chars: text?.length ?? null,
+          files: payload?.files?.length ?? 0,
+          agents: payload?.agents?.length ?? 0,
+          skills: payload?.skills?.length ?? 0,
+        },
+      }
+    }
+    void follow({}, (event) => ({ type: event.type, id: event.id, sessionID: sessionOf(event.data), ...itemOf(event) }))
     if (ctx.options.types)
       void follow({ types: ctx.options.types }, (event) => ({ type: "probe.filtered", event: event.type, id: event.id, sessionID: sessionOf(event.data) }))
     return () => {

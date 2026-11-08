@@ -7,9 +7,11 @@ const STATUS_LIST = `${STATUSES.slice(0, -1).join(", ")} or ${STATUSES.at(-1)}`
 
 export const childBranch = (sessionID: string) => `courier/${sessionID}`
 
+export const BRIEF_FIRST_LINE = "You were started by session "
+
 export function childBrief(parentID: string, task: string, depth: number, limits: Limits, branch?: string) {
   return [
-    `You were started by session ${parentID} through opencode-courier.`,
+    `${BRIEF_FIRST_LINE}${parentID} through opencode-courier.`,
     "",
     `When you finish, send exactly one report: call courier_send with sessionID "${parentID}", a short account of what you did and ` +
       "status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: " +
@@ -22,9 +24,8 @@ export function childBrief(parentID: string, task: string, depth: number, limits
       "that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes " +
       "it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own " +
       "part. Progress alone is not worth a message.",
-    "A message the person writes in your session, outside a <courier> envelope, is for the whole job: before you act on it, " +
-      "send it to the parent at once with courier_send without a status, quoting it as the person's, then carry on. The " +
-      "person's words a session you started passes you are for the whole job too: send them on to the parent the same way.",
+    "Courier passes what the person writes in your session, outside a <courier> envelope, to the sessions above you, in an " +
+      'envelope marked route="prompt". Do not send it up yourself: act on it, and say in your report what you did because of it.',
     "If you need the person to decide something, use your question tool; it reaches them through the top session of the tree.",
     "",
     ...(branch ? [...isolationRule(branch, depth < limits.maxDepth), ""] : []),
@@ -417,6 +418,19 @@ function wait(ms: number) {
 function clock(at: number, from: number) {
   const iso = new Date(at).toISOString()
   return iso.slice(0, 10) === new Date(from).toISOString().slice(0, 10) ? `${iso.slice(11, 16)} UTC` : `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
+}
+
+export function typedNotice(sessionID: string, title: string | undefined, at: number, now: number, text: string) {
+  const named = title === undefined ? "" : ` ("${title}")`
+  return [
+    `At ${clock(at, now)} this text arrived in session ${sessionID}${named}, a session under yours, over the prompt route: courier did ` +
+      "not send it and cannot tell who did, whether the person, a client, a session above it through OpenCode's subagent tool, or a shell " +
+      `with the server's password. Courier passes it on as written. ${sessionID} has the text and acts on it. Where the text changes ` +
+      `other parts of the job, send it to the sessions you started that those parts are under, and only to them: ${sessionID} already has ` +
+      "the text, and every session between it and you and every session above you already has this envelope.",
+    "",
+    text,
+  ].join("\n")
 }
 
 function waitLine(delay: number, at: number | undefined) {

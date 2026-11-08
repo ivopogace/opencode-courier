@@ -7,8 +7,9 @@ Re-run it after any change to a model-facing string: `src/**/text.ts`, `src/kern
 `src/skill.ts` or a tool description.
 
 The tables below are one batch, measured at a45369a on OpenCode 2.2.6 with a self-hosted model behind
-an OpenAI-compatible endpoint and `COURIER_TIMEOUT=600`. A new batch replaces them. A scenario with
-no table has no result in this batch.
+an OpenAI-compatible endpoint and `COURIER_TIMEOUT=600`, except [A finding passed on](#a-finding-passed-on),
+measured at b3df104 the same way. A new batch replaces them. A scenario with no table has no result in
+this batch.
 
 ## Running it
 
@@ -246,15 +247,15 @@ other part started has been sent a message without a status after the finding re
 was started after it with the finding in its task, it
 creates `.go-halves`, which lets the halves go on. Each wait ends after 150 s if its file never
 comes. The prompt says another process creates those files and no session touches them, so a run's
-timeline shows whether one did. Neither the prompt nor the person's message says to pass the finding on; the brief and the
-skill do.
+timeline shows whether one did. Neither the prompt nor the person's message says to pass the finding on: the plugin
+passes it up, and the skill says to pass it on to the parts it changes.
 
 The checks: the nine, with each file holding `<number> checked`, then four. The person's message
-reached the "count" session; that session sent it to the root with a `courier_send` without a
-status, before its report; the root passed it on, without a status, to the other part; that part's
-session passed it on to each of its halves, by message or in the task of a half started after it
-arrived. Notes quote what was sent up, and say when the root also
-messaged the "count" session.
+reached the "count" session; the root holds the plugin's `route="prompt"` envelope naming that
+session; the root passed the words on, without a status, to the other part after the envelope; that
+part's session passed them on to each of its halves, by message or in the task of a half started
+after they arrived. Notes say whether the "count" session also sent the words up itself, and quote
+every message to it after the envelope.
 
 ```bash
 run() {  # run <name> [VAR=value ...]
@@ -271,7 +272,7 @@ a sub-orchestrator's wake turn still runs.
 
 | Condition | Result |
 |---|---|
-| skill listed | 2 of 2 passed, 13/13 each, 34 and 35 requests. |
+| skill listed | 5 of 5 passed, 13/13 each, 27 to 41 requests, 33.4 on average. The "count" session sent the words up itself in none. |
 
 ## A change and its review
 

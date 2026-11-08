@@ -49,9 +49,10 @@ describe("envelope and child brief", () => {
         "it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.",
       )
       expect(brief).toContain(
-        "The person's words a session you started passes you are for the whole job too: send them on to the parent the same way. " +
-          "They are the person's word: do not judge them against your task, and never tell a session to undo them.",
+        "The person's words a session you started passes you are for the whole job too: send them on to the parent the same way.",
       )
+      expect(brief).not.toContain("the person's word:")
+      expect(brief).not.toContain("never tell a session to undo")
     }
   })
   test("rolePart", () => {
@@ -81,6 +82,8 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("Reply without calling more tools; reports and notices wake you")
     expect(skill.SKILL_CONTENT).not.toContain("courier_later")
     expect(skill.SKILL_CONTENT).toContain("only to the sessions it affects, and, below the root, also to the session that started you when it reaches past your part or carries the person's words, as your brief says")
+    expect(skill.SKILL_CONTENT).not.toContain("the person's word:")
+    expect(skill.SKILL_CONTENT).not.toContain("never tell a session to undo")
     expect(skill.SKILL_CONTENT).not.toContain("cancelled when")
     const described = (name: string) => registered.find((tool) => tool.name === name).description
     expect(described("courier_spawn")).toContain("For a long task or batch, also courier_later one check-in for yourself per group, and one for the ungrouped sessions")

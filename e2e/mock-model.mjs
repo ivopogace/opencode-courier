@@ -441,7 +441,7 @@ function relayPersonWords(messages, lastAssistant) {
     const handled = sent.some((item) => /Passed up from|UNDO IT/.test(item.function.arguments ?? ""))
     const reported = sent.some((item) => (item.function.arguments ?? "").includes("RELAYER DONE"))
     if (found && !handled) {
-      const told = first.includes("They are the person's word: do not judge them against your task, and never tell a session to undo them.")
+      const told = first.includes("The person's words a session you started passes you are for the whole job too: send them on to the parent the same way.")
       return told
         ? { tool: "courier_send", args: { sessionID: briefedBy[1], message: `Passed up from ${found[1]}: ${found[2]}` } }
         : { tool: "courier_send", args: { sessionID: found[1], message: "UNDO IT: write the number to the file as your task says" } }

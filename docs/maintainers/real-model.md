@@ -244,7 +244,8 @@ finding has come down two levels. The checker, run with `--finding`, plays the p
 followed by ` checked`, then creates `.go-count`, which lets that part go on. Once each session the
 other part started has been sent a message without a status after the finding reached that part, it
 creates `.go-halves`, which lets the halves go on. Each wait ends after 150 s if its file never
-comes. Neither the prompt nor the person's message says to pass the finding on; the brief and the
+comes. The prompt says another process creates those files and no session touches them, so a run's
+timeline shows whether one did. Neither the prompt nor the person's message says to pass the finding on; the brief and the
 skill do.
 
 The checks: the nine, with each file holding `<number> checked`, then four. The person's message

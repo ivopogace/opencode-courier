@@ -307,9 +307,12 @@ export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"
 export const childrenText = (listed: ReadonlyArray<unknown>) =>
   listed.length ? JSON.stringify(listed, null, 2) : "No sessions started with courier_spawn."
 
+const keptLine = (result: Extract<CleanupResult, { readonly outcome: "kept" }>) =>
+  `Kept the worktree ${result.directory} of ${result.sessionID}: it has ${result.reason}.`
+
 export function cleanupText(result: CleanupResult) {
   if (result.outcome === "kept")
-    return `Kept the worktree ${result.directory} of ${result.sessionID}: it has ${result.reason}. Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it.`
+    return `${keptLine(result)} ${result.sessionID} is not dropped yet: commit what you want to keep to a branch, then call courier_cleanup again, or call it now with force: true to discard it. Either call drops ${result.sessionID}.`
   const done = {
     removed: `Removed the worktree ${result.directory} of ${result.sessionID}.`,
     gone: `The worktree ${result.directory} of ${result.sessionID} was already gone; dropped it from courier_children.`,
@@ -355,15 +358,13 @@ export function stopText(result: {
   ].join("\n")
 }
 
-const FORCE_HINT = " Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it."
-
 function worktreeLines(cleanup: ReadonlyArray<CleanupResult | { readonly sessionID: string; readonly outcome: "failed"; readonly error: string }>) {
   if (!cleanup.length) return ["None of them ran in a worktree of its own."]
-  return cleanup.map((one) =>
-    one.outcome === "failed"
-      ? `Worktree of ${one.sessionID}: not removed (${one.error}).`
-      : cleanupText(one).replace(FORCE_HINT, " Kept; courier_cleanup with force: true discards it."),
-  )
+  return cleanup.map((one) => {
+    if (one.outcome === "failed") return `Worktree of ${one.sessionID}: not removed (${one.error}).`
+    if (one.outcome === "kept") return `${keptLine(one)} Kept; courier_cleanup with force: true discards it.`
+    return cleanupText(one)
+  })
 }
 
 export const stoppedNotice = (title: string, by: string) =>

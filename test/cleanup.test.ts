@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { cleanup, findGit, GIT_ENV, GIT_LOCATIONS, headOf, inspectWorktree, MAX_LISTED } from "../src/tree/cleanup.js"
 import type { CleanupPorts, RosterEntry, WorktreeState } from "../src/tree/ports.js"
-import { keepReason } from "../src/tree/text.js"
+import { cleanupText, keepReason } from "../src/tree/text.js"
 import { childStore, reverseKey, rosterKey } from "../src/tree/store.js"
 
 const clean: WorktreeState = { changes: [], commits: [] }
@@ -125,6 +125,8 @@ describe("cleanup", () => {
     })
     expect(removed).toEqual([])
     expect(store.has(rosterKey("ses_parent", "ses_child"))).toBe(true)
+    expect(cleanupText(result)).toContain("ses_child is not dropped yet")
+    expect(cleanupText(result)).toContain("then call courier_cleanup again")
   })
 
   test("keeps a worktree whose commits are on no branch, tag or remote", async () => {

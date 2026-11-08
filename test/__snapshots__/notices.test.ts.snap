@@ -379,7 +379,7 @@ exports[`tools courier_stop 1`] = `
 
 exports[`tools courier_cleanup 1`] = `
 {
-  "description": "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and the result lists them; commit or branch what you want, or pass force: true to discard it. A session without isolate has no worktree and is only dropped from courier_children. Either way, one in a join group that has not reported is dropped from it, so the group's other reports reach you without it; use this for a member you no longer need a report from. It never deletes the session itself, nor the sessions it started.",
+  "description": "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and the result lists them, the session staying listed; commit what you want to a branch and call again, or pass force: true to discard it. A session without isolate has no worktree and is only dropped from courier_children. Once dropped, one in a join group that has not reported is dropped from it, so the group's other reports reach you without it; use this for a member you no longer need a report from. It never deletes the session itself, nor the sessions it started.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -943,7 +943,7 @@ exports[`tool results cleanupText 1`] = `"Removed the worktree /wt of ses_child.
 
 exports[`tool results cleanupText 2`] = `"The worktree /wt of ses_child was already gone; dropped it from courier_children."`;
 
-exports[`tool results cleanupText 3`] = `"Kept the worktree /wt of ses_child: it has 1 uncommitted change (a.ts). Commit or branch what you want to keep, or call courier_cleanup again with force: true to discard it."`;
+exports[`tool results cleanupText 3`] = `"Kept the worktree /wt of ses_child: it has 1 uncommitted change (a.ts). ses_child is not dropped yet: commit what you want to keep to a branch, then call courier_cleanup again, or call it now with force: true to discard it. Either call drops ses_child."`;
 
 exports[`tool results cleanupText 4`] = `"ses_child ran in /repo, with no worktree of its own to remove; dropped it from courier_children."`;
 

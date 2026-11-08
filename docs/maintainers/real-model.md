@@ -271,7 +271,7 @@ a sub-orchestrator's wake turn still runs.
 
 | Condition | Result |
 |---|---|
-| skill listed, measured at 9d31231 | 5 of 5 passed, 13/13 each, mean 35 requests (32 to 38), 128 to 337 s. No session touched the wait files. The 337 s is the run whose finding reached the "numbers" session before it started its halves: read with `--saved`, since it ran with a checker that waited for a message to them, so the halves waited out the 150 s limit. Every file held the change in all five. |
+| skill listed, measured at 9d31231 and 7948f18 | 9 of 10 passed, 13/13 nine times and 8/13 once, mean 34 requests (27 to 40), 127 to 337 s. No session touched the wait files. In the 8/13 the "count" session applied the person's change to its own file and named it only in its report, so it reached no other part and the halves' files lack it. The two runs of 300 s or more are the halves waiting out the 150 s limit: that 8/13, and a run whose finding reached the "numbers" session before it started its halves, read with `--saved`. Every other file held the change. |
 
 ## A change and its review
 

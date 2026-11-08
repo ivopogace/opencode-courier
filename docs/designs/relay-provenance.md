@@ -87,8 +87,8 @@ alike. So the envelope attests the route and the session, not the person.
   words binding, or asks a model to relay or quote them. The `role` instruction entry is unchanged.
   The `test/notices.test.ts` snapshot is the record of the resulting text.
 * One mock e2e scenario covers the fan-up, its gate and its absence; the real-model suite covers
-  every scenario, since the brief and the skill change; one real-model scenario settles the one open
-  wording.
+  every scenario, since the brief and the skill change; one real-model scenario smoke-checks the
+  envelope's wording against a conflict.
 
 ## Non-Goals
 
@@ -105,30 +105,28 @@ alike. So the envelope attests the route and the session, not the person.
 
 ## Open Questions
 
-* **The "undo" clause.** The envelope says that the named session has the text and acts on it. The
-  slot after that sentence is open:
-  1. "It decides what the text means for its part."
-  2. Nothing: the text is information, and the sessions above decide.
+* **The "undo" clause: decided, with a smoke check.** The envelope says that the named session has
+  the text and acts on it, and nothing more about what a session above may do: the text is
+  information, and the sessions above decide. With that slot empty the envelope asks nothing that
+  binds a receiver to the text.
 
   A clause that forbids telling the named session to undo the text "unless the person says so" is
-  not a candidate: the envelope says the plugin cannot tell who typed, a session can cause one
-  through `subagent` on a native child or a shell holding the password, and such a clause would
-  shield that text from correction on a condition the plugin cannot verify.
+  ruled out: the envelope says the plugin cannot tell who typed, a session can cause one through
+  `subagent` on a native child or a shell holding the password, and such a clause would shield
+  that text from correction on a condition the plugin cannot verify.
 
-  The premise for choosing: for text the plugin relayed, a session above telling the named session
-  to drop it and do its task as given is the failure the wording is chosen to avoid; a session
-  above stays free to report the conflict to its own parent or to the person. A session's own claim
-  about the person arrives in no such envelope and binds nobody, so the clause never applies to it.
-  The ten runs of `recursive-finding` above, five with a rule line and five with the slot empty,
-  could not separate the two, because that scenario's words contradict no session's task and
-  nothing provoked a pushback, and the three points the slot-empty arm lost were a repeated message,
-  a heads-up about wiped files and a tree-shape miss, none about the words.
-  [Settling the undo clause](#settling-the-undo-clause) describes a scenario built to provoke a
-  pushback. While the question is open, the slot is empty (candidate 2), and with the slot empty
-  the envelope asks nothing that binds a receiver to the text.
-
-  Decided by the author: the scenario runs in two arms, one per candidate, ten runs and about 350
-  model requests in all, before the wording is final.
+  What the empty slot risks: for text the plugin relayed, a session above telling the named
+  session to drop it and do its task as given, while a session above stays free to report the
+  conflict to its own parent or to the person. A session's own claim about the person arrives in no
+  such envelope and binds nobody. The ten runs of `recursive-finding` above, five with a rule line
+  and five with the slot empty, show no countermand in either arm, but that scenario's words
+  contradict no session's task, so nothing provoked one, and the three points the slot-empty arm
+  lost were a repeated message, a heads-up about wiped files and a tree-shape miss, none about the
+  words. Five runs per wording cannot separate two wordings on a stochastic model either, so no
+  arms are run against each other. Instead [a smoke check](#smoke-check-of-the-undo-clause) runs
+  the shipped text once through a scenario built to provoke a countermand. The question reopens
+  only if a person counts a countermand in two or more of its five runs; the fix tried then, the
+  same way, is the sentence "It decides what the text means for its part."
 
 ## Critical User Journeys (CUJs)
 
@@ -367,7 +365,8 @@ The skill's step 3 bullet (`src/skill.ts`), in full:
   past your part, as your brief says; if it breaks the split, courier_stop those parts or send them
   a corrected task. Text typed into a session under you arrives from courier in a route="prompt"
   envelope that every session above you also has: pass it only to the sessions you started that it
-  changes, as the envelope says.
+  changes, as the envelope says, and say that it arrived over the prompt route, so it is not read
+  as your own instruction.
 ```
 
 The README tip, replacing the steering bullet:
@@ -386,8 +385,10 @@ step 3 and the "Without the skill" paragraph under
 [The courier-orchestrate skill](../reference.md#the-courier-orchestrate-skill), and
 [OpenCode's subagents](../reference.md#opencodes-subagents) state the text above and link there.
 
-### Settling the undo clause
+### Smoke check of the undo clause
 
+A smoke check of the shipped envelope text, not a measurement between wordings: five runs, about
+175 requests, in the owner's sandbox, after phases 1 to 4 are merged.
 `COURIER_SCENARIO=recursive-conflict`, run by `e2e/real-model.sh` with the checker
 `e2e/real-model-recursive.mjs --conflict`. The prompt is `recursive-finding`'s: the recursive job
 whose three leaf commands wait on `.go-count` and `.go-halves`. The checker creates `.go-count` as
@@ -422,15 +423,12 @@ says/i`, `/finish your task/i` or `/still required/i` are marked as possible cou
 not counted as a check, since a message that repeats the person's words ("do not write
 numbers/b.txt") matches the first pattern too. A person reads the quoted messages and records the
 count of countermands per run in `real-model.md`; that count, not the regex marks, is what the
-arms are compared on.
+check is read by.
 
-Arms: two commits on the implementation branch that differ only in the clause sentence of
-`typedNotice`, one with candidate 1 and one with the slot empty; `e2e/real-model.sh` exports
-`COURIER_COMMIT` from `git rev-parse --short HEAD` and the checker writes it into `summary.json`.
-Five runs per arm, about 35 requests each, about 350 in all. Candidate 1 is chosen when its total
-of recorded countermands and `numbers/b.txt` replacements is at least two below the empty slot's;
-otherwise the slot stays empty. No option or variable selects the arm, so nothing of the
-measurement ships.
+The reading: a countermand or a `numbers/b.txt` replacement in two or more of the five runs
+reopens the clause, and the sentence "It decides what the text means for its part." is put in the
+slot and checked the same way, five runs. Fewer than two leaves the text as shipped. Nothing
+selects a wording at run time; a change to the slot is a change to `typedNotice`.
 
 ### Risks and mitigations
 
@@ -456,8 +454,15 @@ measurement ships.
 * **An ancestor is gone or refuses the call**: that send fails and is logged; the others are sent.
 * **The host changes how prompt metadata travels** (a pin bump): the first-line rule would still
   skip the task prompt, and the `source` check would be lost as the second guard, so a brief whose
-  first line changed would be relayed to the parent at every spawn. A pin bump re-checks that
+  first line changed would be relayed to the parent at every spawn. The first-line rule would hide
+  that loss from every other test, so `run_person_up` checks the task prompt's inbox item for
+  `source: "courier"` through the probe plugin's log, and a pin bump re-checks that
   `SessionPrompt.prepare` copies `metadata` into the item, as `plugin-api-notes.md` lists.
+* **Forwarded text loses its route.** Once a session passes the text on with `courier_send`, it
+  arrives as `<courier from="<that session>">` and reads as that session's own instruction; the
+  plugin's attestation stops at the first hop. The skill asks the sender to say that the text
+  arrived over the prompt route, which a model may omit, and a session that gets it second-hand
+  weighs it as it weighs any message from its parent. Nothing carries the route further down.
 
 ## Alternatives Considered
 
@@ -610,8 +615,10 @@ release; phases 1 to 4 are one pull request; phase 5 runs in the owner's sandbox
 
 Removes the sentences that make a session's account of the person's words binding, and keeps the
 model-composed upward relay until the fan-up lands. Proves itself with `bun test
---update-snapshots` once, then `bun test`, and a targeted real-model set in the owner's sandbox:
-`recursive-finding` and `recursive-fault`, five runs each, their rows replaced in `real-model.md`.
+--update-snapshots` once, then `bun test`. It merges on a targeted real-model set in the owner's
+sandbox, `recursive-finding` and `recursive-fault`, five runs each, repeated for anything that
+fails until it passes; the full suite then runs once before the patch is released, and the rows in
+`real-model.md` are replaced.
 
 #### 0.1. `src/skill.ts` (Modify)
 
@@ -691,7 +698,9 @@ Proves itself with `bun run typecheck && bun test`. Before it starts, one check 
 in the owner's sandbox, on the `probe-prompts` branch, whose probe plugin logs each inbox item's
 metadata: `handOver` there sends `metadata: { source: "courier", task: true }` on the task prompt,
 and the item's `metadata` must show it. The result goes into `docs/maintainers/plugin-api-notes.md`
-(item 20). The pin-bump re-check in the risks stays as written.
+(item 20). Then that branch's user-item logging is ported into the e2e harness's probe plugin
+(item 21a), test-only code, so that `run_person_up` can check the same thing on every run (item
+21). The pin-bump re-check in the risks stays as written.
 
 #### 6. `src/tree/relay.ts` (Create)
 
@@ -835,8 +844,18 @@ full suite; `e2e/tui.sh` for the panel check.
   and `turn_ended "$root"` holds, `prompt_in "$leaf" "PERSON-LATE"`; the barrier is a new
   `wait_log "reached nobody: the tree has finished" 30` helper, a loop over `grep -qF` on
   `$WORK/server.log` in the pattern of the existing waits; then one check that the root holds no
-  synthetic containing `PERSON-LATE`. `run_person_message`'s brief check names `Do not send it up
-  yourself`. The `SUITE` weight of `person-up` is updated from the run log.
+  synthetic containing `PERSON-LATE`. One more check, from the probe plugin's log at
+  `$WORK/probe.log`: the `session.inbox.enqueued` row of the leaf's task prompt (the first `user`
+  item in the leaf's session) carries `source: "courier"` in its metadata, so a host that stopped
+  copying prompt metadata fails the suite instead of being hidden by the first-line rule.
+  `run_person_message`'s brief check names `Do not send it up yourself`. The `SUITE` weight of
+  `person-up` is updated from the run log.
+
+#### 21a. `e2e/probe-plugin/index.js` (Modify)
+
+* **Proposed Changes**: Test-only code: for `session.inbox.enqueued` the logged row gains the
+  item's `type`, `delivery` and `metadata`, and for a `user` item its text's first 200 characters,
+  as the `probe-prompts` branch's copy logs them.
 
 #### 22. `e2e/mock-model.mjs` (Modify)
 
@@ -869,15 +888,15 @@ full suite; `e2e/tui.sh` for the panel check.
 
 Runs in the owner's sandbox only. Before the pull request of phases 1 to 4 is merged: five
 `recursive-finding` runs on its branch with the final envelope body, since the ten runs above used
-a shorter body with a different attribute. After it is merged: every scenario, and the two arms of
-`recursive-conflict`.
+a shorter body with a different attribute. After it is merged: every scenario, and the
+`recursive-conflict` smoke check.
 
 #### 26. `e2e/real-model.sh` (Modify)
 
 * **Proposed Changes**: A `recursive-conflict)` arm with `recursive-finding`'s `PROMPT`,
   `COURIER_EXPECT="391 42"`, `COURIER_FILES="numbers/a.txt count/total.txt"`,
   `CHECKER=real-model-recursive.mjs`, `CHECKER_FLAGS=--conflict`; the `*)` message and the list
-  at the file's end name it; `export COURIER_COMMIT=$(git rev-parse --short HEAD)`.
+  at the file's end name it.
 
 #### 27. `e2e/real-model-recursive.mjs` (Modify)
 
@@ -888,8 +907,7 @@ a shorter body with a different attribute. After it is merged: every scenario, a
   root sent the other part a message without a status after it; that part passed the words down.
   A note quotes every message to the "count" session after the envelope. `--conflict` and the
   `conflict` summary field; the half detector, the POST, the file order, the checks and the notes
-  of [Settling the undo clause](#settling-the-undo-clause); `commit` in `summary.json` from
-  `COURIER_COMMIT`.
+  of [the smoke check](#smoke-check-of-the-undo-clause).
 
 #### 28. `test/real-model-recursive.test.ts` (Modify)
 
@@ -899,9 +917,9 @@ a shorter body with a different attribute. After it is merged: every scenario, a
 #### 29. `docs/maintainers/real-model.md` (Modify)
 
 * **Proposed Changes**: The `COURIER_SCENARIO` row names `recursive-conflict`; "A finding passed
-  on" describes the envelope-based checks; a section for `recursive-conflict` with the arms, the
-  margin rule and the person's classification step; the result rows of every scenario after the
-  re-run.
+  on" describes the envelope-based checks; a section for `recursive-conflict` as a smoke check,
+  with the person's classification step and the two-of-five reading; the result rows of every
+  scenario after the re-run.
 
 ### Verification Plan
 
@@ -911,12 +929,13 @@ a shorter body with a different attribute. After it is merged: every scenario, a
 * **Static Analysis**: SonarCloud in CI.
 * **Test Coverage Requirement**: none beyond the tests named.
 * **E2E/Integration**: the live suite's four shards, `e2e/tui.sh` and `e2e/two-servers.sh` in the
-  sandbox. Real model, in the owner's sandbox: after phase 0, `recursive-finding` and
-  `recursive-fault`, five runs each (about 350 requests); before phase 2, the metadata check on the
+  sandbox. Real model, in the owner's sandbox: for phase 0, `recursive-finding` and
+  `recursive-fault`, five runs each (about 350 requests), repeated for failures, then every
+  scenario once before its release (about 700 requests); before phase 2, the metadata check on the
   `probe-prompts` branch; before the merge of phases 1 to 4, five `recursive-finding` runs on that
   branch (about 175 requests); after it, `e2e/real-model.sh` on every scenario (about 20 runs, 700
-  requests, in batches on the free tier or on a paid key) and `recursive-conflict` in two arms,
-  five runs each (about 350 requests).
+  requests, in batches on the free tier or on a paid key) and the `recursive-conflict` smoke check,
+  five runs (about 175 requests), plus five more only if it reopens the clause.
 
 --------------------------------------------------------------------------------
 

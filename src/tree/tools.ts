@@ -217,8 +217,9 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
     description:
       "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, " +
       "and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and " +
-      "the result lists them; commit or branch what you want, or pass force: true to discard it. A session without " +
-      "isolate has no worktree and is only dropped from courier_children. Either way, one in a join group that has not " +
+      "the result lists them, the session staying listed; commit or branch what you want and call again, or pass " +
+      "force: true to discard it. A session without isolate has no worktree and is only dropped from " +
+      "courier_children. Once dropped, one in a join group that has not " +
       "reported is dropped from it, so the group's other reports reach you without it; use this for a member you no " +
       "longer need a report from. It never deletes the session itself, nor the sessions it started.",
     input: CleanupInput,

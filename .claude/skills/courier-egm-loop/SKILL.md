@@ -65,7 +65,7 @@ with the reason, so later rounds don't raise it again.
 6. **Close the review PR** with a comment that lists the issues filed and the PRs that fixed
    them; it was a reference, never for merging.
 7. **Real-model check.** When the wave changed a model-facing string, CLAUDE.md asks for
-   `e2e/real-model.sh` and a row in `docs/maintainers/real-model.md`. Run it where the owner runs
+   `e2e/real-model.sh` and new results in `docs/maintainers/real-model.md`. Run it where the owner runs
    real models (a memory or the roster names it); ask only if nothing does. A failed check is a
    finding of the next round.
 8. Tell the owner in three lines: the round, what was found and fixed, and what's next. Then

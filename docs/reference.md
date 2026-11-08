@@ -332,6 +332,10 @@ Artifacts:
 A message with a status settles the child's report, `blocked` included. A message without one is
 progress and settles nothing.
 
+Every message courier delivers is one such envelope, and only courier writes its tag: a `<courier`
+or `</courier` inside what a session wrote, in a message, an artifact or a session's title, is
+shown as `&lt;courier`, so no session can make its recipient read a second envelope.
+
 ## Join groups
 
 Each report wakes the parent separately. Give a batch of children the same `group` in

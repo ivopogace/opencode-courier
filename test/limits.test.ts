@@ -518,7 +518,7 @@ describe("admit", () => {
     await expect(refused).rejects.toThrow(totalRefusal(3, 3, 0))
     await expect(refused).rejects.toThrow("only reports already held for a group can still wake you")
     await expect(admit(ports, "ses_a")).rejects.toThrow(totalRefusal(3, 3, 1))
-    await expect(admit(ports, "ses_a")).rejects.toThrow("once one of the sessions you started has reported, not in a loop.")
+    await expect(admit(ports, "ses_a")).rejects.toThrow("answer any session you started that is blocked, end your turn and try again once one of them has reported, not in a loop.")
   })
 
   test("maxTotal does not count another tree's sessions, or finished ones", async () => {
@@ -1192,10 +1192,16 @@ describe("the context hook", () => {
       `start it once one of them has reported, not in a loop. ${counts} you drop it with courier_cleanup.`,
     )
     expect(totalRefusal(4, 4, 1)).toEndWith(
-      `try again once one of the sessions you started has reported, not in a loop. ${counts} its parent drops it with courier_cleanup.`,
+      `try again once one of them has reported, not in a loop. ${counts} its parent drops it with courier_cleanup.`,
     )
     expect(childrenRefusal(1, 1)).not.toContain("turn has ended")
     expect(totalRefusal(4, 4, 1)).not.toContain("turn has ended")
+  })
+
+  test("the maxChildren and maxTotal refusals say to answer a blocked child before waiting for a report (#534)", () => {
+    expect(childrenRefusal(2, 2)).toContain("or answer any of them that is blocked, end your turn and start it once one of them has reported")
+    expect(totalRefusal(4, 4, 1)).toContain("or answer any session you started that is blocked, end your turn and try again")
+    expect(totalRefusal(4, 4, 0)).not.toContain("blocked, end your turn")
   })
 
   test("the maxTotal refusal to a session with none of its own running says to do the part itself", () => {

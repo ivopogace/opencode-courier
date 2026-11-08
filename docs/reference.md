@@ -147,8 +147,9 @@ parent's model unless the parent names one fit for the task.
 Any spawned session can call `courier_spawn` too, so sessions form a tree. The session nobody
 spawned is its top, at depth 0. `courier_spawn` refuses a spawn, naming the limit and what to do
 instead, when the child would be deeper than `maxDepth`, or when `maxChildren` or `maxTotal`
-sessions are already live; the last two say to do the part itself or start it once one of the
-caller's own children has reported, not in a loop, and they state what counts, as listed below.
+sessions are already live; the last two say to do the part itself, or answer any of the caller's
+own children that is `blocked` (it reports only after that answer) and start the part once one of
+them has reported, not in a loop, and they state what counts, as listed below.
 When none of the caller's own sessions is live, the `maxTotal` refusal says only to do the part
 itself, since only reports already held for a [group](#join-groups) can still wake it; the
 `maxChildren` refusal cannot meet that case, as it counts only the caller's own.

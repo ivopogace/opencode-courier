@@ -181,14 +181,14 @@ const stillCounts = (whoDrops: string) =>
 
 export const childrenRefusal = (running: number, maxChildren: number) =>
   `Not started: ${count(running, "session")} you started ${live(running)}, the most allowed at once ` +
-  `(maxChildren ${maxChildren}). Do this part yourself, or end your turn and start it once one of them has reported, not in a loop. ` +
+  `(maxChildren ${maxChildren}). Do this part yourself, or answer any of them that is blocked, end your turn and start it once one of them has reported, not in a loop. ` +
   stillCounts("you drop")
 
 export const totalRefusal = (running: number, maxTotal: number, yours: number) =>
   `Not started: ${count(running, "session")} in this session tree ${live(running)}, the most allowed at once (maxTotal ${maxTotal}). ` +
   (yours === 0
     ? "Do this part yourself: none of the sessions you started counts, so only reports already held for a group can still wake you."
-    : "Do this part yourself, or end your turn and try again once one of the sessions you started has reported, not in a loop. " +
+    : "Do this part yourself, or answer any session you started that is blocked, end your turn and try again once one of them has reported, not in a loop. " +
       stillCounts("its parent drops"))
 
 const LISTED_MAX = 12

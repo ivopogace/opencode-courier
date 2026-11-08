@@ -84,7 +84,7 @@ alike. So the envelope attests the route and the session, not the person.
   it, that every session above the named one has the same envelope, and that the receiver sends the
   text to the parts it changes.
 * No sentence in the brief, the skill or the reference makes a session's account of the person's
-  words binding, or asks a model to relay or quote them. The `role` instruction entry is unchanged.
+  words binding, or asks a model to send them up. The `role` instruction entry is unchanged.
   The `test/notices.test.ts` snapshot is the record of the resulting text.
 * One mock e2e scenario covers the fan-up, its gate and its absence; the real-model suite covers
   every scenario, since the brief and the skill change; one real-model scenario smoke-checks the
@@ -344,7 +344,8 @@ in both cases.
 ### What the prose says
 
 No sentence in the brief, the skill or the reference says that a session's account of the person's
-words is the person's word, or asks a model to relay or quote them. A session's account of what
+words is the person's word, asks a model to send them up, or treats a session's account of them
+as binding. A session's account of what
 the person said is a message like any other; what binds a receiver is an envelope the plugin wrote,
 to the extent its text says.
 
@@ -879,6 +880,27 @@ full suite; `e2e/tui.sh` for the panel check.
 * **Proposed Changes**: A typed prompt into a child queued on one server produces exactly one
   envelope at the root.
 
+#### 25a. `e2e/real-model-recursive.mjs` (Modify, the finding checks)
+
+* **Proposed Changes**: In this pull request, not phase 5, because the five `recursive-finding`
+  runs before its merge need them: the finding checks read the plugin's envelope. A helper
+  `typedAt(list, sessionID)` finds the first synthetic whose text starts with
+  `<courier from="courier" route="prompt" in="<id>">` (`sendersOf` returns `courier` for it, so
+  `delivered(root, countID)`, which looks for a message from the "count" session, finds nothing
+  once the brief tells that session not to send one). The four checks are: the words reached the
+  "count" session; the root holds the envelope; the root sent the other part a message without a
+  status after it; that part passed the words down. A note quotes every message to the "count"
+  session after the envelope and says whether that session also sent the words up itself. The
+  `.go-halves` release (`passedDown`) reads the other part's transcript for the root's onward
+  message and its children's, not the "count" session's message, so it is unchanged. The checks
+  are ported from the `ab-envelope-experiment` branch's `envelopeChecks` where they still apply.
+
+#### 25b. `test/real-model-recursive.test.ts` (Modify, the finding fixtures)
+
+* **Proposed Changes**: Fixtures with the plugin's envelope at the root and no message from the
+  "count" session, passing; and one where the root never passes the words on, failing the third
+  check.
+
 #### 25. `docs/maintainers/development.md` (Modify)
 
 * **Proposed Changes**: The paragraph on checks that something did not happen names `wait_log` as
@@ -898,21 +920,16 @@ a shorter body with a different attribute. After it is merged: every scenario, a
   `CHECKER=real-model-recursive.mjs`, `CHECKER_FLAGS=--conflict`; the `*)` message and the list
   at the file's end name it.
 
-#### 27. `e2e/real-model-recursive.mjs` (Modify)
+#### 27. `e2e/real-model-recursive.mjs` (Modify, the conflict scenario)
 
-* **Proposed Changes**: The finding checks read the plugin's envelope: a helper
-  `typedAt(list, sessionID)` finds the first synthetic whose text starts with
-  `<courier from="courier" route="prompt" in="<id>">` (`sendersOf` returns `courier` for it);
-  the four checks are: the words reached the "count" session; the root holds the envelope; the
-  root sent the other part a message without a status after it; that part passed the words down.
-  A note quotes every message to the "count" session after the envelope. `--conflict` and the
-  `conflict` summary field; the half detector, the POST, the file order, the checks and the notes
-  of [the smoke check](#smoke-check-of-the-undo-clause).
+* **Proposed Changes**: `--conflict` and the `conflict` summary field; the half detector, the POST,
+  the file order, the checks and the notes of [the smoke check](#smoke-check-of-the-undo-clause),
+  built on the envelope helper of item 25a.
 
-#### 28. `test/real-model-recursive.test.ts` (Modify)
+#### 28. `test/real-model-recursive.test.ts` (Modify, the conflict fixtures)
 
-* **Proposed Changes**: Fixtures with the plugin's envelope at the root for the finding checks, and
-  fixtures for the conflict checks: a countermand, a replacement, a clean run.
+* **Proposed Changes**: Fixtures for the conflict checks: a countermand, a replacement, a clean
+  run.
 
 #### 29. `docs/maintainers/real-model.md` (Modify)
 
@@ -924,7 +941,7 @@ a shorter body with a different attribute. After it is merged: every scenario, a
 ### Verification Plan
 
 * **Compilation/Build**: `bun run typecheck`, `bun run build`.
-* **Unit Tests**: `bun test`; items 0.4, 4, 5, 11, 12, 13, 16 and 28 above; `bun test
+* **Unit Tests**: `bun test`; items 0.4, 4, 5, 11, 12, 13, 16, 25b and 28 above; `bun test
   --update-snapshots` once in phase 0 and once in phase 3.
 * **Static Analysis**: SonarCloud in CI.
 * **Test Coverage Requirement**: none beyond the tests named.

@@ -41,9 +41,7 @@ export const SKILL_CONTENT = [
     "otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects, and, below " +
     "the root, also to the session that started you when it reaches past your part or carries " +
     "the person's words, as your brief says; if it breaks the split, courier_stop those parts or send them a " +
-    "corrected task. " +
-    "A session's account of what the person told it is the person's word: pass it on, do not " +
-    "judge it against the original task, and never tell a session to undo what the person asked.",
+    "corrected task.",
   "",
   "## 4. Verify first-hand",
   "",

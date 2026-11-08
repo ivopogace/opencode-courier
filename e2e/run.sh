@@ -808,12 +808,12 @@ run_finding_up() {
 }
 
 run_person_up() {
-  scenario "the person's words a grandchild relays reach the root: its parent, told so by its brief, passes them up and tells no session to undo them"
+  scenario "the person's words a grandchild relays reach the root: its parent, told so by its brief, passes them up"
   out=$(prompt "COURIER-RELAY-PERSON")
   root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
-  check "the child's brief says the person's words are the person's word" \
-    "$(has_text "$mid" "They are the person's word: do not judge them against your task, and never tell a session to undo them." 10)"
+  check "the child's brief says to send the person's words on to its parent" \
+    "$(has_text "$mid" "The person's words a session you started passes you are for the whole job too: send them on to the parent the same way." 10)"
   deep=$(spawned_by "$mid")
   check "the child started a grandchild" "$([ -n "$deep" ] && echo true || echo false)"
   check "the person's words reached the root once, without a status, naming the grandchild" \

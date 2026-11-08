@@ -197,8 +197,7 @@ sends it goes on to its parent the same way when it reaches past its own part. A
 writes in its session, outside a `<courier>` envelope, is for the whole job: it sends it to its
 parent at once, without a status and quoted as the person's, before it acts on it, then carries on.
 The person's words that a session it started passes it go on to its parent the same way, always,
-so they climb the whole tree to the top. They are the person's word: it does not judge them against
-its task and never tells a session to undo them.
+so they climb the whole tree to the top.
 
 **The role.** Every spawned session carries one line in its system prompt, `opencode-courier role: …`,
 in the `role` entry of its session instructions (OpenCode 2.2.0's `<context key="role">` block),
@@ -270,8 +269,7 @@ order:
    At the root, a permission request or question from below comes with its own instructions, and the
    model never answers for the person. A message that changes what other parts need goes on to the
    sessions it affects, and only to them, and below the root also to the parent when it reaches
-   past the session's own part or carries the person's words, as the brief says; a child's account
-   of what the person told it is the person's word ([steering a running tree](#steering-a-running-tree)).
+   past the session's own part or carries the person's words, as the brief says.
 4. **Verify first-hand**, and answer a blocked report, through the person when only they can decide.
    On a partial or failed report the parent has the child finish or retry, does the rest itself,
    or starts a replacement.
@@ -282,13 +280,12 @@ order:
    the next tree should know something, none otherwise.
 
 Without the skill, a child's brief still carries the split rule, the one group, no polling, the
-limits, verifying, how to report and to send a finding or the person's words up, never judging or
-undoing the person's words. The root has no
+limits, verifying, how to report and to send a finding or the person's words up. The root has no
 brief: its role line carries the split rule until its first spawn, then only the limits and
 verifying. The tool descriptions carry the one group, no polling, check-ins, isolation, the model
 and `native`; the notices carry the relay and what to do about a child that fails or goes quiet.
 The skill alone adds the root's split rule after its first spawn, that several jobs are that many
-parts, the waves, writing a task, passing findings and the person's word on, answering a blocked,
+parts, the waves, writing a task, passing findings and the person's words on, answering a blocked,
 partial or failed report, merging, the definition of done and the root's lesson.
 
 Each check a part runs and each skill it loads may ask a permission, and every request below the

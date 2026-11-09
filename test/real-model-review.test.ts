@@ -25,13 +25,15 @@ const send = (sessionID: string, message: string, status?: string) => tool("cour
 const shell = (command: string) => tool("shell", { command })
 const report = (from: string, status: string, text: string): Message => ({ type: "synthetic", text: `<courier from="${from}" status="${status}">\n${text}\n</courier>`, time: { created: tick() } })
 
-type Variant = "clean" | "fixed" | "review-edits" | "review-redirects" | "no-review" | "root-skips-tests" | "root-polls"
+type Variant = "clean" | "fixed" | "review-edits" | "review-redirects" | "review-stashes" | "review-reads-stash" | "no-review" | "root-skips-tests" | "root-polls"
 
 function transcripts(variant: Variant): Record<string, Message[]> {
   const impl = [user("make the change"), step("tool-calls", tool("skill", { id: "test-driven-development" }), tool("write", { path: "lib/words.js" }), tool("edit", { path: "test/words.test.js" }), shell("npm test"), shell("git commit -am slugify"), send("ses_root", "Added slugify with three tests; npm test passes 5.", "done")), step("stop", say("Reported.")), idle()]
   const reviewerTools = [tool("read", { path: "lib/words.js" }), shell("git diff HEAD~1 -- lib test"), shell("npm test 2>&1 | tail -5"), shell('node -e \'import("./lib/words.js").then(({ slugify }) => { const show = (v) => slugify(v); console.log(show("a--b")) })\' >&2')]
   if (variant === "review-edits") reviewerTools.push(tool("edit", { path: "lib/words.js" }))
   if (variant === "review-redirects") reviewerTools.push(shell('echo "export const x = 1" > lib/extra.js'))
+  if (variant === "review-stashes") reviewerTools.push(shell("git stash"))
+  if (variant === "review-reads-stash") reviewerTools.push(shell("ls lib && git stash list && git stash show -p"))
   const finding = variant === "fixed" ? "One finding: slugify keeps a trailing hyphen for input ending in two punctuation marks." : "No findings: the change meets the job."
   const reviewer = [user("review the change"), step("tool-calls", ...reviewerTools, send("ses_root", finding, "done")), step("stop", say("Reported.")), idle()]
   const fixer = [user("fix the finding"), step("tool-calls", tool("edit", { path: "lib/words.js" }), shell("npm test"), send("ses_root", "Fixed the trailing hyphen; 5 tests pass.", "done")), step("stop", say("Reported.")), idle()]
@@ -94,6 +96,15 @@ describe("the review checker", () => {
     const run = check("review-redirects")
     expect(run.failed).toEqual(["the review session changed nothing: no file tool, no shell command that writes, commits or installs, and nothing it started did either"])
     expect(run.notes.some((note) => note.startsWith("the review changed the checkout: ses_review shell("))).toBe(true)
+  })
+
+  test("a review session that stashed the change fails the review check", () => {
+    const run = check("review-stashes")
+    expect(run.failed).toEqual(["the review session changed nothing: no file tool, no shell command that writes, commits or installs, and nothing it started did either"])
+  })
+
+  test("a review session that only read the stash passes", () => {
+    expect(check("review-reads-stash").failed).toEqual([])
   })
 
   test("a finding fixed by a session the root started after the review passes, and is noted", () => {

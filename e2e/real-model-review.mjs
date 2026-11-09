@@ -18,7 +18,7 @@ const RECALL = "courier_recall"
 const SKILL = "courier-orchestrate"
 const CHANGING_TOOLS = new Set(["write", "edit", "patch", "apply_patch", "multiedit"])
 const CHANGING_SHELL =
-  /\bgit\s+(commit|add|merge|checkout|switch|reset|stash|rebase|cherry-pick|rm|mv|apply)\b|\bsed\s+-i\b|\b(npm|pnpm|yarn|bun)\s+(install|add|remove|i)\b|\b(rm|mv|cp|mkdir|touch|tee|chmod)\s|(?<![\d&<=-])>(?!\s*&|\s*\/dev\/null)/
+  /\bgit\s+(commit|add|merge|checkout|switch|reset|stash(?!\s+(?:list|show)\b)|rebase|cherry-pick|rm|mv|apply)\b|\bsed\s+-i\b|\b(npm|pnpm|yarn|bun)\s+(install|add|remove|i)\b|\b(rm|mv|cp|mkdir|touch|tee|chmod)\s|(?<![\d&<=-])>(?!\s*&|\s*\/dev\/null)/
 const TEST_SHELL = /\b(npm|pnpm|yarn|bun)(\s+run)?\s+test\b|\bnode\s+--test\b/
 const loadsAnySkill = (part) => part.type === "tool" && part.name === "skill" && part.state.status === "completed"
 

@@ -52,6 +52,8 @@ describe("e2e/run.sh shards", () => {
 
   test("E2E_GROUPS picks groups, in the order of a full run, and refuses an unknown one", () => {
     expect(plan({ E2E_GROUPS: "skill,depth" }).groups).toEqual(["depth", "skill"])
+    expect(plan({ E2E_GROUPS: "skill depth" }).groups).toEqual(["depth", "skill"])
+    expect(plan({ E2E_GROUPS: "skill, depth" }).groups).toEqual(["depth", "skill"])
     const unknown = plan({ E2E_GROUPS: "nope" })
     expect(unknown.code).toBe(2)
     expect(unknown.error).toContain("unknown group nope")

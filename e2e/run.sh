@@ -324,7 +324,7 @@ selected_groups() {
     for group in ${E2E_GROUPS//,/ }; do
       grep -qxF -- "$group" <<<"$all" || { echo "E2E_GROUPS: unknown group $group; the groups are: $(tr '\n' ' ' <<<"$all")" >&2; exit 2; }
     done
-    grep -xF -f <(tr ',' '\n' <<<"$E2E_GROUPS") <<<"$all" || true
+    grep -xF -f <(tr -s ', ' '\n' <<<"$E2E_GROUPS") <<<"$all" || true
   elif [ -n "${E2E_SHARD:-}" ]; then
     [[ $E2E_SHARD =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ && ${BASH_REMATCH[1]} -le ${BASH_REMATCH[2]} ]] ||
       { echo "E2E_SHARD must be k/n with 1 <= k <= n, not $E2E_SHARD" >&2; exit 2; }

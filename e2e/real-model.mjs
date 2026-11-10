@@ -52,6 +52,8 @@ function turnsOf(list) {
   let busy = false
   let last
   for (const message of list) {
+    // a system message is OpenCode's instruction update, no step (api-notes)
+    if (message.type === "system") continue
     const incoming = message.type === "user" || message.type === "synthetic"
     if (incoming && !busy && (!last || last.type === "idle" || (last.time.completed ?? Infinity) <= message.time.created)) {
       turns.push([])

@@ -171,10 +171,11 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
 3. **The follow-ups**, once the owner has merged the pin PR. Local runs name a follow-up's branch
    `opencode-<v>-<N>`, v from its issue title; courier-wave's are `issue-<N>-*`. An issue that
    already has an open PR with `Closes #<N>` or such a branch is not started again:
-   - In a cloud session, a wave whose children still run belongs to the session that spawned them
-     while that session is live (`get_session`): it is left alone and named in the close-out. Once
-     that session has ended or been archived, or the owner says so, it is taken over as
-     courier-wave's "Taking over a running wave" says. A PR no running child owns gets §5.2 and §5.5. A branch without a
+   - In a cloud session, a wave whose children still run belongs to the session they report to:
+     the latest one a "From now on report to session `<id>`" message in a child's events names,
+     else the orchestrator in its first prompt. While that session is live (`get_session`), the
+     wave is left alone and named in the close-out. Once it has ended or been archived, or the
+     owner says so, the wave is taken over as courier-wave's "Taking over a running wave" says. A PR no running child owns gets §5.2 and §5.5. A branch without a
      PR is finished from its issue's "Done when" and gets its PR when it is this session's own
      branch; another goes as "One branch, one PR" says.
    - Locally, an `opencode-*-<N>` branch without a PR is finished and gets its PR; that PR, or one

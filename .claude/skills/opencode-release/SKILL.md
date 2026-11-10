@@ -26,31 +26,23 @@ sorting it, the plan, retiring features and the order of the PRs.
 ## 1. Versions
 
 - **Resume first.** The run that opens the pin PR ends before it merges, so a later run picks up
-  what earlier runs left. One pin PR is open at a time. With `plan`, resume only reports the state
-  of what it finds, changes nothing, and plans the argument's release, else npm's newest.
-  - **An open PR that changes `peerDependencies["@opencode/plugin"]`:** its version is the target,
-    whatever the argument or npm says; a newer release is named in the close-out and waits until
-    it merges. Add a `Closes #<N>` line for any open "is out" issue at or below its target that its
-    body lacks. If its head, draft or not, does not implement an option the owner has answered,
-    implement their choice; when the commit cannot be pushed from here ("One branch, one PR") or
-    tested here (no registry), it is made or kept a draft, with "owner chose <X>; not yet
-    implemented" and the reason in its body. Mark it ready once the owner has answered every
-    option it awaits, its head implements each answer, and no unexplained Break remains. Then §5.2
-    for its CI, and §5.5 if its body records no completed round (a stop on a draft that is now
-    ready counts as none).
-  - **Open issues titled `OpenCode <v>: …` (§4) for any v at or below the pin:** §5.3 works them,
-    whether or not a pin PR is open; they build on main. An issue still waiting for the owner or in
-    flight never holds back a newer release.
+  what earlier runs left. It acts on the common cases below and names everything else in the
+  close-out, with its state, for the owner. With `plan`, it only reports, and plans the argument's
+  release, else npm's newest.
+  - **An open PR that changes `peerDependencies["@opencode/plugin"]`:** its version is the target;
+    a newer release is named in the close-out and waits until it merges. Add a `Closes #<N>` line
+    for any open "is out" issue at or below its target that its body lacks. If the owner has
+    answered an option its head does not implement, implement their choice; if this session cannot
+    push or test that, it stays or becomes a draft, with "owner chose <X>; not yet implemented" and
+    the reason in its body. Mark it ready once every option it awaits is answered and implemented
+    and no unexplained Break remains. Then §5.2, §5.5 if its body records no completed round, and
+    the close-out.
   - **No pin PR open:** close any open "is out" issue at or below the pin, naming the merged pin
-    PR.
-  - Then, with a pin PR open, the close-out; without one, this run carries on below with the
-    argument or npm's newest.
-- **One branch, one PR.** A cloud session pushes only its own branch, which carries at most one
-  PR. Any other PR that needs a push, or another leftover branch without a PR, is named in the
-  close-out for a session the owner starts on that branch. The session's own branch, when it is
-  such a leftover, is worked here. When it already carries a PR or is a follow-up's, a newer
-  release is planned into the scratchpad and named in the close-out for a session on a fresh
-  branch; no pin work goes onto this branch.
+    PR. §5.3 works the open `OpenCode <v>: …` issues (§4) at or below the pin; then this run
+    carries on below.
+- **One branch, one PR.** A cloud session pushes only its own branch, and puts the pin PR there
+  only if it carries no other PR. Anything that would need a push to another branch is named in
+  the close-out.
 - **Pinned:** `peerDependencies["@opencode/plugin"]` in `package.json`.
 - **Target:** the argument, else `npm view @opencode/cli version`. When it is not newer than the
   pin, say so and go to the close-out.
@@ -59,10 +51,8 @@ sorting it, the plan, retiring features and the order of the PRs.
 - **Without npm:** take the target and range from the `v2.X.Y` tags without a suffix
   (`git ls-remote --tags https://github.com/anomalyco/opencode`), gather and plan, then stop with
   the plan in the scratchpad and nothing filed: the pin PR needs npm (`bun install`, `npm view`,
-  the CLI). Report it as blocked on registry access. Resume still does what needs no registry:
-  `Closes` lines, draft and ready state, CI logs and reruns of failed jobs, §5.5, the hand-off to
-  courier-wave. A local rerun, a local follow-up, or implementing an owner's answer is reported as
-  blocked, and a red group stays unclassified rather than an unexplained Break.
+  the CLI). Report it as blocked on registry access. Resume still does what needs no registry, and
+  reports the rest as blocked; a red group stays unclassified rather than an unexplained Break.
 - **The issues:** every open issue titled `OpenCode <v> is out: move the pin from <p>` for a
   version in the range; there may be several or none. A verdict that did not pass makes the failing
   groups in that run's log Break candidates. A passed or cut-off verdict decides nothing: CI on the
@@ -170,22 +160,12 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
      plan as an unexplained Break: convert the PR to a draft and say why in its body.
 3. **The follow-ups**, once the owner has merged the pin PR. Local runs name a follow-up's branch
    `opencode-<v>-<N>`, v from its issue title; courier-wave's are `issue-<N>-*`. An issue that
-   already has an open PR with `Closes #<N>` or such a branch is not started again:
-   - In a cloud session, an issue with a courier-wave child (an `issue-<N>-*` branch, or a session
-     tagged `issue:<N>`) belongs to its wave, whatever state the child is in. The wave's owner is
-     the session its children report to: the latest one a "From now on report to session `<id>`"
-     message in a child's events names, else the orchestrator in its first prompt. While that
-     session is live (`get_session`), the wave is left alone and named in the close-out. Once it
-     has ended or been archived, or the owner says so, the wave is taken over as courier-wave's
-     "Taking over a running wave" says, idle children with open PRs included: work goes to a child
-     by `send_message`, and its review round is the one in its READY TO MERGE. A PR whose child
-     session is archived or missing gets §5.2 and §5.5. A branch without a PR is finished from its
-     issue's "Done when" and gets its PR when it is this session's own branch; another goes as
-     "One branch, one PR" says.
-   - Locally, an `opencode-*-<N>` branch without a PR is finished and gets its PR; that PR, or one
-     already open, gets §5.2 and §5.5. An `issue-<N>-*` PR or branch may belong to a running cloud
-     wave: it is not pushed to or reviewed, and the close-out names it and asks the owner whether
-     that wave has ended. Once the owner says it has, it is handled as an `opencode-*-<N>` one.
+   already has an open PR with `Closes #<N>` or such a branch is not started again. Its PR or
+   branch is finished here (a branch without a PR from its issue's "Done when", then §5.2 and §5.5)
+   only when it is an `opencode-*-<N>` one locally or this cloud session's own branch. Any other,
+   courier-wave's work included, is named in the close-out with its state; when the owner says a
+   wave's orchestrator has ended, a cloud session takes the wave over as courier-wave's "Taking
+   over a running wave" says.
 
    For each remaining issue the owner answered, rewrite its "Done when" to the option they chose,
    once: not while a child or PR works from it. For a Deprecate, file the removal issue once,

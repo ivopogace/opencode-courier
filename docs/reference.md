@@ -664,6 +664,13 @@ A spawned session cannot use OpenCode's own schedules (`schedule_create` and the
 so a child that scheduled one and ended its turn would read as having ended without a report.
 `courier_later` is the way for a child to wait. A root session keeps them.
 
+A spawned session keeps tools that wake it from outside the tree, such as OpenCode's Console event
+watches (`console_watch`, with `experimental.console_watches` on and a Console workspace that has
+them). Courier does not see such a wait, so the session's brief asks it to tell its parent with a
+message without a status and to schedule itself a `courier_later` check-in before it ends its turn:
+the pending check-in shows it as waiting, not as ended without a report. Once woken, it cancels the
+check-in and reports.
+
 ## `/goal` and courier children
 
 OpenCode's `/goal` (2.2.4 and later) has a reviewer check the session each time its turn ends and

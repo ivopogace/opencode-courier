@@ -851,6 +851,8 @@ run_person_message() {
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the child's brief has the person's message sentence" \
     "$(has_text "$child" "Do not send it up yourself" 10)"
+  check "the child's brief says how to wait for a wake-up from outside the tree" \
+    "$(has_text "$child" "schedule yourself a check-in with courier_later, which shows you as waiting" 10)"
   check "courier_send dropped the status and said so" "$(tool_state courier_send <<<"$out" | jq -r '.status == "completed" and
     .metadata.metadata.dropped == "blocked" and (.metadata.metadata | has("status") | not) and (.output | contains("without the status blocked"))')"
   check "the child got the message without a status" \

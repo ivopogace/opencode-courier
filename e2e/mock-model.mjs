@@ -448,7 +448,7 @@ function relayPersonWords(messages, lastAssistant) {
     return { text: replies.filter(Boolean).join(" ") || "RELAYER WAITS" }
   }
   if (!first.includes("COURIER-RELAY-PERSON")) return undefined
-  if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-RELAYS-PERSON" } }
+  if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-RELAYS-PERSON", native: false } }
   if (call?.function?.name === "courier_spawn") return { text: "ROOT SPAWNED" }
   const replies = [TYPED_ENVELOPE.test(recent) && "ROOT HEARD TYPED", /<courier from="ses_\w+" status="done">/.test(recent) && "ROOT GOT REPORT"]
   return { text: replies.filter(Boolean).join(" ") || "ROOT WOKE" }

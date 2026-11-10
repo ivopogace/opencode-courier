@@ -51,11 +51,9 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
 - The plugin API is pinned to `@opencode/plugin@2.2.6` exactly, as devDependency and peer alike, and
   the live test installs `@opencode/cli` at that version. Read the API's types in `node_modules`, and
   OpenCode's source on the `v2` branch of https://github.com/anomalyco/opencode (tagged per release).
-  A pin bump moves the version README names and the exact `effect` to the one the new plugin depends
-  on, moves `@opentui/core`, `@opentui/solid` and `solid-js` to OpenCode's root catalog at the new
-  tag and `@opencode/theme` to the pin (devDependencies, never peers), re-checks the traps in
-  `plugin-api-notes.md`, and is followed by a patch release. Never edit the Supported OpenCode version
-  tables by hand: `script/compat-table.ts` generates them.
+  A pin bump follows "The plugin API pin" in `docs/maintainers/releasing.md` and is followed by a
+  patch release. Never edit the Supported OpenCode version tables by hand: `script/compat-table.ts`
+  generates them.
 - Every tool is registered with `options: { codemode: false }`, returns metadata without `undefined`
   values, and rethrows failures through `describeFailure`, except the plain permission decline
   `courier_answer` rethrows as it is.

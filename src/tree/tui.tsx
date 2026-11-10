@@ -396,6 +396,22 @@ function reason(error: unknown) {
   return typeof error === "object" && error && "message" in error ? String(error.message) : String(error)
 }
 
+export const UNAVAILABLE_MS = 1000
+const UNAVAILABLE_TRIES = 10
+
+// rpc.call answers rpc.unavailable until the plugin has loaded (api-notes)
+async function whenLoaded<T>(call: () => Promise<T>): Promise<T> {
+  for (let tries = 1; ; tries++) {
+    try {
+      return await call()
+    } catch (error) {
+      const unavailable = typeof error === "object" && error !== null && "type" in error && error.type === "rpc.unavailable"
+      if (!unavailable || tries >= UNAVAILABLE_TRIES) throw error
+      await new Promise((resolve) => setTimeout(resolve, UNAVAILABLE_MS))
+    }
+  }
+}
+
 export function addTreeStatus(ctx: Context, onWaiting?: (sessionID: string) => void) {
   const { courier, location } = courierOf(ctx)
   const [changed, stopListening] = changes(ctx, CHANGES, SETTLE_MS)
@@ -405,7 +421,7 @@ export function addTreeStatus(ctx: Context, onWaiting?: (sessionID: string) => v
       const [read] = createResource(
         () => (input.sessionID ? { sessionID: input.sessionID, changed: changed() } : undefined),
         ({ sessionID }) =>
-          courier.summary({ sessionID }, { location: location(sessionID) }).then(
+          whenLoaded(() => courier.summary({ sessionID }, { location: location(sessionID) })).then(
             (summary) => ({ sessionID, summary, waiting: summary.waiting }),
             () => ({ sessionID, summary: undefined, waiting: 0 }),
           ),

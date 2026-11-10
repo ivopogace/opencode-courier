@@ -1,9 +1,9 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.2.6` and OpenCode 2.2.6. A pin bump re-checks each trap and moves that version.
+`@opencode/plugin@2.2.7` and OpenCode 2.2.7. A pin bump re-checks each trap and moves that version.
 OpenCode's source is on the `v2` branch of https://github.com/anomalyco/opencode, each release
-tagged (`v2.2.6`); paths below are in it. A "since" stays only where the plugin still runs on an
+tagged (`v2.2.7`); paths below are in it. A "since" stays only where the plugin still runs on an
 older host and branches on it. How the plugin itself answers a trap is in
 [architecture.md](architecture.md).
 
@@ -289,10 +289,23 @@ and would go idle. Its name and shape may still change: a pin bump re-checks bot
   the tools and the role part work without it, as with a `skill` rule's deny
   (`COURIER_SKILL=deny`).
 
+## Console event watches
+
+With the `console_watches` [feature flag](#feature-flags) on and a Console workspace that has event
+watches, OpenCode's Console plugin (`packages/core/src/plugin/provider/opencode-watches.ts`) adds
+the Code Mode tools `console_watch.watch` and `unwatch`, pinned in the catalog. A watched Slack
+thread, pull request, issue, commit, Actions run or MCP server event wakes the session with
+`session.synthetic` (`metadata.source: "console.watch"`, `delivery: "steer"`), at most 5 times in
+10 minutes and 20 since the person's last prompt.
+
+Like [a schedule](#opencodes-schedules), a watch is invisible to the plugin: no API, no event, no
+`Waits` supplier. A spawned session that watches something and ends its turn reads as ended without
+a report, and goes on when the watch fires. `CHILD_RULES` does not deny these tools.
+
 ## Feature flags
 
 Some features are flags (`packages/schema/src/config/flag.ts`: `schedules`, `todo`,
-`background_compaction`, `media_blob`, `artifacts`): off in a release build, on in local and dev
+`background_compaction`, `media_blob`, `artifacts`, `codemode_vm`, `console_watches`): off in a release build, on in local and dev
 builds, turned on by `experimental.<key>: true`, `experimental.all_flags: true` or
 `OPENCODE_FLAGS=all` (`-key` turns one off).
 
@@ -370,8 +383,11 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
   location) and passes it to `session.create` as such a parent's model, so a `variant` alone has a
   model to apply to and the child is pinned to it; with the agent's lookup failed it passes none,
   since OpenCode then applies the agent's own model.
-- `agent.get` takes `location`. `agent.list` and `provider.list` wait for plugin activation, and
-  `agent.list` declares a 503 `ServiceUnavailableError` while it has not finished.
+- `agent.get` takes `location`. `provider.list` waits for plugin activation; `agent.list` does not
+  and returns the agents loaded so far (`packages/server/src/handlers/agent.ts`).
+- **A request's model can differ from the session's.** The `experimental.model.resolve` session
+  hook lets a plugin serve one request with another model of the same provider (GitHub Copilot's
+  Auto does); the session keeps its selection, which is what the courier reads and sets.
 
 ## Creating a worktree from a given commit
 
@@ -486,6 +502,11 @@ its turn would read as ended without a report.
   (`packages/core/src/tool.ts`) drops a tool whose action, its id (`opencode_` and the name), a rule
   wholly denies, from the direct tools and the catalog alike; the session's rules come after the
   agent's (`session/context.ts`).
+- The catalog names only the tools that fit its budget, picked in path order within each namespace
+  (`CodeModeCatalog.summarize`, `packages/core/src/codemode/catalog.ts`), and counts the rest:
+  `- opencode (13 tools, 7 shown)`. The schedule tools sort late, so a root's catalog may count
+  them without naming them; the model finds them with `search`. A session they are denied has that
+  many fewer tools in the namespace.
 - A plugin cannot reach schedules: no schedule domain, not under `ctx.experimental` either, and the
   plugin is not given the server's address or password for its HTTP routes. A firing is a plain
   steered prompt (`admitWake`, `packages/core/src/schedule.ts`: `delivery: "steer"`,
@@ -567,6 +588,10 @@ does not cover the question relay.
   `rpc.invalid_input`, `rpc.method_not_found`, declared errors, `rpc.internal`, `rpc.unavailable`,
   `rpc.invalid_output`. Over HTTP: `POST /api/rpc/:rpcID/:method?directory=…` with
   `{ "input": … }`.
+- **`rpc.call` does not wait for plugins** (`packages/server/src/handlers/rpc.ts`): until the
+  location's plugins have loaded it answers `rpc.unavailable` (HTTP 400). So the footer's read asks
+  again each `UNAVAILABLE_MS` while it gets that (`whenLoaded`, `tree/tui.tsx`), and a live script
+  waits for an output after it starts a server (`rpc_ready`, `e2e/tui.sh`).
 
 ## The TUI plugin API
 

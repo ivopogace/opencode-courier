@@ -85,18 +85,32 @@ subject claims for repositories created after 2026-07-15
 ## The plugin API pin
 
 `@opencode/plugin` is pinned to one exact version, as peer and devDependency. `effect` is pinned to
-the version that `@opencode/plugin` depends on. CI installs `@opencode/cli` at the same version.
+the version that `@opencode/plugin` depends on. CI installs `@opencode/cli` at the version of the
+peer.
 
-`latest.yml` opens an issue, "OpenCode X.Y.Z is out", for each newer OpenCode release. To bump the
-pin:
+`latest.yml` opens an issue, "OpenCode X.Y.Z is out: move the pin from W", for a newer release that
+is `latest` when it runs, once per version. To bump the pin:
 
-1. Move `@opencode/plugin`, `@opencode/cli` and `effect`. Move `@opentui/core`, `@opentui/solid`
-   and `solid-js` to the versions in OpenCode's root `package.json` catalog at the new tag, and
-   `@opencode/theme` to the pin.
-2. Run both live suites.
-3. Move the version README.md names: the Quickstart, the Install section's "tested on" line and
-   install command, and the terminal part's line under the table.
-4. Update the affected traps in [plugin-api-notes.md](plugin-api-notes.md).
+1. Move `@opencode/plugin` (peer and devDependency) to the new version, and `effect` (peer and
+   devDependency) to the one it depends on (`npm view @opencode/plugin@<new> dependencies.effect`).
+   Move `@opentui/core`, `@opentui/solid` and `solid-js` to the versions in OpenCode's root
+   `package.json` catalog at the new tag, and `@opencode/theme` to the pin. Run `bun install` and
+   commit `bun.lock`: CI installs with `--frozen-lockfile`.
+2. Run both live suites on the new version. CI's live jobs on the pull request do, since they
+   install the CLI from the peer; locally, install `@opencode/cli@<new>` and set `OPENCODE_BIN` to
+   it as [development.md](development.md#commands) does.
+3. Move every hand-written mention of the pinned version: README.md (the Quickstart, the Install
+   section's "tested on" line and install command, the terminal part's line under the table), the
+   `@opencode/cli` install commands in CLAUDE.md, [development.md](development.md) and
+   [real-model.md](real-model.md), the terminal part's "tested on" line in
+   [reference.md](../reference.md#the-opencode-version), and CLAUDE.md's pin rule.
+   `git grep -nF '<old>'` finds them. These stay: the generated tables, real-model.md's measured
+   batch, and a line naming the version a host feature arrived in ("OpenCode X and later").
+4. Update the affected traps in [plugin-api-notes.md](plugin-api-notes.md) and the version in its
+   first paragraph. The traps of two servers on one data directory are checked only by
+   `e2e/two-servers.sh`, which CI does not run: run it on the new version (`OPENCODE_BIN` as in
+   step 2), and once more when a result differs, since its timing varies. A difference that repeats
+   is a changed trap: update the note and the expected value in the script's `result` lines.
 5. Release a patch, so the published package names the new version and hosts on it stop logging
    the version line.
 

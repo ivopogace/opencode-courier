@@ -24,26 +24,29 @@ first; its "Done when" is your acceptance bar.
   plugin API's types instead of guessing. Before every push run `bun run typecheck` and the test
   files you touch or add, nothing more: CI runs the whole unit suite, the build and the live e2e
   test, so don't run those locally. The exception is CLAUDE.md's real-model smoke test after a
-  change to a model-facing string, which CI does not run. Still add the e2e checks the issue's
-  "Done when" asks for.
+  change to a model-facing string, which CI does not run. Its default free model refuses cloud
+  sessions: run it only with `COURIER_PROVIDER` and `COURIER_MODEL` set to a paid provider;
+  otherwise write in the PR body that it is owed, which is not BLOCKED. Still add the e2e checks
+  the issue's "Done when" asks for.
 - Work on branch <issue-N-slug> in small, well-described commits. Open a PR to main whose body
   says what changed, the decisions you made, how it was tested, and `Closes #<N>`. Open it ready
   for review, never as a draft, and mark it ready at once if your session opened it as one: the
   code review plugin does not review a draft. Never push to main and never merge.
 - Get CI green on the PR head. Then review the PR with the code review plugin: the
-  `code-review:code-review` skill with the PR number, not the built-in `code-review` skill. It
-  posts its findings on the PR as a `### Code review` comment, and posts nothing when no finding
-  reaches its confidence bar. Where it says `gh`, use the GitHub MCP tools instead (gh's GraphQL
-  is blocked in cloud sessions). Fix what it finds, re-run the checks and push. A behaviour change
-  after that round gets another round; tell the plugin its earlier comment covers an older head,
-  or it skips the PR as already reviewed.
+  `code-review:code-review` skill with the PR number, not the built-in `code-review` skill, and
+  without `--comment`: it prints its findings, and its posting step needs an inline-comment tool
+  this session does not have. Where it says `gh`, use the GitHub MCP tools instead (gh's GraphQL
+  is blocked in cloud sessions). Fix what it finds, re-run the checks and push. It stops at its
+  first step on a draft, a closed PR, a change it judges trivial, or a PR Claude has commented on;
+  then say which. A behaviour change after that round gets another round.
 - Update README.md and docs/reference.md in the same PR.
 
 ## Talking to the orchestrator
 End a turn that needs the orchestrator with one of these blocks, and also send the same block
 with `send_message` to session `@parent`:
 - `READY TO MERGE`: PR number, head sha, CI result on that sha, the review round (the sha it
-  reviewed, and its comment's link or "no findings posted") and what it changed.
+  reviewed, the findings it printed and how each was resolved, or why it stopped) and what it
+  changed.
 - `NEEDS USER DECISION`: the question, 2–4 options with trade-offs, and your recommendation.
   Don't use AskUserQuestion.
 - `BLOCKED`: exactly what is wrong and what you need.

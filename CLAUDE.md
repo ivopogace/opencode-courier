@@ -51,11 +51,9 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
 - The plugin API is pinned to `@opencode/plugin@2.2.6` exactly, as devDependency and peer alike, and
   the live test installs `@opencode/cli` at that version. Read the API's types in `node_modules`, and
   OpenCode's source on the `v2` branch of https://github.com/anomalyco/opencode (tagged per release).
-  A pin bump moves the version README names and the exact `effect` to the one the new plugin depends
-  on, moves `@opentui/core`, `@opentui/solid`, `solid-js` and `@opencode/theme` to OpenCode's root
-  catalog at the new tag (devDependencies, never peers), re-checks the traps in
-  `plugin-api-notes.md`, and is followed by a patch release. Never edit the Supported OpenCode version
-  tables by hand: `script/compat-table.ts` generates them.
+  A pin bump follows "The plugin API pin" in `docs/maintainers/releasing.md` and is followed by a
+  patch release. Never edit the Supported OpenCode version tables by hand: `script/compat-table.ts`
+  generates them.
 - Every tool is registered with `options: { codemode: false }`, returns metadata without `undefined`
   values, and rethrows failures through `describeFailure`, except the plain permission decline
   `courier_answer` rethrows as it is.
@@ -65,7 +63,8 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
 - Docs state how things are now: no history, no "used to", "since #N" or "no longer"; that lives in
   git, PR bodies and release notes.
 - After changing a model-facing string (`src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or
-  a tool description), re-run `e2e/real-model.sh` and update its table in `real-model.md`.
+  a tool description), re-run `e2e/real-model.sh` and put its result in the PR body; the tables in
+  `real-model.md` are one batch, replaced only by a full new batch.
 - Keep the provider's prompt cache: a spawned session's role part goes to its `role` instruction
   entry once, before its first prompt; where `context.ts` adds it as a system part instead, it is the
   same on every request. So `courier_spawn` does not gate on the skill being loaded. The skill
@@ -75,4 +74,6 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
 - No TSDoc. A comment only for a fact about OpenCode or the host the code cannot say: one line of
   at most 80 characters; the long form goes in docs/maintainers/plugin-api-notes.md.
 - Running several issues at once in child sessions: the `courier-wave` skill.
+- Adopting a new OpenCode release (its notes, the pin bump, new host features, retiring what the
+  host now does itself): the `opencode-release` skill.
 - Repeating the EGM review of the skill until it finds nothing: the `courier-egm-loop` skill.

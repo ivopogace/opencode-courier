@@ -1502,10 +1502,16 @@ run_schedules() {
   check "the child reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
   check "the child's session carries the courier's rule denying them" \
     "$(session_info "$child" | jq -r '.permissions == [{ "action": "opencode_schedule_*", "resource": "*", "effect": "deny" }]')"
+  # Named as tools or in Code Mode's catalog, or counted there: the root's opencode namespace then holds more tools.
   check "the root was offered them" \
-    "$(jq -sr --arg parent "$parent" 'any(.[]; .session == $parent and .schedules)' "$WORK/model.log")"
+    "$(jq -sr --arg parent "$parent" --arg child "$child" '
+      ([.[] | select(.session == $child) | .opencodeTools] | max) as $below
+      | any(.[]; .session == $parent and (.schedules or ($below >= 0 and .opencodeTools > $below)))' "$WORK/model.log")"
   check "no request of the child offered them" \
-    "$(jq -sr --arg child "$child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and all(.schedules | not)' "$WORK/model.log")"
+    "$(jq -sr --arg parent "$parent" --arg child "$child" '
+      ([.[] | select(.session == $parent) | .opencodeTools] | max) as $above
+      | [.[] | select(.session == $child and (.tools | length > 0))]
+      | length > 0 and all((.schedules | not) and ($above < 0 or .opencodeTools < $above))' "$WORK/model.log")"
   stop_server
   jq 'del(.experimental)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"

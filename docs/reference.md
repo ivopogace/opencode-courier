@@ -36,7 +36,7 @@ version in its `package.json`. Every release and its version:
 OpenCode never checks the version. The plugin loads on any host from 2.0.4 on, but its tools may
 break on another version. On 2.0.0 to 2.0.3 it fails to load with
 `TypeError: undefined is not an object (evaluating 'host.model.list')`. The terminal part is tested on
-OpenCode 2.2.6 only.
+OpenCode 2.2.7 only.
 
 On a version other than the pinned one, the plugin writes one line to the server log when it loads
 (`opencode serve --print-logs` shows it):
@@ -858,6 +858,9 @@ group of its children, as reported over members, then idle; OpenCode's footer co
 [subagents](#opencodes-subagents). A zero part is left out. A click on `waiting on you` opens the
 [asks inbox](#the-asks-inbox). While a permission prompt or form shows, OpenCode hides the footer;
 use `ctrl+x k`.
+
+Right after the server starts, while its plugins still load, the entry asks again each second, for
+up to ten, and shows once the plugin answers.
 
 ### The tree panel
 

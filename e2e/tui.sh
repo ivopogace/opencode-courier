@@ -65,6 +65,10 @@ memory_rpc() {
   curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier-memory/$1?directory=$(location)" \
     -H 'content-type: application/json' -d "{\"input\":$2}"
 }
+# Waits up to 30 s until RPC call $@ has an output: it is rpc.unavailable until the location's plugins loaded.
+rpc_ready() {
+  for _ in $(seq 1 30); do "$@" | jq -e 'has("output")' >/dev/null 2>&1 && return; sleep 1; done
+}
 # Waits up to $2 s until the summary of session $1 is $3 (compact JSON); prints the last one read.
 summary_until() {
   local last
@@ -676,6 +680,7 @@ jq '.plugins[0].options.memory = false' "$WORK/project/opencode.json" >"$WORK/pr
 mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
 git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory off"
 start_server
+rpc_ready memory_rpc records '{}'
 check "the RPC says memory is off and lists nothing" "$(memory_rpc records '{}' | jq -r '.output.memory == false and .output.records == []')"
 open_tui tui-memory-off "$parent"
 check "the TUI is back on the parent" "$(shows "courier 2 idle" 60 tui-memory-off-footer)"
@@ -726,7 +731,7 @@ check "and nothing of the TUI's packages next to it, which the host provides" \
 jq 'del(.plugins)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
 mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
 start_server
-# Booted by the RPC call, which waits for the location's plugins.
+# The RPC call boots the location; it answers once the location's plugins loaded.
 check "its RPC answers" "$([ "$(summary_until "$parent" 30 "$idle")" = "$idle" ] && echo true || echo false)"
 info=$(plugins | jq -c '.data[] | select(.id == "courier") | {state: .state.status, features, source: .source.type}')
 echo "  $info"

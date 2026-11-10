@@ -630,9 +630,11 @@ createServer((request, response) => {
     const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])
     // schedule tools come as tools or in Code Mode's catalog (api-notes)
     const schedules = /opencode[._]schedule_/.test(JSON.stringify(body.tools ?? []) + everything)
+    // the catalog may count a namespace's tools without naming them (api-notes)
+    const opencodeTools = Math.max(-1, ...[...everything.matchAll(/^- opencode \((\d+) tools?/gm)].map((match) => Number(match[1])))
     // a variant reaches the provider as reasoning_effort (api-notes)
     const options = Object.fromEntries(Object.entries(body).filter(([key]) => !["messages", "tools", "stream", "stream_options", "tool_choice"].includes(key)))
-    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, roleEntry, rolePart, updateRole, lessonsEntry, standingEntry, skills, schedules, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
+    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, roleEntry, rolePart, updateRole, lessonsEntry, standingEntry, skills, schedules, opencodeTools, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
     if (reply.status) {
       response.writeHead(reply.status, { "content-type": "application/json", ...reply.headers })
       response.end(JSON.stringify({ error: { message: reply.error, type: "forbidden" } }))

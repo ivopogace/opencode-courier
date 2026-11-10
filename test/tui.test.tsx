@@ -6,7 +6,7 @@ import { MouseButtons, type MouseButton } from "@opentui/core/testing"
 import { testRender } from "@opentui/solid"
 import { batch, createRoot, createSignal } from "solid-js"
 import type { Forgotten, Row, Stopped, Summary, Tree } from "../src/tree/rpc.js"
-import { activityLine, addTreePanel, guides, addTreeStatus, animationsOn, bar, BAR_MS, blend, restBackground, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, BELOW_ROWS, digbyColours } from "../src/tree/tui.js"
+import { UNAVAILABLE_MS, activityLine, addTreePanel, guides, addTreeStatus, animationsOn, bar, BAR_MS, blend, restBackground, createFlashes, createMotion, FLASH_MS, filledCells, FRAME_MS, SPINNER, detailLines, duration, forgottenLine, PANEL, PANEL_SETTLE_MS, parts, SETTLE_MS, rowMark, statusLine, stoppedLine, summaryLine, USAGE, countsLine, mascotState, GLYPH_ROWS, GLYPH_COLUMNS, ART_ROWS, BELOW_ROWS, digbyColours } from "../src/tree/tui.js"
 import { ART, art, BLINK_EVERY, cells, digby, DIG_EVERY, glyph, GLYPH, MASCOT_EVERY, type MascotState } from "../src/tree/mascot.js"
 import { MEMORY_USAGE } from "../src/memory/tui.js"
 import tui from "../src/tui.js"
@@ -245,6 +245,35 @@ describe("the footer status entry", () => {
     await app.waitForFrame((frame) => frame.includes("group pair"))
     expect(app.captureCharFrame()).toContain("courier 1 waiting on you · 2 running · group pair 1/2")
     expect(fake.calls).toEqual([[{ sessionID: "ses_parent" }, { location: { directory: "/workspace" } }]])
+  })
+
+  test("asks again while the server answers rpc.unavailable, its plugins not loaded yet, and shows the summary once it answers", async () => {
+    let asked = 0
+    const fake = fakeContext(async () => {
+      if (++asked < 3) throw { _tag: "RpcError", type: "rpc.unavailable", message: "RPC is unavailable: courier" }
+      return { ...empty, idle: 1 }
+    })
+    await tui.setup(fake.context)
+    const app = await renderFooter(fake.claim("prompt.footer.status"), () => "ses_parent")
+
+    await new Promise((resolve) => setTimeout(resolve, 2 * UNAVAILABLE_MS + 200))
+    await app.waitForFrame((frame) => frame.includes("courier 1 idle"))
+    expect(asked).toBe(3)
+  })
+
+  test("another failure of the RPC is not asked again: the entry stays empty", async () => {
+    let asked = 0
+    const fake = fakeContext(async () => {
+      asked++
+      throw { _tag: "RpcError", type: "rpc.internal", message: "boom" }
+    })
+    await tui.setup(fake.context)
+    const app = await renderFooter(fake.claim("prompt.footer.status"), () => "ses_parent")
+
+    await new Promise((resolve) => setTimeout(resolve, UNAVAILABLE_MS + 200))
+    await app.renderOnce()
+    expect(app.captureCharFrame()).not.toContain("courier")
+    expect(asked).toBe(1)
   })
 
   test("asks at the open session's own location when the TUI knows it", async () => {

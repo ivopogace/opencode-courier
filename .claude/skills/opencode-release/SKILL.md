@@ -33,12 +33,15 @@ sorting it, the plan, retiring features and the order of the PRs.
     it merges. Add a `Closes #<N>` line for any open "is out" issue at or below its target that its
     body lacks. If it is a draft whose head does not implement an option the owner has answered,
     implement their choice; when the commit cannot be pushed from here ("One branch, one PR"), it
-    stays a draft, with "owner chose <X>; not yet implemented" in its body. Mark it ready once its
-    head implements every answered option and no unexplained Break remains. Then §5.2 for its CI,
-    and §5.5 if its body records no review.
+    stays a draft, with "owner chose <X>; not yet implemented" in its body. Mark it ready once the
+    owner has answered every option it awaits, its head implements each answer, and no unexplained
+    Break remains. Then §5.2 for its CI, and §5.5 if its body records no completed round (a stop
+    on a draft that is now ready counts as none).
   - **Open issues titled `OpenCode <v>: …` (§4) for any v at or below the pin:** §5.3 works them,
     whether or not a pin PR is open; they build on main. An issue still waiting for the owner or in
     flight never holds back a newer release.
+  - **No pin PR open:** close any open "is out" issue at or below the pin, naming the merged pin
+    PR.
   - Then, with a pin PR open, the close-out; without one, this run carries on below with the
     argument or npm's newest.
 - **One branch, one PR.** A cloud session pushes only its own branch, which carries at most one
@@ -52,7 +55,10 @@ sorting it, the plan, retiring features and the order of the PRs.
 - **Without npm:** take the target and range from the `v2.X.Y` tags without a suffix
   (`git ls-remote --tags https://github.com/anomalyco/opencode`), gather and plan, then stop with
   the plan in the scratchpad and nothing filed: the pin PR needs npm (`bun install`, `npm view`,
-  the CLI). Report it as blocked on registry access.
+  the CLI). Report it as blocked on registry access. Resume still does what needs no registry:
+  `Closes` lines, draft and ready state, CI logs and reruns of failed jobs, §5.5, the hand-off to
+  courier-wave. A local rerun or a local follow-up is reported as blocked, and a red group stays
+  unclassified rather than an unexplained Break.
 - **The issues:** every open issue titled `OpenCode <v> is out: move the pin from <p>` for a
   version in the range; there may be several or none. A verdict that did not pass makes the failing
   groups in that run's log Break candidates. A passed or cut-off verdict decides nothing: CI on the

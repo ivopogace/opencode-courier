@@ -46,8 +46,9 @@ sorting it, the plan, retiring features and the order of the PRs.
   - Then, with a pin PR open, the close-out; without one, this run carries on below with the
     argument or npm's newest.
 - **One branch, one PR.** A cloud session pushes only its own branch, which carries at most one
-  PR. Any other PR that needs a push, or a leftover branch without a PR, is named in the close-out
-  for a session the owner starts on that branch.
+  PR. Any other PR that needs a push, or another leftover branch without a PR, is named in the
+  close-out for a session the owner starts on that branch. The session's own branch, when it is
+  such a leftover, is worked here.
 - **Pinned:** `peerDependencies["@opencode/plugin"]` in `package.json`.
 - **Target:** the argument, else `npm view @opencode/cli version`. When it is not newer than the
   pin, say so and go to the close-out.
@@ -169,8 +170,9 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
    `opencode-<v>-<N>`, v from its issue title; courier-wave's are `issue-<N>-*`. An issue that
    already has an open PR with `Closes #<N>` or such a branch is not started again:
    - In a cloud session, a wave whose children still run is taken over as courier-wave's "Taking
-     over a running wave" says. A PR no running child owns gets §5.2 and §5.5; a branch without a
-     PR goes as "One branch, one PR" says.
+     over a running wave" says. A PR no running child owns gets §5.2 and §5.5. A branch without a
+     PR is finished from its issue's "Done when" and gets its PR when it is this session's own
+     branch; another goes as "One branch, one PR" says.
    - Locally, an `opencode-*-<N>` branch without a PR is finished and gets its PR; that PR, or one
      already open, gets §5.2 and §5.5. An `issue-<N>-*` PR or branch may belong to a running cloud
      wave: it is not pushed to or reviewed, and the close-out names it and asks the owner whether

@@ -300,7 +300,10 @@ thread, pull request, issue, commit, Actions run or MCP server event wakes the s
 
 Like [a schedule](#opencodes-schedules), a watch is invisible to the plugin: no API, no event, no
 `Waits` supplier. A spawned session that watches something and ends its turn reads as ended without
-a report, and goes on when the watch fires. `CHILD_RULES` does not deny these tools.
+a report, and goes on when the watch fires. `CHILD_RULES` does not deny these tools: the brief
+(`childBrief`, `tree/text.ts`) asks such a session to tell its parent and to schedule itself a
+`courier_later` check-in first, which `isScheduled` supplies to `Waits`. Denied the tool, a session
+told to wait for a pull request kept looking for another way and did not report.
 
 ## Feature flags
 

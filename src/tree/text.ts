@@ -20,6 +20,10 @@ export function childBrief(parentID: string, task: string, depth: number, limits
       "concrete ask, then end your turn and wait for its answer; never end quietly.",
     "A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. " +
       "A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.",
+    "If you have to wait for something outside the tree that wakes this session later (a tool that watches a pull request, " +
+      "a thread or a run), tell the parent so with courier_send without a status and schedule yourself a check-in with " +
+      "courier_later, which shows you as waiting, then end your turn. Once woken, cancel the check-in with courier_cancel " +
+      "and send your report.",
     "If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API " +
       "that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes " +
       "it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own " +

@@ -859,8 +859,8 @@ group of its children, as reported over members, then idle; OpenCode's footer co
 [asks inbox](#the-asks-inbox). While a permission prompt or form shows, OpenCode hides the footer;
 use `ctrl+x k`.
 
-Right after the server starts, while its plugins still load, the entry asks again each second, for
-up to ten, and shows once the plugin answers.
+Right after the server starts, while its plugins still load, the entry asks again each second, up
+to ten times in all, and shows once the plugin answers.
 
 ### The tree panel
 

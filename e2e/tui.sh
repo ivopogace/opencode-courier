@@ -65,7 +65,7 @@ memory_rpc() {
   curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier-memory/$1?directory=$(location)" \
     -H 'content-type: application/json' -d "{\"input\":$2}"
 }
-# Waits up to 30 s until RPC call $@ has an output: it is rpc.unavailable until the location's plugins loaded.
+# rpc.call is rpc.unavailable until the location's plugins loaded (api-notes)
 rpc_ready() {
   for _ in $(seq 1 30); do "$@" | jq -e 'has("output")' >/dev/null 2>&1 && return; sleep 1; done
 }
@@ -731,7 +731,7 @@ check "and nothing of the TUI's packages next to it, which the host provides" \
 jq 'del(.plugins)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
 mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
 start_server
-# The RPC call boots the location; it answers once the location's plugins loaded.
+# The RPC call boots the location, and answers once its plugins loaded.
 check "its RPC answers" "$([ "$(summary_until "$parent" 30 "$idle")" = "$idle" ] && echo true || echo false)"
 info=$(plugins | jq -c '.data[] | select(.id == "courier") | {state: .state.status, features, source: .source.type}')
 echo "  $info"

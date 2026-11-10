@@ -1502,7 +1502,7 @@ run_schedules() {
   check "the child reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
   check "the child's session carries the courier's rule denying them" \
     "$(session_info "$child" | jq -r '.permissions == [{ "action": "opencode_schedule_*", "resource": "*", "effect": "deny" }]')"
-  # Named as tools or in Code Mode's catalog, or counted there: the root's opencode namespace then holds more tools.
+  # the catalog may count the tools without naming them (api-notes)
   check "the root was offered them" \
     "$(jq -sr --arg parent "$parent" --arg child "$child" '
       ([.[] | select(.session == $child) | .opencodeTools] | max) as $below

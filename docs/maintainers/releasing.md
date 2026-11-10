@@ -90,13 +90,21 @@ the version that `@opencode/plugin` depends on. CI installs `@opencode/cli` at t
 `latest.yml` opens an issue, "OpenCode X.Y.Z is out", for each newer OpenCode release. To bump the
 pin:
 
-1. Move `@opencode/plugin`, `@opencode/cli` and `effect`. Move `@opentui/core`, `@opentui/solid`
-   and `solid-js` to the versions in OpenCode's root `package.json` catalog at the new tag, and
-   `@opencode/theme` to the pin.
+1. Move `@opencode/plugin` (peer and devDependency) and `effect` (peer and devDependency) to the
+   version the new plugin depends on (`npm view @opencode/plugin@<new> dependencies.effect`). Move
+   `@opentui/core`, `@opentui/solid` and `solid-js` to the versions in OpenCode's root
+   `package.json` catalog at the new tag, and `@opencode/theme` to the pin. Run `bun install` and
+   commit `bun.lock`: CI installs with `--frozen-lockfile`. CI derives the `@opencode/cli` version
+   from the peer.
 2. Run both live suites.
-3. Move the version README.md names: the Quickstart, the Install section's "tested on" line and
-   install command, and the terminal part's line under the table.
-4. Update the affected traps in [plugin-api-notes.md](plugin-api-notes.md).
+3. Move every hand-written mention of the old version: README.md (the Quickstart, the Install
+   section's "tested on" line and install command, the terminal part's line under the table), the
+   `@opencode/cli` install commands in CLAUDE.md, [development.md](development.md) and
+   [real-model.md](real-model.md), the terminal part's "tested on" line in
+   [reference.md](../reference.md#the-opencode-version), and CLAUDE.md's pin rule. `grep -rnF
+   '<old>'` finds them; the generated tables and real-model.md's measured batch stay.
+4. Update the affected traps in [plugin-api-notes.md](plugin-api-notes.md) and the version in its
+   first paragraph.
 5. Release a patch, so the published package names the new version and hosts on it stop logging
    the version line.
 

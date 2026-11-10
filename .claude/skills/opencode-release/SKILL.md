@@ -30,13 +30,17 @@ sorting it, the plan, retiring features and the order of the PRs.
   of what it finds, changes nothing, and plans the newest release.
   - **An open PR that changes `peerDependencies["@opencode/plugin"]`:** its version is the target,
     whatever the argument or npm says; a newer release is named in the close-out and waits until
-    it merges. If it is a draft awaiting the owner's option and they have answered on it,
-    implement their choice and update its body. Mark it ready once no option awaits them and no
-    unexplained Break remains. Then §5.2 for its CI, §5.5 if its body records no review, and the
-    close-out. A commit it needs on another session's branch goes as "One branch, one PR" says.
-  - **Otherwise, open issues titled `OpenCode <v>: …` (§4) for any v at or below the pin:** §5.3
-    works them, then this run carries on below with the argument or npm's newest. An issue still
-    waiting for the owner or in flight never holds back a newer release.
+    it merges. Add a `Closes #<N>` line for any open "is out" issue at or below its target that its
+    body lacks. If it is a draft whose head does not implement an option the owner has answered,
+    implement their choice; when the commit cannot be pushed from here ("One branch, one PR"), it
+    stays a draft, with "owner chose <X>; not yet implemented" in its body. Mark it ready once its
+    head implements every answered option and no unexplained Break remains. Then §5.2 for its CI,
+    and §5.5 if its body records no review.
+  - **Open issues titled `OpenCode <v>: …` (§4) for any v at or below the pin:** §5.3 works them,
+    whether or not a pin PR is open; they build on main. An issue still waiting for the owner or in
+    flight never holds back a newer release.
+  - Then, with a pin PR open, the close-out; without one, this run carries on below with the
+    argument or npm's newest.
 - **One branch, one PR.** A cloud session pushes only its own branch, which carries at most one
   PR. Any other PR that needs a push, or a leftover branch without a PR, is named in the close-out
   for a session the owner starts on that branch.
@@ -46,8 +50,9 @@ sorting it, the plan, retiring features and the order of the PRs.
 - **Range:** the stable `X.Y.Z` versions after the pin up to the target, without a prerelease
   suffix, from `npm view @opencode/cli versions --json`.
 - **Without npm:** take the target and range from the `v2.X.Y` tags without a suffix
-  (`git ls-remote --tags https://github.com/anomalyco/opencode`), gather and plan, then stop: the pin
-  PR needs npm (`bun install`, `npm view`, the CLI). Report it as blocked on registry access.
+  (`git ls-remote --tags https://github.com/anomalyco/opencode`), gather and plan, then stop with
+  the plan in the scratchpad and nothing filed: the pin PR needs npm (`bun install`, `npm view`,
+  the CLI). Report it as blocked on registry access.
 - **The issues:** every open issue titled `OpenCode <v> is out: move the pin from <p>` for a
   version in the range; there may be several or none. A verdict that did not pass makes the failing
   groups in that run's log Break candidates. A passed or cut-off verdict decides nothing: CI on the
@@ -117,7 +122,8 @@ With `plan` in the arguments, stop here. Otherwise:
   can fix: implement the recommended option in the pin PR, open it as a draft, and say in its body
   that the option awaits the owner.
 - **Every Adopt and Retire waits** for the pin PR to merge, as one issue per item in this
-  repository, titled `OpenCode <target>: <the change>`, with its evidence, the release, and a "Done
+  repository, titled `OpenCode <target>: <the change>` (an open issue with that title from an
+  earlier run is reused, not filed again), with its evidence, the release, and a "Done
   when". A child session implementing it reads only the issue and CLAUDE.md, so the "Done when"
   holds everything it needs: the files, tests, e2e group and docs from the plan, and for a Retire
   the checklist below. An item that changes the tool surface or the options, and every Retire, also
@@ -161,7 +167,7 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
    - Locally, an `opencode-*-<N>` branch without a PR is finished and gets its PR; that PR, or one
      already open, gets §5.2 and §5.5. An `issue-<N>-*` PR or branch may belong to a running cloud
      wave: it is not pushed to or reviewed, and the close-out names it and asks the owner whether
-     that wave has ended.
+     that wave has ended. Once the owner says it has, it is handled as an `opencode-*-<N>` one.
 
    For each remaining issue the owner answered, rewrite its "Done when" to the option they chose,
    once: not while a child or PR works from it. For a Deprecate, file the removal issue once,

@@ -13,6 +13,7 @@ let clock = Date.UTC(2026, 10, 7, 10, 0, 0)
 const tick = () => (clock += 1000)
 const user = (text: string): Message => ({ type: "user", text, time: { created: tick() } })
 const idle = (): Message => ({ type: "idle", time: { created: tick() } })
+const notice = (): Message => ({ type: "system", text: 'The context under "standing" changed', metadata: { notice: "instructions" }, time: { created: tick() } })
 const step = (finish: "tool-calls" | "stop", ...content: unknown[]): Message => {
   const created = tick()
   return { type: "assistant", finish, content, time: { created, completed: tick() } }
@@ -22,11 +23,13 @@ const tool = (name: string, input: unknown, metadata: unknown = {}) => ({ type: 
 const report = (from: string, text: string): Message => ({ type: "synthetic", text: `<courier from="${from}" status="done">\n${text}\n</courier>`, time: { created: tick() } })
 const child = (value: string) => [user("brief"), step("tool-calls", tool("shell", { command: `echo ${value}` }), tool("courier_send", { sessionID: "ses_parent", message: value, status: "done" })), step("stop", say("Reported.")), idle()]
 
-type Shape = "apart" | "steered" | "steered-look" | "look-first"
+type Shape = "apart" | "apart-notices" | "steered" | "steered-look" | "look-first"
 
 function parentOf(shape: Shape): Message[] {
   const spawns = step("tool-calls", tool("courier_spawn", { task: "a" }, { sessionID: "ses_a" }), tool("courier_spawn", { task: "b" }, { sessionID: "ses_b" }))
   const look = step("tool-calls", tool("courier_children", {}))
+  if (shape === "apart-notices")
+    return [user("fan out"), spawns, notice(), step("stop", say("Both started.")), idle(), notice(), report("ses_a", "391"), step("stop", say("a is in.")), idle(), notice(), report("ses_b", "1024"), step("stop", say("RESULTS 391 1024")), idle()]
   if (shape === "apart")
     return [user("fan out"), spawns, step("stop", say("Both started.")), idle(), report("ses_a", "391"), step("stop", say("a is in.")), idle(), report("ses_b", "1024"), step("stop", say("RESULTS 391 1024")), idle()]
   return [
@@ -62,6 +65,11 @@ function check(shape: Shape) {
 describe("the fan-out checker and a report that reaches the parent while its first turn runs", () => {
   test("reports that each wake the idle parent pass every check", () => {
     const run = check("apart")
+    expect(run.failed).toEqual([])
+    expect(run.exitCode).toBe(0)
+  })
+  test("an instruction update between a turn's end and the report that wakes the parent belongs to neither turn", () => {
+    const run = check("apart-notices")
     expect(run.failed).toEqual([])
     expect(run.exitCode).toBe(0)
   })

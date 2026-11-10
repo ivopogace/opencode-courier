@@ -25,6 +25,11 @@ sorting it, the plan, retiring features and the order of the PRs.
 
 ## 1. Versions
 
+- **Resume first.** The run that opens the pin PR ends before it merges, so a later run picks up
+  where that one stopped. Look for a PR that moves the pin to the target, and for open issues
+  titled `OpenCode <target>: …` (§4). A pin PR still open: go to §5.2 for its CI, then the
+  close-out. A pin PR merged: go to §5.3 for the issues the owner has answered or that need no
+  answer. Neither: start here.
 - **Pinned:** `peerDependencies["@opencode/plugin"]` in `package.json`.
 - **Target:** the argument, else `npm view @opencode/cli version`. Stop and say so when it is not
   newer than the pin.
@@ -48,8 +53,9 @@ cloud session, do not add it to the session as a repository.
   or WebFetch on `https://github.com/anomalyco/opencode/releases/tag/v<X.Y.Z>`). A release with no
   notes is recorded as such, and its source diff below is then required.
 - **API diff, pin to target:** the published types are what courier compiles against, and
-  `@opencode/plugin`'s types import its `@opencode/*` dependencies. For `@opencode/plugin` and each
-  `@opencode/*` package in `npm view @opencode/plugin@<v> dependencies`, at both versions:
+  `@opencode/plugin`'s types import its `@opencode/*` dependencies and peers (today ai, client,
+  protocol, schema, util and theme). For `@opencode/plugin` and each `@opencode/*` package in
+  `npm view @opencode/plugin@<v> dependencies peerDependencies`, at both versions:
   `npm pack` it in the scratchpad, unpack each into its own empty directory, and `diff -ru` the two
   `.d.ts` trees. Without npm, diff those packages in the clone between the two tags.
 - **Source diff:** a blobless clone in the scratchpad
@@ -73,7 +79,7 @@ OpenCode's subagents, schedules, `/goal`, skills and the TUI.
 | Kind | Means | Goes to |
 |---|---|---|
 | **Break** | A type, event, hook or behaviour courier relies on changed. | The pin PR. |
-| **Trap** | A trap in plugin-api-notes.md is new, moved, or fixed. | The pin PR updates the note. A fixed trap's workaround stays until an Adopt removes it, unless it now breaks. |
+| **Trap** | A trap in plugin-api-notes.md is new, moved, or fixed. | The pin PR updates the note. A fixed trap's workaround stays unless it now breaks, and its removal is an Adopt. |
 | **Adopt** | The host offers something courier can use: a hook, event, API, TUI slot or field that replaces a workaround or makes a tool better. | Its own PR, after the pin PR. |
 | **Retire** | The host now does natively what a courier tool, option or module does. | Its own PR, after the pin PR and the owner's decision. |
 | **None** | Does not touch the plugin. | Not listed; the plan gives the count. |
@@ -100,11 +106,22 @@ With `plan` in the arguments, stop here. Otherwise:
   CLAUDE.md, and say so in the plan. A Break that only a change to the tool surface or the options
   can fix: implement the recommended option in the pin PR, open it as a draft, and say in its body
   that the option awaits the owner.
-- **Every Adopt and Retire waits** for the pin PR to merge. File one issue per item in this
-  repository, titled for the change, with its evidence, the release, and a "Done when" listing the
-  files, tests, e2e group and docs from the plan. An item that changes the tool surface or the
-  options, and every Retire, also carries its options and the recommendation, and waits for the
-  owner's answer on the issue as well. Link the issues from the pin PR's body.
+- **Every Adopt and Retire waits** for the pin PR to merge, as one issue per item in this
+  repository, titled `OpenCode <target>: <the change>`, with its evidence, the release, and a "Done
+  when". A child session implementing it reads only the issue and CLAUDE.md, so the "Done when"
+  holds everything it needs: the files, tests, e2e group and docs from the plan, and for a Retire
+  the checklist below. An item that changes the tool surface or the options, and every Retire, also
+  carries its options and the recommendation, and waits for the owner's answer on the issue. Link
+  the issues from the pin PR's body.
+
+**A Retire's "Done when"** removes the tool or option from every file `git grep -n '<name>'`
+finds, at least: its registration in `src/<module>/tools.ts` (an option: its parser in the module's
+`domain.ts`, and `src/tree/tui.tsx` for the terminal option), other tools' descriptions and
+`text.ts` strings that name it, the `context` hook, `test/plugin.test.ts`, the snapshots
+(`bun test --update-snapshots`), the e2e groups and real-model checkers, README.md's tables,
+`docs/reference.md`, and the `courier-orchestrate` skill text in `src/skill.ts`. Its storage keys
+(`tree/store.ts`, `memory/store.ts`, `test/store.test.ts`) get a migration, or a reason for none in
+[architecture.md's Storage table](../../../docs/maintainers/architecture.md#storage).
 
 ## 5. Implement
 
@@ -113,26 +130,28 @@ With `plan` in the arguments, stop here. Otherwise:
    per "is out" issue in the range (none when there is none), the plan's list of what the range
    changes for courier, and the issues filed for the follow-ups. Before pushing, `bun run typecheck`
    and `bun test`.
-2. **Its live suites:** CI's live jobs run them on the target. A group that fails, in CI or
-   locally: rerun it locally on the target (`E2E_GROUPS=<group> KEEP=1`, with `OPENCODE_BIN` set to
-   `npm install --prefix <scratch>/oc-<target> @opencode/cli@<target>`'s binary). A group that passes
-   on the rerun is noted in the PR body as flaky, with its first error, and is not a Break. One that
-   fails again is traced to a Break or Trap and fixed in this PR; one you cannot trace goes in the
-   plan as an unexplained Break, and the PR stays a draft.
-3. **The follow-ups**, once the owner has merged the pin PR and answered what their issues ask: in a
-   Claude Code cloud session, hand the issues to the `courier-wave` skill, with "main is at <sha>:
-   the pin bump to <target>" as the context it builds on; locally, do them one after another, each
-   on its own branch off `origin/main`. Each follows CLAUDE.md's rule for a behaviour change. A
-   Retire removes what it retires from every file `git grep -n '<tool or option name>'` finds: its
-   registration in `src/<module>/tools.ts` (an option: where `src/index.ts` reads it), other tools'
-   descriptions and `text.ts` strings that name it, the `context` hook, `test/plugin.test.ts`, the
-   snapshots (`bun test --update-snapshots`), the e2e groups and real-model checkers, README.md's
-   tables, `docs/reference.md`, and the `courier-orchestrate` skill text in `src/skill.ts`. Its
-   storage keys (`tree/store.ts`, `memory/store.ts`) get a migration or a stated reason for none.
+2. **Its live suites:** CI's live jobs run them on the target. A failing group, in CI or locally:
+   rerun it locally on the target, with development.md's live-suite setup at `@opencode/cli@<target>`
+   (`E2E_GROUPS=<group> KEEP=1 e2e/run.sh`; for the terminal part `KEEP=1 e2e/tui.sh`, which needs
+   tmux). One that passes on the rerun is noted in the PR body as flaky, with its first error, and
+   is not a Break. One that fails again is traced to a Break or Trap and fixed in this PR. One you
+   cannot trace goes in the plan as an unexplained Break: convert the PR to a draft and say why in
+   its body.
+3. **The follow-ups**, once the owner has merged the pin PR: first, for each issue the owner
+   answered, rewrite its "Done when" to the option they chose, and for a Deprecate file the issue for
+   its later removal. Then:
+   - In a Claude Code cloud session, hand the issues to the `courier-wave` skill, with this context
+     for every child: "main is at <sha>: the pin bump to <target>. `e2e/real-model.sh`: run it only
+     with `COURIER_PROVIDER` and `COURIER_MODEL` set to a paid provider; otherwise write in the PR
+     body that it is owed, not BLOCKED."
+   - Locally, one after another, each on its own branch off `origin/main`. One whose plan builds on
+     another's code starts after that one merges; the others go side by side, and a conflict in a
+     shared file is resolved by merging `origin/main`.
 4. A changed model-facing string needs `e2e/real-model.sh` (CLAUDE.md). Its default free model
    refuses cloud sessions ([real-model.md](../../../docs/maintainers/real-model.md#running-it)): run
    it locally, or in a cloud session only with `COURIER_PROVIDER` and `COURIER_MODEL` set to a paid
-   provider and its key; otherwise it is owed.
+   provider and its key; otherwise it is owed. A single run's result goes in the PR body: the tables
+   in real-model.md are one batch, replaced only by a full new batch.
 5. Review each PR once it is ready for review, with the `code-review:code-review` skill (the plugin
    `.claude/settings.json` enables): it skips a draft. In a cloud session, where it says `gh`, use
    the GitHub MCP tools. A draft's review is owed, and the close-out says so.

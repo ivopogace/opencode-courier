@@ -107,7 +107,9 @@ is `latest` when it runs, once per version. To bump the pin:
    `git grep -nF '<old>'` finds them. These stay: the generated tables, real-model.md's measured
    batch, and a line naming the version a host feature arrived in ("OpenCode X and later").
 4. Update the affected traps in [plugin-api-notes.md](plugin-api-notes.md) and the version in its
-   first paragraph.
+   first paragraph. The traps of two servers on one data directory are checked only by
+   `e2e/two-servers.sh`, which CI does not run: run it on the new version (`OPENCODE_BIN` as in
+   step 2); a result that differs is a changed trap.
 5. Release a patch, so the published package names the new version and hosts on it stop logging
    the version line.
 

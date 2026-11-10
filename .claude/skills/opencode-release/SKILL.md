@@ -26,20 +26,24 @@ sorting it, the plan, retiring features and the order of the PRs.
 ## 1. Versions
 
 - **Resume first.** The run that opens the pin PR ends before it merges, so a later run picks up
-  what earlier runs left. One pin PR is open at a time.
+  what earlier runs left. One pin PR is open at a time. With `plan`, resume only reports the state
+  of what it finds, changes nothing, and plans the newest release.
   - **An open PR that changes `peerDependencies["@opencode/plugin"]`:** its version is the target,
     whatever the argument or npm says; a newer release is named in the close-out and waits until
     it merges. If it is a draft awaiting the owner's option and they have answered on it,
     implement their choice and update its body. Mark it ready once no option awaits them and no
     unexplained Break remains. Then §5.2 for its CI, §5.5 if its body records no review of its
-   latest commit, and
-    the close-out. When a commit must be pushed and this cloud session's branch is not the PR's,
-    ask the owner to start a session on that branch, or merge the PR's branch into this session's
-    (`git fetch origin <branch>`), open a replacement PR with the old body's `Closes` lines and
-    issue links, and close the old one with a link to it.
+    latest commit, and the close-out. When a commit must be pushed and this cloud session's branch
+    is not the PR's, ask the owner to start a session on that branch, or merge the PR's branch
+    into this session's (`git fetch origin <branch>`), open a replacement PR with the old body's
+    `Closes` lines and issue links, and close the old one with a link to it.
   - **Otherwise, open issues titled `OpenCode <v>: …` (§4) for any v at or below the pin:** §5.3
     works them, then this run carries on below with the argument or npm's newest. An issue still
     waiting for the owner or in flight never holds back a newer release.
+- **One branch, one PR.** A cloud session pushes only its own branch, and that branch carries at
+  most one PR per run. Any other PR that needs a push is named in the close-out, for a session the
+  owner starts on that PR's branch. A newer release whose pin PR would need the branch after it is
+  taken is planned, and its pin PR is left to the next run.
 - **Pinned:** `peerDependencies["@opencode/plugin"]` in `package.json`.
 - **Target:** the argument, else `npm view @opencode/cli version`. When it is not newer than the
   pin, say so and go to the close-out.
@@ -143,46 +147,53 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
 2. **Its live suites:** CI's live jobs run them on the target. A failing group, in CI or locally:
    rerun it locally on the PR's head (`git fetch origin <branch> && git checkout FETCH_HEAD &&
    bun install`, then back to your branch) and the target, with development.md's live-suite setup
-   at `@opencode/cli@<target>`
-   (`E2E_GROUPS=<group> KEEP=1 e2e/run.sh`; for the terminal part `KEEP=1 e2e/tui.sh`, which needs
-   tmux). One that passes on the rerun is noted in the PR body as flaky, with its first error, and
-   is not a Break: rerun the failed CI jobs once (`gh run rerun <id> --failed`, or the GitHub MCP
-   actions tools), since the required check stays red until they pass; if you cannot, the close-out
-   asks the owner to. A group that fails again in that rerun (the workflow run's attempt number shows
-   one happened) is one that fails again, below. One that fails again is traced to a Break or Trap and fixed in this PR. One you
-   cannot trace goes in the plan as an unexplained Break: convert the PR to a draft and say why in
-   its body.
-3. **The follow-ups**, once the owner has merged the pin PR. Skip an issue that already has an
-   open PR with `Closes #<N>` or a branch `issue-<N>-*` (courier-wave's): in a cloud session, a
-   wave whose children still run is taken over as courier-wave's "Taking over a running wave" says,
-   not spawned again. Otherwise such a PR gets §5.2's CI handling and §5.5's review like the pin
-   PR (a push it needs goes as for the pin PR in §1), and a branch without a PR is named in the
-   close-out as in flight elsewhere. For each remaining issue
-   the owner answered, rewrite its "Done when" to the option they chose, once: not while a child or
-   PR works from it. For a Deprecate, file the removal issue once, titled
-   `Remove <name> in the next minor release`: it is not a follow-up, and neither resume nor this
-   step picks it up. Then, for the issues that need no answer or have one (the rest wait, and the
-   close-out lists them):
+   at `@opencode/cli@<target>` (`E2E_GROUPS=<group> KEEP=1 e2e/run.sh`; for the terminal part
+   `KEEP=1 e2e/tui.sh`, which needs tmux).
+   - Passes on the rerun: noted in the PR body as flaky, with its first error, and not a Break.
+     Rerun the failed CI jobs once (`gh run rerun <id> --failed`, or the GitHub MCP actions
+     tools), since the required check stays red until they pass; if you cannot, the close-out asks
+     the owner to. A group that fails that CI rerun too (the workflow run's attempt number shows
+     one happened) fails again.
+   - Fails again: traced to a Break or Trap and fixed in this PR. One you cannot trace goes in the
+     plan as an unexplained Break: convert the PR to a draft and say why in its body.
+3. **The follow-ups**, once the owner has merged the pin PR. Local runs name their follow-up
+   branches `opencode-<target>-<N>`; courier-wave's are `issue-<N>-*`. Skip an issue that already
+   has an open PR with `Closes #<N>` or such a branch:
+   - In a cloud session, a wave whose children still run is taken over as courier-wave's "Taking
+     over a running wave" says, not spawned again; a PR no running child owns gets §5.2 and §5.5.
+   - Locally, a PR on an `opencode-<target>-<N>` branch gets §5.2 and §5.5. One on an
+     `issue-<N>-*` branch, or such a branch without a PR, may belong to a running cloud wave: it
+     is not pushed to or reviewed, and the close-out names it and asks the owner whether that wave
+     has ended.
+
+   For each remaining issue the owner answered, rewrite its "Done when" to the option they chose,
+   once: not while a child or PR works from it. For a Deprecate, file the removal issue once,
+   titled `Remove <name> in the next minor release`: it is not a follow-up, and neither resume nor
+   this step picks it up. Then, for the issues that need no answer or have one (the rest wait, and
+   the close-out lists them):
    - In a Claude Code cloud session, hand them to the `courier-wave` skill, with "main is at <sha>:
      the pin bump to <target>" as the context they build on.
-   - Locally, each on its own branch off `origin/main`. One whose plan builds on another's code
-     starts after that one merges; a conflict in a shared file is resolved by merging `origin/main`.
+   - Locally, each on its own `opencode-<target>-<N>` branch off `origin/main`. One whose plan
+     builds on another's code starts after that one merges; a conflict in a shared file is resolved
+     by merging `origin/main`.
 4. A changed model-facing string needs `e2e/real-model.sh` (CLAUDE.md). Its default free model
    refuses cloud sessions ([real-model.md](../../../docs/maintainers/real-model.md#running-it)):
    there, run it only with a paid provider; otherwise it is owed.
 5. Review the pin PR and each follow-up PR this run handles once it is ready for review, with
    `code-review:code-review <PR>` (the plugin `.claude/settings.json` enables), without
    `--comment`: its posting step needs an inline-comment tool these sessions lack. In a cloud
-   session, where it says `gh`, use the GitHub MCP tools. Fix what it finds, and put the sha
-   reviewed and the findings with how each was resolved in the PR body. It stops at its first step
-   on a draft, a closed PR, a change it judges trivial, or a PR Claude has commented on: say which
-   in the PR body; a draft's review is owed, and the close-out says so. courier-wave's children
-   review their own PRs.
+   session, where it says `gh`, use the GitHub MCP tools. Fix what it finds and push, then review
+   the new head once more. Record in the PR body the sha each round reviewed and its findings with
+   how each was resolved. It stops at its first step on a draft, a closed PR, a change it judges
+   trivial, or a PR Claude has commented on (its own record in the body counts): say which in the
+   PR body. A head no recorded round covers, a draft's included, has its review owed, and the
+   close-out says so. courier-wave's children review their own PRs.
 
 ## 6. Close out
 
 Report to the owner, without waiting for CI: the pin PR and each follow-up PR this run handled,
-with its CI state now (pending, green, or red with the failing job), the follow-up issues and which await their decision with the
-recommendation, the traps that changed, what was not done and why (a review or real-model run owed,
-a case the host does not cover, an unexplained Break), and that a patch release follows the pin PR
-(a minor one when a tool or option was removed), which is theirs to start.
+with its CI state now (pending, green, or red with the failing job); the follow-up issues, and
+which await their decision, with the recommendation; the traps that changed; what was not done and
+why (a review of an uncovered head or a real-model run owed, a PR left for another session, a case
+the host does not cover, an unexplained Break); and that a patch release follows the pin PR (a
+minor one when a tool or option was removed), which is theirs to start.

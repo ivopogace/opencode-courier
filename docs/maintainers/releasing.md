@@ -109,7 +109,8 @@ is `latest` when it runs, once per version. To bump the pin:
 4. Update the affected traps in [plugin-api-notes.md](plugin-api-notes.md) and the version in its
    first paragraph. The traps of two servers on one data directory are checked only by
    `e2e/two-servers.sh`, which CI does not run: run it on the new version (`OPENCODE_BIN` as in
-   step 2); a result that differs is a changed trap.
+   step 2), and once more when a result differs, since its timing varies. A difference that repeats
+   is a changed trap: update the note and the expected value in the script's `result` lines.
 5. Release a patch, so the published package names the new version and hosts on it stop logging
    the version line.
 

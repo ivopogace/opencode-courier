@@ -63,7 +63,8 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
 - Docs state how things are now: no history, no "used to", "since #N" or "no longer"; that lives in
   git, PR bodies and release notes.
 - After changing a model-facing string (`src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or
-  a tool description), re-run `e2e/real-model.sh` and update its table in `real-model.md`.
+  a tool description), re-run `e2e/real-model.sh` and put its result in the PR body; the tables in
+  `real-model.md` are one batch, replaced only by a full new batch.
 - Keep the provider's prompt cache: a spawned session's role part goes to its `role` instruction
   entry once, before its first prompt; where `context.ts` adds it as a system part instead, it is the
   same on every request. So `courier_spawn` does not gate on the skill being loaded. The skill

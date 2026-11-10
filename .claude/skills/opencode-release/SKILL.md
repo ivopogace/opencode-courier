@@ -26,10 +26,18 @@ sorting it, the plan, retiring features and the order of the PRs.
 ## 1. Versions
 
 - **Resume first.** The run that opens the pin PR ends before it merges, so a later run picks up
-  where that one stopped. Look for a PR that moves the pin to the target, and for open issues
-  titled `OpenCode <target>: …` (§4). A pin PR still open: go to §5.2 for its CI, then the
-  close-out. A pin PR merged: go to §5.3 for the issues the owner has answered or that need no
-  answer. Neither: start here.
+  where that one stopped. Look for any open PR that changes `peerDependencies["@opencode/plugin"]`,
+  and for open issues titled `OpenCode <v>: …` (§4) for any v newer than the pin. If either exists,
+  its version is the target, whatever npm's newest is; a newer release is named in the close-out
+  and gets its own run once this one is merged.
+  - **A pin PR still open:** if it is a draft awaiting the owner's option and they have answered
+    on it, implement their choice and update its body. Mark it ready once no option awaits them and
+    no unexplained Break remains. Then §5.2 for its CI, §5.5 if its latest commit has no review,
+    and the close-out. In a cloud session whose branch is not the PR's, ask the owner to start one
+    on that branch, or open a replacement PR from this session's branch and close the old one with
+    a link to it.
+  - **A pin PR merged:** go to §5.3.
+  - **Neither:** start here.
 - **Pinned:** `peerDependencies["@opencode/plugin"]` in `package.json`.
 - **Target:** the argument, else `npm view @opencode/cli version`. Stop and say so when it is not
   newer than the pin.
@@ -137,24 +145,26 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
    is not a Break. One that fails again is traced to a Break or Trap and fixed in this PR. One you
    cannot trace goes in the plan as an unexplained Break: convert the PR to a draft and say why in
    its body.
-3. **The follow-ups**, once the owner has merged the pin PR: first, for each issue the owner
-   answered, rewrite its "Done when" to the option they chose, and for a Deprecate file the issue for
-   its later removal. Then:
+3. **The follow-ups**, once the owner has merged the pin PR. Skip an issue that already has an
+   open PR with `Closes #<N>`; in a cloud session, a wave whose children still run is taken over
+   as courier-wave's "Taking over a running wave" says, not spawned again. For each remaining issue
+   the owner answered, rewrite its "Done when" to the option they chose, once: not while a child or
+   PR works from it. For a Deprecate, file the removal issue once, titled
+   `Remove <name> in the next minor release`: it is not a follow-up, and neither resume nor this
+   step picks it up. Then:
    - In a Claude Code cloud session, hand the issues to the `courier-wave` skill, with this context
      for every child: "main is at <sha>: the pin bump to <target>. `e2e/real-model.sh`: run it only
      with `COURIER_PROVIDER` and `COURIER_MODEL` set to a paid provider; otherwise write in the PR
      body that it is owed, not BLOCKED."
-   - Locally, one after another, each on its own branch off `origin/main`. One whose plan builds on
-     another's code starts after that one merges; the others go side by side, and a conflict in a
-     shared file is resolved by merging `origin/main`.
+   - Locally, each on its own branch off `origin/main`. One whose plan builds on another's code
+     starts after that one merges; a conflict in a shared file is resolved by merging `origin/main`.
 4. A changed model-facing string needs `e2e/real-model.sh` (CLAUDE.md). Its default free model
-   refuses cloud sessions ([real-model.md](../../../docs/maintainers/real-model.md#running-it)): run
-   it locally, or in a cloud session only with `COURIER_PROVIDER` and `COURIER_MODEL` set to a paid
-   provider and its key; otherwise it is owed. A single run's result goes in the PR body: the tables
-   in real-model.md are one batch, replaced only by a full new batch.
-5. Review each PR once it is ready for review, with the `code-review:code-review` skill (the plugin
-   `.claude/settings.json` enables): it skips a draft. In a cloud session, where it says `gh`, use
-   the GitHub MCP tools. A draft's review is owed, and the close-out says so.
+   refuses cloud sessions ([real-model.md](../../../docs/maintainers/real-model.md#running-it)):
+   there, run it only with a paid provider; otherwise it is owed.
+5. Review the pin PR and each follow-up PR made in this session once it is ready for review, with
+   the `code-review:code-review` skill (the plugin `.claude/settings.json` enables): it skips a
+   draft. In a cloud session, where it says `gh`, use the GitHub MCP tools. A draft's review is
+   owed, and the close-out says so. courier-wave's children review their own PRs.
 
 ## 6. Close out
 

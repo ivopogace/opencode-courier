@@ -333,10 +333,14 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   it cancels their questions and forms. The live suite drives native scenarios through
   `POST /api/session/:id/prompt`.
 - **`opencode run` and a running native child:** once the root is idle, the run waits while any
-  session under it is active, but it only checks again when a job's session ends
-  (`packages/cli/src/run/noninteractive.ts`). A native child still running when the root's turn
-  ends keeps the run from exiting, unless something after the child's end starts a turn in the
-  root (a report, a notice).
+  session under it is active, but it only checks again when a turn ends in the root or in the
+  session of a job (a shell, a subagent of OpenCode's own), which a courier child is not
+  (`packages/cli/src/run/noninteractive.ts`). A native child still running at that check keeps the
+  run from exiting until a later turn of the root ends. A notice the plugin sends at the child's
+  end (it failed, it ended without a report) starts such a turn. A report does not for certain:
+  the child sends it from its turn, which ends a step later, so the turn the report starts in the
+  root may end first, and the run then waits for good. With the mock model the root's turn ends
+  about 25 ms before the child's, and the run stalls when the client's check takes less than that.
 - **Deletion:** `Session.remove` interrupts and removes each native child recursively, with a
   `session.deleted` each.
 - **No generated title** and no warming for a session with a `parentID`; the courier sets the

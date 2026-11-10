@@ -2607,9 +2607,12 @@ run_native() {
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
   git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "nativeChildren"
   start_server
-  out=$(prompt "COURIER-TEST")
-  native_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  native_child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  # Through the API: the child reports from its turn, a step before that turn ends, and `opencode run` exits only if
+  # the turn the report starts in the root outlasts it (api-notes, Native parentID).
+  native_parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
+  api_prompt "$native_parent" "COURIER-TEST"
+  native_child=$(spawned_by "$native_parent" 45)
+  check "the parent started a child" "$([ -n "$native_child" ] && echo true || echo false)"
   info=$(session_info "$native_child")
   check "the child's OpenCode parentID is its parent, and courier's metadata is kept" \
     "$(jq -r --arg parent "$native_parent" '.parentID == $parent and .metadata.courier.parentID == $parent' <<<"$info")"

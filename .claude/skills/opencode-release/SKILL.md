@@ -31,7 +31,8 @@ sorting it, the plan, retiring features and the order of the PRs.
     whatever the argument or npm says; a newer release is named in the close-out and waits until
     it merges. If it is a draft awaiting the owner's option and they have answered on it,
     implement their choice and update its body. Mark it ready once no option awaits them and no
-    unexplained Break remains. Then §5.2 for its CI, §5.5 if its latest commit has no review, and
+    unexplained Break remains. Then §5.2 for its CI, §5.5 if its body records no review of its
+   latest commit, and
     the close-out. When a commit must be pushed and this cloud session's branch is not the PR's,
     ask the owner to start a session on that branch, or merge the PR's branch into this session's
     (`git fetch origin <branch>`), open a replacement PR with the old body's `Closes` lines and
@@ -140,7 +141,9 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
    changes for courier, and the issues filed for the follow-ups. Before pushing, `bun run typecheck`
    and `bun test`.
 2. **Its live suites:** CI's live jobs run them on the target. A failing group, in CI or locally:
-   rerun it locally on the target, with development.md's live-suite setup at `@opencode/cli@<target>`
+   rerun it locally on the PR's head (`git fetch origin <branch> && git checkout FETCH_HEAD &&
+   bun install`, then back to your branch) and the target, with development.md's live-suite setup
+   at `@opencode/cli@<target>`
    (`E2E_GROUPS=<group> KEEP=1 e2e/run.sh`; for the terminal part `KEEP=1 e2e/tui.sh`, which needs
    tmux). One that passes on the rerun is noted in the PR body as flaky, with its first error, and
    is not a Break: rerun the failed CI jobs once (`gh run rerun <id> --failed`, or the GitHub MCP
@@ -150,9 +153,11 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
    cannot trace goes in the plan as an unexplained Break: convert the PR to a draft and say why in
    its body.
 3. **The follow-ups**, once the owner has merged the pin PR. Skip an issue that already has an
-   open PR with `Closes #<N>`; locally, such a PR from an earlier run gets §5.2's CI handling and
-   §5.5's review like the pin PR; in a cloud session, a wave whose children still run is taken over
-   as courier-wave's "Taking over a running wave" says, not spawned again. For each remaining issue
+   open PR with `Closes #<N>` or a branch `issue-<N>-*` (courier-wave's): in a cloud session, a
+   wave whose children still run is taken over as courier-wave's "Taking over a running wave" says,
+   not spawned again. Otherwise such a PR gets §5.2's CI handling and §5.5's review like the pin
+   PR (a push it needs goes as for the pin PR in §1), and a branch without a PR is named in the
+   close-out as in flight elsewhere. For each remaining issue
    the owner answered, rewrite its "Done when" to the option they chose, once: not while a child or
    PR works from it. For a Deprecate, file the removal issue once, titled
    `Remove <name> in the next minor release`: it is not a follow-up, and neither resume nor this
@@ -165,18 +170,19 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
 4. A changed model-facing string needs `e2e/real-model.sh` (CLAUDE.md). Its default free model
    refuses cloud sessions ([real-model.md](../../../docs/maintainers/real-model.md#running-it)):
    there, run it only with a paid provider; otherwise it is owed.
-5. Review the pin PR and each follow-up PR made locally once it is ready for review, with
-   `code-review:code-review <PR> --comment` (the plugin `.claude/settings.json` enables): without
-   `--comment` it posts nothing. It leaves an inline comment per finding, or a `## Code review` "No
-   issues found" comment, and it skips a draft. In a cloud session, where it says `gh`, use the
-   GitHub MCP tools. A draft's review is owed, and the close-out says so. It also skips a PR Claude
-   has already commented on: for a re-review, tell it those comments cover an older head.
-   courier-wave's children review their own PRs.
+5. Review the pin PR and each follow-up PR this run handles once it is ready for review, with
+   `code-review:code-review <PR>` (the plugin `.claude/settings.json` enables), without
+   `--comment`: its posting step needs an inline-comment tool these sessions lack. In a cloud
+   session, where it says `gh`, use the GitHub MCP tools. Fix what it finds, and put the sha
+   reviewed and the findings with how each was resolved in the PR body. It stops at its first step
+   on a draft, a closed PR, a change it judges trivial, or a PR Claude has commented on: say which
+   in the PR body; a draft's review is owed, and the close-out says so. courier-wave's children
+   review their own PRs.
 
 ## 6. Close out
 
-Report to the owner, without waiting for CI: the pin PR and each follow-up PR made locally, with
-its CI state now (pending, green, or red with the failing job), the follow-up issues and which await their decision with the
+Report to the owner, without waiting for CI: the pin PR and each follow-up PR this run handled,
+with its CI state now (pending, green, or red with the failing job), the follow-up issues and which await their decision with the
 recommendation, the traps that changed, what was not done and why (a review or real-model run owed,
 a case the host does not cover, an unexplained Break), and that a patch release follows the pin PR
 (a minor one when a tool or option was removed), which is theirs to start.

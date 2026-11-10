@@ -805,7 +805,9 @@ parent (see below). Use native children only with OpenCode's TUI or the paired a
 - **A native child leaves the TUI's session lists.** Reach it from the parent's subagent tab.
 - **`autoaccept` and `opencode run`** in the session whose view shows a native child's asks answer
   its requests: `autoaccept` and `run --auto` approve them, `run` without `--auto` rejects them and
-  cancels their questions and forms.
+  cancels their questions and forms. `opencode run` also waits for native children before it exits,
+  and looks again only when a turn of its own session ends: when a native child's turn ends after
+  the last turn of the session the run prompted, the run does not exit by itself.
 - **The roster, `courier_children`, `courier_tree` and the [tree panel](#the-tree-panel)** mark it:
   `native: true` in the listings, `native` in the panel's row.
 

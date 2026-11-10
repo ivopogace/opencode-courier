@@ -32,18 +32,14 @@ sorting it, the plan, retiring features and the order of the PRs.
     whatever the argument or npm says; a newer release is named in the close-out and waits until
     it merges. If it is a draft awaiting the owner's option and they have answered on it,
     implement their choice and update its body. Mark it ready once no option awaits them and no
-    unexplained Break remains. Then §5.2 for its CI, §5.5 if its body records no review of its
-    latest commit, and the close-out. When a commit must be pushed and this cloud session's branch
-    is not the PR's, ask the owner to start a session on that branch, or merge the PR's branch
-    into this session's (`git fetch origin <branch>`), open a replacement PR with the old body's
-    `Closes` lines and issue links, and close the old one with a link to it.
+    unexplained Break remains. Then §5.2 for its CI, §5.5 if its body records no review, and the
+    close-out. A commit it needs on another session's branch goes as "One branch, one PR" says.
   - **Otherwise, open issues titled `OpenCode <v>: …` (§4) for any v at or below the pin:** §5.3
     works them, then this run carries on below with the argument or npm's newest. An issue still
     waiting for the owner or in flight never holds back a newer release.
-- **One branch, one PR.** A cloud session pushes only its own branch, and that branch carries at
-  most one PR per run. Any other PR that needs a push is named in the close-out, for a session the
-  owner starts on that PR's branch. A newer release whose pin PR would need the branch after it is
-  taken is planned, and its pin PR is left to the next run.
+- **One branch, one PR.** A cloud session pushes only its own branch, which carries at most one
+  PR. Any other PR that needs a push, or a leftover branch without a PR, is named in the close-out
+  for a session the owner starts on that branch.
 - **Pinned:** `peerDependencies["@opencode/plugin"]` in `package.json`.
 - **Target:** the argument, else `npm view @opencode/cli version`. When it is not newer than the
   pin, say so and go to the close-out.
@@ -156,15 +152,16 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
      one happened) fails again.
    - Fails again: traced to a Break or Trap and fixed in this PR. One you cannot trace goes in the
      plan as an unexplained Break: convert the PR to a draft and say why in its body.
-3. **The follow-ups**, once the owner has merged the pin PR. Local runs name their follow-up
-   branches `opencode-<target>-<N>`; courier-wave's are `issue-<N>-*`. Skip an issue that already
-   has an open PR with `Closes #<N>` or such a branch:
+3. **The follow-ups**, once the owner has merged the pin PR. Local runs name a follow-up's branch
+   `opencode-<v>-<N>`, v from its issue title; courier-wave's are `issue-<N>-*`. An issue that
+   already has an open PR with `Closes #<N>` or such a branch is not started again:
    - In a cloud session, a wave whose children still run is taken over as courier-wave's "Taking
-     over a running wave" says, not spawned again; a PR no running child owns gets §5.2 and §5.5.
-   - Locally, a PR on an `opencode-<target>-<N>` branch gets §5.2 and §5.5. One on an
-     `issue-<N>-*` branch, or such a branch without a PR, may belong to a running cloud wave: it
-     is not pushed to or reviewed, and the close-out names it and asks the owner whether that wave
-     has ended.
+     over a running wave" says. A PR no running child owns gets §5.2 and §5.5; a branch without a
+     PR goes as "One branch, one PR" says.
+   - Locally, an `opencode-*-<N>` branch without a PR is finished and gets its PR; that PR, or one
+     already open, gets §5.2 and §5.5. An `issue-<N>-*` PR or branch may belong to a running cloud
+     wave: it is not pushed to or reviewed, and the close-out names it and asks the owner whether
+     that wave has ended.
 
    For each remaining issue the owner answered, rewrite its "Done when" to the option they chose,
    once: not while a child or PR works from it. For a Deprecate, file the removal issue once,
@@ -173,7 +170,7 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
    the close-out lists them):
    - In a Claude Code cloud session, hand them to the `courier-wave` skill, with "main is at <sha>:
      the pin bump to <target>" as the context they build on.
-   - Locally, each on its own `opencode-<target>-<N>` branch off `origin/main`. One whose plan
+   - Locally, each on its own `opencode-<v>-<N>` branch off `origin/main`. One whose plan
      builds on another's code starts after that one merges; a conflict in a shared file is resolved
      by merging `origin/main`.
 4. A changed model-facing string needs `e2e/real-model.sh` (CLAUDE.md). Its default free model
@@ -182,18 +179,19 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
 5. Review the pin PR and each follow-up PR this run handles once it is ready for review, with
    `code-review:code-review <PR>` (the plugin `.claude/settings.json` enables), without
    `--comment`: its posting step needs an inline-comment tool these sessions lack. In a cloud
-   session, where it says `gh`, use the GitHub MCP tools. Fix what it finds and push, then review
-   the new head once more. Record in the PR body the sha each round reviewed and its findings with
-   how each was resolved. It stops at its first step on a draft, a closed PR, a change it judges
-   trivial, or a PR Claude has commented on (its own record in the body counts): say which in the
-   PR body. A head no recorded round covers, a draft's included, has its review owed, and the
-   close-out says so. courier-wave's children review their own PRs.
+   session, where it says `gh`, use the GitHub MCP tools. One round per PR: fix what it finds,
+   then record in the PR body the sha it reviewed, its findings with how each was resolved, and
+   the fix commits on top. It stops at its first step on a draft, a closed PR, a change it judges
+   trivial, or a PR Claude has commented on: say which in the PR body, and that PR's review is
+   owed. The close-out names owed reviews; the owner gets one, or another after later pushes, by
+   commenting `@claude` on the PR (the repository's Claude review workflow). courier-wave's
+   children review their own PRs.
 
 ## 6. Close out
 
 Report to the owner, without waiting for CI: the pin PR and each follow-up PR this run handled,
 with its CI state now (pending, green, or red with the failing job); the follow-up issues, and
 which await their decision, with the recommendation; the traps that changed; what was not done and
-why (a review of an uncovered head or a real-model run owed, a PR left for another session, a case
+why (a review owed, with the `@claude` remedy, or a real-model run owed, a PR left for another session, a case
 the host does not cover, an unexplained Break); and that a patch release follows the pin PR (a
 minor one when a tool or option was removed), which is theirs to start.

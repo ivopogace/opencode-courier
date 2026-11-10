@@ -191,9 +191,8 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
    there, run it only with a paid provider; otherwise it is owed.
 5. Review the pin PR and each follow-up PR this run handles and can push to (another branch's PR is
    named in the close-out for a session there, as "One branch, one PR" says) once it is ready
-   for review, with
-   `code-review:code-review <PR>` (the plugin `.claude/settings.json` enables), without
-   `--comment`: its posting step needs an inline-comment tool these sessions lack. In a cloud
+   for review, with `code-review:code-review <PR>` (the plugin `.claude/settings.json` enables),
+   without `--comment`: its posting step needs an inline-comment tool these sessions lack. In a cloud
    session, where it says `gh`, use the GitHub MCP tools. One round per PR: fix what it finds,
    then record in the PR body the sha it reviewed, its findings with how each was resolved, and
    the fix commits on top. It stops at its first step on a draft, a closed PR, a change it judges

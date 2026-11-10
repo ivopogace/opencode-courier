@@ -27,16 +27,17 @@ sorting it, the plan, retiring features and the order of the PRs.
 
 - **Resume first.** The run that opens the pin PR ends before it merges, so a later run picks up
   what earlier runs left. One pin PR is open at a time. With `plan`, resume only reports the state
-  of what it finds, changes nothing, and plans the newest release.
+  of what it finds, changes nothing, and plans the argument's release, else npm's newest.
   - **An open PR that changes `peerDependencies["@opencode/plugin"]`:** its version is the target,
     whatever the argument or npm says; a newer release is named in the close-out and waits until
     it merges. Add a `Closes #<N>` line for any open "is out" issue at or below its target that its
-    body lacks. If it is a draft whose head does not implement an option the owner has answered,
-    implement their choice; when the commit cannot be pushed from here ("One branch, one PR"), it
-    stays a draft, with "owner chose <X>; not yet implemented" in its body. Mark it ready once the
-    owner has answered every option it awaits, its head implements each answer, and no unexplained
-    Break remains. Then §5.2 for its CI, and §5.5 if its body records no completed round (a stop
-    on a draft that is now ready counts as none).
+    body lacks. If its head, draft or not, does not implement an option the owner has answered,
+    implement their choice; when the commit cannot be pushed from here ("One branch, one PR") or
+    tested here (no registry), it is made or kept a draft, with "owner chose <X>; not yet
+    implemented" and the reason in its body. Mark it ready once the owner has answered every
+    option it awaits, its head implements each answer, and no unexplained Break remains. Then §5.2
+    for its CI, and §5.5 if its body records no completed round (a stop on a draft that is now
+    ready counts as none).
   - **Open issues titled `OpenCode <v>: …` (§4) for any v at or below the pin:** §5.3 works them,
     whether or not a pin PR is open; they build on main. An issue still waiting for the owner or in
     flight never holds back a newer release.
@@ -57,8 +58,8 @@ sorting it, the plan, retiring features and the order of the PRs.
   the plan in the scratchpad and nothing filed: the pin PR needs npm (`bun install`, `npm view`,
   the CLI). Report it as blocked on registry access. Resume still does what needs no registry:
   `Closes` lines, draft and ready state, CI logs and reruns of failed jobs, §5.5, the hand-off to
-  courier-wave. A local rerun or a local follow-up is reported as blocked, and a red group stays
-  unclassified rather than an unexplained Break.
+  courier-wave. A local rerun, a local follow-up, or implementing an owner's answer is reported as
+  blocked, and a red group stays unclassified rather than an unexplained Break.
 - **The issues:** every open issue titled `OpenCode <v> is out: move the pin from <p>` for a
   version in the range; there may be several or none. A verdict that did not pass makes the failing
   groups in that run's log Break candidates. A passed or cut-off verdict decides nothing: CI on the

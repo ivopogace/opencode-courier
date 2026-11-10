@@ -48,7 +48,9 @@ sorting it, the plan, retiring features and the order of the PRs.
 - **One branch, one PR.** A cloud session pushes only its own branch, which carries at most one
   PR. Any other PR that needs a push, or another leftover branch without a PR, is named in the
   close-out for a session the owner starts on that branch. The session's own branch, when it is
-  such a leftover, is worked here.
+  such a leftover, is worked here. When it already carries a PR or is a follow-up's, a newer
+  release is planned into the scratchpad and named in the close-out for a session on a fresh
+  branch; no pin work goes onto this branch.
 - **Pinned:** `peerDependencies["@opencode/plugin"]` in `package.json`.
 - **Target:** the argument, else `npm view @opencode/cli version`. When it is not newer than the
   pin, say so and go to the close-out.
@@ -150,7 +152,7 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
 ## 5. Implement
 
 1. **The pin PR**, from its own branch off `origin/main` (on Claude Code cloud, the branch you were
-   given): releasing.md's pin steps 1 to 4, plus the Breaks and Traps. Body: one `Closes #<N>` line
+   given, unless "One branch, one PR" says otherwise): releasing.md's pin steps 1 to 4, plus the Breaks and Traps. Body: one `Closes #<N>` line
    per "is out" issue in the range (none when there is none), the plan's list of what the range
    changes for courier, and the issues filed for the follow-ups. Before pushing, `bun run typecheck`
    and `bun test`.

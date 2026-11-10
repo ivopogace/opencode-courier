@@ -77,8 +77,9 @@ once per batch in the reply that presents the PRs.
   documentation-only PR skips; the required `Live test against OpenCode V2` gate passed;
 - the PR body has `Closes #<N>`, and the child reports a round of the code review plugin
   (`code-review:code-review`, which `.claude/settings.json` enables for every child) with its
-  findings resolved; read its `### Code review` comment on the PR yourself (none means no finding
-  reached its confidence bar); a behaviour change after that round gets another round;
+  findings resolved; read its review on the PR yourself, inline comments per finding or a
+  `## Code review` "No issues found" comment (neither means it ran without `--comment`, so no
+  review is on the PR); a behaviour change after that round gets another round;
 - you read the diff yourself: scope matches the issue, tools follow CLAUDE.md's rules, new
   behaviour has unit tests and an e2e scenario, README.md and `docs/reference.md` are updated.
 

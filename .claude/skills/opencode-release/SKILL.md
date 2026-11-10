@@ -26,22 +26,22 @@ sorting it, the plan, retiring features and the order of the PRs.
 ## 1. Versions
 
 - **Resume first.** The run that opens the pin PR ends before it merges, so a later run picks up
-  where that one stopped. Look for any open PR that changes `peerDependencies["@opencode/plugin"]`,
-  and for open issues titled `OpenCode <v>: …` (§4) for any v at or above the pin. If either exists,
-  its version is the target, whatever npm's newest is; a newer release is named in the close-out
-  and gets its own run once this one's follow-ups are handed off.
-  - **A pin PR still open:** if it is a draft awaiting the owner's option and they have answered
-    on it, implement their choice and update its body. Mark it ready once no option awaits them and
-    no unexplained Break remains. Then §5.2 for its CI, §5.5 if its latest commit has no review,
-    and the close-out. When a commit must be pushed and this cloud session's branch is not the
-    PR's, ask the owner to start a session on that branch, or open a replacement PR from this
-    session's branch, with the old body's `Closes` lines and issue links, and close the old one
-    with a link to it.
-  - **A pin PR merged** (no open pin PR, and `OpenCode <pin>: …` issues open): go to §5.3.
-  - **Neither:** start here.
+  what earlier runs left. One pin PR is open at a time.
+  - **An open PR that changes `peerDependencies["@opencode/plugin"]`:** its version is the target,
+    whatever the argument or npm says; a newer release is named in the close-out and waits until
+    it merges. If it is a draft awaiting the owner's option and they have answered on it,
+    implement their choice and update its body. Mark it ready once no option awaits them and no
+    unexplained Break remains. Then §5.2 for its CI, §5.5 if its latest commit has no review, and
+    the close-out. When a commit must be pushed and this cloud session's branch is not the PR's,
+    ask the owner to start a session on that branch, or merge the PR's branch into this session's
+    (`git fetch origin <branch>`), open a replacement PR with the old body's `Closes` lines and
+    issue links, and close the old one with a link to it.
+  - **Otherwise, open issues titled `OpenCode <v>: …` (§4) for any v at or below the pin:** §5.3
+    works them, then this run carries on below with the argument or npm's newest. An issue still
+    waiting for the owner or in flight never holds back a newer release.
 - **Pinned:** `peerDependencies["@opencode/plugin"]` in `package.json`.
-- **Target:** the argument, else `npm view @opencode/cli version`. Stop and say so when it is not
-  newer than the pin.
+- **Target:** the argument, else `npm view @opencode/cli version`. When it is not newer than the
+  pin, say so and go to the close-out.
 - **Range:** the stable `X.Y.Z` versions after the pin up to the target, without a prerelease
   suffix, from `npm view @opencode/cli versions --json`.
 - **Without npm:** take the target and range from the `v2.X.Y` tags without a suffix
@@ -145,11 +145,13 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
    tmux). One that passes on the rerun is noted in the PR body as flaky, with its first error, and
    is not a Break: rerun the failed CI jobs once (`gh run rerun <id> --failed`, or the GitHub MCP
    actions tools), since the required check stays red until they pass; if you cannot, the close-out
-   asks the owner to. One that fails again is traced to a Break or Trap and fixed in this PR. One you
+   asks the owner to. A group that fails again in that rerun (the workflow run's attempt number shows
+   one happened) is one that fails again, below. One that fails again is traced to a Break or Trap and fixed in this PR. One you
    cannot trace goes in the plan as an unexplained Break: convert the PR to a draft and say why in
    its body.
 3. **The follow-ups**, once the owner has merged the pin PR. Skip an issue that already has an
-   open PR with `Closes #<N>`; in a cloud session, a wave whose children still run is taken over
+   open PR with `Closes #<N>`; locally, such a PR from an earlier run gets §5.2's CI handling and
+   §5.5's review like the pin PR; in a cloud session, a wave whose children still run is taken over
    as courier-wave's "Taking over a running wave" says, not spawned again. For each remaining issue
    the owner answered, rewrite its "Done when" to the option they chose, once: not while a child or
    PR works from it. For a Deprecate, file the removal issue once, titled
@@ -163,17 +165,18 @@ finds, at least: its registration in `src/<module>/tools.ts` (an option: its par
 4. A changed model-facing string needs `e2e/real-model.sh` (CLAUDE.md). Its default free model
    refuses cloud sessions ([real-model.md](../../../docs/maintainers/real-model.md#running-it)):
    there, run it only with a paid provider; otherwise it is owed.
-5. Review the pin PR and each follow-up PR made in this session once it is ready for review, with
-   the `code-review:code-review` skill (the plugin `.claude/settings.json` enables): it skips a
-   draft. In a cloud session, where it says `gh`, use the GitHub MCP tools. A draft's review is
-   owed, and the close-out says so. On a PR with an earlier `### Code review` comment, tell the
-   plugin that comment covers an older head, or it skips the PR. courier-wave's children review
-   their own PRs.
+5. Review the pin PR and each follow-up PR made locally once it is ready for review, with
+   `code-review:code-review <PR> --comment` (the plugin `.claude/settings.json` enables): without
+   `--comment` it posts nothing. It leaves an inline comment per finding, or a `## Code review` "No
+   issues found" comment, and it skips a draft. In a cloud session, where it says `gh`, use the
+   GitHub MCP tools. A draft's review is owed, and the close-out says so. It also skips a PR Claude
+   has already commented on: for a re-review, tell it those comments cover an older head.
+   courier-wave's children review their own PRs.
 
 ## 6. Close out
 
-Report to the owner, without waiting for CI: the pin PR and its CI state now (pending, green, or
-red with the failing job), the follow-up issues and which await their decision with the
+Report to the owner, without waiting for CI: the pin PR and each follow-up PR made locally, with
+its CI state now (pending, green, or red with the failing job), the follow-up issues and which await their decision with the
 recommendation, the traps that changed, what was not done and why (a review or real-model run owed,
 a case the host does not cover, an unexplained Break), and that a patch release follows the pin PR
 (a minor one when a tool or option was removed), which is theirs to start.

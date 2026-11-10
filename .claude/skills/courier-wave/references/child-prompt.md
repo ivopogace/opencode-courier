@@ -33,19 +33,20 @@ first; its "Done when" is your acceptance bar.
   for review, never as a draft, and mark it ready at once if your session opened it as one: the
   code review plugin does not review a draft. Never push to main and never merge.
 - Get CI green on the PR head. Then review the PR with the code review plugin: the
-  `code-review:code-review` skill with the PR number, not the built-in `code-review` skill. It
-  posts its findings on the PR as a `### Code review` comment, and posts nothing when no finding
-  reaches its confidence bar. Where it says `gh`, use the GitHub MCP tools instead (gh's GraphQL
-  is blocked in cloud sessions). Fix what it finds, re-run the checks and push. A behaviour change
-  after that round gets another round; tell the plugin its earlier comment covers an older head,
-  or it skips the PR as already reviewed.
+  `code-review:code-review` skill with the PR number and `--comment`, not the built-in
+  `code-review` skill; without `--comment` it posts nothing. It leaves an inline review comment per
+  finding, or a `## Code review` "No issues found" comment. Where it says `gh`, use the GitHub MCP
+  tools instead (gh's GraphQL is blocked in cloud sessions). Fix what it finds, re-run the checks
+  and push. A behaviour change after that round gets another round; the plugin skips a PR Claude
+  has already commented on, so tell it the earlier comments cover an older head.
 - Update README.md and docs/reference.md in the same PR.
 
 ## Talking to the orchestrator
 End a turn that needs the orchestrator with one of these blocks, and also send the same block
 with `send_message` to session `@parent`:
 - `READY TO MERGE`: PR number, head sha, CI result on that sha, the review round (the sha it
-  reviewed, and its comment's link or "no findings posted") and what it changed.
+  reviewed, and the link to its `## Code review` comment or its inline comments) and what it
+  changed.
 - `NEEDS USER DECISION`: the question, 2–4 options with trade-offs, and your recommendation.
   Don't use AskUserQuestion.
 - `BLOCKED`: exactly what is wrong and what you need.

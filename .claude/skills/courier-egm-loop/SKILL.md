@@ -64,9 +64,8 @@ with the reason, so later rounds don't raise it again.
    prompt, its merge bar and loop, with the children started as Starting sessions says.
 6. **Close the review PR** with a comment that lists the issues filed and the PRs that fixed
    them; it was a reference, never for merging.
-7. **Real-model check.** When the wave changed a model-facing string, CLAUDE.md asks for one
-   `e2e/real-model.sh` run, with its result in the body of the PR that changed the string (edit
-   it if merged). The tables in `docs/maintainers/real-model.md` stay: only a full new batch
+7. **Real-model check.** When a fix PR's body says CLAUDE.md's `e2e/real-model.sh` run is owed,
+   run it once and put its result in that PR's body (edit it if merged). The tables in `docs/maintainers/real-model.md` stay: only a full new batch
    replaces them, and this step runs none. Run it where the owner runs
    real models (a memory or the roster names it); ask only if nothing does. A failed check is a
    finding of the next round.

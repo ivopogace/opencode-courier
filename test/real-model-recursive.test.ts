@@ -98,7 +98,6 @@ describe("the recursive checker and the instruction updates", () => {
   test("a system message OpenCode stores at a wake's start, before the message that opens the turn, is no step and ends no turn (#384)", () => {
     const tree = transcripts("no-fault")
     const root = tree.ses_root!
-        // an instructions update lands before the message that wakes (api-notes)
     const idleAt = root.findIndex((message) => message.type === "idle")
     root.splice(idleAt + 1, 0, { type: "system", description: "Instructions updated: api/standing", time: { created: tick() } })
     const run = check({ tree, files: FILES })

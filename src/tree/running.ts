@@ -12,10 +12,8 @@ export interface Turn {
 
 const ANSWERS_MAX = 500
 
-// a delivered item stamps nothing until its first step (api-notes)
 const FRESH_MS = 10_000
 
-// a re-sent wake's delivery stamps nothing until its step (api-notes)
 const REST_MS = 30_000
 
 const RUNNING: Turn = { running: true }

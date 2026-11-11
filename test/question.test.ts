@@ -478,7 +478,6 @@ describe("the question tool of a spawned session", () => {
 
     const answering = answerQuestion(ports, "ses_parent", { sessionID: "ses_child", requestID: "question_1", answers: ["Hi"] })
     await settle()
-    // OpenCode takes a pick made just before the withdrawal
     formOf(tool, "ses_parent").answer([["Hey"]])
     await settle()
     release()
@@ -590,7 +589,6 @@ describe("the question tool of a spawned session", () => {
     const child = ask("ses_child")
     await settle()
 
-    // as the person's interrupt does
     await Effect.runPromise(Fiber.interrupt(child))
     await settle()
 
@@ -652,7 +650,6 @@ describe("the question tool of a spawned session", () => {
     const parent = ask("ses_parent")
     await settle()
 
-    // shutdown at 0.0.0-beta-19271: the plugin unloads, then open forms go
     unload()
     formOf(tool, "ses_child").dismiss()
     formOf(tool, "ses_parent").dismiss()
@@ -673,7 +670,6 @@ describe("the question tool of a spawned session", () => {
     const parent = ask("ses_parent")
     await settle()
 
-    // shutdown at 2.0.22: forms go, then location.shutdown, then the unload
     formOf(tool, "ses_child").dismiss()
     formOf(tool, "ses_parent").dismiss()
     await settle()
@@ -1515,7 +1511,6 @@ describe("the relay's runtime", () => {
     expect({ woke, failed }).toEqual({ woke: false, failed: [] })
   })
 })
-
 
 test("a cut-off question is told through a member of this copy's hub first, else through any copy's loaded instance", () => {
   const subscribe = hub.subscribe

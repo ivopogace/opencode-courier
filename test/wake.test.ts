@@ -309,7 +309,6 @@ describe("waking a session whose wake was missed", () => {
     expect((await wakeStore(ports.storage).of("ses_parent"))[0]).toMatchObject({ running: false, rewoken: 100_000 + WAKE_MS })
   })
 
-    // since 2.2.2 time.busy is the latest execution's start (api-notes)
   test("on 2.2.2, one whose session shows no execution started since it was left waiting is woken again by its busy time alone, its transcript unread", async () => {
     const { ports, sent, at, messages, times } = fakePorts({ ses_parent: [idle()] })
     await handle(ports, enqueued())

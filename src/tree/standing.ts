@@ -70,7 +70,6 @@ async function sync(ports: StandingPorts, parentID: string, entries: Entries): P
     await entries.put({ sessionID: parentID, key: STANDING_KEY, value })
     return "put"
   } catch (error) {
-    // a put on a session OpenCode deleted fails NotFound (api-notes)
     if (!isNotFound(error)) ports.log?.(`courier: the standing entry of ${parentID} could not be written, so it may be behind courier_children: ${String(error)}`)
     return "skipped"
   }

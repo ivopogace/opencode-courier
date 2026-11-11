@@ -119,7 +119,6 @@ export async function refresh(ports: RefreshPorts, state: Pick<MemoryState, "win
   const parts = mergeParts(latest?.parts ?? [], [...current, ...forgotten])
   const recalled = latest?.recalled ?? previous?.recalled
   const lesson = latest?.lesson ?? previous?.lesson
-  // the transcript starts at the last compaction (api-notes)
   const first = latest?.split ?? NOT_STATED
   const found = splitOf(first, said.map((reply) => reply.text).join("\n"))
   const stated = statedIn(said)

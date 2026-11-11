@@ -1,10 +1,3 @@
-# Renders docs/social-preview.png, the repository's suggested social preview, at 2x (2560x1280)
-# as real text rather than GIF pixels. Upload it under Settings > General > Social preview.
-#
-#   python3 docs/social-preview.py [out.png]    (default: docs/social-preview.png)
-#
-# Needs Pillow and the Inter and DejaVu Sans Mono fonts at the paths below (Debian/Ubuntu:
-# fonts-inter, fonts-dejavu-core). Keep the tagline in step with package.json's description.
 import sys
 from PIL import Image, ImageDraw, ImageFont
 
@@ -17,8 +10,6 @@ f = lambda w, s: ImageFont.truetype(INTER.format(w), s)
 
 TEXT, GREEN, PURPLE, MUTED = "#eeeeee", "#87d787", "#af87d7", "#7a86b8"
 
-# Everything stays 112 px (56 px at 1x) from both side edges, so a centre crop to 1.91:1
-# (2444x1280) loses nothing. The left column and the terminal panel share a top and a bottom.
 MARGIN, TOP, BOTTOM = 112, 210, 1070
 
 README_ROWS = [
@@ -41,7 +32,6 @@ REPLY_ROWS = [
 im = Image.new("RGB", (W, H), BG)
 d = ImageDraw.Draw(im)
 
-# Left column: name, tagline, points, and the install call to action at the bottom.
 X = MARGIN
 d.text((X, TOP - 20), "opencode-courier", font=f("Bold", 88), fill="#f4f4f6")
 d.text((X, TOP + 110), "Multi-session orchestration", font=f("Medium", 50), fill="#d0d0da")
@@ -55,8 +45,6 @@ d.rounded_rectangle((X, BOTTOM - 190, 930, BOTTOM), radius=22, fill="#1a1d33", o
 d.text((X + 40, BOTTOM - 162), "Install", font=f("Bold", 38), fill="#e6e8f5")
 d.text((X + 40, BOTTOM - 90), "opencode plugin add opencode-courier", font=ImageFont.truetype(MONO_B, 32), fill="#b4c0ff")
 
-# Terminal panel, redrawn from the last frame of the former README demo GIF. Its 6 px frame ends
-# at the right margin.
 PX0, PY0, PX1, PY1 = 980, TOP + 6, W - MARGIN - 6, BOTTOM - 6
 d.rounded_rectangle((PX0 - 6, PY0 - 6, PX1 + 6, PY1 + 6), radius=26, fill="#25263a")
 d.rounded_rectangle((PX0, PY0, PX1, PY1), radius=22, fill="#080808")

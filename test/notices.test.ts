@@ -12,7 +12,6 @@ import { addPersonTools } from "../src/person/index.js"
 import { addSchedulingTools } from "../src/scheduling/index.js"
 import { addMemoryTools } from "../src/memory/index.js"
 
-
 const registered: any[] = []
 const editor = { add: (tool: unknown) => registered.push(tool) } as unknown as ToolEditor
 addTreeTools(editor, {} as never)
@@ -27,7 +26,6 @@ describe("tools", () => {
 
   for (const tool of registered)
     test(tool.name, () => {
-      // OpenCode renders tool schemas closed; effect leaves objects open
       const input = Schema.toJsonSchemaDocument(tool.input, { onExcessProperty: "error" }).schema
       expect({ description: tool.description, input }).toMatchSnapshot()
     })
@@ -198,7 +196,6 @@ describe("envelope and child brief", () => {
     expect(tree.reportBody("Fixed it.", undefined)).toBe("Fixed it.")
     expect(tree.reportBody("Fixed it.", {})).toBe("Fixed it.")
     expect(tree.reportBody("Fixed it.", { branch: "  ", commits: [], files: [], checks: [] })).toBe("Fixed it.")
-    // OpenCode does not check tool input against the schema
     expect(
       tree.reportBody("Fixed it.", { commits: ["abc", 7, " def "], files: "src/a.ts", checks: [{ command: "bun test" }, { result: "?" }, "lint"] } as never),
     ).toBe("Fixed it.\n\nArtifacts:\n- commits: abc, def\n- checks:\n  - bun test: (no result given)")

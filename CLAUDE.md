@@ -71,8 +71,10 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   states the root's split rule and the split-line forms on purpose: the root has no brief, its role
   line loses the rule at its first spawn, and a brief can be compacted away.
 - Feature work goes on a branch and through a PR with green CI; `Closes #N` in the body.
-- No TSDoc. A comment only for a fact about OpenCode or the host the code cannot say: one line of
-  at most 80 characters; the long form goes in docs/maintainers/plugin-api-notes.md.
+- No comments, in any file: no line or block comment, no TSDoc, no docstring, no script header. A
+  fact about OpenCode or the host goes in docs/maintainers/plugin-api-notes.md, a script's usage in
+  docs/maintainers/development.md. Only what a tool reads stays: a shebang, a `# shellcheck` or
+  `@ts-expect-error` directive, a `uv` script header, an action pin's `# vX.Y.Z`, a Markdown marker.
 - Running several issues at once in child sessions: the `courier-wave` skill.
 - Adopting a new OpenCode release (its notes, the pin bump, new host features, retiring what the
   host now does itself): the `opencode-release` skill.

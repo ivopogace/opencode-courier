@@ -1,5 +1,3 @@
-# Shared by run.sh and real-model.sh: a throwaway home directory and an OpenCode V2 server for
-# $WORK/project. Source it after setting ROOT, OPENCODE, WORK and SERVER_PORT. SERVER_FLAGS adds flags to serve.
 
 export HOME=$WORK/home XDG_CONFIG_HOME=$WORK/home/.config XDG_DATA_HOME=$WORK/home/.local/share
 export XDG_STATE_HOME=$WORK/home/.local/state XDG_CACHE_HOME=$WORK/home/.cache
@@ -12,14 +10,13 @@ build_plugin() {
   echo "building plugin"
   (cd "$ROOT" && npm run build >"$WORK/build.log" 2>&1) || { cat "$WORK/build.log"; exit 1; }
 }
-# Commits $WORK/project/opencode.json, because an isolated child runs in a worktree made from HEAD.
 commit_config() {
   git -C "$WORK/project" init -q
   git -C "$WORK/project" add opencode.json
   git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -q -m "opencode config"
 }
 start_server() {
-  # shellcheck disable=SC2086 # SERVER_FLAGS is a list of flags
+  # shellcheck disable=SC2086
   (cd "$WORK/project" && exec "$OPENCODE" serve --hostname 127.0.0.1 --port "$SERVER_PORT" --print-logs ${SERVER_FLAGS:-} >>"$WORK/server.log" 2>&1 </dev/null) &
   SERVER_PID=$!
   for _ in $(seq 1 30); do api info >/dev/null 2>&1 && return; sleep 1; done

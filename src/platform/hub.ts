@@ -25,7 +25,6 @@ export interface FormsTold {
 
 export interface Member {
   readonly directory: string
-  // the adapter hands the Effect half this same object (api-notes)
   readonly location?: object
   readonly permission: unknown
   readonly later: TickPorts
@@ -84,7 +83,6 @@ async function readOwner(ports: TickPorts): Promise<Owner | undefined> {
   return server !== undefined && at !== undefined ? { server, at } : undefined
 }
 
-// OpenCode waits up to 2 s for an unloading instance (architecture)
 export const LEAVE_MS = 2_000
 
 const holds = (at: number, now: number, ms: number) => Math.abs(now - at) < ms
@@ -106,7 +104,6 @@ export interface Hub {
   readonly claimed: Set<string>
   readonly watched: Watched
   readonly forms: FormsTold
-  // a request is answered only through its own location (api-notes)
   readonly locations: Map<object, unknown>
   readonly receivers: object
   readonly questions: object

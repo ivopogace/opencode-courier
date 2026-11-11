@@ -19,7 +19,6 @@ export async function live(ports: Pick<LimitPorts, "session" | "storage">, sessi
   if (report === null && unread) return unread
   const inTurn = report?.reportedAt !== undefined && !(millis(time?.idle) >= report.reportedAt)
   const running = time !== undefined && !report?.ended && !inTurn && (await runs(ports.session, sessionID, time))
-  // a waiting inbox item is in no transcript until delivered (api-notes)
   if (running || report?.owes || (await waitsInInbox(ports, sessionID, { stalled: false }).catch(() => true))) return "live"
   return report?.blocked ? "blocked" : undefined
 }

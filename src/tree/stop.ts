@@ -104,7 +104,6 @@ async function interrupt(ports: StopPorts, { entry, depth, subagent }: Below): P
   const one = { sessionID, title, depth, ...(subagent ? { subagent } : {}) }
   try {
     const { interrupted } = await session.interrupt({ sessionID })
-    // the interrupted event may arrive after this returns
     if (interrupted && !subagent) await childStore(storage).settled(sessionID, "interrupted", now()).catch(() => undefined)
     return { ...one, outcome: interrupted ? "interrupted" : "idle" }
   } catch (error) {
@@ -115,7 +114,6 @@ async function interrupt(ports: StopPorts, { entry, depth, subagent }: Below): P
 
 type Messages = Awaited<ReturnType<StopPorts["courier"]["session"]["context"]>>
 
-// a completed background subagent call names its child (api-notes)
 async function backgroundSubagents(ports: StopPorts, nodes: ReadonlyArray<Below>): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
   const parents = [...new Set(nodes.flatMap((node) => (node.subagent ? [node.entry.parentID] : [])))]
   const found = await Promise.all(
@@ -132,7 +130,6 @@ async function backgroundSubagents(ports: StopPorts, nodes: ReadonlyArray<Below>
   return new Map(found.filter(([, ids]) => ids.size))
 }
 
-// a background subagent's end wakes its parent (api-notes)
 async function settle(ports: StopPorts, nodes: ReadonlyArray<Below>, results: ReadonlyArray<Stopped>, background: ReadonlyMap<string, ReadonlySet<string>>, since: number) {
   const ended = new Set(results.flatMap((one) => (one.subagent && one.outcome === "interrupted" ? [one.sessionID] : [])))
   await Promise.all(

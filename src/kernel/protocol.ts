@@ -44,7 +44,6 @@ export function defuseBlock(text: string) {
 }
 
 export function describeFailure(tool: string, error: unknown) {
-  // OpenCode errors can have an empty message (api-notes)
   const tagged = error as { message?: unknown; _tag?: unknown; sessionID?: unknown }
   const message =
     (typeof tagged?.message === "string" && tagged.message) ||

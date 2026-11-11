@@ -120,7 +120,6 @@ async function sealed(ports: GroupPorts, parentID: string, members: ReadonlyArra
   try {
     const { time } = await ports.session.get({ sessionID: parentID })
     if (millis(time.idle) >= joined) return true
-    // a plain decline ends the turn on an aborted step, no idle (api-notes)
     const end = turnEnd(await ports.session.context({ sessionID: parentID }).catch(() => []))
     return end !== undefined && (endedAt(end, time) ?? Number.NEGATIVE_INFINITY) >= joined
   } catch (error) {

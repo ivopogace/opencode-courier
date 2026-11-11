@@ -86,7 +86,6 @@ function fakeContext(records: ReadonlyArray<MemoryRecord>, { memory = true, loca
   const layers: (() => any)[] = []
   const sizes: unknown[] = []
   let route: { type: string; sessionID?: string } = { type: "session", sessionID: "ses_root" }
-  // a new or cleared dialog resolves the open one with nothing (api-notes)
   let close: (() => void) | undefined
   const dialog = (kind: Dialog["kind"]) => (options: any) => {
     close?.()
@@ -202,7 +201,6 @@ describe("the memory view's lines", () => {
     expect(recordTitle(newest, "ses_root")).toBe("Add memory to courier (this session)")
     expect(recordTitle(newest, "ses_other")).toBe("Add memory to courier")
     expect(recordTitle({ ...older, title: "" })).toBe("ses_old")
-    // the host's select row cuts a title at 61 characters (api-notes)
     expect(recordTitle({ ...newest, title: "x".repeat(80) }, "ses_root")).toBe(`${"x".repeat(ROW_TITLE_MAX - 1)}… (this session)`)
     expect(recordTitle({ ...newest, title: "x".repeat(80) }, "ses_root")).toHaveLength(61)
     expect(recordDescription(newest)).toBe("3 parts: 1 done, 1 partial, 1 out · 42 min · $1.28")

@@ -66,7 +66,6 @@ export function standingIn(ports: Pick<CourierPorts, "storage">, entry: RosterEn
   return groupStore(ports.storage).member(entry.parentID, group, entry.sessionID).then(standingOf, () => "unknown" as const)
 }
 
-// metadata with an undefined value never completes the call (api-notes)
 function withoutUndefined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>
 }

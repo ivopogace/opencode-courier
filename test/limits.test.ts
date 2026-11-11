@@ -696,7 +696,6 @@ describe("admit, with children that owe a report", () => {
     expect((await admit(ports, "ses_root")).depth).toBe(1)
   })
 
-  // an inbox item is in no transcript until delivered (api-notes)
   test("but one that reported counts while a courier message sent with a wake waits in its inbox, and not once it is delivered", async () => {
     const { ports, child, storage } = limitPorts({ ...DEFAULT_LIMITS, maxChildren: 1, maxTotal: 1 }, { ses_a: { ...FINISHED, updated: 9 } })
     await child("ses_root", "ses_a")
@@ -1089,7 +1088,6 @@ describe("the context hook", () => {
     return { ports, storage, child, shape, logged, calls, parents }
   }
 
-  // OpenCode renders an entry as a <context> block ending the baseline
   const baseline = (depth: number) => `AGENTS.md says so.\n\n<context key="${ROLE_KEY}">\n${rolePart(depth, DEFAULT_LIMITS)}\n</context>`
 
   test("adds no part for a session whose role entry is listed, reading the entries once per session", async () => {

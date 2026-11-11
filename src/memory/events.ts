@@ -25,7 +25,6 @@ export async function topOf(ports: Pick<RefreshPorts, "storage">, state: Pick<Me
 export async function noteTurnEnd(ports: RefreshPorts, state: MemoryState, event: Execution) {
   const top = await topOf(ports, state, event.data.sessionID)
   if (top === undefined) return undefined
-  // a plain permission decline also reports "shutdown" (api-notes)
   if (event.data.reason === "shutdown" && !endsIdle(await ports.session.context({ sessionID: event.data.sessionID }).catch(() => []))) return undefined
   if (!claim(state.seen, event.id)) return undefined
   try {

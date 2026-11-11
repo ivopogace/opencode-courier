@@ -1,9 +1,5 @@
 name: Latest OpenCode
 
-# The live suites against the newest OpenCode V2 release. Not on pull requests: a red run never
-# blocks one, and it would double their runner minutes. On every push to `main` and nightly, so a
-# host release that breaks the plugin shows up the next night at the latest.
-# By hand: gh workflow run latest.yml
 on:
   push:
     branches: [main]
@@ -20,14 +16,7 @@ permissions:
 
 jobs:
   e2e-latest:
-    # The same suite on the newest `@opencode/cli` release, so a host release that breaks the plugin
-    # shows up on the next push rather than in a user's session. The build still uses the pinned
-    # `@opencode/plugin`. Allowed to fail: a red run here is a warning, and the pinned leg in ci.yml
-    # stays the required one. The step summary names the version that ran, and so does the log
-    # artifact.
     name: Live test against OpenCode V2 latest (may fail)
-    # run.sh alone takes about 18 minutes unsharded and tui.sh about 3: the budget leaves room for both
-    # to grow before a run is cut off again.
     runs-on: ubuntu-latest
     timeout-minutes: 40
     continue-on-error: true
@@ -51,8 +40,6 @@ jobs:
         run: |
           npm install -g @opencode/cli@latest
           opencode --version
-          # From the installed package, not from `opencode --version`, whose output may carry more
-          # than the version.
           version=$(node -p "require('$(npm root -g)/@opencode/cli/package.json').version")
           pinned=$(node -p "require('./package.json').peerDependencies['@opencode/plugin']")
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -88,14 +75,11 @@ jobs:
         id: outcome
         if: always()
         env:
-          # Empty when the install step itself failed.
           VERSION: ${{ steps.install.outputs.version || 'unknown' }}
           STATUS: ${{ job.status }}
           E2E: ${{ steps.e2e.outcome }}
           TUI: ${{ steps.tui.outcome }}
         run: |
-          # Cancelled with no step failed is timeout-minutes: a cancelled workflow (a newer push)
-          # skips the issue job, so `timeout` reaches it only from the time limit.
           outcome=$STATUS
           if [ "$STATUS" = cancelled ] && [ "$E2E" != failure ] && [ "$TUI" != failure ]; then
             outcome=timeout
@@ -123,9 +107,6 @@ jobs:
           if-no-files-found: ignore
 
   new-release:
-    # An OpenCode release newer than the pin opens one issue, "OpenCode X.Y.Z is out", saying whether
-    # the live suites passed on it: the pin bump it asks for is docs/maintainers/releasing.md's. Opened
-    # once per version, by the first run that sees it to the end (not one a newer push cancelled).
     name: Open an issue for a new OpenCode release
     needs: e2e-latest
     if: ${{ !cancelled() && needs.e2e-latest.outputs.version != '' }}
@@ -149,7 +130,6 @@ jobs:
             exit 0
           fi
           title="OpenCode $VERSION is out: move the pin from $PINNED"
-          # From the list rather than the search API, whose index can lag behind an issue just opened.
           existing="$(gh issue list --state all --limit 1000 --json title \
             --jq "[.[] | select(.title | startswith(\"OpenCode $VERSION is out\"))] | length")"
           if [ "$existing" != 0 ]; then

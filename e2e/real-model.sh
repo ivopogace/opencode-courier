@@ -1,70 +1,4 @@
 #!/usr/bin/env bash
-# Smoke test with a real model: the same throwaway OpenCode V2 server as run.sh, with this plugin
-# loaded, but a real model instead of the scripted one. The parent is asked to fan a small task out
-# to two children; the script records which tools the parent called and in what order, whether it
-# ended its turn instead of polling, whether each child called courier_send, and whether both
-# reports woke the parent. Not run in CI: it needs a model provider.
-#
-#   OPENCODE_BIN=/path/to/opencode e2e/real-model.sh
-#
-# COURIER_SCENARIO=permission runs the permission relay instead: one child whose command needs an
-# approval, a parent that should ask the person rather than answer by itself, and this script as
-# the person, answering "once" (e2e/real-model-permission.mjs); with COURIER_PERSON=other-server, a
-# second server runs on the same data directory and the person answers the parent through it, where
-# the child's request is not pending. COURIER_SCENARIO=question runs the
-# question relay: one child that is to find out from the person which greeting to use, and this
-# script as the person, answering COURIER_ANSWER (default Hi) in the parent's session
-# (e2e/real-model-question.mjs). COURIER_SCENARIO=recursive runs the recursive orchestration: a
-# job of two parts, one of which the session that gets it splits again, checked by
-# e2e/real-model-recursive.mjs down the whole tree. COURIER_SCENARIO=recursive-fault is the same job with
-# one leaf told to report partial first and to finish only once its parent messages it, checked by the
-# same script with --fault. COURIER_SCENARIO=recursive-staged gives the "numbers" part a core both
-# halves need, a seed in numbers/seed.txt, checked by the same script with --staged for whether the
-# halves started only after it. COURIER_SCENARIO=recursive-finding is the recursive job with longer halves, and the
-# checker, run with --finding, as the person telling the "count" session mid-run that every file must hold its number
-# followed by " checked": whether its parents pass it on down to the halves is the test. COURIER_SCENARIO=recursive-conflict
-# runs the same job with --conflict: the checker, as the person, tells the half for numbers/b.txt not to write that file, and
-# the messages it gets from the sessions above are quoted for a person to read.
-# COURIER_SCENARIO=review runs a change and its review: the project in e2e/fixtures/review-project, committed, and
-# a job of one function with tests, done by one session, read by a review session with fresh context that changes
-# nothing, fixed where the review holds, and checked by the root with the project's tests, which the checker
-# (e2e/real-model-review.mjs) runs too.
-#
-# The default model is a free one on OpenCode Zen, from OpenCode's catalog (models.dev), which needs
-# no key. To pick another:
-#
-#   COURIER_PROVIDER, COURIER_MODEL  the model, as OpenCode names it (default opencode,
-#                                     deepseek-v4.1-flash-free), with the provider's usual key
-#                                     variable, such as ANTHROPIC_API_KEY.
-#   COURIER_BASE_URL                 declare the provider in opencode.json as an OpenAI-compatible
-#                                     endpoint with this URL and the model, for one not in the
-#                                     catalog. Zen's free tier refuses its own endpoint declared so.
-#   COURIER_API_KEY_ENV              for a declared provider, the variable holding its key. The
-#                                     config refers to it as {env:NAME}; the key is never written.
-#   COURIER_PROMPT, COURIER_EXPECT   the parent's prompt and the values the reports must hold.
-#   COURIER_FILES                    recursive(-fault, -staged, -finding, -conflict): the files, relative to the project, that must hold
-#                                     them; with recursive-staged the first is the core's.
-#   COURIER_MAX_DEPTH                recursive(-fault, -staged, -finding, -conflict): the maxDepth the checker holds the tree to (default 5).
-#   COURIER_TEST_COMMAND             review: the command the checker runs the project's tests with (default npm test).
-#   COURIER_TESTS                    review: how many tests must pass in the root's checkout (default 5: the fixture's 2
-#                                     and the 3 the job asks for).
-#   COURIER_SKILL                    deny adds a skill permission rule denying courier-orchestrate to
-#                                     opencode.json, so no session is offered it or can load it; any scenario.
-#   COURIER_TIMEOUT                  seconds to wait for the parent's turn and then for the
-#                                     children (default 300 each).
-#   COURIER_NATIVE                   1 loads the plugin with nativeChildren on, so a child started
-#                                     without isolate gets OpenCode's own parentID.
-#   COURIER_SEED                     a JSON file of plugin storage keys to set before the parent's
-#                                     prompt, { "<key>": <value>, ... }, with e2e/kv.ts; "<project>"
-#                                     in a key or value stands for the project's id. For a tree
-#                                     record an earlier tree would have left (docs/reference.md,
-#                                     "Memory").
-#
-# Transcripts (parent.json, child-*.json), timeline.txt, summary.json and the server log stay in
-# the work directory (E2E_WORK, default a new temp dir), which is printed at the end.
-#
-# Needs node, npm, bun (for the build), git, curl, jq and GNU timeout (gtimeout on macOS, from
-# coreutils).
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -80,12 +14,9 @@ export COURIER_TIMEOUT=${COURIER_TIMEOUT:-300}
 SCENARIO=${COURIER_SCENARIO:-fanout}
 CHECKER_FLAGS=
 SEED_PROJECT=
-# Every action is allowed; the permission scenario adds a rule that makes its one command ask.
 PERMISSIONS='[{ "action": "*", "resource": "*", "effect": "allow" }]'
 case $SCENARIO in
   fanout)
-    # No stand-in for work: a report that comes while the parent's first turn still runs is steered into
-    # it, which the checker counts as delivered.
     PROMPT=${COURIER_PROMPT:-'Have two helper sessions work in parallel and report back to you. One runs the shell command `echo $((17 * 23))`, the other runs `echo $((2 ** 10))`, and each reports the number it printed. Start them with courier_spawn and do not run the commands yourself. When both have reported back, reply with one line: RESULTS <first> <second>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024"}
     CHECKER=real-model.mjs
@@ -97,22 +28,17 @@ case $SCENARIO in
     CHECKER=real-model-permission.mjs
     ;;
   question)
-    # The child is not told how to ask: the brief's line on the question tool is part of the test.
     PROMPT=${COURIER_PROMPT:-'Start one helper session with courier_spawn and give it this task, word for word: "Find out from the user which greeting they want to use: Hello, Hi or Hey. Then report the chosen greeting to the session that started you." Do not ask the user anything yourself before the helper does, and do not do the task yourself. When the helper reports back, reply with one line: GREETING <the greeting it reported>'}
     export COURIER_ANSWER=${COURIER_ANSWER:-Hi}
     CHECKER=real-model-question.mjs
     ;;
   recursive)
-    # Two parts, one of them two halves of its own: the root splits once, the session that gets that
-    # part splits again, with no stand-in for work, as in the fan-out; the files are what each level verifies.
     PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
     export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
     CHECKER=real-model-recursive.mjs
     ;;
   recursive-fault)
-    # The recursive job, with the half for numbers/b.txt passed on word for word: its session reports partial,
-    # leaves the file unwritten, and finishes only once its parent messages it, which the "numbers" session must do.
     PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own, doing neither half itself: one runs `echo $((17 * 23))` and writes the number it printed to numbers/a.txt; the other gets this task, passed on word for word: "Run `echo $((2 ** 10))`. Do not write any file yet: report status partial with the number it printed, saying that writing it to numbers/b.txt is left, and end your turn. Once the session that started you sends you a message to finish, write the number to numbers/b.txt and report status done." Part "count" runs `echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-"391 1024 42"}
     export COURIER_FILES=${COURIER_FILES:-"numbers/a.txt numbers/b.txt count/total.txt"}
@@ -120,8 +46,6 @@ case $SCENARIO in
     CHECKER_FLAGS=--fault
     ;;
   recursive-staged)
-    # The recursive job, with a seed the "numbers" part's halves both read: whether the session that gets
-    # it writes the seed, itself or in one session, before it starts the halves is the test, so it is not told.
     PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" has a seed and two halves; the session that gets it hands the halves to two sessions of its own. The seed: run `echo $((7 * 61))` and write the number it printed to numbers/seed.txt. The halves each read the seed from numbers/seed.txt: one writes the seed times 17 to numbers/a.txt, the other writes the seed plus 1000 to numbers/b.txt. Part "count" runs `echo $((99 - 57))` and writes the number it printed to count/total.txt. When the parts have reported back, read the four files yourself and reply with one line: RESULTS <seed> <a> <b> <total>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-"427 7259 1427 42"}
     export COURIER_FILES=${COURIER_FILES:-"numbers/seed.txt numbers/a.txt numbers/b.txt count/total.txt"}
@@ -129,9 +53,6 @@ case $SCENARIO in
     CHECKER_FLAGS=--staged
     ;;
   recursive-finding | recursive-conflict)
-    # The recursive job, with parts that wait on files the checker creates, so that what the person tells the "count" session
-    # mid-run reaches the halves; the checker plays the person, so the prompt says nothing of it. The "count" session must be
-    # running when the person writes, and the halves when the finding has come down two levels; 150 s bounds a file that never comes.
     PROMPT=${COURIER_PROMPT:-'Have this job done through helper sessions started with courier_spawn, one session per part, and do no part yourself. It has two parts. Part "numbers" is itself two independent halves, which the session that gets it hands to two sessions of its own: one runs `for i in $(seq 150); do [ -e .go-halves ] && break; sleep 1; done; echo $((17 * 23))` and writes the number it printed to numbers/a.txt, the other runs `for i in $(seq 150); do [ -e .go-halves ] && break; sleep 1; done; echo $((2 ** 10))` and writes the number it printed to numbers/b.txt. Part "count" runs `for i in $(seq 150); do [ -e .go-count ] && break; sleep 1; done; echo $((99 - 57))` and writes the number it printed to count/total.txt. Another process, outside this job, creates .go-halves and .go-count when those commands may go on: no session creates, removes or looks at those files, and each command is run exactly as written. When the parts have reported back, read the three files yourself and reply with one line: RESULTS <a> <b> <total>'}
     if [ "$SCENARIO" = recursive-conflict ]; then
       export COURIER_EXPECT=${COURIER_EXPECT:-"391 42"}
@@ -145,8 +66,6 @@ case $SCENARIO in
     CHECKER=real-model-recursive.mjs
     ;;
   review)
-    # A change and its review: the shape is in the prompt, so the plugin's tools are under test, not a playbook; which
-    # agent each stage runs with, what the review found and who fixed it are the checker's notes.
     SEED_PROJECT=review-project
     PROMPT=${COURIER_PROMPT:-'The tests of this project run with `npm test`. The job: add a function `slugify(text)` to lib/words.js, exported like the one already there, that lower-cases the text, turns every run of characters other than letters and digits into one hyphen and strips hyphens from both ends, so that "Hello, World!" gives "hello-world"; with tests for it in test/words.test.js, at least three, one of them for text with punctuation at both ends. Do none of the work yourself. First, one helper session started with courier_spawn makes the change and reports. Once it has reported, one review session with fresh context, started with courier_spawn, reads the change against this job, changes nothing and reports what it found. Then have any finding that holds fixed by a helper session. Finally run `npm test` yourself and reply with one line: REVIEWED <the number of passing tests>'}
     export COURIER_EXPECT=${COURIER_EXPECT:-slugify}
@@ -158,7 +77,6 @@ case $SCENARIO in
 esac
 case ${COURIER_SKILL:-} in
   "") ;;
-  # Last match wins (evaluate in OpenCode's packages/core/src/permission.ts), so this follows the allow-all.
   deny) PERMISSIONS=$(jq -c '. + [{ action: "skill", resource: "courier-orchestrate", effect: "deny" }]' <<<"$PERMISSIONS") ;;
   *) echo "COURIER_SKILL must be deny, or unset"; exit 1 ;;
 esac
@@ -210,19 +128,15 @@ jq -n --arg plugin "$ROOT/dist" --arg probe "$ROOT/e2e/probe-plugin" --arg probe
 }' >"$WORK/project/opencode.json"
 commit_config
 if [ -n "${SEED_PROJECT:-}" ]; then
-  # Committed, as the config is: an isolated session's worktree starts from HEAD.
   cp -R "$ROOT/e2e/fixtures/$SEED_PROJECT/." "$WORK/project/"
   git -C "$WORK/project" add -A
   git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -q -m "the project"
 fi
 
-# DEBUG records the provider calls and their errors, which INFO does not; run.sh keeps the default.
 SERVER_FLAGS="--log-level debug"
 start_server
 echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL${COURIER_NATIVE:+, nativeChildren on}${COURIER_SKILL:+, courier-orchestrate denied}"
 if [ "${COURIER_PERSON:-}" = other-server ]; then
-  # A second server on the same data directory, started once the first is up (two starting at once
-  # race to create the database's tables), as in e2e/two-servers.sh.
   OTHER="http://127.0.0.1:$OTHER_PORT"
   export COURIER_OTHER_SERVER=$OTHER
   (cd "$WORK/project" && exec "$OPENCODE" serve --hostname 127.0.0.1 --port "$OTHER_PORT" --print-logs >>"$WORK/server-b.log" 2>&1 </dev/null) &
@@ -232,8 +146,6 @@ if [ "${COURIER_PERSON:-}" = other-server ]; then
   echo "a second server on the same data directory: $OTHER"
 fi
 if [ -n "${COURIER_SEED:-}" ]; then
-  # By the plugin's id: before the first prompt it may have stored nothing (an idle scheduler drops scheduler/owner). Since
-  # OpenCode 2.2 the project is listed only once a session exists in it, so one is made for its projectID and deleted.
   probe=$(curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
     --data "$(jq -n --arg directory "$WORK/project" '{ location: { directory: $directory } }')" "$SERVER/api/session")
   project=$(jq -r '.data.projectID // empty' <<<"$probe")
@@ -250,13 +162,9 @@ echo "parent prompt: $PROMPT"
 
 post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }
 if [ "$SCENARIO" != fanout ] && [ "$SCENARIO" != recursive ] && [ "$SCENARIO" != recursive-fault ] && [ "$SCENARIO" != recursive-staged ] && [ "$SCENARIO" != recursive-finding ] && [ "$SCENARIO" != recursive-conflict ]; then
-  # Started through the API, as a session in the TUI would be, not with opencode run: run cancels
-  # any question form opened in its session while it is attached, and the child's request can wake
-  # the parent before run has let go. The checker waits for the turns.
   parent=$(post session "$(jq -n --arg directory "$WORK/project" '{ location: { directory: $directory } }')" | jq -r '.data.id // empty' || true)
   [ -z "$parent" ] || post "session/$parent/prompt" "$(jq -n --arg text "$PROMPT" '{ text: $text }')" >/dev/null || parent=
 else
-  # The parent's first turn; run returns when it ends.
   status=0
   (cd "$WORK/project" && "$TIMEOUT_BIN" "$COURIER_TIMEOUT" "$OPENCODE" run --server "$SERVER" --auto --format json "$PROMPT" \
     </dev/null >"$WORK/parent-run.jsonl" 2>"$WORK/parent-run.err") || status=$?

@@ -10,7 +10,6 @@ export const BLINK_EVERY = 11
 
 export const DIG_EVERY = 18
 
-// text.muted is close to background.raised.max: no muted pixel on the mound
 export const GLYPH: Readonly<Record<MascotState, ReadonlyArray<ReadonlyArray<string>>>> = {
   idle: [["........", "........", "..gggg..", "gggggggg"]],
   spawn: [

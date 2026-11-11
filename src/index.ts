@@ -162,7 +162,6 @@ export const courier = () => Plugin.define({
       .then(() => registerPersonRpc(ctx.rpc, { questions: questionPorts, permissions }))
       .then(() => registerMemoryRpc(ctx.rpc, memoryPorts))
       .catch((error: unknown) => log(`courier rpc: not registered, the TUI part shows nothing and cannot stop: ${String(error)}`))
-    // a host before 2.2.0 has no instructions entries (api-notes)
     const instructions = (ctx.session as Partial<typeof ctx.session>).instructions
     await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, session: ctx.session, limits, roles, instructions, hiddenFromLeaf: [RECALL_TOOL, NOTE_TOOL], log }, event))
 
@@ -188,7 +187,6 @@ export const courier = () => Plugin.define({
       nudge,
     }
     await Promise.resolve()
-      // a host before 2.2.4 takes this hook and never runs it (api-notes)
       .then(() => ctx.session.hook("experimental.idle", (event) => onIdle(watchPorts, watchState.seen, outside, event).then(() => undefined)))
       .catch((error: unknown) => log(`courier idle: not registered, a child that ends without a report is not reminded: ${String(error)}`))
     watchFromHub(hub, eventModules)
@@ -215,13 +213,11 @@ export const courier = () => Plugin.define({
   },
 })
 
-// an Effect plugin, so the question call can be interrupted (api-notes)
 export default EffectPlugin.define({
   id: "courier",
   effect: (host) =>
     Effect.gen(function* () {
       yield* fromPromise(courier()).effect(host)
-      // the adapter hands the promise plugin this same location (api-notes)
       yield* relayQuestions(host, portsAt(host.location))
     }),
 })

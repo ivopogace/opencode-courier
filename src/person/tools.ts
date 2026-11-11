@@ -71,7 +71,6 @@ export function addPersonTools(tools: ToolEditor, ports: PersonToolPorts) {
     execute: async (input, context) => {
       const call: AnswerCall = { messageID: context.messageID, callID: context.id }
       const result = await answerRequest(ports, context.sessionID, input, call).catch((error: unknown) => {
-        // rethrown untouched, a plain decline ends the step (api-notes)
         if (isDeclined(error)) throw error
         return rethrow("courier_answer")(error)
       })

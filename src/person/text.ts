@@ -16,7 +16,6 @@ import type {
 export type AnswerResult = PermissionAnswered | QuestionAnswered
 
 export function answerText(result: AnswerResult) {
-  // a permission request is pending only in the server running the turn
   if (!result.answered && "reply" in result)
     return (
       `Nothing was passed on: no request ${result.requestID} of ${result.sessionID} is pending in this OpenCode server. ` +
@@ -38,7 +37,6 @@ export function answerText(result: AnswerResult) {
   return `Passed the answers to question ${result.requestID} on to ${result.sessionID}${how}; it carries on and reports back with courier_send. ${END_TURN}`
 }
 
-// a bare rejection ends the child's turn (api-notes)
 export const REJECTED = "Refused by the person or the top session of the tree. Do without it, or report back why you cannot."
 
 export function refusedText(sessionID: string, requestID: string, reason: string) {

@@ -28,19 +28,15 @@ const answersIn = (text) => [...text.matchAll(/"[^"]*"="([^"]*)"/g)].map((match)
 const GIT = "git -c user.name=courier -c user.email=courier@example.invalid"
 const branchIn = (messages) => textOf(messages.find((message) => message.role === "user")?.content).match(/branch (courier\/ses_\w+)/)?.[1]
 
-// OpenCode sends an instruction update as a user message (api-notes)
 const isInstructionUpdate = (message) => /^<system-update>\n/.test(textOf(message.content))
 
-// a summary without a template heading is nudged once, then fails (api-notes)
 const SUMMARY = "## Objective\n- Courier test"
 
 const TYPED_ENVELOPE = /<courier from="courier" route="prompt" in="ses_\w+">/
 
 function decide(body) {
   const messages = (body.messages ?? []).filter((message) => !isInstructionUpdate(message))
-  // no tools: the title request, or a compaction on an older host
   if (!body.tools?.length) return { text: messages.some((message) => textOf(message.content).includes(DEMO_PROMPT)) ? "Fix #12 and #15" : SUMMARY }
-  // a compaction request has tools; its last user message asks a summary
   const asked = textOf(messages.findLast((message) => message.role === "user")?.content)
   if (asked.includes("Summarize only what the user and the assistant said") || asked.includes("did not fill in the required summary template")) return { text: SUMMARY }
   const lastAssistant = messages.findLastIndex((message) => message.role === "assistant")
@@ -82,7 +78,6 @@ function decide(body) {
     if (call?.function?.name === "subagent" && noRoot) return { tool: "courier_send", args: { sessionID: noRoot[1], message: "CHILD SAW " + result, status: "done" } }
     if (call?.function?.name === "courier_send" && noRoot) return { text: "CHILD REPORTED" }
     if (call?.function?.name === "courier_spawn" && prompt.includes("COURIER-STALL")) return { text: "ROOT SPAWNED" }
-    // Reads the directory the skill tool named, as a model that looks for the skill's files would.
     const base = call?.function?.name === "skill" && prompt.includes("COURIER-SKILL-READ") ? result.match(/Base directory for this skill: (\S+)/)?.[1] : undefined
     if (base) return { tool: "read", args: { path: `${base}/SKILL.md` } }
     if (call?.function?.name === "courier_spawn" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-STALL-MID"))
@@ -183,7 +178,6 @@ function decide(body) {
     return { tool: "shell", args: { command: `${GIT} merge --no-edit ${reported[1]} && ls` } }
   if (recent.includes("COURIER-NEST")) return { tool: "courier_spawn", args: { task: "CHILD-NEST-MID", isolate: true } }
   if (parent && recent.includes("CHILD-FAILS")) return { status: 403, error: "This model is not available in your country" }
-  // OpenCode never retries a 402; a 429 it retries for minutes
   if (parent && recent.includes("CHILD-LIMITED"))
     return { status: 402, error: "You exceeded your current quota", headers: { "retry-after": "1800" } }
   if (parent && recent.includes("CHILD-PROBES")) return { tool: "shell", args: { command: "echo courier-asks probe" } }
@@ -193,7 +187,6 @@ function decide(body) {
   if (parent && question) {
     const options = ["Hello", "Hi", "Hey"].map((label) => ({ label, description: `Say ${label}` }))
     const header = question[1] === "-RELABEL" ? "Relabel" : question[1] === "-REWORD" ? "Reword" : "Greeting"
-    // held until `opencode run`, which dismisses questions, has let go
     return {
       tool: "question",
       args: { questions: [{ header, question: "Which greeting?", options, multiple: question[1] === "-MULTI" }] },
@@ -628,11 +621,8 @@ createServer((request, response) => {
     const lessonsEntry = /(<|&lt;)context key="lessons"(>|&gt;)\n\s*opencode-courier lessons:/.test(everything)
     const standingEntry = /(<|&lt;)context key="standing"(>|&gt;)\n\s*opencode-courier standing:/.test(everything)
     const skills = [...system.matchAll(/<skill>\s*<id>([^<]+)<\/id>/g)].map((match) => match[1])
-    // schedule tools come as tools or in Code Mode's catalog (api-notes)
     const schedules = /opencode[._]schedule_/.test(JSON.stringify(body.tools ?? []) + everything)
-    // the catalog may count a namespace's tools without naming them (api-notes)
     const opencodeTools = Math.max(-1, ...[...everything.matchAll(/^- opencode \((\d+) tools?/gm)].map((match) => Number(match[1])))
-    // a variant reaches the provider as reasoning_effort (api-notes)
     const options = Object.fromEntries(Object.entries(body).filter(([key]) => !["messages", "tools", "stream", "stream_options", "tool_choice"].includes(key)))
     if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, roleEntry, rolePart, updateRole, lessonsEntry, standingEntry, skills, schedules, opencodeTools, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
     if (reply.status) {

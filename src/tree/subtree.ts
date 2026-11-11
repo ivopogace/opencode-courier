@@ -46,7 +46,6 @@ export async function subtree(storage: RosterStorage, rootID: string, retention?
     for (const [index, [entries, listed]] of found.entries()) {
       const spawned = entries.filter(kept).map((entry): Below => ({ entry, depth }))
       for (const node of spawned) seen.add(node.entry.sessionID)
-      // session.list also lists native courier children
       const onRoster = new Set(entries.map((entry) => entry.sessionID))
       const subagents = listed.filter((entry) => !onRoster.has(entry.sessionID) && kept(entry)).map((entry): Below => ({ entry, depth, subagent: true }))
       for (const node of subagents) seen.add(node.entry.sessionID)
@@ -94,7 +93,6 @@ export async function look(ports: ReadPorts, node: Below, known?: Info): Promise
   ])
   const turn = info === undefined ? undefined : await turnOf(ports.session, node.entry.sessionID, info.time)
   const running = turn?.running ?? false
-  // a form outlives its turn only if its withdrawal event was missed
   return { ...node, info, running, ...(turn?.endedAt !== undefined ? { endedAt: turn.endedAt } : {}), pending, forms: running ? forms : [] }
 }
 

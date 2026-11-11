@@ -28,7 +28,6 @@ export interface PermissionAnswered {
 
 type Context = Plugin.Context
 
-// OpenCode keeps pending requests per location (api-notes)
 export type Permissions = Pick<Context["permission"], "list" | "reply">
 
 export type Assert = Context["permission"]["assert"]
@@ -94,7 +93,6 @@ const tagOf = (value: unknown) => (value as { _tag?: unknown } | undefined)?._ta
 
 export const isDeclined = (error: unknown) => tagOf(error) === "Permission.DeclinedError"
 
-// the host's Tool.Error message is the deny rule's or the feedback (api-notes)
 function refusalOf(error: unknown) {
   if (tagOf(error) !== "Tool.Error") return undefined
   const { message, error: cause } = error as { message?: unknown; error?: unknown }
@@ -105,7 +103,6 @@ function refusalOf(error: unknown) {
 
 async function askCaller(ports: AnswerPorts, callerID: string, request: PermissionRequest, call?: AnswerCall) {
   try {
-    // no save: always would answer the other requests it covers (api-notes)
     await ports.assert({
       sessionID: callerID,
       action: request.action,

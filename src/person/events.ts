@@ -14,7 +14,6 @@ export async function reportAsked(ports: PersonPorts, state: PersonState, event:
   const chain = await lineage(ports.storage, request.sessionID)
   if (!chain.length || state.answered.has(request.id) || !claim(state.waiting, request.id)) return []
   const startedBy = chain.length > 1 ? chain[0]!.parentID : undefined
-  // a native child's request shows in its native root's view (api-notes)
   const native = nativeRootOf(chain) === topOf(chain)
   await ports.session.synthetic({
     sessionID: topOf(chain),
@@ -50,7 +49,6 @@ export async function reportReplied(ports: PersonPorts, state: PersonState, even
   return [topOf(chain)]
 }
 
-// the event stream does not replay requests asked before it subscribed
 export async function relayPending(ports: PersonPorts, state: PersonState) {
   const sessions = new Set((await allEntries(ports.storage)).map((entry) => entry.sessionID))
   const domains = [...ports.permissions()]
@@ -72,7 +70,6 @@ function routePerson(ports: PersonPorts, state: PersonState, event: HostEvent) {
   }
   if (event.type === "form.replied" || event.type === "form.cancelled")
     return reportFormSettled(ports, state, event as unknown as FormSettled)
-  // location.shutdown may name no location: it then counts for all
   if (event.type === "location.shutdown") {
     const directory = (event as { location?: { directory?: unknown } }).location?.directory
     locationClosing(ports.now(), typeof directory === "string" ? directory : undefined)

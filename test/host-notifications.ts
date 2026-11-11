@@ -1,4 +1,3 @@
-// verbatim from OpenCode v2.1.2 tui/src/feature-plugins/system/notifications.ts
 import { Plugin } from "@opencode/plugin/tui"
 import type { AttentionSoundName } from "@opencode/plugin/tui/context"
 

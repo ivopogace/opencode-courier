@@ -1,4 +1,3 @@
-// the host compiles no JSX in node_modules and provides packages (api-notes)
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
 
 const result = await Bun.build({

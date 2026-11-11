@@ -563,8 +563,8 @@ is not. What the plugin does about it: [architecture.md](architecture.md#two-ser
 - A session's inbox events (`enqueued`, `delivered`, `cancelled`) are seen by the server that
   queued its prompt only, so the fan-up of typed text happens in that server.
 
-`e2e/two-servers.sh` (not in CI; see its header) checks these and exits 1 when one differs. It
-does not cover the question relay.
+`e2e/two-servers.sh` (not in CI; run as in [development.md](development.md)) checks these and exits
+1 when one differs. It does not cover the question relay.
 
 ## TUI and RPC packaging
 

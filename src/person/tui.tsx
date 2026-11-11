@@ -83,7 +83,6 @@ export function askFooter(ask: Ask) {
     .join(" · ")
 }
 
-// as OpenCode reads a field's when conditions (api-notes)
 export function active(field: FormField, answers: FormAnswer) {
   const when = "when" in field ? (field.when ?? []) : []
   return when.every(({ key, op, value }) => {
@@ -97,7 +96,6 @@ export function active(field: FormField, answers: FormAnswer) {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const isDate = (text: string) => /^\d{4}-\d{2}-\d{2}$/.test(text) && new Date(`${text}T00:00:00.000Z`).toISOString().slice(0, 10) === text
 
-// the limits OpenCode's form service checks on reply, worded as its view
 export function misfit(field: FormField, value: FormValue): string | undefined {
   if (field.type === "string") {
     if (typeof value !== "string") return "Expected text"
@@ -211,7 +209,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     return { asks, listed }
   }
 
-  // the host's client throws an RPC error as a plain { type, message }
   const reason = (error: unknown) => {
     if (error instanceof Error) return error.message
     return typeof error === "object" && error && "message" in error ? String(error.message) : String(error)
@@ -257,7 +254,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     const message = decision === "reason" ? await ctx.ui.dialog.prompt({ title: "Why not?", placeholder: "Passed on to the session" }) : undefined
     if (decision === "reason" && message === undefined) return false
     const reply = decision === "reason" ? "reject" : decision
-    // a bare rejection would end the session's turn (api-notes)
     await ctx.client.permission.reply({
       sessionID: request.sessionID,
       requestID: request.requestID,
@@ -363,7 +359,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
     for (const field of form.fields) {
       if (!active(field, answer)) continue
       if ("hidden" in field && field.hidden) {
-        // OpenCode's form view submits a hidden field's default
         if ("default" in field && field.default !== undefined) answer[field.key] = field.default
         continue
       }
@@ -372,7 +367,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
       if (value !== SKIP) answer[field.key] = value
     }
     try {
-      // data.session.form.reply resolves only once the form is gone
       await ctx.client.session.form.reply({ sessionID: form.sessionID, formID: form.id, answer })
     } catch (error) {
       const tag = (error as { _tag?: unknown } | undefined)?._tag
@@ -490,7 +484,6 @@ export function addAsksInbox(ctx: Context, follows: ReadonlySet<string>) {
       if (sounded.has(ask.key)) continue
       sounded.add(ask.key)
       if (first && !eventSessions.has(ask.session.sessionID)) continue
-      // OpenCode notifies for every ask but a native child's
       if (!ctx.data.session.get(ask.session.sessionID)?.parentID) continue
       void ctx.attention.notify({
         title: pathOf(asks, ask.session.sessionID, top, currentTitle),

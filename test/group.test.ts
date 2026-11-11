@@ -283,7 +283,6 @@ describe("deliverReleased", () => {
     expect(delivered).toEqual([])
     expect(store.size).toBe(2)
 
-    // OpenCode's API gives idle as a DateTime
     parent.idle = DateTime.makeUnsafe(1) as never
     await deliverReleased(ports, new Set())
     expect(delivered).toHaveLength(1)

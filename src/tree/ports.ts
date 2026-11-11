@@ -116,7 +116,6 @@ export interface Role {
   readonly subagent?: true
 }
 
-// session.instructions exists since 2.2.0 (api-notes)
 export type Instructions = Partial<Pick<Context["session"], "instructions">>
 
 export type Lister = Partial<Pick<Context["session"], "list">>
@@ -257,7 +256,6 @@ export interface ExecutionError {
   readonly type: string
   readonly message: string
   readonly status?: number
-  // counted from the event's created; set by rate and quota limits
   readonly retryAfterMs?: number
 }
 
@@ -265,7 +263,6 @@ export interface WatchPorts {
   readonly storage: RosterStorage
   readonly session: Pick<Context["session"], "synthetic" | "context" | "get"> & Instructions
   readonly event: Pick<Context["event"], "subscribe">
-  // requests are kept per location: an isolated child's in its worktree's
   readonly permissions: () => Iterable<Pick<Context["permission"], "list">>
   readonly now: () => number
   readonly log: (message: string) => void

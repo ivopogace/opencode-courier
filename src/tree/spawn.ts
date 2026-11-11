@@ -19,7 +19,6 @@ export interface SpawnInput {
   readonly native?: boolean
 }
 
-// a schedule's wake-up is invisible to Waits (api-notes, OpenCode's schedules)
 const CHILD_RULES = [{ action: "opencode_schedule_*", resource: "*", effect: "deny" }] as const
 
 function titleOf(task: string) {
@@ -89,7 +88,6 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
     : undefined
   const base = worktree ? await ports.head(worktree) : undefined
   const title = input.title ?? titleOf(input.task)
-  // OpenCode takes a location or a parentID, never both
   const native = (input.native ?? ports.nativeChildren === true) && !worktree
   const child = await ports.session
     .create({
@@ -139,7 +137,6 @@ async function enrol(ports: CourierPorts, entry: RosterEntry, group: string | un
 }
 
 async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, task: string, rostered: boolean, grouped: boolean) {
-  // the prompt's inbox.delivered event moves this on; so written first
   const children = childStore(ports.storage)
   if (rostered) await children.prompted(entry.sessionID, ports.now()).catch(() => undefined)
   try {
@@ -170,7 +167,6 @@ async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
   }
 }
 
-// entries put before the first step are in its baseline (api-notes)
 async function nameBoth(ports: CourierPorts, parentID: string, childID: string, depth: number) {
   const extra = await extraEntries(ports)
   await nameRole(ports, childID, depth)
@@ -192,7 +188,6 @@ async function extraEntries(ports: CourierPorts): Promise<ReadonlyArray<Entry>> 
   }
 }
 
-// a host before 2.2.0 has no entries; the context hook adds the part
 async function nameRole(ports: CourierPorts, sessionID: string, depth: number) {
   const entries = ports.session.instructions?.entry
   if (!entries) return false

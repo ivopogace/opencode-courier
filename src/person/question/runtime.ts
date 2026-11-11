@@ -20,7 +20,6 @@ function sleep(ms: number): Effect.Effect<void> {
   const rest = ms > MAX_TIMER_MS ? Effect.suspend(() => sleep(ms - MAX_TIMER_MS)) : Effect.void
   return Effect.callback<void>((resume) => {
     const timer = setTimeout(() => resume(rest), Math.min(ms, MAX_TIMER_MS))
-    // unref'd: OpenCode exits without waiting for the relay's timers
     timer.unref?.()
     return Effect.sync(() => clearTimeout(timer))
   })

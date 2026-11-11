@@ -36,15 +36,12 @@ type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
 export type BusyTimes = Pick<Times, "updated" | "idle" | "busy">
 
-// time.busy exists since 2.2.2; time.updated is no sign of activity (api-notes)
 export const busy = (time: BusyTimes) => time.idle === undefined || millis(time.busy ?? time.updated) > millis(time.idle)
 
-// a person's switches and shell commands append these, at rest or mid-turn
 const ASIDES = new Set(["agent-switched", "model-switched", "location-switched", "shell"])
 
 type Stored = { readonly type: string; readonly error?: { readonly type: string }; readonly time?: { readonly created?: unknown; readonly completed?: unknown } }
 
-// a decline or dismissed question ends on an aborted step, no idle (api-notes)
 export function turnEnd<M extends Stored>(messages: ReadonlyArray<M>): M | undefined {
   const last = messages.findLast((message) => !ASIDES.has(message.type))
   return last?.type === "idle" || (last?.type === "assistant" && last.error?.type === "aborted") ? last : undefined
@@ -140,7 +137,6 @@ export function lineageBy(bySession: ReadonlyMap<string, RosterEntry>, sessionID
   return chain
 }
 
-// OpenCode shows a native child's asks in its root's view (api-notes)
 export function nativeRootOf(chain: ReadonlyArray<RosterEntry>) {
   let root = chain[0]!.sessionID
   for (const entry of chain) {
@@ -191,7 +187,6 @@ export function standingOf(member: Member | undefined): Standing {
 
 export const complete = (members: ReadonlyArray<Member>) => members.every((member) => member.report || member.left)
 
-// OpenCode clamps retry-after to 2^53 ms, past what a Date holds
 const RETRY_MAX_MS = 30 * 24 * 3_600_000
 
 export function retryDelay(error: { readonly retryAfterMs?: unknown }) {

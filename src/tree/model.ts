@@ -13,7 +13,6 @@ export async function chooseModel(ports: CourierPorts, parentID: string, choice:
   const own = named === undefined ? undefined : parseModelName(named)
   if (named !== undefined && !own) throw new Error(modelFormatRefusal(named))
   const parent = await parentModel(ports, parentID)
-  // with no model passed, OpenCode applies the agent's own (api-notes)
   const inherited = own ? undefined : await inheritedModel(ports, parent, agent).catch(() => undefined)
   const base: ModelRef | undefined = own ?? inherited
   if (!base) {
@@ -38,7 +37,6 @@ async function inheritedModel(ports: CourierPorts, parent: ModelRef | undefined,
   return named.data.model ?? parent
 }
 
-// OpenCode refuses an unknown model at the child's first turn (api-notes)
 async function check(ports: CourierPorts, model: ModelRef, named: boolean) {
   let known: ReadonlyArray<KnownModel>
   try {

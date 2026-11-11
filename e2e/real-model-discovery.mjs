@@ -145,10 +145,16 @@ for (;;) {
     const root = tree.get(rootID).list
     const { initID, consumers } = rolesOf(tree)
     const foundAt = initID ? foundIn(root, initID) : -1
-    if (!saved && !released && foundAt !== -1 && consumers.length >= 2 && consumers.every(([id]) => toldAfter(root, id, foundAt, keyAt(root, initID, foundAt)))) {
+    const init = initID ? tree.get(initID).list : []
+    const passed = foundAt !== -1 && consumers.every(([id]) => toldAfter(root, id, foundAt, keyAt(root, initID, foundAt)))
+    const answered = foundAt !== -1 && settled(root) && root.slice(foundAt + 1).some((message) => message.type === "assistant")
+    const onItsWay = sendsTo(init, rootID).some((send) => !send.status && KEY.test(send.message))
+    const held = foundAt === -1 && !onItsWay && settled(init) && reportsTo(init, rootID).length > 0 && settled(root)
+    const why = passed ? `the root has given ${consumers.length} parts the key since it arrived` : answered ? "the root ended its turn on the key without passing it on to each part" : held ? 'the "init" session has reported and no key has reached the root' : undefined
+    if (!saved && !released && consumers.length >= 2 && why) {
       writeFileSync(join(work, "project", GO), "")
       released = true
-      console.log(`  (the root has given ${consumers.length} parts the key since it arrived: created ${GO})`)
+      console.log(`  (${why}: created ${GO})`)
     }
     const spawned = [...tree].filter(([id]) => id !== rootID)
     const reported = spawned.filter(([id, entry]) => deliveriesFrom(tree.get(entry.parentID).list, id).length > 0)

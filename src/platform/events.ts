@@ -11,7 +11,6 @@ export interface EventPorts {
   readonly log: (message: string) => void
 }
 
-// a plugin never receives server.connected (api-notes)
 export type EventType = NonNullable<NonNullable<Parameters<EventPorts["event"]["subscribe"]>[0]>["types"]>[number]
 
 export interface EventModule<P extends EventPorts> {
@@ -25,7 +24,6 @@ export interface EventModule<P extends EventPorts> {
 
 export const RESUBSCRIBE_MS = 5_000
 
-// a plugin's event stream never says it connected (api-notes)
 export const CONNECTED_MS = 1_000
 
 const pause = (ms: number, signal: AbortSignal) =>
@@ -123,7 +121,6 @@ async function subscription<P extends EventPorts>(ports: P, modules: readonly Ev
     subscribed(ports, modules, alongside)
     for await (const event of until(events, signal)) {
       connected()
-      // a host may ignore the types filter (api-notes)
       if (wanted && !wanted.has(event.type)) continue
       await handleLogged(ports, modules, event)
     }
@@ -133,7 +130,6 @@ async function subscription<P extends EventPorts>(ports: P, modules: readonly Ev
     clearTimeout(timer)
     first = []
     if (following) for (const module of modules) module.left?.()
-    // not awaited: closing waits on OpenCode, stuck while a location closes
     void events?.return?.().catch(() => {})
   }
 }

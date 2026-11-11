@@ -11,7 +11,6 @@ import { noteSent, waitsInInbox, type Enqueued, type InboxSettled } from "./wake
 
 const TYPED_MAX = 4000
 
-// a user item says nothing else of its origin (api-notes)
 function typedText(item: Enqueued["data"]["item"]) {
   if (item.type !== "user") return undefined
   const { text, metadata } = item.payload ?? {}
@@ -55,7 +54,6 @@ async function rootRuns(ports: WatchPorts, root: string) {
   return info !== undefined && runs(ports.session, root, info.time, ports.now())
 }
 
-// the typed-in turn has started: judged by its state before the item
 async function ownsWork(ports: WatchPorts, children: ChildStore, sessionID: string) {
   const [report, waiting] = await Promise.all([reportOf(children, sessionID), waitsInInbox(ports, sessionID, { stalled: false })])
   return report?.owes === true || report?.blocked === true || waiting

@@ -44,7 +44,6 @@ async function messages(sessionID) {
     const page = await response.json()
     all.push(...page.data)
     if (page.data.length < 50 || !page.cursor?.next) return all
-    // OpenCode refuses a cursor together with an order
     query = `cursor=${encodeURIComponent(page.cursor.next)}`
   }
 }
@@ -56,7 +55,6 @@ const contentText = (state) => (state.content ?? []).flatMap((item) => (typeof i
 const failed = (message) => message.error !== undefined || message.finish === "error" || message.outcome === "failed"
 const failedRequest = (message) => message.type === "assistant" && message.error !== undefined
 const failedTurn = (message) => message.type === "idle" && message.outcome === "failed"
-// since OpenCode 2.0.22 a turn's end is also an `idle` message
 const ended = (message) =>
   message?.type === "idle" ||
   (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
@@ -79,7 +77,6 @@ function turnsOf(list) {
   let busy = false
   let last
   for (const message of list) {
-    // a system message is OpenCode's instruction update, no step (api-notes)
     if (message.type === "system") continue
     const incoming = message.type === "user" || message.type === "synthetic"
     if (incoming && !busy && (!last || last.type === "idle" || (last.time.completed ?? Infinity) <= message.time.created)) {
@@ -131,7 +128,6 @@ const carriedInSpawn = (list, child, after) =>
       index > after && message.type === "assistant" && message.content.some((part) => childOf(part) === child && /\bchecked\b/i.test(part.state.input?.task ?? "")),
   )
 const toldAfter = (list, child, after) => plainAfter(list, child, after) ?? (carriedInSpawn(list, child, after) ? { spawned: true } : undefined)
-// the plugin's envelope for text typed into a session under the root
 const typedAt = (list, sessionID) =>
   list.findIndex((message) => message.type === "synthetic" && message.text?.startsWith(`<courier from="courier" route="prompt" in="${sessionID}">`))
 const passedDown = (entry) => {
@@ -537,7 +533,6 @@ if (staged) {
     notes.push(`staged: ${who(stagerID)} did the core ${coreSession ? `in session ${coreSession}` : coreWrite?.id === stagerID ? "itself" : "nowhere it could be seen"}, ${when}`)
   }
 }
-// OpenCode applies the last matching permission rule
 const glob = (pattern) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")}$`)
 const skillRule = (() => {
   try {

@@ -33,7 +33,6 @@ const forms = async (sessionID) => (await api(`session/${sessionID}/form`)).data
 const toolsOf = (list) => list.flatMap((message) => (message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : []))
 const textOf = (message) =>
   message.type === "assistant" ? message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") : (message.text ?? "")
-// since OpenCode 2.0.22 a turn's end is also an `idle` message
 const ended = (message) =>
   message?.type === "idle" ||
   (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))

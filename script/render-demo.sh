@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Renders a cast from script/record-demo.sh as the README's narrated, highlighted 1920×1080 video:
-#   script/render-demo.sh demo.cast [out.mp4]   # needs and settings: docs/maintainers/development.md
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

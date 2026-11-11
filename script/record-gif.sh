@@ -1,24 +1,18 @@
 #!/usr/bin/env bash
-# Records the README's GIF, two issues fixed in parallel in the TUI, as the pane's screens and markers for script/render-gif.py:
-#   OPENCODE_BIN=/path/to/opencode script/record-gif.sh [out dir]   # settings: docs/maintainers/development.md
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT=$(realpath -m "${1:-demo-gif}")
 ROWS=${ROWS:-40}
 TUI_ENV=COLORTERM=truecolor
-# A worker reports after two to five times this, so the tree still runs while the viewer moves through it.
 MOCK_CHILD_DELAY_MS=${MOCK_CHILD_DELAY_MS:-7000}
 # shellcheck source=script/demo-lib.sh
 source "$ROOT/script/demo-lib.sh"
 
-# The caption under the screen from now on.
 caption() { mark "caption $1"; }
-# Types $1 into the prompt and sends it, shown to the viewer as typed.
 command_line() {
   mark "key $1"
   submit "$1"
 }
-# Moves the tree panel's selection, ▸, to the row titled $1 with ↓ or ↑, a key at a time.
 select_row() {
   local at row
   for _ in $(seq 1 10); do
@@ -31,7 +25,6 @@ select_row() {
     sleep 0.7
   done
 }
-# The pane's screen, with its colours, and the cursor, about twelve times a second, until the pane closes.
 record_pane() {
   rm -rf "$OUT"
   mkdir -p "$OUT/frames"

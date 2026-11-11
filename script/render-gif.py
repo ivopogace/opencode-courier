@@ -2,12 +2,6 @@
 # requires-python = ">=3.10"
 # dependencies = ["pillow>=10"]
 # ///
-"""Renders a recording from script/record-gif.sh as the README's GIF, a caption under the screen and the viewer's eye led:
-
-    uv run script/render-gif.py <recording dir> <out.gif>
-
-Draws each screen tmux kept, its colours and cursor, with the highlights dimming the rest, each key pressed and each
-click, and the captions, then has ffmpeg encode the GIF. Settings: docs/maintainers/development.md."""
 import json
 import os
 import re
@@ -60,7 +54,6 @@ SGR = re.compile(r"\x1b\[([0-9;:]*)m")
 
 
 def colour(params: list[int], at: int) -> tuple[tuple[int, int, int] | None, int]:
-    """The colour a 38 or 48 at params[at - 1] names, and the index after it."""
     if at < len(params) and params[at] == 5 and at + 1 < len(params):
         return PALETTE[params[at + 1] % 256], at + 2
     if at < len(params) and params[at] == 2 and at + 3 < len(params):
@@ -69,7 +62,6 @@ def colour(params: list[int], at: int) -> tuple[tuple[int, int, int] | None, int
 
 
 def parse(text: str, columns: int, rows: int):
-    """A screen's cells, row by row: (character, foreground, background, bold), wide characters followed by None."""
     grid = []
     fg, bg, bold, dim, reverse = None, None, False, False, False
     for line in text.split("\n")[:rows]:
@@ -123,7 +115,6 @@ def parse(text: str, columns: int, rows: int):
                         bg = value
                     continue
                 i += 1
-        # The rest of a line tmux trimmed keeps the colours it ended with.
         while len(cells) < columns:
             cells.append((" ", fg or DEFAULT_FG, bg or DEFAULT_BG, False))
         grid.append(cells[:columns])
@@ -132,7 +123,6 @@ def parse(text: str, columns: int, rows: int):
     return grid
 
 
-# Box drawing as strokes up, right, down and left: 1 light, 2 heavy.
 BOX = {
     "─": (0, 1, 0, 1), "━": (0, 2, 0, 2), "│": (1, 0, 1, 0), "┃": (2, 0, 2, 0),
     "┌": (0, 1, 1, 0), "┐": (0, 0, 1, 1), "└": (1, 1, 0, 0), "┘": (1, 0, 0, 1),
@@ -141,7 +131,6 @@ BOX = {
     "┏": (0, 2, 2, 0), "┓": (0, 0, 2, 2), "┗": (2, 2, 0, 0), "┛": (2, 0, 0, 2),
     "╹": (2, 0, 0, 0), "╻": (0, 0, 2, 0), "╵": (1, 0, 0, 0), "╷": (0, 0, 1, 0),
 }
-# Block elements as the quadrants they fill: top left, top right, bottom left, bottom right.
 QUADRANTS = {
     "▀": (1, 1, 0, 0), "▄": (0, 0, 1, 1), "█": (1, 1, 1, 1), "▌": (1, 0, 1, 0), "▐": (0, 1, 0, 1),
     "▘": (1, 0, 0, 0), "▝": (0, 1, 0, 0), "▖": (0, 0, 1, 0), "▗": (0, 0, 0, 1), "▚": (1, 0, 0, 1), "▞": (0, 1, 1, 0),
@@ -220,7 +209,6 @@ def read_recording(folder: Path):
 
 
 def squeeze(times: list[float], start: float):
-    """Maps a time of the recording to the GIF's, every pause between two changes cut to IDLE."""
     points = sorted({start, *[t for t in times if t >= start]})
     out = [0.0]
     for before, after in zip(points, points[1:]):
@@ -285,7 +273,6 @@ def main():
     moved = squeeze([at for at, _ in frames] + [at for at, _ in marks], start)
     length = moved(end)
 
-    # What is on show from each time of the GIF: the screen, the caption, the highlight, the last key and click.
     def state_at(time: float):
         screen = max((index for index, (at, _) in enumerate(frames) if moved(at) <= time and at >= start), default=None)
         if screen is None:

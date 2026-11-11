@@ -32,7 +32,6 @@ export async function watchWake(ports: WatchPorts, event: Enqueued) {
   const { sessionID, inboxID, item } = event.data
   const payload = item.payload
   if (item.type !== "synthetic" || payload?.metadata?.source !== "courier" || typeof payload.text !== "string") return false
-  // resume: false starts no turn: the item waits for the next (api-notes)
   if (payload.metadata.resume === false) return false
   const at = event.created ?? ports.now()
   if ((await wakeStore(ports.storage).of(sessionID)).some((wake) => wake.inboxID === inboxID)) return true
@@ -70,7 +69,6 @@ export async function wakeEnded(ports: WatchPorts, event: Execution & { readonly
   if (!waiting.length) return
   const at = event.created ?? ports.now()
   const messages = await ports.session.context({ sessionID }).catch((): Messages => [])
-  // a plain decline reports a shutdown after its aborted step (api-notes)
   if (event.data.reason === "shutdown" && !endsIdle(messages)) return
   const stored = new Set(messages.map((message) => message.id))
   await Promise.all(
@@ -114,9 +112,7 @@ async function wakeAgain(ports: WakePorts, store: ReturnType<typeof wakeStore>, 
       ports.log(`courier wake: ${wake.sessionID} has not taken message ${wake.inboxID} since it was woken again; flagged stalled`)
       return await store.put({ ...current, stalled: now })
     }
-    // the woken turn may take the message before synthetic returns
     await store.put({ ...current, rewoken: now })
-    // synthetic with a waiting item's id wakes again, adds no message (api-notes)
     await ports.session.synthetic({
       sessionID: wake.sessionID,
       id: wake.inboxID,
@@ -138,7 +134,6 @@ async function runsNow(ports: WakePorts, wake: Wake) {
   const { sessionID } = wake
   const info = await ports.session.get({ sessionID }).catch(() => undefined)
   if (!info) return false
-  // time.busy, since 2.2.2, records a start whose event was missed (api-notes)
   if (info.time.busy !== undefined) return busy(info.time) && millis(info.time.busy) >= waitingSince(wake)
   if (!busy(info.time)) return false
   const messages = await ports.session.context({ sessionID }).catch((): Messages => [])

@@ -412,7 +412,6 @@ describe("the tree panel's lines", () => {
     expect(mark({ state: "gone" })).toEqual({ mark: " ", color: undefined })
   })
 
-
   test("a duration reads in its two coarsest units", () => {
     expect(duration(45_900)).toBe("45s")
     expect(duration(185_000)).toBe("3m 05s")
@@ -1537,7 +1536,6 @@ describe("the tree panel's motion (#224)", () => {
     const frame = async () => {
       for (let i = 0; i < 20; i++) await Promise.resolve()
       await settle(app.renderOnce())
-      // a timed-out test destroys the OpenTUI renderer; its buffer is freed
       if (app.renderer.isDestroyed) await new Promise(() => {})
       return app.captureCharFrame()
     }
@@ -2152,7 +2150,6 @@ describe("the tree panel's motion, its pieces", () => {
 
 describe("Digby's colours", () => {
   const hex = RGBA.fromHex
-  // OpenCode's resolved `opencode` theme: light's accent is the v1 #ec5b2b
   const themes = {
     dark: { base: "#0a0a0a", text: "#eeeeee", max: "#4c4c4c", selected: "#fab283" },
     light: { base: "#ffffff", text: "#1a1a1a", max: "#bebcb9", selected: "#ec5b2b" },
@@ -2173,7 +2170,6 @@ describe("Digby's colours", () => {
 
 describe("a hovered row's colour (#250)", () => {
   const hex = RGBA.fromHex
-  // OpenCode's `opencode` theme at v2.1.0, resolved with @opencode/theme
   const themes = {
     dark: { base: "#0a0a0a", raised: "#141414", high: "#1e1e1e" },
     light: { base: "#ffffff", raised: "#fafafa", high: "#f5f5f5" },

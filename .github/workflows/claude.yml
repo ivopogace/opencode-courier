@@ -1,9 +1,5 @@
 name: Claude review
 
-# A first review of a pull request by Claude Code, on the maintainer's Claude subscription (the
-# CLAUDE_CODE_OAUTH_TOKEN secret, from `claude setup-token`). On its own when an outside contributor
-# opens a pull request, marks it ready or pushes to it, and whenever a maintainer comments `@claude`
-# on one. Neither runs the pull request's code: they read the diff and CI's results.
 on:
   pull_request_target:
     types: [opened, reopened, ready_for_review, synchronize]
@@ -21,8 +17,6 @@ permissions:
 
 jobs:
   outside:
-    # pull_request_target runs with the secrets for a fork's pull request too. So: the base branch
-    # checked out, never the head, and no tool that reads files or the environment, only `gh pr`.
     name: Claude review (outside contributor)
     if: |
       github.event_name == 'pull_request_target' &&

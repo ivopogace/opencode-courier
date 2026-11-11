@@ -52,7 +52,6 @@ export const FLASH_MS = 1500
 
 export const BAR_MS = 450
 
-// the TUI's animations setting is not on the plugin API (api-notes)
 export function animationsOn(options: Readonly<Record<string, unknown>> | undefined) {
   return options?.animations !== false
 }
@@ -363,7 +362,6 @@ export function guides(rows: ReadonlyArray<Row>, base: number) {
 
 function courierOf(ctx: Context) {
   const courier = ctx.client.rpc(treeRpc)
-  // an RPC with no location goes to the server's default
   const location = (sessionID: string): Location => ctx.data.session.get(sessionID)?.location ?? ctx.location ?? ctx.data.location.default()
   return { courier, location }
 }
@@ -399,7 +397,6 @@ function reason(error: unknown) {
 export const UNAVAILABLE_MS = 1000
 const UNAVAILABLE_TRIES = 10
 
-// rpc.call answers rpc.unavailable until the plugin has loaded (api-notes)
 async function whenLoaded<T>(call: () => Promise<T>): Promise<T> {
   for (let tries = 1; ; tries++) {
     try {
@@ -444,7 +441,6 @@ export function addTreeStatus(ctx: Context, onWaiting?: (sessionID: string) => v
             flexShrink={1}
             minWidth={0}
             onSizeChange={function () {
-              // an OpenTUI box not laid out yet is 0 wide
               if (this.width > 0) setWidth(this.width)
             }}
           >
@@ -530,10 +526,8 @@ async function confirmForget(
   return true
 }
 
-// a newly shown panel takes the keyboard (api-notes)
 const FOCUS_PROMPT = "pane.focus.left"
 
-// OpenCode splits a panel from 108 columns less vertical tabs (api-notes)
 const SPLIT_WIDTH = 108
 
 type Following = { root: string; at?: string; to?: string; presentation: PanelPresentation; focused: boolean; refocus?: boolean; tree?: Tree }
@@ -590,7 +584,6 @@ function TreePanel(props: {
     const tree = latest()?.tree
     if (tree) view.note({ tree })
   })
-  // OpenCode shows fullscreen whatever was asked while it cannot split
   createEffect(() => {
     const { presentation, focused } = input
     view.note(ctx.renderer.width >= SPLIT_WIDTH ? { presentation, focused } : { focused })
@@ -707,7 +700,6 @@ function TreePanel(props: {
   const header = createMemo(() => cells(glyph(mascot(), mascotFrame())))
   const art = createMemo(() => artOf(mascot(), mascotFrame()))
   const tokens = digbyColours(theme)
-  // OpenTUI keeps a span's old bg when it goes undefined (api-notes)
   const drawn = (line: Accessor<ReadonlyArray<Cell>>) => (
     <text wrapMode="none" flexShrink={0}>
       <Index each={line()}>{(one) => <span style={{ fg: one().fg && tokens[one().fg!], bg: one().bg ? tokens[one().bg!] : DIGBY_UNDER }}>{one().char}</span>}</Index>

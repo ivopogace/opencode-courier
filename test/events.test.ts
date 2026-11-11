@@ -193,7 +193,6 @@ describe("the event types a subscription asks for", () => {
     const seen: string[] = []
     const eventPorts = {
       event: {
-        // the plugin adapter forwards only types and signal (api-notes)
         subscribe: async function* () {
           await Bun.sleep(30)
           seen.push("event")
@@ -280,9 +279,9 @@ describe("the event types a subscription asks for", () => {
   })
 
   test("a type OpenCode does not publish, or server.connected, does not compile", () => {
-    // @ts-expect-error: not one of OpenCode's event types
+    // @ts-expect-error
     const typo: readonly EventType[] = ["session.text.deltas"]
-    // @ts-expect-error: a plugin never receives it, so it cannot be asked for
+    // @ts-expect-error
     const connected: readonly EventType[] = ["server.connected"]
     expect([typo, connected]).toHaveLength(2)
   })

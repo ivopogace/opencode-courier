@@ -1,14 +1,5 @@
 name: Tag the release
 
-# Step two of a release (docs/maintainers/releasing.md): when a push to main leaves package.json at a
-# version without a tag, tags it vX.Y.Z and starts the Release workflow on that tag. A version
-# whose tag exists is left alone, so a push that does not bump the version does nothing.
-#
-# The tag is pushed with the job's GITHUB_TOKEN, and GitHub starts no workflow for an event made
-# with that token except workflow_dispatch, so release.yml's `on: push: tags` never sees it.
-# Instead the Release workflow is dispatched on the tag: there GITHUB_REF is the tag, which is
-# what the npm environment's `v*` rule and the tag check in release.yml look at.
-
 on:
   push:
     branches: [main]
@@ -23,8 +14,6 @@ on:
 permissions:
   contents: read
 
-# Two pushes to main in a row would both find the version untagged; one at a time. Dry runs queue
-# apart, so one never displaces a pending release (a group holds one pending run).
 concurrency:
   group: release-tag-${{ inputs.dry_run == true && 'dry-run' || 'release' }}
 
@@ -34,12 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write # push the tag
-      actions: write # dispatch the Release workflow
+      contents: write
+      actions: write
     env:
       DRY_RUN: ${{ inputs.dry_run == true }}
     steps:
-      # No token on disk while the dry run builds branch code; the tag step passes it itself.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -64,8 +52,6 @@ jobs:
           echo "releasing ${tag}"
           echo "tag=${tag}" >>"${GITHUB_OUTPUT}"
 
-      # Dry run: release.yml's build and `npm stage publish --dry-run`, which also refuses a
-      # version npm already has. No token: a dry run needs none.
       - uses: ./.github/actions/build
         if: steps.version.outputs.tag != '' && env.DRY_RUN == 'true'
       - name: Stage as a dry run
@@ -88,7 +74,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag --annotate "${TAG}" --message "${TAG}"
           git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}"
-          # The new tag can take a moment to be dispatchable.
           for attempt in 1 2 3; do
             if gh workflow run release.yml --ref "${TAG}"; then
               break

@@ -71,7 +71,6 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
   return entries.map((entry) => entry.parentID)
 }
 
-// only inbox.enqueued carries the item's type (api-notes)
 const TYPED = "typed"
 const UNOWED = new Set(["user", "compaction", "move", TYPED])
 const OWN = "own"
@@ -116,7 +115,6 @@ export async function notePrompt(
   const parentID = await children.indexedParent(sessionID)
   if (parentID === undefined) return false
   if (await ownAfterReport(children, sessionID, kind)) return false
-  // the idle hook's reminder still publishes inbox.delivered (api-notes)
   if (inboxID !== undefined && (await children.nudgeOf(sessionID)).inboxID === inboxID) return false
   await children.prompted(sessionID, event.created ?? ports.now())
   await syncStanding(ports, parentID)
@@ -186,7 +184,6 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   return [entry.parentID]
 }
 
-// a plain decline ends as a shutdown, on an aborted step (api-notes)
 export async function reportDeclined(ports: WatchPorts, seen: Set<string>, event: SessionEvent, outside: Waits) {
   if (event.data.reason !== "shutdown" || (await childStore(ports.storage).indexedParent(event.data.sessionID)) === undefined) return []
   if (!endsIdle(await ports.session.context({ sessionID: event.data.sessionID }).catch(() => []))) return []
@@ -208,7 +205,6 @@ const TREE_TYPES = [
 
 async function sealGroups(ports: WatchPorts, event: SessionEvent) {
   try {
-    // a shutdown ends a turn only on a plain decline's aborted step (api-notes)
     if (event.data.reason === "shutdown" && !endsIdle(await ports.session.context({ sessionID: event.data.sessionID }).catch(() => []))) return
     if (await hasCompleteGroup(groupStore(ports.storage), event.data.sessionID)) ports.nudge()
   } catch (error) {

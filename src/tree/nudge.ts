@@ -6,7 +6,6 @@ import { awaited, reportOf, stoppedSincePrompt } from "./report.js"
 import { childStore, groupStore } from "./store.js"
 import { reportReminder } from "./text.js"
 
-// experimental.idle's event; its name and shape may change (api-notes)
 export interface Idle {
   readonly sessionID: string
   readonly background: ReadonlyArray<{ readonly sessionID: string }>
@@ -40,7 +39,6 @@ export async function nudgeSilent(ports: NudgePorts, seen: Set<string>, outside:
   const { at: nudgedAt } = await children.nudgeOf(sessionID)
   if ((nudgedAt !== undefined && nudgedAt >= report.prompt) || !claim(seen, `nudge/${sessionID}/${report.prompt}`)) return false
   const at = Math.max(ports.now(), report.prompt)
-  // every instance's idle hook runs; delivery matches by inbox id (api-notes)
   await children.nudged(sessionID, at)
   const { id } = await ports.session.synthetic({
     sessionID,
@@ -48,14 +46,12 @@ export async function nudgeSilent(ports: NudgePorts, seen: Set<string>, outside:
     description: "Reminded to report",
     metadata: { source: "courier", reminder: "report", resume: false },
     delivery: "steer",
-    // input the idle hook admits continues its execution (api-notes)
     resume: false,
   })
   await children.nudged(sessionID, at, id)
   return true
 }
 
-// a throwing idle hook fails the execution (api-notes)
 export async function onIdle(ports: NudgePorts, seen: Set<string>, outside: Waits, idle: Idle) {
   try {
     return await nudgeSilent(ports, seen, outside, idle)

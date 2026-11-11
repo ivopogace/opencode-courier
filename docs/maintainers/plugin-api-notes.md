@@ -563,7 +563,9 @@ is not. What the plugin does about it: [architecture.md](architecture.md#two-ser
 - A session's inbox events (`enqueued`, `delivered`, `cancelled`) are seen by the server that
   queued its prompt only, so the fan-up of typed text happens in that server.
 
-`e2e/two-servers.sh` (not in CI; see its header) checks these and exits 1 when one differs. It
+`e2e/two-servers.sh` (not in CI) checks these and exits 1 when one differs. It runs as
+`OPENCODE_BIN=/path/to/opencode e2e/two-servers.sh`; `ROUNDS` (default 10) sets how many
+`courier_later` messages each round schedules, and `KEEP=1` keeps the temp directory and logs. It
 does not cover the question relay.
 
 ## TUI and RPC packaging

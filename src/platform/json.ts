@@ -4,7 +4,6 @@ export const finite = (value: unknown) => (typeof value === "number" && Number.i
 export const obj = (value: unknown): Record<string, any> =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, any>) : {}
 
-// OpenCode's session times are DateTimes; tests pass numbers
 export function millis(value: unknown) {
   if (typeof value === "number") return value
   if (typeof value === "string") return Date.parse(value)

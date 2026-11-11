@@ -1,4 +1,3 @@
-// rpc.register and client.rpc both take Standard Schema (api-notes)
 import { Rpc } from "@opencode/plugin/rpc"
 import { Schema } from "effect"
 

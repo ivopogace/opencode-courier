@@ -19,7 +19,6 @@ export function lastTool(messages: Messages) {
   return undefined
 }
 
-// as OpenCode's session view reads it (packages/tui/src/util/session.ts)
 export function contextOf(messages: Messages, windows: ReadonlyArray<ModelWindow>) {
   const compacted = messages.findLastIndex((message) => message.type === "compaction" && message.status === "completed")
   const last = messages.findLast((message, index) => index > compacted && message.type === "assistant" && message.tokens !== undefined)

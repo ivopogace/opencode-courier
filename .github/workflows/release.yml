@@ -3,9 +3,6 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  # Dispatched on the tag by release-tag.yml, since a tag it pushes with GITHUB_TOKEN starts no
-  # workflow by itself; or by hand: gh workflow run release.yml --ref vX.Y.Z [-f dry_run=true].
-  # On the tag ref the npm environment's `v*` rule and the tag check below hold as for a push.
   workflow_dispatch:
     inputs:
       dry_run:
@@ -25,21 +22,13 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Holds the NPM_TOKEN secret, and is the environment npm's trusted publisher names. Limit it to
-    # `v*` tags (Settings → Environments → npm → Deployment branches and tags), so that only a run
-    # on a version tag can read the secret. Approval happens on npm (staged publishing), so the
-    # environment needs no required reviewer.
     environment: npm
     permissions:
       contents: read
-      id-token: write # trusted publishing, and provenance either way
+      id-token: write
     env:
-      # How the job authenticates to npm: `token` (NPM_TOKEN, the default) or `oidc` (trusted
-      # publishing). Set the repository variable NPM_AUTH to switch; see docs/maintainers/releasing.md.
       NPM_AUTH: ${{ vars.NPM_AUTH || 'token' }}
-      # In token mode, `false` stages without provenance, should npm refuse the attestation.
       NPM_PROVENANCE: ${{ vars.NPM_PROVENANCE }}
-      # Set by a dispatch with dry_run; a pushed tag has no inputs.
       DRY_RUN: ${{ inputs.dry_run == true }}
     steps:
       - name: Check the release settings
@@ -63,12 +52,6 @@ jobs:
             exit 1
           fi
       - uses: ./.github/actions/build
-      # Either way the job can only stage: the version goes live once a maintainer approves it with
-      # 2FA on npmjs.com (Staged Packages) or with `npm stage approve <id>`.
-      #
-      # token: NPM_TOKEN is a granular access token without 2FA bypass, with stage-only read and write
-      # on this package only; such a token can stage but not publish. It stands in for trusted publishing
-      # while npm rejects the OIDC subject claims GitHub issues for this repository (npm/cli#9969).
       - name: Check the npm token
         if: env.NPM_AUTH == 'token'
         run: |
@@ -84,11 +67,6 @@ jobs:
         env:
           HAS_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      # oidc: the trusted publisher on npmjs.com (this repository, workflow release.yml, environment
-      # npm) allows staging only; trusted publishing authenticates and adds provenance.
-      # npm skips a failed OIDC exchange silently and falls back to the .npmrc setup-node wrote,
-      # which ends in a bare E401. So check the OIDC token first and log the claims npm's trusted
-      # publisher matches on (repository, workflow file, environment), never the token itself.
       - name: Check the OIDC token for npm
         if: env.NPM_AUTH == 'oidc'
         run: |
@@ -96,7 +74,7 @@ jobs:
             echo "::error::no OIDC token available: the job needs 'permissions: id-token: write'"
             exit 1
           fi
-          # shellcheck disable=SC2016 # the quotes keep ${...} for node, not the shell
+          # shellcheck disable=SC2016
           node --input-type=module -e '
             const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL)
             url.searchParams.set("audience", "npm:registry.npmjs.org")
@@ -111,12 +89,6 @@ jobs:
               console.log(`${key}: ${claims[key] ?? "(missing)"}`)
             }
           '
-      # Prereleases (1.2.0-beta.1) go to the `next` dist-tag; npm 11 refuses them without one.
-      # token: the token is exported for npm, and provenance added unless NPM_PROVENANCE is false.
-      # oidc: NPM_TOKEN is not exported, so a failed exchange cannot fall back to it: npm falls back
-      # to setup-node's placeholder token and fails with E401, as above. Verbose logging shows why
-      # the exchange failed; npm redacts credentials in its logs.
-      # A dry run packs, checks the version against the registry and stops short of staging.
       - name: Stage
         run: |
           flags=(--access public)
@@ -132,7 +104,6 @@ jobs:
         env:
           NPM_TOKEN: ${{ env.NPM_AUTH == 'token' && secrets.NPM_TOKEN || '' }}
 
-  # A draft, because the version is not live until it is approved: publish the draft afterwards.
   github-release:
     name: Draft GitHub release
     needs: publish

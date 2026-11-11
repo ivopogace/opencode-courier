@@ -3,7 +3,6 @@ import { addMemoryView, MEMORY_USAGE } from "./memory/tui.js"
 import { addAsksInbox } from "./person/tui.js"
 import { addTreeAttention, addTreePanel, addTreeStatus, CHANGES } from "./tree/tui.js"
 
-// the host provides this bundle's packages (api-notes)
 export default Plugin.define({
   id: "courier.tui",
   setup: (ctx) => {

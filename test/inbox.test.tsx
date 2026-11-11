@@ -38,7 +38,6 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
   const layers: (() => any)[] = []
   const sizes: unknown[] = []
   let route: { type: string; sessionID?: string } = { type: "session", sessionID: "ses_root" }
-  // a new or cleared dialog resolves the open one with nothing (api-notes)
   let close: (() => void) | undefined
   let cleared = 0
   const dialog = (kind: Dialog["kind"]) => (options: any) => {
@@ -121,7 +120,6 @@ function fakeContext(asks: Asks, forms: Record<string, unknown[]> = {}) {
     keymap: { layer: (factory: () => any) => void layers.push(factory) },
   } as unknown as Plugin.Context
   const emit = (type: string, sessionID?: string) => {
-    // the host puts form.created's sessionID inside its form
     const data = type === "form.created" ? { form: { sessionID } } : { sessionID }
     for (const listener of listeners) listener({ details: { type, ...(sessionID ? { data } : {}) } } as never)
   }

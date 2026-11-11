@@ -69,7 +69,6 @@ const settle = (ports: QuestionPorts, question: Question, exit: CallExit, loaded
     if (shared.questions.get(question.requestID) !== question) {
       return yield* Effect.promise(() => forget(ports, question))
     }
-    // a closing location withdraws its forms as if dismissed (api-notes)
     const closing = unloaded || !loaded() || (held !== undefined && (yield* Fiber.join(held)))
     if (Exit.isFailure(exit) && (closing || (!dismissed && Exit.hasInterrupts(exit))))
       return closing ? tellLater(ports, question) : yield* Effect.promise(() => stopped(ports, question))
@@ -119,7 +118,6 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
         ...(chain.length > 1 ? { startedBy: chain[0]!.parentID } : {}),
         questions: promptsOf(input),
         askedAt: current.now(),
-        // a native child's form shows in its native root's view (api-notes)
         ...(nativeRootOf(chain) === top ? { native: true as const } : {}),
         directory,
         call: (outcome) => {
@@ -129,7 +127,6 @@ function asking(ports: () => QuestionPorts | undefined, directory: string, origi
           return acceptance()
         },
       }
-      // form.created comes only once the call's permission check passed
       const key = `${context.sessionID} ${context.id}`
       const loaded = () => ports() === current
       const shown = Deferred.makeUnsafe<void>()
@@ -225,7 +222,6 @@ function linking(ports: () => QuestionPorts | undefined, directory: string, ask:
         Effect.onExit((exit) =>
           Effect.sync(() => {
             if (linked.link === settled) linked.link = undefined
-            // unloaded: OpenCode withdrew the form as it closed the location
             if (Exit.isSuccess(exit) || !loaded()) return
             void background(linkedCallFailed(current, linked, exit.cause, loaded, directory), notPassedOn(current, linked))
           }),

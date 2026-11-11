@@ -32,7 +32,6 @@ async function messages(sessionID) {
     const page = await response.json()
     all.push(...page.data)
     if (page.data.length < 50 || !page.cursor?.next) return all
-    // OpenCode refuses a cursor together with an order
     query = `cursor=${encodeURIComponent(page.cursor.next)}`
   }
 }
@@ -44,7 +43,6 @@ const contentText = (state) => (state.content ?? []).flatMap((item) => (typeof i
 const failed = (message) => message.error !== undefined || message.finish === "error" || message.outcome === "failed"
 const failedRequest = (message) => message.type === "assistant" && message.error !== undefined
 const failedTurn = (message) => message.type === "idle" && message.outcome === "failed"
-// since OpenCode 2.0.22 a turn's end is also an `idle` message
 const ended = (message) =>
   message?.type === "idle" ||
   (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
@@ -63,7 +61,6 @@ function turnsOf(list) {
   let busy = false
   let last
   for (const message of list) {
-    // a system message is OpenCode's instruction update, no step (api-notes)
     if (message.type === "system") continue
     const incoming = message.type === "user" || message.type === "synthetic"
     if (incoming && !busy && (!last || last.type === "idle" || (last.time.completed ?? Infinity) <= message.time.created)) {

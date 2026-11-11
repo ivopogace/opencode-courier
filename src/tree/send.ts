@@ -16,11 +16,9 @@ export interface SendInput {
 
 export async function send(ports: CourierPorts, from: string, input: SendInput): Promise<Sent> {
   const { status, dropped } = await statusFor(ports, from, input)
-  // the delivery may wake the parent, whose turn may end before a later note
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
   try {
     const held = noted?.member && status && status !== "blocked" ? await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) }) : undefined
-    // an entry put now shows at the woken parent's next step (api-notes)
     if (noted) await syncStanding(ports, input.sessionID)
     if (held) return { status, report: true, held }
     const delivered = await deliver(ports, from, input, status, noted)
@@ -42,13 +40,11 @@ async function deliver(ports: CourierPorts, from: string, input: SendInput, stat
     metadata: { source: "courier", from, ...(status ? { status } : {}) },
     delivery: input.queue ? "queue" : "steer",
   })
-  // the enqueued event is handled apart from this call (api-notes)
   await noteSent(ports, { sessionID: input.sessionID, inboxID: delivered.id, text, description }).catch(() => undefined)
   if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)
   return { messageID: delivered.id, ...(status ? { status } : {}) }
 }
 
-// tool inputs use plain schemas, so the value is checked here (api-notes)
 async function statusFor(ports: CourierPorts, from: string, input: SendInput): Promise<{ status?: Status; dropped?: Status }> {
   const given = input.status ?? undefined
   if (given === undefined) return {}

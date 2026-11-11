@@ -5,7 +5,6 @@ import { childStore } from "../src/tree/store.js"
 
 const request = { id: "per_1", sessionID: "ses_child", action: "shell", resources: ["git push"], save: ["git push*"] }
 
-// the host builds Tool.Error's message from the cause (api-notes)
 class ToolError extends Error {
   readonly _tag = "Tool.Error"
   constructor(message: string, readonly error: { _tag: string; feedback?: string }) {

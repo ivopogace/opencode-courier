@@ -15,7 +15,6 @@ export const NO_RECORDS = "No record of a session tree in this project: one is w
 
 export const LESSON_LINE_MAX = 160
 
-// the host's select cuts a title at 61; " (this session)" must fit
 export const ROW_TITLE_MAX = 46
 
 export const TODAY = "Today"
@@ -213,7 +212,6 @@ export function addMemoryView(ctx: Context) {
     const sessionID = openSession()
     return (sessionID ? ctx.data.session.get(sessionID)?.location : undefined) ?? ctx.location ?? ctx.data.location.default()
   }
-  // the host's client throws an RPC error as a plain { type, message }
   const reason = (error: unknown) => {
     if (error instanceof Error) return error.message
     return typeof error === "object" && error && "message" in error ? String(error.message) : String(error)
@@ -230,14 +228,12 @@ export function addMemoryView(ctx: Context) {
     })
     const choosing = ctx.ui.dialog.select<Value>({
       ...options,
-      // the host runs a footer action's key before the search sees it
       actions: [
         { bind: "x", title: "forget", onTrigger: (value) => request(forget(value)) },
         { bind: "p", title: pin.title, onTrigger: (value) => request(pin.ask(value)) },
       ],
     })
     ctx.ui.dialog.set({ size: "xlarge" })
-    // select resolves undefined on esc or when replaced (api-notes)
     return Promise.race([choosing.then((value): Request => (value === undefined ? { kind: "back" } : chosen(value))), requested])
   }
 
@@ -248,9 +244,7 @@ export function addMemoryView(ctx: Context) {
       {
         title: `Memory (${read.records.length})`,
         placeholder: "Search",
-        // the host matches `current` by deep equality (api-notes)
         ...(current ? { current } : {}),
-        // `details`: drawn by the host's select, undeclared in the API (api-notes)
         options: read.records.map((record) => ({
           title: recordTitle(record, open),
           value: record,

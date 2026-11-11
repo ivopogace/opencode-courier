@@ -51,6 +51,9 @@ describe("envelope and child brief", () => {
     for (const depth of [1, 3]) {
       const brief = tree.childBrief("ses_parent", "Fix the bug", depth, limits)
       expect(brief).toContain(
+        "send it to the parent with courier_send without a status as soon as you find it, before you go on and apart from your report: a report can be held until the other parts have reported, which is too late for them.",
+      )
+      expect(brief).toContain(
         "it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own part. Progress alone is not worth a message.",
       )
       expect(brief).toContain(

@@ -24,9 +24,10 @@ export function childBrief(parentID: string, task: string, depth: number, limits
       "a thread or a run), tell the parent so with courier_send without a status and schedule yourself a check-in with " +
       "courier_later, which shows you as waiting, then end your turn. Once woken, cancel the check-in with courier_cancel " +
       "and send your report.",
-    "If you find something the other parts of the job need (an assumption of the split that is wrong, a shared file or API " +
-      "that behaves otherwise), send it to the parent at once with courier_send without a status, then carry on: it passes " +
-      "it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own " +
+    "If you find something the other parts of the job need (an assumption of the split or of your task that is wrong, a " +
+      "shared file or API that behaves otherwise), send it to the parent with courier_send without a status as soon as you " +
+      "find it, before you go on and apart from your report: a report can be held until the other parts have reported, " +
+      "which is too late for them. Then carry on: it passes it on to the sessions it affects. Do the same with one a session you started sends you, when it reaches past your own " +
       "part. Progress alone is not worth a message.",
     "Courier passes what the person writes in your session, outside a <courier> envelope, to the sessions above you, in an " +
       'envelope marked route="prompt". Do not send it up yourself: act on it, and say in your report what you did because of it.',

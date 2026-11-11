@@ -192,8 +192,10 @@ parts after it, is the whole task. It says which in one line: `split: no, becaus
 or `split: <n> parts: …`. A session that splits starts the parts in one join group, ends its turn
 without polling, checks each part and sends one combined report. At `maxDepth` it is told to do the
 task itself. Any spawned session is told to send its parent a finding the other parts need (an
-assumption of the split that is wrong, a shared file or API that behaves otherwise) at once, without
-a status, and carry on; progress alone is not worth a message. A finding that a session it started
+assumption of the split or of its task that is wrong, a shared file or API that behaves otherwise) as
+soon as it finds it, without a status and apart from its report, and carry on: a report in a join
+group is held until the group is complete, too late for the other parts. Progress alone is not worth
+a message. A finding that a session it started
 sends it goes on to its parent the same way when it reaches past its own part. Courier passes what the person
 writes in its session, outside a `<courier>` envelope, to the sessions above it, in an envelope
 marked `route="prompt"` ([steering](#steering-a-running-tree)). The session is told not to send it up

@@ -726,6 +726,8 @@ run_finding_up() {
   mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the child's brief says to pass a finding from below up" \
     "$(has_text "$mid" "Do the same with one a session you started sends you, when it reaches past your own part." 10)"
+  check "and to send a finding apart from its report, which can be held" \
+    "$(has_text "$mid" "apart from your report: a report can be held until the other parts have reported" 10)"
   deep=$(for _ in $(seq 1 30); do
     found=$(texts "$mid" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
     [ -n "$found" ] && { echo "$found"; break; }

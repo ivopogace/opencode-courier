@@ -33,9 +33,9 @@ free messages"): run it from your own machine, or with a paid provider's key.
 | `COURIER_PROVIDER`, `COURIER_MODEL` | `opencode`, `deepseek-v4.1-flash-free` | The model, as OpenCode names it in its catalog, with the provider's usual key variable. |
 | `COURIER_BASE_URL` | | Declares the provider as an OpenAI-compatible endpoint, for a model not in the catalog. Zen's free tier refuses its own endpoint declared so (403, `FreeTierError`). |
 | `COURIER_API_KEY_ENV` | | For a declared provider, the variable holding its key (written as `{env:NAME}`, never to a file). |
-| `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault`, `recursive-staged`, `recursive-finding`, `recursive-conflict` or `review`. |
+| `COURIER_SCENARIO` | the fan-out | `permission`, `question`, `recursive`, `recursive-fault`, `recursive-staged`, `recursive-finding`, `recursive-conflict`, `discovery` or `review`. |
 | `COURIER_PROMPT`, `COURIER_EXPECT` | per scenario | The parent's prompt, and the values the reports and the reply must hold. |
-| `COURIER_FILES` | per scenario | Recursive scenarios: the files that must hold those values, in order; for `recursive-staged` the first is the core's. |
+| `COURIER_FILES` | per scenario | Recursive scenarios and `discovery`: the files that must hold those values, in order; for `recursive-staged` the first is the core's. |
 | `COURIER_MAX_DEPTH` | `5` | Recursive scenarios: the `maxDepth` the checker holds the tree to. |
 | `COURIER_TEST_COMMAND` | `npm test` | `review`: the command the checker runs the project's tests with, in the root's checkout. |
 | `COURIER_TESTS` | `5` | `review`: how many tests must pass there, the fixture's two and the three the job asks for. |
@@ -68,7 +68,7 @@ stops moving:
 ### No sleeps
 
 The fan-out and recursive prompts give each command as it is, with no `sleep` standing in for work.
-`recursive-finding`'s parts wait on files the checker creates (below).
+`recursive-finding`'s and `discovery`'s parts wait on files the checker creates (below).
 A report that reaches a parent while its turn still runs is
 steered into that turn, and the checkers count it as delivered: the first turn may hold reports, and
 one look after each report, in a turn of its own or steered in, is not polling.
@@ -319,6 +319,56 @@ done
 |---|---|
 | skill listed | 3 of 5 passed, 13/13 three times, 12/13 and 5/13 once each, mean 30 requests (25 to 33). No countermand and no replaced file in the four runs that reached the conflict, so the text stays as it is. The 12/13 is the check that every session reported with a status. In the 5/13 the root started the halves itself, so the words never reached a half at depth 2. |
 
+## A finding a session makes
+
+`COURIER_SCENARIO=discovery`: three parts side by side, one of which finds that the job's description
+of a shared API is wrong. In [A finding passed on](#a-finding-passed-on) the person brings the
+finding; here a session comes upon it in its own work. The project is
+`e2e/fixtures/discovery-project`: `api.sh`, whose `describe` prints that amounts are in cents, not
+euros, and whose `get a` and `get b` print `1999` and `2550`. The parent is asked:
+
+> This project has a price API, api.sh, whose amounts are in euros. Have this job done through helper
+> sessions started with courier_spawn, one session per part, all started together, and do no part
+> yourself. It has three parts. Part "schema" runs `` `sh api.sh describe` `` and writes what it
+> printed to out/schema.txt. Part "a" runs
+> `` `for i in $(seq 150); do [ -e .go-parts ] && break; sleep 1; done; sh api.sh get a` `` and writes
+> the amount it printed, as a whole number of cents, to out/a.txt. Part "b" runs the same with
+> `get b` and writes to out/b.txt. Another process, outside this job, creates .go-parts when those
+> commands may go on: no session creates, removes or looks at that file, and each command is run
+> exactly as written. When the parts have reported back, read out/a.txt and out/b.txt yourself and
+> reply with one line: RESULTS \<a\> \<b\>
+
+Nothing in the prompt says to tell anyone. The brief tells the "schema" session to send its parent
+what the other parts need, at once and without a status, and the skill tells the root to pass it on
+to the parts it changes. A part that was told writes `1999` or `2550`; one that was not multiplies by
+100. The checker (`e2e/real-model-discovery.mjs`) creates `.go-parts` once the root has sent each of
+the other parts a message without a status after the finding reached it, or started them after it;
+each wait ends after 150 s if the file never comes.
+
+Nine checks: the root spawned the three parts in its first turn; it ended that turn; it did not poll;
+every session reported with a status; a message or report from the "schema" session naming cents
+reached the root; the root passed it on to each other part without a status; each of those parts had
+it before it reported, and the root stopped no part and started none twice; the files hold `1999` and
+`2550`; the reply holds both. The notes say how the finding came (without a status before the
+report, or in the report), whether it came alone or in a join group's reports, and with how many
+parts yet to report; they quote what the root told each part, and name a part that read the API's
+description itself, whose file then does not show the relay.
+
+A root that starts the three in one join group gets the "schema" session's report only with the
+other two, after they wrote: the finding arrives in time only when that session sends it without a
+status first. A root that runs "schema" first and starts the others after its report fails the first
+check alone, and the notes call it staged.
+
+```bash
+run() {  # run <name> [VAR=value ...]
+  local name=$1; shift
+  env COURIER_SCENARIO=discovery E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
+  echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
+}
+for n in 1 2 3 4 5; do run discovery-skill-$n; run discovery-noskill-$n COURIER_SKILL=deny; done
+bun script/real-model-table.ts $(for n in 1 2 3 4 5; do echo skill=$HOME/courier-runs/discovery-skill-$n noskill=$HOME/courier-runs/discovery-noskill-$n; done)
+```
+
 ## A change and its review
 
 `COURIER_SCENARIO=review`: a code change, reviewed by a session with fresh context, then fixed and
@@ -404,4 +454,4 @@ This is a smoke test, not a benchmark: a few runs on one model. A
 model that passes here can still poll or forget to report on a harder task, so a `courier_later`
 check-in still pays. Which session loads the skill varies from run to run; on one-result tasks,
 models do not load it. No table reaches the five-run floor on two models. No results for: the fan-out, `permission` with
-`COURIER_PERSON=other-server`, `recursive-staged` and `review`.
+`COURIER_PERSON=other-server`, `recursive-staged`, `discovery` and `review`.

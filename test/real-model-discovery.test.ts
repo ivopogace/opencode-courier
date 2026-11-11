@@ -36,7 +36,7 @@ const TASKS: Record<string, string> = {
 }
 const spawn = (sessionID: string, input: Record<string, unknown> = {}) => tool("courier_spawn", { task: TASKS[sessionID], ...input }, { sessionID })
 
-type Variant = "relayed" | "in-report" | "not-passed" | "grouped" | "staged" | "restarted" | "polls" | "peeks" | "grouped-other"
+type Variant = "relayed" | "in-report" | "not-passed" | "grouped" | "staged" | "restarted" | "polls" | "peeks" | "grouped-other" | "fenced"
 
 function transcripts(variant: Variant): { tree: Record<string, Message[]>; values: [string, string] } {
   const grouped = variant === "grouped" || variant === "grouped-other"
@@ -45,7 +45,7 @@ function transcripts(variant: Variant): { tree: Record<string, Message[]>; value
   const values: [string, string] = informed ? ["1999", "2550"] : ["199900", "255000"]
   const early = variant !== "in-report" && !grouped && variant !== "staged"
   const schema = [
-    user(TASKS.ses_s!),
+    user(variant === "fenced" ? `Do not touch out/a.txt or out/b.txt. ${TASKS.ses_s}` : TASKS.ses_s!),
     step("tool-calls", shell("sh api.sh describe"), ...(early ? [send("ses_root", FINDING)] : [])),
     step("tool-calls", tool("write", { path: "out/schema.txt" }), send("ses_root", early ? "Wrote out/schema.txt." : `Wrote out/schema.txt.${found}`, "done")),
     step("stop", say("Reported.")),
@@ -150,6 +150,13 @@ describe("the discovery checker", () => {
     const run = check("grouped-other")
     expect(run.failed).toEqual([FOUND, PASSED_ON, IN_TIME, FILES, REPLY])
     expect(run.notes.some((note) => note.startsWith('discovery: the "schema" session sent the root nothing about cents'))).toBe(true)
+  })
+
+  test("a schema task that names the other parts' files in a prohibition is still the schema part, by the command it ran", () => {
+    const run = check("fenced")
+    expect(run.failed).toEqual([])
+    expect(run.notes).toContain(`discovery: the "schema" session sent it without a status, before its report: ${FINDING}`)
+    expect(run.notes).not.toContain("discovery: the root started a part a second time")
   })
 
   test("a root that ran the schema part first and started the others after it fails only the first-turn check", () => {

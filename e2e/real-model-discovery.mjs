@@ -41,7 +41,11 @@ const ended = (message) =>
   (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
 const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
 const taskOf = (list) => textOf(list.find((message) => message.type === "user" || message.type === "synthetic") ?? {})
-const isSchema = (list) => /schema\.txt|describe/.test(taskOf(list)) && !/out\/[ab]\.txt/.test(taskOf(list))
+const commandsOf = (list) => toolsOf(list).flatMap((part) => (part.name === "shell" ? [part.state.input?.command ?? ""] : []))
+const partOf = (list) =>
+  commandsOf(list).map((command) => command.match(/api\.sh get ([ab])\b/)?.[1]).find(Boolean) ??
+  (commandsOf(list).some((command) => /api\.sh describe/.test(command)) ? "schema" : taskOf(list).match(/out\/(schema|a|b)\.txt/)?.[1])
+const isSchema = (list) => partOf(list) === "schema"
 const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
@@ -233,8 +237,7 @@ const onward = consumers.map(([id, entry]) => {
   const report = reportsTo(entry.list, rootID)[0]
   return { id, entry, told, reached, inTime: reached !== -1 && (report === undefined || reached < report.index) }
 })
-const fileOf = (list) => taskOf(list).match(/out\/[ab]\.txt/)?.[0]
-const outFiles = consumers.map(([, entry]) => fileOf(entry.list)).filter(Boolean)
+const outFiles = consumers.map(([, entry]) => partOf(entry.list)).filter(Boolean)
 const startedTwice = outFiles.length !== new Set(outFiles).size
 const stopped = toolsOf(root).filter((part) => part.name === "courier_stop" && part.state.status === "completed").length
 

@@ -346,6 +346,10 @@ to the parts it changes. A part that was told writes `1999` or `2550`; one that 
 the other parts a message without a status after the finding reached it, or started them after it;
 each wait ends after 150 s if the file never comes.
 
+The checker tells the parts apart by the command each session ran: `api.sh get a` or `get b`, or
+`api.sh describe` without either for "schema". A session that has run none of them counts by the
+first of `out/schema.txt`, `out/a.txt` and `out/b.txt` its task names.
+
 Nine checks: the root spawned the three parts in its first turn; it ended that turn; it did not poll;
 every session reported with a status; a message or report from the "schema" session naming cents
 reached the root; the root passed it on to each other part without a status; each of those parts had

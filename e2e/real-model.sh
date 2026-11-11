@@ -65,6 +65,13 @@ case $SCENARIO in
     fi
     CHECKER=real-model-recursive.mjs
     ;;
+  discovery)
+    SEED_PROJECT=discovery-project
+    PROMPT=${COURIER_PROMPT:-'This project has a price API, api.sh, whose amounts are in euros. Have this job done through helper sessions started with courier_spawn, one session per part, all started together, and do no part yourself. It has three parts. Part "schema" runs `sh api.sh describe` and writes what it printed to out/schema.txt. Part "a" runs `for i in $(seq 150); do [ -e .go-parts ] && break; sleep 1; done; sh api.sh get a` and writes the amount it printed, as a whole number of cents, to out/a.txt. Part "b" runs `for i in $(seq 150); do [ -e .go-parts ] && break; sleep 1; done; sh api.sh get b` and writes the amount it printed, as a whole number of cents, to out/b.txt. Another process, outside this job, creates .go-parts when those commands may go on: no session creates, removes or looks at that file, and each command is run exactly as written. When the parts have reported back, read out/a.txt and out/b.txt yourself and reply with one line: RESULTS <a> <b>'}
+    export COURIER_EXPECT=${COURIER_EXPECT:-"1999 2550"}
+    export COURIER_FILES=${COURIER_FILES:-"out/a.txt out/b.txt"}
+    CHECKER=real-model-discovery.mjs
+    ;;
   review)
     SEED_PROJECT=review-project
     PROMPT=${COURIER_PROMPT:-'The tests of this project run with `npm test`. The job: add a function `slugify(text)` to lib/words.js, exported like the one already there, that lower-cases the text, turns every run of characters other than letters and digits into one hyphen and strips hyphens from both ends, so that "Hello, World!" gives "hello-world"; with tests for it in test/words.test.js, at least three, one of them for text with punctuation at both ends. Do none of the work yourself. First, one helper session started with courier_spawn makes the change and reports. Once it has reported, one review session with fresh context, started with courier_spawn, reads the change against this job, changes nothing and reports what it found. Then have any finding that holds fixed by a helper session. Finally run `npm test` yourself and reply with one line: REVIEWED <the number of passing tests>'}
@@ -73,7 +80,7 @@ case $SCENARIO in
     export COURIER_TESTS=${COURIER_TESTS:-5}
     CHECKER=real-model-review.mjs
     ;;
-  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, recursive-staged, recursive-finding, recursive-conflict, review, permission or question"; exit 1 ;;
+  *) echo "COURIER_SCENARIO must be fanout, recursive, recursive-fault, recursive-staged, recursive-finding, recursive-conflict, discovery, review, permission or question"; exit 1 ;;
 esac
 case ${COURIER_SKILL:-} in
   "") ;;

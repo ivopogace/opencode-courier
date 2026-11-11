@@ -321,47 +321,50 @@ done
 
 ## A finding a session makes
 
-`COURIER_SCENARIO=discovery`: three parts side by side, one of which finds that the job's description
-of a shared API is wrong. In [A finding passed on](#a-finding-passed-on) the person brings the
-finding; here a session comes upon it in its own work. The project is
-`e2e/fixtures/discovery-project`: `api.sh`, whose `describe` prints that amounts are in cents, not
-euros, and whose `get a` and `get b` print `1999` and `2550`. The parent is asked:
+`COURIER_SCENARIO=discovery`: three parts side by side, one of which comes upon something the other
+two cannot work without. In [A finding passed on](#a-finding-passed-on) the person brings the
+finding; here a session meets it in its own work. The project is `e2e/fixtures/discovery-project`:
+`api.sh`, whose `init` makes a random key, prints it once and keeps only its checksum, and whose
+`get a` and `get b` print `1999` and `2550` when given that key and an error without it. The key
+exists only once the "init" part has run, so no session can know it beforehand, by reading `api.sh`
+or otherwise: it reaches the other parts through courier or not at all. The parent is asked:
 
-> This project has a price API, api.sh, whose amounts are in euros. Have this job done through helper
-> sessions started with courier_spawn, one session per part, all started together, and do no part
-> yourself. It has three parts. Part "schema" runs `` `sh api.sh describe` `` and writes what it
-> printed to out/schema.txt. Part "a" runs
-> `` `for i in $(seq 150); do [ -e .go-parts ] && break; sleep 1; done; sh api.sh get a` `` and writes
-> the amount it printed, as a whole number of cents, to out/a.txt. Part "b" runs
-> `` `for i in $(seq 150); do [ -e .go-parts ] && break; sleep 1; done; sh api.sh get b` `` and writes
-> the amount it printed, as a whole number of cents, to out/b.txt. Another process, outside this job, creates .go-parts when those
-> commands may go on: no session creates, removes or looks at that file, and each command is run
-> exactly as written. When the parts have reported back, read out/a.txt and out/b.txt yourself and
-> reply with one line: RESULTS \<a\> \<b\>
+> This project has a price API, api.sh: once `` `sh api.sh init` `` has been run,
+> `` `sh api.sh get <id>` `` prints the amount of an item as a whole number of cents. Have this job
+> done through helper sessions started with courier_spawn, one session per part, all started
+> together, and do no part yourself: run no api.sh command. It has three parts. Part "init" runs
+> `` `sh api.sh init` ``, once, and reports what it printed. Part "a" first runs
+> `` `for i in $(seq 150); do [ -e .go-parts ] && break; sleep 1; done` `` exactly as written, then
+> gets the amount of item a from the API and writes it to out/a.txt. Part "b" first runs
+> `` `for i in $(seq 150); do [ -e .go-parts ] && break; sleep 1; done` `` exactly as written, then
+> gets the amount of item b from the API and writes it to out/b.txt. Another process, outside this
+> job, creates .go-parts when parts "a" and "b" may go on: no session creates, removes or looks at
+> that file. When the parts have reported back, read out/a.txt and out/b.txt yourself and reply with
+> one line: RESULTS \<a\> \<b\>
 
-Nothing in the prompt says to tell anyone. The brief tells the "schema" session to send its parent
-what the other parts need, at once and without a status, and the skill tells the root to pass it on
-to the parts it changes. A part that was told writes `1999` or `2550`; one that was not multiplies by
-100. The checker (`e2e/real-model-discovery.mjs`) creates `.go-parts` once the root has sent each of
-the other parts a message without a status after the finding reached it, or started them after it;
+Nothing in the prompt says to tell anyone. The brief tells the "init" session to send its parent
+what the other parts need, without a status, and
+the skill tells the root to pass it on to the parts it changes. The checker
+(`e2e/real-model-discovery.mjs`) creates `.go-parts` once the root has sent each of the other parts
+a message without a status that holds the key, or started them after it with the key in the task;
 each wait ends after 150 s if the file never comes.
 
-The checker tells the parts apart by the command each session ran: `api.sh get a` or `get b`, or
-`api.sh describe` without either for "schema". A session that has run none of them counts by the
-first of `out/schema.txt`, `out/a.txt` and `out/b.txt` its task names.
+The checker tells the parts apart by what each session ran: the wait on `.go-parts` makes it "a" or
+"b", by the file its task names; `api.sh init` without that wait makes it "init". A session that has
+run neither counts by its task: one that holds the wait is "a" or "b".
 
 Nine checks: the root spawned the three parts in its first turn; it ended that turn; it did not poll;
-every session reported with a status; a message or report from the "schema" session naming cents
-reached the root; the root passed it on to each other part without a status; each of those parts had
-it before it reported, and the root stopped no part and started none twice; the files hold `1999` and
-`2550`; the reply holds both. The notes say how the finding came (without a status before the
+every session reported with a status; a message or report from the "init" session holding the key
+reached the root; the root passed the key on to each other part without a status; each of those
+parts had it before it reported, and the root stopped no part and started none twice; the files hold
+`1999` and `2550`; the reply holds both. The notes say how the key came (without a status before the
 report, or in the report), whether it came alone or in a join group's reports, and with how many
-parts yet to report; they quote what the root told each part, and name a part that read the API's
-description itself, whose file then does not show the relay.
+parts yet to report; they quote what the root told each part, and name a part that ran `init` or
+touched the key's file itself, whose file then does not show the relay.
 
-A root that starts the three in one join group gets the "schema" session's report only with the
-other two, after they wrote: the finding arrives in time only when that session sends it without a
-status first. A root that runs "schema" first and starts the others after its report fails the first
+A root that starts the three in one join group gets the "init" session's report only with the other
+two, after their `get` has failed: the key arrives in time only when that session sends it without a
+status first. A root that runs "init" first and starts the others after its report fails the first
 check alone, and the notes call it staged.
 
 ```bash

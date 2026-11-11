@@ -22,7 +22,8 @@ e2e/real-model.sh               # a real model, not in CI: real-model.md
 e2e/two-servers.sh              # two servers on one data directory, not in CI
 ```
 
-`KEEP=1` keeps a live script's temp directory and logs; `E2E_WORK` sets where it goes.
+`KEEP=1` keeps a live script's temp directory and logs; `E2E_WORK` sets where it goes. `ROUNDS`
+(default 10) sets how many `courier_later` messages `e2e/two-servers.sh` schedules each round.
 
 To try a local build in OpenCode, list the `dist` directory (not a file) in `plugins`:
 `"plugins": ["/absolute/path/to/opencode-courier/dist"]`.

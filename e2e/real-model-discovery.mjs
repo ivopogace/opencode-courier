@@ -104,7 +104,15 @@ const plainAfter = (list, to, after) => sendsTo(list, to).find((send) => send.in
 const spawnedAfter = (list, child, after) =>
   list.some((message, index) => index > after && message.type === "assistant" && message.content.some((part) => childOf(part) === child))
 const toldAfter = (list, child, after) => plainAfter(list, child, after) ?? (spawnedAfter(list, child, after) ? { spawned: true } : undefined)
-const foundIn = (list, from) => list.findIndex((message) => reportersOf(message).includes(from) && FOUND.test(message.text))
+const sectionOf = (message, from) => {
+  if (!groupOf(message)) return message.text
+  const lines = message.text.split("\n")
+  const header = /^\[\d+\/\d+\] (ses_\w+) "/
+  const start = lines.findIndex((line) => line.match(header)?.[1] === from)
+  const end = lines.findIndex((line, index) => index > start && header.test(line))
+  return start === -1 ? "" : lines.slice(start + 1, end === -1 ? lines.length : end).join("\n")
+}
+const foundIn = (list, from) => list.findIndex((message) => reportersOf(message).includes(from) && FOUND.test(sectionOf(message, from)))
 
 async function readTree() {
   const sessions = new Map([[rootID, { parentID: undefined, depth: 0, list: await messages(rootID) }]])

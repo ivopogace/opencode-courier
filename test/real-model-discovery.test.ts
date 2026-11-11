@@ -36,20 +36,22 @@ const TASKS: Record<string, string> = {
 }
 const spawn = (sessionID: string, input: Record<string, unknown> = {}) => tool("courier_spawn", { task: TASKS[sessionID], ...input }, { sessionID })
 
-type Variant = "relayed" | "in-report" | "not-passed" | "grouped" | "staged" | "restarted" | "polls" | "peeks"
+type Variant = "relayed" | "in-report" | "not-passed" | "grouped" | "staged" | "restarted" | "polls" | "peeks" | "grouped-other"
 
 function transcripts(variant: Variant): { tree: Record<string, Message[]>; values: [string, string] } {
-  const informed = variant !== "not-passed" && variant !== "grouped"
+  const grouped = variant === "grouped" || variant === "grouped-other"
+  const informed = variant !== "not-passed" && !grouped
+  const found = variant === "grouped-other" ? "" : ` ${FINDING}`
   const values: [string, string] = informed ? ["1999", "2550"] : ["199900", "255000"]
-  const early = variant !== "in-report" && variant !== "grouped" && variant !== "staged"
+  const early = variant !== "in-report" && !grouped && variant !== "staged"
   const schema = [
     user(TASKS.ses_s!),
     step("tool-calls", shell("sh api.sh describe"), ...(early ? [send("ses_root", FINDING)] : [])),
-    step("tool-calls", tool("write", { path: "out/schema.txt" }), send("ses_root", early ? "Wrote out/schema.txt." : `Wrote out/schema.txt. ${FINDING}`, "done")),
+    step("tool-calls", tool("write", { path: "out/schema.txt" }), send("ses_root", early ? "Wrote out/schema.txt." : `Wrote out/schema.txt.${found}`, "done")),
     step("stop", say("Reported.")),
     idle(),
   ]
-  const group = variant === "grouped" ? { group: "parts" } : {}
+  const group = grouped ? { group: "parts" } : {}
   const root: Message[] = [user("the job")]
   if (variant === "staged") root.push(step("tool-calls", spawn("ses_s")), step("stop", say("The schema first.")), idle())
   else root.push(step("tool-calls", spawn("ses_s", group), spawn("ses_a", group), spawn("ses_b", group), ...(variant === "polls" ? [tool("courier_children", {})] : [])), step("stop", say("split: 3 parts.")), idle())
@@ -64,12 +66,12 @@ function transcripts(variant: Variant): { tree: Record<string, Message[]>; value
   const tell = step("tool-calls", send("ses_a", FINDING), send("ses_b", FINDING))
   const tree: Record<string, Message[]> = { ses_root: root, ses_s: schema }
 
-  if (variant === "grouped") {
+  if (grouped) {
     tree.ses_a = consumer("ses_a", values[0], false)
     tree.ses_b = consumer("ses_b", values[1], false)
     root.push({
       type: "synthetic",
-      text: `<courier from="ses_s,ses_a,ses_b" group="parts" reports="3">\n[1/3] ses_s "schema": done\nWrote out/schema.txt. ${FINDING}\n[2/3] ses_a "a": done\n${values[0]}\n[3/3] ses_b "b": done\n${values[1]}\n</courier>`,
+      text: `<courier from="ses_s,ses_a,ses_b" group="parts" reports="3">\n[1/3] ses_s "schema": done\nWrote out/schema.txt.${found}\n[2/3] ses_a "a": done\nWrote ${values[0]} cents to out/a.txt\n[3/3] ses_b "b": done\n${values[1]}\n</courier>`,
       time: { created: tick() },
     })
     root.push(tell)
@@ -142,6 +144,12 @@ describe("the discovery checker", () => {
     expect(run.failed).toEqual([IN_TIME, FILES, REPLY])
     expect(run.notes).toContain('discovery: it reached the root in the reports of group "parts", with 0 of 2 other parts yet to report')
     expect(run.notes).toContain("the root started 3 session(s) in group(s) parts")
+  })
+
+  test("a join group's reports that name cents only in another part's report are no finding from the schema session", () => {
+    const run = check("grouped-other")
+    expect(run.failed).toEqual([FOUND, PASSED_ON, IN_TIME, FILES, REPLY])
+    expect(run.notes.some((note) => note.startsWith('discovery: the "schema" session sent the root nothing about cents'))).toBe(true)
   })
 
   test("a root that ran the schema part first and started the others after it fails only the first-turn check", () => {

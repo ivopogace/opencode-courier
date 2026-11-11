@@ -332,8 +332,9 @@ euros, and whose `get a` and `get b` print `1999` and `2550`. The parent is aske
 > yourself. It has three parts. Part "schema" runs `` `sh api.sh describe` `` and writes what it
 > printed to out/schema.txt. Part "a" runs
 > `` `for i in $(seq 150); do [ -e .go-parts ] && break; sleep 1; done; sh api.sh get a` `` and writes
-> the amount it printed, as a whole number of cents, to out/a.txt. Part "b" runs the same with
-> `get b` and writes to out/b.txt. Another process, outside this job, creates .go-parts when those
+> the amount it printed, as a whole number of cents, to out/a.txt. Part "b" runs
+> `` `for i in $(seq 150); do [ -e .go-parts ] && break; sleep 1; done; sh api.sh get b` `` and writes
+> the amount it printed, as a whole number of cents, to out/b.txt. Another process, outside this job, creates .go-parts when those
 > commands may go on: no session creates, removes or looks at that file, and each command is run
 > exactly as written. When the parts have reported back, read out/a.txt and out/b.txt yourself and
 > reply with one line: RESULTS \<a\> \<b\>

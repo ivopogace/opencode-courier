@@ -23,7 +23,7 @@ const tool = (name: string, input: unknown, metadata: unknown = {}) => ({ type: 
 const report = (from: string, text: string): Message => ({ type: "synthetic", text: `<courier from="${from}" status="done">\n${text}\n</courier>`, time: { created: tick() } })
 const child = (value: string) => [user("brief"), step("tool-calls", tool("shell", { command: `echo ${value}` }), tool("courier_send", { sessionID: "ses_parent", message: value, status: "done" })), step("stop", say("Reported.")), idle()]
 
-type Shape = "apart" | "apart-notices" | "steered" | "steered-look" | "look-first"
+type Shape = "apart" | "apart-notices" | "steered" | "steered-look" | "look-first" | "look-before-spawn"
 
 function parentOf(shape: Shape): Message[] {
   const spawns = step("tool-calls", tool("courier_spawn", { task: "a" }, { sessionID: "ses_a" }), tool("courier_spawn", { task: "b" }, { sessionID: "ses_b" }))
@@ -34,6 +34,7 @@ function parentOf(shape: Shape): Message[] {
     return [user("fan out"), spawns, step("stop", say("Both started.")), idle(), report("ses_a", "391"), step("stop", say("a is in.")), idle(), report("ses_b", "1024"), step("stop", say("RESULTS 391 1024")), idle()]
   return [
     user("fan out"),
+    ...(shape === "look-before-spawn" ? [look] : []),
     spawns,
     ...(shape === "look-first" ? [look] : []),
     report("ses_a", "391"),
@@ -83,5 +84,8 @@ describe("the fan-out checker and a report that reaches the parent while its fir
   test("one look after the steered report is no poll; one before any report is", () => {
     expect(check("steered-look").failed).toEqual([])
     expect(check("look-first").failed).toEqual([POLL])
+  })
+  test("a look before the first spawn is no poll", () => {
+    expect(check("look-before-spawn").failed).toEqual([])
   })
 })

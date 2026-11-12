@@ -37,7 +37,7 @@ const TASKS: Record<string, string> = {
   ses_a2: `Again: get the amount of item a from the API and write it to out/a.txt. The key: ${KEY}`,
 }
 
-type Variant = "relayed" | "in-report" | "not-passed" | "vague" | "grouped" | "grouped-other" | "staged" | "restarted" | "polls" | "own-init" | "fenced" | "searched" | "looked"
+type Variant = "relayed" | "in-report" | "not-passed" | "vague" | "grouped" | "grouped-other" | "staged" | "restarted" | "polls" | "own-init" | "fenced" | "searched" | "looked" | "carried" | "quoted"
 
 function transcripts(variant: Variant): { tree: Record<string, Message[]>; values: [string, string] } {
   const grouped = variant === "grouped" || variant === "grouped-other"
@@ -77,15 +77,16 @@ function transcripts(variant: Variant): { tree: Record<string, Message[]>; value
   const tell = step("tool-calls", send("ses_a", words), send("ses_b", words))
   const tree: Record<string, Message[]> = { ses_root: root, ses_i: init }
 
-  if (variant === "looked") {
+  if (variant === "looked" || variant === "carried" || variant === "quoted") {
+    const heldPart = variant === "quoted" ? ` I found ${KEY} in server.log; is it the one?` : variant === "carried" ? `\n\nHeld with group "parts" so far, 1 report, shown now in case what this session needs is in it.\n\n- ses_i "init": done\n${inReport}` : ""
     const look = { type: "tool", name: "courier_children", state: { status: "completed", input: {}, metadata: {}, content: [{ type: "text", text: `ses_i: its report is held with group "parts": init ran. ${FINDING}` }] } }
     const finish = (item: string) => [step("tool-calls", shell(`sh api.sh get ${item} ${KEY}`), tool("write", { path: `out/${item}.txt` }), send("ses_root", item === "a" ? "1999" : "2550", "done")), step("stop", say("Reported.")), idle()]
     root.splice(1, root.length - 1, step("tool-calls", spawn("ses_i", { group: "parts" }), spawn("ses_a", { group: "parts" }), spawn("ses_b", { group: "parts" })), step("stop", say("split: 3 parts.")), idle())
     init.splice(1, init.length - 1, step("tool-calls", shell("sh api.sh init"), send("ses_root", inReport, "done")), step("stop", say("Reported.")), idle())
     tree.ses_b = [user(tasks.ses_b!), step("tool-calls", shell(WAIT)), step("tool-calls", shell("sh api.sh get b"), send("ses_root", "I need the key that get asks for.", "blocked")), step("stop", say("Blocked.")), idle()]
     tree.ses_a = [user(tasks.ses_a!), step("tool-calls", shell(WAIT))]
-    root.push({ type: "synthetic", text: '<courier from="ses_b" status="blocked">\nI need the key that get asks for.\n</courier>', time: { created: tick() } })
-    root.push(step("tool-calls", look), step("tool-calls", send("ses_a", FINDING), send("ses_b", FINDING)), step("stop", say("Passed on.")), idle())
+    root.push({ type: "synthetic", text: `<courier from="ses_b" status="blocked">\nI need the key that get asks for.${heldPart}\n</courier>`, time: { created: tick() } })
+    root.push(...(variant === "looked" ? [step("tool-calls", look)] : []), step("tool-calls", send("ses_a", FINDING), send("ses_b", FINDING)), step("stop", say("Passed on.")), idle())
     tree.ses_a.push(plain("ses_root", FINDING), ...finish("a"))
     tree.ses_b.push(plain("ses_root", FINDING), ...finish("b"))
     root.push({
@@ -228,5 +229,18 @@ describe("the discovery checker", () => {
     expect(run.failed).toEqual([IN_TIME])
     expect(run.notes).toContain("discovery: it reached the root through its own look with courier_children or courier_tree, the report still held, with 1 of 2 other parts yet to report")
     expect(run.notes).toContain(`discovery: the root told ses_b: ${FINDING}`)
+  })
+
+  test("a key that came with another part's blocked report, among the reports its group held, counts from that report", () => {
+    const run = check("carried")
+    expect(run.failed).toEqual([IN_TIME])
+    expect(run.notes).toContain("discovery: it reached the root with another part's blocked report, among the reports its group held, with 1 of 2 other parts yet to report")
+    expect(run.notes).toContain(`discovery: the root told ses_a: ${FINDING}`)
+  })
+
+  test("a key a part quotes in its own blocked report did not come from the init session: it arrives with the group's reports", () => {
+    const run = check("quoted")
+    expect(run.failed).toEqual([PASSED_ON, IN_TIME])
+    expect(run.notes).toContain('discovery: it reached the root in the reports of group "parts", with 0 of 2 other parts yet to report')
   })
 })

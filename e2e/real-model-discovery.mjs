@@ -124,8 +124,11 @@ const arrivalOf = (root, init, initID) => {
   const key = sendsTo(init, rootID).map((send) => send.message.match(KEY)?.[0]).find(Boolean) ?? keyAt(root, initID, told)
   const seen = (message) => message.type === "assistant" && message.content.some((part) => part.type === "tool" && LOOKS.has(part.name) && JSON.stringify(part.state).includes(key))
   const looked = key === undefined ? -1 : root.findIndex(seen)
-  const first = told === -1 ? looked : looked === -1 ? told : Math.min(told, looked)
-  return { foundAt: first, key, looked: looked !== -1 && looked === first }
+  const heldPart = (text) => (text.includes("\nHeld with group ") ? text.slice(text.indexOf("\nHeld with group ")) : "")
+  const carried = key === undefined ? -1 : root.findIndex((message) => message.type === "synthetic" && /^<courier from="ses_\w+" status="blocked">/.test(message.text) && !sendersOf(message).includes(initID) && heldPart(message.text).includes(key))
+  const first = Math.min(...[told, looked, carried].filter((index) => index !== -1), Infinity)
+  if (first === Infinity) return { foundAt: -1, key }
+  return { foundAt: first, key, looked: looked === first, carried: carried === first }
 }
 
 async function readTree() {
@@ -245,7 +248,7 @@ const fileText = (file) => {
 }
 const fileTexts = files.map(fileText)
 
-const { foundAt, key, looked } = initID ? arrivalOf(root, init, initID) : { foundAt: -1 }
+const { foundAt, key, looked, carried } = initID ? arrivalOf(root, init, initID) : { foundAt: -1 }
 const foundSend = sendsTo(init, rootID).find((send) => KEY.test(send.message))
 const onward = consumers.map(([id, entry]) => {
   const told = foundAt === -1 ? undefined : toldAfter(root, id, foundAt, key)
@@ -299,7 +302,7 @@ else notes.push(`discovery: the "init" session sent it ${foundSend.status ? `in 
 if (initID && foundAt !== -1) {
   const arrival = root[foundAt]
   const running = consumers.filter(([, entry]) => reportsTo(entry.list, rootID).every((send) => entry.list[send.index].time.created > arrival.time.created)).length
-  notes.push(`discovery: it reached the root ${looked ? "through its own look with courier_children or courier_tree, the report still held" : groupOf(arrival) ? `in the reports of group "${groupOf(arrival)}"` : "in a message of its own"}, with ${running} of ${consumers.length} other parts yet to report`)
+  notes.push(`discovery: it reached the root ${carried ? "with another part's blocked report, among the reports its group held" : looked ? "through its own look with courier_children or courier_tree, the report still held" : groupOf(arrival) ? `in the reports of group "${groupOf(arrival)}"` : "in a message of its own"}, with ${running} of ${consumers.length} other parts yet to report`)
 }
 for (const one of onward) {
   if (one.told?.spawned) notes.push(`discovery: the root started ${one.id} only after the finding had arrived: staged, nothing to pass on mid-run`)

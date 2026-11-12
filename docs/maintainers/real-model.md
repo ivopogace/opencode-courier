@@ -358,8 +358,9 @@ run neither counts by its task: one that holds the wait is "a" or "b".
 
 Nine checks: the root spawned the three parts in its first turn; it ended that turn; it did not poll;
 every session reported with a status; a message or report from the "init" session holding the key
-reached the root, or the root read the key with `courier_children` or `courier_tree` from a report a
-join group still held; the root passed the key on to each other part without a status after that;
+reached the root, or the key came with another part's `blocked` report among the reports its group
+held, or the root read it with `courier_children` or `courier_tree` from a report still held; the
+root passed the key on to each other part without a status after that;
 each of those parts had it before it reported, and the root stopped no part and started none twice;
 the files hold `1999` and `2550`; the reply holds both. The notes say how the key came (without a
 status before the report, in the report, or by the root's own look), whether it came alone or in a

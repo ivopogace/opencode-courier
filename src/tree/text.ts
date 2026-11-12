@@ -519,6 +519,17 @@ const LEFT_HOW = {
   dropped: "you dropped it with courier_cleanup",
 }
 
+export function heldSoFar(group: string, reports: ReadonlyArray<HeldReport & { readonly sessionID: string; readonly title: string }>) {
+  if (!reports.length) return ""
+  return [
+    "",
+    "",
+    `Held with group "${group}" so far, ${count(reports.length, "report")}, shown now in case what this session needs is in ${reports.length === 1 ? "it" : "them"}. ` +
+      `The group's message brings ${reports.length === 1 ? "it" : "them"} again once every member has reported.`,
+    ...reports.flatMap((report) => ["", `- ${report.sessionID} "${report.title}": ${report.status}`, reportBody(report.message, report.artifacts)]),
+  ].join("\n")
+}
+
 export function groupNotice(group: string, reports: ReadonlyArray<HeldReport & { readonly sessionID: string; readonly title: string }>, left: ReadonlyArray<LeftMember> = []) {
   const total = reports.length + left.length
   const listed = reports.flatMap((report, index) => [

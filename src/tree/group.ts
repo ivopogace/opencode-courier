@@ -89,6 +89,11 @@ export async function leave(ports: Pick<WatchPorts, "storage" | "log">, member: 
   }
 }
 
+export async function heldByOthers(groups: Pick<GroupStore, "ofGroup">, { parentID, group, sessionID }: Membership) {
+  const members = (await groups.ofGroup(parentID, group)).sort((a, b) => a.joinedAt - b.joinedAt)
+  return members.flatMap((member) => (member.report && member.sessionID !== sessionID ? [{ sessionID: member.sessionID, title: member.title, ...member.report }] : []))
+}
+
 export async function unholdForBlocked(groups: GroupStore, membership: Membership) {
   const { parentID, group, sessionID, title, joinedAt } = membership
   if (!membership.report) return

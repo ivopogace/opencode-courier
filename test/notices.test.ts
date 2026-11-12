@@ -342,6 +342,9 @@ describe("join groups", () => {
         { sessionID: "ses_g", title: "Review g.ts", by: "dropped" },
       ]),
     ).toMatchSnapshot()
+    expect(tree.heldSoFar("reviews", reports.slice(0, 2))).toMatchSnapshot()
+    expect(tree.heldSoFar("reviews", reports.slice(0, 1))).toMatchSnapshot()
+    expect(tree.heldSoFar("reviews", [])).toBe("")
   })
 })
 

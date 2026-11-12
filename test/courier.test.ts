@@ -967,6 +967,45 @@ describe("send, from a member of a group", () => {
     expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000, by: "report", status: "blocked" })
   })
 
+  test("a blocked report brings the reports its group holds from the other members, which stay held", async () => {
+    const { ports, calls, store } = fakePorts()
+    await grouped(ports)
+    await send(ports, "ses_other", { sessionID: "ses_parent", message: "init ran; get needs key-0a1b2c3d", status: "done", artifacts: { files: ["out/init.txt"] } })
+
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "I need the key.", status: "blocked" })
+
+    const [blocked] = calls.filter((call) => call.method === "session.synthetic")
+    expect(blocked!.input.text).toBe(
+      '<courier from="ses_child" status="blocked">\nI need the key.\n\n' +
+        'Held with group "pair" so far, 1 report, shown now in case what this session needs is in it. The group\'s message brings it again once every member has reported.\n\n' +
+        '- ses_other "B": done\ninit ran; get needs key-0a1b2c3d\n\nArtifacts:\n- files: out/init.txt\n</courier>',
+    )
+    expect(store.get(memberKey("ses_parent", "pair", "ses_other"))).toMatchObject({ report: { status: "done" } })
+  })
+
+  test("a blocked report brings nothing of its own held report, nor a section when the group holds none", async () => {
+    const { ports, calls } = fakePorts()
+    await grouped(ports)
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done.", status: "done" })
+
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "Which?", status: "blocked" })
+
+    expect(calls.filter((call) => call.method === "session.synthetic").map((call) => call.input.text)).toEqual(['<courier from="ses_child" status="blocked">\nWhich?\n</courier>'])
+  })
+
+  test("a blocked report goes out without the held reports when they cannot be read", async () => {
+    const { ports, calls, logs } = fakePorts()
+    await grouped(ports)
+    await send(ports, "ses_other", { sessionID: "ses_parent", message: "Done.", status: "done" })
+    const scan = ports.storage.scan
+    ;(ports.storage as any).scan = async (query: { prefix: string }) => (query.prefix.includes("pair") ? Promise.reject(new Error("storage is down")) : scan(query as any))
+
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "Which?", status: "blocked" })
+
+    expect(calls.filter((call) => call.method === "session.synthetic").map((call) => call.input.text)).toEqual(['<courier from="ses_child" status="blocked">\nWhich?\n</courier>'])
+    expect(logs.some((line) => line.includes("could not be read for ses_child's blocked report"))).toBe(true)
+  })
+
   test("a blocked report after a held one drops the held one, stale now, so the member is out again", async () => {
     const { ports, store } = fakePorts()
     await grouped(ports)

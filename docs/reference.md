@@ -351,6 +351,11 @@ replaces it. Everything else reaches the parent at once: a `blocked` report (the
 until it reports again), progress, a failed turn and a silent end; at the top of the tree also a
 permission request, a question and a form, which below it [go to the top](#a-child-that-asks-for-permission).
 
+**A blocked member and the held reports.** A member's `blocked` report brings, after its own text, the
+reports the group holds from the other members, under `Held with group "<name>" so far`: what the
+member waits for may be in one of them, and the parent would otherwise see it only once that member
+has reported. They stay held and come again in the group's message.
+
 **The release.** The message is wrapped in `<courier from="<members>" group="<name>"
 reports="<n>">`. It counts the reports by status, then lists each in join order, as
 `[i/n] <sessionID> "<title>": <status>` with its text and artifacts, then the members that left

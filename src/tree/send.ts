@@ -1,9 +1,9 @@
 import { envelope, isStatus, STATUSES, type Status } from "../kernel/protocol.js"
-import { groupStanding, holdReport, membershipFor, unholdForBlocked } from "./group.js"
+import { groupStanding, heldByOthers, holdReport, membershipFor, unholdForBlocked } from "./group.js"
 import type { Artifacts, CourierPorts, Held, HeldReport, Membership, RosterEntry, Sent } from "./ports.js"
 import { syncStanding } from "./standing.js"
 import { childStore, groupStore } from "./store.js"
-import { reportBody } from "./text.js"
+import { heldSoFar, reportBody } from "./text.js"
 import { noteSent } from "./wake.js"
 
 export interface SendInput {
@@ -31,7 +31,8 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
 }
 
 async function deliver(ports: CourierPorts, from: string, input: SendInput, status: Status | undefined, noted: Awaited<ReturnType<typeof noteReport>>): Promise<Sent> {
-  const text = envelope(from, reportBody(input.message, input.artifacts), status ? { status } : {})
+  const held = noted?.member && status === "blocked" ? await heldWith(ports, noted.member) : ""
+  const text = envelope(from, reportBody(input.message, input.artifacts) + held, status ? { status } : {})
   const description = `Message from ${from}`
   const delivered = await ports.session.synthetic({
     sessionID: input.sessionID,
@@ -43,6 +44,15 @@ async function deliver(ports: CourierPorts, from: string, input: SendInput, stat
   await noteSent(ports, { sessionID: input.sessionID, inboxID: delivered.id, text, description }).catch(() => undefined)
   if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)
   return { messageID: delivered.id, ...(status ? { status } : {}) }
+}
+
+async function heldWith(ports: CourierPorts, member: Membership) {
+  try {
+    return heldSoFar(member.group, await heldByOthers(groupStore(ports.storage), member))
+  } catch (error) {
+    ports.log(`courier_send: the reports held with group ${member.group} could not be read for ${member.sessionID}'s blocked report: ${String(error)}`)
+    return ""
+  }
 }
 
 async function statusFor(ports: CourierPorts, from: string, input: SendInput): Promise<{ status?: Status; dropped?: Status }> {

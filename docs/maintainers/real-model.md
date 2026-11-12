@@ -273,6 +273,12 @@ part's session passed them on to each of its halves, by message or in the task o
 after they arrived. Notes say whether the "count" session also sent the words up itself, and quote
 every message to it after the envelope.
 
+The checker finds the "count" session by `99 - 57`, or `count/total.txt` in a sentence of its task that
+holds no negation and does not call the file another part's ("the other part writes count/total.txt"
+names it to forbid touching it). The checks read the session the plugin's envelope names
+(`route="prompt"`, the session that was told), not the first session whose task names the file; with
+no such envelope they read the first depth-1 session that matches.
+
 ```bash
 run() {  # run <name> [VAR=value ...]
   local name=$1; shift

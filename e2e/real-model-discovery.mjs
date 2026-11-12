@@ -119,6 +119,14 @@ const sectionOf = (message, from) => {
 }
 const foundIn = (list, from) => list.findIndex((message) => reportersOf(message).includes(from) && KEY.test(sectionOf(message, from)))
 const keyAt = (list, from, index) => (index === -1 ? undefined : sectionOf(list[index], from).match(KEY)[0])
+const arrivalOf = (root, init, initID) => {
+  const told = foundIn(root, initID)
+  const key = sendsTo(init, rootID).map((send) => send.message.match(KEY)?.[0]).find(Boolean) ?? keyAt(root, initID, told)
+  const seen = (message) => message.type === "assistant" && message.content.some((part) => part.type === "tool" && LOOKS.has(part.name) && JSON.stringify(part.state).includes(key))
+  const looked = key === undefined ? -1 : root.findIndex(seen)
+  const first = told === -1 ? looked : looked === -1 ? told : Math.min(told, looked)
+  return { foundAt: first, key, looked: looked !== -1 && looked === first }
+}
 
 async function readTree() {
   const sessions = new Map([[rootID, { parentID: undefined, depth: 0, list: await messages(rootID) }]])
@@ -144,9 +152,9 @@ for (;;) {
     tree = await readTree()
     const root = tree.get(rootID).list
     const { initID, consumers } = rolesOf(tree)
-    const foundAt = initID ? foundIn(root, initID) : -1
     const init = initID ? tree.get(initID).list : []
-    const passed = foundAt !== -1 && consumers.every(([id]) => toldAfter(root, id, foundAt, keyAt(root, initID, foundAt)))
+    const { foundAt, key } = initID ? arrivalOf(root, init, initID) : { foundAt: -1 }
+    const passed = foundAt !== -1 && consumers.every(([id]) => toldAfter(root, id, foundAt, key))
     const answered = foundAt !== -1 && settled(root) && root.slice(foundAt + 1).some((message) => message.type === "assistant")
     const onItsWay = sendsTo(init, rootID).some((send) => !send.status && KEY.test(send.message))
     const held = foundAt === -1 && !onItsWay && settled(init) && reportsTo(init, rootID).length > 0 && settled(root)
@@ -237,8 +245,7 @@ const fileText = (file) => {
 }
 const fileTexts = files.map(fileText)
 
-const foundAt = initID ? foundIn(root, initID) : -1
-const key = keyAt(root, initID, foundAt)
+const { foundAt, key, looked } = initID ? arrivalOf(root, init, initID) : { foundAt: -1 }
 const foundSend = sendsTo(init, rootID).find((send) => KEY.test(send.message))
 const onward = consumers.map(([id, entry]) => {
   const told = foundAt === -1 ? undefined : toldAfter(root, id, foundAt, key)
@@ -292,14 +299,14 @@ else notes.push(`discovery: the "init" session sent it ${foundSend.status ? `in 
 if (initID && foundAt !== -1) {
   const arrival = root[foundAt]
   const running = consumers.filter(([, entry]) => reportsTo(entry.list, rootID).every((send) => entry.list[send.index].time.created > arrival.time.created)).length
-  notes.push(`discovery: it reached the root ${groupOf(arrival) ? `in the reports of group "${groupOf(arrival)}"` : "in a message of its own"}, with ${running} of ${consumers.length} other parts yet to report`)
+  notes.push(`discovery: it reached the root ${looked ? "through its own look with courier_children or courier_tree, the report still held" : groupOf(arrival) ? `in the reports of group "${groupOf(arrival)}"` : "in a message of its own"}, with ${running} of ${consumers.length} other parts yet to report`)
 }
 for (const one of onward) {
   if (one.told?.spawned) notes.push(`discovery: the root started ${one.id} only after the finding had arrived: staged, nothing to pass on mid-run`)
   else if (one.told) notes.push(`discovery: the root told ${one.id}: ${short(one.told.message, 200)}`)
   else notes.push(`discovery: the root sent ${one.id} no message without a status that holds the key`)
-  const own = toolsOf(one.entry.list).filter((part) => part.name === "shell" && /api\.sh init\b|\.api-key/.test(part.state.input?.command ?? ""))
-  if (own.length) notes.push(`discovery: ${one.id} ran init or touched the key's file itself, ${own.length} call(s): what it wrote does not show the relay`)
+  const own = toolsOf(one.entry.list).filter((part) => part.name === "shell" && /api\.sh init\b|\.api-key|share\/opencode|server\.log|probe\.log|key-\[/.test(part.state.input?.command ?? ""))
+  if (own.length) notes.push(`discovery: ${one.id} ran init, touched the key's file or searched outside the project for the key, ${own.length} call(s): what it wrote does not show the relay`)
 }
 if (startedTwice) notes.push("discovery: the root started a part a second time")
 if (stopped) notes.push(`discovery: the root stopped ${stopped} session(s)`)

@@ -327,7 +327,7 @@ finding; here a session meets it in its own work. The project is `e2e/fixtures/d
 `api.sh`, whose `init` makes a random key, prints it once and keeps only its checksum, and whose
 `get a` and `get b` print `1999` and `2550` when given that key and an error without it. The key
 exists only once the "init" part has run, so no session can know it beforehand, by reading `api.sh`
-or otherwise: it reaches the other parts through courier or not at all. The parent is asked:
+or otherwise: a part that stays inside the project gets it through courier or not at all. The parent is asked:
 
 > This project has a price API, api.sh: once `` `sh api.sh init` `` has been run,
 > `` `sh api.sh get <id>` `` prints the amount of an item as a whole number of cents. Have this job
@@ -358,12 +358,17 @@ run neither counts by its task: one that holds the wait is "a" or "b".
 
 Nine checks: the root spawned the three parts in its first turn; it ended that turn; it did not poll;
 every session reported with a status; a message or report from the "init" session holding the key
-reached the root; the root passed the key on to each other part without a status; each of those
-parts had it before it reported, and the root stopped no part and started none twice; the files hold
-`1999` and `2550`; the reply holds both. The notes say how the key came (without a status before the
-report, or in the report), whether it came alone or in a join group's reports, and with how many
-parts yet to report; they quote what the root told each part, and name a part that ran `init` or
-touched the key's file itself, whose file then does not show the relay.
+reached the root, or the root read the key with `courier_children` or `courier_tree` from a report a
+join group still held; the root passed the key on to each other part without a status after that;
+each of those parts had it before it reported, and the root stopped no part and started none twice;
+the files hold `1999` and `2550`; the reply holds both. The notes say how the key came (without a
+status before the report, in the report, or by the root's own look), whether it came alone or in a
+join group's reports, and with how many parts yet to report; they quote what the root told each part.
+
+The key is not out of a part's reach: the run's work directory, one level above the project, holds
+the server's log and OpenCode's own files, with the "init" session's shell output in them. The notes
+name a part that ran `init`, touched the key's file or searched those files for the key, whose file
+then does not show the relay.
 
 A root that starts the three in one join group gets the "init" session's report only with the other
 two, after their `get` has failed: the key arrives in time only when that session sends it without a

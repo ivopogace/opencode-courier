@@ -61,36 +61,9 @@ npm registry and redirects every other request to the real one.
 
 ## Recording the demo
 
-The README's video is made in two steps, neither in CI:
-
-```bash
-OPENCODE_BIN=... script/record-demo.sh demo.cast   # about 4 minutes, in real time
-script/render-demo.sh demo.cast                    # demo.mp4, about 6 minutes
-```
-
-`record-demo.sh` drives the TUI in `tmux`, scene by scene, on `e2e/tui.sh`'s setup, and writes an
-asciicast with a marker per scene and highlight. It needs tmux, jq, curl and what `e2e/tui.sh`
-needs. A scene whose screen does not come ends the run, printing that screen.
-
-`render-demo.sh` adds the voice-over (`script/demo-narration.json`, a line per scene, spoken with
-Kokoro-82M through `uv`) and the highlights, and scales to 1920×1080. It needs agg, ffmpeg, node, uv
-and `fc-match` (or `FONT` and `MONO_FONT`). A narration change needs only the render.
-
-| Setting | Default | |
-|---|---|---|
-| `COLS`, `ROWS` | `160`, `42` | Terminal size for the recording. |
-| `PACE` | `1` | Scales the holds after each step; `0.3` for a quick check. |
-| `TYPE_DELAY` | `0.05` | Seconds per typed key. |
-| `FONT_SIZE`, `FPS` | `20`, `15` | The render's font size and frame rate. |
-| `IDLE` | `3` | The longest pause kept in the cast, in seconds. |
-
-A feature with something to see in the TUI gets a scene in `record-demo.sh` and its line in the
-narration. GitHub plays a video only from its own uploads: drag the file into an issue or PR comment
-and put the URL it gives on its own line in README.md.
-
 The README's GIF, two issues fixed in parallel by an orchestrator, a lead per issue and their four
 workers, with one worker's finding passed on by its lead to the sibling it changes, walked through in
-the tree panel, is made the same way, without a voice: each step has a caption under the screen, and
+the tree panel, is made in two steps, neither in CI: each step has a caption under the screen, and
 each key pressed shows beside it.
 
 ```bash
@@ -98,13 +71,37 @@ OPENCODE_BIN=... script/record-gif.sh demo-gif                 # about 2 minutes
 uv run script/render-gif.py demo-gif docs/demo.gif             # about 1 minute
 ```
 
-`record-gif.sh` shares `script/demo-lib.sh` with `record-demo.sh`, but keeps tmux's own screens,
-about twelve a second, rather than a cast, so the render needs no terminal emulator: `render-gif.py`
-draws them with Pillow and has ffmpeg encode the GIF. Its scenario is `e2e/mock-model.mjs`'s
+`record-gif.sh` drives the TUI in `tmux`, scene by scene, on `e2e/tui.sh`'s setup, with the helpers
+of `script/demo-lib.sh`. It needs tmux and what `e2e/tui.sh` needs. A scene whose screen does not
+come ends the run, printing that screen. It keeps tmux's own screens, about twelve a second, so the
+render needs no terminal emulator: `render-gif.py` draws them with Pillow and has ffmpeg encode the
+GIF; it needs ffmpeg, uv and `fc-match`. The scenario is `e2e/mock-model.mjs`'s
 `demoTree`; `MOCK_CHILD_DELAY_MS` (`7000`) paces its workers, each of whose messages takes two to
-four times it. The render takes `FONT_SIZE` (`14`), `FPS` (`10`) and `IDLE` (`2.5`), and the fonts
-as `MONO_FONT`, `MONO_BOLD_FONT`, `FONT` and `KEY_FONT` (else `fc-match`'s DejaVu Sans Mono, Inter
-and DejaVu Sans).
+four times it. A `look` puts the spotlight on the lines a caption is about, and `hold` moves it with
+them when the transcript scrolls; `zoom on` and `zoom off` mark the moments that carry the story,
+where the render magnifies the spotlight.
+
+The recording takes `COLS` and `ROWS` (`160`, `40`), the terminal's size, `PACE` (`1`), which
+scales the holds after each step (`0.3` for a quick check), and `TYPE_DELAY` (`0.05`), the seconds
+per typed key.
+
+The render takes `FONT_SIZE` (`14`), `FPS` (`10`) and `IDLE` (`2.5`), and the fonts as `MONO_FONT`,
+`MONO_BOLD_FONT`, `FONT` and `KEY_FONT` (else `fc-match`'s DejaVu Sans Mono, Inter and DejaVu Sans).
+Two more settings are for what moves:
+
+| Setting | Default | |
+|---|---|---|
+| `MOTION_FPS` | `20` | The frame rate while something animates: the spotlight's glide, a caption's turn, a key's badge, a click's ripple, the zoom. `10` halves those frames. |
+| `ZOOM` | `1.15` | How much a zoomed spotlight is magnified; `1` for none. |
+
+A frame is written only when the picture changes. The line along the bottom edge is the progress,
+moving once a second and full on the last frame, with a tick where each scene starts. The last frame holds for 3 s and
+dissolves into the first.
+
+`docs/demo.gif` stays under 3 MB: the README loads it from GitHub. A frame that changes the whole
+picture costs 50 to 80 KB, so the shade around the spotlight cuts in and out while the box glides,
+and the zoom magnifies the spotlight alone, not the screen. `render-gif.py` prints the size; over the
+limit, render with `MOTION_FPS=10` or `ZOOM=1`.
 
 ## CI
 

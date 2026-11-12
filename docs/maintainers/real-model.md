@@ -245,8 +245,22 @@ finding has come down two levels. The checker, run with `--finding`, plays the p
 followed by ` checked`, then creates `.go-count`, which lets that part go on. Once each session the
 other part started has been sent a message without a status after the finding reached that part, or
 was started after it with the finding in its task, it
-creates `.go-halves`, which lets the halves go on. Each wait ends after 150 s if its file never
-comes. The prompt says another process creates those files and no session touches them, so a run's
+creates `.go-halves`, which lets the halves go on.
+
+A failing run waits out no timeout. The checker creates a file as well once the finding can no
+longer end the wait on it: when every session has ended its turn or sits in a shell call that waits
+on a file not yet created, and at least one waits on that file. Nothing can then move before the
+wait runs out, so the checker ends it, `.go-count` before `.go-halves`, one file a reading. A
+session still in its turn, one just started and one whose wait is over all count as moving, and so
+does the other part's session while a message the root sent it has not arrived. The log names why,
+by where the finding stopped: the root has it and ended its turn without passing it on to each
+other part; the other part's session has it and ended its turn without passing it on to each of its
+sessions; the root passed it to a session that sits in the wait itself; it has not reached the
+root; or the person's message was never written, for want of a "count" session at depth 1 in a turn
+to take it. The decision is `releaseOf` in `e2e/real-model-recursive-release.mjs`, a pure function
+of the transcripts. The 150 s in each command only bounds a wait whose checker has stopped.
+
+The prompt says another process creates those files and no session touches them, so a run's
 timeline shows whether one did. Neither the prompt nor the person's message says to pass the finding on: the plugin
 passes it up, and the skill says to pass it on to the parts it changes.
 
@@ -288,6 +302,12 @@ assistant message and no settled report, prompts it:
 
 then creates `.go-halves`. The item is delivered at the half's step after its wait ends, so the
 sessions above read the envelope after the half has started acting on the words.
+
+A run with no session to write to waits out no timeout either: the release of
+[A finding passed on](#a-finding-passed-on) holds here. Once every session has ended its turn or
+sits in a wait, the checker creates `.go-count` when no session at depth 1 has run the "count"
+part, and `.go-halves` when no half for `numbers/b.txt` at depth 2 is in a turn to take the
+person's message, as when the root started the halves itself. Its log names which.
 
 The checks: the seven of the recursive set that do not read the files or the reply, then six. The
 files hold `391` and `42` and `numbers/b.txt` does not exist; the half's report to its parent holds

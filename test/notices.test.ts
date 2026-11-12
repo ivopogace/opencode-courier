@@ -131,7 +131,7 @@ describe("envelope and child brief", () => {
     for (const depth of [1, 2, 3]) expect(tree.childBrief("ses_parent", "Fix the bug", depth, limits)).not.toContain(kernel.ONE_PART_LINE)
     for (const depth of [0, 1, 2, 3]) expect(tree.rolePart(depth, limits)).not.toContain(kernel.ONE_PART_LINE)
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("start the parts that run at once in one group, with the same group name for each, which holds their reports until all are in. Leave out of the group a part whose result the others need while they run (one that sets up, probes or decides something they use): its report wakes you alone, and you courier_send them the result. Then end your turn while they work.")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("start the parts that run at once in one group, with the same group name for each: it holds their reports until all are in. Leave out of the group a part whose result the others need while they run (one that sets up, probes or decides something they use): its report wakes you alone, and you courier_send them the result. Then end your turn while they work.")
     expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
     expect(tree.rolePart(1, limits)).toContain(`load the ${kernel.SKILL_ID} skill`)
     expect(tree.rolePart(3, limits)).not.toContain(kernel.SKILL_ID)

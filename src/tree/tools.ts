@@ -135,7 +135,7 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
       "back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report " +
       "instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). " +
       "Give a batch of parallel sessions one group name to " +
-      "be woken once, with all their reports, instead of once per report, and none to one whose result the others need " +
+      "be woken once, with all their reports, instead of once per report, but give none to a session whose result the others need " +
       "while they run. DO NOT poll it or call courier_children in a " +
       "loop: once you have started the sessions you need, end your turn by replying without calling more tools; each " +
       "report, or each group's reports, starts a new turn in which you carry on. For a long task or batch, also " +

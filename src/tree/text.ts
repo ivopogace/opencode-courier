@@ -65,8 +65,8 @@ function splitRule(parentID: string, depth: number, limits: Limits) {
       "a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. " +
       "One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.",
     `- Say which in one line of your reply: ${SPLIT_LINE}.`,
-    "- If you split, you orchestrate: start the parts that run at once in one group, with the same group name for each, " +
-      "which holds their reports until all are in. Leave out of the group a part whose result the others need while they " +
+    "- If you split, you orchestrate: start the parts that run at once in one group, with the same group name for each: " +
+      "it holds their reports until all are in. Leave out of the group a part whose result the others need while they " +
       "run (one that sets up, probes or decides something they use): its report wakes you alone, and you courier_send them the result. " +
       "Then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: the " +
       "reports wake you. Check and integrate each part yourself when it reports (never hand that checking to another " +

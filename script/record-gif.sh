@@ -46,10 +46,10 @@ scene "The orchestrator splits the work"
 caption "Ask the top session to fix two issues in parallel"
 submit "Fix issues #12 and #15 in parallel, one lead per issue"
 look "courier_spawn [title=Issue #12" 6 72
-caption "It starts a lead per issue with courier_spawn, both in one group"
-hold 3
+caption "It starts a lead per issue with courier_spawn, in one group: it needs only both results"
+hold 3.5
 look "Two leads started" 1 78
-caption "and ends its turn: the leads' reports will wake it. No polling."
+caption "and ends its turn: the group's message will wake it. No polling."
 hold 3.5
 
 scene "The tree"
@@ -72,17 +72,37 @@ look "Two workers started" 1 78 "" 20
 hold 1
 look "courier_spawn [title=Cause of #12" 6 72
 caption "The lead splits its issue again: one worker finds the cause, one writes a failing test"
+hold 3.5
+look "Two workers started" 1 78
+caption "In no group: each worker's message wakes the lead as it comes"
+hold 3.5
+
+scene "A finding"
+look "Message from" 1 line "" 45
+caption "Mid-run, the cause worker finds what the test needs and sends it up at once, without a status"
+hold 3.5
+look "courier_send [" 2 72
+caption "It wakes the lead, which passes the finding on to the test worker"
+hold 3.5
+look "Cause of #12" 2 80
+caption "In the tree the cause worker still runs and owes its report: a finding is not one"
 hold 4
 
-scene "A worker"
-caption "Down to a worker, the orchestrator's grandchild, and enter"
+scene "The test worker"
+caption "Down to the test worker, the orchestrator's grandchild, and enter"
 hold 1
 select_row "Test for #12"
 hold 1
 press "enter" Enter
-look "Write a test that fails on issue #12" 1 72 "" 20
-caption "The worker runs: it was briefed by its lead, and owes it a report"
+look "log in, wait 31 s" 1 line "" 20
+caption "It had drafted a test that logs in plainly, which passes on main"
+hold 3.5
+look "Message from" 1 line last 20
+caption "The lead's message lands in its running turn"
 hold 3
+look "log in with remember me" 1 line "" 30
+caption "and it rewrites the test with remember me on, as the cause worker found"
+hold 4
 wait_for "Reported to my lead" 40
 look "courier_send [" 2 72
 caption "Its test fails on main: it reports to its lead with courier_send"
@@ -94,11 +114,11 @@ hold 1
 select_row "Issue #12"
 hold 1
 press "enter" Enter
-look "Reports of group issue-12" 1 27 last 20
-caption "The cause and the failing test woke the lead together, as one message"
-hold 3.5
-look "courier_send [" 3 72 last
-caption "It fixed the issue and reported up to the orchestrator"
+look "One part reported" 1 78 "" 20
+caption "Each report woke the lead as it came"
+hold 3
+look "courier_send [" 3 72 last 30
+caption "With both in, it fixed the issue and reported up to the orchestrator"
 hold 3.5
 
 scene "The top"
@@ -107,11 +127,14 @@ hold 1
 select_row "Fix #12 and #15"
 hold 1
 press "enter" Enter
-look "Both issues fixed" 2 78 last 60
-caption "Once both leads have reported, the orchestrator wakes: both issues fixed"
+look "Reports of group issues" 1 line last 60
+caption "Its leads were a join group, its choice for a pure fan-in: their reports came as one message"
+hold 3.5
+look "Both issues fixed" 2 78 last
+caption "Both issues fixed"
 hold 3
 look "courier tree  [" 16 80
-caption "Two issues fixed in parallel, seven sessions, and nothing polled"
+caption "Two issues fixed in parallel, a finding passed on mid-run, and nothing polled"
 hold 5
 
 tmux kill-session -t "$TMUX_SESSION"

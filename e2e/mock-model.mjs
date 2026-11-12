@@ -486,21 +486,27 @@ function passFinding(messages, lastAssistant) {
 }
 
 const DEMO_PROMPT = "Fix issues #12 and #15 in parallel"
+const DEMO_FINDING = "Finding: the login times out only with remember me on; without it the token is refreshed in time. A test without remember me passes on main."
 const DEMO_LEADS = [
   {
     title: "Issue #12",
     task: "Fix issue #12, the login that times out after 30 s: find the cause and a failing test in parallel, then fix it.",
-    group: "issue-12",
-    report: "#12 fixed: the session token is refreshed before the timeout, and the new test passes.",
+    report: "#12 fixed: the remember-me token is refreshed before the timeout, and the new test passes.",
     workers: [
-      { title: "Cause of #12", task: "Find why the login times out after 30 s (issue #12), then report back.", after: 2, report: "Cause: the token is refreshed only after the 30 s timeout." },
-      { title: "Test for #12", task: "Write a test that fails on issue #12, the login timeout, then report back.", after: 5, report: "test/login.test.ts fails on main, as issue #12 says." },
+      { title: "Cause of #12", task: "Find why the login times out after 30 s (issue #12), then report back.", finds: 4, after: 2, report: "Cause: with remember me on, the token is refreshed only after the 30 s timeout." },
+      {
+        title: "Test for #12",
+        task: "Write a test that fails on issue #12, the login timeout, then report back.",
+        drafts: "echo 'test/login.test.ts: log in, wait 31 s, expect to be logged in'",
+        heeds: "echo 'test/login.test.ts: log in with remember me, wait 31 s, expect to be logged in'",
+        after: 2,
+        report: "test/login.test.ts logs in with remember me, as the cause worker found, and fails on main.",
+      },
     ],
   },
   {
     title: "Issue #15",
     task: "Fix issue #15, the CSV export that drops rows: find the cause and a failing test in parallel, then fix it.",
-    group: "issue-15",
     report: "#15 fixed: the export pages through every row, and the new test passes.",
     workers: [
       { title: "Cause of #15", task: "Find why the CSV export drops rows (issue #15), then report back.", after: 3, report: "Cause: the export reads only the first page of 500 rows." },
@@ -509,6 +515,42 @@ const DEMO_LEADS = [
   },
 ]
 
+function demoWorker(worker, messages, parent) {
+  const calls = messages.flatMap((message) => message.tool_calls ?? [])
+  const sent = calls.filter((item) => item.function?.name === "courier_send")
+  const shells = calls.filter((item) => item.function?.name === "shell").map((item) => item.function.arguments ?? "")
+  const report = { tool: "courier_send", args: { sessionID: parent, message: worker.report, status: "done" }, slower: worker.after }
+  if (sent.some((item) => (item.function.arguments ?? "").includes('"status"'))) return { text: "Reported to my lead." }
+  if (worker.finds) return sent.length ? report : { tool: "courier_send", args: { sessionID: parent, message: DEMO_FINDING }, slower: worker.finds }
+  if (!worker.drafts) return report
+  const heard = messages.some((message) => message.role === "user" && /<courier from="ses_\w+">\n[^]*remember me/.test(textOf(message.content)))
+  if (heard && shells.some((command) => command.includes("remember me"))) return report
+  if (heard) return { tool: "shell", args: { command: worker.heeds } }
+  if (!shells.length) return { tool: "shell", args: { command: worker.drafts } }
+  return shells.length < 30 ? { tool: "shell", args: { command: "sleep 2" }, quick: true } : report
+}
+
+function demoLead(lead, messages, lastAssistant, parent) {
+  const last = messages.at(-1)
+  const call = last?.role === "tool" ? messages[lastAssistant]?.tool_calls?.find((item) => item.id === last.tool_call_id) : undefined
+  if (call?.function?.name === "courier_spawn") return { text: "Two workers started, on the cause and on a failing test, in no group: each report wakes me as it comes. I end my turn." }
+  if (call?.function?.name === "courier_send")
+    return { text: (call.function.arguments ?? "").includes(parent) ? "Reported to the orchestrator." : "Passed the finding on to the test worker, whose test needs it. I end my turn." }
+  const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
+  const everything = messages.map((message) => textOf(message.content)).join("\n")
+  const found = recent.match(/<courier from="(ses_\w+)">\n(Finding:[^\n]*)/)
+  if (found) {
+    const started = messages.flatMap((message) => (message.role === "tool" ? [...textOf(message.content).matchAll(/Started session (ses_\w+)/g)] : []))
+    const sibling = started.map((match) => match[1]).find((id) => id !== found[1])
+    return { tool: "courier_send", args: { sessionID: sibling, message: `From the cause worker: ${found[2].replace("Finding: ", "")} Write the test with remember me on.` }, quick: true }
+  }
+  if (messages.some((message) => (message.tool_calls ?? []).some((item) => item.function?.name === "courier_send" && (item.function.arguments ?? "").includes(parent)))) return { text: "Reported to the orchestrator." }
+  const reported = new Set([...everything.matchAll(/<courier from="(ses_\w+)" status="done"/g)].map((match) => match[1]))
+  if (reported.size >= lead.workers.length) return { tool: "courier_send", args: { sessionID: parent, message: lead.report, status: "done" }, quick: true }
+  if (lastAssistant === -1) return { calls: lead.workers.map(({ title, task }) => ({ tool: "courier_spawn", args: { title, task } })) }
+  return { text: "One part reported; the other still runs. I end my turn." }
+}
+
 function demoTree(messages, lastAssistant) {
   const first = textOf(messages.find((message) => message.role === "user")?.content)
   const last = messages.at(-1)
@@ -516,19 +558,11 @@ function demoTree(messages, lastAssistant) {
   const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
   const briefedBy = first.match(/You were started by session (ses_\w+)/)
   const lead = briefedBy && DEMO_LEADS.find((one) => first.includes(one.task))
+  if (lead) return demoLead(lead, messages, lastAssistant, briefedBy[1])
   const worker = briefedBy && DEMO_LEADS.flatMap((one) => one.workers).find((one) => first.includes(one.task))
-  if (worker) {
-    if (called) return { text: "Reported to my lead." }
-    return { tool: "courier_send", args: { sessionID: briefedBy[1], message: worker.report, status: "done" }, slower: worker.after }
-  }
-  if (lead) {
-    if (called === "courier_send") return { text: "Reported to the orchestrator." }
-    if (called) return { text: "Two workers started, on the cause and on a failing test. I end my turn; their reports will wake me." }
-    if (recent.includes(' group="')) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: lead.report, status: "done" }, quick: true }
-    return { calls: lead.workers.map(({ title, task }) => ({ tool: "courier_spawn", args: { title, task, group: lead.group } })) }
-  }
+  if (worker) return demoWorker(worker, messages, briefedBy[1])
   if (briefedBy || !first.includes(DEMO_PROMPT)) return undefined
-  if (called) return { text: "Two leads started, one per issue. I end my turn; their reports will wake me." }
+  if (called) return { text: "Two leads started, one per issue, in one group: I need only both results. I end my turn; the group's message will wake me." }
   if (recent.includes(' group="')) return { text: "Both issues fixed: #12 and #15, each with a test that failed before the fix." }
   return { calls: DEMO_LEADS.map(({ title, task }) => ({ tool: "courier_spawn", args: { title, task, group: "issues" } })) }
 }

@@ -23,8 +23,10 @@ export const SKILL_CONTENT = [
   "",
   "## 2. Start the parts",
   "",
-  "- One courier_spawn per part, the parts that run at once in one group. When they do not all fit the tree's limits " +
-    "at once, start waves, each its own group, or leave them ungrouped and start the next as each report frees a slot.",
+  "- One courier_spawn per part. When they do not all fit the tree's limits at once, start the next as each report " +
+    "frees a slot.",
+  "- Each report wakes you. A group name is for parts whose reports are of no use to you one at a time: it holds them " +
+    "for one wake, with every report.",
   "- No two parts edit the same files; isolate: true for each part that edits files in parallel with another.",
   "- Write each task so the session can do it without you, since it sees none of your conversation: what to produce " +
     "and where, the context it needs, how to check it, and what to report. Name the skills it should load for its " +
@@ -34,7 +36,8 @@ export const SKILL_CONTENT = [
   "",
   "## 3. End your turn",
   "",
-  "- Reply without calling more tools; reports and notices wake you.",
+  "- Reply without calling more tools; reports and notices wake you. After one, while parts are still out, end your " +
+    "turn again.",
   "- At the root, a permission request or question from below arrives with its own instructions: follow them, and never " +
     "answer for the person.",
   "- When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves " +

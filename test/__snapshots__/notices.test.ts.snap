@@ -73,7 +73,7 @@ exports[`tools are the eleven courier tools, each a direct tool 1`] = `
 
 exports[`tools courier_spawn 1`] = `
 {
-  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Give a batch of parallel sessions one group name to be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_children in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself per group, and one for the ungrouped sessions, in case the reports never come, and courier_cancel each when its last report arrives: a report does not cancel it.",
+  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Each report wakes you as it comes; a group name is for sessions whose reports are of no use to you one at a time, and wakes you once, with all of them. DO NOT poll it or call courier_children in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself for the ungrouped sessions, and one per group, in case the reports never come, and courier_cancel each when its last report arrives: a report does not cancel it.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -91,7 +91,7 @@ exports[`tools courier_spawn 1`] = `
       "group": {
         "anyOf": [
           {
-            "description": "A join group: start the sessions of one batch with the same name, and their reports are held and delivered to you in one message once every one of them has reported and your turn has ended, instead of one turn per report. A blocked report, a failed turn or an end without a report still reaches you at once, and at the top of the tree so do a question and a permission request (below it they go to the top). Letters, digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
+            "description": "A join group, for sessions whose reports are of no use to you one at a time: the reports of those started with the same name are held and delivered to you in one message once every one of them has reported and your turn has ended, instead of one turn per report. A blocked report, a failed turn or an end without a report still reaches you at once, and at the top of the tree so do a question and a permission request (below it they go to the top). Letters, digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
             "type": "string",
           },
           {
@@ -483,7 +483,7 @@ exports[`tools courier_answer 1`] = `
 
 exports[`tools courier_later 1`] = `
 {
-  "description": "Schedule a message for a session (this one by default), delivered when due and waking it if idle. For a long task or batch of sessions you start, use it as a safety net: schedule one check-in per group, and one for the ungrouped sessions, end your turn by replying without calling more tools, and cancel each with courier_cancel when its last report arrives, as a report does not cancel it. Survives server restarts; may arrive up to ~15 seconds late.",
+  "description": "Schedule a message for a session (this one by default), delivered when due and waking it if idle. For a long task or batch of sessions you start, use it as a safety net: schedule one check-in for the ungrouped sessions, and one per group, end your turn by replying without calling more tools, and cancel each with courier_cancel when its last report arrives, as a report does not cancel it. Survives server restarts; may arrive up to ~15 seconds late.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -626,7 +626,7 @@ You are at depth 1 of a session tree that goes at most 3 deep. Split your task o
 - Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
 - Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.
 - Say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part).
-- If you split, you orchestrate: start the parts that run at once in one group, with the same group name for each, then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: the group's reports wake you. Check and integrate each part yourself when it reports (never hand that checking to another session), then send ses_parent one combined report.
+- If you split, you orchestrate: start the parts, then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: each report wakes you. A group name is for parts whose reports are of no use to you one at a time: it holds them for one wake. Check and integrate each part yourself when it reports (never hand that checking to another session), and once every part has reported, send ses_parent one combined report.
 
 Task:
 Fix the bug
@@ -669,7 +669,7 @@ You are at depth 1 of a session tree that goes at most 3 deep. Split your task o
 - Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
 - Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.
 - Say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part).
-- If you split, you orchestrate: start the parts that run at once in one group, with the same group name for each, then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: the group's reports wake you. Check and integrate each part yourself when it reports (never hand that checking to another session), then send ses_parent one combined report.
+- If you split, you orchestrate: start the parts, then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: each report wakes you. A group name is for parts whose reports are of no use to you one at a time: it holds them for one wake. Check and integrate each part yourself when it reports (never hand that checking to another session), and once every part has reported, send ses_parent one combined report.
 
 Task:
 Fix the bug"
@@ -743,14 +743,15 @@ Split or do by the rule in your brief, the text above your task. At the root, th
 
 ## 2. Start the parts
 
-- One courier_spawn per part, the parts that run at once in one group. When they do not all fit the tree's limits at once, start waves, each its own group, or leave them ungrouped and start the next as each report frees a slot.
+- One courier_spawn per part. When they do not all fit the tree's limits at once, start the next as each report frees a slot.
+- Each report wakes you. A group name is for parts whose reports are of no use to you one at a time: it holds them for one wake, with every report.
 - No two parts edit the same files; isolate: true for each part that edits files in parallel with another.
 - Write each task so the session can do it without you, since it sees none of your conversation: what to produce and where, the context it needs, how to check it, and what to report. Name the skills it should load for its part, from those listed to you (an isolated part sees only committed project skills).
 - A part that depends on another starts once that one has reported and its branch, if isolated, is merged into your checkout.
 
 ## 3. End your turn
 
-- Reply without calling more tools; reports and notices wake you.
+- Reply without calling more tools; reports and notices wake you. After one, while parts are still out, end your turn again.
 - At the root, a permission request or question from below arrives with its own instructions: follow them, and never answer for the person.
 - When a message changes what other parts need (a wrong assumption of the split, a shared file or API that behaves otherwise, a decision of the person's), courier_send it at once, only to the sessions it affects, and, below the root, also to the session that started you when it reaches past your part, as your brief says; if it breaks the split, courier_stop those parts or send them a corrected task. Text typed into a session under you arrives from courier in a route="prompt" envelope that every session above you also has: pass it only to the sessions you started that it changes, as the envelope says, and say that it arrived over the prompt route, so it is not read as your own instruction.
 

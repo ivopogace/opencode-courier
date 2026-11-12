@@ -63,6 +63,22 @@ submit "COURIER-NOTE Give the docs to one session"
 look "courier_note [text=" 1 50
 hold 3
 
+scene "A finding passed on"
+new_session
+submit "COURIER-FINDING"
+look "PARENT PASSED ON" 1 line last 45
+hold 3
+submit "/courier tree"
+look "CHILD-HEARS  " 2 60
+hold 3
+click "CHILD-HEARS  " 50
+look "Message from" 1 line last
+hold 3
+look "HEARD FINDING" 1 60 last 30
+hold 4
+keys q
+hold 1
+
 scene "A child whose turn fails"
 new_session
 submit "COURIER-FAIL"

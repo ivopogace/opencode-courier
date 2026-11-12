@@ -784,6 +784,8 @@ describe("the recursive checker's release of a wait the finding can no longer en
     root.push(step("tool-calls", send("ses_a", FINDING), send("ses_b", FINDING)), step("stop", say("Passed on.")), idle())
     const tree = treeOf({ ses_root: root, ses_a: [user("half a"), inWait(".go-halves")], ses_b: [user("half b"), inWait(".go-halves"), fromRoot()], ses_count: count }, FLAT)
     expect(releaseOf(tree, "ses_root", AFTER_TOLD)).toEqual({ file: ".go-halves", why: `the root passed the finding on to a session that sits in the wait itself${QUIET}` })
+    tree.get("ses_b")!.list = [user("half b"), step("stop", say("Waiting.")), idle()]
+    expect(releaseOf(tree, "ses_root", AFTER_TOLD)).toBeUndefined()
   })
 
   test("with no count session at depth 1 to write to, the count wait is released first, and the halves once its session has ended its turn", () => {

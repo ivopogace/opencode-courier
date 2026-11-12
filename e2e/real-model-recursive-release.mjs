@@ -77,8 +77,8 @@ function stoppedAt(tree, rootID, { finding, conflict, told }, file) {
   if (!others.length) return "the root has the finding and no other part to pass it on to"
   if (!others.every(([id]) => plainAfter(root, id, envelopeAt))) return "the root has the finding and has ended its turn without passing it on to each other part"
   if (others.every(([, entry]) => passedDown(entry, rootID))) return undefined
+  if (!others.every(([, entry]) => !settled(entry.list) || delivered(entry.list, rootID) !== -1)) return undefined
   if (others.some(([, entry]) => !settled(entry.list))) return "the root passed the finding on to a session that sits in the wait itself"
-  if (!others.every(([, entry]) => delivered(entry.list, rootID) !== -1)) return undefined
   return "the other part's session has the finding and has ended its turn without passing it on to each of its sessions"
 }
 

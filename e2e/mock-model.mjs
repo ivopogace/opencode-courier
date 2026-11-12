@@ -227,6 +227,8 @@ function decide(body) {
   if (startedBy && recent.includes("PERSON-ASKS")) return { text: "CHILD ANSWERS PERSON" }
   if (startedBy && recent.includes("CHILD-REPORT-NOW"))
     return { tool: "courier_send", args: { sessionID: startedBy[1], message: "CHILD DONE AFTER NUDGE", status: "done" } }
+  if (startedBy && recent.includes("CHILD-STUCK-AGAIN"))
+    return { tool: "courier_send", args: { sessionID: startedBy[1], message: "CHILD BLOCKED AGAIN", status: "blocked" } }
   if (startedBy && recent.includes("CHILD-REPORT-PLAIN"))
     return { tool: "courier_send", args: { sessionID: startedBy[1], message: "CHILD DONE WITHOUT STATUS" } }
   if (answered && startedBy)
@@ -281,8 +283,9 @@ function decide(body) {
   if (/<courier from="[^"]*" group="/.test(recent)) return { text: "PARENT GOT GROUP" }
   if (/<courier from="ses_\w+" status="blocked">/.test(recent)) return { text: "PARENT BLOCKED" }
   if (recent.includes("<courier from=")) return { text: "PARENT WOKE" }
-  const nudge = recent.match(/COURIER-NUDGE(-PLAIN)? (ses_\w+)/)
-  if (nudge) return { tool: "courier_send", args: { sessionID: nudge[2], message: nudge[1] ? "CHILD-REPORT-PLAIN" : "CHILD-REPORT-NOW" } }
+  const nudge = recent.match(/COURIER-NUDGE(-PLAIN|-BLOCK)? (ses_\w+)/)
+  const nudged = { "-PLAIN": "CHILD-REPORT-PLAIN", "-BLOCK": "CHILD-STUCK-AGAIN" }
+  if (nudge) return { tool: "courier_send", args: { sessionID: nudge[2], message: nudged[nudge[1]] ?? "CHILD-REPORT-NOW" } }
   const later = recent.match(/COURIER-LATER(-CANCEL|-STRING)? ([\d.]+)/)
   if (later)
     return { tool: "courier_later", args: { message: "CHECK-IN", delayMinutes: later[1] === "-STRING" ? later[2] : Number(later[2]) } }

@@ -501,6 +501,12 @@ run_reports_groups() {
     jq -r --arg held "$held" --arg blocked "$blocked" '.status == "completed" and
       ([.metadata.metadata.children[] | select(.sessionID == $held) | .group] == [{name: "pair", report: "held"}]) and
       ([.metadata.metadata.children[] | select(.sessionID == $blocked) | .group] == [{name: "pair", report: "out"}])')"
+  prompt_in "$parent" "COURIER-NUDGE-BLOCK $blocked" >/dev/null
+  again=$([ "$(has_text "$parent" "CHILD BLOCKED AGAIN" 45)" = true ] && api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD BLOCKED AGAIN"))] | first // ""')
+  check "blocked again, now that the other's report is held, its report brings that report, which stays held" \
+    "$(jq -rn --arg text "$again" --arg held "$held" '($text | contains("status=\"blocked\">")) and ($text | contains("Held with group \"pair\" so far, 1 report")) and
+      ($text | contains("- " + $held + " \"")) and ($text | contains(": done\nCHILD DONE\n"))' | grep -qx true &&
+      [ "$(kv get "group/$parent/pair/$held" | jq -r '.report.status == "done"')" = true ] && echo true || echo false)"
   prompt_in "$parent" "COURIER-NUDGE $blocked" >/dev/null
   check "answered, the blocked member reported, and the group went to the parent in one message with both reports" \
     "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 45)" ] && notices_with "$parent" group | jq -r 'length == 1 and (.[0] |

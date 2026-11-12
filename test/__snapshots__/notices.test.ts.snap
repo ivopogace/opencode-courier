@@ -1148,6 +1148,38 @@ Without a report: ses_d "Review d.ts" (its turn failed), ses_e "Review e.ts" (it
 Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
 `;
 
+exports[`join groups groupNotice 3`] = `
+"
+
+Held with group "reviews" so far, 2 reports, shown now in case what this session needs is in them. The group's message brings them again once every member has reported.
+
+- ses_a "Review a.ts": done
+Looks fine.
+
+Artifacts:
+- files: src/a.ts
+- checks:
+  - bun test: ok
+
+- ses_b "Review b.ts": partial
+Two of three functions.
+The third needs the API."
+`;
+
+exports[`join groups groupNotice 4`] = `
+"
+
+Held with group "reviews" so far, 1 report, shown now in case what this session needs is in it. The group's message brings it again once every member has reported.
+
+- ses_a "Review a.ts": done
+Looks fine.
+
+Artifacts:
+- files: src/a.ts
+- checks:
+  - bun test: ok"
+`;
+
 exports[`permission requests REJECTED 1`] = `"Refused by the person or the top session of the tree. Do without it, or report back why you cannot."`;
 
 exports[`permission requests refusedText 1`] = `"not allowed in your session (Not on main). The refusal was passed on with that reason to request per_1 of ses_child, so its call fails and it carries on; it reports back with courier_send. Tell the person, and do not propose it again unless they ask."`;

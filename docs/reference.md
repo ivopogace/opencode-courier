@@ -189,8 +189,9 @@ whole task; one session for one stage is a part: a staged core when 2 or more pa
 review of the merged parts, the fixing of what a review found once verified. One session alone,
 with nothing of the task done before it by the session or by 2 or more parts, and fewer than 2
 parts after it, is the whole task. It says which in one line: `split: no, because …; considered: …`
-or `split: <n> parts: …`. A session that splits starts the parts in one join group, ends its turn
-without polling, checks each part and sends one combined report. At `maxDepth` it is told to do the
+or `split: <n> parts: …`. A session that splits starts the parts, ends its turn
+without polling, checks each part as it reports and sends one combined report once every part has reported;
+the brief says what a [join group](#join-groups) is for. At `maxDepth` it is told to do the
 task itself. Any spawned session is told to send its parent a finding the other parts need (an
 assumption of the split that is wrong, a shared file or API that behaves otherwise) at once, without
 a status, and carry on; progress alone is not worth a message. A finding that a session it started
@@ -259,13 +260,14 @@ order:
    to one session. The decision goes in the split line, whose forms the skill repeats, as a brief can
    be compacted away. Several whole jobs in one prompt are that many parts; below the root, never one
    session for the whole task.
-2. **Start the parts**: the parts that run at once in one join group; when they do not all fit the
-   limits, waves, each its own group, or ungrouped, the next started as each report frees a slot. No
+2. **Start the parts**: when they do not all fit the limits, the next is started as each report
+   frees a slot. Each report wakes the parent, and the skill says what a [join group](#join-groups) is for. No
    two parts edit the same files, `isolate: true` where they edit in parallel. Each task says what
    to produce, the context, how to check it, what to report and the skills to load from those the
    parent sees listed (an isolated part sees only committed project skills). A part that depends on
    another starts once that one has reported and its branch, if isolated, is merged.
-3. **End the turn**: reports and notices wake the parent.
+3. **End the turn**: reports and notices wake the parent, which ends its turn again after one while
+   parts are still out.
    At the root, a permission request or question from below comes with its own instructions, and the
    model never answers for the person. A message that changes what other parts need goes on to the
    sessions it affects, and only to them, and below the root also to the parent when it reaches
@@ -282,14 +284,14 @@ order:
 6. **Done** only when every part is verified and integrated; at the root, one `courier_note` when
    the next tree should know something, none otherwise.
 
-Without the skill, a child's brief still carries the split rule, the one group, no polling, the
+Without the skill, a child's brief still carries the split rule, what a group is for, no polling, the
 limits, verifying, how to report and to send a finding up, and that text typed into its session reaches the sessions above it
 by itself ([steering](#steering-a-running-tree)). The root has no
 brief: its role line carries the split rule until its first spawn, then only the limits and
-verifying. The tool descriptions carry the one group, no polling, check-ins, isolation, the model
+verifying. The tool descriptions carry what a group is for, no polling, check-ins, isolation, the model
 and `native`; the notices carry the relay and what to do about a child that fails or goes quiet.
 The skill alone adds the root's split rule after its first spawn, that several jobs are that many
-parts, the waves, writing a task, passing findings and prompt-route text on, answering a blocked,
+parts, writing a task, passing findings and prompt-route text on, answering a blocked,
 partial or failed report, merging, the definition of done and the root's lesson.
 
 Each check a part runs and each skill it loads may ask a permission, and every request below the
@@ -339,8 +341,11 @@ shown as `&lt;courier`, so no session can make its recipient read a second envel
 
 ## Join groups
 
-Each report wakes the parent separately. Give a batch of children the same `group` in
-`courier_spawn`, and their reports are held until every member has reported and the parent's turn
+Each report wakes the parent separately, so it can act on one, or pass on what it found, while the
+others work. That is what a session gets unless it chooses otherwise. A join group is for a pure
+fan-in, children whose reports are of no use to the parent one at a time: the skill, the brief and
+`courier_spawn`'s descriptions say so, and none tells a session to group its parts. Children given the
+same `group` in `courier_spawn` have their reports held until every member has reported and the parent's turn
 that started them has ended, by an idle time at or after the last member joined or, since a plain
 decline of a permission prompt stamps none, by the parent's transcript ending on that declined step.
 Then they reach the parent in one message. A group name is 1 to 60
@@ -661,7 +666,7 @@ message and forgetting it can deliver it twice. After a start,
 OpenCode loads plugins when a project is first used, so messages that fell due meanwhile arrive
 then. `delayMinutes` may be a number or a string holding a plain decimal (`"3"`, `"2.5"`).
 For a long task or batch, `courier_spawn`'s and `courier_later`'s descriptions ask for one check-in
-per group and one for the ungrouped sessions, each cancelled when its last report arrives.
+for the ungrouped sessions and one per group, each cancelled when its last report arrives.
 A report does not cancel a check-in: only `courier_cancel` does, or
 [`courier_stop`](#seeing-and-stopping-a-subtree) of the session it is for.
 

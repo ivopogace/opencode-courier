@@ -50,9 +50,9 @@ export const SpawnInput = Schema.Struct({
   group: Schema.optional(
     Schema.String.annotate({
       description:
-        "A join group: start the sessions of one batch with the same name, and their reports are held and delivered " +
-        "to you in one message once every one of them has reported and your turn has ended, instead of one turn per " +
-        "report. A blocked report, a failed turn or an end without a report still reaches you at once, and at the top of " +
+        "A join group, for sessions whose reports are of no use to you one at a time: the reports of those started with " +
+        "the same name are held and delivered to you in one message once every one of them has reported and your turn " +
+        "has ended, instead of one turn per report. A blocked report, a failed turn or an end without a report still reaches you at once, and at the top of " +
         "the tree so do a question and a permission request (below it they go to the top). Letters, " +
         "digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
     }),
@@ -134,11 +134,11 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
       "variant (reasoning effort) fit for the task. The session reports " +
       "back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report " +
       "instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). " +
-      "Give a batch of parallel sessions one group name to " +
-      "be woken once, with all their reports, instead of once per report. DO NOT poll it or call courier_children in a " +
+      "Each report wakes you as it comes; a group name is for sessions whose reports are of no use to you one at a " +
+      "time, and wakes you once, with all of them. DO NOT poll it or call courier_children in a " +
       "loop: once you have started the sessions you need, end your turn by replying without calling more tools; each " +
       "report, or each group's reports, starts a new turn in which you carry on. For a long task or batch, also " +
-      "courier_later one check-in for yourself per group, and one for the ungrouped sessions, in case the reports never " +
+      "courier_later one check-in for yourself for the ungrouped sessions, and one per group, in case the reports never " +
       "come, and courier_cancel each when its last report arrives: a report does not cancel it.",
     input: SpawnInput,
     execute: async (input, context) => {

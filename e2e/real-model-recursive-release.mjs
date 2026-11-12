@@ -12,7 +12,7 @@ export const ended = (message) =>
 export const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
 export const taskOf = (list) => textOf(list.find((message) => message.type === "user" || message.type === "synthetic") ?? {})
 const FORBIDS = /\b(?:not|never|don't|except|other than|besides)\b/i
-const ELSEWHERE = /\b(?:other|another) (?:part|half|session)\b|\bnothing\b/i
+const ELSEWHERE = /\b(?:other|another) (?:part|half|session)\b/i
 const sentencesOf = (list) => taskOf(list).split(/(?<=[.!?])\s+|\n/)
 export const isCount = (list) =>
   sentencesOf(list).some((sentence) => /99 - 57/.test(sentence) || (sentence.includes("count/total.txt") && !FORBIDS.test(sentence) && !ELSEWHERE.test(sentence)))

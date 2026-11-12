@@ -506,7 +506,10 @@ echo "/courier memory lists the project's tree records; x forgets a lesson, then
 project=$(api "session/$parent" | jq -r '.data.projectID // .projectID')
 record=$(for _ in $(seq 1 30); do found=$(kv get "memory/$project/$parent"); if [ -n "$found" ] && [ "$(jq -r '.finished and (.parts | length) == 2' <<<"$found")" = true ]; then echo "$found"; break; fi; sleep 1; done)
 check "the COURIER-TUI tree has a finished record with its two parts" "$([ -n "$record" ] && echo true || echo false)"
-kv set "memory/$project/$parent" "$(jq -c '.lesson = {text: "Give the docs to one session", at: (now * 1000 | floor)}' <<<"$record")" "memory/$project/$parent"
+seeded_record=$(jq -c '.lesson = {text: "Give the docs to one session", at: (now * 1000 | floor)}' <<<"$record")
+kv set "memory/$project/$parent" "$seeded_record" "memory/$project/$parent"
+record_day=$(date -d "@$(($(jq -r '.movedAt' <<<"$seeded_record") / 1000))" "+%a %b %d %Y")
+lesson_day=$(date -d "@$(($(jq -r '.lesson.at' <<<"$seeded_record") / 1000))" +%F)
 listed=$(memory_rpc records '{}')
 echo "  $(jq -c '.output | {memory, records: [.records[] | {sessionID, parts: (.parts | length), lesson: .lesson.text}]}' <<<"$listed")"
 check "the RPC lists the project's records newest first, memory on, the seeded lesson among them" \
@@ -515,13 +518,12 @@ check "the RPC lists the project's records newest first, memory on, the seeded l
 check "forgetting a record that is not there finds nothing" "$(memory_rpc forget '{"sessionID":"ses_nowhere"}' | jq -r '.output.outcome == "none"')"
 total=$(jq -r '.output.records | length' <<<"$listed")
 index=$(jq -r --arg parent "$parent" '.output.records | map(.sessionID) | index($parent)' <<<"$listed")
-today=$(date +%F)
 open_tui tui-memory "$parent"
 check "the TUI is on the parent" "$(shows "courier 2 idle" 60 tui-memory-footer)"
 submit "/courier memory"
 check "/courier memory opens the view with every record of the project" "$(shows "Memory ($total)" 30 tui-memory-list)"
-check "the tree's row is under Today, with its parts counted and the lesson, dated on the local day, as its footer" \
-  "$(awk -v lesson="lesson ($today): \"Give the docs to one session\"" '/(^|[^A-Za-z])Today([^A-Za-z]|$)/ { today = NR } index($0, lesson) && today && today < NR { under = 1 } /(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z][a-z] [0-9]+ [0-9][0-9][0-9][0-9]/ { dated = 1 } END { exit !(under && !dated) }' "$WORK/tui-memory-list.txt" && grep -qF "2 parts: 2 done" "$WORK/tui-memory-list.txt" && echo true || echo false)"
+check "the tree's row is under the heading of the day it moved on, with its parts counted and the lesson, dated on the local day, as its footer" \
+  "$(awk -v lesson="lesson ($lesson_day): \"Give the docs to one session\"" -v heading="$record_day" '/(^|[^A-Za-z])Today([^A-Za-z]|$)/ || index($0, heading) { today = NR } index($0, lesson) { if (today && today < NR) under = 1; if ($0 ~ /(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z][a-z] [0-9]+ [0-9][0-9][0-9][0-9]/) dated = 1 } END { exit !(under && !dated) }' "$WORK/tui-memory-list.txt" && grep -qF "2 parts: 2 done" "$WORK/tui-memory-list.txt" && echo true || echo false)"
 check "the footer offers x to forget and p to pin" "$(grep -qF "forget x" "$WORK/tui-memory-list.txt" && grep -qF "pin p" "$WORK/tui-memory-list.txt" && echo true || echo false)"
 for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done
 tmux send-keys -t "$TMUX_SESSION" Enter
@@ -550,9 +552,9 @@ submit "/courier memory"
 check "the view opens again, for the pin" "$(shows "Memory ($total)" 30 tui-memory-pin-open)"
 for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done
 tmux send-keys -t "$TMUX_SESSION" p
-pinned_above_today() { awk '/(^|[^A-Za-z])Pinned([^A-Za-z"]|$)/ && !/Pinned "/ { pinned = NR } /(^|[^A-Za-z])Today([^A-Za-z]|$)/ { today = NR } END { exit !(pinned && today && pinned < today) }' "$1"; }
-check "p pins the tree's record: a toast says so, and the list has it under Pinned, above Today" \
-  "$(shows_with "Pinned \"" 15 tui-memory-pinned pinned_above_today)"
+pinned_above_days() { awk '/(^|[^A-Za-z])Pinned([^A-Za-z"]|$)/ && !/Pinned "/ { pinned = NR } pinned && NR > pinned && (/(^|[^A-Za-z])Today([^A-Za-z]|$)/ || /(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z][a-z] [0-9]+ [0-9][0-9][0-9][0-9]/) { below = 1 } END { exit !(pinned && below) }' "$1"; }
+check "p pins the tree's record: a toast says so, and the list has it under Pinned, above the day headings" \
+  "$(shows_with "Pinned \"" 15 tui-memory-pinned pinned_above_days)"
 check "the pin lies beside the record, which is not written" \
   "$([ "$(kv get "memory/$project/$parent/pin" | jq -r '(.at | type) == "number"')" = true ] && [ "$(kv get "memory/$project/$parent" | jq -r 'has("pinned") | not')" = true ] && echo true || echo false)"
 check "the RPC lists it first, pinned" "$(memory_rpc records '{}' | jq -r --arg parent "$parent" '.output.records[0].sessionID == $parent and (.output.records[0].pinned.at | type) == "number"')"

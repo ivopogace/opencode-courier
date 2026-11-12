@@ -37,7 +37,7 @@ const TASKS: Record<string, string> = {
   ses_a2: `Again: get the amount of item a from the API and write it to out/a.txt. The key: ${KEY}`,
 }
 
-type Variant = "relayed" | "in-report" | "not-passed" | "vague" | "grouped" | "grouped-other" | "staged" | "restarted" | "polls" | "own-init" | "fenced"
+type Variant = "relayed" | "in-report" | "not-passed" | "vague" | "grouped" | "grouped-other" | "staged" | "restarted" | "polls" | "own-init" | "fenced" | "searched" | "looked"
 
 function transcripts(variant: Variant): { tree: Record<string, Message[]>; values: [string, string] } {
   const grouped = variant === "grouped" || variant === "grouped-other"
@@ -68,6 +68,8 @@ function transcripts(variant: Variant): { tree: Record<string, Message[]>; value
     const list: Message[] = [user(tasks[id]!), step("tool-calls", shell(WAIT))]
     if (told) list.push(plain("ses_root", told))
     if (variant === "own-init" && id === "ses_a") list.push(step("tool-calls", shell("rm .api-key; sh api.sh init")))
+    if (variant === "searched" && id === "ses_a") list.push(step("tool-calls", shell("grep -rho 'key-[0-9a-f]\\{8\\}' ../home/.local/share/opencode ../server.log")))
+    if (variant === "searched" && id === "ses_b") list.push(step("tool-calls", shell("cd /root/courier-runs/discovery-1/project && ls out")))
     list.push(step("tool-calls", shell(`sh api.sh get ${item}${informed ? ` ${KEY}` : ""}`), tool("write", { path: `out/${item}.txt` }), send("ses_root", value, "done")), step("stop", say("Reported.")), idle())
     return list
   }
@@ -75,6 +77,25 @@ function transcripts(variant: Variant): { tree: Record<string, Message[]>; value
   const tell = step("tool-calls", send("ses_a", words), send("ses_b", words))
   const tree: Record<string, Message[]> = { ses_root: root, ses_i: init }
 
+  if (variant === "looked") {
+    const look = { type: "tool", name: "courier_children", state: { status: "completed", input: {}, metadata: {}, content: [{ type: "text", text: `ses_i: its report is held with group "parts": init ran. ${FINDING}` }] } }
+    const finish = (item: string) => [step("tool-calls", shell(`sh api.sh get ${item} ${KEY}`), tool("write", { path: `out/${item}.txt` }), send("ses_root", item === "a" ? "1999" : "2550", "done")), step("stop", say("Reported.")), idle()]
+    root.splice(1, root.length - 1, step("tool-calls", spawn("ses_i", { group: "parts" }), spawn("ses_a", { group: "parts" }), spawn("ses_b", { group: "parts" })), step("stop", say("split: 3 parts.")), idle())
+    init.splice(1, init.length - 1, step("tool-calls", shell("sh api.sh init"), send("ses_root", inReport, "done")), step("stop", say("Reported.")), idle())
+    tree.ses_b = [user(tasks.ses_b!), step("tool-calls", shell(WAIT)), step("tool-calls", shell("sh api.sh get b"), send("ses_root", "I need the key that get asks for.", "blocked")), step("stop", say("Blocked.")), idle()]
+    tree.ses_a = [user(tasks.ses_a!), step("tool-calls", shell(WAIT))]
+    root.push({ type: "synthetic", text: '<courier from="ses_b" status="blocked">\nI need the key that get asks for.\n</courier>', time: { created: tick() } })
+    root.push(step("tool-calls", look), step("tool-calls", send("ses_a", FINDING), send("ses_b", FINDING)), step("stop", say("Passed on.")), idle())
+    tree.ses_a.push(plain("ses_root", FINDING), ...finish("a"))
+    tree.ses_b.push(plain("ses_root", FINDING), ...finish("b"))
+    root.push({
+      type: "synthetic",
+      text: `<courier from="ses_i,ses_a,ses_b" group="parts" reports="3">\n[1/3] ses_i "init": done\n${inReport}\n[2/3] ses_a "a": done\n1999\n[3/3] ses_b "b": done\n2550\n</courier>`,
+      time: { created: tick() },
+    })
+    root.push(step("tool-calls", tool("read", { path: "out/a.txt" }), tool("read", { path: "out/b.txt" })), step("stop", say("RESULTS 1999 2550")), idle())
+    return { tree, values: ["1999", "2550"] }
+  }
   if (grouped) {
     tree.ses_a = consumer("ses_a", values[0], undefined)
     tree.ses_b = consumer("ses_b", values[1], undefined)
@@ -193,6 +214,19 @@ describe("the discovery checker", () => {
   test("a part that ran init itself is noted, and is still that part", () => {
     const run = check("own-init")
     expect(run.failed).toEqual([])
-    expect(run.notes).toContain("discovery: ses_a ran init or touched the key's file itself, 1 call(s): what it wrote does not show the relay")
+    expect(run.notes).toContain("discovery: ses_a ran init, touched the key's file or searched outside the project for the key, 1 call(s): what it wrote does not show the relay")
+  })
+
+  test("a part that searched the server's files for the key is noted; its own project path is not a search", () => {
+    const run = check("searched")
+    expect(run.notes).toContain("discovery: ses_a ran init, touched the key's file or searched outside the project for the key, 1 call(s): what it wrote does not show the relay")
+    expect(run.notes.some((note) => note.startsWith("discovery: ses_b ran init"))).toBe(false)
+  })
+
+  test("a key the root read with courier_children while a join group held the report counts from that look, and the parts it then told are told", () => {
+    const run = check("looked")
+    expect(run.failed).toEqual([IN_TIME])
+    expect(run.notes).toContain("discovery: it reached the root through its own look with courier_children or courier_tree, the report still held, with 1 of 2 other parts yet to report")
+    expect(run.notes).toContain(`discovery: the root told ses_b: ${FINDING}`)
   })
 })

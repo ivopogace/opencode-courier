@@ -37,7 +37,7 @@ const TASKS: Record<string, string> = {
   ses_a2: `Again: get the amount of item a from the API and write it to out/a.txt. The key: ${KEY}`,
 }
 
-type Variant = "relayed" | "in-report" | "not-passed" | "vague" | "grouped" | "grouped-other" | "staged" | "restarted" | "polls" | "own-init" | "fenced" | "searched" | "looked" | "carried" | "quoted"
+type Variant = "relayed" | "in-report" | "not-passed" | "vague" | "grouped" | "grouped-other" | "staged" | "restarted" | "polls" | "own-init" | "fenced" | "searched" | "looked" | "carried" | "quoted" | "look-first"
 
 function transcripts(variant: Variant): { tree: Record<string, Message[]>; values: [string, string] } {
   const grouped = variant === "grouped" || variant === "grouped-other"
@@ -61,7 +61,7 @@ function transcripts(variant: Variant): { tree: Record<string, Message[]>; value
   const group = grouped ? { group: "parts" } : {}
   const root: Message[] = [user("the job")]
   if (variant === "staged") root.push(step("tool-calls", spawn("ses_i")), step("stop", say("init first.")), idle())
-  else root.push(step("tool-calls", spawn("ses_i", group), spawn("ses_a", group), spawn("ses_b", group), ...(variant === "polls" ? [tool("courier_children", {})] : [])), step("stop", say("split: 3 parts.")), idle())
+  else root.push(...(variant === "look-first" ? [step("tool-calls", tool("courier_children", {}))] : []), step("tool-calls", spawn("ses_i", group), spawn("ses_a", group), spawn("ses_b", group), ...(variant === "polls" ? [tool("courier_children", {})] : [])), step("stop", say("split: 3 parts.")), idle())
 
   const consumer = (id: "ses_a" | "ses_b", value: string, told: string | undefined) => {
     const item = id.at(-1)
@@ -210,6 +210,10 @@ describe("the discovery checker", () => {
 
   test("a look right after spawning is polling", () => {
     expect(check("polls").failed).toEqual([POLL])
+  })
+
+  test("a look before the first spawn is no poll", () => {
+    expect(check("look-first").failed).toEqual([])
   })
 
   test("a part that ran init itself is noted, and is still that part", () => {

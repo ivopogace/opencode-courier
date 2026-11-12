@@ -72,6 +72,8 @@ The fan-out and recursive prompts give each command as it is, with no `sleep` st
 A report that reaches a parent while its turn still runs is
 steered into that turn, and the checkers count it as delivered: the first turn may hold reports, and
 one look after each report, in a turn of its own or steered in, is not polling.
+A `courier_children` or `courier_tree` call before the session's first `courier_spawn` is not polling: there is
+nothing to poll yet. One after the first spawn and before any report is, and a `sleep` keeps its own rule.
 
 ## The fan-out
 

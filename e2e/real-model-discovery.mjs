@@ -124,7 +124,8 @@ const arrivalOf = (root, init, initID) => {
   const key = sendsTo(init, rootID).map((send) => send.message.match(KEY)?.[0]).find(Boolean) ?? keyAt(root, initID, told)
   const seen = (message) => message.type === "assistant" && message.content.some((part) => part.type === "tool" && LOOKS.has(part.name) && JSON.stringify(part.state).includes(key))
   const looked = key === undefined ? -1 : root.findIndex(seen)
-  const carried = key === undefined ? -1 : root.findIndex((message) => message.type === "synthetic" && !sendersOf(message).includes(initID) && message.text.includes(key))
+  const heldPart = (text) => (text.includes("\nHeld with group ") ? text.slice(text.indexOf("\nHeld with group ")) : "")
+  const carried = key === undefined ? -1 : root.findIndex((message) => message.type === "synthetic" && /^<courier from="ses_\w+" status="blocked">/.test(message.text) && !sendersOf(message).includes(initID) && heldPart(message.text).includes(key))
   const first = Math.min(...[told, looked, carried].filter((index) => index !== -1), Infinity)
   if (first === Infinity) return { foundAt: -1, key }
   return { foundAt: first, key, looked: looked === first, carried: carried === first }

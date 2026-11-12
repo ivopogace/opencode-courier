@@ -37,7 +37,7 @@ const TASKS: Record<string, string> = {
   ses_a2: `Again: get the amount of item a from the API and write it to out/a.txt. The key: ${KEY}`,
 }
 
-type Variant = "relayed" | "in-report" | "not-passed" | "vague" | "grouped" | "grouped-other" | "staged" | "restarted" | "polls" | "own-init" | "fenced" | "searched" | "looked" | "carried"
+type Variant = "relayed" | "in-report" | "not-passed" | "vague" | "grouped" | "grouped-other" | "staged" | "restarted" | "polls" | "own-init" | "fenced" | "searched" | "looked" | "carried" | "quoted"
 
 function transcripts(variant: Variant): { tree: Record<string, Message[]>; values: [string, string] } {
   const grouped = variant === "grouped" || variant === "grouped-other"
@@ -77,8 +77,8 @@ function transcripts(variant: Variant): { tree: Record<string, Message[]>; value
   const tell = step("tool-calls", send("ses_a", words), send("ses_b", words))
   const tree: Record<string, Message[]> = { ses_root: root, ses_i: init }
 
-  if (variant === "looked" || variant === "carried") {
-    const heldPart = variant === "carried" ? `\n\nHeld with group "parts" so far, 1 report, shown now in case what this session needs is in it.\n\n- ses_i "init": done\n${inReport}` : ""
+  if (variant === "looked" || variant === "carried" || variant === "quoted") {
+    const heldPart = variant === "quoted" ? ` I found ${KEY} in server.log; is it the one?` : variant === "carried" ? `\n\nHeld with group "parts" so far, 1 report, shown now in case what this session needs is in it.\n\n- ses_i "init": done\n${inReport}` : ""
     const look = { type: "tool", name: "courier_children", state: { status: "completed", input: {}, metadata: {}, content: [{ type: "text", text: `ses_i: its report is held with group "parts": init ran. ${FINDING}` }] } }
     const finish = (item: string) => [step("tool-calls", shell(`sh api.sh get ${item} ${KEY}`), tool("write", { path: `out/${item}.txt` }), send("ses_root", item === "a" ? "1999" : "2550", "done")), step("stop", say("Reported.")), idle()]
     root.splice(1, root.length - 1, step("tool-calls", spawn("ses_i", { group: "parts" }), spawn("ses_a", { group: "parts" }), spawn("ses_b", { group: "parts" })), step("stop", say("split: 3 parts.")), idle())
@@ -236,5 +236,11 @@ describe("the discovery checker", () => {
     expect(run.failed).toEqual([IN_TIME])
     expect(run.notes).toContain("discovery: it reached the root with another part's blocked report, among the reports its group held, with 1 of 2 other parts yet to report")
     expect(run.notes).toContain(`discovery: the root told ses_a: ${FINDING}`)
+  })
+
+  test("a key a part quotes in its own blocked report did not come from the init session: it arrives with the group's reports", () => {
+    const run = check("quoted")
+    expect(run.failed).toEqual([PASSED_ON, IN_TIME])
+    expect(run.notes).toContain('discovery: it reached the root in the reports of group "parts", with 0 of 2 other parts yet to report')
   })
 })

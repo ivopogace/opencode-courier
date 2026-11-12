@@ -346,8 +346,11 @@ Nothing in the prompt says to tell anyone. The brief tells the "init" session to
 what the other parts need, without a status, and
 the skill tells the root to pass it on to the parts it changes. The checker
 (`e2e/real-model-discovery.mjs`) creates `.go-parts` once the root has sent each of the other parts
-a message without a status that holds the key, or started them after it with the key in the task;
-each wait ends after 150 s if the file never comes.
+a message without a status that holds the key, or started them after it with the key in the task.
+It creates the file as well once the key can no longer come in time, so a failing run waits out no
+timeout: when the root has ended its turn on the key without passing it on to each part, or when the
+"init" session has reported, the key in no message of its own, and the root is idle. The 150 s in
+the command only bounds a wait whose checker has stopped.
 
 The checker tells the parts apart by what each session ran: the wait on `.go-parts` makes it "a" or
 "b", by the file its task names; `api.sh init` without that wait makes it "init". A session that has

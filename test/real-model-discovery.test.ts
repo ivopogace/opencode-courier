@@ -37,7 +37,7 @@ const TASKS: Record<string, string> = {
   ses_a2: `Again: get the amount of item a from the API and write it to out/a.txt. The key: ${KEY}`,
 }
 
-type Variant = "relayed" | "in-report" | "not-passed" | "vague" | "grouped" | "grouped-other" | "staged" | "restarted" | "polls" | "own-init" | "fenced" | "searched" | "looked" | "carried" | "quoted" | "look-first"
+type Variant = "relayed" | "in-report" | "not-passed" | "vague" | "grouped" | "grouped-other" | "staged" | "restarted" | "polls" | "own-init" | "fenced" | "searched" | "looked" | "carried" | "quoted" | "look-first" | "field" | "field-other"
 
 function transcripts(variant: Variant): { tree: Record<string, Message[]>; values: [string, string] } {
   const grouped = variant === "grouped" || variant === "grouped-other"
@@ -77,6 +77,27 @@ function transcripts(variant: Variant): { tree: Record<string, Message[]>; value
   const tell = step("tool-calls", send("ses_a", words), send("ses_b", words))
   const tree: Record<string, Message[]> = { ses_root: root, ses_i: init }
 
+  if (variant === "field" || variant === "field-other") {
+    const found = variant === "field" ? FINDING : "init printed nothing the others need"
+    const got = variant === "field" ? ["1999", "2550"] : ["error", "error"]
+    const waiting = (id: "ses_a" | "ses_b"): Message[] => [user(tasks[id]!), step("tool-calls", shell(WAIT))]
+    const finish = (item: string, value: string) => [step("tool-calls", shell(`sh api.sh get ${item}`), tool("write", { path: `out/${item}.txt` }), send("ses_root", value, "done")), step("stop", say("Reported.")), idle()]
+    root.splice(1, root.length - 1, step("tool-calls", spawn("ses_i", { group: "parts" }), spawn("ses_a", { group: "parts" }), spawn("ses_b", { group: "parts" })), step("stop", say("split: 3 parts.")), idle())
+    init.splice(1, init.length - 1, step("tool-calls", shell("sh api.sh init"), tool("courier_send", { sessionID: "ses_root", message: "init ran.", status: "done", finding: found })), step("stop", say("Reported.")), idle())
+    tree.ses_a = waiting("ses_a")
+    tree.ses_b = waiting("ses_b")
+    root.push({ type: "synthetic", text: `<courier from="ses_i" finding="ahead">\nA finding from this session's report (status done), delivered ahead of it: the report is held with group "parts".\n\n${found}\n</courier>`, time: { created: tick() } })
+    root.push(step("tool-calls", send("ses_a", found), send("ses_b", found)), step("stop", say("Passed on.")), idle())
+    tree.ses_a.push(plain("ses_root", found), ...finish("a", got[0]!))
+    tree.ses_b.push(plain("ses_root", found), ...finish("b", got[1]!))
+    root.push({
+      type: "synthetic",
+      text: `<courier from="ses_i,ses_a,ses_b" group="parts" reports="3">\n[1/3] ses_i "init": done\ninit ran.\n\nFinding for the other parts:\n${found}\n[2/3] ses_a "a": done\n${got[0]}\n[3/3] ses_b "b": done\n${got[1]}\n</courier>`,
+      time: { created: tick() },
+    })
+    root.push(step("tool-calls", tool("read", { path: "out/a.txt" }), tool("read", { path: "out/b.txt" })), step("stop", say(`RESULTS ${got[0]} ${got[1]}`)), idle())
+    return { tree, values: [got[0]!, got[1]!] }
+  }
   if (variant === "looked" || variant === "carried" || variant === "quoted") {
     const heldPart = variant === "quoted" ? ` I found ${KEY} in server.log; is it the one?` : variant === "carried" ? `\n\nHeld with group "parts" so far, 1 report, shown now in case what this session needs is in it.\n\n- ses_i "init": done\n${inReport}` : ""
     const look = { type: "tool", name: "courier_children", state: { status: "completed", input: {}, metadata: {}, content: [{ type: "text", text: `ses_i: its report is held with group "parts": init ran. ${FINDING}` }] } }
@@ -140,7 +161,7 @@ function check(variant: Variant) {
     writeFileSync(join(work, "project", "out", "b.txt"), `${values[1]}\n`)
     const run = Bun.spawnSync([process.execPath, CHECKER, "ses_root", "--saved"], { env: { ...env, WORK: work, COURIER_EXPECT: "1999 2550", COURIER_FILES: "out/a.txt out/b.txt" } })
     if (run.exitCode !== 0 && run.exitCode !== 1) throw new Error(`the checker exited ${run.exitCode}: ${run.stderr.toString()}`)
-    const summary = JSON.parse(readFileSync(join(work, "summary.json"), "utf8")) as { verdict: string; checks: Record<string, boolean>; notes: string[] }
+    const summary = JSON.parse(readFileSync(join(work, "summary.json"), "utf8")) as { verdict: string; checks: Record<string, boolean>; notes: string[]; finding: Record<string, unknown> }
     return { exitCode: run.exitCode, ...summary, failed: Object.entries(summary.checks).flatMap(([name, ok]) => (ok ? [] : [name])) }
   } finally {
     rmSync(work, { recursive: true, force: true })
@@ -157,6 +178,9 @@ describe("the discovery checker", () => {
     expect(run.notes).toContain("discovery: it reached the root in a message of its own, with 2 of 2 other parts yet to report")
     expect(run.notes).toContain(`discovery: the root told ses_a: ${FINDING}`)
     expect(run.notes).toContain("the root started 3 session(s), in no group")
+    expect(run.notes).toContain('finding: the "init" session put no finding on its report; 0 of 3 reports in the tree carried one')
+    expect(run.notes).toContain('finding: the "init" session was started in no group; the key reached the root, with no group to wait for')
+    expect(run.notes).toContain("finding: 2 of 2 other parts had the key before they reported")
   })
 
   test("a key that came in the init session's report passes too, and the note says how it came", () => {
@@ -181,6 +205,27 @@ describe("the discovery checker", () => {
     expect(run.failed).toEqual([IN_TIME, FILES, REPLY])
     expect(run.notes).toContain('discovery: it reached the root in the reports of group "parts", with 0 of 2 other parts yet to report')
     expect(run.notes).toContain("the root started 3 session(s) in group(s) parts")
+    expect(run.notes).toContain('finding: the "init" session was started in group "parts"; the key reached the root only once the group was complete')
+    expect(run.notes).toContain("finding: 0 of 2 other parts had the key before they reported")
+    expect(run.finding).toEqual({ initGroup: "parts", filled: false, filledWithKey: false, reportsWithFinding: 0, reports: 3, keyReachedRoot: true, keyBeforeGroup: false, partsInTime: 0, parts: 2 })
+  })
+
+  test("a key on the report's finding reaches the root ahead of the held report: the parts have it in time, and the counts say so", () => {
+    const run = check("field")
+    expect(run.failed).toEqual([])
+    expect(run.notes).toContain(`discovery: the "init" session sent it in its report, status done: ${FINDING}`)
+    expect(run.notes).toContain("discovery: it reached the root in its report's finding, delivered ahead of the held report, with 2 of 2 other parts yet to report")
+    expect(run.notes).toContain('finding: the "init" session put a finding on its report, with the key; 1 of 3 reports in the tree carried one')
+    expect(run.notes).toContain('finding: the "init" session was started in group "parts"; the key reached the root before the group was complete')
+    expect(run.finding).toEqual({ initGroup: "parts", filled: true, filledWithKey: true, reportsWithFinding: 1, reports: 3, keyReachedRoot: true, keyBeforeGroup: true, partsInTime: 2, parts: 2 })
+  })
+
+  test("a finding that leaves the key out is counted as filled without the key, and no key reached the root", () => {
+    const run = check("field-other")
+    expect(run.failed).toEqual([FOUND, PASSED_ON, IN_TIME, FILES, REPLY])
+    expect(run.notes).toContain('finding: the "init" session put a finding on its report, without the key; 1 of 3 reports in the tree carried one')
+    expect(run.notes).toContain('finding: the "init" session was started in group "parts"; the key did not reach the root')
+    expect(run.finding).toMatchObject({ filled: true, filledWithKey: false, keyReachedRoot: false, keyBeforeGroup: false })
   })
 
   test("a join group's reports that name a key only in another part's report are no finding from the init session", () => {
@@ -240,6 +285,7 @@ describe("the discovery checker", () => {
     expect(run.failed).toEqual([IN_TIME])
     expect(run.notes).toContain("discovery: it reached the root with another part's blocked report, among the reports its group held, with 1 of 2 other parts yet to report")
     expect(run.notes).toContain(`discovery: the root told ses_a: ${FINDING}`)
+    expect(run.notes).toContain('finding: the "init" session was started in group "parts"; the key reached the root before the group was complete')
   })
 
   test("a key a part quotes in its own blocked report did not come from the init session: it arrives with the group's reports", () => {

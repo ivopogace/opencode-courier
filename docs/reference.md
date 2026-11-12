@@ -112,7 +112,7 @@ for a git elsewhere.
 | Tool | Parameters | Does |
 |---|---|---|
 | `courier_spawn` | `task`, `title?`, `agent?`, `model?`, `variant?`, `isolate?`, `native?`, `group?` | Creates a session, sends it the task and a brief, and returns at once. `model` and `variant` choose [what it runs on](#the-model-a-child-runs-on). `isolate: true` gives it its own [worktree](#worktrees). `native` says whether it is an OpenCode subagent ([native child sessions](#native-child-sessions)). With a `group`, its report is held with the [group's](#join-groups). Refused past the [limits](#session-trees-and-their-limits). |
-| `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `queue?` | Delivers a message, signed with the sender's id, waking the session if idle. A running turn reads it at its next step, after the tool call in progress returns, and nothing is cut short; `queue: true` holds it until the turn ends. From a child to its parent, a `status` makes it the child's [report](#a-childs-report). |
+| `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `finding?`, `queue?` | Delivers a message, signed with the sender's id, waking the session if idle. A running turn reads it at its next step, after the tool call in progress returns, and nothing is cut short; `queue: true` holds it until the turn ends. From a child to its parent, a `status` makes it the child's [report](#a-childs-report), and a `finding` on it reaches the parent at once even when the report is held. |
 | `courier_children` | `sessionID?` | One look at the sessions this one (or `sessionID`) started, each with its last turn's outcome, how long it has been idle, when it was archived, its last reply, the requests and questions it waits on (`pending`), its directory, whether it is isolated, `native: true` when it is a [subagent](#native-child-sessions), when it started, its [group](#join-groups) and its [model](#the-model-a-child-runs-on) when that is not the parent's. |
 | `courier_tree` | `sessionID?` | The [whole tree](#seeing-and-stopping-a-subtree) under a session. |
 | `courier_stop` | `sessionID`, `cleanup?` | [Stops](#seeing-and-stopping-a-subtree) a session below this one and everything under it. |
@@ -194,7 +194,8 @@ without polling, checks each part as it reports and sends one combined report on
 the brief says what a [join group](#join-groups) is for. At `maxDepth` it is told to do the
 task itself. Any spawned session is told to send its parent a finding the other parts need (an
 assumption of the split that is wrong, a shared file or API that behaves otherwise) at once, without
-a status, and carry on; progress alone is not worth a message. A finding that a session it started
+a status, and carry on; progress alone is not worth a message. What the other parts need from its
+report it is told to put in the report's [`finding`](#a-childs-report) as well. A finding that a session it started
 sends it goes on to its parent the same way when it reaches past its own part. Courier passes what the person
 writes in its session, outside a `<courier>` envelope, to the sessions above it, in an envelope
 marked `route="prompt"` ([steering](#steering-a-running-tree)). The session is told not to send it up
@@ -335,6 +336,26 @@ Artifacts:
 A message with a status settles the child's report, `blocked` included. A message without one is
 progress and settles nothing.
 
+**A finding on the report.** `finding` is a sentence or two for what the other parts of the job need
+from the report now: a value, a path or a command they wait for, an assumption of the split that is
+wrong. A blank one counts as none. In a message that reaches the parent at once (a report from a child in no group, a `blocked`
+report, a message without a status) it follows the text, under `Finding for the other parts:` and
+before the artifacts. When the report is held with a [join group](#join-groups), the finding goes to the
+parent at once in a message of its own, steered in, and the report is held with the finding in it:
+
+```
+<courier from="ses_child" finding="ahead">
+A finding from this session's report (status done), delivered ahead of it: the report is held with group "parts" and reaches you with the group's other reports. If other sessions you started need the finding, send it to them now with courier_send, only to those it affects.
+
+The store needs the key in out/key.txt.
+</courier>
+```
+
+The child's result says the finding went ahead. The report that completes its group sends its
+finding ahead too, before the group's message, which waits for the parent's turn to end. If that message cannot be delivered, the report
+stays held and the result tells the child to send the finding without a status. The group's message,
+and a blocked member's `Held with group` section, show the finding again under the held report. No role line names the field.
+
 Every message courier delivers is one such envelope, and only courier writes its tag: a `<courier`
 or `</courier` inside what a session wrote, in a message, an artifact or a session's title, is
 shown as `&lt;courier`, so no session can make its recipient read a second envelope.
@@ -353,7 +374,7 @@ letters, digits, dots, dashes or underscores, scoped to the parent.
 
 **What is held.** A `done`, `partial` or `failed` report is held. A later report from the same member
 replaces it. Everything else reaches the parent at once: a `blocked` report (the member stays out
-until it reports again), progress, a failed turn and a silent end; at the top of the tree also a
+until it reports again), a held report's [`finding`](#a-childs-report), progress, a failed turn and a silent end; at the top of the tree also a
 permission request, a question and a form, which below it [go to the top](#a-child-that-asks-for-permission).
 
 **A blocked member and the held reports.** A member's `blocked` report brings, after its own text, the

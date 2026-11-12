@@ -98,11 +98,13 @@ const sendsTo = (list, to) =>
       ? []
       : message.content.flatMap((part, place) =>
           part.type === "tool" && part.name === "courier_send" && part.state.status === "completed" && part.state.input?.sessionID === to
-            ? [{ index, place, status: part.state.input.status, message: part.state.input.message ?? "" }]
+            ? [{ index, place, status: part.state.input.status, message: part.state.input.message ?? "", finding: part.state.input.finding ?? "" }]
             : [],
         ),
   )
 const reportsTo = (list, parentID) => sendsTo(list, parentID).filter((send) => send.status)
+const wordsOf = (send) => [send.message, send.finding].join(" ")
+const aheadOf = (message) => message.type === "synthetic" && /^<courier from="ses_\w+" finding="ahead">/.test(message.text)
 const plainFrom = (list, from, after, key) =>
   list.findIndex((message, index) => index > after && sendersOf(message).includes(from) && !groupOf(message) && !statusOf(message, from) && message.text.includes(key))
 const plainAfter = (list, to, after, key) => sendsTo(list, to).find((send) => send.index > after && !send.status && send.message.includes(key))
@@ -121,7 +123,7 @@ const foundIn = (list, from) => list.findIndex((message) => reportersOf(message)
 const keyAt = (list, from, index) => (index === -1 ? undefined : sectionOf(list[index], from).match(KEY)[0])
 const arrivalOf = (root, init, initID) => {
   const told = foundIn(root, initID)
-  const key = sendsTo(init, rootID).map((send) => send.message.match(KEY)?.[0]).find(Boolean) ?? keyAt(root, initID, told)
+  const key = sendsTo(init, rootID).map((send) => wordsOf(send).match(KEY)?.[0]).find(Boolean) ?? keyAt(root, initID, told)
   const seen = (message) => message.type === "assistant" && message.content.some((part) => part.type === "tool" && LOOKS.has(part.name) && JSON.stringify(part.state).includes(key))
   const looked = key === undefined ? -1 : root.findIndex(seen)
   const heldPart = (text) => (text.includes("\nHeld with group ") ? text.slice(text.indexOf("\nHeld with group ")) : "")
@@ -252,7 +254,7 @@ const fileText = (file) => {
 const fileTexts = files.map(fileText)
 
 const { foundAt, key, looked, carried } = initID ? arrivalOf(root, init, initID) : { foundAt: -1 }
-const foundSend = sendsTo(init, rootID).find((send) => KEY.test(send.message))
+const foundSend = sendsTo(init, rootID).find((send) => KEY.test(wordsOf(send)))
 const onward = consumers.map(([id, entry]) => {
   const told = foundAt === -1 ? undefined : toldAfter(root, id, foundAt, key)
   const reached = told?.spawned ? 0 : told ? plainFrom(entry.list, rootID, 0, key) : -1
@@ -300,11 +302,11 @@ notes.push(`the root orchestrated ${load === -1 ? `without ${SKILL} loaded` : lo
 if (polled) notes.push("polled: the root")
 if (!initID) notes.push('discovery: no session at depth 1 has the task for the "init" part')
 else if (!foundSend) notes.push(`discovery: the "init" session sent the root no key; its sends: ${short(sendsTo(init, rootID).map((send) => send.message), 240)}`)
-else notes.push(`discovery: the "init" session sent it ${foundSend.status ? `in its report, status ${foundSend.status}` : "without a status, before its report"}: ${short(foundSend.message, 200)}`)
+else notes.push(`discovery: the "init" session sent it ${foundSend.status ? `in its report, status ${foundSend.status}` : "without a status, before its report"}: ${short(KEY.test(foundSend.message) ? foundSend.message : foundSend.finding, 200)}`)
 if (initID && foundAt !== -1) {
   const arrival = root[foundAt]
   const running = consumers.filter(([, entry]) => reportsTo(entry.list, rootID).every((send) => entry.list[send.index].time.created > arrival.time.created)).length
-  notes.push(`discovery: it reached the root ${carried ? "with another part's blocked report, among the reports its group held" : looked ? "through its own look with courier_children or courier_tree, the report still held" : groupOf(arrival) ? `in the reports of group "${groupOf(arrival)}"` : "in a message of its own"}, with ${running} of ${consumers.length} other parts yet to report`)
+  notes.push(`discovery: it reached the root ${carried ? "with another part's blocked report, among the reports its group held" : looked ? "through its own look with courier_children or courier_tree, the report still held" : aheadOf(arrival) ? "in its report's finding, delivered ahead of the held report" : groupOf(arrival) ? `in the reports of group "${groupOf(arrival)}"` : "in a message of its own"}, with ${running} of ${consumers.length} other parts yet to report`)
 }
 for (const one of onward) {
   if (one.told?.spawned) notes.push(`discovery: the root started ${one.id} only after the finding had arrived: staged, nothing to pass on mid-run`)
@@ -313,6 +315,26 @@ for (const one of onward) {
   const own = toolsOf(one.entry.list).filter((part) => part.name === "shell" && /api\.sh init\b|\.api-key|share\/opencode|server\.log|probe\.log|key-\[/.test(part.state.input?.command ?? ""))
   if (own.length) notes.push(`discovery: ${one.id} ran init, touched the key's file or searched outside the project for the key, ${own.length} call(s): what it wrote does not show the relay`)
 }
+const initGroup = initID ? rootTools.find((part) => childOf(part) === initID)?.state.input?.group : undefined
+const initReports = reportsTo(init, rootID)
+const allReports = spawned.flatMap(([, entry]) => reportsTo(entry.list, entry.parentID))
+const groupAt = initGroup ? root.findIndex((message) => groupOf(message) === initGroup && sendersOf(message).includes(initID)) : -1
+const finding = {
+  initGroup: initGroup ?? null,
+  filled: initReports.some((send) => send.finding.trim()),
+  filledWithKey: initReports.some((send) => KEY.test(send.finding)),
+  reportsWithFinding: allReports.filter((send) => send.finding.trim()).length,
+  reports: allReports.length,
+  keyReachedRoot: foundAt !== -1,
+  keyBeforeGroup: initGroup ? foundAt !== -1 && (groupAt === -1 || foundAt < groupAt) : null,
+  partsInTime: onward.filter((one) => one.inTime).length,
+  parts: onward.length,
+}
+const filledHow = finding.filledWithKey ? "put a finding on its report, with the key" : finding.filled ? "put a finding on its report, without the key" : "put no finding on its report"
+if (initID) notes.push(`finding: the "init" session ${filledHow}; ${finding.reportsWithFinding} of ${finding.reports} reports in the tree carried one`)
+const arrived = !finding.keyReachedRoot ? "did not reach the root" : !initGroup ? "reached the root, with no group to wait for" : finding.keyBeforeGroup ? "reached the root before the group was complete" : "reached the root only once the group was complete"
+if (initID) notes.push(`finding: the "init" session was started ${initGroup ? `in group "${initGroup}"` : "in no group"}; the key ${arrived}`)
+notes.push(`finding: ${finding.partsInTime} of ${finding.parts} other parts had the key before they reported`)
 if (startedTwice) notes.push("discovery: the root started a part a second time")
 if (stopped) notes.push(`discovery: the root stopped ${stopped} session(s)`)
 const touched = [...tree].filter(([, entry]) => toolsOf(entry.list).some((part) => part.name === "shell" && /(touch|>|rm)\s[^|;&]*\.go-parts/.test(part.state.input?.command ?? ""))).map(([id]) => id)
@@ -354,7 +376,7 @@ console.log(`result: ${verdict}${verdict === "inconclusive" ? " (checks failed, 
 writeFileSync(
   join(work, "summary.json"),
   JSON.stringify(
-    { verdict, rootID, sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, usage, finalText },
+    { verdict, rootID, sessions: Object.fromEntries([...tree].map(([id, entry]) => [id, { parentID: entry.parentID, depth: entry.depth }])), checks: Object.fromEntries(checks), notes, finding, usage, finalText },
     null,
     2,
   ),

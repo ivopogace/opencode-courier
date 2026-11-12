@@ -370,8 +370,8 @@ or otherwise: a part that stays inside the project gets it through courier or no
 > one line: RESULTS \<a\> \<b\>
 
 Nothing in the prompt says to tell anyone. The brief tells the "init" session to send its parent
-what the other parts need, without a status, and
-the skill tells the root to pass it on to the parts it changes. The checker
+what the other parts need, without a status, and to put what they need from its report in the
+report's `finding`, which reaches the parent ahead of a held report; the skill tells the root to pass it on to the parts it changes. The checker
 (`e2e/real-model-discovery.mjs`) creates `.go-parts` once the root has sent each of the other parts
 a message without a status that holds the key, or started them after it with the key in the task.
 It creates the file as well once the key can no longer come in time, so a failing run waits out no
@@ -385,13 +385,18 @@ run neither counts by its task: one that holds the wait is "a" or "b".
 
 Nine checks: the root spawned the three parts in its first turn; it ended that turn; it did not poll;
 every session reported with a status; a message or report from the "init" session holding the key
-reached the root, or the key came with another part's `blocked` report among the reports its group
+reached the root (a report's finding delivered ahead of the held report is such a message), or the key came with another part's `blocked` report among the reports its group
 held, or the root read it with `courier_children` or `courier_tree` from a report still held; the
 root passed the key on to each other part without a status after that;
 each of those parts had it before it reported, and the root stopped no part and started none twice;
 the files hold `1999` and `2550`; the reply holds both. The notes say how the key came (without a
 status before the report, in the report, or by the root's own look), whether it came alone or in a
 join group's reports, and with how many parts yet to report; they quote what the root told each part.
+Three `finding:` notes, and the same under `finding` in `summary.json`, give what a batch counts:
+whether the "init" session put a finding on its report, with the key or without, and how many of
+the tree's reports carried one; the group the "init" session was started in, and whether the key
+reached the root before that group was complete; how many of the other parts had the key before
+they reported.
 
 The key is not out of a part's reach: the run's work directory, one level above the project, holds
 the server's log and OpenCode's own files, with the "init" session's shell output in them. The notes
@@ -400,7 +405,7 @@ then does not show the relay.
 
 A root that starts the three in one join group gets the "init" session's report only with the other
 two, after their `get` has failed: the key arrives in time only when that session sends it without a
-status first. A root that runs "init" first and starts the others after its report fails the first
+status first or puts it in its report's `finding`. A root that runs "init" first and starts the others after its report fails the first
 check alone, and the notes call it staged.
 
 ```bash

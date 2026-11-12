@@ -3,7 +3,7 @@ import { groupStanding, heldByOthers, holdReport, membershipFor, unholdForBlocke
 import type { Artifacts, CourierPorts, Held, HeldReport, Membership, RosterEntry, Sent } from "./ports.js"
 import { syncStanding } from "./standing.js"
 import { childStore, groupStore } from "./store.js"
-import { heldSoFar, reportBody } from "./text.js"
+import { findingAhead, heldSoFar, reportBody } from "./text.js"
 import { noteSent } from "./wake.js"
 
 export interface SendInput {
@@ -12,16 +12,18 @@ export interface SendInput {
   readonly status?: Status
   readonly artifacts?: Artifacts
   readonly queue?: boolean
+  readonly finding?: string
 }
 
 export async function send(ports: CourierPorts, from: string, input: SendInput): Promise<Sent> {
   const { status, dropped } = await statusFor(ports, from, input)
+  const finding = input.finding?.trim() || undefined
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
   try {
-    const held = noted?.member && status && status !== "blocked" ? await hold(ports, noted.member, { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}) }) : undefined
+    const kept = await keep(ports, noted, input, status, finding)
     if (noted) await syncStanding(ports, input.sessionID)
-    if (held) return { status, report: true, held }
-    const delivered = await deliver(ports, from, input, status, noted)
+    if (kept) return await heldSent(ports, from, input.sessionID, kept)
+    const delivered = await deliver(ports, from, input, status, noted, finding)
     return { ...delivered, ...(noted ? { report: noted.report } : {}), ...(dropped ? { dropped } : {}) }
   } catch (error) {
     await noted?.undo().catch(() => undefined)
@@ -30,9 +32,22 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
   }
 }
 
-async function deliver(ports: CourierPorts, from: string, input: SendInput, status: Status | undefined, noted: Awaited<ReturnType<typeof noteReport>>): Promise<Sent> {
+async function keep(ports: CourierPorts, noted: Awaited<ReturnType<typeof noteReport>>, input: SendInput, status: Status | undefined, finding: string | undefined) {
+  if (!noted?.member || !status || status === "blocked") return undefined
+  const report: HeldReport = { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}), ...(finding ? { finding } : {}) }
+  const kept = await hold(ports, noted.member, report)
+  return kept && { ...kept, report }
+}
+
+async function heldSent(ports: CourierPorts, from: string, to: string, { held, report, due }: { readonly held: Held; readonly report: HeldReport; readonly due: boolean }): Promise<Sent> {
+  const finding = report.finding ? await ahead(ports, from, to, held.group, report.status, report.finding) : undefined
+  if (due) ports.nudge()
+  return { status: report.status, report: true, held, ...(finding ? { finding } : {}) }
+}
+
+async function deliver(ports: CourierPorts, from: string, input: SendInput, status: Status | undefined, noted: Awaited<ReturnType<typeof noteReport>>, finding: string | undefined): Promise<Sent> {
   const held = noted?.member && status === "blocked" ? await heldWith(ports, noted.member) : ""
-  const text = envelope(from, reportBody(input.message, input.artifacts) + held, status ? { status } : {})
+  const text = envelope(from, reportBody(input.message, input.artifacts, finding) + held, status ? { status } : {})
   const description = `Message from ${from}`
   const delivered = await ports.session.synthetic({
     sessionID: input.sessionID,
@@ -44,6 +59,19 @@ async function deliver(ports: CourierPorts, from: string, input: SendInput, stat
   await noteSent(ports, { sessionID: input.sessionID, inboxID: delivered.id, text, description }).catch(() => undefined)
   if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)
   return { messageID: delivered.id, ...(status ? { status } : {}) }
+}
+
+async function ahead(ports: CourierPorts, from: string, to: string, group: string, status: Status, finding: string) {
+  const text = envelope(from, findingAhead(group, status, finding), { finding: "ahead" })
+  const description = `Finding from ${from}`
+  try {
+    const delivered = await ports.session.synthetic({ sessionID: to, text, description, metadata: { source: "courier", from, finding: "ahead" }, delivery: "steer" })
+    await noteSent(ports, { sessionID: to, inboxID: delivered.id, text, description }).catch(() => undefined)
+    return "ahead" as const
+  } catch (error) {
+    ports.log(`courier_send: the finding of ${from}'s report, held with group ${group}, could not be delivered to ${to}: ${String(error)}`)
+    return "unsent" as const
+  }
 }
 
 async function heldWith(ports: CourierPorts, member: Membership) {
@@ -96,7 +124,7 @@ async function memberIn(ports: CourierPorts, entry: RosterEntry): Promise<Member
   }
 }
 
-async function hold(ports: CourierPorts, member: Membership, report: HeldReport): Promise<Held | undefined> {
+async function hold(ports: CourierPorts, member: Membership, report: HeldReport): Promise<{ readonly held: Held; readonly due: boolean } | undefined> {
   const groups = groupStore(ports.storage)
   try {
     await holdReport(groups, member, report)
@@ -108,6 +136,5 @@ async function hold(ports: CourierPorts, member: Membership, report: HeldReport)
     return undefined
   }
   const standing = await groupStanding(groups, member.parentID, member.group).catch(() => undefined)
-  if (standing?.complete !== false) ports.nudge()
-  return { group: member.group, ...(standing ? { reported: standing.reported, members: standing.members } : {}) }
+  return { held: { group: member.group, ...(standing ? { reported: standing.reported, members: standing.members } : {}) }, due: standing?.complete !== false }
 }

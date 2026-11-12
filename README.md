@@ -60,7 +60,8 @@ or stuck, the child calls `courier_send` with a status (`done`, `partial`, `bloc
 The message lands in the parent's inbox and starts a new turn if the parent is idle.
 
 Each report wakes the parent as it comes. Children started with the same `group`, a choice for a
-pure fan-in, report together, in one message. A child that fails (a rate or quota limit with when it
+pure fan-in, report together, in one message; a `finding` on a member's report still reaches the
+parent at once. A child that fails (a rate or quota limit with when it
 lifts) is reported to its parent. One about to end its turn without reporting is reminded once, in
 the same turn, and its parent is told only if it still does not report. A message that does not wake
 its session is sent once more, then shown as `stalled`. On OpenCode 2.2.0 a parent's system prompt

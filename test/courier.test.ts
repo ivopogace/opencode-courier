@@ -105,7 +105,7 @@ describe("spawn", () => {
     expect(child).toEqual({ sessionID: "ses_child", directory: "/repo", group: "pair", belowTop: true })
     const text = spawnText(child)
     expect(text).toContain("Its permission requests and questions go to the top session of the tree, not to you")
-    expect(text).toContain("a blocked report, a failed turn or an end without a report still reaches you at once.")
+    expect(text).toContain("a blocked report, a report's finding, a failed turn or an end without a report still reaches you at once.")
     expect(text).not.toContain("a question or a permission request")
   })
 
@@ -114,7 +114,7 @@ describe("spawn", () => {
     const child = await spawn(ports, "ses_parent", { task: "t", group: "pair" })
     expect(child).not.toHaveProperty("belowTop")
     const text = spawnText(child)
-    expect(text).toContain("a blocked report, a failed turn or an end without a report still reaches you at once, and so does a question or a permission request.")
+    expect(text).toContain("a blocked report, a report's finding, a failed turn or an end without a report still reaches you at once, and so does a question or a permission request.")
     expect(text).not.toContain("top session")
   })
 
@@ -965,6 +965,100 @@ describe("send, from a member of a group", () => {
     expect(calls.filter((call) => call.method === "session.synthetic")).toHaveLength(2)
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({ title: "A", joinedAt: 1 })
     expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000, by: "report", status: "blocked" })
+  })
+
+  test("a member's finding goes to the parent at once, ahead of its report, which is held with the finding", async () => {
+    const { ports, calls, store, nudges } = fakePorts()
+    await grouped(ports)
+
+    const sent = await send(ports, "ses_child", { sessionID: "ses_parent", message: "init ran.", status: "done", finding: " get needs key-0a1b2c3d ", artifacts: { files: ["out/init.txt"] } })
+
+    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair", reported: 1, members: 2 }, finding: "ahead" })
+    const delivered = calls.filter((call) => call.method === "session.synthetic")
+    expect(delivered).toHaveLength(1)
+    expect(delivered[0]!.input).toMatchObject({
+      sessionID: "ses_parent",
+      delivery: "steer",
+      metadata: { source: "courier", from: "ses_child", finding: "ahead" },
+      text:
+        '<courier from="ses_child" finding="ahead">\n' +
+        'A finding from this session\'s report (status done), delivered ahead of it: the report is held with group "pair" and reaches you with the group\'s other reports. ' +
+        "If other sessions you started need the finding, send it to them now with courier_send, only to those it affects.\n\nget needs key-0a1b2c3d\n</courier>",
+    })
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({
+      title: "A",
+      joinedAt: 1,
+      report: { at: 1_000, status: "done", message: "init ran.", artifacts: { files: ["out/init.txt"] }, finding: "get needs key-0a1b2c3d" },
+    })
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000, by: "report", status: "done" })
+    expect(nudges).toEqual([])
+  })
+
+  test("a held report without a finding, or with a blank one, sends the parent nothing", async () => {
+    const { ports, calls, store } = fakePorts()
+    await grouped(ports)
+
+    const sent = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done.", status: "done", finding: "  \n" })
+
+    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair", reported: 1, members: 2 } })
+    expect(calls.filter((call) => call.method === "session.synthetic")).toEqual([])
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({ title: "A", joinedAt: 1, report: { at: 1_000, status: "done", message: "Done." } })
+  })
+
+  test("the report that completes its group sends its finding ahead before the scheduler is told to deliver the group", async () => {
+    const { ports, calls, store, nudges } = fakePorts()
+    await grouped(ports)
+    await send(ports, "ses_other", { sessionID: "ses_parent", message: "Done.", status: "done" })
+
+    const sent = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done too.", status: "done", finding: "the key is k" })
+
+    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair", reported: 2, members: 2 }, finding: "ahead" })
+    const ahead = calls.findIndex((call) => call.method === "session.synthetic" && String(call.input.text).startsWith('<courier from="ses_child" finding="ahead">'))
+    expect(ahead).toBeGreaterThanOrEqual(0)
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { finding: "the key is k" } })
+    expect(nudges).toHaveLength(1)
+    expect(nudges[0]).toBeGreaterThan(ahead)
+  })
+
+  test("a finding that cannot be delivered ahead leaves the report held, and the result says to send it apart", async () => {
+    const { ports, store, logs } = fakePorts()
+    await grouped(ports)
+    ;(ports.session as any).synthetic = async () => Promise.reject(new Error("parent is busy"))
+
+    const sent = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done.", status: "done", finding: "the key is k" })
+
+    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair", reported: 1, members: 2 }, finding: "unsent" })
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { status: "done", finding: "the key is k" } })
+    expect(store.get(settledKey("ses_child"))).toEqual({ at: 1_000, by: "report", status: "done" })
+    expect(logs.some((line) => line.includes("the finding of ses_child's report, held with group pair, could not be delivered to ses_parent"))).toBe(true)
+  })
+
+  test("a report that is not held carries its finding in the one message: in no group, blocked, or without a status", async () => {
+    const { ports, calls } = fakePorts()
+    const { group: _, ...alone } = spawned
+    await childStore(ports.storage).record(alone)
+
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "init ran.", status: "done", finding: "the key is k", artifacts: { files: ["a"] } })).toEqual({ messageID: "msg_2", status: "done", report: true })
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "Which?", status: "blocked", finding: "the key is k" })).toEqual({ messageID: "msg_2", status: "blocked", report: true })
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "halfway", finding: " the key is k " })).toEqual({ messageID: "msg_2", report: false })
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "more", finding: "  " })
+
+    expect(calls.filter((call) => call.method === "session.synthetic").map((call) => call.input.text)).toEqual([
+      '<courier from="ses_child" status="done">\ninit ran.\n\nFinding for the other parts:\nthe key is k\n\nArtifacts:\n- files: a\n</courier>',
+      '<courier from="ses_child" status="blocked">\nWhich?\n\nFinding for the other parts:\nthe key is k\n</courier>',
+      '<courier from="ses_child">\nhalfway\n\nFinding for the other parts:\nthe key is k\n</courier>',
+      '<courier from="ses_child">\nmore\n</courier>',
+    ])
+  })
+
+  test("a blocked report brings a held report's finding with it", async () => {
+    const { ports, calls } = fakePorts()
+    await grouped(ports)
+    await send(ports, "ses_other", { sessionID: "ses_parent", message: "init ran.", status: "done", finding: "the key is k" })
+
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "I need the key.", status: "blocked" })
+
+    expect(calls.filter((call) => call.method === "session.synthetic").at(-1)!.input.text).toContain('- ses_other "B": done\ninit ran.\n\nFinding for the other parts:\nthe key is k\n</courier>')
   })
 
   test("a blocked report brings the reports its group holds from the other members, which stay held", async () => {

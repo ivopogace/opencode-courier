@@ -91,7 +91,7 @@ exports[`tools courier_spawn 1`] = `
       "group": {
         "anyOf": [
           {
-            "description": "A join group, for sessions whose reports are of no use to you one at a time: the reports of those started with the same name are held and delivered to you in one message once every one of them has reported and your turn has ended, instead of one turn per report. A blocked report, a failed turn or an end without a report still reaches you at once, and at the top of the tree so do a question and a permission request (below it they go to the top). Letters, digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
+            "description": "A join group, for sessions whose reports are of no use to you one at a time: the reports of those started with the same name are held and delivered to you in one message once every one of them has reported and your turn has ended, instead of one turn per report. A blocked report, a report's finding, a failed turn or an end without a report still reaches you at once, and at the top of the tree so do a question and a permission request (below it they go to the top). Letters, digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
             "type": "string",
           },
           {
@@ -169,7 +169,7 @@ exports[`tools courier_spawn 1`] = `
 
 exports[`tools courier_send 1`] = `
 {
-  "description": "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. Use it to report back to the session that started you, with a status (done, partial, blocked or failed) and the artifacts you produced, or to steer a session you started: a session that is working reads the message at its next step, after the tool call it is running has returned; nothing is interrupted. The status is carried as an attribute of the message; without one, a message to the session that started you is progress, not your report. A message to a session you started carries no status: one given is dropped. If you were started in a group, a report with status done, partial or failed is held and delivered with the group's other reports; the result says so, and nothing more is needed from you.",
+  "description": "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. Use it to report back to the session that started you, with a status (done, partial, blocked or failed) and the artifacts you produced, or to steer a session you started: a session that is working reads the message at its next step, after the tool call it is running has returned; nothing is interrupted. The status is carried as an attribute of the message; without one, a message to the session that started you is progress, not your report. A message to a session you started carries no status: one given is dropped. If you were started in a group, a report with status done, partial or failed is held and delivered with the group's other reports; the result says so, and nothing more is needed from you. What the other parts need from your report goes in its finding, which is delivered at once all the same.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -249,6 +249,17 @@ exports[`tools courier_send 1`] = `
               },
             },
             "type": "object",
+          },
+          {
+            "type": "null",
+          },
+        ],
+      },
+      "finding": {
+        "anyOf": [
+          {
+            "description": "With a report: what the other parts of the job need from it now, in a sentence or two (a value, a path or a command they wait for, an assumption of the split that is wrong). It reaches the session that started you at once, also when the report itself is held with a group, and that session passes it on. Leave it unset when nothing in the report matters to another part.",
+            "type": "string",
           },
           {
             "type": "null",
@@ -614,7 +625,7 @@ exports[`envelope and child brief END_TURN 1`] = `"If nothing else is left to do
 exports[`envelope and child brief childBrief 1`] = `
 "You were started by session ses_parent through opencode-courier.
 
-When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result).
+When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result). If the report holds something the other parts of the job need (a value, a path or a command they wait for, an assumption of the split that is wrong), put that in finding as well, in a sentence or two: a finding reaches the parent at once, also when the report itself is held for later.
 If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you have to wait for something outside the tree that wakes this session later (a tool that watches a pull request, a thread or a run), tell the parent so with courier_send without a status and schedule yourself a check-in with courier_later, which shows you as waiting, then end your turn. Once woken, cancel the check-in with courier_cancel and send your report.
@@ -636,7 +647,7 @@ in src/a.ts"
 exports[`envelope and child brief childBrief 2`] = `
 "You were started by session ses_parent through opencode-courier.
 
-When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result).
+When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result). If the report holds something the other parts of the job need (a value, a path or a command they wait for, an assumption of the split that is wrong), put that in finding as well, in a sentence or two: a finding reaches the parent at once, also when the report itself is held for later.
 If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you have to wait for something outside the tree that wakes this session later (a tool that watches a pull request, a thread or a run), tell the parent so with courier_send without a status and schedule yourself a check-in with courier_later, which shows you as waiting, then end your turn. Once woken, cancel the check-in with courier_cancel and send your report.
@@ -654,7 +665,7 @@ in src/a.ts"
 exports[`envelope and child brief childBrief 3`] = `
 "You were started by session ses_parent through opencode-courier.
 
-When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result).
+When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result). If the report holds something the other parts of the job need (a value, a path or a command they wait for, an assumption of the split that is wrong), put that in finding as well, in a sentence or two: a finding reaches the parent at once, also when the report itself is held for later.
 If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you have to wait for something outside the tree that wakes this session later (a tool that watches a pull request, a thread or a run), tell the parent so with courier_send without a status and schedule yourself a check-in with courier_later, which shows you as waiting, then end your turn. Once woken, cancel the check-in with courier_cancel and send your report.
@@ -678,7 +689,7 @@ Fix the bug"
 exports[`envelope and child brief childBrief 4`] = `
 "You were started by session ses_parent through opencode-courier.
 
-When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result).
+When you finish, send exactly one report: call courier_send with sessionID "ses_parent", a short account of what you did and status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result). If the report holds something the other parts of the job need (a value, a path or a command they wait for, an assumption of the split that is wrong), put that in finding as well, in a sentence or two: a finding reaches the parent at once, also when the report itself is held for later.
 If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a concrete ask, then end your turn and wait for its answer; never end quietly.
 A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. A message without a status is progress, not your report: if you end your turn without a report, the parent is told so.
 If you have to wait for something outside the tree that wakes this session later (a tool that watches a pull request, a thread or a run), tell the parent so with courier_send without a status and schedule yourself a check-in with courier_later, which shows you as waiting, then end your turn. Once woken, cancel the check-in with courier_cancel and send your report.
@@ -744,7 +755,7 @@ Split or do by the rule in your brief, the text above your task. At the root, th
 ## 2. Start the parts
 
 - One courier_spawn per part. When they do not all fit the tree's limits at once, start the next as each report frees a slot.
-- Each report wakes you. A group name is for parts whose reports are of no use to you one at a time: it holds them for one wake, with every report.
+- Each report wakes you. A group name is for parts whose reports are of no use to you one at a time: it holds them for one wake, with every report. A finding a member puts on its report still reaches you at once, ahead of the held report, in an envelope marked finding="ahead": pass it on as section 3 says.
 - No two parts edit the same files; isolate: true for each part that edits files in parallel with another.
 - Write each task so the session can do it without you, since it sees none of your conversation: what to produce and where, the context it needs, how to check it, and what to report. Name the skills it should load for its part, from those listed to you (an isolated part sees only committed project skills).
 - A part that depends on another starts once that one has reported and its branch, if isolated, is merged into your checkout.
@@ -841,7 +852,7 @@ exports[`tool results spawnText 1`] = `"Started session ses_child in /repo. It w
 
 exports[`tool results spawnText 2`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is not on your courier_children list: roster failed: disk full"`;
 
-exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a failed turn or an end without a report still reaches you at once, and so does a question or a permission request. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
+exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a report's finding, a failed turn or an end without a report still reaches you at once, and so does a question or a permission request. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
 exports[`tool results spawnText 4`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is in no group, so its report comes on its own: group failed: disk full"`;
 
@@ -849,7 +860,7 @@ exports[`tool results spawnText 5`] = `"Started session ses_child in /repo, on m
 
 exports[`tool results spawnText for a child started below the top 1`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
-exports[`tool results spawnText for a child started below the top 2`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a failed turn or an end without a report still reaches you at once. Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
+exports[`tool results spawnText for a child started below the top 2`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a report's finding, a failed turn or an end without a report still reaches you at once. Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
 exports[`tool results spawnText for a child started from its parent's HEAD 1`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. Its worktree starts from the commit your own worktree is on."`;
 
@@ -872,6 +883,10 @@ exports[`tool results sendText 7`] = `"Recorded as your report, status done. It 
 exports[`tool results sendText 8`] = `"Recorded as your report, status failed. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once ses_parent's turn has ended, yours being the last. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`tool results sendText 9`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported. Nothing more is needed from you for it. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+
+exports[`tool results sendText 10`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported (1 of 3 have). Nothing more is needed from you for it. Its finding went to ses_parent now, ahead of the report. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+
+exports[`tool results sendText 11`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once ses_parent's turn has ended, yours being the last. Its finding could not be delivered ahead of it: send the finding to ses_parent now with courier_send without a status. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`tool results childrenText 1`] = `"No sessions started with courier_spawn."`;
 
@@ -1179,6 +1194,50 @@ Artifacts:
 - files: src/a.ts
 - checks:
   - bun test: ok"
+`;
+
+exports[`join groups groupNotice 5`] = `
+"Group "reviews" is complete: 2 reports of 2 members (1 done, 1 partial). Each report follows, with its status.
+
+[1/2] ses_a "Review a.ts": done
+Looks fine.
+
+Finding for the other parts:
+a.ts and b.ts share a parser: review them together.
+
+Artifacts:
+- files: src/a.ts
+- checks:
+  - bun test: ok
+
+[2/2] ses_b "Review b.ts": partial
+Two of three functions.
+The third needs the API.
+
+Check and integrate each one yourself. The sessions that reported are idle; message one with courier_send if it has more to do."
+`;
+
+exports[`join groups groupNotice 6`] = `
+"
+
+Held with group "reviews" so far, 1 report, shown now in case what this session needs is in it. The group's message brings it again once every member has reported.
+
+- ses_a "Review a.ts": done
+Looks fine.
+
+Finding for the other parts:
+a.ts and b.ts share a parser: review them together.
+
+Artifacts:
+- files: src/a.ts
+- checks:
+  - bun test: ok"
+`;
+
+exports[`join groups groupNotice 7`] = `
+"A finding from this session's report (status done), delivered ahead of it: the report is held with group "reviews" and reaches you with the group's other reports. If other sessions you started need the finding, send it to them now with courier_send, only to those it affects.
+
+a.ts and b.ts share a parser: review them together."
 `;
 
 exports[`permission requests REJECTED 1`] = `"Refused by the person or the top session of the tree. Do without it, or report back why you cannot."`;

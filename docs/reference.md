@@ -189,8 +189,8 @@ whole task; one session for one stage is a part: a staged core when 2 or more pa
 review of the merged parts, the fixing of what a review found once verified. One session alone,
 with nothing of the task done before it by the session or by 2 or more parts, and fewer than 2
 parts after it, is the whole task. It says which in one line: `split: no, because …; considered: …`
-or `split: <n> parts: …`. A session that splits starts the parts in one join group, ends its turn
-without polling, checks each part and sends one combined report. At `maxDepth` it is told to do the
+or `split: <n> parts: …`. A session that splits starts the parts in one join group, leaving out
+[a part whose result the others need](#join-groups), ends its turn without polling, checks each part and sends one combined report. At `maxDepth` it is told to do the
 task itself. Any spawned session is told to send its parent a finding the other parts need (an
 assumption of the split that is wrong, a shared file or API that behaves otherwise) at once, without
 a status, and carry on; progress alone is not worth a message. A finding that a session it started
@@ -259,7 +259,8 @@ order:
    to one session. The decision goes in the split line, whose forms the skill repeats, as a brief can
    be compacted away. Several whole jobs in one prompt are that many parts; below the root, never one
    session for the whole task.
-2. **Start the parts**: the parts that run at once in one join group; when they do not all fit the
+2. **Start the parts**: the parts that run at once in one join group, without
+   [a part whose result the others need](#join-groups); when they do not all fit the
    limits, waves, each its own group, or ungrouped, the next started as each report frees a slot. No
    two parts edit the same files, `isolate: true` where they edit in parallel. Each task says what
    to produce, the context, how to check it, what to report and the skills to load from those the
@@ -282,11 +283,11 @@ order:
 6. **Done** only when every part is verified and integrated; at the root, one `courier_note` when
    the next tree should know something, none otherwise.
 
-Without the skill, a child's brief still carries the split rule, the one group, no polling, the
+Without the skill, a child's brief still carries the split rule, the one group and the part left out of it, no polling, the
 limits, verifying, how to report and to send a finding up, and that text typed into its session reaches the sessions above it
 by itself ([steering](#steering-a-running-tree)). The root has no
 brief: its role line carries the split rule until its first spawn, then only the limits and
-verifying. The tool descriptions carry the one group, no polling, check-ins, isolation, the model
+verifying. The tool descriptions carry the one group and the part left out of it, no polling, check-ins, isolation, the model
 and `native`; the notices carry the relay and what to do about a child that fails or goes quiet.
 The skill alone adds the root's split rule after its first spawn, that several jobs are that many
 parts, the waves, writing a task, passing findings and prompt-route text on, answering a blocked,
@@ -345,6 +346,12 @@ that started them has ended, by an idle time at or after the last member joined 
 decline of a permission prompt stamps none, by the parent's transcript ending on that declined step.
 Then they reach the parent in one message. A group name is 1 to 60
 letters, digits, dots, dashes or underscores, scoped to the parent.
+
+**What to group.** The skill, the brief and `courier_spawn`'s descriptions tell a model the same
+rule: a group is for the parts that run at once, whose reports the parent can do nothing with until
+all are in. A part whose result the others need while they run (one that sets up, probes or decides
+something they use) is left out of the group: its report wakes the parent alone, and the parent
+passes the result on with `courier_send`.
 
 **What is held.** A `done`, `partial` or `failed` report is held. A later report from the same member
 replaces it. Everything else reaches the parent at once: a `blocked` report (the member stays out

@@ -10,23 +10,6 @@ source "$ROOT/script/demo-lib.sh"
 
 caption() { mark "caption $1"; }
 zoom() { mark "zoom $1"; }
-hold() {
-  local until rows row
-  until=$(awk -v s="$1" -v p="$PACE" -v now="$(date +%s%3N)" 'BEGIN { printf "%d", now + s * p * 1000 }')
-  while [ "$(date +%s%3N)" -lt "$until" ]; do
-    sleep 0.2
-    [ -n "$FOCUSED" ] || continue
-    rows=$(tmux capture-pane -pt "$TMUX_SESSION" | grep -nF -- "$LOOKED" | cut -d: -f1 || true)
-    if [ "$LOOKED_WHICH" = last ]; then row=$(tail -1 <<<"$rows"); else row=$(head -1 <<<"$rows"); fi
-    if [ -z "$row" ]; then
-      mark "focus off"
-      FOCUSED=
-    elif [ "$row" != "$AT_ROW" ]; then
-      AT_ROW=$row
-      mark "focus $AT_COLUMN $AT_ROW $LOOKED_SIZE"
-    fi
-  done
-}
 command_line() {
   mark "key $1"
   submit "$1"

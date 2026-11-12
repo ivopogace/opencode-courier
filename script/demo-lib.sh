@@ -35,7 +35,23 @@ press() {
   shift
   keys "$@"
 }
-hold() { sleep "$(awk -v s="$1" -v p="$PACE" 'BEGIN { print s * p }')"; }
+hold() {
+  local until rows row
+  until=$(awk -v s="$1" -v p="$PACE" -v now="$(date +%s%3N)" 'BEGIN { printf "%d", now + s * p * 1000 }')
+  while [ "$(date +%s%3N)" -lt "$until" ]; do
+    sleep 0.2
+    [ -n "$FOCUSED" ] || continue
+    rows=$(tmux capture-pane -pt "$TMUX_SESSION" | grep -nF -- "$LOOKED" | cut -d: -f1 || true)
+    if [ "$LOOKED_WHICH" = last ]; then row=$(tail -1 <<<"$rows"); else row=$(head -1 <<<"$rows"); fi
+    if [ -z "$row" ]; then
+      mark "focus off"
+      FOCUSED=
+    elif [ "$row" != "$AT_ROW" ]; then
+      AT_ROW=$row
+      mark "focus $AT_COLUMN $AT_ROW $LOOKED_SIZE"
+    fi
+  done
+}
 type_text() {
   local text=$1 i
   for ((i = 0; i < ${#text}; i++)); do
@@ -64,12 +80,6 @@ wait_for() {
   cat "$WORK/screens/$name.txt"
   KEEP=1
   exit 1
-}
-wait_gone() {
-  for _ in $(seq 1 "${2:-30}"); do
-    tmux capture-pane -pt "$TMUX_SESSION" | grep -qF -- "$1" || return 0
-    sleep 1
-  done
 }
 look() {
   wait_for "$1" "${5:-30}"

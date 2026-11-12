@@ -223,7 +223,10 @@ const { initID, consumers } = rolesOf(tree)
 const init = initID ? tree.get(initID).list : []
 const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length
 const sleeps = (part) => part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))
-const looksIn = (turn) => toolsOf(turn).filter((part) => LOOKS.has(part.name) || part.name === RECALL || sleeps(part)).length
+const rootTools = toolsOf(root)
+const firstRootSpawn = rootTools.findIndex(childOf)
+const lookedBeforeSpawn = new Set(rootTools.slice(0, firstRootSpawn === -1 ? rootTools.length : firstRootSpawn).filter((part) => LOOKS.has(part.name)))
+const looksIn = (turn) => toolsOf(turn).filter((part) => (LOOKS.has(part.name) && !lookedBeforeSpawn.has(part)) || part.name === RECALL || sleeps(part)).length
 const allowedRecall = (turn) => {
   const tools = toolsOf(turn)
   const firstSpawn = tools.findIndex(childOf)
@@ -292,7 +295,6 @@ for (const [id, entry] of [...tree].filter(([, entry]) => spawnsOf(entry.list).l
   const groups = [...new Set(toolsOf(entry.list).filter((part) => childOf(part) && part.state.input?.group).map((part) => part.state.input.group))]
   notes.push(`${who(id)} started ${spawnsOf(entry.list).length} session(s)${groups.length ? ` in group(s) ${groups.join(", ")}` : ", in no group"}`)
 }
-const rootTools = toolsOf(root)
 const load = rootTools.findIndex((part) => loadsAnySkill(part) && part.state.input?.id === SKILL)
 notes.push(`the root orchestrated ${load === -1 ? `without ${SKILL} loaded` : load < rootTools.findIndex(childOf) ? `with ${SKILL} loaded before its first spawn` : `with ${SKILL} loaded only after its first spawn`}`)
 if (polled) notes.push("polled: the root")

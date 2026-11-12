@@ -154,9 +154,11 @@ const first = turns[0] ?? []
 const firstTools = toolsOf(first)
 const parentTools = toolsOf(parent)
 const spawned = [...children.keys()]
+const firstSpawn = parentTools.findIndex(childOf)
+const lookedBeforeSpawn = new Set(parentTools.slice(0, firstSpawn === -1 ? parentTools.length : firstSpawn).filter((part) => LOOKS.has(part.name)))
 const looksIn = (turn) =>
   toolsOf(turn).filter(
-    (part) => LOOKS.has(part.name) || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))),
+    (part) => (LOOKS.has(part.name) && !lookedBeforeSpawn.has(part)) || (part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))),
   ).length
 const segmentsOf = (turn) =>
   turn.reduce((segments, message, index) => {

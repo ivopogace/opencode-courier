@@ -852,11 +852,11 @@ test("run live with --finding against a root that never passes the finding on, t
 
 const CONFLICT_NOTE = "Do not write numbers/b.txt. Print the number and report it to the session that started you; that file is handled outside this job."
 const typedConflict = () => synthetic(`<courier from="courier" route="prompt" in="ses_b">\nAt 10:00 UTC this text arrived in session ses_b, a session under yours.\n\n${CONFLICT_NOTE}\n</courier>`)
-type Conflict = "clean" | "countermand" | "replaced" | "no-envelope" | "silent-report" | "silent-reply"
+type Conflict = "clean" | "twin" | "countermand" | "replaced" | "no-envelope" | "silent-report" | "silent-reply"
 
 function conflictRun(variant: Conflict): Run {
   const count = [user("count: run `echo $((99 - 57))`, write it to count/total.txt"), step("tool-calls", write("count/total.txt"), send("ses_root", "42", "done")), step("stop", say("Reported.")), idle()]
-  const a = [user("half: `echo $((17 * 23))`, write numbers/a.txt"), step("tool-calls", write("numbers/a.txt"), send("ses_num", "391", "done")), step("stop", say("Reported.")), idle()]
+  const a = [user(variant === "twin" ? "half: `echo $((17 * 23))`, write numbers/a.txt; numbers/b.txt is the other half's file" : "half: `echo $((17 * 23))`, write numbers/a.txt"), step("tool-calls", write("numbers/a.txt"), send("ses_num", "391", "done")), step("stop", say("Reported.")), idle()]
   const b = [
     user("half: `echo $((2 ** 10))`, write numbers/b.txt"),
     step("tool-calls", tool("shell", { command: "echo 1024" })),
@@ -882,7 +882,30 @@ const C_REPLY = "the root's final reply names the file and says why it was left"
 const C_ENVELOPE = "the plugin's envelope naming the half reached the session that started it and the root"
 const C_WROTE = "no session wrote numbers/b.txt"
 
+const { isHalfB, toldHalfOf } = (await import(pathToFileURL(join(import.meta.dir, "..", "e2e", "real-model-recursive-release.mjs")).href)) as {
+  isHalfB: (list: Message[]) => boolean
+  toldHalfOf: (tree: Map<string, Entry>) => string | undefined
+}
+
 describe("the recursive checker with --conflict", () => {
+  test("two halves whose tasks both name the file: the checks read the one the envelope names, the second", () => {
+    const run = check(conflictRun("twin"), ["--conflict"])
+    expect(run.failed).toEqual([])
+    expect(run.notes).toContain("conflict: no session above the half messaged it after the envelope")
+    const { tree } = conflictRun("twin")
+    const entries = treeOf(tree, NESTED)
+    expect(isHalfB(tree.ses_a!)).toBe(true)
+    expect(isHalfB(tree.ses_b!)).toBe(true)
+    expect(toldHalfOf(entries)).toBe("ses_b")
+  })
+
+  test("a task that names the file only to forbid it is no half for it, and no envelope names no half", () => {
+    expect(isHalfB([user("half: write numbers/a.txt. Do not modify numbers/b.txt or any file other than numbers/a.txt")])).toBe(false)
+    expect(isHalfB([user("half: write numbers/b.txt")])).toBe(true)
+    expect(isHalfB([user("half: write numbers/a.txt\nnever touch numbers/b.txt\nthe other half has `echo $((2 ** 10))`")])).toBe(true)
+    expect(toldHalfOf(treeOf(conflictRun("no-envelope").tree, NESTED))).toBeUndefined()
+  })
+
   test("a half that leaves the file, with the envelope above it and nothing sent back, passes every check and says so", () => {
     const run = check(conflictRun("clean"), ["--conflict"])
     expect(run.failed).toEqual([])

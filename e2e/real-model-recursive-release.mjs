@@ -11,12 +11,13 @@ export const ended = (message) =>
   (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
 export const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
 export const taskOf = (list) => textOf(list.find((message) => message.type === "user" || message.type === "synthetic") ?? {})
-export const isCount = (list) => /99 - 57|count\/total\.txt/.test(taskOf(list))
 const FORBIDS = /\b(?:not|never|don't|except|other than|besides)\b/i
+const ELSEWHERE = /\b(?:other|another) (?:part|half|session)\b/i
+const sentencesOf = (list) => taskOf(list).split(/(?<=[.!?])\s+|\n/)
+export const isCount = (list) =>
+  sentencesOf(list).some((sentence) => /99 - 57/.test(sentence) || (sentence.includes("count/total.txt") && !FORBIDS.test(sentence) && !ELSEWHERE.test(sentence)))
 export const isHalfB = (list) =>
-  taskOf(list)
-    .split(/(?<=[.!?])\s+|\n/)
-    .some((sentence) => /2 \*\* 10/.test(sentence) || (sentence.includes(CONFLICT_FILE) && !FORBIDS.test(sentence)))
+  sentencesOf(list).some((sentence) => /2 \*\* 10/.test(sentence) || (sentence.includes(CONFLICT_FILE) && !FORBIDS.test(sentence)))
 export const hasRun = (list) => list.some((message) => message.type === "assistant")
 export function childOf(part) {
   if (part.name !== "courier_spawn" || part.state.status !== "completed") return undefined
@@ -51,14 +52,16 @@ const carriedInSpawn = (list, child, after) =>
 export const toldAfter = (list, child, after) => plainAfter(list, child, after) ?? (carriedInSpawn(list, child, after) ? { spawned: true } : undefined)
 export const typedAt = (list, sessionID) =>
   list.findIndex((message) => message.type === "synthetic" && message.text?.startsWith(`<courier from="courier" route="prompt" in="${sessionID}">`))
-export function toldHalfOf(tree) {
+export function toldOf(tree, depth) {
   for (const [, entry] of tree)
     for (const message of entry.list) {
       const id = message.type === "synthetic" ? message.text.match(/^<courier from="courier" route="prompt" in="([^"]+)">/)?.[1] : undefined
-      if (id !== undefined && tree.get(id)?.depth === 2) return id
+      if (id !== undefined && tree.get(id)?.depth === depth) return id
     }
   return undefined
 }
+export const toldHalfOf = (tree) => toldOf(tree, 2)
+export const countIdOf = (tree) => toldOf(tree, 1) ?? [...tree].find(([, entry]) => entry.depth === 1 && isCount(entry.list))?.[0]
 export const passedDown = (entry, rootID) => {
   const reached = delivered(entry.list, rootID)
   const below = spawnsOf(entry.list)
@@ -77,7 +80,7 @@ export function waitOf(list, files) {
 
 function stoppedAt(tree, rootID, { finding, conflict, told }, file) {
   const depth1 = [...tree].filter(([, entry]) => entry.depth === 1)
-  const [countID] = depth1.find(([, entry]) => isCount(entry.list)) ?? []
+  const countID = countIdOf(tree)
   if (file === GO_COUNT) return finding ? 'no "count" session at depth 1 is in a turn to take the person\'s message' : 'no session at depth 1 has run the "count" part'
   if (conflict) return `no half for ${CONFLICT_FILE} at depth 2 is in a turn to take the person's message`
   if (!finding) return "no session is left to pass anything on"

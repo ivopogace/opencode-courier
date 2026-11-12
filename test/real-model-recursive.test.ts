@@ -416,6 +416,13 @@ test("without --staged the recursive checks keep their rules on a staged tree: a
   expect(denied.notes.some((note) => note.startsWith("staged:"))).toBe(false)
 })
 
+const { isCount, isHalfB, toldHalfOf, countIdOf } = (await import(pathToFileURL(join(import.meta.dir, "..", "e2e", "real-model-recursive-release.mjs")).href)) as {
+  isCount: (list: Message[]) => boolean
+  isHalfB: (list: Message[]) => boolean
+  toldHalfOf: (tree: Map<string, Entry>) => string | undefined
+  countIdOf: (tree: Map<string, Entry>) => string | undefined
+}
+
 const PERSON_NOTE =
   "A change from the person for the whole job, not only for your part: every file this job writes must hold its number " +
   "followed by a space and the word checked, such as 7 checked. Write yours that way."
@@ -475,6 +482,28 @@ describe("the recursive checker with --finding", () => {
     expect(Object.keys(run.checks)).toHaveLength(13)
     expect(run.exitCode).toBe(0)
     expect(run.notes).toContain('finding: the "count" session did not send the words up itself; its report: 42 checked')
+  })
+
+  test("a numbers session whose task names count/total.txt to forbid it, ahead of the count session, is not the count session: the checks read the one the envelope names", () => {
+    const task = "numbers: the other part of the job writes count/total.txt, so touch nothing outside numbers/"
+    const run = findingRun("passed")
+    run.tree.ses_num![0] = user(task)
+    expect(isCount([user(task)])).toBe(false)
+    expect(isCount([user("count: write count/total.txt")])).toBe(true)
+    expect(isCount([user("numbers: do not write count/total.txt")])).toBe(false)
+    expect(isCount([user("numbers: touch only numbers/. Run `echo $((99 - 57))` and report it")])).toBe(true)
+    const entries = treeOf(run.tree, NESTED)
+    expect(countIdOf(entries)).toBe("ses_count")
+    const result = check(run, ["--finding"])
+    expect(result.failed).toEqual([])
+    expect(result.notes).toContain('finding: the "count" session did not send the words up itself; its report: 42 checked')
+  })
+
+  test("no envelope names no count session, and the first session whose task matches is the count session", () => {
+    const run = findingRun("passed")
+    const root = run.tree.ses_root!
+    root.splice(root.findIndex((message) => message.type === "synthetic" && (message.text as string).startsWith('<courier from="courier"')), 1)
+    expect(countIdOf(treeOf(run.tree, NESTED))).toBe("ses_count")
   })
 
   test("the count session that also sends the words up, and a message to it after the envelope, are quoted in the notes", () => {
@@ -881,11 +910,6 @@ const C_REPORT = "the half's report to its parent holds 1024"
 const C_REPLY = "the root's final reply names the file and says why it was left"
 const C_ENVELOPE = "the plugin's envelope naming the half reached the session that started it and the root"
 const C_WROTE = "no session wrote numbers/b.txt"
-
-const { isHalfB, toldHalfOf } = (await import(pathToFileURL(join(import.meta.dir, "..", "e2e", "real-model-recursive-release.mjs")).href)) as {
-  isHalfB: (list: Message[]) => boolean
-  toldHalfOf: (tree: Map<string, Entry>) => string | undefined
-}
 
 describe("the recursive checker with --conflict", () => {
   test("two halves whose tasks both name the file: the checks read the one the envelope names, the second", () => {

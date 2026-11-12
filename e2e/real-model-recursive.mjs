@@ -9,6 +9,7 @@ import {
   ended,
   groupOf,
   hasRun,
+  countIdOf,
   isCount,
   isHalfB,
   passedDown,
@@ -163,7 +164,8 @@ for (;;) {
       contradicted = true
       go(GO_HALVES, `the half for ${CONFLICT_FILE} has been told as the person`)
     }
-    const parts = [...tree.values()].filter((entry) => entry.depth === 1 && !isCount(entry.list))
+    const countNow = countIdOf(tree)
+    const parts = [...tree].filter(([id, entry]) => entry.depth === 1 && id !== countNow).map(([, entry]) => entry)
     if (told && parts.length > 0 && parts.every((entry) => passedDown(entry, rootID))) go(GO_HALVES, "the finding has come down to each session of the other part")
     const release = saved ? undefined : releaseOf(tree, rootID, { finding, conflict, told, created })
     if (release) go(release.file, release.why)
@@ -355,7 +357,8 @@ const stagedChecks = [
   ["the session that staged reported upward once, with status done", stagerUpward.length === 1 && stagerUpward[0].status === "done"],
 ]
 
-const [countID, countEntry] = [...tree].find(([, entry]) => entry.depth === 1 && isCount(entry.list)) ?? []
+const countID = countIdOf(tree)
+const countEntry = countID ? tree.get(countID) : undefined
 const noteAt = countEntry ? countEntry.list.findIndex((message) => message.type === "user" && message.text?.includes(PERSON_NOTE)) : -1
 const up = countEntry && noteAt !== -1 ? plainAfter(countEntry.list, rootID, noteAt) : undefined
 const countReport = countEntry ? reportsTo(countEntry.list, rootID)[0] : undefined

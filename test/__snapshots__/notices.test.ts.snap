@@ -886,7 +886,9 @@ exports[`tool results sendText 9`] = `"Recorded as your report, status done. It 
 
 exports[`tool results sendText 10`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported (1 of 3 have). Nothing more is needed from you for it. Its finding went to ses_parent now, ahead of the report. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
-exports[`tool results sendText 11`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once ses_parent's turn has ended, yours being the last. Its finding could not be delivered ahead of it: send the finding to ses_parent now with courier_send without a status. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+exports[`tool results sendText 11`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported (2 of 3 have). Nothing more is needed from you for it. Its finding could not be delivered ahead of it: send the finding to ses_parent now with courier_send without a status. If nothing else is left to do now, end your turn by replying without calling more tools."`;
+
+exports[`tool results sendText 12`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once ses_parent's turn has ended, yours being the last. Its finding goes in that message, under your report: with no other member left to report, nothing was sent ahead of it. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`tool results childrenText 1`] = `"No sessions started with courier_spawn."`;
 

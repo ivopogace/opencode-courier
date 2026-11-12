@@ -232,7 +232,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:89 reports-groups:97 reminder:18 finding:21 finding-up:16 person-message:7 permission:36 depth:4 role-entry:6 entries:11 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:1 later:20 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 memory:27 busy:77 spawn-native:15 native:39 decline-seal:17 total-refusal:23 early-report:23 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
+SUITE="reports:89 reports-groups:97 reminder:18 finding:29 finding-up:16 person-message:7 permission:36 depth:4 role-entry:6 entries:11 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:1 later:20 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 memory:27 busy:77 spawn-native:15 native:39 decline-seal:17 total-refusal:23 early-report:23 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {
@@ -747,6 +747,26 @@ run_finding() {
       (map(contains(" group=\"finding\"")) | index(true)) as $group | length == 2 and $ahead == 0 and $group == 1')"
   check "the finder sent no progress, and neither child was told as one that ended without a report" \
     "$([ -z "$(kv get "report/$finder/progress")" ] && notices_with "$parent" ended | jq -r 'length == 0')"
+
+  scenario "the report that completes its group sends no finding ahead: the finding comes in the group's message, under the report"
+  out=$(prompt "COURIER-FINDING-LAST")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  early=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-REPORTS-FIRST") | .metadata.metadata.sessionID')
+  finder=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-FINDS-LAST") | .metadata.metadata.sessionID')
+  check "two children were started in one group" "$([ -n "$early" ] && [ -n "$finder" ] && echo true || echo false)"
+  check "the first member's report is held" \
+    "$(for _ in $(seq 1 30); do [ "$(kv get "group/$parent/finding/$early" | jq -r '.report.status == "done"' 2>/dev/null)" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
+  api_post "session/$finder/synthetic" "$(jq -nc --arg text "<courier from=\"$parent\">REPORT-NOW</courier>" --arg from "$parent" \
+    '{text: $text, description: ("Message from " + $from), metadata: {source: "courier", from: $from}, delivery: "steer"}')" >/dev/null
+  check "the parent got the group's message, with the finding under the finder's report" \
+    "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r 'length == 1 and (.[0] |
+      contains("reports=\"2\"") and contains("FIRST DONE") and contains("FINDER DONE\n\nFinding for the other parts:\nFINDING: the shared API returns cents"))')"
+  check "the finder's report completed the group and its result says the finding goes in the group's message" \
+    "$(api "session/$finder/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send") | .state] |
+      length == 1 and (.[0] | .status == "completed" and ((.metadata.metadata // .metadata) | .finding == "held" and .held.group == "finding" and .held.reported == 2) and
+        (tostring | contains("Its finding goes in that message, under your report")))')"
+  check "no finding went ahead: the group's message is the parent's only courier message" \
+    "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] | length == 1 and (map(contains("finding=\"ahead\"")) | any | not)')"
 }
 
 run_finding_up() {

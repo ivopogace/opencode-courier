@@ -39,8 +39,8 @@ async function keep(ports: CourierPorts, noted: Awaited<ReturnType<typeof noteRe
   return kept && { ...kept, report }
 }
 
-async function heldSent(ports: CourierPorts, from: string, to: string, { held, report, due }: { readonly held: Held; readonly report: HeldReport; readonly due: boolean }): Promise<Sent> {
-  const finding = report.finding ? await ahead(ports, from, to, held.group, report.status, report.finding) : undefined
+async function heldSent(ports: CourierPorts, from: string, to: string, { held, report, due, open }: Kept): Promise<Sent> {
+  const finding = report.finding ? (open ? await ahead(ports, from, to, held.group, report.status, report.finding) : "held") : undefined
   if (due) ports.nudge()
   return { status: report.status, report: true, held, ...(finding ? { finding } : {}) }
 }
@@ -124,7 +124,14 @@ async function memberIn(ports: CourierPorts, entry: RosterEntry): Promise<Member
   }
 }
 
-async function hold(ports: CourierPorts, member: Membership, report: HeldReport): Promise<{ readonly held: Held; readonly due: boolean } | undefined> {
+interface Kept {
+  readonly held: Held
+  readonly report: HeldReport
+  readonly due: boolean
+  readonly open: boolean
+}
+
+async function hold(ports: CourierPorts, member: Membership, report: HeldReport): Promise<Omit<Kept, "report"> | undefined> {
   const groups = groupStore(ports.storage)
   try {
     await holdReport(groups, member, report)
@@ -136,5 +143,5 @@ async function hold(ports: CourierPorts, member: Membership, report: HeldReport)
     return undefined
   }
   const standing = await groupStanding(groups, member.parentID, member.group).catch(() => undefined)
-  return { held: { group: member.group, ...(standing ? { reported: standing.reported, members: standing.members } : {}) }, due: standing?.complete !== false }
+  return { held: { group: member.group, ...(standing ? { reported: standing.reported, members: standing.members } : {}) }, due: standing?.complete !== false, open: standing?.complete !== true }
 }

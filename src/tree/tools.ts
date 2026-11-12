@@ -85,7 +85,13 @@ export const SendInput = Schema.Struct({
     }).annotate({ description: "With a report: what you produced, listed in the message after your text in a fixed layout." }),
   ),
   queue: Schema.optional(
-    Schema.Boolean.annotate({ description: "Wait until the target's current turn ends instead of steering it now." }),
+    Schema.Boolean.annotate({
+      description:
+        "Hold the message until the target's current turn has ended, so a working target reads it only after that turn. " +
+        "Without queue the message is steered in: the target reads it at its next step, after the tool call it is " +
+        "running (a wait or a sleep included) has returned; nothing is cut short or interrupted. Use queue only for a " +
+        "message that must not be read before that turn ends.",
+    }),
   ),
 })
 
@@ -153,7 +159,9 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
     description:
       "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. " +
       "Use it to report back to the session that started you, with a status (done, partial, blocked or failed) and " +
-      "the artifacts you produced, or to steer a session you started. The status is carried as an attribute of the " +
+      "the artifacts you produced, or to steer a session you started: a session that is working reads the message at " +
+      "its next step, after the tool call it is running has returned; nothing is interrupted. The status is carried " +
+      "as an attribute of the " +
       "message; without one, a message to the session that started you is progress, not your report. A message to a " +
       "session you started carries no status: one given is dropped. If you were " +
       "started in a group, a report with status done, partial or failed is held and delivered with the group's other " +

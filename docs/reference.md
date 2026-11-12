@@ -112,7 +112,7 @@ for a git elsewhere.
 | Tool | Parameters | Does |
 |---|---|---|
 | `courier_spawn` | `task`, `title?`, `agent?`, `model?`, `variant?`, `isolate?`, `native?`, `group?` | Creates a session, sends it the task and a brief, and returns at once. `model` and `variant` choose [what it runs on](#the-model-a-child-runs-on). `isolate: true` gives it its own [worktree](#worktrees). `native` says whether it is an OpenCode subagent ([native child sessions](#native-child-sessions)). With a `group`, its report is held with the [group's](#join-groups). Refused past the [limits](#session-trees-and-their-limits). |
-| `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `queue?` | Delivers a message, signed with the sender's id, waking the session if idle. It steers into a running turn, or waits for its end with `queue: true`. From a child to its parent, a `status` makes it the child's [report](#a-childs-report). |
+| `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `queue?` | Delivers a message, signed with the sender's id, waking the session if idle. A running turn reads it at its next step, after the tool call in progress returns, and nothing is cut short; `queue: true` holds it until the turn ends. From a child to its parent, a `status` makes it the child's [report](#a-childs-report). |
 | `courier_children` | `sessionID?` | One look at the sessions this one (or `sessionID`) started, each with its last turn's outcome, how long it has been idle, when it was archived, its last reply, the requests and questions it waits on (`pending`), its directory, whether it is isolated, `native: true` when it is a [subagent](#native-child-sessions), when it started, its [group](#join-groups) and its [model](#the-model-a-child-runs-on) when that is not the parent's. |
 | `courier_tree` | `sessionID?` | The [whole tree](#seeing-and-stopping-a-subtree) under a session. |
 | `courier_stop` | `sessionID`, `cleanup?` | [Stops](#seeing-and-stopping-a-subtree) a session below this one and everything under it. |
@@ -616,7 +616,9 @@ courier message. A session's own account of what the person said is a message li
 an envelope the plugin wrote binds a receiver, as far as its text says.
 
 **Other ways to reach the tree.** `courier_send` without a `status` is an ordinary message, not a
-report. It is delivered as `steer` (or after the current turn with `queue: true`) and wakes the
+report. It is delivered as `steer`: a running turn reads it at its next step, once the tool call in
+progress has returned, and nothing running is cut short. `queue: true` holds it until the turn ends,
+for a message that must not be read before then. It wakes the
 target if it is idle. It has no target restriction, so a parent that got a finding can pass it on to
 its other children, which steers their running turns. A `status` belongs on a report upward: on a
 message to a session below the sender it is dropped, the message goes without it, and the result says

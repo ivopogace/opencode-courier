@@ -1005,6 +1005,19 @@ describe("send, from a member of a group", () => {
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({ title: "A", joinedAt: 1, report: { at: 1_000, status: "done", message: "Done." } })
   })
 
+  test("the report that completes its group sends no finding ahead: the group's message is due and carries it", async () => {
+    const { ports, calls, store, nudges } = fakePorts()
+    await grouped(ports)
+    await send(ports, "ses_other", { sessionID: "ses_parent", message: "Done.", status: "done" })
+
+    const sent = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done too.", status: "done", finding: "the key is k" })
+
+    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair", reported: 2, members: 2 } })
+    expect(calls.filter((call) => call.method === "session.synthetic")).toEqual([])
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { finding: "the key is k" } })
+    expect(nudges).toHaveLength(1)
+  })
+
   test("a finding that cannot be delivered ahead leaves the report held, and the result says to send it apart", async () => {
     const { ports, store, logs } = fakePorts()
     await grouped(ports)
@@ -1025,12 +1038,14 @@ describe("send, from a member of a group", () => {
 
     expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "init ran.", status: "done", finding: "the key is k", artifacts: { files: ["a"] } })).toEqual({ messageID: "msg_2", status: "done", report: true })
     expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "Which?", status: "blocked", finding: "the key is k" })).toEqual({ messageID: "msg_2", status: "blocked", report: true })
-    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "halfway", finding: "the key is k" })).toEqual({ messageID: "msg_2", report: false })
+    expect(await send(ports, "ses_child", { sessionID: "ses_parent", message: "halfway", finding: " the key is k " })).toEqual({ messageID: "msg_2", report: false })
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "more", finding: "  " })
 
     expect(calls.filter((call) => call.method === "session.synthetic").map((call) => call.input.text)).toEqual([
       '<courier from="ses_child" status="done">\ninit ran.\n\nFinding for the other parts:\nthe key is k\n\nArtifacts:\n- files: a\n</courier>',
       '<courier from="ses_child" status="blocked">\nWhich?\n\nFinding for the other parts:\nthe key is k\n</courier>',
       '<courier from="ses_child">\nhalfway\n\nFinding for the other parts:\nthe key is k\n</courier>',
+      '<courier from="ses_child">\nmore\n</courier>',
     ])
   })
 

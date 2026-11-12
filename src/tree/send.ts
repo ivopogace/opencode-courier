@@ -23,8 +23,9 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
     const report = noted?.member && status && status !== "blocked" ? { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}), ...(finding ? { finding } : {}) } : undefined
     const held = noted?.member && report ? await hold(ports, noted.member, report) : undefined
     if (noted) await syncStanding(ports, input.sessionID)
-    if (held && report) return { status: report.status, report: true, held, ...(finding ? { finding: await ahead(ports, from, input.sessionID, held.group, report.status, finding) } : {}) }
-    const delivered = await deliver(ports, from, { ...input, ...(finding ? { finding } : {}) }, status, noted)
+    const last = held?.reported !== undefined && held.members !== undefined && held.reported >= held.members
+    if (held && report) return { status: report.status, report: true, held, ...(finding && !last ? { finding: await ahead(ports, from, input.sessionID, held.group, report.status, finding) } : {}) }
+    const delivered = await deliver(ports, from, input, status, noted, finding)
     return { ...delivered, ...(noted ? { report: noted.report } : {}), ...(dropped ? { dropped } : {}) }
   } catch (error) {
     await noted?.undo().catch(() => undefined)
@@ -33,9 +34,9 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
   }
 }
 
-async function deliver(ports: CourierPorts, from: string, input: SendInput, status: Status | undefined, noted: Awaited<ReturnType<typeof noteReport>>): Promise<Sent> {
+async function deliver(ports: CourierPorts, from: string, input: SendInput, status: Status | undefined, noted: Awaited<ReturnType<typeof noteReport>>, finding: string | undefined): Promise<Sent> {
   const held = noted?.member && status === "blocked" ? await heldWith(ports, noted.member) : ""
-  const text = envelope(from, reportBody(input.message, input.artifacts, input.finding) + held, status ? { status } : {})
+  const text = envelope(from, reportBody(input.message, input.artifacts, finding) + held, status ? { status } : {})
   const description = `Message from ${from}`
   const delivered = await ports.session.synthetic({
     sessionID: input.sessionID,

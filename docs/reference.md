@@ -340,7 +340,7 @@ progress and settles nothing.
 from the report now: a value, a path or a command they wait for, an assumption of the split that is
 wrong. A blank one counts as none. In a message that reaches the parent at once (a report from a child in no group, a `blocked`
 report, a message without a status) it follows the text, under `Finding for the other parts:` and
-before the artifacts. When the report is held with a [join group](#join-groups), the finding goes to the
+before the artifacts. When the report is held with a [join group](#join-groups) that still waits for another member, the finding goes to the
 parent at once in a message of its own, steered in, and the report is held with the finding in it:
 
 ```
@@ -351,11 +351,9 @@ The store needs the key in out/key.txt.
 </courier>
 ```
 
-The child's result says the finding went ahead. If that message cannot be delivered, the report
+The child's result says the finding went ahead. The report that completes its group sends none ahead: the group's message is due and carries it. If that message cannot be delivered, the report
 stays held and the result tells the child to send the finding without a status. The group's message,
-and a blocked member's `Held with group` section, show the finding again under the held report. The
-field is named in the brief's line on the report, in `courier_send`'s descriptions and, for the
-parent, in `courier_spawn`'s `group` and the skill's line on groups; no role line names it.
+and a blocked member's `Held with group` section, show the finding again under the held report. No role line names the field.
 
 Every message courier delivers is one such envelope, and only courier writes its tag: a `<courier`
 or `</courier` inside what a session wrote, in a message, an artifact or a session's title, is

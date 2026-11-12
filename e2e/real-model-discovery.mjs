@@ -161,7 +161,7 @@ for (;;) {
     const { foundAt, key } = initID ? arrivalOf(root, init, initID) : { foundAt: -1 }
     const passed = foundAt !== -1 && consumers.every(([id]) => toldAfter(root, id, foundAt, key))
     const answered = foundAt !== -1 && settled(root) && root.slice(foundAt + 1).some((message) => message.type === "assistant")
-    const onItsWay = sendsTo(init, rootID).some((send) => !send.status && KEY.test(send.message))
+    const onItsWay = sendsTo(init, rootID).some((send) => (send.status ? KEY.test(send.finding) : KEY.test(send.message)))
     const held = foundAt === -1 && !onItsWay && settled(init) && reportsTo(init, rootID).length > 0 && settled(root)
     const why = passed ? `the root has given ${consumers.length} parts the key since it arrived` : answered ? "the root ended its turn on the key without passing it on to each part" : held ? 'the "init" session has reported and no key has reached the root' : undefined
     if (!saved && !released && consumers.length >= 2 && why) {

@@ -23,7 +23,9 @@ export const SKILL_CONTENT = [
   "",
   "## 2. Start the parts",
   "",
-  "- One courier_spawn per part, the parts that run at once in one group. When they do not all fit the tree's limits " +
+  "- One courier_spawn per part, the parts that run at once in one group, which holds their reports until all are in. " +
+    "Leave out of the group a part whose result the others need while they run (one that sets up, probes or decides " +
+    "something they use): its report wakes you alone, and you courier_send them the result. When they do not all fit the tree's limits " +
     "at once, start waves, each its own group, or leave them ungrouped and start the next as each report frees a slot.",
   "- No two parts edit the same files; isolate: true for each part that edits files in parallel with another.",
   "- Write each task so the session can do it without you, since it sees none of your conversation: what to produce " +

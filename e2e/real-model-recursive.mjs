@@ -22,6 +22,7 @@ import {
   statusOf,
   textOf,
   toldAfter,
+  toldHalfOf,
   toolsOf,
   typedAt,
 } from "./real-model-recursive-release.mjs"
@@ -380,7 +381,8 @@ const findingChecks = [
   ["that part's session passed it on to each of its own sessions, once it arrived", onward.length > 0 && onward.every((one) => one.below.length > 0 && one.down.every((down) => down.sent))],
 ]
 
-const [halfID, halfEntry] = [...tree].find(([, entry]) => entry.depth === 2 && isHalfB(entry.list)) ?? []
+const toldHalf = toldHalfOf(tree)
+const [halfID, halfEntry] = toldHalf ? [toldHalf, tree.get(toldHalf)] : ([...tree].find(([, entry]) => entry.depth === 2 && isHalfB(entry.list)) ?? [])
 const halfParent = halfEntry ? tree.get(halfEntry.parentID) : undefined
 const halfReports = halfEntry ? reportsTo(halfEntry.list, halfEntry.parentID) : []
 const writesConflictFile = writesFile(CONFLICT_FILE)

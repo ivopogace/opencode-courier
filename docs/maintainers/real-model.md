@@ -296,7 +296,8 @@ a sub-orchestrator's wake turn still runs.
 text that contradicts a session's task, run five times. It measures no wording against another. The
 prompt is [A finding passed on](#a-finding-passed-on)'s, and the checker, run with `--conflict`, plays
 the person. It creates `.go-count` as soon as the "count" session runs. It finds the half for
-`numbers/b.txt` at depth 2 by `2 ** 10` or `numbers/b.txt` in its task, and once that half has an
+`numbers/b.txt` at depth 2 by `2 ** 10` or `numbers/b.txt` in a sentence of its task that holds no
+negation ("Do not modify numbers/b.txt" names the file to forbid it), and once that half has an
 assistant message and no settled report, prompts it:
 
 > Do not write numbers/b.txt. Print the number and report it to the session that started you; that
@@ -310,6 +311,10 @@ A run with no session to write to waits out no timeout either: the release of
 sits in a wait, the checker creates `.go-count` when no session at depth 1 has run the "count"
 part, and `.go-halves` when no half for `numbers/b.txt` at depth 2 is in a turn to take the
 person's message, as when the root started the halves itself. Its log names which.
+
+The checks that read the half read the session the plugin's envelope names (`route="prompt"`, the
+session that was told), not the first session whose task names the file; with no such envelope they
+read the first depth-2 session that matches.
 
 The checks: the seven of the recursive set that do not read the files or the reply, then six. The
 files hold `391` and `42` and `numbers/b.txt` does not exist; the half's report to its parent holds

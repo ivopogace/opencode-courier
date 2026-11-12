@@ -12,7 +12,11 @@ export const ended = (message) =>
 export const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
 export const taskOf = (list) => textOf(list.find((message) => message.type === "user" || message.type === "synthetic") ?? {})
 export const isCount = (list) => /99 - 57|count\/total\.txt/.test(taskOf(list))
-export const isHalfB = (list) => /2 \*\* 10|numbers\/b\.txt/.test(taskOf(list))
+const FORBIDS = /\b(?:not|never|don't|except|other than|besides)\b/i
+export const isHalfB = (list) =>
+  taskOf(list)
+    .split(/(?<=[.!?])\s+|\n/)
+    .some((sentence) => /2 \*\* 10/.test(sentence) || (sentence.includes(CONFLICT_FILE) && !FORBIDS.test(sentence)))
 export const hasRun = (list) => list.some((message) => message.type === "assistant")
 export function childOf(part) {
   if (part.name !== "courier_spawn" || part.state.status !== "completed") return undefined
@@ -47,6 +51,14 @@ const carriedInSpawn = (list, child, after) =>
 export const toldAfter = (list, child, after) => plainAfter(list, child, after) ?? (carriedInSpawn(list, child, after) ? { spawned: true } : undefined)
 export const typedAt = (list, sessionID) =>
   list.findIndex((message) => message.type === "synthetic" && message.text?.startsWith(`<courier from="courier" route="prompt" in="${sessionID}">`))
+export function toldHalfOf(tree) {
+  for (const [, entry] of tree)
+    for (const message of entry.list) {
+      const id = message.type === "synthetic" ? message.text.match(/^<courier from="courier" route="prompt" in="([^"]+)">/)?.[1] : undefined
+      if (id !== undefined && tree.get(id)?.depth === 2) return id
+    }
+  return undefined
+}
 export const passedDown = (entry, rootID) => {
   const reached = delivered(entry.list, rootID)
   const below = spawnsOf(entry.list)

@@ -61,7 +61,7 @@ npm registry and redirects every other request to the real one.
 
 ## Recording the demo
 
-The README's video is made in two steps, neither in CI:
+A narrated video of the terminal UI is made in two steps, neither in CI:
 
 ```bash
 OPENCODE_BIN=... script/record-demo.sh demo.cast   # about 4 minutes, in real time
@@ -86,7 +86,7 @@ and `fc-match` (or `FONT` and `MONO_FONT`). A narration change needs only the re
 
 A feature with something to see in the TUI gets a scene in `record-demo.sh` and its line in the
 narration. GitHub plays a video only from its own uploads: drag the file into an issue or PR comment
-and put the URL it gives on its own line in README.md.
+and use the URL it gives, on a line of its own.
 
 The README's GIF, two issues fixed in parallel by an orchestrator, a lead per issue and their four
 workers, with one worker's finding passed on by its lead to the sibling it changes, walked through in
@@ -116,7 +116,7 @@ Two more settings are for what moves:
 | `ZOOM` | `1.15` | How much a zoomed spotlight is magnified; `1` for none. |
 
 A frame is written only when the picture changes. The line along the bottom edge is the progress,
-moving once a second, with a tick where each scene starts. The last frame holds for 3 s and
+moving once a second and full on the last frame, with a tick where each scene starts. The last frame holds for 3 s and
 dissolves into the first.
 
 `docs/demo.gif` stays under 3 MB: the README loads it from GitHub. A frame that changes the whole

@@ -17,10 +17,6 @@ The main case in the `/courier tree` panel: two issues, a lead per issue, two wo
 worker's finding wakes its lead as it comes, the lead passes it on, and the sibling rewrites its
 test. The leads are a join group: the orchestrator needs only both results.
 
-https://github.com/user-attachments/assets/d7cf74f8-15b3-4cc1-866e-b75ba0ac3f8a
-
-A narrated tour of the terminal UI: the tree panel, the asks inbox, failing children and memory.
-
 ## Quickstart
 
 ```bash

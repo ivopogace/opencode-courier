@@ -3,7 +3,6 @@
 # dependencies = ["pillow>=10.1"]
 # ///
 import json
-import math
 import os
 import re
 import subprocess
@@ -26,7 +25,6 @@ BAR = (17, 17, 17)
 TRACK = (74, 51, 22)
 TICK = (150, 104, 44)
 SHADE = 150
-SHADE_STEPS = 1
 KEY_SHOWN = 1.4
 KEY_POP = 0.15
 KEY_FADE = 0.2
@@ -283,9 +281,8 @@ class Glide:
         share = ease((time - since) / self.seconds) if since > float("-inf") else 1.0
         return tuple(mix(a, b, share) for a, b in zip(before, after))
 
-    def rising(self, time: float, part: int) -> bool:
-        _, before, after = next(turn for turn in reversed(self.turns) if turn[0] <= time)
-        return after[part] >= before[part]
+    def heading(self, time: float):
+        return next(turn for turn in reversed(self.turns) if turn[0] <= time)[2]
 
     def to(self, time: float, value, start=None):
         self.turns.append((time, start or self.at(time), value))
@@ -357,10 +354,9 @@ class Story:
 
     def look(self, time: float):
         left, top, right, bottom, lit = self.spot.at(time)
-        steps = int(SHADE_STEPS)
-        shade = (math.ceil(lit * steps - 1e-6) if self.spot.rising(time, 4) else math.floor(lit * steps + 1e-6)) / steps
+        shade = self.spot.heading(time)[4]
         scale = round(self.zoom.at(time)[0], 3) if lit > 0.004 else 1.0
-        reached = int(time / PROGRESS_STEP) * PROGRESS_STEP
+        reached = self.length if time + 1 / FPS > self.length else int(time / PROGRESS_STEP) * PROGRESS_STEP
         return (scale, (round(left), round(top), round(right), round(bottom)) if lit > 0.004 else None, shade, round(lit, 2),
                 self.caption(time), self.key(time), self.click(time), round(self.width * clamp(reached / self.length)))
 

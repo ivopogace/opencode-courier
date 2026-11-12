@@ -315,6 +315,7 @@ export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"
     const finding = {
       ahead: ` Its finding went to ${sessionID} now, ahead of the report.`,
       unsent: ` Its finding could not be delivered ahead of it: send the finding to ${sessionID} now with courier_send without a status.`,
+      held: " Its finding goes in that message, under your report: with no other member left to report, nothing was sent ahead of it.",
       none: "",
     }[sent.finding ?? "none"]
     return `Recorded as your report${status}. It is held with group "${group}" and goes to ${sessionID} in one message with the group's other reports, ${when}${finding} ${END_TURN}`

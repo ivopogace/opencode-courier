@@ -6,7 +6,7 @@ import type { CourierPorts } from "../src/tree/ports.js"
 import { DEFAULT_LIMITS } from "../src/tree/domain.js"
 import { describeFailure, envelope } from "../src/kernel/protocol.js"
 import { childBrief, modelFormatRefusal, nativeIsolateRefusal, reportBody, spawnText, variantWithoutModelRefusal } from "../src/tree/text.js"
-import { joinGroup } from "../src/tree/group.js"
+import { joinGroup, leaveGroup } from "../src/tree/group.js"
 import { childStore, groupStore, memberKey, progressKey, rosterKey, settledKey } from "../src/tree/store.js"
 
 const CHILD_RULES = [{ action: "opencode_schedule_*", resource: "*", effect: "deny" }]
@@ -1005,17 +1005,55 @@ describe("send, from a member of a group", () => {
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({ title: "A", joinedAt: 1, report: { at: 1_000, status: "done", message: "Done." } })
   })
 
-  test("the report that completes its group sends its finding ahead before the scheduler is told to deliver the group", async () => {
+  test("the report that completes its group sends no finding ahead: the finding waits under the report for the group's message", async () => {
     const { ports, calls, store, nudges } = fakePorts()
     await grouped(ports)
     await send(ports, "ses_other", { sessionID: "ses_parent", message: "Done.", status: "done" })
 
     const sent = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done too.", status: "done", finding: "the key is k" })
 
-    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair", reported: 2, members: 2 }, finding: "ahead" })
+    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair", reported: 2, members: 2 }, finding: "held" })
+    expect(calls.filter((call) => call.method === "session.synthetic")).toEqual([])
+    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { finding: "the key is k" } })
+    expect(nudges).toHaveLength(1)
+  })
+
+  test("a member that left without a report has not yet to report, so the last one standing sends no finding ahead", async () => {
+    const { ports, calls } = fakePorts()
+    await grouped(ports)
+    await leaveGroup(groupStore(ports.storage), "ses_parent", "pair", "ses_other", "failed", 500)
+
+    const sent = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done.", status: "done", finding: "the key is k" })
+
+    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair", reported: 1, members: 1 }, finding: "held" })
+    expect(calls.filter((call) => call.method === "session.synthetic")).toEqual([])
+  })
+
+  test("a blocked member has yet to report, so a finding goes ahead while it waits", async () => {
+    const { ports, calls } = fakePorts()
+    await grouped(ports)
+    await send(ports, "ses_other", { sessionID: "ses_parent", message: "Which?", status: "blocked" })
+
+    const sent = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done.", status: "done", finding: "the key is k" })
+
+    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair", reported: 1, members: 2 }, finding: "ahead" })
+    expect(calls.filter((call) => call.method === "session.synthetic").map((call) => call.input.metadata)).toEqual([
+      { source: "courier", from: "ses_other", status: "blocked" },
+      { source: "courier", from: "ses_child", finding: "ahead" },
+    ])
+  })
+
+  test("a finding goes ahead when the group's standing cannot be read after the report is held", async () => {
+    const { ports, calls, nudges } = fakePorts()
+    await grouped(ports)
+    const scan = ports.storage.scan
+    ;(ports.storage as any).scan = async (query: { prefix: string }) => (query.prefix.includes("pair") ? Promise.reject(new Error("storage is down")) : scan(query as any))
+
+    const sent = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done.", status: "done", finding: "the key is k" })
+
+    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair" }, finding: "ahead" })
     const ahead = calls.findIndex((call) => call.method === "session.synthetic" && String(call.input.text).startsWith('<courier from="ses_child" finding="ahead">'))
     expect(ahead).toBeGreaterThanOrEqual(0)
-    expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { finding: "the key is k" } })
     expect(nudges).toHaveLength(1)
     expect(nudges[0]).toBeGreaterThan(ahead)
   })

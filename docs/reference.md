@@ -340,8 +340,9 @@ progress and settles nothing.
 from the report now: a value, a path or a command they wait for, an assumption of the split that is
 wrong. A blank one counts as none. In a message that reaches the parent at once (a report from a child in no group, a `blocked`
 report, a message without a status) it follows the text, under `Finding for the other parts:` and
-before the artifacts. When the report is held with a [join group](#join-groups), the finding goes to the
-parent at once in a message of its own, steered in, and the report is held with the finding in it:
+before the artifacts. When the report is held with a [join group](#join-groups) and another member
+has yet to report, the finding goes to the parent at once in a message of its own, steered in, and
+the report is held with the finding in it:
 
 ```
 <courier from="ses_child" finding="ahead">
@@ -351,10 +352,14 @@ The store needs the key in out/key.txt.
 </courier>
 ```
 
-The child's result says the finding went ahead. The report that completes its group sends its
-finding ahead too, before the group's message, which waits for the parent's turn to end. If that message cannot be delivered, the report
-stays held and the result tells the child to send the finding without a status. The group's message,
-and a blocked member's `Held with group` section, show the finding again under the held report. No role line names the field.
+The child's result says the finding went ahead. If that message cannot be delivered, the report
+stays held and the result tells the child to send the finding without a status. A member has yet to
+report while it has no report held and has not left the group: a `blocked` member has yet to report,
+one whose turn failed, was interrupted or was deleted has not. The report that completes its group
+sends no finding ahead: the group's message follows, with the finding under the report, and the
+child's result says so. If the group's standing cannot be read once the report is held, the finding
+goes ahead. The group's message, and a blocked member's `Held with group` section, show the finding
+again under the held report. No role line names the field.
 
 Every message courier delivers is one such envelope, and only courier writes its tag: a `<courier`
 or `</courier` inside what a session wrote, in a message, an artifact or a session's title, is
@@ -374,7 +379,7 @@ letters, digits, dots, dashes or underscores, scoped to the parent.
 
 **What is held.** A `done`, `partial` or `failed` report is held. A later report from the same member
 replaces it. Everything else reaches the parent at once: a `blocked` report (the member stays out
-until it reports again), a held report's [`finding`](#a-childs-report), progress, a failed turn and a silent end; at the top of the tree also a
+until it reports again), a held report's [`finding`](#a-childs-report) while another member has yet to report, progress, a failed turn and a silent end; at the top of the tree also a
 permission request, a question and a form, which below it [go to the top](#a-child-that-asks-for-permission).
 
 **A blocked member and the held reports.** A member's `blocked` report brings, after its own text, the

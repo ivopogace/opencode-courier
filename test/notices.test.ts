@@ -235,7 +235,8 @@ describe("tool results", () => {
     expect(tree.sendText("ses_parent", { report: true, status: "failed", held: { group: "reviews", reported: 3, members: 3 } })).toMatchSnapshot()
     expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews" } })).toMatchSnapshot()
     expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 1, members: 3 }, finding: "ahead" })).toMatchSnapshot()
-    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 3, members: 3 }, finding: "unsent" })).toMatchSnapshot()
+    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 2, members: 3 }, finding: "unsent" })).toMatchSnapshot()
+    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 3, members: 3 }, finding: "held" })).toMatchSnapshot()
   })
   test("childrenText", () => {
     expect(tree.childrenText([])).toMatchSnapshot()

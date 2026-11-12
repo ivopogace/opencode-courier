@@ -329,12 +329,15 @@ const finding = {
   keyBeforeGroup: initGroup ? foundAt !== -1 && (groupAt === -1 || foundAt < groupAt) : null,
   partsInTime: onward.filter((one) => one.inTime).length,
   parts: onward.length,
+  aheads: root.filter(aheadOf).length,
+  rootTurns: turns.length,
 }
 const filledHow = finding.filledWithKey ? "put a finding on its report, with the key" : finding.filled ? "put a finding on its report, without the key" : "put no finding on its report"
 if (initID) notes.push(`finding: the "init" session ${filledHow}; ${finding.reportsWithFinding} of ${finding.reports} reports in the tree carried one`)
 const arrived = !finding.keyReachedRoot ? "did not reach the root" : !initGroup ? "reached the root, with no group to wait for" : finding.keyBeforeGroup ? "reached the root before the group was complete" : "reached the root only once the group was complete"
 if (initID) notes.push(`finding: the "init" session was started ${initGroup ? `in group "${initGroup}"` : "in no group"}; the key ${arrived}`)
 notes.push(`finding: ${finding.partsInTime} of ${finding.parts} other parts had the key before they reported`)
+notes.push(`finding: ${finding.aheads} finding(s) reached the root ahead of a held report; the root took ${finding.rootTurns} turn(s)`)
 if (startedTwice) notes.push("discovery: the root started a part a second time")
 if (stopped) notes.push(`discovery: the root stopped ${stopped} session(s)`)
 const touched = [...tree].filter(([, entry]) => toolsOf(entry.list).some((part) => part.name === "shell" && /(touch|>|rm)\s[^|;&]*\.go-parts/.test(part.state.input?.command ?? ""))).map(([id]) => id)

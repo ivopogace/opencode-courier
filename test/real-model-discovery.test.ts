@@ -207,7 +207,8 @@ describe("the discovery checker", () => {
     expect(run.notes).toContain("the root started 3 session(s) in group(s) parts")
     expect(run.notes).toContain('finding: the "init" session was started in group "parts"; the key reached the root only once the group was complete')
     expect(run.notes).toContain("finding: 0 of 2 other parts had the key before they reported")
-    expect(run.finding).toEqual({ initGroup: "parts", filled: false, filledWithKey: false, reportsWithFinding: 0, reports: 3, keyReachedRoot: true, keyBeforeGroup: false, partsInTime: 0, parts: 2 })
+    expect(run.notes).toContain("finding: 0 finding(s) reached the root ahead of a held report; the root took 2 turn(s)")
+    expect(run.finding).toEqual({ initGroup: "parts", filled: false, filledWithKey: false, reportsWithFinding: 0, reports: 3, keyReachedRoot: true, keyBeforeGroup: false, partsInTime: 0, parts: 2, aheads: 0, rootTurns: 2 })
   })
 
   test("a key on the report's finding reaches the root ahead of the held report: the parts have it in time, and the counts say so", () => {
@@ -217,7 +218,8 @@ describe("the discovery checker", () => {
     expect(run.notes).toContain("discovery: it reached the root in its report's finding, delivered ahead of the held report, with 2 of 2 other parts yet to report")
     expect(run.notes).toContain('finding: the "init" session put a finding on its report, with the key; 1 of 3 reports in the tree carried one')
     expect(run.notes).toContain('finding: the "init" session was started in group "parts"; the key reached the root before the group was complete')
-    expect(run.finding).toEqual({ initGroup: "parts", filled: true, filledWithKey: true, reportsWithFinding: 1, reports: 3, keyReachedRoot: true, keyBeforeGroup: true, partsInTime: 2, parts: 2 })
+    expect(run.notes).toContain("finding: 1 finding(s) reached the root ahead of a held report; the root took 3 turn(s)")
+    expect(run.finding).toEqual({ initGroup: "parts", filled: true, filledWithKey: true, reportsWithFinding: 1, reports: 3, keyReachedRoot: true, keyBeforeGroup: true, partsInTime: 2, parts: 2, aheads: 1, rootTurns: 3 })
   })
 
   test("a finding that leaves the key out is counted as filled without the key, and no key reached the root", () => {

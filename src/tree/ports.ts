@@ -108,7 +108,7 @@ export interface Sent {
   readonly report?: boolean
   readonly held?: Held
   readonly dropped?: Status
-  readonly finding?: "ahead" | "unsent"
+  readonly finding?: "ahead" | "unsent" | "held"
 }
 
 export interface Role {

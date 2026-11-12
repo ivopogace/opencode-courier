@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { pathToFileURL } from "node:url"
 
 const CHECKER = join(import.meta.dir, "..", "e2e", "real-model-recursive.mjs")
 const FILES = { "numbers/a.txt": "391", "numbers/b.txt": "1024", "count/total.txt": "42" }
@@ -682,6 +683,171 @@ test("run live with --finding, the checker lets the count part go once it has wr
   expect(notDown).toEqual({ told: true, count: true, halves: false })
   expect(inSpawn).toEqual({ told: true, count: true, halves: true })
   expect(silent).toEqual({ told: true, count: true, halves: false })
+}, 20_000)
+
+type Entry = { parentID: string | undefined; depth: number; list: Message[] }
+type ReleaseState = { finding: boolean; conflict: boolean; told: boolean; created: string[] }
+const { releaseOf } = (await import(pathToFileURL(join(import.meta.dir, "..", "e2e", "real-model-recursive-release.mjs")).href)) as {
+  releaseOf: (tree: Map<string, Entry>, rootID: string, state: ReleaseState) => { file: string; why: string } | undefined
+}
+const QUIET = ", and every session has ended its turn or sits in a wait on a file"
+const waitCommand = (file: string) => `for i in $(seq 150); do [ -e ${file} ] && break; sleep 1; done; echo 1`
+const inWait = (file: string, status = "running"): Message => ({
+  type: "assistant",
+  content: [{ type: "tool", name: "shell", state: { status, input: { command: waitCommand(file) } } }],
+  time: { created: tick() },
+})
+const fromRoot = () => synthetic(`<courier from="ses_root">\n${FINDING}\n</courier>`)
+const treeOf = (lists: Record<string, Message[]>, shape: Record<string, readonly [string, number]>) =>
+  new Map<string, Entry>(Object.entries(lists).map(([id, list]) => [id, { parentID: shape[id]?.[0], depth: shape[id]?.[1] ?? 0, list }]))
+const NESTED = { ses_num: ["ses_root", 1], ses_count: ["ses_root", 1], ses_a: ["ses_num", 2], ses_b: ["ses_num", 2] } as const
+const FLAT = { ses_a: ["ses_root", 1], ses_b: ["ses_root", 1], ses_count: ["ses_root", 1] } as const
+const AFTER_TOLD: ReleaseState = { finding: true, conflict: false, told: true, created: [".go-count"] }
+
+type Stall = "root-silent" | "root-answering" | "root-passed" | "one-half" | "part-answering" | "each-half"
+
+function stalled(variant: Stall) {
+  const count = [user("count: run `echo $((99 - 57))`, write it to count/total.txt"), step("tool-calls", write("count/total.txt"), send("ses_root", "42 checked", "done")), step("stop", say("Reported.")), idle()]
+  const root = [user("the job"), step("tool-calls", spawn("ses_num", ""), spawn("ses_count", "")), step("stop", say("split: 2 parts")), idle(), typed("ses_count")]
+  const num = [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves")), step("stop", say("split: 2 halves")), idle()]
+  if (variant === "root-silent") root.push(step("stop", say("Noted.")), idle())
+  if (variant !== "root-silent" && variant !== "root-answering") root.push(step("tool-calls", send("ses_num", FINDING)), step("stop", say("Passed on.")), idle())
+  if (variant === "one-half" || variant === "part-answering" || variant === "each-half") num.push(fromRoot())
+  if (variant === "one-half") num.push(step("tool-calls", send("ses_a", FINDING)), step("stop", say("Passed on.")), idle())
+  if (variant === "each-half") num.push(step("tool-calls", send("ses_a", FINDING), send("ses_b", FINDING)), step("stop", say("Passed on.")), idle())
+  const half = (id: string) => [user(`half ${id}`), inWait(".go-halves")]
+  return treeOf({ ses_root: root, ses_num: num, ses_count: count, ses_a: half("a"), ses_b: half("b") }, NESTED)
+}
+
+describe("the recursive checker's release of a wait the finding can no longer end", () => {
+  test("a root that ended its turn on the envelope without passing the finding on releases the halves", () => {
+    expect(releaseOf(stalled("root-silent"), "ses_root", AFTER_TOLD)).toEqual({
+      file: ".go-halves",
+      why: `the root has the finding and has ended its turn without passing it on to each other part${QUIET}`,
+    })
+  })
+
+  test("a part's session that ended its turn on the finding with one half of two told releases the halves", () => {
+    expect(releaseOf(stalled("one-half"), "ses_root", AFTER_TOLD)).toEqual({
+      file: ".go-halves",
+      why: `the other part's session has the finding and has ended its turn without passing it on to each of its sessions${QUIET}`,
+    })
+  })
+
+  test("a session that has the finding and is still in its turn releases nothing", () => {
+    expect(releaseOf(stalled("root-answering"), "ses_root", AFTER_TOLD)).toBeUndefined()
+    expect(releaseOf(stalled("part-answering"), "ses_root", AFTER_TOLD)).toBeUndefined()
+    const inStep = stalled("part-answering")
+    inStep.get("ses_num")!.list.push({ type: "assistant", content: [], time: { created: tick() } })
+    expect(releaseOf(inStep, "ses_root", AFTER_TOLD)).toBeUndefined()
+  })
+
+  test("the root's message on its way to an idle session releases nothing", () => {
+    expect(releaseOf(stalled("root-passed"), "ses_root", AFTER_TOLD)).toBeUndefined()
+  })
+
+  test("a finding that has come down to each half is the checker's own release, not this one", () => {
+    expect(releaseOf(stalled("each-half"), "ses_root", AFTER_TOLD)).toBeUndefined()
+  })
+
+  test("a sub-orchestrator between the part's session and the halves, in its turn on the finding, releases nothing", () => {
+    const tree = stalled("one-half")
+    const mid = [user("the halves"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves")), step("stop", say("split: 2 halves")), idle(), synthetic(`<courier from="ses_num">\n${FINDING}\n</courier>`)]
+    tree.get("ses_num")!.list = [user("numbers"), step("tool-calls", spawn("ses_mid", "")), step("stop", say("One stage.")), idle(), fromRoot(), step("tool-calls", send("ses_mid", FINDING)), step("stop", say("Passed on.")), idle()]
+    tree.set("ses_mid", { parentID: "ses_num", depth: 2, list: mid })
+    for (const id of ["ses_a", "ses_b"]) Object.assign(tree.get(id)!, { parentID: "ses_mid", depth: 3 })
+    expect(releaseOf(tree, "ses_root", AFTER_TOLD)).toBeUndefined()
+  })
+
+  test("a session just started, one whose wait is over and one waiting on a file that exists are each still moving", () => {
+    const untold = stalled("root-silent")
+    untold.get("ses_count")!.list = [user("count: write count/total.txt"), inWait(".go-count")]
+    expect(releaseOf(untold, "ses_root", AFTER_TOLD)).toBeUndefined()
+    const started = stalled("root-silent")
+    started.get("ses_b")!.list = []
+    expect(releaseOf(started, "ses_root", AFTER_TOLD)).toBeUndefined()
+    const over = stalled("root-silent")
+    over.get("ses_b")!.list = [user("half b"), inWait(".go-halves", "completed")]
+    expect(releaseOf(over, "ses_root", AFTER_TOLD)).toBeUndefined()
+    expect(releaseOf(stalled("root-silent"), "ses_root", { ...AFTER_TOLD, created: [".go-count", ".go-halves"] })).toBeUndefined()
+  })
+
+  test("a tree with no session in a wait releases nothing, whatever was passed on", () => {
+    const tree = stalled("root-silent")
+    for (const id of ["ses_a", "ses_b"]) tree.get(id)!.list = [user("half"), step("stop", say("Done.")), idle()]
+    expect(releaseOf(tree, "ses_root", AFTER_TOLD)).toBeUndefined()
+  })
+
+  test("a root that passed the finding to sessions that sit in the wait themselves releases them", () => {
+    const count = stalled("root-silent").get("ses_count")!.list
+    const root = [user("the job"), step("tool-calls", spawn("ses_a", ""), spawn("ses_b", ""), spawn("ses_count", "")), step("stop", say("split: 3 parts")), idle(), typed("ses_count")]
+    root.push(step("tool-calls", send("ses_a", FINDING), send("ses_b", FINDING)), step("stop", say("Passed on.")), idle())
+    const tree = treeOf({ ses_root: root, ses_a: [user("half a"), inWait(".go-halves")], ses_b: [user("half b"), inWait(".go-halves"), fromRoot()], ses_count: count }, FLAT)
+    expect(releaseOf(tree, "ses_root", AFTER_TOLD)).toEqual({ file: ".go-halves", why: `the root passed the finding on to a session that sits in the wait itself${QUIET}` })
+    tree.get("ses_b")!.list = [user("half b"), step("stop", say("Waiting.")), idle()]
+    expect(releaseOf(tree, "ses_root", AFTER_TOLD)).toBeUndefined()
+  })
+
+  test("with no count session at depth 1 to write to, the count wait is released first, and the halves once its session has ended its turn", () => {
+    const untold: ReleaseState = { finding: true, conflict: false, told: false, created: [] }
+    const tree = stalled("root-silent")
+    tree.delete("ses_count")
+    tree.get("ses_root")!.list = [user("the job"), step("tool-calls", spawn("ses_num", "")), inWait(".go-count")]
+    expect(releaseOf(tree, "ses_root", untold)).toEqual({ file: ".go-count", why: `no "count" session at depth 1 is in a turn to take the person's message${QUIET}` })
+    expect(releaseOf(tree, "ses_root", { ...untold, created: [".go-count"] })).toBeUndefined()
+    tree.get("ses_root")!.list = [user("the job"), step("tool-calls", spawn("ses_num", ""), write("count/total.txt")), step("stop", say("Waiting for the halves.")), idle()]
+    expect(releaseOf(tree, "ses_root", { ...untold, created: [".go-count"] })).toEqual({
+      file: ".go-halves",
+      why: `the person's message was never written, for want of a "count" session at depth 1 in a turn to take it${QUIET}`,
+    })
+  })
+
+  test("with --conflict, halves the root started itself have no half at depth 2 to write to, and are released", () => {
+    const state: ReleaseState = { finding: false, conflict: true, told: false, created: [".go-count"] }
+    const count = stalled("root-silent").get("ses_count")!.list
+    const root = [user("the job"), step("tool-calls", spawn("ses_a", ""), spawn("ses_b", ""), spawn("ses_count", "")), step("stop", say("split: 3 parts")), idle()]
+    const tree = treeOf({ ses_root: root, ses_a: [user("half: write numbers/a.txt"), inWait(".go-halves")], ses_b: [user("half: write numbers/b.txt"), inWait(".go-halves")], ses_count: count }, FLAT)
+    expect(releaseOf(tree, "ses_root", state)).toEqual({ file: ".go-halves", why: `no half for numbers/b.txt at depth 2 is in a turn to take the person's message${QUIET}` })
+    tree.get("ses_root")!.list = [user("the job"), step("tool-calls", spawn("ses_a", ""), spawn("ses_b", "")), inWait(".go-count")]
+    tree.delete("ses_count")
+    expect(releaseOf(tree, "ses_root", { ...state, created: [] })).toEqual({ file: ".go-count", why: `no session at depth 1 has run the "count" part${QUIET}` })
+  })
+})
+
+test("run live with --finding against a root that never passes the finding on, the checker releases the halves and its log says why", async () => {
+  const tree = stalled("root-silent")
+  let told = false
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname
+      if (request.method === "POST" && path === "/api/session/ses_count/prompt") {
+        told = true
+        return Response.json({})
+      }
+      const id = path.split("/")[3] ?? ""
+      if (id === "ses_count" && !told) return Response.json({ data: [user("count: write count/total.txt"), inWait(".go-count")] })
+      return Response.json({ data: id === "ses_root" && !told ? tree.get(id)!.list.slice(0, 4) : tree.get(id)!.list })
+    },
+  })
+  const work = mkdtempSync(join(tmpdir(), "rmr-"))
+  mkdirSync(join(work, "project"))
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("COURIER_")))
+  try {
+    const run = Bun.spawn([process.execPath, CHECKER, "ses_root", "--finding"], {
+      env: { ...env, WORK: work, SERVER: server.url.origin, OPENCODE_PASSWORD: "test", COURIER_TIMEOUT: "2", COURIER_EXPECT: "", COURIER_FILES: "" },
+      stdout: "pipe",
+      stderr: "ignore",
+    })
+    const log = await new Response(run.stdout).text()
+    await run.exited
+    expect(log).toContain('  (the "count" session has been told as the person: created .go-count)')
+    expect(log).toContain(`  (the root has the finding and has ended its turn without passing it on to each other part${QUIET}: created .go-halves)`)
+    expect(existsSync(join(work, "project", ".go-halves"))).toBe(true)
+  } finally {
+    await server.stop(true)
+    rmSync(work, { recursive: true, force: true })
+  }
 }, 20_000)
 
 const CONFLICT_NOTE = "Do not write numbers/b.txt. Print the number and report it to the session that started you; that file is handled outside this job."

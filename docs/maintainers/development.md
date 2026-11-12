@@ -101,9 +101,10 @@ uv run script/render-gif.py demo-gif docs/demo.gif             # about 1 minute
 `record-gif.sh` shares `script/demo-lib.sh` with `record-demo.sh`, but keeps tmux's own screens,
 about twelve a second, rather than a cast, so the render needs no terminal emulator: `render-gif.py`
 draws them with Pillow and has ffmpeg encode the GIF. Its scenario is `e2e/mock-model.mjs`'s
-`demoTree`; `MOCK_CHILD_DELAY_MS` (`7000`) paces its workers, each of whose messages takes two to four times it.
-The render takes `FONT_SIZE` (`14`), `FPS` (`10`) and `IDLE` (`2.5`), and the fonts as `MONO_FONT`,
-`MONO_BOLD_FONT`, `FONT` and `KEY_FONT` (else `fc-match`'s DejaVu Sans Mono, Inter and DejaVu Sans).
+`demoTree`; `MOCK_CHILD_DELAY_MS` (`7000`) paces its workers, each of whose messages takes two to
+four times it. The render takes `FONT_SIZE` (`14`), `FPS` (`10`) and `IDLE` (`2.5`), and the fonts
+as `MONO_FONT`, `MONO_BOLD_FONT`, `FONT` and `KEY_FONT` (else `fc-match`'s DejaVu Sans Mono, Inter
+and DejaVu Sans).
 
 ## CI
 

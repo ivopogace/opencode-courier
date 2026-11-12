@@ -526,8 +526,8 @@ function demoWorker(worker, messages, parent) {
   const heard = messages.some((message) => message.role === "user" && /<courier from="ses_\w+">\n[^]*remember me/.test(textOf(message.content)))
   if (heard && shells.some((command) => command.includes("remember me"))) return report
   if (heard) return { tool: "shell", args: { command: worker.heeds } }
-  if (!shells.length) return { tool: "shell", args: { command: worker.drafts } }
-  return shells.length < 30 ? { tool: "shell", args: { command: "sleep 2" }, quick: true } : report
+  if (!shells.length) return { tool: "shell", args: { command: worker.drafts }, slower: 3 }
+  return shells.length < 20 ? { tool: "shell", args: { command: "sleep 4" }, quick: true } : report
 }
 
 function demoLead(lead, messages, lastAssistant, parent) {

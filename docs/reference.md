@@ -348,8 +348,8 @@ Then they reach the parent in one message. A group name is 1 to 60
 letters, digits, dots, dashes or underscores, scoped to the parent.
 
 **What to group.** The skill, the brief and `courier_spawn`'s descriptions tell a model the same
-rule: a group is for the parts that run at once, whose reports the parent can do nothing with until
-all are in. A part whose result the others need while they run (one that sets up, probes or decides
+rule: the parts that run at once go in one group, as the parent can do nothing with their reports
+until all are in. A part whose result the others need while they run (one that sets up, probes or decides
 something they use) is left out of the group: its report wakes the parent alone, and the parent
 passes the result on with `courier_send`.
 

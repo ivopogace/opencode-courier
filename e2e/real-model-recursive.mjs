@@ -246,8 +246,13 @@ const sleepsBeforeSpawn = (list) => {
   const firstSpawn = tools.findIndex(childOf)
   return new Set(staged ? tools.slice(0, firstSpawn === -1 ? tools.length : firstSpawn).filter(sleeps) : [])
 }
+const lookedBeforeSpawn = (list) => {
+  const tools = toolsOf(list)
+  const firstSpawn = tools.findIndex(childOf)
+  return new Set(tools.slice(0, firstSpawn === -1 ? tools.length : firstSpawn).filter((part) => LOOKS.has(part.name)))
+}
 const looksIn = (turn, exempt = new Set()) =>
-  toolsOf(turn).filter((part) => LOOKS.has(part.name) || part.name === RECALL || (sleeps(part) && !exempt.has(part))).length
+  toolsOf(turn).filter((part) => (LOOKS.has(part.name) && !exempt.has(part)) || part.name === RECALL || (sleeps(part) && !exempt.has(part))).length
 const allowedRecall = (id, turn) => {
   if (id !== rootID) return 0
   const tools = toolsOf(turn)
@@ -264,7 +269,7 @@ const segmentsOf = (turn) =>
 const polledIn = (id, list) => {
   const turns = turnsOf(list)
   const [opening = [], ...woken] = turns.flatMap(segmentsOf)
-  const exempt = sleepsBeforeSpawn(list)
+  const exempt = new Set([...sleepsBeforeSpawn(list), ...lookedBeforeSpawn(list)])
   return looksIn(opening, exempt) - allowedRecall(id, turns[0] ?? []) > 0 || woken.some((segment) => looksIn(segment, exempt) > 1)
 }
 const pollers = orchestrators.filter(([id, entry]) => polledIn(id, entry.list)).map(([id]) => id)

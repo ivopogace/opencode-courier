@@ -567,11 +567,12 @@ describe("the recursive checker on lone spawns and recalls", () => {
   })
 })
 
-function steeredRun(look: "none" | "after" | "before"): Run {
+function steeredRun(look: "none" | "after" | "before" | "before-spawn"): Run {
   const tree = transcripts("no-fault")
   const children = tool("courier_children", {})
   tree.ses_root = [
     user("the job"),
+    ...(look === "before-spawn" ? [step("tool-calls", tool("courier_recall", {}), tool("read", { path: "numbers/a.txt" }), children)] : []),
     step("tool-calls", spawn("ses_num", ""), spawn("ses_count", "")),
     ...(look === "before" ? [step("tool-calls", children)] : []),
     report("ses_count", "done", "42"),
@@ -595,6 +596,16 @@ describe("the recursive checker and a report steered into the root's first turn"
   test("one look after the steered report is no poll, one before any report is", () => {
     expect(check(steeredRun("after")).failed).toEqual([])
     expect(check(steeredRun("before")).failed).toEqual([POLL])
+  })
+  test("a look before the root's first spawn is no poll", () => {
+    expect(check(steeredRun("before-spawn")).failed).toEqual([])
+  })
+  test("a look before a sub-orchestrator's first spawn is no poll, one after it and before any report is", () => {
+    expect(check(loneSpawnRun([tool("read", { path: "count/plan.md" }), tool("courier_children", {})])).failed).toEqual([])
+    const run = loneSpawnRun([tool("read", { path: "count/plan.md" })])
+    const count = run.tree.ses_count as { content?: unknown[] }[]
+    count[1]!.content!.push(tool("courier_children", {}))
+    expect(check(run).failed).toEqual([POLL])
   })
 })
 

@@ -89,8 +89,9 @@ narration. GitHub plays a video only from its own uploads: drag the file into an
 and put the URL it gives on its own line in README.md.
 
 The README's GIF, two issues fixed in parallel by an orchestrator, a lead per issue and their four
-workers, walked through in the tree panel, is made the same way, without a voice: each step has a
-caption under the screen, and each key pressed shows beside it.
+workers, with one worker's finding passed on by its lead to the sibling it changes, walked through in
+the tree panel, is made the same way, without a voice: each step has a caption under the screen, and
+each key pressed shows beside it.
 
 ```bash
 OPENCODE_BIN=... script/record-gif.sh demo-gif                 # about 2 minutes, in real time
@@ -100,9 +101,10 @@ uv run script/render-gif.py demo-gif docs/demo.gif             # about 1 minute
 `record-gif.sh` shares `script/demo-lib.sh` with `record-demo.sh`, but keeps tmux's own screens,
 about twelve a second, rather than a cast, so the render needs no terminal emulator: `render-gif.py`
 draws them with Pillow and has ffmpeg encode the GIF. Its scenario is `e2e/mock-model.mjs`'s
-`demoTree`; `MOCK_CHILD_DELAY_MS` (`7000`) paces its workers, who report after two to five times it.
-The render takes `FONT_SIZE` (`14`), `FPS` (`10`) and `IDLE` (`2.5`), and the fonts as `MONO_FONT`,
-`MONO_BOLD_FONT`, `FONT` and `KEY_FONT` (else `fc-match`'s DejaVu Sans Mono, Inter and DejaVu Sans).
+`demoTree`; `MOCK_CHILD_DELAY_MS` (`7000`) paces its workers, each of whose messages takes two to
+four times it. The render takes `FONT_SIZE` (`14`), `FPS` (`10`) and `IDLE` (`2.5`), and the fonts
+as `MONO_FONT`, `MONO_BOLD_FONT`, `FONT` and `KEY_FONT` (else `fc-match`'s DejaVu Sans Mono, Inter
+and DejaVu Sans).
 
 ## CI
 

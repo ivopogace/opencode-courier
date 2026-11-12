@@ -11,10 +11,11 @@ polling.
 [![License: MIT](https://img.shields.io/npm/l/opencode-courier)](LICENSE)
 [![Supported OpenCode V2 version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fivopogace%2Fopencode-courier%2Fmain%2Fpackage.json&query=%24.peerDependencies%5B%27%40opencode%2Fplugin%27%5D&label=opencode&color=blue)](#supported-opencode-version)
 
-![An orchestrator fixes two issues in parallel: a lead per issue, each with two workers, switched between in the tree panel as the reports come back up](https://raw.githubusercontent.com/ivopogace/opencode-courier/main/docs/demo.gif)
+![An orchestrator fixes two issues in parallel: a worker's finding wakes its lead mid-run, the lead passes it on, and the sibling rewrites its test, followed in the tree panel](https://raw.githubusercontent.com/ivopogace/opencode-courier/main/docs/demo.gif)
 
-The main case, step by step: two issues fixed in parallel, a lead per issue and two workers under
-each, switched between in the `/courier tree` panel as the reports come back up.
+The main case in the `/courier tree` panel: two issues, a lead per issue, two workers under each. A
+worker's finding wakes its lead as it comes, the lead passes it on, and the sibling rewrites its
+test. The leads are a join group: the orchestrator needs only both results.
 
 https://github.com/user-attachments/assets/d7cf74f8-15b3-4cc1-866e-b75ba0ac3f8a
 
@@ -43,8 +44,9 @@ prompt again.
 OpenCode's own [`subagent` tool](https://opencode.ai/docs/agents) hands back a child's final
 answer. Use it when one result is all you need. Use courier for more:
 
-- **Messages mid-run.** A child reports progress or asks its parent at any time, and its parent
-  passes a finding that changes the other parts on to the children it affects.
+- **Messages mid-run.** A child sends its parent a finding or a question at any time, and each
+  report wakes the parent as it comes. The parent passes a finding on to the children it affects,
+  into their running turns. A join group, its children's reports in one message, is a choice.
 - **Waking an idle session.** A message or a schedule starts a new turn.
 - **Parallel edits.** `isolate: true` gives a child its own git worktree and branch to merge.
 - **Asks reach you.** A child's permission requests and questions come to you through the top
@@ -57,14 +59,15 @@ A parent calls `courier_spawn`, gets the child's session id at once, and ends it
 or stuck, the child calls `courier_send` with a status (`done`, `partial`, `blocked` or `failed`).
 The message lands in the parent's inbox and starts a new turn if the parent is idle.
 
-Children started with the same `group` report together, in one message. A child that fails (a
-rate or quota limit with when it lifts) is reported to its parent. One about to end its turn
-without reporting is reminded once, in the same turn, and its parent is told only if it still does
-not report. A message that does not wake its session is sent once more, then shown as `stalled`. On
-OpenCode 2.2.0 a parent's system prompt carries one line per child with its state, kept current,
-so it need not look. Children, held reports and scheduled messages survive a restart. The `courier-orchestrate` skill, listed in every session, tells a model when to
-split a task and how to check and merge the parts; how to plan and review them is left to
-your own skills. Every detail: [the reference](docs/reference.md).
+Each report wakes the parent as it comes. Children started with the same `group`, a choice for a
+pure fan-in, report together, in one message. A child that fails (a rate or quota limit with when it
+lifts) is reported to its parent. One about to end its turn without reporting is reminded once, in
+the same turn, and its parent is told only if it still does not report. A message that does not wake
+its session is sent once more, then shown as `stalled`. On OpenCode 2.2.0 a parent's system prompt
+carries one line per child with its state, kept current, so it need not look. Children, held reports
+and scheduled messages survive a restart. The `courier-orchestrate` skill, listed in every session,
+tells a model when to split a task and how to check and merge the parts; how to plan and review them
+is left to your own skills. Every detail: [the reference](docs/reference.md).
 
 ## Install
 

@@ -454,6 +454,11 @@ function passFinding(messages, lastAssistant) {
   const first = textOf(messages.find((message) => message.role === "user")?.content)
   const sent = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_send")
   const briefedBy = first.match(/You were started by session (ses_\w+)/)
+  if (briefedBy && first.includes("CHILD-FINDS-IN-REPORT")) {
+    if (sent.length === 0)
+      return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "FINDER DONE", status: "done", finding: "FINDING: the shared API returns cents, not euros" } }
+    return { text: "FINDER REPORTED" }
+  }
   if (briefedBy && first.includes("CHILD-FINDS")) {
     if (sent.length === 0) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "FINDING: the shared API returns cents, not euros" } }
     if (sent.length === 1) return { tool: "courier_send", args: { sessionID: briefedBy[1], message: "FINDER DONE", status: "done" } }
@@ -473,9 +478,9 @@ function passFinding(messages, lastAssistant) {
     return { text: call?.function?.name === "courier_send" ? "PARENT PASSED ON" : "PARENT SPAWNED" }
   }
   if (lastAssistant === -1)
-    return { calls: ["CHILD-FINDS", "CHILD-HEARS"].map((task) => ({ tool: "courier_spawn", args: { task, group: "finding" } })) }
+    return { calls: [first.includes("COURIER-FINDING-IN-REPORT") ? "CHILD-FINDS-IN-REPORT" : "CHILD-FINDS", "CHILD-HEARS"].map((task) => ({ tool: "courier_spawn", args: { task, group: "finding" } })) }
   const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
-  const found = recent.match(/<courier from="(ses_\w+)">\n(FINDING:[^\n]*)/)
+  const found = recent.match(/<courier from="(ses_\w+)"(?: finding="ahead")?>\n(?:A finding from this session's report[^\n]*\n\n)?(FINDING:[^\n]*)/)
   if (found) {
     const started = messages.flatMap((message) => (message.role === "tool" ? [...textOf(message.content).matchAll(/Started session (ses_\w+)/g)] : []))
     const sibling = started.map((match) => match[1]).find((id) => id !== found[1])

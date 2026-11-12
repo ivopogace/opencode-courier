@@ -270,7 +270,8 @@ function readReport(value: unknown): HeldReport | undefined {
   const message = str(given.message)
   const at = num(given.at)
   if (!isStatus(status) || message === undefined || at === undefined) return undefined
-  return { at, status, message, ...(given.artifacts !== undefined ? { artifacts: given.artifacts as Artifacts } : {}) }
+  const finding = str(given.finding)
+  return { at, status, message, ...(given.artifacts !== undefined ? { artifacts: given.artifacts as Artifacts } : {}), ...(finding ? { finding } : {}) }
 }
 
 const stored = (member: Member) => ({ ...member }) as unknown as Stored

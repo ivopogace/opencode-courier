@@ -722,6 +722,31 @@ run_finding() {
     "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r 'length == 1 and (.[0] |
       contains("reports=\"2\"") and contains("HEARD FINDING: the shared API returns cents") and contains("FINDER DONE"))')"
   check "neither child was told as one that ended without a report" "$(notices_with "$parent" ended | jq -r 'length == 0')"
+
+  scenario "a group member's finding on its report reaches the parent at once, the report held; the sibling has it before it reports"
+  out=$(prompt "COURIER-FINDING-IN-REPORT")
+  turn_ended=$(now_ms)
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  finder=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-FINDS-IN-REPORT") | .metadata.metadata.sessionID')
+  hearer=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-HEARS") | .metadata.metadata.sessionID')
+  check "two children were started in one group" "$([ -n "$finder" ] && [ -n "$hearer" ] && echo true || echo false)"
+  passed=$(reply_time "$parent" "PARENT PASSED ON" 45)
+  check "the finding started a new turn after the parent's had ended" "$([ -n "$passed" ] && [ "$passed" -gt "$turn_ended" ] && echo true || echo false)"
+  check "the finder's one courier_send was its report, held with the group, its finding sent ahead" \
+    "$(api "session/$finder/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send") | .state] |
+      length == 1 and (.[0] | .status == "completed" and .input.status == "done" and ((.metadata.metadata // .metadata) | .finding == "ahead" and .held.group == "finding") and
+        (tostring | contains("Its finding went to")))')"
+  check "the parent passed it on to the sibling only" \
+    "$([ "$(has_text "$hearer" "<courier from=\"$parent\">" 30)" = true ] && ! texts "$finder" | grep -qF "Passed on from" && echo true || echo false)"
+  check "the sibling heard it in the turn it was running, and reported it" \
+    "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r 'length == 1 and (.[0] |
+      contains("reports=\"2\"") and contains("HEARD FINDING: the shared API returns cents") and contains("FINDER DONE\n\nFinding for the other parts:\nFINDING: the shared API returns cents"))')"
+  check "the finding came in an envelope of its own, marked ahead, before the group's message" \
+    "$(api "session/$parent/message" | jq -r --arg finder "$finder" '[.data[] | select(.type == "synthetic") | .text] |
+      (map(startswith("<courier from=\"" + $finder + "\" finding=\"ahead\">") and contains("held with group \"finding\"") and contains("FINDING: the shared API returns cents")) | index(true)) as $ahead |
+      (map(contains(" group=\"finding\"")) | index(true)) as $group | length == 2 and $ahead == 0 and $group == 1')"
+  check "the finder sent no progress, and neither child was told as one that ended without a report" \
+    "$([ -z "$(kv get "report/$finder/progress")" ] && notices_with "$parent" ended | jq -r 'length == 0')"
 }
 
 run_finding_up() {

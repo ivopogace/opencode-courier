@@ -15,7 +15,9 @@ export function childBrief(parentID: string, task: string, depth: number, limits
     "",
     `When you finish, send exactly one report: call courier_send with sessionID "${parentID}", a short account of what you did and ` +
       "status done, partial (say what is left and why) or failed (say what went wrong). Add artifacts where there are any: " +
-      "branch, commits, files, checks (each command you ran and its result).",
+      "branch, commits, files, checks (each command you ran and its result). If the report holds something the other parts of " +
+      "the job need (a value, a path or a command they wait for, an assumption of the split that is wrong), put that in finding " +
+      "as well, in a sentence or two: a finding reaches the parent at once, also when the report itself is held for later.",
     "If you need a decision from the session that started you, which you cannot make yourself, send status blocked with a " +
       "concrete ask, then end your turn and wait for its answer; never end quietly.",
     "A report with a status wakes the parent and is the only way it hears from you, so do not end without sending one. " +
@@ -232,7 +234,9 @@ const strings = (value: unknown) => (Array.isArray(value) ? value.flatMap((item)
 
 const listed = (name: string, items: readonly string[]) => (items.length ? [`- ${name}: ${items.join(", ")}`] : [])
 
-export function reportBody(message: string, artifacts: Artifacts | undefined) {
+const FINDING_LABEL ="Finding for the other parts:"
+
+export function reportBody(message: string, artifacts: Artifacts | undefined, finding?: string) {
   const given = obj(artifacts)
   const checks = (Array.isArray(given.checks) ? given.checks : []).flatMap((check: unknown) => {
     const command = str(obj(check).command)?.trim()
@@ -244,8 +248,16 @@ export function reportBody(message: string, artifacts: Artifacts | undefined) {
     ...listed("files", strings(given.files)),
     ...(checks.length ? ["- checks:", ...checks] : []),
   ]
-  return lines.length ? [message, "", "Artifacts:", ...lines].join("\n") : message
+  return [message, ...(finding ? ["", FINDING_LABEL, finding] : []), ...(lines.length ? ["", "Artifacts:", ...lines] : [])].join("\n")
 }
+
+export const findingAhead = (group: string, status: string, finding: string) =>
+  [
+    `A finding from this session's report (status ${status}), delivered ahead of it: the report is held with group "${group}" and reaches you ` +
+      "with the group's other reports. If other sessions you started need the finding, send it to them now with courier_send, only to those it affects.",
+    "",
+    finding,
+  ].join("\n")
 
 export const nativeIsolateRefusal = () =>
   "Not started: native: true and isolate: true cannot go together. OpenCode runs a session in a worktree of its own or as a " +
@@ -275,7 +287,7 @@ export function spawnText(child: {
   const topAsks = child.belowTop ? "" : ", and so does a question or a permission request"
   const reports = child.group
     ? `Its report is held with group "${child.group}": once every session you started in that group has reported and your ` +
-      `turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a failed turn ` +
+      `turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a report's finding, a failed turn ` +
       `or an end without a report still reaches you at once${topAsks}.${asks}`
     : `It will report back with courier_send, which starts a new turn for you.${asks}`
   const on = child.model ? `, on ${child.model}` : ""
@@ -285,7 +297,7 @@ export function spawnText(child: {
   )
 }
 
-export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report" | "held" | "dropped"> = {}) {
+export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report" | "held" | "dropped" | "finding"> = {}) {
   if (sent.dropped)
     return (
       `Delivered to ${sessionID}, without the status ${sent.dropped}: a status belongs on a report to the session that ` +
@@ -300,7 +312,12 @@ export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"
       const have = counted ? ` (${reported} of ${members} have)` : ""
       when = `once every member of the group has reported${have}. Nothing more is needed from you for it.`
     }
-    return `Recorded as your report${status}. It is held with group "${group}" and goes to ${sessionID} in one message with the group's other reports, ${when} ${END_TURN}`
+    const finding = {
+      ahead: ` Its finding went to ${sessionID} now, ahead of the report.`,
+      unsent: ` Its finding could not be delivered ahead of it: send the finding to ${sessionID} now with courier_send without a status.`,
+      none: "",
+    }[sent.finding ?? "none"]
+    return `Recorded as your report${status}. It is held with group "${group}" and goes to ${sessionID} in one message with the group's other reports, ${when}${finding} ${END_TURN}`
   }
   if (sent.report === true) return `Delivered to ${sessionID} as your report${status}. ${END_TURN}`
   if (sent.report === false)
@@ -526,7 +543,7 @@ export function heldSoFar(group: string, reports: ReadonlyArray<HeldReport & { r
     "",
     `Held with group "${group}" so far, ${count(reports.length, "report")}, shown now in case what this session needs is in ${reports.length === 1 ? "it" : "them"}. ` +
       `The group's message brings ${reports.length === 1 ? "it" : "them"} again once every member has reported.`,
-    ...reports.flatMap((report) => ["", `- ${report.sessionID} "${report.title}": ${report.status}`, reportBody(report.message, report.artifacts)]),
+    ...reports.flatMap((report) => ["", `- ${report.sessionID} "${report.title}": ${report.status}`, reportBody(report.message, report.artifacts, report.finding)]),
   ].join("\n")
 }
 
@@ -535,7 +552,7 @@ export function groupNotice(group: string, reports: ReadonlyArray<HeldReport & {
   const listed = reports.flatMap((report, index) => [
     "",
     `[${index + 1}/${reports.length}] ${report.sessionID} "${report.title}": ${report.status}`,
-    reportBody(report.message, report.artifacts),
+    reportBody(report.message, report.artifacts, report.finding),
   ])
   const named = left.map((member) => `${member.sessionID} "${member.title}" (${LEFT_HOW[member.by]})`).join(", ")
   const without = left.length ? ["", `Without a report: ${named}.`] : []

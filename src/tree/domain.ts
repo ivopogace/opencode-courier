@@ -158,6 +158,7 @@ export interface HeldReport {
   readonly status: Status
   readonly message: string
   readonly artifacts?: Artifacts
+  readonly finding?: string
 }
 
 export interface LeftMember {

@@ -234,6 +234,8 @@ describe("tool results", () => {
     expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 1, members: 3 } })).toMatchSnapshot()
     expect(tree.sendText("ses_parent", { report: true, status: "failed", held: { group: "reviews", reported: 3, members: 3 } })).toMatchSnapshot()
     expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews" } })).toMatchSnapshot()
+    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 1, members: 3 }, finding: "ahead" })).toMatchSnapshot()
+    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 3, members: 3 }, finding: "unsent" })).toMatchSnapshot()
   })
   test("childrenText", () => {
     expect(tree.childrenText([])).toMatchSnapshot()
@@ -351,6 +353,10 @@ describe("join groups", () => {
     expect(tree.heldSoFar("reviews", reports.slice(0, 2))).toMatchSnapshot()
     expect(tree.heldSoFar("reviews", reports.slice(0, 1))).toMatchSnapshot()
     expect(tree.heldSoFar("reviews", [])).toBe("")
+    const found = [{ ...reports[0]!, finding: "a.ts and b.ts share a parser: review them together." }, reports[1]!]
+    expect(tree.groupNotice("reviews", found)).toMatchSnapshot()
+    expect(tree.heldSoFar("reviews", found.slice(0, 1))).toMatchSnapshot()
+    expect(tree.findingAhead("reviews", "done", "a.ts and b.ts share a parser: review them together.")).toMatchSnapshot()
   })
 })
 

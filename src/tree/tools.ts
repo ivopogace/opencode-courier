@@ -52,7 +52,7 @@ export const SpawnInput = Schema.Struct({
       description:
         "A join group, for sessions whose reports are of no use to you one at a time: the reports of those started with " +
         "the same name are held and delivered to you in one message once every one of them has reported and your turn " +
-        "has ended, instead of one turn per report. A blocked report, a failed turn or an end without a report still reaches you at once, and at the top of " +
+        "has ended, instead of one turn per report. A blocked report, a report's finding, a failed turn or an end without a report still reaches you at once, and at the top of " +
         "the tree so do a question and a permission request (below it they go to the top). Letters, " +
         "digits, dots, dashes and underscores, up to 60; the name is free again once the group has been delivered.",
     }),
@@ -83,6 +83,15 @@ export const SendInput = Schema.Struct({
         ).annotate({ description: "The checks you ran and their results." }),
       ),
     }).annotate({ description: "With a report: what you produced, listed in the message after your text in a fixed layout." }),
+  ),
+  finding: Schema.optional(
+    Schema.String.annotate({
+      description:
+        "With a report: what the other parts of the job need from it now, in a sentence or two (a value, a path or a " +
+        "command they wait for, an assumption of the split that is wrong). It reaches the session that started you at " +
+        "once, also when the report itself is held with a group, and that session passes it on. Leave it unset when " +
+        "nothing in the report matters to another part.",
+    }),
   ),
   queue: Schema.optional(
     Schema.Boolean.annotate({
@@ -165,7 +174,8 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
       "message; without one, a message to the session that started you is progress, not your report. A message to a " +
       "session you started carries no status: one given is dropped. If you were " +
       "started in a group, a report with status done, partial or failed is held and delivered with the group's other " +
-      "reports; the result says so, and nothing more is needed from you.",
+      "reports; the result says so, and nothing more is needed from you. What the other parts need from your report " +
+      "goes in its finding, which is delivered at once all the same.",
     input: SendInput,
     execute: async (input, context) => {
       const delivered = await send(ports.courier, context.sessionID, input).catch(rethrow("courier_send"))

@@ -9,6 +9,24 @@ MOCK_CHILD_DELAY_MS=${MOCK_CHILD_DELAY_MS:-7000}
 source "$ROOT/script/demo-lib.sh"
 
 caption() { mark "caption $1"; }
+zoom() { mark "zoom $1"; }
+hold() {
+  local until rows row
+  until=$(awk -v s="$1" -v p="$PACE" -v now="$(date +%s%3N)" 'BEGIN { printf "%d", now + s * p * 1000 }')
+  while [ "$(date +%s%3N)" -lt "$until" ]; do
+    sleep 0.2
+    [ -n "$FOCUSED" ] || continue
+    rows=$(tmux capture-pane -pt "$TMUX_SESSION" | grep -nF -- "$LOOKED" | cut -d: -f1 || true)
+    if [ "$LOOKED_WHICH" = last ]; then row=$(tail -1 <<<"$rows"); else row=$(head -1 <<<"$rows"); fi
+    if [ -z "$row" ]; then
+      mark "focus off"
+      FOCUSED=
+    elif [ "$row" != "$AT_ROW" ]; then
+      AT_ROW=$row
+      mark "focus $AT_COLUMN $AT_ROW $LOOKED_SIZE"
+    fi
+  done
+}
 command_line() {
   mark "key $1"
   submit "$1"
@@ -45,11 +63,11 @@ start_demo
 scene "The orchestrator splits the work"
 caption "Ask the top session to fix two issues in parallel"
 submit "Fix issues #12 and #15 in parallel, one lead per issue"
-look "courier_spawn [title=Issue #12" 6 72
+look "courier_spawn [title=Issue #12" 5 110
 caption "It starts a lead per issue with courier_spawn, in one group: it needs only both results"
 hold 3.5
-look "Two leads started" 1 78
-caption "and ends its turn: the group's message will wake it. No polling."
+look "Two leads started" 2 110
+caption "and ends its turn: the group's message will wake it"
 hold 3.5
 
 scene "The tree"
@@ -68,23 +86,27 @@ select_row "Issue #12"
 hold 1
 caption "enter opens its session; the tree follows you"
 press "enter" Enter
-look "Two workers started" 1 78 "" 20
+wait_for "Two workers started" 20
 hold 1
-look "courier_spawn [title=Cause of #12" 6 72
+look "courier_spawn [title=Cause of #12" 5 72
 caption "The lead splits its issue again: one worker finds the cause, one writes a failing test"
 hold 3.5
-look "Two workers started" 1 78
+look "Two workers started" 2 74
 caption "In no group: each worker's message wakes the lead as it comes"
 hold 3.5
 
 scene "A finding"
-look "Message from" 1 line "" 45
+look "◈ Message from" 1 46 "" 45
 caption "Mid-run, the cause worker finds what the test needs and sends it up at once, without a status"
-hold 3.5
-look "courier_send [" 2 72
+hold 0.5
+zoom on
+hold 3
+look "courier_send [" 4 72
 caption "It wakes the lead, which passes the finding on to the test worker"
-hold 3.5
-look "Cause of #12" 2 80
+hold 3
+zoom off
+hold 0.5
+look "Cause of #12  running" 2 70
 caption "In the tree the cause worker still runs and owes its report: a finding is not one"
 hold 4
 
@@ -94,17 +116,21 @@ hold 1
 select_row "Test for #12"
 hold 1
 press "enter" Enter
-look "log in, wait 31 s" 1 line "" 20
+look "\$ echo 'test/login.test.ts: log in, wait 31 s, expect to be logged in'" 1 "" "" 20
 caption "It had drafted a test that logs in plainly, which passes on main"
 hold 3.5
-look "Message from" 1 line last 20
+look "◈ Message from" 1 46 last 20
 caption "The lead's message lands in its running turn"
 hold 3
-look "log in with remember me" 1 line "" 30
+look "\$ echo 'test/login.test.ts: log in with remember me" 2 72 "" 30
 caption "and it rewrites the test with remember me on, as the cause worker found"
-hold 4
+hold 0.5
+zoom on
+hold 3.5
 wait_for "Reported to my lead" 40
-look "courier_send [" 2 72
+zoom off
+hold 0.5
+look "courier_send [" 3 72
 caption "Its test fails on main: it reports to its lead with courier_send"
 hold 4
 
@@ -114,7 +140,7 @@ hold 1
 select_row "Issue #12"
 hold 1
 press "enter" Enter
-look "One part reported" 1 78 "" 20
+look "One part reported" 1 74 "" 20
 caption "Each report woke the lead as it came"
 hold 3
 look "courier_send [" 3 72 last 30
@@ -130,7 +156,7 @@ press "enter" Enter
 look "Reports of group issues" 1 line last 60
 caption "Its leads were a join group, its choice for a pure fan-in: their reports came as one message"
 hold 3.5
-look "Both issues fixed" 2 78 last
+look "Both issues fixed" 2 74 last
 caption "Both issues fixed"
 hold 3
 look "courier tree  [" 16 80

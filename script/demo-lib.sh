@@ -88,7 +88,10 @@ look() {
     columns=$((columns - ${#prefix}))
   fi
   [ $((AT_COLUMN + columns - 1)) -le "$COLS" ] || columns=$((COLS - AT_COLUMN + 1))
-  mark "focus $AT_COLUMN $AT_ROW $columns ${2:-1}"
+  LOOKED=$1
+  LOOKED_WHICH=${4:-}
+  LOOKED_SIZE="$columns ${2:-1}"
+  mark "focus $AT_COLUMN $AT_ROW $LOOKED_SIZE"
   FOCUSED=1
 }
 click() {

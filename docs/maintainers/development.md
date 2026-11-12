@@ -102,9 +102,27 @@ uv run script/render-gif.py demo-gif docs/demo.gif             # about 1 minute
 about twelve a second, rather than a cast, so the render needs no terminal emulator: `render-gif.py`
 draws them with Pillow and has ffmpeg encode the GIF. Its scenario is `e2e/mock-model.mjs`'s
 `demoTree`; `MOCK_CHILD_DELAY_MS` (`7000`) paces its workers, each of whose messages takes two to
-four times it. The render takes `FONT_SIZE` (`14`), `FPS` (`10`) and `IDLE` (`2.5`), and the fonts
-as `MONO_FONT`, `MONO_BOLD_FONT`, `FONT` and `KEY_FONT` (else `fc-match`'s DejaVu Sans Mono, Inter
-and DejaVu Sans).
+four times it. A `look` puts the spotlight on the lines a caption is about, and `hold` moves it with
+them when the transcript scrolls; `zoom on` and `zoom off` mark the moments that carry the story,
+where the render magnifies the spotlight.
+
+The render takes `FONT_SIZE` (`14`), `FPS` (`10`) and `IDLE` (`2.5`), and the fonts as `MONO_FONT`,
+`MONO_BOLD_FONT`, `FONT` and `KEY_FONT` (else `fc-match`'s DejaVu Sans Mono, Inter and DejaVu Sans).
+Two more settings are for what moves:
+
+| Setting | Default | |
+|---|---|---|
+| `MOTION_FPS` | `20` | The frame rate while something animates: the spotlight's glide, a caption's turn, a key's badge, a click's ripple, the zoom. `10` halves those frames. |
+| `ZOOM` | `1.15` | How much a zoomed spotlight is magnified; `1` for none. |
+
+A frame is written only when the picture changes. The line along the bottom edge is the progress,
+moving once a second, with a tick where each scene starts. The last frame holds for 3 s and
+dissolves into the first.
+
+`docs/demo.gif` stays under 3 MB: the README loads it from GitHub. A frame that changes the whole
+picture costs 50 to 80 KB, so the shade around the spotlight cuts in and out while the box glides,
+and the zoom magnifies the spotlight alone, not the screen. `render-gif.py` prints the size; over the
+limit, render with `MOTION_FPS=10` or `ZOOM=1`.
 
 ## CI
 

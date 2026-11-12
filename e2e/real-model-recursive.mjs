@@ -1,5 +1,30 @@
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import {
+  CONFLICT_FILE,
+  GO_COUNT,
+  GO_HALVES,
+  childOf,
+  delivered,
+  ended,
+  groupOf,
+  hasRun,
+  isCount,
+  isHalfB,
+  passedDown,
+  plainAfter,
+  releaseOf,
+  reportsTo,
+  sendersOf,
+  sendsTo,
+  settled,
+  spawnsOf,
+  statusOf,
+  textOf,
+  toldAfter,
+  toolsOf,
+  typedAt,
+} from "./real-model-recursive-release.mjs"
 
 const [rootID, ...flags] = process.argv.slice(2)
 const saved = flags.includes("--saved")
@@ -23,7 +48,6 @@ const PERSON_NOTE =
 const SUFFIX = " checked"
 const CONFLICT_NOTE =
   "Do not write numbers/b.txt. Print the number and report it to the session that started you; that file is handled outside this job."
-const CONFLICT_FILE = "numbers/b.txt"
 const COUNTERMANDS = [/write .*b\.txt/i, /as your task says/i, /finish your task/i, /still required/i]
 const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
@@ -48,21 +72,9 @@ async function messages(sessionID) {
   }
 }
 
-const toolsOf = (list) => list.flatMap((message) => (message.type === "assistant" ? message.content.filter((part) => part.type === "tool") : []))
-const textOf = (message) =>
-  message.type === "assistant" ? message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("") : (message.text ?? "")
-const contentText = (state) => (state.content ?? []).flatMap((item) => (typeof item?.text === "string" ? [item.text] : [])).join("")
 const failed = (message) => message.error !== undefined || message.finish === "error" || message.outcome === "failed"
 const failedRequest = (message) => message.type === "assistant" && message.error !== undefined
 const failedTurn = (message) => message.type === "idle" && message.outcome === "failed"
-const ended = (message) =>
-  message?.type === "idle" ||
-  (message?.type === "assistant" && (message.finish !== undefined ? message.finish !== "tool-calls" : message.error !== undefined))
-const settled = (list) => ended(list.at(-1)) && (list.at(-1).type === "idle" || list.at(-1).time.completed !== undefined)
-const taskOf = (list) => textOf(list.find((message) => message.type === "user" || message.type === "synthetic") ?? {})
-const isCount = (list) => /99 - 57|count\/total\.txt/.test(taskOf(list))
-const isHalfB = (list) => /2 \*\* 10|numbers\/b\.txt/.test(taskOf(list))
-const hasRun = (list) => list.some((message) => message.type === "assistant")
 const short = (value, max = 160) => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return text.length > max ? `${text.slice(0, max - 3)}...` : text
@@ -92,50 +104,18 @@ function turnsOf(list) {
   }
   return turns
 }
-function childOf(part) {
-  if (part.name !== "courier_spawn" || part.state.status !== "completed") return undefined
-  const metadata = part.state.metadata ?? {}
-  return metadata.sessionID ?? metadata.metadata?.sessionID ?? contentText(part.state).match(/Started session (ses_\w+)/)?.[1]
-}
-const spawnsOf = (list) => toolsOf(list).map(childOf).filter(Boolean)
-const sendersOf = (message) => (message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.[1].split(",") ?? []) : [])
-const groupOf = (message) => message.text?.match(/^<courier from="[^"]*" group="([^"]+)"/)?.[1]
 const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ?? "")
-const statusOf = (message, from) =>
-  groupOf(message)
-    ? message.text.match(new RegExp(`^\\[\\d+/\\d+\\] ${from} ".*": (\\w+)$`, "m"))?.[1]
-    : message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
 const deliveriesFrom = (list, child) =>
   list.flatMap((message, index) => (reportersOf(message).includes(child) && statusOf(message, child) ? [{ index, message }] : []))
-const sendsTo = (list, to) =>
-  list.flatMap((message, index) =>
-    message.type !== "assistant"
-      ? []
-      : message.content.flatMap((part, place) =>
-          part.type === "tool" && part.name === "courier_send" && part.state.status === "completed" && part.state.input?.sessionID === to
-            ? [{ index, place, status: part.state.input.status, message: part.state.input.message }]
-            : [],
-        ),
-  )
 const sentBefore = (one, other) => one.index < other.index || (one.index === other.index && one.place < other.place)
-const reportsTo = (list, parentID) => sendsTo(list, parentID).filter((send) => send.status)
-const delivered = (list, from, after = -1) => list.findIndex((message, index) => index > after && sendersOf(message).includes(from) && !groupOf(message) && !statusOf(message, from))
-const plainAfter = (list, to, after) => sendsTo(list, to).find((send) => send.index > after && !send.status)
-const carriedInSpawn = (list, child, after) =>
-  list.some(
-    (message, index) =>
-      index > after && message.type === "assistant" && message.content.some((part) => childOf(part) === child && /\bchecked\b/i.test(part.state.input?.task ?? "")),
-  )
-const toldAfter = (list, child, after) => plainAfter(list, child, after) ?? (carriedInSpawn(list, child, after) ? { spawned: true } : undefined)
-const typedAt = (list, sessionID) =>
-  list.findIndex((message) => message.type === "synthetic" && message.text?.startsWith(`<courier from="courier" route="prompt" in="${sessionID}">`))
-const passedDown = (entry) => {
-  const reached = delivered(entry.list, rootID)
-  const below = spawnsOf(entry.list)
-  return reached !== -1 && below.length > 0 && below.every((child) => toldAfter(entry.list, child, reached))
+const created = []
+function go(file, why) {
+  if (created.includes(file)) return
+  writeFileSync(join(work, "project", file), "")
+  created.push(file)
+  console.log(`  (${why}: created ${file})`)
 }
-const go = (name) => writeFileSync(join(work, "project", name), "")
 async function tellAsPerson(sessionID, text, who) {
   const response = await fetch(`${server}/api/session/${sessionID}/prompt`, {
     method: "POST",
@@ -170,9 +150,9 @@ for (;;) {
     if (count) {
       await tellAsPerson(count[0], PERSON_NOTE, 'the "count" session')
       told = true
-      go(".go-count")
+      go(GO_COUNT, 'the "count" session has been told as the person')
     }
-    if (conflict && !saved && [...tree.values()].some((entry) => entry.depth === 1 && isCount(entry.list) && hasRun(entry.list))) go(".go-count")
+    if (conflict && !saved && [...tree.values()].some((entry) => entry.depth === 1 && isCount(entry.list) && hasRun(entry.list))) go(GO_COUNT, 'the "count" session runs')
     const halfB =
       conflict && !saved && !contradicted
         ? [...tree].find(([, entry]) => entry.depth === 2 && isHalfB(entry.list) && hasRun(entry.list) && !settled(entry.list) && reportsTo(entry.list, entry.parentID).length === 0)
@@ -180,10 +160,12 @@ for (;;) {
     if (halfB) {
       await tellAsPerson(halfB[0], CONFLICT_NOTE, `the half for ${CONFLICT_FILE}`)
       contradicted = true
-      go(".go-halves")
+      go(GO_HALVES, `the half for ${CONFLICT_FILE} has been told as the person`)
     }
     const parts = [...tree.values()].filter((entry) => entry.depth === 1 && !isCount(entry.list))
-    if (told && parts.length > 0 && parts.every(passedDown)) go(".go-halves")
+    if (told && parts.length > 0 && parts.every((entry) => passedDown(entry, rootID))) go(GO_HALVES, "the finding has come down to each session of the other part")
+    const release = saved ? undefined : releaseOf(tree, rootID, { finding, conflict, told, created })
+    if (release) go(release.file, release.why)
     const spawned = [...tree].filter(([id]) => id !== rootID)
     const reported = spawned.filter(([id, entry]) => deliveriesFrom(tree.get(entry.parentID).list, id).length > 0)
     const quiet = [...tree.values()].every((entry) => settled(entry.list))

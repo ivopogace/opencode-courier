@@ -327,7 +327,7 @@ finding; here a session meets it in its own work. The project is `e2e/fixtures/d
 `api.sh`, whose `init` makes a random key, prints it once and keeps only its checksum, and whose
 `get a` and `get b` print `1999` and `2550` when given that key and an error without it. The key
 exists only once the "init" part has run, so no session can know it beforehand, by reading `api.sh`
-or otherwise: it reaches the other parts through courier or not at all. The parent is asked:
+or otherwise: a part that stays inside the project gets it through courier or not at all. The parent is asked:
 
 > This project has a price API, api.sh: once `` `sh api.sh init` `` has been run,
 > `` `sh api.sh get <id>` `` prints the amount of an item as a whole number of cents. Have this job

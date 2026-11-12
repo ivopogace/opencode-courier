@@ -20,11 +20,9 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
   const finding = input.finding?.trim() || undefined
   const noted = await noteReport(ports, from, input.sessionID, status).catch(() => undefined)
   try {
-    const report = noted?.member && status && status !== "blocked" ? { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}), ...(finding ? { finding } : {}) } : undefined
-    const held = noted?.member && report ? await hold(ports, noted.member, report) : undefined
+    const kept = await keep(ports, noted, input, status, finding)
     if (noted) await syncStanding(ports, input.sessionID)
-    const last = held?.reported !== undefined && held.members !== undefined && held.reported >= held.members
-    if (held && report) return { status: report.status, report: true, held, ...(finding && !last ? { finding: await ahead(ports, from, input.sessionID, held.group, report.status, finding) } : {}) }
+    if (kept) return await heldSent(ports, from, input.sessionID, kept)
     const delivered = await deliver(ports, from, input, status, noted, finding)
     return { ...delivered, ...(noted ? { report: noted.report } : {}), ...(dropped ? { dropped } : {}) }
   } catch (error) {
@@ -32,6 +30,19 @@ export async function send(ports: CourierPorts, from: string, input: SendInput):
     if (noted) await syncStanding(ports, input.sessionID)
     throw error
   }
+}
+
+async function keep(ports: CourierPorts, noted: Awaited<ReturnType<typeof noteReport>>, input: SendInput, status: Status | undefined, finding: string | undefined) {
+  if (!noted?.member || !status || status === "blocked") return undefined
+  const report: HeldReport = { at: noted.at, status, message: input.message, ...(input.artifacts ? { artifacts: input.artifacts } : {}), ...(finding ? { finding } : {}) }
+  const kept = await hold(ports, noted.member, report)
+  return kept && { ...kept, report }
+}
+
+async function heldSent(ports: CourierPorts, from: string, to: string, { held, report, due }: { readonly held: Held; readonly report: HeldReport; readonly due: boolean }): Promise<Sent> {
+  const finding = report.finding ? await ahead(ports, from, to, held.group, report.status, report.finding) : undefined
+  if (due) ports.nudge()
+  return { status: report.status, report: true, held, ...(finding ? { finding } : {}) }
 }
 
 async function deliver(ports: CourierPorts, from: string, input: SendInput, status: Status | undefined, noted: Awaited<ReturnType<typeof noteReport>>, finding: string | undefined): Promise<Sent> {
@@ -113,7 +124,7 @@ async function memberIn(ports: CourierPorts, entry: RosterEntry): Promise<Member
   }
 }
 
-async function hold(ports: CourierPorts, member: Membership, report: HeldReport): Promise<Held | undefined> {
+async function hold(ports: CourierPorts, member: Membership, report: HeldReport): Promise<{ readonly held: Held; readonly due: boolean } | undefined> {
   const groups = groupStore(ports.storage)
   try {
     await holdReport(groups, member, report)
@@ -125,6 +136,5 @@ async function hold(ports: CourierPorts, member: Membership, report: HeldReport)
     return undefined
   }
   const standing = await groupStanding(groups, member.parentID, member.group).catch(() => undefined)
-  if (standing?.complete !== false) ports.nudge()
-  return { group: member.group, ...(standing ? { reported: standing.reported, members: standing.members } : {}) }
+  return { held: { group: member.group, ...(standing ? { reported: standing.reported, members: standing.members } : {}) }, due: standing?.complete !== false }
 }

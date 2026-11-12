@@ -1005,17 +1005,19 @@ describe("send, from a member of a group", () => {
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toEqual({ title: "A", joinedAt: 1, report: { at: 1_000, status: "done", message: "Done." } })
   })
 
-  test("the report that completes its group sends no finding ahead: the group's message is due and carries it", async () => {
+  test("the report that completes its group sends its finding ahead before the scheduler is told to deliver the group", async () => {
     const { ports, calls, store, nudges } = fakePorts()
     await grouped(ports)
     await send(ports, "ses_other", { sessionID: "ses_parent", message: "Done.", status: "done" })
 
     const sent = await send(ports, "ses_child", { sessionID: "ses_parent", message: "Done too.", status: "done", finding: "the key is k" })
 
-    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair", reported: 2, members: 2 } })
-    expect(calls.filter((call) => call.method === "session.synthetic")).toEqual([])
+    expect(sent).toEqual({ status: "done", report: true, held: { group: "pair", reported: 2, members: 2 }, finding: "ahead" })
+    const ahead = calls.findIndex((call) => call.method === "session.synthetic" && String(call.input.text).startsWith('<courier from="ses_child" finding="ahead">'))
+    expect(ahead).toBeGreaterThanOrEqual(0)
     expect(store.get(memberKey("ses_parent", "pair", "ses_child"))).toMatchObject({ report: { finding: "the key is k" } })
     expect(nudges).toHaveLength(1)
+    expect(nudges[0]).toBeGreaterThan(ahead)
   })
 
   test("a finding that cannot be delivered ahead leaves the report held, and the result says to send it apart", async () => {

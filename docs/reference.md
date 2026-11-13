@@ -669,6 +669,35 @@ compaction or restart. A child deleted in OpenCode is forgotten at once, unless 
 has children of its own. Other entries are dropped 14 days after the child started, except isolated
 children whose worktree is still there.
 
+**Forking a session in a tree.** A fork (OpenCode's `/fork`, `POST /api/session/:id/fork`) copies a
+session's transcript, its instruction entries and its metadata, so a fork of a child reads the
+child's brief and a fork of a parent reads of children it never started. The roster holds no entry
+for a fork: it is a top session, `courier_children` lists nothing in it, the children the original
+started report to the original, and held reports and passed-on requests go there too. On OpenCode
+2.3.0 courier tells the fork so, through the `session.fork` hook, when the original was started by
+courier, has children in the roster, or holds a `role` or `standing` entry. It removes the fork's
+`role` and `standing` entries, which OpenCode announces to the model at the fork's next step as
+"no longer applies", and leaves the project's `lessons` entry. Then it adds one message, after
+OpenCode's own `<fork-notice>`, that waits for the fork's first prompt and wakes nothing:
+
+```text
+<courier from="courier" notice="fork" of="ses_count">
+Courier did not start this fork. What courier gave session ses_count stays with it:
+- The brief above from session ses_top is the assignment of session ses_count, which reports on it: here it is background. You report to no one: send session ses_top nothing with courier_send unless the person asks.
+- The sessions started above with courier_spawn are the children of session ses_count: their reports, the ones still pending too, and what they ask go there, never here. courier_children lists none of them here: do not wait for them, and do not combine or send their reports as yours.
+- Here you are the top session of a tree of your own, with no sessions started: the role and standing courier gave above are not yours.
+</courier>
+```
+
+The first line is for a fork of a spawned session, the second for a fork of one that started
+sessions. Nothing copied is edited: the notice and the removal are appended, so the fork's request
+begins with the same system prompt and messages as the original's where OpenCode's own copy does
+([the notes](maintainers/plugin-api-notes.md#keyed-session-instructions)). The fork's system prompt
+keeps the original's role block until a compaction; from then, or from its first `courier_spawn`,
+it reads the root's role. A fork of a leaf can start sessions. A fork of a session outside any tree
+is left alone. Without the hook, on an older OpenCode, a fork is a top session all the same and is
+told nothing.
+
 ## Worktrees
 
 An isolated child works in a git worktree under OpenCode's data directory, on a detached HEAD. It is

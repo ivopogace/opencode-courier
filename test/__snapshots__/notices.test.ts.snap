@@ -1101,6 +1101,34 @@ If you are finished, send your report now: call courier_send with sessionID "ses
 This reminder comes once: if you end your turn without a report, the session that started you is told."
 `;
 
+exports[`turn failures forkNotice 1`] = `
+"<courier from="courier" notice="fork" of="ses_orig">
+Courier did not start this fork. What courier gave session ses_orig stays with it:
+- The brief above from session ses_parent is the assignment of session ses_orig, which reports on it: here it is background. You report to no one: send session ses_parent nothing with courier_send unless the person asks.
+- Here you are the top session of a tree of your own, with no sessions started: the role and standing courier gave above are not yours.
+</courier>"
+`;
+
+exports[`turn failures forkNotice 2`] = `
+"Courier did not start this fork. What courier gave session ses_orig stays with it:
+- The sessions started above with courier_spawn are the children of session ses_orig: their reports, the ones still pending too, and what they ask go there, never here. courier_children lists none of them here: do not wait for them, and do not combine or send their reports as yours.
+- Here you are the top session of a tree of your own, with no sessions started: the role and standing courier gave above are not yours."
+`;
+
+exports[`turn failures forkNotice 3`] = `
+"Courier did not start this fork. What courier gave session ses_orig stays with it:
+- The brief above from session ses_parent is the assignment of session ses_orig, which reports on it: here it is background. You report to no one: send session ses_parent nothing with courier_send unless the person asks.
+- The sessions started above with courier_spawn are the children of session ses_orig: their reports, the ones still pending too, and what they ask go there, never here. courier_children lists none of them here: do not wait for them, and do not combine or send their reports as yours.
+- Here you are the top session of a tree of your own, with no sessions started: the role and standing courier gave above are not yours."
+`;
+
+exports[`turn failures forkNotice 4`] = `
+"Courier did not start this fork. What courier gave the original session stays with it:
+- The brief above from session ses_parent is the assignment of the original session, which reports on it: here it is background. You report to no one: send session ses_parent nothing with courier_send unless the person asks.
+- The sessions started above with courier_spawn are the children of the original session: their reports, the ones still pending too, and what they ask go there, never here. courier_children lists none of them here: do not wait for them, and do not combine or send their reports as yours.
+- Here you are the top session of a tree of your own, with no sessions started: the role and standing courier gave above are not yours."
+`;
+
 exports[`turn failures silentNotice 1`] = `
 "This session, "Fix the bug", which you started with courier_spawn, ended its turn without reporting back with courier_send, and does nothing more on its own.
 Its last reply:

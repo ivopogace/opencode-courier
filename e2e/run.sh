@@ -232,7 +232,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:89 reports-groups:97 reminder:18 finding:29 finding-up:16 person-message:7 permission:36 depth:4 role-entry:6 entries:11 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:1 later:20 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 memory:27 busy:77 spawn-native:15 native:39 decline-seal:17 total-refusal:23 early-report:23 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
+SUITE="reports:89 reports-groups:97 reminder:18 finding:29 finding-up:16 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:11 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:1 later:20 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 memory:27 busy:77 spawn-native:15 native:39 decline-seal:17 total-refusal:23 early-report:23 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {
@@ -957,6 +957,69 @@ run_role_entry() {
   check "after the compaction the leaf still has its entry, and its request named it a leaf through the block, without courier_spawn" \
     "$([[ $(role_entry_of "$role_leaf") == "opencode-courier role: leaf"* ]] && jq -sr --arg leaf "$role_leaf" '[.[] | select(.session == $leaf and (.tools | length > 0))]
       | last | .role == "leaf" and .roleEntry and (.rolePart | not) and (.tools | index("courier_spawn") | not) and (.reply.text == "LEAF AGAIN")' "$WORK/model.log")"
+}
+
+fork_of() { api_post "session/$1/fork" '{}' | jq -r '(.data // .).id // empty'; }
+system_hashes() { jq -sc --arg session "$1" '[.[] | select(.session == $session and (.tools | length > 0)) | .systemHash] | unique' "$WORK/model.log"; }
+run_fork() {
+  scenario "a fork of a session in a tree is told that courier did not start it, loses its role and standing entries and reports to no one (#602)"
+  child_delay 1000
+  out=$(prompt "COURIER-ROLE")
+  fork_root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  fork_mid=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the middle session's report woke the root" "$(has_text "$fork_root" "ROOT WOKE" 90)"
+  fork_leaf=$(texts "$fork_mid" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
+  turn_ended "$fork_root"
+  turn_ended "$fork_mid"
+  turn_ended "$fork_leaf"
+  check "before the fork the middle session holds its role and standing entries, and the leaf its role" \
+    "$([[ $(entry_of "$fork_mid" role) == "opencode-courier role: sub-orchestrator"* && $(entry_of "$fork_mid" standing) == "opencode-courier standing:"* &&
+      $(entry_of "$fork_leaf" role) == "opencode-courier role: leaf"* ]] && echo true || echo false)"
+  root_before=$(api "session/$fork_root/message" | jq -c '[.data[].id]')
+  mid_before=$(api "session/$fork_mid/message" | jq -c '[.data[].id]')
+  leaf_before=$(api "session/$fork_leaf/message" | jq -c '[.data[].id]')
+  leaf_fork=$(fork_of "$fork_leaf")
+  mid_fork=$(fork_of "$fork_mid")
+  check "OpenCode forked the leaf and the middle session" "$([ -n "$leaf_fork" ] && [ -n "$mid_fork" ] && echo true || echo false)"
+  check "the forks are copies: each names its original, and the leaf's fork carries the courier metadata of the leaf" \
+    "$([ "$(session_info "$leaf_fork" | jq -r '.fork.sessionID')" = "$fork_leaf" ] && [ "$(session_info "$mid_fork" | jq -r '.fork.sessionID')" = "$fork_mid" ] &&
+      [ "$(session_info "$leaf_fork" | jq -r '.metadata.courier.parentID')" = "$fork_mid" ] && echo true || echo false)"
+  check "the leaf's fork holds no role entry and the middle session's fork neither role nor standing, while the originals keep theirs" \
+    "$(for _ in $(seq 1 20); do
+      [ -z "$(entry_of "$leaf_fork" role)$(entry_of "$mid_fork" role)$(entry_of "$mid_fork" standing)" ] &&
+        [[ $(entry_of "$fork_leaf" role) == "opencode-courier role: leaf"* && $(entry_of "$fork_mid" role) == "opencode-courier role: sub-orchestrator"* &&
+          $(entry_of "$fork_mid" standing) == "opencode-courier standing:"* ]] && { echo true; exit; }
+      sleep 1
+    done; echo false)"
+  check "no fork has a roster entry" "$([ -z "$(indexed_under "$leaf_fork")$(indexed_under "$mid_fork")" ] && echo true || echo false)"
+  prompt_in "$leaf_fork" "CHILD-ROLE-AGAIN" >/dev/null
+  prompt_in "$mid_fork" "CHILD-ROLE-AGAIN" >/dev/null
+  echo "  the leaf's fork was told: $(notices_with "$leaf_fork" notice)"
+  echo "  OpenCode's own fork notices in the leaf's fork: $(api "session/$leaf_fork/message" | jq -r '[.data[] | select(.type == "synthetic" and (.text | startswith("<fork-notice>")))] | length')"
+  check "the leaf's fork holds one courier fork notice, which names the leaf and tells it to send the leaf's parent nothing" \
+    "$(notices_with "$leaf_fork" notice | jq -r --arg leaf "$fork_leaf" --arg mid "$fork_mid" 'length == 1 and (.[0] | startswith("<courier from=\"courier\" notice=\"fork\" of=\"" + $leaf + "\">") and
+      contains("Courier did not start this fork.") and contains("send session " + $mid + " nothing with courier_send") and (contains("courier_children") | not))')"
+  check "the middle session's fork holds one, which says the brief is the middle session's and its children report to it" \
+    "$(notices_with "$mid_fork" notice | jq -r --arg mid "$fork_mid" --arg root "$fork_root" 'length == 1 and (.[0] | contains(" of=\"" + $mid + "\"") and
+      contains("The brief above from session " + $root + " is the assignment of session " + $mid) and contains("are the children of session " + $mid))')"
+  echo "  instruction updates in the forks: leaf $(instruction_updates "$leaf_fork"), middle $(instruction_updates "$mid_fork")"
+  check "each fork's transcript gained one update for its removed entries, api/role for the leaf's and api/role, api/standing beside the copied ones for the middle session's" \
+    "$([ "$(instruction_updates "$leaf_fork")" = '["Instructions updated: api/role"]' ] &&
+      [ "$(instruction_updates "$mid_fork" | jq -r '[.[] | select(contains("api/role"))] == ["Instructions updated: api/role, api/standing"]')" = true ] &&
+      [ "$(instruction_updates "$fork_mid" | jq -r 'any(contains("api/role")) | not')" = true ] && echo true || echo false)"
+  echo "  system prompt hashes: leaf $(system_hashes "$fork_leaf"), its fork $(system_hashes "$leaf_fork"); middle $(system_hashes "$fork_mid"), its fork $(system_hashes "$mid_fork")"
+  check "the leaf's fork answered as a top session: courier_spawn among its tools, no role part of the hook's, and the system prompt of the leaf byte for byte" \
+    "$(jq -sr --arg fork "$leaf_fork" '[.[] | select(.session == $fork and (.tools | length > 0))] | length > 0 and
+      all((.tools | index("courier_spawn")) and (.rolePart | not) and .roleEntry and .reply.text == "LEAF AGAIN")' "$WORK/model.log" | grep -qx true &&
+      [ "$(system_hashes "$leaf_fork")" = "$(system_hashes "$fork_leaf")" ] && [ "$(system_hashes "$leaf_fork" | jq -r 'length')" = 1 ] && echo true || echo false)"
+  check "the middle session's fork answered too, with no role part of the hook's" \
+    "$(jq -sr --arg fork "$mid_fork" '[.[] | select(.session == $fork and (.tools | length > 0))] | length > 0 and all((.tools | index("courier_spawn")) and (.rolePart | not) and .reply.text == "LEAF AGAIN")' "$WORK/model.log")"
+  turn_ended "$leaf_fork"
+  turn_ended "$mid_fork"
+  check "the root, the middle session and the leaf got nothing from the forks, and the forks called no tool, so sent nothing with courier_send" \
+    "$([ "$(api "session/$fork_root/message" | jq -c '[.data[].id]')" = "$root_before" ] && [ "$(api "session/$fork_mid/message" | jq -c '[.data[].id]')" = "$mid_before" ] &&
+      [ "$(api "session/$fork_leaf/message" | jq -c '[.data[].id]')" = "$leaf_before" ] &&
+      [ "$(jq -sr --arg a "$leaf_fork" --arg b "$mid_fork" '[.[] | select((.session == $a or .session == $b) and .reply.tool != null)] | length' "$WORK/model.log")" = 0 ] && echo true || echo false)"
 }
 
 run_entries() {

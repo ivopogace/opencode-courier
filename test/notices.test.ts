@@ -326,6 +326,14 @@ describe("turn failures", () => {
   test("reportReminder", () => {
     expect(tree.reportReminder("ses_parent")).toMatchSnapshot()
   })
+  test("forkNotice", () => {
+    expect(kernel.envelope("courier", tree.forkNotice("ses_orig", "ses_parent", false), { notice: "fork", of: "ses_orig" })).toMatchSnapshot()
+    expect(tree.forkNotice("ses_orig", undefined, true)).toMatchSnapshot()
+    expect(tree.forkNotice("ses_orig", "ses_parent", true)).toMatchSnapshot()
+    expect(tree.forkNotice(undefined, "ses_parent", true)).toMatchSnapshot()
+    expect(tree.forkNotice("ses_orig", "ses_parent", true).length).toBeLessThan(1000)
+    expect(tree.forkNotice("ses_orig", "ses_parent", true)).not.toContain("fork of")
+  })
   test("silentNotice", () => {
     expect(tree.silentNotice("Fix the bug", "I looked at src/a.ts; the bug is on line 4.")).toMatchSnapshot()
     expect(tree.silentNotice("Fix the bug", undefined)).toMatchSnapshot()

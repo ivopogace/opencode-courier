@@ -1272,6 +1272,24 @@ describe("the context hook", () => {
     expect((await listed.shape("ses_d1", baseline(1))).system).toEqual([{ type: "text", text: baseline(1) }])
   })
 
+  test("a fork of a leaf reads as a top session: it keeps its tools, adds no part while its baseline carries the leaf's block, and takes the root's part once that is gone", async () => {
+    const limits = { ...DEFAULT_LIMITS, maxDepth: 1 }
+    const { shape, child, calls, ports } = contextPorts(limits, new Map([["ses_d1", new Map([[ROLE_KEY, rolePart(1, limits)]])]]))
+    await chainTo(child, 1)
+    const copied = `AGENTS.md says so.\n\n<context key="${ROLE_KEY}">\n${rolePart(1, limits)}\n</context>`
+
+    const original = await shape("ses_d1", copied)
+    const fork = await shape("ses_fork", copied)
+    const compacted = await shape("ses_fork")
+
+    expect(original.tools.courier_spawn).toBeUndefined()
+    expect(fork.tools.courier_spawn).toBeDefined()
+    expect(fork.system).toEqual(original.system)
+    expect(compacted.system).toEqual([{ type: "text", text: "base" }, { type: "text", text: rolePart(null, limits) }])
+    expect(calls).toEqual(["list ses_d1"])
+    expect(ports.roles.get("ses_fork")).toEqual({ depth: null, entry: false })
+  })
+
   test("hides the tools from a leaf whose entry names it, as from one without", async () => {
     const entries = new Map([["ses_d2", new Map([[ROLE_KEY, rolePart(2, DEFAULT_LIMITS)]])]])
     const { ports, child } = contextPorts({ ...DEFAULT_LIMITS, maxDepth: 2 }, entries)

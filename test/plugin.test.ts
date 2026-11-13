@@ -265,6 +265,46 @@ test("registers the experimental.idle hook, which reminds a spawned child owing 
   expect(reminders[0]!.input).toMatchObject({ sessionID: "ses_child", metadata: { reminder: "report" }, resume: false })
 })
 
+test("registers the fork hook after the others, which tells a fork of a spawned child once and leaves other forks alone", async () => {
+  const forks: Record<string, unknown> = { ses_fork: { fork: { sessionID: "ses_child" }, metadata: { courier: { parentID: "ses_parent" } } }, ses_plain: { fork: { sessionID: "ses_other" } } }
+  const removed: string[] = []
+  const { hooks, calls, session } = await setUp()
+  const get = session.get
+  session.get = async (input: any) => ({ ...(await get(input)), ...(forks[input.sessionID] as object) })
+  ;(session as any).instructions = {
+    entry: {
+      list: async () => [{ key: "role", value: "opencode-courier role: leaf" }],
+      remove: async ({ sessionID, key }: { sessionID: string; key: string }) => void removed.push(`${sessionID} ${key}`),
+    },
+  }
+
+  expect([...hooks.keys()]).toEqual(["context", "experimental.idle", "fork"])
+  await hooks.get("fork")!({ sessionID: "ses_fork" })
+  await hooks.get("fork")!({ sessionID: "ses_fork" })
+  ;(session as any).instructions.entry.list = async () => []
+  await hooks.get("fork")!({ sessionID: "ses_plain" })
+
+  const notices = calls.filter((call) => call.method === "session.synthetic")
+  expect(notices).toHaveLength(1)
+  expect(notices[0]!.input).toMatchObject({ sessionID: "ses_fork", metadata: { source: "courier", notice: "fork", of: "ses_child", resume: false }, resume: false })
+  expect(removed).toEqual(["ses_fork role"])
+})
+
+test("loads all the same on a host that refuses the fork hook, and logs it", async () => {
+  const logged: string[] = []
+  const error = spyOn(console, "error").mockImplementation((message: unknown) => void logged.push(String(message)))
+  try {
+    const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { refusesHook: "fork" })
+
+    expect(tools.size).toBe(11)
+    expect(hooks.has("experimental.idle")).toBe(true)
+    expect(hooks.has("fork")).toBe(false)
+    expect(logged.filter((line) => line.startsWith("courier fork: not registered"))).toHaveLength(1)
+  } finally {
+    error.mockRestore()
+  }
+})
+
 test("loads all the same on a host without the experimental.idle hook, and logs it", async () => {
   const logged: string[] = []
   const error = spyOn(console, "error").mockImplementation((message: unknown) => void logged.push(String(message)))

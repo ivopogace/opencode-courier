@@ -491,11 +491,30 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   (`parentID`) and `session.create` do not. `courier_cleanup` and a forgotten child leave entries
   alone: they belong to the session and go with it.
 - **A fork is announced.** After the copy, `Session.fork` (`packages/core/src/session.ts`) runs the
-  experimental `session.fork` hook with the fork's `sessionID`, failures logged and ignored; the
-  built-in `fork-notice` plugin uses it to admit a `<fork-notice>` synthetic with `resume: false`
-  (background work and notifications stay with the original). The courier registers no `fork` hook,
-  so a fork of a session in a tree keeps its `role`, `standing` and `lessons` entries and has no
-  roster entry.
+  experimental `session.fork` hook (`SessionHooks.fork: { sessionID }`, since 2.3.0) with the fork's
+  `sessionID`, in the fork's location, failures logged and ignored; the built-in `fork-notice` plugin
+  uses it to admit a `<fork-notice>` synthetic with `resume: false` (background work and
+  notifications stay with the original), which waits in the fork's inbox for its first prompt. The
+  fork's `Session.Info` names the original in `fork.sessionID` and carries the original's `metadata`,
+  the courier's `courier.parentID` of a spawned child included; its `parentID` is empty. The courier
+  registers the hook after its others (`tree/fork.ts`, a refusal logged): it removes the fork's
+  `role` and `standing` entries and admits its own `resume: false` notice after the host's
+  ([forking a session in a tree](../reference.md#roster)). The `lessons` entry stays: it is the
+  project's, not the tree's.
+- **What a fork's first request looks like** (`projectFork` in `session/projector.ts`,
+  `instruction-state.ts`, `history.ts`). The fork's baseline is seeded from the original's *current*
+  entry values (`InstructionState.current`), not from the original's baseline, and the copied
+  transcript keeps its instruction updates. So a fork of a session whose entries have not moved
+  since its first step, a spawned child with its `role`, has the original's system prompt byte for
+  byte; a fork of one whose entries moved after it, a root named at its first spawn or any parent
+  with a `standing` entry, starts from a baseline the original never sent, whatever a plugin does.
+  A `remove` in the hook leaves that baseline alone: the fork's first step announces it as one
+  appended update ("The context under "role" no longer applies. Disregard it.", `Instructions
+  updated: api/role` or `api/role, api/standing`), after the copied messages, like the two notices.
+  The stale block stays in the fork's baseline until a compaction, so `context.ts` finds a role line
+  there and pushes no part, and the request's system prompt and copied messages stay the original's.
+  What does differ is the tool list of a fork of a leaf: with no roster entry it is a top session,
+  and `courier_spawn`, `courier_recall` and `courier_note` are not hidden from it.
 - **Reading it.** `put`, `list` and `remove` need the session to exist (`Session.NotFoundError`) but
   boot no location. The request hooks' `messages` carry each stored message's `metadata`, for
   reading only (`SessionRequestMessage`); the `context` hook does not use it. The `context` hook reads nothing of the value: the text itself only shows in

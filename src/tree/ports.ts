@@ -254,6 +254,12 @@ export interface GroupPorts {
   readonly log: (message: string) => void
 }
 
+export interface ForkPorts {
+  readonly storage: RosterStorage
+  readonly session: Pick<Context["session"], "get" | "synthetic"> & Instructions
+  readonly log: (message: string) => void
+}
+
 export interface ExecutionError {
   readonly type: string
   readonly message: string

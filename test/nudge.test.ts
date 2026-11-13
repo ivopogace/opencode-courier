@@ -160,7 +160,6 @@ describe("nudgeSilent", () => {
     expect(await nudgeSilent(subagent.ports, new Set(), outside, idle())).toBe(true)
   })
 
-<<<<<<< HEAD
   test("counts OpenCode's report of a native child the session dropped as a prompt, like a subagent's", async () => {
     const { ports } = await prompted()
     const inbox = new Map<string, string>()
@@ -176,8 +175,6 @@ describe("nudgeSilent", () => {
     expect(await nudgeSilent(ports, new Set(), outside, idle())).toBe(true)
   })
 
-=======
->>>>>>> origin/main
   test("reminds a child whose own message, scheduled after it reported, reached it (#514)", async () => {
     const enqueued = (inboxID: string, scheduledAt: number) => ({
       data: { sessionID: "ses_child", inboxID, item: { type: "synthetic", payload: { metadata: { source: "courier", from: "ses_child", scheduled: "lat_1", scheduledAt } } } },

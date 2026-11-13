@@ -34,8 +34,31 @@ const SUMMARY = "## Objective\n- Courier test"
 
 const TYPED_ENVELOPE = /<courier from="courier" route="prompt" in="ses_\w+">/
 
+const HOST_REPORT = /<subagent sessionID="(ses_\w+)" state="[^"]*"[^>]*>[\s\S]*?<\/subagent>/g
+
+const withoutReportsOf = (started) => (message) => {
+  if (message.role !== "user") return message
+  const strip = (text) => text.replace(HOST_REPORT, (block, id) => (started.has(id) ? "" : block))
+  const content = typeof message.content === "string" ? strip(message.content) : Array.isArray(message.content) ? message.content.map((part) => (typeof part?.text === "string" ? { ...part, text: strip(part.text) } : part)) : message.content
+  return { ...message, content }
+}
+
+function courierChildReportsDropped(messages) {
+  const started = new Set(
+    messages.filter((message) => message.role === "tool").flatMap((message) => [...textOf(message.content).matchAll(/Started session (ses_\w+) in /g)].map((match) => match[1])),
+  )
+  if (!started.size) return messages
+  const strip = withoutReportsOf(started)
+  return messages.flatMap((message) => {
+    const stripped = strip(message)
+    return message.role === "user" && textOf(message.content).includes("<subagent ") && !textOf(stripped.content).trim() ? [] : [stripped]
+  })
+}
+
 function decide(body) {
-  const messages = (body.messages ?? []).filter((message) => !isInstructionUpdate(message))
+  const shown = (body.messages ?? []).filter((message) => !isInstructionUpdate(message))
+  const messages = courierChildReportsDropped(shown)
+  if (messages.length < shown.length && messages.at(-1)?.role === "assistant") return { text: "NOTED CHILD TURN END" }
   if (!body.tools?.length) return { text: messages.some((message) => textOf(message.content).includes(DEMO_PROMPT)) ? "Fix #12 and #15" : SUMMARY }
   const asked = textOf(messages.findLast((message) => message.role === "user")?.content)
   if (asked.includes("Summarize only what the user and the assistant said") || asked.includes("did not fill in the required summary template")) return { text: SUMMARY }
@@ -70,9 +93,9 @@ function decide(body) {
     if (call?.function?.name === "courier_spawn" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-BLOCKED-STOP-MID"))
       return { text: "MID SPAWNED BLOCKER" }
     if (call?.function?.name === "subagent" && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-SUBAGENT-MID"))
-      return (call.function.arguments ?? "").includes('"background"')
-        ? { tool: "subagent", args: { agent: "general", description: "Look it up", prompt: "SUBAGENT-FOREGROUND" } }
-        : { text: "MID DONE" }
+      return (call.function.arguments ?? "").includes("SUBAGENT-FIRST")
+        ? { tool: "subagent", args: { agent: "general", description: "Look it up", prompt: "SUBAGENT-SECOND" } }
+        : { text: "MID HOLDING", hold: true }
     const briefOf = textOf(messages.find((message) => message.role === "user")?.content)
     const noRoot = briefOf.includes("CHILD-SUBAGENT-NO-ROOT") && briefOf.match(/You were started by session (ses_\w+)/)
     if (call?.function?.name === "subagent" && noRoot) return { tool: "courier_send", args: { sessionID: noRoot[1], message: "CHILD SAW " + result, status: "done" } }
@@ -216,7 +239,7 @@ function decide(body) {
   if (parent && recent.includes("CHILD-SUBAGENT-NO-ROOT"))
     return { tool: "subagent", args: { agent: "general", description: "Answer in one line", prompt: "SUBAGENT-NO-ROOT-ASK" } }
   if (parent && recent.includes("CHILD-SUBAGENT-MID"))
-    return { tool: "subagent", args: { agent: "general", description: "Run the checks", prompt: "SUBAGENT-BACKGROUND", background: true } }
+    return { tool: "subagent", args: { agent: "general", description: "Run the checks", prompt: "SUBAGENT-FIRST" } }
   if (parent && recent.includes("CHILD-SUBTREE-MID")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-LEAF" } }
   if (parent && recent.includes("CHILD-SUBTREE-LEAF")) return { text: "LEAF HOLDING", hold: true }
   if (parent && recent.includes("CHILD-MID-BREAKS")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-LEAF" } }
@@ -435,7 +458,7 @@ function relayPersonWords(messages, lastAssistant) {
     return { text: sent.length ? "WORDS REPORTED" : "LEAF WAITS" }
   }
   if (briefedBy && first.includes("CHILD-RELAYS-PERSON")) {
-    if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-PERSON-WORDS" } }
+    if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-PERSON-WORDS", native: true } }
     if (call?.function?.name === "courier_spawn") return { text: "RELAYER SPAWNED" }
     const later = messages.map((message) => textOf(message.content)).join("\n")
     const reported = sent.some((item) => (item.function.arguments ?? "").includes("RELAYER DONE"))

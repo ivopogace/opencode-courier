@@ -30,6 +30,10 @@ older host and branches on it. How the plugin itself answers a trap is in
   `packages/core/src/tool/runtime.ts`). `test/notices.test.ts` renders them the same way.
 - An undeclared key never reaches a tool: `tool-input-repair` (`packages/core/src/plugin/`) deletes
   it. So a renamed optional key stays declared under its old name while it is accepted.
+- A promise tool that reads `context.signal`, or spreads the context, opts into a cooperative stop
+  (`executePromiseTool`, `packages/plugin/src/promise/adapter.ts`): on the person's stop the signal
+  aborts and whatever the tool returns is its result. The courier's tools read only `sessionID` and
+  `id`, so a stop interrupts them.
 
 ## Events
 
@@ -345,6 +349,18 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   `session.deleted` each.
 - **No generated title** and no warming for a session with a `parentID`; the courier sets the
   title.
+- **OpenCode reports every turn end to the parent** (`session/execution/subagent-report.ts`): when
+  an execution of a session with a `parentID` ends, succeeded with an assistant message, failed, or
+  interrupted by the person (not a shutdown), the host admits a synthetic `<subagent
+  sessionID="…" state="completed|error|cancelled|running" description="…">` with the child's last
+  text into the parent (`metadata: { source: "subagent", childID, agent, state }`, delivery
+  `steer`, without `resume: false`) and wakes it unless a revert is staged. No job is needed, so a
+  native courier child sends one per turn. Nothing opts out: the subagent tool's `notify` is gone,
+  and the plugin API cannot withdraw an inbox item. The plugin keeps such a message from counting
+  as a prompt in a parent started with `courier_spawn` (`notePrompt`), and `courier_stop` waits for
+  it from a stopped native child, as from a subagent.
+- **A restart resumes a directly driven child** (`session/execution/restart.ts`), a native child
+  included, and defers the resumed children's wakes until the parents' attempts are counted.
 
 ## OpenCode's subagent tool
 
@@ -353,22 +369,22 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
 
 - **The tool is `subagent`**, not `task`. It creates the child with `parentID` and the
   `description` as title, and prompts it with `You are a subagent spawned by another session.`
-  first. `experimental.subagent_depth` (default 1) counts `parentID` links up to the root, so a
+  first. Its input is `agent`, `description`, `prompt`, `model` and `sessionID`; `background` and
+  `notify` are gone, so a mock's extra key is deleted ([Tools](#tools)). `experimental.subagent_depth` (default 1) counts `parentID` links up to the root, so a
   native courier child cannot start one by default; a standalone one can.
 - **`session.list({ parentID })`** lists a session's children from any location, 50 by default
   (`session.ts`), most recently updated first (`session/store.ts`). The plugin's `ctx.session.list`
   is the same call.
-- **A foreground call** blocks on the child's job and interrupts it when the parent's call is
-  interrupted. **A background one** (`background: true`, or a foreground one moved there) is tied to
-  nothing: when the child's execution ends, interrupted included, its job ends and a forked observer
-  sends the parent a synthetic `<subagent sessionID=… state=…>` with `metadata.childID`, without
-  `resume: false`, which wakes an idle parent, or one still stopping. `courier_stop` waits for it
-  (`SETTLE_MS`) and interrupts the parent again.
+- **Every call runs in the background** and returns at once; nothing ties the child to the parent's
+  call. Each time the child's execution ends, interrupted included, the parent gets the report
+  [above](#native-parentid), which wakes an idle parent, or one still stopping; its `state` is
+  `running` while the child's own background work runs. `courier_stop` waits for it (`SETTLE_MS`)
+  and interrupts the parent again.
 - **An existing session is accepted.** `subagent` takes the id of a session whose `parentID` is
   the caller and prompts it as a plain `user` item, so a parent's follow-up into its native child
   is a `user` item like typed text, and the fan-up passes it up. A pin bump re-checks it.
-- **A completed background call's content** names the child's id (`working in the background
-  (sessionID: …)`); a foreground call's stays `running` until the child ends.
+- **A completed call's content** names the child's id (`working in the background (sessionID:
+  …)`).
 
 ## Models and variants
 
@@ -466,8 +482,15 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
 - **What inherits it.** `session.fork` copies the parent's entries and baseline; a native child
   (`parentID`) and `session.create` do not. `courier_cleanup` and a forgotten child leave entries
   alone: they belong to the session and go with it.
+- **A fork is announced.** After the copy, `Session.fork` (`packages/core/src/session.ts`) runs the
+  experimental `session.fork` hook with the fork's `sessionID`, failures logged and ignored; the
+  built-in `fork-notice` plugin uses it to admit a `<fork-notice>` synthetic with `resume: false`
+  (background work and notifications stay with the original). The courier registers no `fork` hook,
+  so a fork of a session in a tree keeps its `role`, `standing` and `lessons` entries and has no
+  roster entry.
 - **Reading it.** `put`, `list` and `remove` need the session to exist (`Session.NotFoundError`) but
-  boot no location. The `context` hook reads nothing of the value: the text itself only shows in
+  boot no location. The request hooks' `messages` carry each stored message's `metadata`, for
+  reading only (`SessionRequestMessage`); the `context` hook does not use it. The `context` hook reads nothing of the value: the text itself only shows in
   the model's request (`e2e/mock-model.mjs` logs `roleEntry` and `rolePart`).
 
 ## Skills
@@ -528,7 +551,9 @@ courier children are invisible to it ([reference](../reference.md#goal-and-couri
 - The runner (`session/runner/llm.ts`) fills `background` from `SessionBackground.outstanding`
   (`session/background.ts`): the host's running jobs under the session, which are task-tool
   subagents, image jobs and shells. A native courier child has a `parentID` but is not a job.
-  `GET /api/experimental/job` lists the same jobs over HTTP only; a plugin cannot add one.
+  `outstanding` can add the descendants with a running execution (`active`), but only the
+  subagent report passes them, not the idle hook. `GET /api/experimental/job` lists the same jobs
+  over HTTP only; a plugin cannot add one.
 - `goal.ts` returns early only for a `subagent` or `image` entry of the session itself, and offers
   `wait` only while one of its own shells runs. Otherwise `continue` admits a synthetic continuation
   in the same execution; `MAX_STALLS` (3) rounds in a row with the same reason or no tool call

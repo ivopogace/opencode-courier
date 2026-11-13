@@ -381,6 +381,8 @@ letters, digits, dots, dashes or underscores, scoped to the parent.
 replaces it. Everything else reaches the parent at once: a `blocked` report (the member stays out
 until it reports again), a held report's [`finding`](#a-childs-report) while another member has yet to report, progress, a failed turn and a silent end; at the top of the tree also a
 permission request, a question and a form, which below it [go to the top](#a-child-that-asks-for-permission).
+OpenCode's own message at a [native](#native-child-sessions) member's turn end is not the courier's
+to hold.
 
 **A blocked member and the held reports.** A member's `blocked` report brings, after its own text, the
 reports the group holds from the other members, under `Held with group "<name>" so far`: what the
@@ -559,7 +561,9 @@ without `report`. Anyone can read any tree.
    no longer has it) or `failed` (it may still run). Only an interrupted turn settles a session: an
    `idle` one that owed its report still owes it, stays in its [join group](#join-groups) and counts
    toward `maxChildren` and `maxTotal` until its parent drops it with `courier_cleanup`. The result
-   says so when a session other than a subagent was `idle`.
+   says so when a session other than a subagent was `idle`. OpenCode's notice that a stopped
+   subagent or [native child](#native-child-sessions) ended wakes its parent: when that parent was
+   stopped too, the stop waits up to two seconds for the notice and interrupts the parent again.
 4. With `cleanup: true`, their worktrees are removed by `courier_cleanup`'s rules, without `force`.
 
 When the target was interrupted, or was `idle` and still owed a report or had last reported
@@ -835,6 +839,13 @@ parent (see below). Use native children only with OpenCode's TUI or the paired a
   isolated one, or one spawned with `native: false`) they are relayed as without the option. With a
   bare API client nothing shows the prompts: `courier_answer` is the fallback, and
   `courier_children` lists them under `pending`.
+- **OpenCode reports each turn's end too.** When a native child's turn ends, OpenCode sends its
+  parent a `<subagent sessionID="…" state="…">` message of its own with the child's last reply,
+  and that wakes the parent; nothing turns it off. The courier's reports and notices come as
+  without the option, and OpenCode's message does not make a parent started with `courier_spawn`
+  owe a report again. So a parent may get a turn that holds only OpenCode's message, and a [join
+  group](#join-groups) with native members wakes the parent at each of their turn ends, since
+  OpenCode's messages are not held.
 - **Deleting a session deletes its native children.**
 - **The child gets the courier's own ruleset** (OpenCode's schedule tools denied, [Scheduled
   messages](#scheduled-messages)), not its parent's session rules, as without the option.
@@ -855,8 +866,9 @@ shows in OpenCode as several trees, split at each isolated child; `courier_tree`
 
 ## OpenCode's subagents
 
-A session in a tree may start subagents with OpenCode's own `subagent` tool, in the foreground or
-with `background: true`. They are the sessions whose OpenCode `parentID` is a session of the tree
+A session in a tree may start subagents with OpenCode's own `subagent` tool, which runs each in the
+background: the call returns at once, and OpenCode tells the parent each time the subagent's turn
+ends, which wakes it. They are the sessions whose OpenCode `parentID` is a session of the tree
 but which have no roster entry; a [native child](#native-child-sessions) has both and is the
 courier's. The plugin finds them through OpenCode's session list, under every session of the tree,
 subagents' own subagents too.
@@ -866,10 +878,8 @@ subagents' own subagents too.
   report and are in no group, so a parent's bar leaves them out. `enter` opens one; `s` and `x` do
   not act on one, which is stopped with the session above it.
 - **[`courier_stop`](#seeing-and-stopping-a-subtree)** interrupts them with the rest of the subtree,
-  background ones included, which would outlive their parent: OpenCode ties only a foreground
-  subagent to its parent's tool call. OpenCode tells a parent of each background subagent's end, and
-  that wakes it; the stop waits up to two seconds for that notice and interrupts the parent again. A
-  subagent cannot be the target itself.
+  since OpenCode ties none to its parent and they would outlive it. A subagent cannot be the target
+  itself.
 - **The [record](#the-record)** lists them in `parts`, so its cost is the whole tree's.
 - **A follow-up into a native child.** A parent's `subagent` call with its native child's session id
   prompts that child as a plain `user` item, which courier passes up to the parent too, as

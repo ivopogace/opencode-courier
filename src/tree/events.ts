@@ -76,9 +76,11 @@ const UNOWED = new Set(["user", "compaction", "move", TYPED])
 const OWN = "own"
 const OWN_SCHEDULED = "own-scheduled:"
 const MESSAGE_FROM = "from:"
+const HOST_REPORT = "host-report:"
 
 function kindOf(sessionID: string, item: Enqueued["data"]["item"]) {
   const metadata = item.payload?.metadata
+  if (item.type === "synthetic" && metadata?.source === "subagent" && typeof metadata.childID === "string") return `${HOST_REPORT}${metadata.childID}`
   if (item.type !== "synthetic" || metadata?.source !== "courier") return item.type
   if (metadata.route === "prompt") return TYPED
   if (typeof metadata.group === "string") return OWN
@@ -86,6 +88,10 @@ function kindOf(sessionID: string, item: Enqueued["data"]["item"]) {
   if (ownCheckIn) return `${OWN_SCHEDULED}${metadata.scheduledAt}`
   const statusless = typeof metadata.from === "string" && Object.keys(metadata).length === 2
   return statusless ? `${MESSAGE_FROM}${metadata.from}` : item.type
+}
+
+async function reportOfOwnChild(children: Pick<ChildStore, "indexedParent">, sessionID: string, kind: string | undefined) {
+  return kind?.startsWith(HOST_REPORT) === true && (await children.indexedParent(kind.slice(HOST_REPORT.length))) === sessionID
 }
 
 async function ownAfterReport(children: Pick<ChildStore, "notes" | "indexedParent">, sessionID: string, kind: string | undefined) {
@@ -114,7 +120,7 @@ export async function notePrompt(
   const children = childStore(ports.storage)
   const parentID = await children.indexedParent(sessionID)
   if (parentID === undefined) return false
-  if (await ownAfterReport(children, sessionID, kind)) return false
+  if ((await reportOfOwnChild(children, sessionID, kind)) || (await ownAfterReport(children, sessionID, kind))) return false
   if (inboxID !== undefined && (await children.nudgeOf(sessionID)).inboxID === inboxID) return false
   await children.prompted(sessionID, event.created ?? ports.now())
   await syncStanding(ports, parentID)

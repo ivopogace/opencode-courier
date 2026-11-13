@@ -1003,9 +1003,10 @@ run_fork() {
     "$(notices_with "$mid_fork" notice | jq -r --arg mid "$fork_mid" --arg root "$fork_root" 'length == 1 and (.[0] | contains(" of=\"" + $mid + "\"") and
       contains("The brief above from session " + $root + " is the assignment of session " + $mid) and contains("are the children of session " + $mid))')"
   echo "  instruction updates in the forks: leaf $(instruction_updates "$leaf_fork"), middle $(instruction_updates "$mid_fork")"
-  check "each fork's transcript ends its entries with one appended update, api/role for the leaf's and api/role, api/standing for the middle session's" \
-    "$([ "$(instruction_updates "$leaf_fork" | jq -r 'last')" = "Instructions updated: api/role" ] &&
-      [ "$(instruction_updates "$mid_fork" | jq -r 'last')" = "Instructions updated: api/role, api/standing" ] && echo true || echo false)"
+  check "each fork's transcript gained one update for its removed entries, api/role for the leaf's and api/role, api/standing beside the copied ones for the middle session's" \
+    "$([ "$(instruction_updates "$leaf_fork")" = '["Instructions updated: api/role"]' ] &&
+      [ "$(instruction_updates "$mid_fork" | jq -r '[.[] | select(contains("api/role"))] == ["Instructions updated: api/role, api/standing"]')" = true ] &&
+      [ "$(instruction_updates "$fork_mid" | jq -r 'any(contains("api/role")) | not')" = true ] && echo true || echo false)"
   echo "  system prompt hashes: leaf $(system_hashes "$fork_leaf"), its fork $(system_hashes "$leaf_fork"); middle $(system_hashes "$fork_mid"), its fork $(system_hashes "$mid_fork")"
   check "the leaf's fork answered as a top session: courier_spawn among its tools, no role part of the hook's, and the system prompt of the leaf byte for byte" \
     "$(jq -sr --arg fork "$leaf_fork" '[.[] | select(.session == $fork and (.tools | length > 0))] | length > 0 and

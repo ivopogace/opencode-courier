@@ -66,8 +66,10 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   a tool description), re-run `e2e/real-model.sh` and put its result in the PR body; the tables in
   `real-model.md` are one batch, replaced only by a full new batch.
 - Keep the provider's prompt cache: a spawned session's role part goes to its `role` instruction
-  entry once, before its first prompt; where `context.ts` adds it as a system part instead, it is the
-  same on every request. So `courier_spawn` does not gate on the skill being loaded. The skill
+  entry before its first prompt, and is put again only when the session starts its first native
+  child while `nativeChildren` is off, which arrives as one instruction update and leaves the cached
+  prefix alone; where `context.ts` adds it as a system part instead, it is the same on every
+  request. So `courier_spawn` does not gate on the skill being loaded. The skill
   states the root's split rule and the split-line forms on purpose: the root has no brief, its role
   line loses the rule at its first spawn, and a brief can be compacted away.
 - Feature work goes on a branch and through a PR with green CI; `Closes #N` in the body.

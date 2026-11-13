@@ -60,7 +60,7 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     ...(model ? { model } : {}),
   }
   const { rosterError, groupError } = await enrol(ports, entry, group)
-  await nameBoth(ports, parentID, entry.sessionID, admitted.depth)
+  await nameBoth(ports, entry, admitted.depth)
   try {
     await handOver(ports, entry, admitted.depth, input.task, !rosterError, !rosterError && !groupError)
   } finally {
@@ -167,15 +167,37 @@ async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
   }
 }
 
-async function nameBoth(ports: CourierPorts, parentID: string, childID: string, depth: number) {
+const naming = new Map<string, Promise<unknown>>()
+
+function nameBoth(ports: CourierPorts, child: RosterEntry, depth: number) {
+  const { parentID } = child
+  const before = (naming.get(parentID) ?? Promise.resolve()).catch(() => undefined)
+  const run = before.then(() => nameEach(ports, child, depth))
+  const done: Promise<unknown> = run.then(
+    () => naming.get(parentID) === done && naming.delete(parentID),
+    () => naming.get(parentID) === done && naming.delete(parentID),
+  )
+  naming.set(parentID, done)
+  return run
+}
+
+async function nameEach(ports: CourierPorts, child: RosterEntry, depth: number) {
+  const { parentID } = child
   const extra = await extraEntries(ports)
-  await nameRole(ports, childID, depth)
-  if (depth < ports.limits.maxDepth) await putEntries(ports, childID, extra)
+  await nameRole(ports, child.sessionID, depth, ports.nativeChildren === true)
+  if (depth < ports.limits.maxDepth) await putEntries(ports, child.sessionID, extra)
   const rootNamed = ports.roles.get(parentID)?.entry === true
-  const named = depth === 1 && (rootNamed || (await nameRole(ports, parentID, 0)))
-  if (named && !rootNamed) await putEntries(ports, parentID, extra)
-  if (named) ports.roles.set(parentID, { depth: 0, entry: true })
+  const fresh = depth === 1 && !rootNamed
+  const renamed = fresh || child.native ? await nameRole(ports, parentID, depth - 1, await hostReportsReach(ports, child)) : false
+  if (fresh && renamed) await putEntries(ports, parentID, extra)
+  if (renamed || (depth === 1 && rootNamed)) ports.roles.set(parentID, { depth: depth - 1, entry: true })
   else ports.roles.delete(parentID)
+}
+
+async function hostReportsReach(ports: CourierPorts, child: RosterEntry) {
+  if (ports.nativeChildren === true || child.native) return true
+  const started = await childStore(ports.storage).children(child.parentID).catch(() => [])
+  return started.some((entry) => entry.native)
 }
 
 async function extraEntries(ports: CourierPorts): Promise<ReadonlyArray<Entry>> {
@@ -188,11 +210,11 @@ async function extraEntries(ports: CourierPorts): Promise<ReadonlyArray<Entry>> 
   }
 }
 
-async function nameRole(ports: CourierPorts, sessionID: string, depth: number) {
+async function nameRole(ports: CourierPorts, sessionID: string, depth: number, hostReports: boolean) {
   const entries = ports.session.instructions?.entry
   if (!entries) return false
   try {
-    await entries.put({ sessionID, key: ROLE_KEY, value: rolePart(depth, ports.limits) })
+    await entries.put({ sessionID, key: ROLE_KEY, value: rolePart(depth, ports.limits, hostReports) })
     return true
   } catch (error) {
     ports.log(`courier_spawn: the role entry of ${sessionID} could not be written, so its role goes in a system part: ${String(error)}`)

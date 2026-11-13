@@ -78,7 +78,23 @@ export const ROLE_PREFIX = "opencode-courier role:"
 
 export const ROLE_KEY = "role"
 
-export function rolePart(depth: number | null, limits: Limits) {
+export const HOST_REPORTS_LEAD = "OpenCode's own message at a turn end:"
+
+export const HOST_REPORTS =
+  `${HOST_REPORTS_LEAD} when a turn of a session you started with courier_spawn as your OpenCode subagent ends, OpenCode itself sends you ` +
+  `<subagent sessionID="…" state="…"> with that session's last text. It is the host's note that the turn ended, not the session's report. ` +
+  "What counts is the report the session sends you with courier_send, or the courier's notice that it ended without one, each in a <courier> message. " +
+  "The <subagent> message needs no reply and nothing done: when a turn brings you nothing else, end it in one line. " +
+  "For sessions in a group, wait for the group's reports, which come together in one message. " +
+  "This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <subagent> message of a subagent " +
+  "you started with OpenCode's subagent tool is that subagent's result."
+
+export function rolePart(depth: number | null, limits: Limits, hostReports = false) {
+  const role = roleLine(depth, limits)
+  return hostReports && depth !== null && depth < limits.maxDepth ? `${role}\n${HOST_REPORTS}` : role
+}
+
+function roleLine(depth: number | null, limits: Limits) {
   const { maxDepth, maxChildren, maxTotal } = limits
   const budget = `At most ${maxChildren} of the sessions you start run at once, and ${maxTotal} in the whole tree.`
   if (depth === null)

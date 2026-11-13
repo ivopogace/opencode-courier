@@ -65,6 +65,12 @@ describe("envelope and child brief", () => {
     for (const depth of [0, 1, 2, 3, null]) expect(tree.rolePart(depth, limits)).toMatchSnapshot()
     for (const depth of [0, 1, 2, 3, null]) expect(tree.rolePart(depth, limits)).toStartWith(tree.ROLE_PREFIX)
   })
+  test("rolePart of a session OpenCode's own message at a native child's turn end can reach", () => {
+    expect(tree.HOST_REPORTS).toMatchSnapshot()
+    expect(tree.HOST_REPORTS).toStartWith(tree.HOST_REPORTS_LEAD)
+    for (const depth of [0, 1, 2]) expect(tree.rolePart(depth, limits, true)).toMatchSnapshot()
+    for (const depth of [3, null]) expect(tree.rolePart(depth, limits, true)).toBe(tree.rolePart(depth, limits))
+  })
   test("the courier-orchestrate skill", () => {
     expect(kernel.SKILL_ID).toBe("courier-orchestrate")
     expect(skill.SKILL_DESCRIPTION).toMatchSnapshot()

@@ -698,6 +698,8 @@ createServer((request, response) => {
     const roleEntry = /(<|&lt;)context key="role"(>|&gt;)\n\s*opencode-courier role:/.test(everything)
     const rolePart = (system.match(/^opencode-courier role:/gm) ?? []).length > (system.match(/<context key="role">\n\s*opencode-courier role:/g) ?? []).length
     const updateRole = (body.messages ?? []).find(isInstructionUpdate)?.role ?? null
+    const hostReports = [...everything.matchAll(/^OpenCode's own message at a turn end:.*$/gm)].map((match) => match[0])
+    const hostMessage = (body.messages ?? []).some((message) => message.role === "user" && /<subagent sessionID="ses_\w+" state=/.test(textOf(message.content)))
     const systemHash = createHash("sha256").update(system).digest("hex").slice(0, 16)
     const lessonsEntry = /(<|&lt;)context key="lessons"(>|&gt;)\n\s*opencode-courier lessons:/.test(everything)
     const standingEntry = /(<|&lt;)context key="standing"(>|&gt;)\n\s*opencode-courier standing:/.test(everything)
@@ -705,7 +707,7 @@ createServer((request, response) => {
     const schedules = /opencode[._]schedule_/.test(JSON.stringify(body.tools ?? []) + everything)
     const opencodeTools = Math.max(-1, ...[...everything.matchAll(/^- opencode \((\d+) tools?/gm)].map((match) => Number(match[1])))
     const options = Object.fromEntries(Object.entries(body).filter(([key]) => !["messages", "tools", "stream", "stream_options", "tool_choice"].includes(key)))
-    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, roleEntry, rolePart, updateRole, systemHash, lessonsEntry, standingEntry, skills, schedules, opencodeTools, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
+    if (log) appendFileSync(log, `${JSON.stringify({ url: request.url, stream: !!body.stream, session, role, roleEntry, rolePart, updateRole, systemHash, hostReports, hostMessage, lessonsEntry, standingEntry, skills, schedules, opencodeTools, tools: (body.tools ?? []).map((tool) => tool.function?.name), options, reply })}\n`)
     if (reply.status) {
       response.writeHead(reply.status, { "content-type": "application/json", ...reply.headers })
       response.end(JSON.stringify({ error: { message: reply.error, type: "forbidden" } }))

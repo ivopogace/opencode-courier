@@ -1015,6 +1015,17 @@ describe("spawn", () => {
       expect(entries.get("ses_root")?.get(ROLE_KEY)).toBe(rolePart(0, DEFAULT_LIMITS, true))
     })
 
+    test("with it off, a native and a plain child started in one step leave the text in the root's entry, whichever is named first", async () => {
+      for (const order of [[true, false], [false, true]]) {
+        const entries = new Map<string, Map<string, unknown>>()
+        const { courier } = spawnPorts(DEFAULT_LIMITS, entries)
+
+        await Promise.all(order.map((native) => spawn(courier, "ses_root", { task: "t", native })))
+
+        expect(entries.get("ses_root")?.get(ROLE_KEY)).toBe(rolePart(0, DEFAULT_LIMITS, true))
+      }
+    })
+
     test("with it off, a sub-orchestrator's native child renews the sub-orchestrator's entry at its own depth", async () => {
       const entries = new Map<string, Map<string, unknown>>()
       const { courier, calls, roles, child } = spawnPorts(DEFAULT_LIMITS, entries)

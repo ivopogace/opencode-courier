@@ -2398,6 +2398,9 @@ run_spawn_native() {
       [ "$(session_info "$mixed_plain" | jq -r '.parentID == null')" = true ] && echo true || echo false)"
   check "OpenCode lists only the subagent under the parent" \
     "$(api "session?parentID=$parent" | jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '[.data[].id] | index($native) != null and index($plain) == null')"
+  check "the parent's role entry says what OpenCode's own message at the subagent's turn end is, and neither child's does" \
+    "$([[ $(role_entry_of "$parent") == "opencode-courier role: root orchestrator"*$'\n'"OpenCode's own message at a turn end:"* ]] &&
+      [[ $(role_entry_of "$mixed_native")$(role_entry_of "$mixed_plain") != *"OpenCode's own message at a turn end:"* ]] && echo true || echo false)"
   check "the roster records the subagent as native and the other not, both in the group" \
     "$([ "$(kv get "roster/$parent/$mixed_native" | jq -r '.native == true and .isolated == false and .group == "pair"')" = true ] &&
       [ "$(kv get "roster/$parent/$mixed_plain" | jq -r '(has("native") | not) and .isolated == false and .group == "pair"')" = true ] && echo true || echo false)"
@@ -2470,6 +2473,12 @@ run_native() {
   check "OpenCode told the parent of the child's turn end too, in a message of its own" \
     "$(for _ in $(seq 1 30); do api "session/$native_parent/message" | jq -e --arg child "$native_child" '[.data[] | select(.type == "synthetic" and .metadata.source == "subagent" and .metadata.childID == $child)] | length >= 1' >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
 
+  check "from its first spawn every request of the parent carries, once, what OpenCode's own message is, the same bytes on the request that message starts" \
+    "$(for _ in $(seq 1 30); do jq -sre --arg parent "$native_parent" '[.[] | select(.session == $parent and (.tools | length > 0))] | (map(.hostReports | length > 0) | index(true)) as $i
+      | $i != null and $i > 0 and (.[:$i] | all(.hostReports == [])) and (.[$i].hostReports as $first | ($first | length == 1) and (.[$i:] | all(.hostReports == $first) and any(.hostMessage)))' "$WORK/model.log" >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
+  check "the child, which can start sessions, has it in its role entry on every request, and the parent's role entry holds it" \
+    "$([[ $(role_entry_of "$native_parent") == "opencode-courier role: root orchestrator"*$'\n'"OpenCode's own message at a turn end:"* ]] &&
+      jq -sr --arg child "$native_child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and (.[0].hostReports | length == 1) and all(.roleEntry) and (map(.hostReports) | unique | length == 1)' "$WORK/model.log" | grep -qx true && echo true || echo false)"
   scenario "nativeChildren: an isolated child is created as before, without a parentID"
   child_delay 1000
   out=$(prompt "COURIER-TEST isolate")

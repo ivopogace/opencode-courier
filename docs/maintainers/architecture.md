@@ -114,7 +114,9 @@ The host facts behind this are in [plugin-api-notes.md](plugin-api-notes.md#the-
 The courier writes three [keyed session instructions](plugin-api-notes.md#keyed-session-instructions):
 
 - `role`: a spawned session's role part (`spawn.ts`, before the first prompt, so it is in the
-  baseline and moves no cached prefix).
+  baseline and moves no cached prefix). It ends with the line about OpenCode's own message at a
+  [native child's turn end](plugin-api-notes.md#native-parentid) when `nativeChildren` is on, and
+  for a parent from its first native child.
 - `lessons`: the project's lessons, to a session above the deepest level when memory is on and has
   lessons (`spawn.ts`; `memory/lessons.ts` supplies the text and `courier_note` renews it).
 - `standing`: a parent's children (`tree/standing.ts`, from the tools and events that move a child,

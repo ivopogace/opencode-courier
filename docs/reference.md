@@ -844,9 +844,22 @@ parent (see below). Use native children only with OpenCode's TUI or the paired a
   parent a `<subagent sessionID="…" state="…">` message of its own with the child's last reply,
   and that wakes the parent; nothing turns it off. The courier's reports and notices come as
   without the option, and OpenCode's message does not make a parent started with `courier_spawn`
-  owe a report again. So a parent may get a turn that holds only OpenCode's message, and a [join
+  owe a report again. The cost is an extra parent turn per child turn, at every native level above
+  it: the turn OpenCode's message starts in a parent that is a native child too ends with a message
+  to its own parent, up to the first session that is not a native child. A [join
   group](#join-groups) with native members wakes the parent at each of their turn ends, since
-  OpenCode's messages are not held.
+  OpenCode's messages are not held. So native children are worth it for OpenCode's own view of
+  the children (the TUI or the paired app), not for fewer turns.
+- **The parent's model is told what that message is.** The [role](#session-trees-and-their-limits) of a session that has,
+  or can start, a native child ends with one fixed line: OpenCode's `<subagent>` message about a
+  session started with `courier_spawn` is the host's note that its turn ended, not its report; the
+  report, or the courier's notice that it ended without one, is what counts; the message needs no
+  reply; a group's reports come together. With `nativeChildren` on, every session that can start
+  sessions has the line from its first spawn (a root) or its first request (a child); with it off,
+  a session gets it when it starts its first child with `native: true`, as one update of its role.
+  A leaf, and a session with no native child while the option is off, do not have it. The line
+  leaves the `<subagent>` message of a subagent started with OpenCode's own tool, and of a child
+  removed with `courier_cleanup`, as that session's result.
 - **Deleting a session deletes its native children.**
 - **The child gets the courier's own ruleset** (OpenCode's schedule tools denied, [Scheduled
   messages](#scheduled-messages)), not its parent's session rules, as without the option.

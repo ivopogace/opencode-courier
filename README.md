@@ -110,7 +110,7 @@ Set the server options on the plugin's entry in the **global** config,
 | `maxChildren` | `5` | Live children one session may have. |
 | `maxTotal` | `30` | Live spawned sessions in one tree. |
 | `memory` | `true` | Keep a record of each session tree for later orchestrators ([memory](docs/reference.md#memory)). |
-| `nativeChildren` | `false` | The default for a spawn that does not set `native`: `true` creates non-isolated children as OpenCode subagents ([native children](docs/reference.md#native-child-sessions)). |
+| `nativeChildren` | `false` | The default for a spawn that does not set `native`: `true` creates non-isolated children as OpenCode subagents, for OpenCode's own view of them, at an extra parent turn per child turn ([native children](docs/reference.md#native-child-sessions)). |
 
 The terminal part reads its options only from `~/.config/opencode/cli.json`, in the same entry
 form. Its one option, `"animations": false`, keeps the tree panel still.

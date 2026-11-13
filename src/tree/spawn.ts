@@ -167,7 +167,19 @@ async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
   }
 }
 
-async function nameBoth(ports: CourierPorts, child: RosterEntry, depth: number) {
+const naming = new Map<string, Promise<unknown>>()
+
+function nameBoth(ports: CourierPorts, child: RosterEntry, depth: number) {
+  const { parentID } = child
+  const run = (naming.get(parentID) ?? Promise.resolve()).then(() => nameEach(ports, child, depth))
+  const done = run.finally(() => {
+    if (naming.get(parentID) === done) naming.delete(parentID)
+  })
+  naming.set(parentID, done)
+  return run
+}
+
+async function nameEach(ports: CourierPorts, child: RosterEntry, depth: number) {
   const { parentID } = child
   const extra = await extraEntries(ports)
   await nameRole(ports, child.sessionID, depth, ports.nativeChildren === true)

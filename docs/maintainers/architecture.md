@@ -115,8 +115,11 @@ The courier writes three [keyed session instructions](plugin-api-notes.md#keyed-
 
 - `role`: a spawned session's role part (`spawn.ts`, before the first prompt, so it is in the
   baseline and moves no cached prefix). It ends with the line about OpenCode's own message at a
-  [native child's turn end](plugin-api-notes.md#native-parentid) when `nativeChildren` is on, and
-  for a parent from its first native child.
+  [native child's turn end](plugin-api-notes.md#native-parentid) when `nativeChildren` is on. With
+  the option off, `spawn.ts` puts a parent's entry again, with the line, at its first `native: true`
+  spawn: that put comes after the parent's first prompt, so it leaves the baseline and the cached
+  prefix alone and reaches the model as one instruction update, as a root's entry does at its first
+  spawn.
 - `lessons`: the project's lessons, to a session above the deepest level when memory is on and has
   lessons (`spawn.ts`; `memory/lessons.ts` supplies the text and `courier_note` renews it).
 - `standing`: a parent's children (`tree/standing.ts`, from the tools and events that move a child,

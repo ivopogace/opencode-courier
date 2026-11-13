@@ -171,10 +171,12 @@ const naming = new Map<string, Promise<unknown>>()
 
 function nameBoth(ports: CourierPorts, child: RosterEntry, depth: number) {
   const { parentID } = child
-  const run = (naming.get(parentID) ?? Promise.resolve()).then(() => nameEach(ports, child, depth))
-  const done = run.finally(() => {
-    if (naming.get(parentID) === done) naming.delete(parentID)
-  })
+  const before = (naming.get(parentID) ?? Promise.resolve()).catch(() => undefined)
+  const run = before.then(() => nameEach(ports, child, depth))
+  const done: Promise<unknown> = run.then(
+    () => naming.get(parentID) === done && naming.delete(parentID),
+    () => naming.get(parentID) === done && naming.delete(parentID),
+  )
   naming.set(parentID, done)
   return run
 }

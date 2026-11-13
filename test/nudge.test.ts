@@ -160,6 +160,21 @@ describe("nudgeSilent", () => {
     expect(await nudgeSilent(subagent.ports, new Set(), outside, idle())).toBe(true)
   })
 
+  test("counts OpenCode's report of a native child the session dropped as a prompt, like a subagent's", async () => {
+    const { ports } = await prompted()
+    const inbox = new Map<string, string>()
+    const children = childStore(ports.storage)
+    await children.record({ ...child("ses_child"), sessionID: "ses_grandchild", native: true })
+    await reportFrom(ports, 150)
+    await children.remove("ses_child", "ses_grandchild")
+    await noteEnqueued(ports, inbox, {
+      data: { sessionID: "ses_child", inboxID: "inb_1", item: { type: "synthetic", payload: { metadata: { source: "subagent", childID: "ses_grandchild", agent: "subagent", state: "completed" } } } },
+    })
+
+    expect(await notePrompt(ports, delivered("evt_h", 200, "inb_1"), inbox)).toBe(true)
+    expect(await nudgeSilent(ports, new Set(), outside, idle())).toBe(true)
+  })
+
   test("reminds a child whose own message, scheduled after it reported, reached it (#514)", async () => {
     const enqueued = (inboxID: string, scheduledAt: number) => ({
       data: { sessionID: "ses_child", inboxID, item: { type: "synthetic", payload: { metadata: { source: "courier", from: "ses_child", scheduled: "lat_1", scheduledAt } } } },

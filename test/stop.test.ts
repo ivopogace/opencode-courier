@@ -325,6 +325,27 @@ describe("stop", () => {
     expect(Date.now() - started).toBeLessThan(SETTLE_MS)
   })
 
+  test("does not wait for OpenCode's report of a native child that was idle, or of one whose parent it did not stop", async () => {
+    const idle = await fixture({ idle: ["leaf2"] })
+    await childStore(idle.ports.courier.storage as any).record(entry("leaf2", "mid", 4, { native: true }))
+    await childStore(idle.ports.courier.storage as any).record(entry("mid", "root", 1, { native: true }))
+
+    const started = Date.now()
+    await stop(idle.ports, "root", { sessionID: "mid" })
+
+    expect(Date.now() - started).toBeLessThan(SETTLE_MS)
+    expect(idle.calls.filter((call) => call.method === "interrupt" && call.input.sessionID === "mid")).toHaveLength(1)
+
+    const target = await fixture()
+    await childStore(target.ports.courier.storage as any).record(entry("leaf2", "mid", 4, { native: true }))
+
+    const again = Date.now()
+    await stop(target.ports, "root", { sessionID: "leaf2" })
+
+    expect(Date.now() - again).toBeLessThan(SETTLE_MS)
+    expect(target.calls.filter((call) => call.method === "interrupt").map((call) => call.input.sessionID)).toEqual(["leaf2"])
+  })
+
   test("waits at most SETTLE_MS for a notice that does not come, and interrupts nothing more", async () => {
     const { ports, calls } = await fixture({ listed: { leaf2: [["bg", 6]] } })
     const returned = { type: "tool", name: "subagent", state: { status: "completed", input: {}, content: [{ type: "text", text: "(sessionID: bg)" }] } }

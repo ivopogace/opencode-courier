@@ -2,6 +2,7 @@ export { dirtyOf, headOf, inspectWorktree } from "./cleanup.js"
 export { shapeContext } from "./context.js"
 export { endsIdle, lineageIn, nativeRootOf, readLimits, readNativeChildren } from "./domain.js"
 export { treeEvents, waitsOn } from "./events.js"
+export { onFork } from "./fork.js"
 export { deliverReleased } from "./group.js"
 export { onIdle } from "./nudge.js"
 export { contextOf } from "./panel.js"
@@ -10,6 +11,7 @@ export type {
   CourierPorts,
   Entries,
   Entry,
+  ForkPorts,
   Instructions,
   Lister,
   ModelWindow,

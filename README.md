@@ -62,7 +62,8 @@ lifts) is reported to its parent. One about to end its turn without reporting is
 the same turn, and its parent is told only if it still does not report. A message that does not wake
 its session is sent once more, then shown as `stalled`. On OpenCode 2.2.0 a parent's system prompt
 carries one line per child with its state, kept current, so it need not look. Children, held reports
-and scheduled messages survive a restart. The `courier-orchestrate` skill, listed in every session,
+and scheduled messages survive a restart. A fork of a session in a tree is told that courier did not
+start it: the brief and the children it reads of are the original's. The `courier-orchestrate` skill, listed in every session,
 tells a model when to split a task and how to check and merge the parts; how to plan and review them
 is left to your own skills. Every detail: [the reference](docs/reference.md).
 

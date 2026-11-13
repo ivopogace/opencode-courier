@@ -120,6 +120,8 @@ The courier writes three [keyed session instructions](plugin-api-notes.md#keyed-
 - `standing`: a parent's children (`tree/standing.ts`, from the tools and events that move a child,
   removed with the last child).
 
+A fork copies all three; `tree/fork.ts` removes `role` and `standing` from it and leaves `lessons`.
+
 Each value stays well under 3 KiB. `standing` and `lessons` are `list`ed and compared before a put
 that may be the same, so an unchanged value costs one read and no write. The `context` hook lists a
 session's entries once per instance and session.

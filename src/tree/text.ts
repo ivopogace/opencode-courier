@@ -499,6 +499,26 @@ export function reportReminder(parentID: string) {
   ].join("\n")
 }
 
+export function forkNotice(originalID: string | undefined, parentID: string | undefined, parent: boolean) {
+  const original = originalID ? `session ${originalID}` : "the original session"
+  return [
+    `Courier did not start this fork. What courier gave ${original} stays with it:`,
+    ...(parentID
+      ? [
+          `- The brief above from session ${parentID} is the assignment of ${original}, which reports on it: here it is background. ` +
+            `You report to no one: send session ${parentID} nothing with courier_send unless the person asks.`,
+        ]
+      : []),
+    ...(parent
+      ? [
+          `- The sessions started above with courier_spawn are the children of ${original}: their reports, the ones still pending too, and what they ask go there, never here. ` +
+            "courier_children lists none of them here: do not wait for them, and do not combine or send their reports as yours.",
+        ]
+      : []),
+    "- Here you are the top session of a tree of your own, with no sessions started: the role and standing courier gave above are not yours.",
+  ].join("\n")
+}
+
 const QUOTED_REPLY_MAX = 2000
 
 export function silentNotice(title: string, lastText: string | undefined, progressed = false, group?: string) {

@@ -115,6 +115,7 @@ export interface Role {
   readonly depth: number | null
   readonly entry: boolean
   readonly subagent?: true
+  readonly hostReports?: true
 }
 
 export type Instructions = Partial<Pick<Context["session"], "instructions">>
@@ -280,6 +281,7 @@ export type Waits = (ports: Pick<WatchPorts, "storage" | "permissions">, session
 export interface ContextPorts {
   readonly storage: RosterStorage
   readonly limits: Limits
+  readonly nativeChildren?: boolean
   readonly roles: Map<string, Role>
   readonly session: Pick<Context["session"], "get">
   readonly instructions?: Context["session"]["instructions"]

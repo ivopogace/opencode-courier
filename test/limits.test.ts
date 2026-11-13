@@ -8,7 +8,7 @@ import { busy, DEFAULT_LIMITS, endedAt, endsIdle, nativeRootOf, readLimits, read
 import { runs, turnOf } from "../src/tree/running.js"
 import type { ContextPorts, CourierPorts, LimitPorts, Role, SpawnGate } from "../src/tree/ports.js"
 import { ROOT_SPLIT_LINE, SKILL_ID } from "../src/kernel/protocol.js"
-import { childBrief, depthRefusal, childrenRefusal, ROLE_KEY, ROLE_PREFIX, rolePart, STANDING_KEY, standingEntry, totalRefusal } from "../src/tree/text.js"
+import { childBrief, depthRefusal, childrenRefusal, HOST_REPORTS, ROLE_KEY, ROLE_PREFIX, rolePart, STANDING_KEY, standingEntry, totalRefusal } from "../src/tree/text.js"
 import { reportOf } from "../src/tree/report.js"
 import { childStore, wakeStore } from "../src/tree/store.js"
 
@@ -946,6 +946,98 @@ describe("spawn", () => {
     expect(roles.has("ses_a")).toBe(false)
   })
 
+  describe("what OpenCode's own message at a native child's turn end is (#604)", () => {
+    const rolePuts = (calls: string[], sessionID: string) => calls.filter((call) => call.startsWith(`put ${sessionID} ${ROLE_KEY}: `))
+
+    test("with nativeChildren on, a child that can start sessions and the root get the text in their role entry, a leaf does not", async () => {
+      const limits = { ...DEFAULT_LIMITS, maxDepth: 2 }
+      const entries = new Map<string, Map<string, unknown>>()
+      const { courier, calls } = spawnPorts(limits, entries)
+      ;(courier as any).nativeChildren = true
+
+      await spawn(courier, "ses_root", { task: "t" })
+      await spawn(courier, "ses_new1", { task: "u" })
+
+      expect(entries.get("ses_root")?.get(ROLE_KEY)).toBe(rolePart(0, limits, true))
+      expect(entries.get("ses_new1")?.get(ROLE_KEY)).toBe(rolePart(1, limits, true))
+      expect(entries.get("ses_new2")?.get(ROLE_KEY)).toBe(rolePart(2, limits))
+      expect(String(entries.get("ses_new2")?.get(ROLE_KEY))).not.toContain(HOST_REPORTS)
+      expect(rolePuts(calls, "ses_root")).toHaveLength(1)
+      expect(new Set(rolePuts(calls, "ses_new1"))).toEqual(new Set([`put ses_new1 ${ROLE_KEY}: ${rolePart(1, limits, true)}`]))
+    })
+
+    test("with it on, a child spawned with native: false or isolate still tells its parent, which can start a native one", async () => {
+      const entries = new Map<string, Map<string, unknown>>()
+      const { courier } = spawnPorts(DEFAULT_LIMITS, entries)
+      ;(courier as any).nativeChildren = true
+
+      await spawn(courier, "ses_root", { task: "t", native: false })
+
+      expect(entries.get("ses_root")?.get(ROLE_KEY)).toBe(rolePart(0, DEFAULT_LIMITS, true))
+    })
+
+    test("with it off and no native child, nobody gets the text", async () => {
+      const entries = new Map<string, Map<string, unknown>>()
+      const { courier } = spawnPorts(DEFAULT_LIMITS, entries)
+
+      await spawn(courier, "ses_root", { task: "t" })
+      await spawn(courier, "ses_new1", { task: "u" })
+
+      for (const sessionID of ["ses_root", "ses_new1", "ses_new2"]) expect(String(entries.get(sessionID)?.get(ROLE_KEY))).not.toContain(HOST_REPORTS)
+    })
+
+    test("with it off, native: true at the root's first spawn puts the text in the root's entry, and the child's has none", async () => {
+      const entries = new Map<string, Map<string, unknown>>()
+      const { courier, calls } = spawnPorts(DEFAULT_LIMITS, entries)
+
+      await spawn(courier, "ses_root", { task: "t", native: true })
+
+      expect(rolePuts(calls, "ses_root")).toEqual([`put ses_root ${ROLE_KEY}: ${rolePart(0, DEFAULT_LIMITS, true)}`])
+      expect(entries.get("ses_new1")?.get(ROLE_KEY)).toBe(rolePart(1, DEFAULT_LIMITS))
+    })
+
+    test("with it off, a session's first native child renews its role entry with the text, and every later spawn carries the same bytes", async () => {
+      const entries = new Map<string, Map<string, unknown>>()
+      const { courier, calls, roles } = spawnPorts(DEFAULT_LIMITS, entries)
+      const told = `put ses_root ${ROLE_KEY}: ${rolePart(0, DEFAULT_LIMITS, true)}`
+
+      await spawn(courier, "ses_root", { task: "t" })
+      expect(rolePuts(calls, "ses_root")).toEqual([`put ses_root ${ROLE_KEY}: ${rolePart(0, DEFAULT_LIMITS)}`])
+      await spawn(courier, "ses_root", { task: "u", native: true })
+      expect(rolePuts(calls, "ses_root").slice(1)).toEqual([told])
+      await spawn(courier, "ses_root", { task: "v" })
+      await spawn(courier, "ses_root", { task: "w", native: true })
+      expect(rolePuts(calls, "ses_root").slice(1)).toEqual([told, told])
+
+      roles.delete("ses_root")
+      await spawn(courier, "ses_root", { task: "x" })
+      expect(rolePuts(calls, "ses_root").slice(1)).toEqual([told, told, told])
+      expect(entries.get("ses_root")?.get(ROLE_KEY)).toBe(rolePart(0, DEFAULT_LIMITS, true))
+    })
+
+    test("with it off, a sub-orchestrator's native child renews the sub-orchestrator's entry at its own depth", async () => {
+      const entries = new Map<string, Map<string, unknown>>()
+      const { courier, calls, roles, child } = spawnPorts(DEFAULT_LIMITS, entries)
+      await child("ses_root", "ses_a")
+
+      await spawn(courier, "ses_a", { task: "t", native: true })
+
+      expect(rolePuts(calls, "ses_a")).toEqual([`put ses_a ${ROLE_KEY}: ${rolePart(1, DEFAULT_LIMITS, true)}`])
+      expect(roles.get("ses_a")).toEqual({ depth: 1, entry: true })
+      expect(entries.get("ses_new1")?.get(ROLE_KEY)).toBe(rolePart(2, DEFAULT_LIMITS))
+    })
+
+    test("the text names the courier's child only: not a subagent started with OpenCode's tool, nor a session cleaned up", () => {
+      expect(HOST_REPORTS).toContain("a session you started with courier_spawn as your OpenCode subagent")
+      expect(HOST_REPORTS).toEndWith(
+        "This holds only for sessions you started with courier_spawn and have not removed with courier_cleanup: the <subagent> message of a subagent you started with OpenCode's subagent tool is that subagent's result.",
+      )
+      expect(HOST_REPORTS).not.toContain("\n")
+      for (const depth of [DEFAULT_LIMITS.maxDepth, null]) expect(rolePart(depth, DEFAULT_LIMITS, true)).toBe(rolePart(depth, DEFAULT_LIMITS))
+      for (const depth of [0, 1, 2]) expect(rolePart(depth, DEFAULT_LIMITS, true)).toBe(`${rolePart(depth, DEFAULT_LIMITS)}\n${HOST_REPORTS}`)
+    })
+  })
+
   test("on a host without keyed instructions writes no entry: the context hook adds the part", async () => {
     const { courier, calls, roles } = spawnPorts()
 
@@ -1099,6 +1191,48 @@ describe("the context hook", () => {
     expect((await shape("ses_d1", baseline(1))).system).toEqual([{ type: "text", text: baseline(1) }])
     expect(calls).toEqual(["list ses_d1"])
     expect(ports.roles.get("ses_d1")).toEqual({ depth: 1, entry: true })
+  })
+
+  describe("the role part of a session whose entry could not be written, and OpenCode's own message at a turn end (#604)", () => {
+    const native = (storage: Parameters<typeof childStore>[0], parentID: string, sessionID: string) =>
+      childStore(storage).record({ sessionID, parentID, title: sessionID, directory: "/repo", isolated: false, createdAt: 1, native: true })
+
+    test("carries the text, the same bytes on two requests, for a session with a native child", async () => {
+      const { shape, child, storage } = contextPorts()
+      await chainTo(child, 1)
+      await native(storage, "ses_d1", "ses_kid")
+
+      const [first, second] = [await shape("ses_d1"), await shape("ses_d1")]
+
+      expect(first.system.at(-1)).toEqual({ type: "text", text: rolePart(1, DEFAULT_LIMITS, true) })
+      expect(second.system.at(-1)?.text).toBe(first.system.at(-1)!.text)
+      expect((await shape("ses_root")).system.at(-1)?.text).toBe(rolePart(0, DEFAULT_LIMITS))
+    })
+
+    test("carries it with nativeChildren on for a session that can start one, not for a leaf, the native child itself or a session outside a tree", async () => {
+      const limits = { ...DEFAULT_LIMITS, maxDepth: 2 }
+      const { ports, child } = contextPorts(limits)
+      await chainTo(child, 2)
+      const shape = async (sessionID: string) => {
+        const event = { sessionID, tools: tools() as Record<string, unknown>, system: [{ type: "text" as const, text: "base" }] }
+        await shapeContext({ ...ports, nativeChildren: true }, event)
+        return event.system.at(-1)!.text
+      }
+
+      for (const _ of [1, 2]) expect(await shape("ses_root")).toBe(rolePart(0, limits, true))
+      expect(await shape("ses_d1")).toBe(rolePart(1, limits, true))
+      expect(await shape("ses_d2")).toBe(rolePart(2, limits))
+      expect(await shape("ses_d2")).not.toContain(HOST_REPORTS)
+      expect(await shape("ses_alone")).toBe(rolePart(null, limits))
+    })
+
+    test("leaves it out with nativeChildren off and no native child", async () => {
+      const { shape, child } = contextPorts()
+      await chainTo(child, 2)
+
+      for (const [sessionID, depth] of [["ses_root", 0], ["ses_d1", 1], ["ses_d2", 2]] as const)
+        expect((await shape(sessionID)).system.at(-1)).toEqual({ type: "text", text: rolePart(depth, DEFAULT_LIMITS) })
+    })
   })
 
   test("adds the part, the same on every request, when the entries hold no role, and reads them once", async () => {

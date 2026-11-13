@@ -15,12 +15,12 @@ export interface Shaped {
 
 export async function shapeContext(ports: ContextPorts, event: Shaped) {
   try {
-    const { depth, entry, subagent } = await roleOf(ports, event.sessionID)
+    const { depth, entry, subagent, hostReports } = await roleOf(ports, event.sessionID)
     const leaf = subagent || (depth !== null && depth >= ports.limits.maxDepth)
     if (leaf) for (const tool of ["courier_spawn", ...(ports.hiddenFromLeaf ?? [])]) delete event.tools[tool]
     if (subagent || (depth === null && !event.tools.courier_spawn)) return
     if (entry || event.system.some((part) => ROLE_LINE.test(part.text))) return
-    event.system.push({ type: "text", text: rolePart(depth, ports.limits) })
+    event.system.push({ type: "text", text: rolePart(depth, ports.limits, hostReports === true) })
   } catch (error) {
     ports.log(`courier: cannot tell the role of session ${event.sessionID}: ${String(error)}`)
   }
@@ -30,8 +30,8 @@ async function roleOf(ports: ContextPorts, sessionID: string, below: ReadonlySet
   const known = ports.roles.get(sessionID)
   if (known !== undefined) return known
   const children = childStore(ports.storage)
-  const chain = await children.indexedLineage(sessionID)
-  const depth = chain.length || ((await children.children(sessionID)).length ? 0 : null)
+  const [chain, started] = await Promise.all([children.indexedLineage(sessionID), children.children(sessionID)])
+  const depth = chain.length || (started.length ? 0 : null)
   if (depth === null) {
     const { parentID } = await ports.session.get({ sessionID })
     if (parentID && !below.has(parentID)) {
@@ -42,7 +42,9 @@ async function roleOf(ports: ContextPorts, sessionID: string, below: ReadonlySet
       return role
     }
   }
-  const role = { depth, entry: depth !== null && (await hasEntry(ports, sessionID)) }
+  const entry = depth !== null && (await hasEntry(ports, sessionID))
+  const hostReports = depth !== null && !entry && (ports.nativeChildren === true || started.some((child) => child.native))
+  const role: Role = { depth, entry, ...(hostReports ? { hostReports: true } : {}) }
   setBounded(ports.roles, sessionID, role, ROLES_MAX)
   return role
 }

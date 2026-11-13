@@ -1,9 +1,9 @@
 # Plugin API traps
 
 What the OpenCode V2 plugin API and host do that the plugin works around or relies on, at
-`@opencode/plugin@2.2.7` and OpenCode 2.2.7. A pin bump re-checks each trap and moves that version.
+`@opencode/plugin@2.3.0` and OpenCode 2.3.0. A pin bump re-checks each trap and moves that version.
 OpenCode's source is on the `v2` branch of https://github.com/anomalyco/opencode, each release
-tagged (`v2.2.7`); paths below are in it. A "since" stays only where the plugin still runs on an
+tagged (`v2.3.0`); paths below are in it. A "since" stays only where the plugin still runs on an
 older host and branches on it. How the plugin itself answers a trap is in
 [architecture.md](architecture.md).
 

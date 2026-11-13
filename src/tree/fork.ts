@@ -8,7 +8,7 @@ export interface Forked {
   readonly sessionID: string
 }
 
-const OWN_KEYS: ReadonlyArray<string> = [ROLE_KEY, STANDING_KEY]
+const OWN_KEYS: ReadonlySet<string> = new Set([ROLE_KEY, STANDING_KEY])
 
 const startedBy = (metadata: unknown) => {
   const courier = (metadata as { courier?: { parentID?: unknown } } | null | undefined)?.courier
@@ -19,7 +19,7 @@ async function ownEntries(ports: ForkPorts, sessionID: string) {
   const entries = ports.session.instructions?.entry
   if (!entries) return []
   try {
-    return (await entries.list({ sessionID })).map((entry) => entry.key).filter((key) => OWN_KEYS.includes(key))
+    return (await entries.list({ sessionID })).map((entry) => entry.key).filter((key) => OWN_KEYS.has(key))
   } catch (error) {
     ports.log(`courier fork: cannot read the instruction entries of ${sessionID}: ${String(error)}`)
     return []

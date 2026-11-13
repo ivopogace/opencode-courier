@@ -355,8 +355,8 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   sessionID="…" state="completed|error|cancelled|running" description="…">` with the child's last
   text into the parent (`metadata: { source: "subagent", childID, agent, state }`, delivery
   `steer`, without `resume: false`) and wakes it unless a revert is staged. No job is needed, so a
-  native courier child sends one per turn. Nothing opts out: the subagent tool's `notify` is gone,
-  and the plugin API cannot withdraw an inbox item. The plugin keeps such a message from counting
+  native courier child sends one per turn. Nothing opts out: neither the session nor the subagent
+  tool has a switch, and the plugin API cannot withdraw an inbox item. The plugin keeps such a message from counting
   as a prompt in a parent started with `courier_spawn` (`notePrompt`), and `courier_stop` waits for
   it from a stopped native child, as from a subagent.
 - **A restart resumes a directly driven child** (`session/execution/restart.ts`), a native child
@@ -369,8 +369,8 @@ What reading OpenCode's subagents into a tree rests on (`packages/core/src/tool/
 
 - **The tool is `subagent`**, not `task`. It creates the child with `parentID` and the
   `description` as title, and prompts it with `You are a subagent spawned by another session.`
-  first. Its input is `agent`, `description`, `prompt`, `model` and `sessionID`; `background` and
-  `notify` are gone, so a mock's extra key is deleted ([Tools](#tools)). `experimental.subagent_depth` (default 1) counts `parentID` links up to the root, so a
+  first. Its input is `agent`, `description`, `prompt`, `model` and `sessionID`, and any other key
+  a mock sends is deleted ([Tools](#tools)). `experimental.subagent_depth` (default 1) counts `parentID` links up to the root, so a
   native courier child cannot start one by default; a standalone one can.
 - **`session.list({ parentID })`** lists a session's children from any location, 50 by default
   (`session.ts`), most recently updated first (`session/store.ts`). The plugin's `ctx.session.list`

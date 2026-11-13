@@ -35,6 +35,7 @@ import {
   dirtyOf,
   headOf,
   inspectWorktree,
+  onFork,
   onIdle,
   pruneExpired,
   readLimits,
@@ -189,6 +190,9 @@ export const courier = () => Plugin.define({
     await Promise.resolve()
       .then(() => ctx.session.hook("experimental.idle", (event) => onIdle(watchPorts, watchState.seen, outside, event).then(() => undefined)))
       .catch((error: unknown) => log(`courier idle: not registered, a child that ends without a report is not reminded: ${String(error)}`))
+    await Promise.resolve()
+      .then(() => ctx.session.hook("fork", (event) => onFork({ storage: ctx.storage, session: ctx.session, log }, watchState.seen, event).then(() => undefined)))
+      .catch((error: unknown) => log(`courier fork: not registered, a fork of a session in a tree is not told that courier did not start it: ${String(error)}`))
     watchFromHub(hub, eventModules)
     const member: Member = {
       directory: ctx.location.directory,

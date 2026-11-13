@@ -15,7 +15,7 @@ this batch.
 
 ```bash
 bun install
-npm install --prefix <scratch>/oc @opencode/cli@2.2.7
+npm install --prefix <scratch>/oc @opencode/cli@2.3.0
 OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/real-model.sh
 ```
 

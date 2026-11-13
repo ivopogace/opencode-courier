@@ -130,10 +130,20 @@ async function backgroundSubagents(ports: StopPorts, nodes: ReadonlyArray<Below>
   return new Map(found.filter(([, ids]) => ids.size))
 }
 
+function withNativeChildren(background: ReadonlyMap<string, ReadonlySet<string>>, nodes: ReadonlyArray<Below>) {
+  const stopped = new Set(nodes.map((node) => node.entry.sessionID))
+  const reporting = new Map([...background].map(([parentID, ids]) => [parentID, new Set(ids)]))
+  for (const { entry, subagent } of nodes) {
+    if (subagent || !entry.native || !stopped.has(entry.parentID)) continue
+    reporting.set(entry.parentID, (reporting.get(entry.parentID) ?? new Set<string>()).add(entry.sessionID))
+  }
+  return reporting
+}
+
 async function settle(ports: StopPorts, nodes: ReadonlyArray<Below>, results: ReadonlyArray<Stopped>, background: ReadonlyMap<string, ReadonlySet<string>>, since: number) {
-  const ended = new Set(results.flatMap((one) => (one.subagent && one.outcome === "interrupted" ? [one.sessionID] : [])))
+  const ended = new Set(results.flatMap((one) => (one.outcome === "interrupted" ? [one.sessionID] : [])))
   await Promise.all(
-    [...background].map(async ([parentID, ids]) => {
+    [...withNativeChildren(background, nodes)].map(async ([parentID, ids]) => {
       const waited = new Set([...ids].filter((id) => ended.has(id)))
       if (!waited.size || !(await told(ports, parentID, waited, since))) return
       const parent = nodes.find((node) => node.entry.sessionID === parentID)

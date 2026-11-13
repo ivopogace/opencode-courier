@@ -20,7 +20,7 @@ test. The leads are a join group: the orchestrator needs only both results.
 ## Quickstart
 
 ```bash
-npm install -g @opencode/cli@2.2.7   # OpenCode V2, the version courier is tested on
+npm install -g @opencode/cli@2.3.0   # OpenCode V2, the version courier is tested on
 opencode plugin add opencode-courier
 opencode
 ```
@@ -69,10 +69,10 @@ is left to your own skills. Every detail: [the reference](docs/reference.md).
 ## Install
 
 Requires OpenCode V2: the `opencode` command from `@opencode/cli`. Each release is tested against
-one OpenCode version; this one is tested on **OpenCode 2.2.7** (check with `opencode --version`).
+one OpenCode version; this one is tested on **OpenCode 2.3.0** (check with `opencode --version`).
 
 ```bash
-npm install -g @opencode/cli@2.2.7
+npm install -g @opencode/cli@2.3.0
 opencode plugin add opencode-courier
 ```
 
@@ -91,7 +91,7 @@ name, without a version: OpenCode offers updates only for an entry without an ex
 <!-- compat-table:end -->
 
 Every release: [the full table](docs/reference.md#the-opencode-version). The server part loads on
-any V2 host from 2.0.4 on. The terminal part is tested on OpenCode 2.2.7 only.
+any V2 host from 2.0.4 on. The terminal part is tested on OpenCode 2.3.0 only.
 
 ## Options
 

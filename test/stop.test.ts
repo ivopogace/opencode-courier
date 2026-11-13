@@ -302,6 +302,29 @@ describe("stop", () => {
     expect(Date.now() - started).toBeLessThan(SETTLE_MS)
   })
 
+  test("interrupts a stopped parent again once OpenCode's report that its native child was stopped has woken it, not the caller", async () => {
+    const { ports, calls } = await fixture()
+    await childStore(ports.courier.storage as any).record(entry("leaf2", "mid", 4, { native: true }))
+    await childStore(ports.courier.storage as any).record(entry("mid", "root", 1, { native: true }))
+    const session = ports.courier.session as any
+    let noticed = false
+    session.context = async ({ sessionID }: any) =>
+      sessionID === "mid" && noticed ? [{ type: "synthetic", time: { created: Date.now() }, metadata: { source: "subagent", childID: "leaf2", state: "cancelled" }, text: "" }] : []
+    const interrupt = session.interrupt
+    session.interrupt = async (input: any) => {
+      if (input.sessionID === "leaf2") setTimeout(() => (noticed = true), 100)
+      return interrupt(input)
+    }
+
+    const started = Date.now()
+    await stop(ports, "root", { sessionID: "mid" })
+
+    const order = calls.filter((call) => call.method === "interrupt").map((call) => call.input.sessionID)
+    expect(order.slice(0, 2).sort()).toEqual(["leaf1", "leaf2"])
+    expect(order.slice(2)).toEqual(["mid", "mid"])
+    expect(Date.now() - started).toBeLessThan(SETTLE_MS)
+  })
+
   test("waits at most SETTLE_MS for a notice that does not come, and interrupts nothing more", async () => {
     const { ports, calls } = await fixture({ listed: { leaf2: [["bg", 6]] } })
     const returned = { type: "tool", name: "subagent", state: { status: "completed", input: {}, content: [{ type: "text", text: "(sessionID: bg)" }] } }

@@ -27,6 +27,7 @@ select_row() {
   done
 }
 record_pane() {
+  echo '{ "highlights": false, "session": { "verbosity": "medium" } }' >"$XDG_CONFIG_HOME/opencode/cli.json"
   rm -rf "$OUT"
   mkdir -p "$OUT/frames"
   echo "recording to $OUT"

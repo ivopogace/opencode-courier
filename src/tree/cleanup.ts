@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { isAbsolute } from "node:path"
-import { forgetDropped } from "./forget.js"
+import { forgetChild } from "./forget.js"
 import type { CleanupPorts, CleanupResult, WorktreeState } from "./ports.js"
 import { syncStanding } from "./standing.js"
 import { childStore } from "./store.js"
@@ -19,15 +19,20 @@ export async function cleanup(ports: CleanupPorts, parentID: string, input: Clea
   if (!entry) throw new Error(`${input.sessionID} is not a child of ${parentID}: courier_cleanup takes a session you started yourself.`)
   const { directory } = entry
   const forget = async () => {
-    const group = await forgetDropped(ports, entry)
+    await forgetChild(ports.storage, parentID, input.sessionID)
     await syncStanding(ports, parentID)
-    return group ? { group } : {}
   }
-  if (!entry.isolated) return { sessionID: input.sessionID, directory, outcome: "forgotten", ...(await forget()) }
+  if (!entry.isolated) {
+    await forget()
+    return { sessionID: input.sessionID, directory, outcome: "forgotten" }
+  }
   const state = await ports
     .inspect(directory, entry.base)
     .catch((error: unknown) => (input.force ? { changes: [], commits: [] } : Promise.reject(error)))
-  if (!state) return { sessionID: input.sessionID, directory, outcome: "gone", ...(await forget()) }
+  if (!state) {
+    await forget()
+    return { sessionID: input.sessionID, directory, outcome: "gone" }
+  }
   const reason = keepReason(state)
   if (reason && !input.force)
     return {
@@ -43,7 +48,8 @@ export async function cleanup(ports: CleanupPorts, parentID: string, input: Clea
     directory,
     force: input.force === true,
   })
-  return { sessionID: input.sessionID, directory, outcome: "removed", ...(await forget()) }
+  await forget()
+  return { sessionID: input.sessionID, directory, outcome: "removed" }
 }
 
 export const GIT_ENV = "OPENCODE_COURIER_GIT"

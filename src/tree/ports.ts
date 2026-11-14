@@ -1,9 +1,9 @@
 import type { Plugin } from "@opencode/plugin"
 import type { Status } from "../kernel/protocol.js"
 import type { Storage } from "../platform/storage.js"
-import type { Limits, Member, ModelRef, RosterEntry } from "./domain.js"
+import type { Limits, ModelRef, RosterEntry } from "./domain.js"
 
-export type { Artifacts, HeldReport, LeftMember, Limits, Member, ModelRef, RosterEntry, Standing } from "./domain.js"
+export type { Artifacts, Limits, ModelRef, RosterEntry } from "./domain.js"
 
 type Context = Plugin.Context
 
@@ -81,34 +81,11 @@ export interface WakeStore {
   remove(sessionID: string, inboxID: string): Promise<void>
 }
 
-export interface Membership extends Member {
-  readonly parentID: string
-  readonly group: string
-  readonly sessionID: string
-}
-
-export interface GroupStore {
-  member(parentID: string, group: string, sessionID: string): Promise<Member | undefined>
-  all(): Promise<Membership[]>
-  ofParent(parentID: string): Promise<Membership[]>
-  ofGroup(parentID: string, group: string): Promise<Membership[]>
-  put(parentID: string, group: string, sessionID: string, member: Member): Promise<void>
-  remove(parentID: string, group: string, sessionID: string): Promise<void>
-}
-
-export interface Held {
-  readonly group: string
-  readonly reported?: number
-  readonly members?: number
-}
-
 export interface Sent {
   readonly messageID?: string
   readonly status?: Status
   readonly report?: boolean
-  readonly held?: Held
   readonly dropped?: Status
-  readonly finding?: "ahead" | "unsent" | "held"
 }
 
 export interface Role {
@@ -146,7 +123,6 @@ export interface CourierPorts {
   readonly limits: Limits
   readonly gate: SpawnGate
   readonly roles: Map<string, Role>
-  readonly nudge: () => void
   readonly log: (message: string) => void
 }
 
@@ -206,7 +182,7 @@ export interface LimitPorts {
 }
 
 export type CleanupResult =
-  | { readonly sessionID: string; readonly directory: string; readonly outcome: "removed" | "gone" | "forgotten"; readonly group?: string }
+  | { readonly sessionID: string; readonly directory: string; readonly outcome: "removed" | "gone" | "forgotten" }
   | {
       readonly sessionID: string
       readonly directory: string
@@ -227,7 +203,6 @@ export interface CleanupPorts {
   readonly projectID: string
   readonly inspect: (directory: string, base?: string) => Promise<WorktreeState | undefined>
   readonly now: () => number
-  readonly nudge: () => void
   readonly session?: Instructions
   readonly log?: (message: string) => void
 }
@@ -236,13 +211,6 @@ export interface StopPorts {
   readonly courier: CourierPorts
   readonly cancelScheduled: (sessionID: string) => Promise<ReadonlyArray<string>>
   readonly cleanup: CleanupPorts
-}
-
-export interface GroupPorts {
-  readonly storage: Storage
-  readonly session: Pick<Context["session"], "synthetic" | "get" | "context"> & Instructions
-  readonly now: () => number
-  readonly log: (message: string) => void
 }
 
 export interface ForkPorts {
@@ -265,7 +233,6 @@ export interface WatchPorts {
   readonly permissions: () => Iterable<Pick<Context["permission"], "list">>
   readonly now: () => number
   readonly log: (message: string) => void
-  readonly nudge: () => void
 }
 
 export interface WatchState {

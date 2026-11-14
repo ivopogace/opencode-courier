@@ -1,11 +1,10 @@
 import { describeFailure } from "../kernel/protocol.js"
-import { isGroupName, modelName } from "./domain.js"
-import { joinGroup, leaveGroup } from "./group.js"
+import { modelName } from "./domain.js"
 import { admit } from "./limits.js"
 import { chooseModel } from "./model.js"
 import type { CourierPorts, RosterEntry } from "./ports.js"
 import { syncStanding } from "./standing.js"
-import { childStore, groupStore } from "./store.js"
+import { childStore } from "./store.js"
 import { childBrief, childBranch, nativeIsolateRefusal, ROLE_KEY, rolePart } from "./text.js"
 
 export interface SpawnInput {
@@ -13,7 +12,6 @@ export interface SpawnInput {
   readonly title?: string
   readonly agent?: string
   readonly isolate?: boolean
-  readonly group?: string
   readonly model?: string
   readonly variant?: string
   readonly native?: boolean
@@ -33,20 +31,17 @@ async function dropWorktree(ports: CourierPorts, directory: string) {
 }
 
 export async function spawn(ports: CourierPorts, parentID: string, input: SpawnInput) {
-  const group = typeof input.group === "string" ? input.group.trim() || undefined : (input.group ?? undefined)
-  if (group !== undefined && !isGroupName(group))
-    throw new Error(`group must be a name of 1 to 60 letters, digits, dots, dashes or underscores, not ${JSON.stringify(group)}.`)
   const native = typeof input.native === "boolean" ? input.native : undefined
   if (native && input.isolate) throw new Error(nativeIsolateRefusal())
   const admitted = await admit(ports, parentID)
   try {
-    return await start(ports, parentID, { ...input, native }, admitted, group)
+    return await start(ports, parentID, { ...input, native }, admitted)
   } finally {
     admitted.release()
   }
 }
 
-async function start(ports: CourierPorts, parentID: string, input: SpawnInput, admitted: Awaited<ReturnType<typeof admit>>, group: string | undefined) {
+async function start(ports: CourierPorts, parentID: string, input: SpawnInput, admitted: Awaited<ReturnType<typeof admit>>) {
   const { worktree, handedDown, model, ...child } = await create(ports, parentID, input)
   admitted.reservation.sessionID = child.sessionID
   const entry: RosterEntry = {
@@ -56,22 +51,19 @@ async function start(ports: CourierPorts, parentID: string, input: SpawnInput, a
     createdAt: ports.now(),
     reports: "status",
     ...(worktree ? { source: ports.directory, project: ports.projectID } : {}),
-    ...(group ? { group } : {}),
     ...(model ? { model } : {}),
   }
-  const { rosterError, groupError } = await enrol(ports, entry, group)
+  const rosterError = await enrol(ports, entry)
   await nameBoth(ports, entry, admitted.depth)
   try {
-    await handOver(ports, entry, admitted.depth, input.task, !rosterError, !rosterError && !groupError)
+    await handOver(ports, entry, admitted.depth, input.task, !rosterError)
   } finally {
     await syncStanding(ports, parentID)
   }
   return {
     sessionID: entry.sessionID,
     directory: entry.directory,
-    ...(group && !rosterError && !groupError ? { group } : {}),
     ...(rosterError ? { rosterError } : {}),
-    ...(groupError ? { groupError } : {}),
     ...(handedDown?.from ? { fromParent: true } : {}),
     ...(handedDown?.uncommitted ? { uncommitted: true } : {}),
     ...(model ? { model } : {}),
@@ -127,43 +119,21 @@ async function parentWork(ports: CourierPorts, parentID: string) {
   return { ...(head ? { from: { directory, head } } : {}), uncommitted }
 }
 
-async function enrol(ports: CourierPorts, entry: RosterEntry, group: string | undefined) {
-  const rosterError = await childStore(ports.storage).record(entry).then(
+function enrol(ports: CourierPorts, entry: RosterEntry) {
+  return childStore(ports.storage).record(entry).then(
     () => undefined,
     (error: unknown) => describeFailure("roster", error).message,
   )
-  const groupError = group && !rosterError ? await join(ports, entry, group) : undefined
-  return { rosterError, groupError }
 }
 
-async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, task: string, rostered: boolean, grouped: boolean) {
+async function handOver(ports: CourierPorts, entry: RosterEntry, depth: number, task: string, rostered: boolean) {
   const children = childStore(ports.storage)
   if (rostered) await children.prompted(entry.sessionID, ports.now()).catch(() => undefined)
   try {
     await ports.session.prompt({ sessionID: entry.sessionID, text: childBrief(entry.parentID, task, depth, ports.limits, entry.isolated ? childBranch(entry.sessionID) : undefined), metadata: { source: "courier", task: true } })
   } catch (error) {
     if (rostered) await children.settled(entry.sessionID, "failed", ports.now()).catch(() => undefined)
-    if (grouped && entry.group)
-      await leaveGroup(groupStore(ports.storage), entry.parentID, entry.group, entry.sessionID, "failed", ports.now()).then(
-        (complete) => complete && ports.nudge(),
-        (leaveError: unknown) => ports.log(`courier_spawn: ${entry.sessionID} could not leave group ${entry.group}: ${String(leaveError)}`),
-      )
     throw error
-  }
-}
-
-async function join(ports: CourierPorts, entry: RosterEntry, group: string) {
-  const groups = groupStore(ports.storage)
-  try {
-    await joinGroup(groups, entry.parentID, group, entry.sessionID, entry.title, ports.now())
-    return undefined
-  } catch (error) {
-    const { group: _, ...ungrouped } = entry
-    await Promise.all([
-      childStore(ports.storage).record(ungrouped).catch(() => undefined),
-      groups.remove(entry.parentID, group, entry.sessionID).catch(() => undefined),
-    ])
-    return describeFailure("group", error).message
   }
 }
 

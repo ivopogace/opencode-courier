@@ -447,12 +447,13 @@ test("tool inputs decode with their schemas", async () => {
 
   const decode = (name: string, value: unknown) => Schema.decodeUnknownSync(tools.get(name).input)(value)
   expect(decode("courier_spawn", { task: "t", isolate: true })).toEqual({ task: "t", isolate: true })
-  expect(decode("courier_spawn", { task: "t", group: "reviews" })).toEqual({ task: "t", group: "reviews" })
+  expect(decode("courier_spawn", { task: "t", group: "reviews" })).toEqual({ task: "t" })
   expect(decode("courier_spawn", { task: "t", native: true })).toEqual({ task: "t", native: true })
   expect(decode("courier_spawn", { task: "t", native: false, isolate: true })).toEqual({ task: "t", native: false, isolate: true })
   expect(() => decode("courier_spawn", { task: "t", native: "yes" })).toThrow()
   expect(decode("courier_send", { sessionID: "s", message: "m" })).toEqual({ sessionID: "s", message: "m" })
   expect(decode("courier_send", { sessionID: "s", message: "m", queue: true })).toEqual({ sessionID: "s", message: "m" })
+  expect(decode("courier_send", { sessionID: "s", message: "m", status: "done", finding: "f" })).toEqual({ sessionID: "s", message: "m", status: "done" })
   expect(() => decode("courier_send", { sessionID: "s" })).toThrow()
   const report = { sessionID: "s", message: "m", status: "done", artifacts: { branch: "b", commits: ["c"], files: ["f"], checks: [{ command: "bun test", result: "ok" }] } }
   expect(decode("courier_send", report)).toEqual(report)

@@ -14,11 +14,9 @@ function fakePorts(state: WorktreeState | "gone" = clean) {
   const store = new Map<string, unknown>()
   const removed: unknown[] = []
   const inspected: unknown[] = []
-  const nudges: number[] = []
   const ports: CleanupPorts = {
     projectID: "proj_plugin",
     now: () => 1_000,
-    nudge: () => void nudges.push(removed.length),
     storage: {
       get: async (key) => store.get(key) as any,
       set: async (key, value) => void store.set(key, value),
@@ -35,7 +33,7 @@ function fakePorts(state: WorktreeState | "gone" = clean) {
       return state === "gone" ? undefined : state
     },
   }
-  return { ports, store, removed, inspected, nudges }
+  return { ports, store, removed, inspected }
 }
 
 const child = (overrides: Partial<RosterEntry> = {}): RosterEntry => ({
@@ -328,48 +326,14 @@ describe("findGit", () => {
   })
 })
 
-test("forgetting a child started in a group has the scheduler deliver the group, which may be complete without it", async () => {
-  const { ports, store, nudges } = fakePorts()
-  await childStore(ports.storage).record(child({ group: "pair" }))
-  store.set("group/ses_parent/pair/ses_child", { title: "t", joinedAt: 1 })
-
-  expect(await cleanup(ports, "ses_parent", { sessionID: "ses_child" })).toMatchObject({ outcome: "removed", group: "pair" })
-
-  expect(store.get("group/ses_parent/pair/ses_child")).toEqual({ title: "t", joinedAt: 1, left: { at: 1_000, by: "dropped" } })
-  expect(store.has(rosterKey("ses_parent", "ses_child"))).toBe(false)
-  expect(nudges).toEqual([1])
-  await childStore(ports.storage).record(child())
-  expect(await cleanup(ports, "ses_parent", { sessionID: "ses_child" })).not.toHaveProperty("group")
-  expect(nudges).toEqual([1])
-  await childStore(ports.storage).record(child({ group: "pair" }))
-  store.set("group/ses_parent/pair/ses_child", { title: "t", joinedAt: 1, left: { at: 5, by: "failed" } })
-  expect(await cleanup(ports, "ses_parent", { sessionID: "ses_child" })).not.toHaveProperty("group")
-  expect(store.get("group/ses_parent/pair/ses_child")).toEqual({ title: "t", joinedAt: 1, left: { at: 5, by: "failed" } })
-  expect(nudges).toEqual([1])
-  await childStore(ports.storage).record(child({ group: "pair" }))
-  store.set("group/ses_parent/pair/ses_child", { title: "t", joinedAt: 1, report: { at: 2, status: "done", message: "m" } })
-  await cleanup(ports, "ses_parent", { sessionID: "ses_child" })
-  expect(store.get("group/ses_parent/pair/ses_child")).toHaveProperty("report")
-  expect(nudges).toEqual([1])
-})
-
-test("forgetting a member without a worktree that has not reported drops it from its group, which is released without it", async () => {
-  const { ports, store, nudges } = fakePorts()
-  await childStore(ports.storage).record(child({ isolated: false, directory: "/repo", source: undefined, group: "pair" }))
-  store.set("group/ses_parent/pair/ses_child", { title: "t", joinedAt: 1 })
-
-  expect(await cleanup(ports, "ses_parent", { sessionID: "ses_child" })).toEqual({ sessionID: "ses_child", directory: "/repo", outcome: "forgotten", group: "pair" })
-  expect(store.get("group/ses_parent/pair/ses_child")).toEqual({ title: "t", joinedAt: 1, left: { at: 1_000, by: "dropped" } })
-  expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_child"])
-  expect(nudges).toEqual([0])
-})
-
-test("a membership that cannot be read fails the call before the child is forgotten, so it can be tried again", async () => {
+test("dropping a child whose roster entry names a group of an earlier release reads no group key and leaves it in storage", async () => {
   const { ports, store } = fakePorts()
   await childStore(ports.storage).record(child({ isolated: false, directory: "/repo", source: undefined, group: "pair" }))
+  const held = { title: "t", joinedAt: 1, report: { at: 2, status: "done", message: "m" } }
+  store.set("group/ses_parent/pair/ses_child", held)
   const { get } = ports.storage
-  const locked = { ...ports, storage: { ...ports.storage, get: async (key: string) => (key.startsWith("group/") ? Promise.reject(new Error("locked")) : get(key)) } }
+  const unread = { ...ports, storage: { ...ports.storage, get: async (key: string) => (key.startsWith("group/") ? Promise.reject(new Error("read")) : get(key)) } }
 
-  await expect(cleanup(locked, "ses_parent", { sessionID: "ses_child" })).rejects.toThrow("locked")
-  expect(store.has(rosterKey("ses_parent", "ses_child"))).toBe(true)
+  expect(await cleanup(unread, "ses_parent", { sessionID: "ses_child" })).toEqual({ sessionID: "ses_child", directory: "/repo", outcome: "forgotten" })
+  expect([...store]).toEqual([["group/ses_parent/pair/ses_child", held]])
 })

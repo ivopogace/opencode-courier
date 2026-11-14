@@ -83,7 +83,7 @@ Eight checks: two children spawned; the first turn ended after spawning; no poll
 report); both children reported to the parent; both reports reached it, waking it or steered into
 its running turn, and got a reply; each carries a status and its answer; the reply holds both. The
 README's Quickstart prompt is a shorter wording with sleeps, which keep the children busy past the
-parent's first turn so that each report visibly wakes it: set `COURIER_PROMPT` to it. To check a join group, add *both in one join group named "pair"*.
+parent's first turn so that each report visibly wakes it: set `COURIER_PROMPT` to it.
 
 ## The permission relay
 
@@ -344,8 +344,7 @@ or otherwise: a part that stays inside the project gets it through courier or no
 > one line: RESULTS \<a\> \<b\>
 
 Nothing in the prompt says to tell anyone. The brief tells the "init" session to send its parent
-what the other parts need, without a status, and to put what they need from its report in the
-report's `finding`, which reaches the parent ahead of a held report; the skill tells the root to pass it on to the parts it changes. The checker
+what the other parts need, without a status; the skill tells the root to pass it on to the parts it changes. The checker
 (`e2e/real-model-discovery.mjs`) creates `.go-parts` once the root has sent each of the other parts
 a message without a status that holds the key, or started them after it with the key in the task.
 It creates the file as well once the key can no longer come in time, so a failing run waits out no
@@ -377,9 +376,7 @@ the server's log and OpenCode's own files, with the "init" session's shell outpu
 name a part that ran `init`, touched the key's file or searched those files for the key, whose file
 then does not show the relay.
 
-A root that starts the three in one join group gets the "init" session's report only with the other
-two, after their `get` has failed: the key arrives in time only when that session sends it without a
-status first or puts it in its report's `finding`. A root that runs "init" first and starts the others after its report fails the first
+A root that runs "init" first and starts the others after its report fails the first
 check alone, and the notes call it staged.
 
 ```bash

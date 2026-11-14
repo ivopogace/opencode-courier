@@ -29,7 +29,7 @@ export const isExpired = (entry: RosterEntry, now: number, exists: Exists = exis
 
 async function dropExpired(storage: RosterStorage, entries: RosterEntry[], now: number, exists: Exists) {
   const expired = new Set(entries.filter((entry) => isExpired(entry, now, exists)))
-  await Promise.all([...expired].map((entry) => forgetChild(storage, entry.parentID, entry.sessionID, entry.group)))
+  await Promise.all([...expired].map((entry) => forgetChild(storage, entry.parentID, entry.sessionID)))
   return entries.filter((entry) => !expired.has(entry))
 }
 

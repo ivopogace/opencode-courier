@@ -17,7 +17,7 @@ the hub), `development.md` (commands, suites, CI), `real-model.md` and `releasin
 - `src/platform/`: the process-wide hub, the scheduler loop, OpenCode's event stream, storage helpers.
   Imports nothing outside itself.
 - The modules, each imported from outside only through its `index.ts`: `tree/` (the session tree:
-  spawn, send, reports, groups, missed wakes, the `context` hook, the tree panel), `person/`
+  spawn, send, reports, missed wakes, the `context` hook, the tree panel), `person/`
   (permission requests, forms, the question relay) and `scheduling/` (`courier_later`).
   `person/` may import `tree/`; nothing else crosses. Each has `ports.ts`, a pure
   `domain.ts`, `text.ts` (its model-facing strings, pure), `tools.ts`, and one file per use case.

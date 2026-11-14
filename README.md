@@ -43,8 +43,7 @@ top session's view. Use it when a child's final answer is all you need. Courier 
 
 - **Messages before a turn ends.** A child sends its parent a finding or a question at any time,
   and each report wakes the parent as it comes. The parent passes a finding on to the children it
-  affects, into their running turns. A join group, its children's reports in one message, is a
-  choice.
+  affects, into their running turns.
 - **Reports with a status.** A child reports `done`, `partial`, `blocked` or `failed`, with the
   branch, commits and checks of its work.
 - **Waking an idle session.** A message or a schedule starts a new turn.
@@ -60,13 +59,11 @@ A parent calls `courier_spawn`, gets the child's session id at once, and ends it
 or stuck, the child calls `courier_send` with a status (`done`, `partial`, `blocked` or `failed`).
 The message lands in the parent's inbox and starts a new turn if the parent is idle.
 
-Each report wakes the parent as it comes. Children started with the same `group`, a choice for a
-pure fan-in, report together, in one message; a `finding` on a member's report still reaches the
-parent at once. A child that fails (a rate or quota limit with when it
+Each report wakes the parent as it comes. A child that fails (a rate or quota limit with when it
 lifts) is reported to its parent. One about to end its turn without reporting is reminded once, in
 the same turn, and its parent is told only if it still does not report. A message that does not wake
 its session is sent once more, then shown as `stalled`. On OpenCode 2.2.0 a parent's system prompt
-carries one line per child with its state, kept current, so it need not look. Children, held reports
+carries one line per child with its state, kept current, so it need not look. Children
 and scheduled messages survive a restart. A fork of a session in a tree is told that courier did not
 start it: the brief and the children it reads of are the original's. The `courier-orchestrate` skill, listed in every session,
 tells a model when to split a task and how to check and merge the parts; how to plan and review them
@@ -123,7 +120,7 @@ form. Its one option, `"animations": false`, keeps the tree panel still.
 
 | Tool | Does |
 |---|---|
-| `courier_spawn` | Starts a child session with a task and returns at once. `isolate`, `group`, `agent`, `model`, `variant`, `native`, `title`. |
+| `courier_spawn` | Starts a child session with a task and returns at once. `isolate`, `agent`, `model`, `variant`, `native`, `title`. |
 | `courier_send` | Messages a session, waking it if idle. With a `status`, it is a child's report. |
 | `courier_tree` | One look at the whole tree of sessions a session started, directly or through others. |
 | `courier_stop` | Stops a session below you and everything under it. |
@@ -135,7 +132,7 @@ Parameters and behaviour: [the reference](docs/reference.md#the-tools).
 
 ## In the terminal
 
-- **Footer:** `courier 1 waiting on you · 2 running · group pair 1/2`.
+- **Footer:** `courier 1 waiting on you · 2 running · 1 idle`.
 - **`/courier tree`:** a panel with the tree, the session it was opened in as its first row. `enter` opens a session, `s` stops it, `q` closes.
 - **`ctrl+x k`** or **`/asks`:** every ask waiting on you in the tree, answered in a dialog.
 

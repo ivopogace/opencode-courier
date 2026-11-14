@@ -3,13 +3,12 @@ import { claim, SEEN_MAX, setBounded } from "../platform/bounded.js"
 import type { EventModule, EventType, HostEvent } from "../platform/events.js"
 import { endsIdle, retryDelay } from "./domain.js"
 import { forgetChild, forgetDeleted } from "./forget.js"
-import { hasCompleteGroup, leave, outIn } from "./group.js"
 import { liveBelow } from "./limits.js"
 import type { ChildStore, ExecutionError, Waits, WatchPorts, WatchState } from "./ports.js"
 import { owedUnwaited } from "./nudge.js"
 import { reportedSincePrompt, stoppedSincePrompt } from "./report.js"
 import { syncStanding } from "./standing.js"
-import { childStore, groupStore } from "./store.js"
+import { childStore } from "./store.js"
 import { forgetTyped, noteTyped, relayTyped } from "./relay.js"
 import { lastReply } from "./status.js"
 import { failureNotice, silentNotice } from "./text.js"
@@ -41,8 +40,6 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
     await children.settled(sessionID, "failed", at, undefined, wait === undefined ? undefined : at + wait).catch((error: unknown) =>
       ports.log(`courier watch: could not note the failed turn of ${sessionID}: ${String(error)}`),
     )
-  const out = await Promise.all(entries.map((entry) => outIn(ports, entry)))
-  const completed = await Promise.all(out.map((member) => (member ? leave(ports, member, "failed", at) : Promise.resolve(false))))
   const quiet = entries.length > 0 && (await stoppedSincePrompt(children, sessionID).catch(() => false))
   try {
     if (quiet) return []
@@ -54,10 +51,10 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
       },
     )
     await Promise.all(
-      entries.map((entry, index) =>
+      entries.map((entry) =>
         ports.session.synthetic({
           sessionID: entry.parentID,
-          text: envelope(sessionID, failureNotice(entry.title, error, out[index]?.group, at, below), { failed: error.type }),
+          text: envelope(sessionID, failureNotice(entry.title, error, at, below), { failed: error.type }),
           description: `Session ${sessionID} failed`,
           metadata: { source: "courier", from: sessionID, failed: true },
           delivery: "steer",
@@ -65,7 +62,6 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
       ),
     )
   } finally {
-    if (completed.includes(true)) ports.nudge()
     await Promise.all(entries.map((entry) => syncStanding(ports, entry.parentID)))
   }
   return entries.map((entry) => entry.parentID)
@@ -73,7 +69,6 @@ export async function reportFailure(ports: WatchPorts, seen: Set<string>, event:
 
 const TYPED = "typed"
 const UNOWED = new Set(["user", "compaction", "move", TYPED])
-const OWN = "own"
 const OWN_SCHEDULED = "own-scheduled:"
 const MESSAGE_FROM = "from:"
 const HOST_REPORT = "host-report:"
@@ -83,7 +78,6 @@ function kindOf(sessionID: string, item: Enqueued["data"]["item"]) {
   if (item.type === "synthetic" && metadata?.source === "subagent" && typeof metadata.childID === "string") return `${HOST_REPORT}${metadata.childID}`
   if (item.type !== "synthetic" || metadata?.source !== "courier") return item.type
   if (metadata.route === "prompt") return TYPED
-  if (typeof metadata.group === "string") return OWN
   const ownCheckIn = typeof metadata.scheduled === "string" && metadata.from === sessionID && typeof metadata.scheduledAt === "number"
   if (ownCheckIn) return `${OWN_SCHEDULED}${metadata.scheduledAt}`
   const statusless = typeof metadata.from === "string" && Object.keys(metadata).length === 2
@@ -95,7 +89,6 @@ async function reportOfOwnChild(children: Pick<ChildStore, "indexedParent">, ses
 }
 
 async function ownAfterReport(children: Pick<ChildStore, "notes" | "indexedParent">, sessionID: string, kind: string | undefined) {
-  if (kind === OWN) return reportedSincePrompt(children, sessionID)
   if (kind?.startsWith(MESSAGE_FROM))
     return (await children.indexedParent(kind.slice(MESSAGE_FROM.length))) === sessionID && reportedSincePrompt(children, sessionID)
   if (!kind?.startsWith(OWN_SCHEDULED)) return false
@@ -133,10 +126,7 @@ export async function noteInterrupted(ports: WatchPorts, event: SessionEvent) {
   const children = childStore(ports.storage)
   const entry = await children.indexedEntry(sessionID)
   if (entry === undefined) return false
-  const at = event.created ?? ports.now()
-  await children.settled(sessionID, "interrupted", at)
-  const member = await outIn(ports, entry)
-  if (member && (await leave(ports, member, "interrupted", at))) ports.nudge()
+  await children.settled(sessionID, "interrupted", event.created ?? ports.now())
   await syncStanding(ports, entry.parentID)
   return true
 }
@@ -147,8 +137,7 @@ export async function noteDeleted(ports: WatchPorts, event: SessionEvent) {
   const [parentID, started] = await Promise.all([children.indexedParent(sessionID), children.children(sessionID)])
   const forgotten = [...(parentID === undefined ? [] : [sessionID]), ...started.map((child) => child.sessionID)]
   const entry = parentID === undefined ? undefined : await children.entry(parentID, sessionID)
-  const member = entry && (await outIn(ports, entry))
-  await forgetDeleted(ports, sessionID, forgotten, member, event.created)
+  await forgetDeleted(ports, forgotten)
   if (parentID !== undefined && entry && !entry.isolated && started.length === 0) await forgetChild(ports.storage, parentID, sessionID)
   if (parentID !== undefined) await syncStanding(ports, parentID)
   return forgotten
@@ -169,7 +158,6 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   const report = await owedUnwaited(ports, children, outside, sessionID)
   if (!report) return []
   const lastText = await ports.session.context({ sessionID }).then(lastReply, () => undefined)
-  const group = (await outIn(ports, entry))?.group
   const toldAt = event.created ?? ports.now()
   await children.told(sessionID, toldAt).catch((error: unknown) =>
     ports.log(`courier watch: could not note that the parent of ${sessionID} was told: ${String(error)}`),
@@ -177,7 +165,7 @@ export async function reportSilent(ports: WatchPorts, seen: Set<string>, event: 
   try {
     await ports.session.synthetic({
       sessionID: entry.parentID,
-      text: envelope(sessionID, silentNotice(entry.title, lastText, report.progressed, group), { ended: "without-report" }),
+      text: envelope(sessionID, silentNotice(entry.title, lastText, report.progressed), { ended: "without-report" }),
       description: `Session ${sessionID} ended without a report`,
       metadata: { source: "courier", from: sessionID, ended: "without-report" },
       delivery: "steer",
@@ -208,15 +196,6 @@ const TREE_TYPES = [
   "session.inbox.cancelled",
   "session.deleted",
 ] as const satisfies readonly EventType[]
-
-async function sealGroups(ports: WatchPorts, event: SessionEvent) {
-  try {
-    if (event.data.reason === "shutdown" && !endsIdle(await ports.session.context({ sessionID: event.data.sessionID }).catch(() => []))) return
-    if (await hasCompleteGroup(groupStore(ports.storage), event.data.sessionID)) ports.nudge()
-  } catch (error) {
-    ports.log(`courier watch: could not read the groups of ${event.data.sessionID}: ${String(error)}`)
-  }
-}
 
 async function inboxEnqueued(ports: WatchPorts, state: WatchState, event: Enqueued) {
   const noted = await noteEnqueued(ports, state.inbox, event)
@@ -265,6 +244,5 @@ export function treeEvents(state: WatchState, outside: Waits): EventModule<Watch
   return {
     types: TREE_TYPES,
     handle: (ports, event) => route(ports, state, outside, event),
-    after: (ports, event) => (TURN_ENDS.has(event.type) ? sealGroups(ports, event as unknown as SessionEvent) : undefined),
   }
 }

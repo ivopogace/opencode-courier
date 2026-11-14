@@ -3,7 +3,6 @@ export { shapeContext } from "./context.js"
 export { lineageIn, nativeRootOf, readLimits, readRemovedOptions } from "./domain.js"
 export { treeEvents, waitsOn } from "./events.js"
 export { onFork } from "./fork.js"
-export { deliverReleased } from "./group.js"
 export { onIdle } from "./nudge.js"
 export type {
   CleanupPorts,

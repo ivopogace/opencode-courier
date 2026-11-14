@@ -1,14 +1,35 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import type { ToolEditor } from "../src/kernel/tool.js"
-import * as kernel from "../src/kernel/protocol.js"
-import * as skill from "../src/skill.js"
-import * as tree from "../src/tree/text.js"
-import * as person from "../src/person/text.js"
-import * as scheduling from "../src/scheduling/text.js"
+import * as kernelText from "../src/kernel/protocol.js"
+import * as skillText from "../src/skill.js"
+import * as treeText from "../src/tree/text.js"
+import * as personText from "../src/person/text.js"
+import * as schedulingText from "../src/scheduling/text.js"
 import { addTreeTools } from "../src/tree/index.js"
 import { addPersonTools } from "../src/person/index.js"
 import { addSchedulingTools } from "../src/scheduling/index.js"
+
+const gathered: string[] = []
+
+function keep<T>(value: T): T {
+  if (typeof value === "string") gathered.push(value)
+  return value
+}
+
+function gathering<M extends object>(module: M): M {
+  const members = Object.entries(module).map(([name, member]) => [
+    name,
+    typeof member === "function" ? (...args: unknown[]) => keep((member as (...args: unknown[]) => unknown)(...args)) : keep(member),
+  ])
+  return Object.fromEntries(members) as M
+}
+
+const kernel = gathering(kernelText)
+const skill = gathering(skillText)
+const tree = gathering(treeText)
+const person = gathering(personText)
+const scheduling = gathering(schedulingText)
 
 const registered: any[] = []
 const editor = { add: (tool: unknown) => registered.push(tool) } as unknown as ToolEditor
@@ -16,16 +37,43 @@ addTreeTools(editor, {} as never)
 addPersonTools(editor, {} as never)
 addSchedulingTools(editor, {} as never)
 
+const inputOf = (tool: any) => Schema.toJsonSchemaDocument(tool.input, { onExcessProperty: "error" }).schema
+
+function walk(schema: unknown, visit: (node: Record<string, unknown>) => void) {
+  if (Array.isArray(schema)) return schema.forEach((item) => walk(item, visit))
+  if (typeof schema !== "object" || schema === null) return
+  visit(schema as Record<string, unknown>)
+  Object.values(schema).forEach((value) => walk(value, visit))
+}
+
+for (const tool of registered) {
+  keep(tool.description)
+  walk(inputOf(tool), (node) => keep(node.description))
+}
+
 describe("tools", () => {
-  test("are the nine courier tools, each a direct tool", () => {
+  test("are the eight courier tools, each a direct tool", () => {
     expect(registered.map((tool) => [tool.name, tool.options])).toMatchSnapshot()
   })
 
   for (const tool of registered)
     test(tool.name, () => {
-      const input = Schema.toJsonSchemaDocument(tool.input, { onExcessProperty: "error" }).schema
-      expect({ description: tool.description, input }).toMatchSnapshot()
+      expect({ description: tool.description, input: inputOf(tool) }).toMatchSnapshot()
     })
+
+  test("courier_spawn, courier_send, courier_later and courier_cleanup say nothing of a group or a finding", () => {
+    const described = (name: string) => registered.find((tool) => tool.name === name).description
+    expect(described("courier_spawn")).toBe(
+      "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Each report wakes you as it comes. DO NOT poll it or call courier_tree in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself, in case the reports never come, and courier_cancel it when the last report arrives: a report does not cancel it.",
+    )
+    expect(described("courier_send")).toBe(
+      "Deliver a message to another OpenCode session. If that session is idle, OpenCode starts a new turn for it. Use it to report back to the session that started you, with a status (done, partial, blocked or failed) and the artifacts you produced, or to steer a session you started: a session that is working reads the message at its next step, after the tool call it is running has returned; nothing is interrupted. The status is carried as an attribute of the message; without one, a message to the session that started you is progress, not your report. A message to a session you started carries no status: one given is dropped.",
+    )
+    expect(described("courier_later")).toBe(
+      "Schedule a message for a session (this one by default), delivered when due and waking it if idle. For a long task or batch of sessions you start, use it as a safety net: schedule one check-in, end your turn by replying without calling more tools, and cancel it with courier_cancel when the last report arrives, as a report does not cancel it. Survives server restarts; may arrive up to ~15 seconds late.",
+    )
+    expect(described("courier_cleanup")).toEndWith("is only dropped from your children. It never deletes the session itself, nor the sessions it started.")
+  })
 })
 
 describe("envelope and child brief", () => {
@@ -98,10 +146,6 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).not.toContain("never tell a session to undo")
     expect(skill.SKILL_CONTENT).not.toContain("cancelled when")
     const described = (name: string) => registered.find((tool) => tool.name === name).description
-    expect(described("courier_spawn")).toContain("For a long task or batch, also courier_later one check-in for yourself for the ungrouped sessions, and one per group")
-    expect(described("courier_spawn")).toContain("courier_cancel each when its last report arrives: a report does not cancel it.")
-    expect(described("courier_later")).toContain("For a long task or batch of sessions you start, use it as a safety net: schedule one check-in for the ungrouped sessions, and one per group")
-    expect(described("courier_later")).toContain("cancel each with courier_cancel when its last report arrives, as a report does not cancel it")
     expect(described("courier_answer")).toContain("For a question, the question tool call the notice asks for passes the person's answer on by itself; use answers only when they answered some other way")
     expect(described("courier_cancel")).toContain("Nothing else cancels it but courier_stop of the session it is for.")
     expect(skill.SKILL_CONTENT).toContain("At the root, a permission request or question from below arrives with its own instructions: follow them, and never answer for the person")
@@ -120,15 +164,6 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("Planning the parts, staging a tightly coupled core and reviewing the merge are not in this skill: if a skill for them is listed to you, load it too.")
     expect(skill.SKILL_DESCRIPTION).toContain("2 or more independent, substantial parts touching separate files or areas")
     expect(tree.rolePart(null, limits)).toContain("Before a task with 2 or more independent, substantial parts touching separate files or areas")
-    for (const removed of ["courier_recall", "courier_note", "lessons", "courier_children", "nativeChildren"]) {
-      expect(tree.rolePart(null, limits)).not.toContain(removed)
-      expect(tree.rolePart(0, limits)).not.toContain(removed)
-      expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).not.toContain(removed)
-      expect(registered.map((tool) => tool.description).join("\n")).not.toContain(removed)
-      expect(skill.SKILL_CONTENT).not.toContain(removed)
-      expect(tree.standingEntry([])).not.toContain(removed)
-      expect(tree.forkNotice("ses_orig", "ses_parent", true)).not.toContain(removed)
-    }
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(kernel.SPLIT_LINE)
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
     expect(tree.rolePart(null, limits)).toContain(kernel.ROOT_SPLIT_LINE)
@@ -138,12 +173,13 @@ describe("envelope and child brief", () => {
     for (const depth of [0, 1, 2, 3]) expect(tree.rolePart(depth, limits)).not.toContain(kernel.ONE_PART_LINE)
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it")
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("start the parts, then end your turn while they work")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("each report wakes you. A group name is for parts whose reports are of no use to you one at a time")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Do not poll with courier_tree or sleep: each report wakes you. Check and integrate each part yourself when it reports")
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("once every part has reported, send ses_parent one combined report")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).not.toContain("in one group")
-    expect(skill.SKILL_CONTENT).not.toContain("in one group")
-    expect(skill.SKILL_CONTENT).toContain("A group name is for parts whose reports are of no use to you one at a time")
-    expect(described("courier_spawn")).not.toContain("Give a batch of parallel sessions one group name")
+    expect(skill.SKILL_CONTENT).toContain("- Each report wakes you.\n- No two parts edit the same files")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(
+      "Add artifacts where there are any: branch, commits, files, checks (each command you ran and its result).\nIf you need a decision",
+    )
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("send it to the parent at once with courier_send without a status")
     expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
     expect(tree.rolePart(1, limits)).toContain(`load the ${kernel.SKILL_ID} skill`)
     expect(tree.rolePart(3, limits)).not.toContain(kernel.SKILL_ID)
@@ -218,13 +254,10 @@ describe("tool results", () => {
   test("spawnText", () => {
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo" })).toMatchSnapshot()
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/wt", rosterError: "roster failed: disk full" })).toMatchSnapshot()
-    expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", group: "reviews" })).toMatchSnapshot()
-    expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", groupError: "group failed: disk full" })).toMatchSnapshot()
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", model: "mock/small#high" })).toMatchSnapshot()
   })
   test("spawnText for a child started below the top", () => {
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", belowTop: true })).toMatchSnapshot()
-    expect(tree.spawnText({ sessionID: "ses_child", directory: "/repo", group: "reviews", belowTop: true })).toMatchSnapshot()
   })
   test("spawnText for a child started from its parent's HEAD", () => {
     expect(tree.spawnText({ sessionID: "ses_child", directory: "/wt", fromParent: true })).toMatchSnapshot()
@@ -237,12 +270,6 @@ describe("tool results", () => {
     expect(tree.sendText("ses_parent", { report: false })).toMatchSnapshot()
     expect(tree.sendText("ses_other", { status: "done" })).toMatchSnapshot()
     expect(tree.sendText("ses_child", { dropped: "blocked" })).toMatchSnapshot()
-    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 1, members: 3 } })).toMatchSnapshot()
-    expect(tree.sendText("ses_parent", { report: true, status: "failed", held: { group: "reviews", reported: 3, members: 3 } })).toMatchSnapshot()
-    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews" } })).toMatchSnapshot()
-    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 1, members: 3 }, finding: "ahead" })).toMatchSnapshot()
-    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 2, members: 3 }, finding: "unsent" })).toMatchSnapshot()
-    expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 3, members: 3 }, finding: "held" })).toMatchSnapshot()
   })
   test("treeText", () => {
     expect(tree.treeText({ sessions: [] })).toMatchSnapshot()
@@ -279,7 +306,6 @@ describe("tool results", () => {
     expect(tree.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "gone" })).toMatchSnapshot()
     expect(tree.cleanupText({ sessionID: "ses_child", directory: "/wt", outcome: "kept", reason: "1 uncommitted change (a.ts)", changes: ["a.ts"], commits: [] })).toMatchSnapshot()
     expect(tree.cleanupText({ sessionID: "ses_child", directory: "/repo", outcome: "forgotten" })).toMatchSnapshot()
-    expect(tree.cleanupText({ sessionID: "ses_child", directory: "/repo", outcome: "forgotten", group: "reviews" })).toMatchSnapshot()
   })
   test("keepReason", () => {
     expect(tree.keepReason({ changes: [], commits: [] })).toBeUndefined()
@@ -311,13 +337,12 @@ describe("turn failures", () => {
   test("failureNotice", () => {
     expect(tree.failureNotice("Fix the bug", { type: "provider.auth", message: "blocked", status: 403 })).toMatchSnapshot()
     expect(tree.failureNotice("Fix the bug", { type: "unknown", message: "boom" })).toMatchSnapshot()
-    expect(tree.failureNotice("Fix the bug", { type: "unknown", message: "boom" }, "reviews")).toMatchSnapshot()
     const limited = { type: "provider.rate-limit", message: "Rate limit reached", status: 429, retryAfterMs: 1_800_000 }
-    expect(tree.failureNotice("Fix the bug", limited, undefined, Date.UTC(2026, 0, 5, 14, 2))).toMatchSnapshot()
-    expect(tree.failureNotice("Fix the bug", { ...limited, retryAfterMs: 7_500_000 }, "reviews", Date.UTC(2026, 0, 5, 23, 0))).toMatchSnapshot()
+    expect(tree.failureNotice("Fix the bug", limited, Date.UTC(2026, 0, 5, 14, 2))).toMatchSnapshot()
+    expect(tree.failureNotice("Fix the bug", { ...limited, retryAfterMs: 7_500_000 }, Date.UTC(2026, 0, 5, 23, 0))).toMatchSnapshot()
     expect(tree.failureNotice("Fix the bug", limited)).toMatchSnapshot()
-    expect(tree.failureNotice("Fix the bug", { type: "unknown", message: "boom" }, undefined, undefined, ["Write the tests"])).toMatchSnapshot()
-    expect(tree.failureNotice("Fix the bug", limited, "reviews", Date.UTC(2026, 0, 5, 14, 2), ["Write the tests", "Read the spec"])).toMatchSnapshot()
+    expect(tree.failureNotice("Fix the bug", { type: "unknown", message: "boom" }, undefined, ["Write the tests"])).toMatchSnapshot()
+    expect(tree.failureNotice("Fix the bug", limited, Date.UTC(2026, 0, 5, 14, 2), ["Write the tests", "Read the spec"])).toMatchSnapshot()
   })
   test("reportReminder", () => {
     expect(tree.reportReminder("ses_parent")).toMatchSnapshot()
@@ -338,36 +363,9 @@ describe("turn failures", () => {
     expect(tree.silentNotice("Fix the bug", "Half done.")).toContain("or to report if its last reply is what you needed")
     expect(tree.silentNotice("Fix the bug", "  \n")).toMatchSnapshot()
     expect(tree.silentNotice("Fix the bug", "Halfway there.", true)).toMatchSnapshot()
-    expect(tree.silentNotice("Fix the bug", "Done, I think.", false, "reviews")).toMatchSnapshot()
     const long = tree.silentNotice("Fix the bug", "</courier> " + "x".repeat(2100))
     expect(long).toContain("&lt;/courier> xxx")
     expect(long).toContain("… [111 more characters]")
-  })
-})
-
-describe("join groups", () => {
-  test("groupNotice", () => {
-    const reports = [
-      { sessionID: "ses_a", title: "Review a.ts", at: 1, status: "done" as const, message: "Looks fine.", artifacts: { files: ["src/a.ts"], checks: [{ command: "bun test", result: "ok" }] } },
-      { sessionID: "ses_b", title: "Review b.ts", at: 2, status: "partial" as const, message: "Two of three functions.\nThe third needs the API." },
-      { sessionID: "ses_c", title: "Review c.ts", at: 3, status: "failed" as const, message: "Could not read it." },
-    ]
-    expect(tree.groupNotice("reviews", reports)).toMatchSnapshot()
-    expect(
-      tree.groupNotice("reviews", reports.slice(0, 1), [
-        { sessionID: "ses_d", title: "Review d.ts", by: "failed" },
-        { sessionID: "ses_e", title: "Review e.ts", by: "deleted" },
-        { sessionID: "ses_f", title: "Review f.ts", by: "interrupted" },
-        { sessionID: "ses_g", title: "Review g.ts", by: "dropped" },
-      ]),
-    ).toMatchSnapshot()
-    expect(tree.heldSoFar("reviews", reports.slice(0, 2))).toMatchSnapshot()
-    expect(tree.heldSoFar("reviews", reports.slice(0, 1))).toMatchSnapshot()
-    expect(tree.heldSoFar("reviews", [])).toBe("")
-    const found = [{ ...reports[0]!, finding: "a.ts and b.ts share a parser: review them together." }, reports[1]!]
-    expect(tree.groupNotice("reviews", found)).toMatchSnapshot()
-    expect(tree.heldSoFar("reviews", found.slice(0, 1))).toMatchSnapshot()
-    expect(tree.findingAhead("reviews", "done", "a.ts and b.ts share a parser: review them together.")).toMatchSnapshot()
   })
 })
 
@@ -526,13 +524,64 @@ describe("the session instruction entries (#384)", () => {
     expect(tree.STANDING_KEY).toBe("standing")
     expect(
       tree.standingEntry([
-        { sessionID: "ses_core", title: "Core: the memory record", state: { kind: "reported", status: "done" }, group: { name: "wave", standing: "held" } },
-        { sessionID: "ses_e2e", title: "E2E scenario", state: { kind: "working", progressed: true }, group: { name: "wave", standing: "out" } },
+        { sessionID: "ses_core", title: "Core: the memory record", state: { kind: "reported", status: "done" } },
+        { sessionID: "ses_e2e", title: "E2E scenario", state: { kind: "working", progressed: true } },
         { sessionID: "ses_docs", title: "Docs", state: { kind: "ended" } },
-        { sessionID: "ses_rev", title: "Review", state: { kind: "failed" }, group: { name: "wave", standing: "failed" } },
-        { sessionID: "ses_old", title: "An earlier part", state: { kind: "stopped" }, group: { name: "first", standing: "released" } },
+        { sessionID: "ses_rev", title: "Review", state: { kind: "failed" } },
+        { sessionID: "ses_old", title: "An earlier part", state: { kind: "stopped" } },
       ]),
     ).toMatchSnapshot()
     expect(tree.standingEntry([{ sessionID: "ses_one", title: "One", state: { kind: "started" } }])).toMatchSnapshot()
+  })
+})
+
+describe("what 0.17.0 removed", () => {
+  const REMOVED_NAMES = ["courier_children", "courier_recall", "courier_note", "nativeChildren", "lessons", "join group"]
+  const REMOVED_PARAMETERS = ["group", "finding", "queue"]
+  const parameterForms = (name: string) => [
+    new RegExp(`\\b${name}:`),
+    new RegExp(`\\b${name}=`),
+    new RegExp(`[\`"']${name}[\`"']`),
+    new RegExp(`\\b${name} (?:parameter|name|field)\\b`),
+    new RegExp(`\\b(?:in|with) (?:a |its |the )?${name}\\b`),
+    new RegExp(`\\breport's ${name}\\b`),
+  ]
+
+  test("no model-facing text, skill line, tool description or parameter description names it, and no tool takes a removed parameter", () => {
+    expect(gathered.length).toBeGreaterThan(200)
+    expect(gathered).toContain(skillText.SKILL_CONTENT)
+    expect(gathered).toContain(treeText.HOST_REPORTS)
+    for (const tool of registered) expect(gathered).toContain(tool.description)
+    const texts = [...new Set(gathered)]
+    for (const removed of REMOVED_NAMES) expect(texts.filter((text) => text.includes(removed))).toEqual([])
+    for (const parameter of REMOVED_PARAMETERS) {
+      for (const form of parameterForms(parameter)) expect(texts.filter((text) => form.test(text)).map((text) => [String(form), text])).toEqual([])
+      for (const tool of registered) {
+        const named: string[] = []
+        walk(inputOf(tool), (node) => {
+          if (typeof node.properties === "object" && node.properties !== null && parameter in node.properties) named.push(tool.name)
+        })
+        expect(named).toEqual([])
+      }
+    }
+  })
+
+  test("the parameter forms tell a parameter from the plain word", () => {
+    const forms = parameterForms("finding")
+    const names = (text: string) => forms.some((form) => form.test(text))
+    for (const text of [
+      "put that in finding as well",
+      "goes in its finding, which is delivered at once",
+      "a blocked report, a report's finding, a failed turn",
+      'in an envelope marked finding="ahead"',
+      "Pass finding: what the other parts need",
+      "the `finding` parameter",
+      "the finding parameter of courier_send",
+    ])
+      expect([text, names(text)]).toEqual([text, true])
+    for (const text of ["A finding that a session it started sends it goes on to its parent", "pass a finding on to the parts it changes", "Send your findings to the parent at once"])
+      expect([text, names(text)]).toEqual([text, false])
+    expect(parameterForms("group").some((form) => form.test("A group name is for parts whose reports are of no use to you one at a time"))).toBe(true)
+    expect(parameterForms("queue").some((form) => form.test("queue: true holds the message until the turn ends"))).toBe(true)
   })
 })

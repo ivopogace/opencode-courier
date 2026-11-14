@@ -21,16 +21,12 @@ import {
   type TickJob,
   type Timers,
 } from "../src/platform/hub.js"
-import { deliverReleased } from "../src/tree/group.js"
 import type { QuestionPorts } from "../src/person/question/index.js"
 import { portsAt, questionState, shared as relayState } from "../src/person/question/shared.js"
 import { resetHub } from "./fixtures/reset.js"
 import { deliverDue, type LaterEntry, type LaterPorts } from "../src/scheduling/index.js"
 
-const jobs: TickJob[] = [
-  (owner, claimed) => deliverDue(owner.later as LaterPorts, claimed),
-  (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
-]
+const jobs: TickJob[] = [(owner, claimed) => deliverDue(owner.later as LaterPorts, claimed)]
 
 const { join } = openInProcess(jobs)
 
@@ -299,35 +295,25 @@ describe("the scheduler", () => {
     for (const leave of leaves) leave()
   })
 
-  test("delivers a released group at each tick, and at once when nudged", async () => {
+  test("delivers a due message at each tick, and at once when nudged", async () => {
     const { timers, fire } = fakeTimers()
     const { join: joinHub, nudge } = open({}, jobs, timers)
     const store = new Map<string, unknown>()
     const delivered: string[] = []
-    const later = laterPorts("/a", store, delivered)
-    ;(later.session as any).synthetic = async (input: { metadata: { scheduled?: string; group?: string } }) => {
-      delivered.push(`/a ${input.metadata.scheduled ?? input.metadata.group}`)
-      return { id: "msg_1" }
-    }
-    const leave = joinHub(member("/a", () => {}, later))
-    await settle()
-    const held = (sessionID: string) => ({ title: sessionID, joinedAt: 1, report: { at: 1, status: "done", message: "m" } })
-    store.set("group/ses_parent/pair/ses_a", held("ses_a"))
-    store.set("group/ses_parent/pair/ses_b", { title: "ses_b", joinedAt: 2 })
-    fire()
+    const leave = joinHub(member("/a", () => {}, laterPorts("/a", store, delivered)))
     await settle()
     expect(delivered).toEqual([])
 
-    store.set("group/ses_parent/pair/ses_b", held("ses_b"))
+    store.set("later/later_1", due("later_1"))
     nudge()
     await settle()
-    expect(delivered).toEqual(["/a pair"])
+    expect(delivered).toEqual(["/a later_1"])
     expect([...store.keys()]).toEqual([OWNER_KEY])
 
-    store.set("group/ses_parent/next/ses_c", held("ses_c"))
+    store.set("later/later_2", due("later_2"))
     fire()
     await settle()
-    expect(delivered).toEqual(["/a pair", "/a next"])
+    expect(delivered).toEqual(["/a later_1", "/a later_2"])
     leave()
   })
 
@@ -337,21 +323,17 @@ describe("the scheduler", () => {
     const store = new Map<string, unknown>()
     const delivered: string[] = []
     const later = laterPorts("/a", store, delivered)
-    ;(later.session as any).synthetic = async (input: { metadata: { group: string } }) => {
-      delivered.push(input.metadata.group)
-      return { id: "msg_1" }
-    }
     let release = () => {}
     let scans = 0
     const scan = later.storage.scan
     ;(later.storage as any).scan = async (input: { prefix: string }) => {
-      if (input.prefix === "group/" && ++scans === 1) await new Promise<void>((resolve) => (release = resolve))
+      if (input.prefix === "later/" && ++scans === 1) await new Promise<void>((resolve) => (release = resolve))
       return scan(input)
     }
     const leave = joinHub(member("/a", () => {}, later))
     await settle()
     expect(scans).toBe(1)
-    store.set("group/ses_parent/pair/ses_a", { title: "a", joinedAt: 1, report: { at: 1, status: "done", message: "m" } })
+    store.set("later/later_1", due("later_1"))
     nudge()
     await settle()
     expect(delivered).toEqual([])
@@ -359,7 +341,7 @@ describe("the scheduler", () => {
     await settle()
     await settle()
 
-    expect(delivered).toEqual(["pair"])
+    expect(delivered).toEqual(["/a later_1"])
     expect(scans).toBe(2)
     leave()
   })

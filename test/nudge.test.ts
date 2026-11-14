@@ -34,7 +34,7 @@ async function prompted(pending: Parameters<typeof fakePorts>[1] = []) {
 }
 
 function reportFrom(ports: WatchPorts, now: number) {
-  const courier = { session: { synthetic: async () => ({ id: "msg_r" }) }, storage: ports.storage, now: () => now, nudge: ports.nudge } as unknown as CourierPorts
+  const courier = { session: { synthetic: async () => ({ id: "msg_r" }) }, storage: ports.storage, now: () => now } as unknown as CourierPorts
   return send(courier, "ses_child", { sessionID: "ses_parent", message: "done", status: "done" })
 }
 
@@ -81,24 +81,6 @@ describe("nudgeSilent", () => {
     expect(await nudgeSilent(stopped.ports, new Set(), outside, idle())).toBe(false)
 
     expect([...sent, ...reported.sent, ...stopped.sent]).toEqual([])
-  })
-
-  test("leaves a child that reported before its own group's reports arrived, but reminds one that had not", async () => {
-    const enqueued = (inboxID: string) => ({
-      data: { sessionID: "ses_child", inboxID, item: { type: "synthetic", payload: { metadata: { source: "courier", group: "halves" } } } },
-    })
-    const reported = await prompted()
-    const inbox = new Map<string, string>()
-    await reportFrom(reported.ports, 150)
-    await noteEnqueued(reported.ports, inbox, enqueued("inb_1"))
-    expect(await notePrompt(reported.ports, delivered("evt_g", 200, "inb_1"), inbox)).toBe(false)
-    expect(await nudgeSilent(reported.ports, new Set(), outside, idle())).toBe(false)
-    expect(reported.sent).toEqual([])
-
-    const owing = await prompted()
-    await noteEnqueued(owing.ports, inbox, enqueued("inb_2"))
-    expect(await notePrompt(owing.ports, delivered("evt_g", 200, "inb_2"), inbox)).toBe(true)
-    expect(await nudgeSilent(owing.ports, new Set(), outside, idle())).toBe(true)
   })
 
   test("leaves a child that reported before its own check-in fired, but reminds one its parent's scheduled message reached", async () => {

@@ -208,19 +208,14 @@ export function blend(tint: RGBA, rest: RGBA, amount: number) {
 }
 
 export function summaryLine(summary: Summary, maxWidth = Infinity) {
-  const groups = summary.groups.map((group) => `group ${group.name} ${group.reported}/${group.members}`)
   const parts = [
     summary.waiting ? `${summary.waiting} waiting on you` : "",
     summary.stalled ? `${summary.stalled} stalled` : "",
     summary.running ? `${summary.running} running` : "",
-    ...groups,
     summary.idle ? `${summary.idle} idle` : "",
   ].filter(Boolean)
   if (!parts.length) return ""
-  const line = (kept: number) => {
-    const dropped = groups.filter((group) => parts.indexOf(group) >= kept).length
-    return ["courier", parts.slice(0, kept).join(" · "), dropped ? `· +${counted(dropped, "group")}` : ""].filter(Boolean).join(" ")
-  }
+  const line = (kept: number) => `courier ${parts.slice(0, kept).join(" · ")}`
   for (let kept = parts.length; kept > 0; kept--) if (line(kept).length <= maxWidth) return line(kept)
   return parts[0]!
 }
@@ -262,7 +257,6 @@ export function statusParts(row: Row, now = Date.now()) {
   const parts: Array<{ text: string; kind: "state" | "report" | "plain" }> = [
     { text: stateWord(row, now), kind: "state" },
     { text: reportWords(row.report, row.stopped), kind: "report" },
-    { text: row.group ? `group ${row.group.name} ${row.group.standing}` : "", kind: "plain" },
     { text: row.isolated ? "isolated" : "", kind: "plain" },
     { text: row.native ? "native" : "", kind: "plain" },
     { text: row.subagent ? "subagent" : "", kind: "plain" },
@@ -990,26 +984,19 @@ export function addTreeAttention(ctx: Context) {
     const { sessionID, inboxID, item } = event.data
     const metadata: Record<string, unknown> = item.type === "synthetic" ? (item.payload.metadata ?? {}) : {}
     if (metadata.source !== "courier" || notified.has(inboxID)) return
-    const group = typeof metadata.group === "string" ? metadata.group : undefined
     const status = typeof metadata.status === "string" ? metadata.status : undefined
     const from = typeof metadata.from === "string" ? metadata.from : ""
-    if (!group && !status) return
-    if (!group && ctx.data.session.get(from)?.parentID !== undefined) return
+    if (!status) return
+    if (ctx.data.session.get(from)?.parentID !== undefined) return
     notified.add(inboxID)
     if (notified.size > NOTIFIED_MAX) notified.delete(notified.values().next().value!)
-    void (group
-      ? ctx.attention.notify({
-          title: title(sessionID),
-          message: `Group ${group}: ${typeof metadata.reports === "number" ? counted(metadata.reports, "report") : "its reports"} arrived`,
-          notification: { when: "blurred" },
-          sound: { name: "done", when: "always" },
-        })
-      : ctx.attention.notify({
-          title: title(sessionID),
-          message: `${title(from) ?? from} reported ${status}`,
-          notification: false,
-          sound: { name: "subagent_done", when: "always" },
-        })
-    ).catch(() => undefined)
+    void ctx.attention
+      .notify({
+        title: title(sessionID),
+        message: `${title(from) ?? from} reported ${status}`,
+        notification: false,
+        sound: { name: "subagent_done", when: "always" },
+      })
+      .catch(() => undefined)
   })
 }

@@ -214,10 +214,10 @@ echo "  $info"
 check "the server reports features server, tui and rpc" "$(jq -r '.features == {server: true, tui: true, rpc: true}' <<<"$info")"
 
 echo "the RPC answers over HTTP with the parent's summary, and refuses what it cannot take"
-waiting='{"running":0,"waiting":1,"idle":1,"groups":[{"name":"pair","reported":1,"members":2}]}'
+waiting='{"running":0,"waiting":1,"idle":1,"groups":[]}'
 result=$(summary_until "$parent" 60 "$waiting")
 echo "  $result"
-check "one child waits on the person, one has reported, and group pair holds 1 of 2" "$([ "$result" = "$waiting" ] && echo true || echo false)"
+check "one child waits on the person and one has reported, with the groups field a terminal of an earlier release reads left empty" "$([ "$result" = "$waiting" ] && echo true || echo false)"
 asking=$(for child in $children; do if [ "$(api "session/$child/permission" | jq -r '.data | length')" = 1 ]; then echo "$child"; fi; done | head -1)
 check "the child that asks is found" "$([ -n "$asking" ] && echo true || echo false)"
 bad=$(rpc summary '{"wrong":1}')
@@ -229,13 +229,13 @@ check "a session that started none has an empty summary" \
 
 echo "the TUI shows the entry in the prompt's footer, and follows the answer"
 open_tui tui "$parent"
-check "the footer shows what the RPC gave" "$(shows "courier 1 waiting on you · group pair 1/2 · 1 idle" 60 tui-waiting)"
+check "the footer shows what the RPC gave" "$(shows "courier 1 waiting on you · 1 idle" 60 tui-waiting)"
 echo "  $(footer tui-waiting)"
 echo "the tree panel: /courier tree opens it on both children, with the bar of the parts reported"
-rows=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[] | {depth, state, report: .report.state, group: .group.standing}] | sort_by(.state)')
+rows=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[] | {depth, state, report: .report.state, group: has("group")}] | sort_by(.state)')
 echo "  $rows"
-check "the RPC's tree: one child reported and held, the other waits on the person and owes its report" \
-  "$(jq -r '. == [{depth: 1, state: "idle", report: "reported", group: "held"}, {depth: 1, state: "waiting", report: "owed", group: "out"}]' <<<"$rows")"
+check "the RPC's tree: one child reported, the other waits on the person and owes its report, and neither row has a group" \
+  "$(jq -r '. == [{depth: 1, state: "idle", report: "reported", group: false}, {depth: 1, state: "waiting", report: "owed", group: false}]' <<<"$rows")"
 top=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '.output.top | {sessionID, depth}')
 echo "  $top"
 check "the RPC's tree carries the parent itself as its top row, at depth 0 (#395)" \
@@ -247,9 +247,9 @@ check "the RPC's tree carries a mock-model child's context use: a fraction of th
 submit "/courier tree"
 check "the panel opens with the bar: 1 of 2 parts reported" "$(shows "courier tree  [█████░░░░░] 1/2 reported" 30 tui-panel)"
 check "its first row is the parent, on screen and selected (#395)" "$(grep -qE '▸ . .*\(on screen\)' "$WORK/tui-panel.txt" && echo true || echo false)"
-check "it has the reported child's row" "$(grep -qF "✓ Report back to your parent.  idle · reported done · group pair held" "$WORK/tui-panel.txt" && echo true || echo false)"
+check "it has the reported child's row" "$(grep -qF "✓ Report back to your parent.  idle · reported done" "$WORK/tui-panel.txt" && ! grep -qF "group pair" "$WORK/tui-panel.txt" && echo true || echo false)"
 check "and the asking child's, which says what it waits on" \
-  "$(grep -qF "● CHILD-ASKS  waiting on you · owes a report · group pair out" "$WORK/tui-panel.txt" && grep -qF "asks permission: shell echo courier-asks" "$WORK/tui-panel.txt" && echo true || echo false)"
+  "$(grep -qF "● CHILD-ASKS  waiting on you · owes a report" "$WORK/tui-panel.txt" && grep -qF "asks permission: shell echo courier-asks" "$WORK/tui-panel.txt" && echo true || echo false)"
 check "the 16×16 Digby shows below the rows, the header without its glyph" \
   "$([ "$(shows "████████████████" 15 tui-panel-digby)" = true ] && ! grep -qE '[▀▄█] +courier tree' "$WORK/tui-panel-digby.txt" && echo true || echo false)"
 request=$(api "session/$asking/permission" | jq -r '.data[0].id // empty')
@@ -259,7 +259,7 @@ check "the person answered the child's request ($request)" "$([ "$code" = 204 ] 
 idle='{"running":0,"waiting":0,"idle":2,"groups":[]}'
 result=$(summary_until "$parent" 60 "$idle")
 echo "  $result"
-check "the summary follows: both children idle, the group released" "$([ "$result" = "$idle" ] && echo true || echo false)"
+check "the summary follows: both children idle" "$([ "$result" = "$idle" ] && echo true || echo false)"
 check "the panel follows the report: 2 of 2 parts reported" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-reported)"
 check "once the report's pose ends, the 16×16 Digby keeps no background of the poses before" "$(digby_settles 15 tui-panel-settled)"
 api_prompt "$parent" "PARENT-BUSY"
@@ -270,7 +270,7 @@ tmux send-keys -t "$TMUX_SESSION" q
 check "q closes the panel" "$(hides "courier tree" 10 tui-panel-closed)"
 check "the footer follows it" "$(shows "courier 2 idle" 30 tui-released)"
 echo "  $(footer tui-released)"
-check "and the group is gone from it" "$([[ $(footer tui-released) != *"group pair"* ]] && echo true || echo false)"
+check "and it names no group" "$([[ $(footer tui-released) != *group* ]] && echo true || echo false)"
 submit "/courier tree"
 check "the panel opens again" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-again)"
 check "the parent's own row is selected first" "$(grep -qE '▸ +[^✓].*\(on screen\)' "$WORK/tui-panel-again.txt" && echo true || echo false)"

@@ -1,8 +1,8 @@
 import { num, obj, str } from "../platform/json.js"
-import { isStatus, type Status } from "../kernel/protocol.js"
+import type { Status } from "../kernel/protocol.js"
 import { scanAll, scanEntries, type Storage } from "../platform/storage.js"
-import { lineageIn, type Artifacts, type HeldReport, type Member, type RosterEntry } from "./domain.js"
-import type { ChildStore, GroupStore, Membership, ReportField, ReportNote, Settled, Stored, Typed, Wake, WakeStore } from "./ports.js"
+import { lineageIn, type RosterEntry } from "./domain.js"
+import type { ChildStore, ReportField, ReportNote, Settled, Typed, Wake, WakeStore } from "./ports.js"
 
 const ROSTER_PREFIX = "roster/"
 const BY_CHILD = "roster-by-child/"
@@ -36,13 +36,6 @@ const REPORT_KEYS: Readonly<Record<ReportField, (sessionID: string) => string>> 
   stopped: stoppedKey,
   nudged: nudgedKey,
 }
-
-const GROUP_PREFIX = "group/"
-
-export const memberKey = (parentID: string, group: string, sessionID: string) => `${GROUP_PREFIX}${parentID}/${group}/${sessionID}`
-
-export const groupsPrefix = (parentID: string) => `${GROUP_PREFIX}${parentID}/`
-export const groupPrefix = (parentID: string, group: string) => `${groupsPrefix(parentID)}${group}/`
 
 const WAKE_PREFIX = "wake/"
 
@@ -244,58 +237,6 @@ export function childStore(storage: Storage): ChildStore {
     async typedSessions() {
       const rows = await scanEntries<unknown>(storage, TYPED_PREFIX)
       return new Set(rows.map(({ key }) => key.slice(0, key.indexOf("/"))))
-    },
-  }
-}
-
-function readMember(value: unknown): Member | undefined {
-  const given = obj(value)
-  const title = str(given.title)
-  const joinedAt = num(given.joinedAt)
-  if (title === undefined || joinedAt === undefined) return undefined
-  const report = readReport(given.report)
-  const left = obj(given.left)
-  const by = str(left.by)
-  return {
-    title,
-    joinedAt,
-    ...(report ? { report } : {}),
-    ...(by === "failed" || by === "interrupted" || by === "deleted" || by === "dropped" ? { left: { at: num(left.at) ?? 0, by } } : {}),
-  }
-}
-
-function readReport(value: unknown): HeldReport | undefined {
-  const given = obj(value)
-  const status: unknown = given.status
-  const message = str(given.message)
-  const at = num(given.at)
-  if (!isStatus(status) || message === undefined || at === undefined) return undefined
-  const finding = str(given.finding)
-  return { at, status, message, ...(given.artifacts !== undefined ? { artifacts: given.artifacts as Artifacts } : {}), ...(finding ? { finding } : {}) }
-}
-
-const stored = (member: Member) => ({ ...member }) as unknown as Stored
-
-export function groupStore(storage: Storage): GroupStore {
-  const membersUnder = async (prefix: string): Promise<Membership[]> => {
-    const entries = await scanEntries<unknown>(storage, prefix)
-    return entries.flatMap(({ key, value }) => {
-      const parts = `${prefix.slice(GROUP_PREFIX.length)}${key}`.split("/")
-      const member = parts.length === 3 ? readMember(value) : undefined
-      return member ? [{ ...member, parentID: parts[0]!, group: parts[1]!, sessionID: parts[2]! }] : []
-    })
-  }
-
-  return {
-    member: async (parentID, group, sessionID) => readMember(await storage.get(memberKey(parentID, group, sessionID))),
-    all: () => membersUnder(GROUP_PREFIX),
-    ofParent: (parentID) => membersUnder(groupsPrefix(parentID)),
-    ofGroup: (parentID, group) => membersUnder(groupPrefix(parentID, group)),
-    async put(parentID, group, sessionID, member) {
-      await storage.set(memberKey(parentID, group, sessionID), stored(member))
-    },
-    async remove(parentID, group, sessionID) {
-      await storage.remove(memberKey(parentID, group, sessionID))
     },
   }
 }

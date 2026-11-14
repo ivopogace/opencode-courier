@@ -1,6 +1,6 @@
 import { millis } from "../platform/json.js"
 import { busy, endsIdle } from "./domain.js"
-import type { GroupPorts, Wake, WatchPorts } from "./ports.js"
+import type { Wake, WatchPorts } from "./ports.js"
 import { wakeStore } from "./store.js"
 
 type Messages = Awaited<ReturnType<WatchPorts["session"]["context"]>>
@@ -81,7 +81,7 @@ export async function forgetWakes(ports: Pick<WatchPorts, "storage">, sessionID:
   await Promise.all((await store.of(sessionID)).map((wake) => store.remove(sessionID, wake.inboxID)))
 }
 
-export type WakePorts = GroupPorts & { readonly session: Pick<WatchPorts["session"], "get" | "context">; readonly now: () => number }
+export type WakePorts = Pick<WatchPorts, "storage" | "now" | "log"> & { readonly session: Pick<WatchPorts["session"], "synthetic" | "get" | "context"> }
 
 export async function wakeMissed(ports: WakePorts, claimed: Set<string>) {
   const store = wakeStore(ports.storage)

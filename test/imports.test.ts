@@ -247,11 +247,18 @@ test("tree/store.ts is imported from no file outside tree/, and tree/index.ts re
 })
 
 test("only tree/store.ts names the tree's storage prefixes, so no other file builds its keys", () => {
-  const prefix = /\b(?:roster|roster-by-child|report|group|wake|typed)\//
+  const prefix = /\b(?:roster|roster-by-child|report|wake|typed)\//
   const naming = sources()
     .filter(({ file }) => prefix.test(readFileSync(join(SRC, file), "utf8")))
     .map(({ file }) => file.split("\\").join("/"))
   expect(naming).toEqual(["tree/store.ts"])
+})
+
+test("no file names the group/ storage prefix, so stored group keys are not read", () => {
+  const naming = sources()
+    .filter(({ file }) => /(?<![\w./-])group\//.test(readFileSync(join(SRC, file), "utf8")))
+    .map(({ file }) => file.split("\\").join("/"))
+  expect(naming).toEqual([])
 })
 
 test("no file names the memory/ storage prefix, so stored memory keys are not read", () => {

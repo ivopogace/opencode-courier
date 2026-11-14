@@ -13,9 +13,9 @@ woken when they report. It has grown to 11 model-facing tools, five server optio
 part with a tree panel and four commands, a memory of earlier trees, scheduled messages, a relay for a child's
 permission requests and questions, and two kinds of child session.
 
-This design removes the parts that have no known user, that another part already covers, or
-that only serve a host older than the pinned one. The tool list goes from 11 to 8 and the options
-from five to three, in one breaking release, 0.17.0. It adds no feature. The plugin is pinned to OpenCode 2.3.0, and "the host" below means OpenCode.
+This design removes the parts that have no known user or that another part already covers. The
+tool list goes from 11 to 8 and the options from five to three, in one breaking release, 0.17.0.
+It adds no feature. The plugin is pinned to OpenCode 2.3.0, and "the host" below means OpenCode.
 
 ### The tools today
 
@@ -144,8 +144,7 @@ isolated worktrees stay (Alternative A), so the cuts come from around them.
 *   Removed: memory (`courier_recall`, `courier_note`, the `memory` option, `/courier memory`, the
     `lessons` instruction entry), join groups (the `group` parameter) and the `finding`
     parameter, `courier_children` as a separate tool, `/courier stop`, the `queue` parameter of
-    `courier_send`, the `nativeChildren` option, and the paths listed under "Hosts older than
-    2.3.0".
+    `courier_send`, and the `nativeChildren` option.
 *   Kept: `courier_spawn` with `isolate`, `agent`, `model`, `variant`, `title` and `native`; the
     four report statuses (`done`, `partial`, `blocked`, `failed`); `courier_cancel`; the
     typed-text copy; the tree panel, the footer and `/asks`; missed-wake retries and `stalled`;
@@ -408,30 +407,29 @@ the update still runs the old terminal part. Its memory view calls an interface 
 longer registers, and shows its existing error for a failed call. Its tree panel and footer read
 group fields that are no longer sent, and show no group.
 
-### Hosts older than 2.3.0
+### Code for older hosts stays
 
-Removed, because it serves only an older host:
+Some of the plugin's code exists for a host older than the pinned one, or looks as if it does.
+None of it is removed here.
 
-*   The branch that decides whether a session runs when the host gives no `busy` time (it arrived
-    in 2.2.2), and the matching branch in the re-send logic. A session that has not run since its
-    host was upgraded has an `idle` time and no `busy` time; after the change the plugin reads it
-    as idle, which is correct.
+*   **The fallback for a host that gives no `busy` time.** A host before 2.2.2 does not say when
+    a session last became busy, and the plugin then reads whether it runs from its `updated` and
+    `idle` times. Only an older host needs that, but most unit tests describe a running session
+    through it, and it is what makes a session that has never run read correctly. Removing it
+    would save one expression and one branch and cost rewritten fixtures in six test files.
+*   **Every check for a missing instructions port.** Without the port a spawn falls back to
+    adding the role as a system part. Removing the check would make that spawn fail instead,
+    after its session and worktree exist, and the maintainer notes say the port's location in
+    the host API may move in a later release.
+*   **The guard around registering the `experimental.idle` and `fork` hooks.** Both are
+    experimental on 2.3.0 and may be absent in a later host.
+*   **The system-part path itself.** It also serves a fork, a session whose instruction entry
+    could not be written and a top session that has not spawned yet.
+*   **The plugin's own filter that drops an event of a type it did not ask for.** A later host
+    may ignore the filter it is given.
 
-Kept, although they look like fallbacks:
-
-*   Every check for a missing instructions port. Without the port a spawn falls back to adding
-    the role as a system part. Removing the check would make that spawn fail instead, after its
-    session and worktree exist, and the maintainer notes say the port's location in the host API
-    may move in a later release.
-*   The guard around registering the `experimental.idle` and `fork` hooks. Both are experimental
-    on 2.3.0 and may be absent in a later host.
-*   The system-part path itself. It also serves a fork, a session whose instruction entry could
-    not be written and a top session that has not spawned yet.
-*   The plugin's own filter that drops an event of a type it did not ask for. A host that ignores
-    the filter it is given may be a newer one.
-
-The version check at load keeps its one log line. The "server part loads on any V2 host from 2.0.4
-on" claim in the README and the reference is replaced by the pinned version alone.
+The version check at load keeps its one log line, and the README's statement of which hosts the
+server part loads on is not changed.
 
 ### The real-model check
 
@@ -492,29 +490,27 @@ request and is not part of this check.
 
 ### Order of work
 
-Steps 1 to 5 are one pull request each, with its unit tests, its live scenario changes and its
+Steps 1 to 4 are one pull request each, with its unit tests, its live scenario changes and its
 part of `docs/reference.md`. They merge into an integration branch, not into main, so main stays
 releasable for a fix while the work is under way.
 
 ```text
  1  memory removed                                        ┐
- 2  the branches for a host without a busy time removed   │
- 3  small cuts: courier_children, /courier stop,          │  pull requests into the
-    queue, the nativeChildren option; the README's        │  integration branch, in order
-    account of the host's subagent tool corrected         │
- 4  groups and finding removed                            │
- 5  README demo recorded again, without a group           ┘
+ 2  small cuts: courier_children, /courier stop,          │
+    queue, the nativeChildren option; the README's        │  pull requests into the
+    account of the host's subagent tool corrected         │  integration branch, in order
+ 3  groups and finding removed                            │
+ 4  README demo recorded again, without a group           ┘
     the real-model check: main against the branch; the author decides
     one pull request from the integration branch to main, then release 0.17.0 (breaking)
- 6  the checkers lose the allowances no run can use any more
+ 5  the checkers lose the allowances no run can use any more
 ```
 
-Steps 1 to 4 do not depend on each other's behaviour: any one of them could ship alone. They do
-edit the same files. All four touch the composition root and the spawn code, and steps 1, 3 and 4
-touch the model-facing strings and their snapshot. So they merge in the order 1, 2, 3, 4, each
-rebased on the one before. Step 5 depends on step 4 and merges before the check, so the README
-never shows a join group the plugin does not have. Step 6 follows the release as an ordinary pull
-request to main.
+Steps 1 to 3 do not depend on each other's behaviour: any one of them could ship alone. They do
+edit the same files: the composition root, the spawn code, the model-facing strings and their
+snapshot. So they merge in the order 1, 2, 3, each rebased on the one before. Step 4 depends on
+step 3 and merges before the check, so the README never shows a join group the plugin does not
+have. Step 5 follows the release as an ordinary pull request to main.
 
 If OpenCode releases a version while the branch is open, main takes the pin bump as usual and
 the branch takes main. The check runs after that, so both sides are on the same host version.
@@ -595,7 +591,8 @@ The author made each rejection below.
 *   **Pros**: No behaviour changes for anyone on 2.3.0. No real-model risk.
 *   **Cons**: Removes a few dozen source lines and changes nothing a model sees.
 *   **Reason for Rejection**: As the whole plan it touches only part of the first of the four
-    costs. Kept as step 2.
+    costs. It is not kept as a step either: "Code for older hosts stays" gives the reason for
+    each path.
 
 ### Alternative G: Options that turn features off, with the code kept
 
@@ -776,17 +773,13 @@ The author made each rejection below.
 
 ## Detailed Implementation Plan
 
-**This plan is not ready to implement from.** A review against the code found it wrong in three
+**This plan is not ready to implement from.** A review against the code found it wrong in two
 ways that block, and it has not been corrected:
 
 *   **The file lists are not exact.** About fifteen files that must change are missing, among
-    them `test/notices.test.ts` in steps 3 and 4, `src/tree/index.ts` and `src/tree/standing.ts`
-    in step 1, and `e2e/mock-model.mjs` in step 5. About twenty listed files need no change.
-*   **Step 2 breaks tests it does not list and does not state the new rule.** Most unit fixtures
-    mark a running session through the fallback that step removes, in `test/limits.test.ts`,
-    `test/subtree.test.ts`, `test/panel.test.ts`, `test/summary.test.ts` and
-    `test/courier.test.ts`. Dropping step 2 is the likely answer.
-*   **Step 3.3 is wrong about `listChildren`.** The state lines do not use it. Its one caller is
+    them `test/notices.test.ts` in steps 2 and 3, `src/tree/index.ts` and `src/tree/standing.ts`
+    in step 1, and `e2e/mock-model.mjs` in step 4. About twenty listed files need no change.
+*   **Step 2.3 is wrong about `listChildren`.** The state lines do not use it. Its one caller is
     the `courier_children` tool, so it is removed with the tool.
 
 The plan also leaves out text an implementer would have to write: the final wording of about ten
@@ -800,7 +793,7 @@ against the code as it then is. What follows is the outline to start from.
 
 The file lists come from a search of every tracked file for each feature's names, not from
 reading every file. A listed file mentions the feature; the implementer confirms each needs the
-change. Steps 1 to 5 are one pull request each, into the integration branch the order of work
+change. Steps 1 to 4 are one pull request each, into the integration branch the order of work
 describes. A file that several steps touch is listed under each of
 them, with that step's change. Every step also updates `test/__snapshots__/notices.test.ts.snap`
 and, where the terminal part changes, `test/__snapshots__/tui.test.tsx.snap`, by running
@@ -811,27 +804,27 @@ and, where the terminal part changes, `test/__snapshots__/tui.test.tsx.snap`, by
 ### Model-facing strings, by step
 
 These are the strings found by a search of `src/tree/text.ts`, `src/tree/cleanup.ts`,
-`src/tree/tui.tsx` and `src/skill.ts`. The test that step 4 adds is the check that none was
+`src/tree/tui.tsx` and `src/skill.ts`. The test that step 3 adds is the check that none was
 missed.
 
 | String | Who reads it | What changes | Step |
 |---|---|---|---|
 | The top session's role line | The top session | Loses the instruction to call `courier_recall` once before splitting | 1 |
 | The `lessons` instruction entry | A session that may start others | No longer written | 1 |
-| The brief's rule on splitting | Every child that may start others | Loses `courier_children` from "do not poll with …" (step 3) and the sentence on what a group name is for (step 4) | 3, 4 |
-| The brief's rule on reporting | Every child | Loses the sentences on putting what other parts need in `finding`, and that a finding passes a held report | 4 |
-| The native sentence in a role line | A parent with a native child | Loses its clause on waiting for a group's reports | 4 |
-| The state-lines header and its overflow line | Every parent | `courier_children` becomes `courier_tree` in both; "a group's reports" goes | 3, 4 |
-| Each state line | Every parent | Loses the child's group and its standing in it | 4 |
-| The result of `courier_spawn` | The caller | "not on your `courier_children` list" names `courier_tree`; the text on a held report goes | 3, 4 |
-| The result of `courier_send` | The caller | Loses the text on a report held with a group and on a finding sent ahead | 4 |
-| The result of `courier_cleanup` and `courier_stop`, and the `courier_cleanup` error for a session that is not the caller's child | The caller | `courier_children` becomes `courier_tree`; the text on dropping a member from a group goes | 3, 4 |
-| The refusal at the tree-wide limit, for a session none of whose own children counts | The caller | "only reports already held for a group can still wake you" becomes "no report is still due to you" | 4 |
-| The failure notice, the ended-without-a-report notice, and the two notices about a stopped child | A parent | Lose their sentences on the child's join group | 4 |
-| The fork notice | A forked session | "`courier_children` lists none of them" names `courier_tree` | 3 |
-| The notice of a finding sent ahead, the notice of a complete group, the list of reports held so far | A parent | Removed whole | 4 |
-| The `courier-orchestrate` skill | A session that loads it | Loses the advice to call `courier_note` (step 1), the group rule and the sentence on a finding sent ahead (step 4) | 1, 4 |
-| The panel's confirmation before forgetting a row | The person | "this tree and `courier_children`" loses the tool name | 3 |
+| The brief's rule on splitting | Every child that may start others | Loses `courier_children` from "do not poll with …" (step 2) and the sentence on what a group name is for (step 3) | 2, 3 |
+| The brief's rule on reporting | Every child | Loses the sentences on putting what other parts need in `finding`, and that a finding passes a held report | 3 |
+| The native sentence in a role line | A parent with a native child | Loses its clause on waiting for a group's reports | 3 |
+| The state-lines header and its overflow line | Every parent | `courier_children` becomes `courier_tree` in both; "a group's reports" goes | 2, 3 |
+| Each state line | Every parent | Loses the child's group and its standing in it | 3 |
+| The result of `courier_spawn` | The caller | "not on your `courier_children` list" names `courier_tree`; the text on a held report goes | 2, 3 |
+| The result of `courier_send` | The caller | Loses the text on a report held with a group and on a finding sent ahead | 3 |
+| The result of `courier_cleanup` and `courier_stop`, and the `courier_cleanup` error for a session that is not the caller's child | The caller | `courier_children` becomes `courier_tree`; the text on dropping a member from a group goes | 2, 3 |
+| The refusal at the tree-wide limit, for a session none of whose own children counts | The caller | "only reports already held for a group can still wake you" becomes "no report is still due to you" | 3 |
+| The failure notice, the ended-without-a-report notice, and the two notices about a stopped child | A parent | Lose their sentences on the child's join group | 3 |
+| The fork notice | A forked session | "`courier_children` lists none of them" names `courier_tree` | 2 |
+| The notice of a finding sent ahead, the notice of a complete group, the list of reports held so far | A parent | Removed whole | 3 |
+| The `courier-orchestrate` skill | A session that loads it | Loses the advice to call `courier_note` (step 1), the group rule and the sentence on a finding sent ahead (step 3) | 1, 3 |
+| The panel's confirmation before forgetting a row | The person | "this tree and `courier_children`" loses the tool name | 2 |
 
 ### Step 1: memory
 
@@ -906,13 +899,13 @@ missed.
 *   **Proposed Changes**: `real-model.sh` loses the seeding of a record and its `COURIER_SEED`
     switch. The checkers and the table script are not changed: they keep the recall columns and
     the allowance for the top session's one `courier_recall`, as "The real-model check"
-    requires, until step 6.
+    requires, until step 5.
 
 #### 1.11 `test/real-model-recursive.test.ts`, `test/real-model-review.test.ts`, `test/real-model-table.test.ts`, `test/fixtures/real-model/pass-a/summary.json`, `test/fixtures/real-model/fail-b/summary.json` (Modify)
 
 *   **Type / Scope**: Tests of the real-model checkers.
 *   **Proposed Changes**: Only the cases that seed a record go. The recall and lesson fields
-    stay until step 6, since the checkers still report them for runs of main.
+    stay until step 5, since the checkers still report them for runs of main.
 
 #### 1.12 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/plugin-api-notes.md`, `docs/maintainers/real-model.md`, `CLAUDE.md`, `.claude/skills/opencode-release/SKILL.md` (Modify)
 
@@ -925,52 +918,28 @@ missed.
     rows. Real-model: remove "Seeding a record". `CLAUDE.md`: remove `memory/` from the layout
     and the import rule. The release skill: remove its memory mention.
 
-### Step 2: the branches for a host without a `busy` time
+### Step 2: the small cuts
 
-#### 2.1 `src/tree/domain.ts`, `src/tree/running.ts`, `src/tree/wake.ts` (Modify)
-
-*   **Type / Scope**: Session-state logic.
-*   **Proposed Changes**: Remove the branch that decides whether a session runs when `time.busy`
-    is absent, and the matching branch in the re-send logic. A session with `idle` set and no
-    `busy` reads as idle. No check for a missing instructions port is touched, in any file.
-
-#### 2.2 `test/limits.test.ts`, `test/watch.test.ts`, `test/wake.test.ts` (Modify)
-
-*   **Type / Scope**: Unit tests.
-*   **Proposed Changes**: Remove the cases that read a running session from `updated` when `busy`
-    is absent. One case stays and changes its expectation: a session with `idle` and no `busy`
-    reads as idle. The cases for a missing instructions port stay as they are.
-
-#### 2.3 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/plugin-api-notes.md`, `e2e/run.sh` (Modify)
-
-*   **Type / Scope**: Documentation and the live suite.
-*   **Proposed Changes**: Replace "the server part loads on any V2 host from 2.0.4 on" with the
-    pinned version alone, and say a different host gets one log line. Remove the sentences and
-    notes about a host before 2.2.2 and its missing `busy` time. `run.sh` drops any check that
-    names that case.
-
-### Step 3: the small cuts
-
-#### 3.1 `src/tree/tools.ts` (Modify)
+#### 2.1 `src/tree/tools.ts` (Modify)
 
 *   **Type / Scope**: Tool definitions.
 *   **Proposed Changes**: Remove the `courier_children` tool and its input schema. Remove `queue`
     from the send schema. `native`'s description no longer names the `nativeChildren` option.
     Every description that named `courier_children` names `courier_tree`.
 
-#### 3.2 `src/tree/send.ts` (Modify)
+#### 2.2 `src/tree/send.ts` (Modify)
 
 *   **Type / Scope**: Send use case.
 *   **Proposed Changes**: Remove `queue` from the input type; delivery is always `steer`.
 
-#### 3.3 `src/tree/text.ts`, `src/tree/status.ts`, `src/tree/cleanup.ts`, `src/tree/standing.ts` (Modify)
+#### 2.3 `src/tree/text.ts`, `src/tree/status.ts`, `src/tree/cleanup.ts`, `src/tree/standing.ts` (Modify)
 
 *   **Type / Scope**: Tree module.
 *   **Proposed Changes**: Remove `childrenText`. `status.ts` keeps `listChildren`, which the state
     lines use, and loses what only the tool's output needed. Notices in `cleanup.ts` and
     `standing.ts` name `courier_tree`.
 
-#### 3.4 `src/index.ts`, `src/tree/domain.ts`, `src/tree/index.ts`, `src/tree/ports.ts`, `src/tree/spawn.ts`, `src/tree/context.ts` (Modify)
+#### 2.4 `src/index.ts`, `src/tree/domain.ts`, `src/tree/index.ts`, `src/tree/ports.ts`, `src/tree/spawn.ts`, `src/tree/context.ts` (Modify)
 
 *   **Type / Scope**: The `nativeChildren` option.
 *   **Proposed Changes**: `readNativeChildren` no longer yields a setting. It returns a problem
@@ -980,13 +949,13 @@ missed.
     native spawn only. In `context.ts` that line is added only for a session that has a native
     child.
 
-#### 3.5 `src/tree/tui.tsx` (Modify)
+#### 2.5 `src/tree/tui.tsx` (Modify)
 
 *   **Type / Scope**: Terminal part.
 *   **Proposed Changes**: Remove the `/courier stop` command branch and its part of the usage
     line. The `s` key in the panel is unchanged.
 
-#### 3.6 `test/courier.test.ts`, `test/cleanup.test.ts`, `test/fork.test.ts`, `test/limits.test.ts`, `test/plugin.test.ts`, `test/standing.test.ts`, `test/summary.test.ts`, `test/tui.test.tsx`, `test/real-model.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-review.test.ts` (Modify)
+#### 2.6 `test/courier.test.ts`, `test/cleanup.test.ts`, `test/fork.test.ts`, `test/limits.test.ts`, `test/plugin.test.ts`, `test/standing.test.ts`, `test/summary.test.ts`, `test/tui.test.tsx`, `test/real-model.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-review.test.ts` (Modify)
 
 *   **Type / Scope**: Unit tests.
 *   **Proposed Changes**: Remove the cases for `courier_children`, `queue`, the `nativeChildren`
@@ -994,7 +963,7 @@ missed.
     only with `native: true`; a `queue` a model passes is ignored. The checker tests keep "a
     listing call after a spawn is polling" for both listing tool names.
 
-#### 3.7 `e2e/run.sh`, `e2e/mock-model.mjs`, `e2e/tui.sh`, `e2e/real-model.sh`, `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `e2e/real-model-permission.mjs`, `e2e/real-model-question.mjs`, `test/e2e-shards.test.ts` (Modify)
+#### 2.7 `e2e/run.sh`, `e2e/mock-model.mjs`, `e2e/tui.sh`, `e2e/real-model.sh`, `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `e2e/real-model-permission.mjs`, `e2e/real-model-question.mjs`, `test/e2e-shards.test.ts` (Modify)
 
 *   **Type / Scope**: Live suite and real-model harness.
 *   **Proposed Changes**: `run.sh`: the `native` and `spawn-native` groups stop turning the option
@@ -1007,7 +976,7 @@ missed.
     checkers are not changed: their rule that a listing call after a spawn is polling keeps
     naming both `courier_tree` and `courier_children`.
 
-#### 3.8 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/development.md`, `docs/maintainers/plugin-api-notes.md`, `docs/maintainers/real-model.md`, `CLAUDE.md` (Modify)
+#### 2.8 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/development.md`, `docs/maintainers/plugin-api-notes.md`, `docs/maintainers/real-model.md`, `CLAUDE.md` (Modify)
 
 *   **Type / Scope**: Documentation.
 *   **Proposed Changes**: README: options table without `nativeChildren`, tools table without
@@ -1018,14 +987,14 @@ missed.
     native line is put at a first native spawn, with no option. Development and real-model: no
     `COURIER_NATIVE`.
 
-### Step 4: groups and `finding`
+### Step 3: groups and `finding`
 
-#### 4.1 `src/tree/group.ts` (Delete), `test/group.test.ts` (Delete)
+#### 3.1 `src/tree/group.ts` (Delete), `test/group.test.ts` (Delete)
 
 *   **Type / Scope**: The group use case and its test.
 *   **Proposed Changes**: Delete.
 
-#### 4.2 `src/tree/tools.ts` (Modify)
+#### 3.2 `src/tree/tools.ts` (Modify)
 
 *   **Type / Scope**: Tool definitions.
 *   **Proposed Changes**: Remove `group` from the spawn schema and `finding` from the send schema.
@@ -1033,41 +1002,41 @@ missed.
     `courier_send` and `courier_cleanup`. `courier_spawn` keeps its advice to schedule a
     check-in and to cancel it, without "one per group".
 
-#### 4.3 `src/tree/spawn.ts`, `src/tree/send.ts` (Modify)
+#### 3.3 `src/tree/spawn.ts`, `src/tree/send.ts` (Modify)
 
 *   **Type / Scope**: Spawn and send use cases.
 *   **Proposed Changes**: `spawn.ts` no longer joins a child to a group or stores `group` on its
     roster entry. `send.ts` loses the holding of a report, the early delivery of a finding and
     the release of a held report on `blocked`; every report is delivered at once.
 
-#### 4.4 `src/index.ts`, `src/tree/index.ts` (Modify)
+#### 3.4 `src/index.ts`, `src/tree/index.ts` (Modify)
 
 *   **Type / Scope**: Composition root and module surface.
 *   **Proposed Changes**: The tick jobs are `dueJob` and `wakeMissed`. `deliverReleased` is no
     longer exported. The hub version constant is not changed.
 
-#### 4.5 `src/tree/domain.ts`, `src/tree/ports.ts`, `src/tree/store.ts`, `src/tree/roster.ts` (Modify)
+#### 3.5 `src/tree/domain.ts`, `src/tree/ports.ts`, `src/tree/store.ts`, `src/tree/roster.ts` (Modify)
 
 *   **Type / Scope**: Tree types and storage.
 *   **Proposed Changes**: Delete the held-report and membership types, the group ports, the group
     store and its key prefix. A roster entry's `group` field stays in the type as optional, for
     entries written earlier, and is never written or read.
 
-#### 4.6 `src/tree/standing.ts`, `src/tree/status.ts`, `src/tree/summary.ts`, `src/tree/panel.ts`, `src/tree/rpc.ts`, `src/tree/rpc-handlers.ts`, `src/tree/tui.tsx` (Modify)
+#### 3.6 `src/tree/standing.ts`, `src/tree/status.ts`, `src/tree/summary.ts`, `src/tree/panel.ts`, `src/tree/rpc.ts`, `src/tree/rpc-handlers.ts`, `src/tree/tui.tsx` (Modify)
 
 *   **Type / Scope**: State lines, listings and the terminal part.
 *   **Proposed Changes**: Remove each child's group and group standing from the state lines, the
     tree listing, the summary, the panel rows and the footer. The summary and tree RPCs lose
     their group fields; the terminal part of the same release does not read them.
 
-#### 4.7 `src/tree/cleanup.ts`, `src/tree/forget.ts`, `src/tree/nudge.ts`, `src/tree/events.ts`, `src/tree/stop.ts`, `src/tree/wake.ts` (Modify)
+#### 3.7 `src/tree/cleanup.ts`, `src/tree/forget.ts`, `src/tree/nudge.ts`, `src/tree/events.ts`, `src/tree/stop.ts`, `src/tree/wake.ts` (Modify)
 
 *   **Type / Scope**: Tree use cases.
 *   **Proposed Changes**: Remove every branch that takes a member out of its group or checks
     whether a group became complete: on cleanup, on forgetting a deleted child, on a reminder, on
     a failed or silent end, on a stop.
 
-#### 4.8 `src/tree/text.ts`, `src/skill.ts`, `src/scheduling/tools.ts`, `src/person/rpc.ts`, `src/person/rpc-handlers.ts`, `src/person/tui.tsx` (Modify)
+#### 3.8 `src/tree/text.ts`, `src/skill.ts`, `src/scheduling/tools.ts`, `src/person/rpc.ts`, `src/person/rpc-handlers.ts`, `src/person/tui.tsx` (Modify)
 
 *   **Type / Scope**: Model-facing strings and the asks inbox.
 *   **Proposed Changes**: `text.ts` loses all group wording, the finding-ahead wording and the
@@ -1077,7 +1046,7 @@ missed.
     on to the parts it changes" stays. `courier_later`'s description loses "one per group". The
     asks inbox drops the group a waiting session belongs to.
 
-#### 4.9 `test/courier.test.ts`, `test/cleanup.test.ts`, `test/hub.test.ts`, `test/inbox.test.tsx`, `test/limits.test.ts`, `test/nudge.test.ts`, `test/panel.test.ts`, `test/person-rpc.test.ts`, `test/plugin.test.ts`, `test/roster.test.ts`, `test/standing.test.ts`, `test/stop.test.ts`, `test/store.test.ts`, `test/summary.test.ts`, `test/tui.test.tsx`, `test/watch.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-review.test.ts`, `test/real-model-table.test.ts` (Modify)
+#### 3.9 `test/courier.test.ts`, `test/cleanup.test.ts`, `test/hub.test.ts`, `test/inbox.test.tsx`, `test/limits.test.ts`, `test/nudge.test.ts`, `test/panel.test.ts`, `test/person-rpc.test.ts`, `test/plugin.test.ts`, `test/roster.test.ts`, `test/standing.test.ts`, `test/stop.test.ts`, `test/store.test.ts`, `test/summary.test.ts`, `test/tui.test.tsx`, `test/watch.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-review.test.ts`, `test/real-model-table.test.ts` (Modify)
 
 *   **Type / Scope**: Unit tests.
 *   **Proposed Changes**: Remove the group and finding cases. `courier.test.ts` adds: a `group` or
@@ -1086,7 +1055,7 @@ missed.
     contains a removed name, as "Model-facing text that changes" lists them. `store.test.ts` adds:
     a `group/` entry in storage is not read and not removed.
 
-#### 4.10 `e2e/run.sh`, `e2e/mock-model.mjs`, `e2e/tui.sh`, `test/e2e-shards.test.ts` (Modify)
+#### 3.10 `e2e/run.sh`, `e2e/mock-model.mjs`, `e2e/tui.sh`, `test/e2e-shards.test.ts` (Modify)
 
 *   **Type / Scope**: Live suite.
 *   **Proposed Changes**: Remove the `reports-groups`, `finding`, `finding-up` and
@@ -1095,15 +1064,15 @@ missed.
     `tui.sh`'s first scenario runs two ungrouped children; its footer and row checks lose the
     group text.
 
-#### 4.11 `e2e/real-model.sh`, `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-recursive-release.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `script/real-model-table.ts` (Modify)
+#### 3.11 `e2e/real-model.sh`, `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-recursive-release.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `script/real-model-table.ts` (Modify)
 
 *   **Type / Scope**: Real-model harness.
 *   **Proposed Changes**: No checker changes in this step. Every allowance for a held report, a
     finding sent ahead or a look at a held report stays, so one checker scores main and
     the integration branch. Only what the harness can no longer set is removed from
-    `real-model.sh`. Step 6 removes the allowances no run can use any more.
+    `real-model.sh`. Step 5 removes the allowances no run can use any more.
 
-#### 4.12 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/development.md`, `docs/maintainers/plugin-api-notes.md`, `docs/maintainers/real-model.md`, `CLAUDE.md` (Modify)
+#### 3.12 `README.md`, `docs/reference.md`, `docs/maintainers/architecture.md`, `docs/maintainers/development.md`, `docs/maintainers/plugin-api-notes.md`, `docs/maintainers/real-model.md`, `CLAUDE.md` (Modify)
 
 *   **Type / Scope**: Documentation.
 *   **Proposed Changes**: README: no join group in "Why courier", "How it works", the tools row or
@@ -1112,9 +1081,9 @@ missed.
     the key and nothing reads it. Plugin-api-notes: the note on reading a decline from the
     transcript goes. `CLAUDE.md`: "groups" leaves the layout line.
 
-### Step 5: the demo
+### Step 4: the demo
 
-#### 5.1 `script/record-gif.sh`, `script/demo-lib.sh`, `script/render-gif.py`, `docs/demo.gif`, `README.md` (Modify)
+#### 4.1 `script/record-gif.sh`, `script/demo-lib.sh`, `script/render-gif.py`, `docs/demo.gif`, `README.md` (Modify)
 
 *   **Type / Scope**: Demo recording.
 *   **Proposed Changes**: The demo shows a top session with two sessions under it that each
@@ -1123,9 +1092,9 @@ missed.
     the README caption and alt text describe what it shows. This pull request merges before the
     release is cut.
 
-### Step 6: the checkers, after the release
+### Step 5: the checkers, after the release
 
-#### 6.1 `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-recursive-release.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `script/real-model-table.ts`, `test/real-model.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-review.test.ts`, `test/real-model-table.test.ts`, `test/fixtures/real-model/pass-a/summary.json`, `test/fixtures/real-model/fail-b/summary.json` (Modify)
+#### 5.1 `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-recursive-release.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `script/real-model-table.ts`, `test/real-model.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-review.test.ts`, `test/real-model-table.test.ts`, `test/fixtures/real-model/pass-a/summary.json`, `test/fixtures/real-model/fail-b/summary.json` (Modify)
 
 *   **Type / Scope**: Real-model checkers and their tests.
 *   **Proposed Changes**: Once 0.17.0 is released and `real-model.md` holds its tables, remove
@@ -1157,11 +1126,11 @@ missed.
 *   **Test Coverage Requirement**: No numeric bar. Every changed behaviour has a unit test and a
     live scenario, as `CLAUDE.md` requires.
 *   **E2E/Integration**: `npm run test:e2e` in four shards and `e2e/tui.sh`, both in CI on every
-    pull request; `e2e/two-servers.sh` on step 4, because that step removes one of the
+    pull request; `e2e/two-servers.sh` on step 3, because that step removes one of the
     scheduler's periodic jobs and the script checks that two servers on one data directory do
     not deliver a message twice.
 *   **Real model**: Main against the integration branch, reported and decided as "The
-    real-model check" says. Steps 1, 3 and 4 change model-facing strings, so each of their pull
+    real-model check" says. Steps 1, 2 and 3 change model-facing strings, so each of their pull
     requests carries one `e2e/real-model.sh` run in its body.
 *   **Counts**: The characters of all tool descriptions and schemas on the integration branch
     against main, taken with the real-model check.

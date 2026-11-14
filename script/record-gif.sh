@@ -27,6 +27,7 @@ select_row() {
   done
 }
 record_pane() {
+  echo '{ "highlights": false, "session": { "verbosity": "medium" } }' >"$XDG_CONFIG_HOME/opencode/cli.json"
   rm -rf "$OUT"
   mkdir -p "$OUT/frames"
   echo "recording to $OUT"
@@ -47,10 +48,10 @@ scene "The orchestrator splits the work"
 caption "Ask the top session to fix two issues in parallel"
 submit "Fix issues #12 and #15 in parallel, one lead per issue"
 look "courier_spawn [title=Issue #12" 5 110
-caption "It starts a lead per issue with courier_spawn, in one group: it needs only both results"
+caption "It starts a lead per issue with courier_spawn"
 hold 3.5
 look "Two leads started" 2 110
-caption "and ends its turn: the group's message will wake it"
+caption "and ends its turn: each lead's report will wake it"
 hold 3.5
 
 scene "The tree"
@@ -75,7 +76,7 @@ look "courier_spawn [title=Cause of #12" 5 72
 caption "The lead splits its issue again: one worker finds the cause, one writes a failing test"
 hold 3.5
 look "Two workers started" 2 74
-caption "In no group: each worker's message wakes the lead as it comes"
+caption "Each worker's message wakes the lead as it comes"
 hold 3.5
 
 scene "A finding"
@@ -136,8 +137,8 @@ hold 1
 select_row "Fix #12 and #15"
 hold 1
 press "enter" Enter
-look "Reports of group issues" 1 line last 60
-caption "Its leads were a join group, its choice for a pure fan-in: their reports came as one message"
+look "◈ Message from" 1 46 "" 60
+caption "Each lead's report woke it as it came"
 hold 3.5
 look "Both issues fixed" 2 74 last
 caption "Both issues fixed"

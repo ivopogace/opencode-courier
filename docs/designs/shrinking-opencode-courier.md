@@ -165,8 +165,8 @@ isolated worktrees stay (Alternative A), so the cuts come from around them.
 *   The character count of all tool descriptions and schemas is lower on the integration
     branch than on main by at least the size of the three removed tools and the three removed
     parameters.
-*   The real-model check is run on main and on the integration branch, and its numbers are in
-    the pull request that takes the branch to main.
+*   The real-model check is run on main and on the integration branch, and its numbers go to the
+    author only: they are in no pull request, release note or document.
 *   A scheduled message that is pending when the plugin is updated is still delivered.
 *   Each removed option that is present in the config, whatever its value, is reported in one
     log line at load. The lines go at the next breaking release.
@@ -436,7 +436,7 @@ server part loads on is not changed.
 The check compares real-model runs of the plugin before and after the removals. It informs the
 decision to release; it does not make it. Five runs per scenario cannot tell a small drop from
 chance, and the repository's own floor for a claim about how models behave is five finished runs
-on each of two models. So the numbers are reported and the author decides.
+on each of two models. So the numbers go to the author, who decides.
 
 *   **When.** Once, when every step is merged into the integration branch. The steps do not
     touch main, so main's head is the "before" and the branch's head is the "after", and both can
@@ -459,11 +459,10 @@ on each of two models. So the numbers are reported and the author decides.
     side too.
 *   **A closer look.** A scenario with two or more fewer passes on the branch is run again, ten
     runs on each side. If the branch again has two or more fewer, the drop is taken as real.
-*   **The decision.** The author decides whether to release, and the pull request to main
-    carries the numbers and the reason. For a drop taken as real there are three courses: find
+*   **The decision.** The author decides whether to release; the numbers stay with the author and
+    the pull request to main does not carry them. For a drop taken as real there are three courses: find
     the step by running the scenario at each step's merge commit, and reword what that step
-    changed; restore the feature that step removed; or release with the drop stated in the
-    release notes. A branch run that costs more is expected where the run of main used a group,
+    changed; restore the feature that step removed; or release with the drop accepted. A branch run that costs more is expected where the run of main used a group,
     since a group gives one parent turn for several reports.
 
 Before step 1, one run of `fanout` and one of `recursive` are made at main. They show that a
@@ -484,9 +483,9 @@ The ten scenarios:
 | `discovery` | One part learns a value the other two need; it must reach them through the parent. This is the scenario the removal of `finding` and groups bears on most. |
 | `review` | A change is made, reviewed by another session and fixed. |
 
-Each pull request that changes a model-facing string also carries one `e2e/real-model.sh` run in
-its body, as the repository's rules require. That run is information for the reviewer of the pull
-request and is not part of this check.
+Each pull request that changes a model-facing string is also followed by one `e2e/real-model.sh`
+run, as the repository's rules require. Its result is not put in the pull request and is not part of
+this check.
 
 ### Order of work
 
@@ -751,8 +750,7 @@ The author made each rejection below.
 *   **Token cost.** Fewer tool description and schema characters per request; the goal states
     the floor. Two places may cost more: a fan-in that used a group, which now gets up to one
     parent turn per report, and a call to `courier_tree` where `courier_children` was called.
-*   **Privacy.** Real-model results are published without the self-hosted model's name, address
-    or provider id.
+*   **Privacy.** Real-model results are not published.
 
 --------------------------------------------------------------------------------
 
@@ -1097,7 +1095,7 @@ missed.
 #### 5.1 `e2e/real-model.mjs`, `e2e/real-model-recursive.mjs`, `e2e/real-model-recursive-release.mjs`, `e2e/real-model-discovery.mjs`, `e2e/real-model-review.mjs`, `script/real-model-table.ts`, `test/real-model.test.ts`, `test/real-model-recursive.test.ts`, `test/real-model-discovery.test.ts`, `test/real-model-review.test.ts`, `test/real-model-table.test.ts`, `test/fixtures/real-model/pass-a/summary.json`, `test/fixtures/real-model/fail-b/summary.json` (Modify)
 
 *   **Type / Scope**: Real-model checkers and their tests.
-*   **Proposed Changes**: Once 0.17.0 is released and `real-model.md` holds its tables, remove
+*   **Proposed Changes**: Once 0.17.0 is released, remove
     what no run can use any more: the allowances for a report held in a group, a finding sent
     ahead, a look through `courier_children` and the top session's `courier_recall`, with the
     notes and table columns for groups, findings, recall calls and lesson reads. This is one
@@ -1105,14 +1103,13 @@ missed.
 
 ### The release
 
-#### R.1 `package.json`, `README.md`, `docs/reference.md`, `docs/maintainers/real-model.md` (Modify)
+#### R.1 `package.json`, `README.md`, `docs/reference.md` (Modify)
 
-*   **Type / Scope**: Version, the generated compatibility tables and the result tables.
+*   **Type / Scope**: Version and the generated compatibility tables.
 *   **Proposed Changes**: After the author has decided on the real-model check's numbers, one pull
     request takes the integration branch to main and the version becomes 0.17.0.
     The version tables are regenerated by `script/compat-table.ts`, never edited by hand. The
-    tables in `real-model.md` are replaced by the branch's side of the real-model check, and its
-    "Running it" text describes the check as this design does. The release follows
+    check's numbers are in no file. The release follows
     `docs/maintainers/releasing.md`. Its notes list every removed tool, parameter, option and
     command with what to do in its place, and say to let running trees finish before updating.
 
@@ -1129,9 +1126,9 @@ missed.
     pull request; `e2e/two-servers.sh` on step 3, because that step removes one of the
     scheduler's periodic jobs and the script checks that two servers on one data directory do
     not deliver a message twice.
-*   **Real model**: Main against the integration branch, reported and decided as "The
-    real-model check" says. Steps 1, 2 and 3 change model-facing strings, so each of their pull
-    requests carries one `e2e/real-model.sh` run in its body.
+*   **Real model**: Main against the integration branch, reported to the author and decided as
+    "The real-model check" says. Steps 1, 2 and 3 change model-facing strings, so each of their
+    pull requests is followed by one `e2e/real-model.sh` run, whose result is not put in it.
 *   **Counts**: The characters of all tool descriptions and schemas on the integration branch
     against main, taken with the real-model check.
 *   **Manual check**: With a config that sets `memory`, `nativeChildren` and `maxChildren`, the

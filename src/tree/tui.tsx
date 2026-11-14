@@ -208,19 +208,14 @@ export function blend(tint: RGBA, rest: RGBA, amount: number) {
 }
 
 export function summaryLine(summary: Summary, maxWidth = Infinity) {
-  const groups = summary.groups.map((group) => `group ${group.name} ${group.reported}/${group.members}`)
   const parts = [
     summary.waiting ? `${summary.waiting} waiting on you` : "",
     summary.stalled ? `${summary.stalled} stalled` : "",
     summary.running ? `${summary.running} running` : "",
-    ...groups,
     summary.idle ? `${summary.idle} idle` : "",
   ].filter(Boolean)
   if (!parts.length) return ""
-  const line = (kept: number) => {
-    const dropped = groups.filter((group) => parts.indexOf(group) >= kept).length
-    return ["courier", parts.slice(0, kept).join(" · "), dropped ? `· +${counted(dropped, "group")}` : ""].filter(Boolean).join(" ")
-  }
+  const line = (kept: number) => `courier ${parts.slice(0, kept).join(" · ")}`
   for (let kept = parts.length; kept > 0; kept--) if (line(kept).length <= maxWidth) return line(kept)
   return parts[0]!
 }
@@ -262,7 +257,6 @@ export function statusParts(row: Row, now = Date.now()) {
   const parts: Array<{ text: string; kind: "state" | "report" | "plain" }> = [
     { text: stateWord(row, now), kind: "state" },
     { text: reportWords(row.report, row.stopped), kind: "report" },
-    { text: row.group ? `group ${row.group.name} ${row.group.standing}` : "", kind: "plain" },
     { text: row.isolated ? "isolated" : "", kind: "plain" },
     { text: row.native ? "native" : "", kind: "plain" },
     { text: row.subagent ? "subagent" : "", kind: "plain" },
@@ -509,7 +503,7 @@ async function confirmForget(
 ) {
   const what = target.isolated
     ? "Its worktree is removed unless it has uncommitted changes or commits found nowhere else."
-    : "It leaves this tree and courier_children."
+    : "It leaves this tree."
   const confirmed = await ctx.ui.dialog.confirm({
     title: "Forget session",
     message: `Forget "${oneLine(target.title)}" (${target.sessionID})? ${what}`,
@@ -870,13 +864,9 @@ function TreePanel(props: {
   )
 }
 
-export const USAGE = "/courier tree opens the session tree; /courier stop [session] stops a session and those under it"
+export const USAGE = "/courier tree opens the session tree"
 
-export type Verb = { readonly run: () => void; readonly usage: string }
-
-export const usageWith = (verbs: Readonly<Record<string, Verb>>) => [USAGE, ...Object.values(verbs).map((verb) => verb.usage)].join("; ")
-
-export function addTreePanel(ctx: Context, verbs: Readonly<Record<string, Verb>> = {}) {
+export function addTreePanel(ctx: Context) {
   const { courier, location } = courierOf(ctx)
   const animations = animationsOn(ctx.options)
   const [changed, stopListening] = changes(ctx, PANEL_CHANGES, PANEL_SETTLE_MS)
@@ -960,44 +950,19 @@ export function addTreePanel(ctx: Context, verbs: Readonly<Record<string, Verb>>
     following = before
     ctx.ui.toast.show({ title: "courier", message: "Open a session first", variant: "warning" })
   }
-  const stopUnder = async (target: string) => {
-    const route = ctx.ui.router.current()
-    if (route.type !== "session") return ctx.ui.toast.show({ title: "courier", message: "Open a session first", variant: "warning" })
-    const read = await courier.tree({ sessionID: route.sessionID }, { location: location(route.sessionID) }).then(
-      (tree) => ({ rows: tree.rows }),
-      (error: unknown) => ({ rows: [] as Row[], error }),
-    )
-    const rows = read.rows
-    const spawned = rows.filter((row) => !row.subagent)
-    if (!target && "error" in read) return ctx.ui.toast.show({ title: "courier stop", message: reason(read.error), variant: "error" })
-    if (!target && !spawned.length)
-      return ctx.ui.toast.show({ title: "courier stop", message: "No session started with courier_spawn under this one.", variant: "warning" })
-    const sessionID =
-      target ||
-      (await ctx.ui.dialog.select({
-        title: "Stop which session?",
-        options: spawned.map((row) => ({ title: row.title, value: row.sessionID, description: `${row.sessionID} · ${statusLine(row)}` })),
-      }))
-    if (!sessionID) return
-    const row = rows.find((one) => one.sessionID === sessionID)
-    await confirmStop(ctx, courier, location, route.sessionID, { sessionID, title: row?.title ?? sessionID, under: row ? reach(rows, sessionID) - 1 : 0 })
-  }
   ctx.keymap.layer(() => ({
     mode: "global",
     commands: [
       {
         id: "courier.command",
         title: "Courier",
-        description: usageWith(verbs),
+        description: USAGE,
         group: "Courier",
         slash: { name: "courier", arguments: true },
-        run: async (input) => {
-          const [verb = "tree", target = ""] = (input ?? "").trim().split(/\s+/).filter(Boolean)
+        run: (input) => {
+          const verb = (input ?? "").trim().split(/\s+/).find(Boolean) ?? "tree"
           if (verb === "tree") return openPanel()
-          if (verb === "stop") return stopUnder(target)
-          const further = Object.hasOwn(verbs, verb) ? verbs[verb] : undefined
-          if (further) return further.run()
-          ctx.ui.toast.show({ title: "courier", message: usageWith(verbs), variant: "warning" })
+          ctx.ui.toast.show({ title: "courier", message: USAGE, variant: "warning" })
         },
       },
       { id: "courier.tree", title: "Courier session tree", group: "Courier", palette: true, run: openPanel },
@@ -1019,26 +984,19 @@ export function addTreeAttention(ctx: Context) {
     const { sessionID, inboxID, item } = event.data
     const metadata: Record<string, unknown> = item.type === "synthetic" ? (item.payload.metadata ?? {}) : {}
     if (metadata.source !== "courier" || notified.has(inboxID)) return
-    const group = typeof metadata.group === "string" ? metadata.group : undefined
     const status = typeof metadata.status === "string" ? metadata.status : undefined
     const from = typeof metadata.from === "string" ? metadata.from : ""
-    if (!group && !status) return
-    if (!group && ctx.data.session.get(from)?.parentID !== undefined) return
+    if (!status) return
+    if (ctx.data.session.get(from)?.parentID !== undefined) return
     notified.add(inboxID)
     if (notified.size > NOTIFIED_MAX) notified.delete(notified.values().next().value!)
-    void (group
-      ? ctx.attention.notify({
-          title: title(sessionID),
-          message: `Group ${group}: ${typeof metadata.reports === "number" ? counted(metadata.reports, "report") : "its reports"} arrived`,
-          notification: { when: "blurred" },
-          sound: { name: "done", when: "always" },
-        })
-      : ctx.attention.notify({
-          title: title(sessionID),
-          message: `${title(from) ?? from} reported ${status}`,
-          notification: false,
-          sound: { name: "subagent_done", when: "always" },
-        })
-    ).catch(() => undefined)
+    void ctx.attention
+      .notify({
+        title: title(sessionID),
+        message: `${title(from) ?? from} reported ${status}`,
+        notification: false,
+        sound: { name: "subagent_done", when: "always" },
+      })
+      .catch(() => undefined)
   })
 }

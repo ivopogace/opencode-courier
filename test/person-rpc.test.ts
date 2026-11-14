@@ -70,7 +70,7 @@ describe("the asks method", () => {
       top: "ses_root",
       sessions: [
         { sessionID: "ses_a", title: "Fix the bug", parentID: "ses_root", depth: 1 },
-        { sessionID: "ses_b", title: "Write tests", parentID: "ses_a", depth: 2, group: "pair" },
+        { sessionID: "ses_b", title: "Write tests", parentID: "ses_a", depth: 2 },
       ],
       permissions: [{ sessionID: "ses_b", requestID: "per_1", action: "bash", resources: ["bun test"], save: ["bun *"] }],
       questions: [{ sessionID: "ses_a", requestID: "question_1", questions: greeting, stopped: true }],

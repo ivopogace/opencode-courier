@@ -44,10 +44,6 @@ person_rpc() {
   curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier-person/$1?directory=$(location)" \
     -H 'content-type: application/json' -d "{\"input\":$2}"
 }
-memory_rpc() {
-  curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier-memory/$1?directory=$(location)" \
-    -H 'content-type: application/json' -d "{\"input\":$2}"
-}
 rpc_ready() {
   for _ in $(seq 1 30); do "$@" | jq -e 'has("output")' >/dev/null 2>&1 && return; sleep 1; done
 }
@@ -218,10 +214,10 @@ echo "  $info"
 check "the server reports features server, tui and rpc" "$(jq -r '.features == {server: true, tui: true, rpc: true}' <<<"$info")"
 
 echo "the RPC answers over HTTP with the parent's summary, and refuses what it cannot take"
-waiting='{"running":0,"waiting":1,"idle":1,"groups":[{"name":"pair","reported":1,"members":2}]}'
+waiting='{"running":0,"waiting":1,"idle":1,"groups":[]}'
 result=$(summary_until "$parent" 60 "$waiting")
 echo "  $result"
-check "one child waits on the person, one has reported, and group pair holds 1 of 2" "$([ "$result" = "$waiting" ] && echo true || echo false)"
+check "one child waits on the person and one has reported, with the groups field a terminal of an earlier release reads left empty" "$([ "$result" = "$waiting" ] && echo true || echo false)"
 asking=$(for child in $children; do if [ "$(api "session/$child/permission" | jq -r '.data | length')" = 1 ]; then echo "$child"; fi; done | head -1)
 check "the child that asks is found" "$([ -n "$asking" ] && echo true || echo false)"
 bad=$(rpc summary '{"wrong":1}')
@@ -233,13 +229,13 @@ check "a session that started none has an empty summary" \
 
 echo "the TUI shows the entry in the prompt's footer, and follows the answer"
 open_tui tui "$parent"
-check "the footer shows what the RPC gave" "$(shows "courier 1 waiting on you · group pair 1/2 · 1 idle" 60 tui-waiting)"
+check "the footer shows what the RPC gave" "$(shows "courier 1 waiting on you · 1 idle" 60 tui-waiting)"
 echo "  $(footer tui-waiting)"
 echo "the tree panel: /courier tree opens it on both children, with the bar of the parts reported"
-rows=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[] | {depth, state, report: .report.state, group: .group.standing}] | sort_by(.state)')
+rows=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '[.output.rows[] | {depth, state, report: .report.state, group: has("group")}] | sort_by(.state)')
 echo "  $rows"
-check "the RPC's tree: one child reported and held, the other waits on the person and owes its report" \
-  "$(jq -r '. == [{depth: 1, state: "idle", report: "reported", group: "held"}, {depth: 1, state: "waiting", report: "owed", group: "out"}]' <<<"$rows")"
+check "the RPC's tree: one child reported, the other waits on the person and owes its report, and neither row has a group" \
+  "$(jq -r '. == [{depth: 1, state: "idle", report: "reported", group: false}, {depth: 1, state: "waiting", report: "owed", group: false}]' <<<"$rows")"
 top=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -c '.output.top | {sessionID, depth}')
 echo "  $top"
 check "the RPC's tree carries the parent itself as its top row, at depth 0 (#395)" \
@@ -251,9 +247,9 @@ check "the RPC's tree carries a mock-model child's context use: a fraction of th
 submit "/courier tree"
 check "the panel opens with the bar: 1 of 2 parts reported" "$(shows "courier tree  [█████░░░░░] 1/2 reported" 30 tui-panel)"
 check "its first row is the parent, on screen and selected (#395)" "$(grep -qE '▸ . .*\(on screen\)' "$WORK/tui-panel.txt" && echo true || echo false)"
-check "it has the reported child's row" "$(grep -qF "✓ Report back to your parent.  idle · reported done · group pair held" "$WORK/tui-panel.txt" && echo true || echo false)"
+check "it has the reported child's row" "$(grep -qF "✓ Report back to your parent.  idle · reported done" "$WORK/tui-panel.txt" && ! grep -qF "group pair" "$WORK/tui-panel.txt" && echo true || echo false)"
 check "and the asking child's, which says what it waits on" \
-  "$(grep -qF "● CHILD-ASKS  waiting on you · owes a report · group pair out" "$WORK/tui-panel.txt" && grep -qF "asks permission: shell echo courier-asks" "$WORK/tui-panel.txt" && echo true || echo false)"
+  "$(grep -qF "● CHILD-ASKS  waiting on you · owes a report" "$WORK/tui-panel.txt" && grep -qF "asks permission: shell echo courier-asks" "$WORK/tui-panel.txt" && echo true || echo false)"
 check "the 16×16 Digby shows below the rows, the header without its glyph" \
   "$([ "$(shows "████████████████" 15 tui-panel-digby)" = true ] && ! grep -qE '[▀▄█] +courier tree' "$WORK/tui-panel-digby.txt" && echo true || echo false)"
 request=$(api "session/$asking/permission" | jq -r '.data[0].id // empty')
@@ -263,7 +259,7 @@ check "the person answered the child's request ($request)" "$([ "$code" = 204 ] 
 idle='{"running":0,"waiting":0,"idle":2,"groups":[]}'
 result=$(summary_until "$parent" 60 "$idle")
 echo "  $result"
-check "the summary follows: both children idle, the group released" "$([ "$result" = "$idle" ] && echo true || echo false)"
+check "the summary follows: both children idle" "$([ "$result" = "$idle" ] && echo true || echo false)"
 check "the panel follows the report: 2 of 2 parts reported" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-reported)"
 check "once the report's pose ends, the 16×16 Digby keeps no background of the poses before" "$(digby_settles 15 tui-panel-settled)"
 api_prompt "$parent" "PARENT-BUSY"
@@ -274,7 +270,7 @@ tmux send-keys -t "$TMUX_SESSION" q
 check "q closes the panel" "$(hides "courier tree" 10 tui-panel-closed)"
 check "the footer follows it" "$(shows "courier 2 idle" 30 tui-released)"
 echo "  $(footer tui-released)"
-check "and the group is gone from it" "$([[ $(footer tui-released) != *"group pair"* ]] && echo true || echo false)"
+check "and it names no group" "$([[ $(footer tui-released) != *group* ]] && echo true || echo false)"
 submit "/courier tree"
 check "the panel opens again" "$(shows "courier tree  [██████████] 2/2 reported" 30 tui-panel-again)"
 check "the parent's own row is selected first" "$(grep -qE '▸ +[^✓].*\(on screen\)' "$WORK/tui-panel-again.txt" && echo true || echo false)"
@@ -312,17 +308,33 @@ check "the panel sits beside the session, not over it" \
   "$(awk '/courier tree/ { if (index($0, "courier tree") > 40) found = 1 } END { print found ? "true" : "false" }' "$WORK/tui-widened.txt")"
 open_tui tui "$parent"
 check "the TUI is back on the parent" "$(shows "courier 2 idle" 60 tui-parent-again)"
-echo "/courier stop stops a child after a confirm, through courier_stop's path"
+echo "/courier stop is no verb: it shows the usage and stops nothing"
+submit "/courier stop $asking"
+check "/courier stop shows the usage in a toast, and no confirm" \
+  "$([ "$(shows "/courier tree opens the session tree" 30 tui-stop-usage)" = true ] && ! grep -qF "Stop \"CHILD-ASKS\"" "$WORK/tui-stop-usage.txt" && echo true || echo false)"
+check "and the child is not noted stopped" "$([ -z "$(kv get "report/$asking/stopped")" ] && echo true || echo false)"
+echo "s in the tree panel stops a child after a confirm, through courier_stop's path"
 refused=$(rpc stop "{\"sessionID\":\"$asking\",\"by\":\"$asking\"}")
 echo "  $refused"
 check "the RPC refuses a stop from a session not above the target" "$(jq -r '.type == "refused"' <<<"$refused")"
-submit "/courier stop $asking"
+check "the usage toast is gone" "$(hides "/courier tree opens the session tree" 30 tui-stop-usage-gone)"
+submit "/courier tree"
+check "the panel opens" "$(shows "courier tree  [" 30 tui-stop-panel)"
+for _ in 1 2 3; do
+  tmux send-keys -t "$TMUX_SESSION" Down
+  sleep 0.5
+  tmux capture-pane -pt "$TMUX_SESSION" 2>/dev/null | grep -qE '▸ (├|└) .+CHILD-ASKS' && break
+done
+check "down selects the child" "$(tmux capture-pane -pt "$TMUX_SESSION" >"$WORK/tui-stop-selected.txt" 2>/dev/null; grep -qE '▸ (├|└) .+CHILD-ASKS' "$WORK/tui-stop-selected.txt" && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" s
 check "a confirm names the child" "$(shows "Stop \"CHILD-ASKS\"" 30 tui-stop-confirm)"
 tmux send-keys -t "$TMUX_SESSION" Enter
 check "once confirmed, a toast says what was stopped" "$(shows "Stopped 1 session: 0 interrupted" 30 tui-stopped)"
 check "and the child is noted stopped, as courier_stop notes it" "$([ -n "$(kv get "report/$asking/stopped")" ] && echo true || echo false)"
 stopped_row=$(rpc tree "{\"sessionID\":\"$parent\"}" | jq -r --arg id "$asking" '.output.rows[] | select(.sessionID == $id) | .stopped')
 check "and the panel's tree reads the child as stopped" "$([ "$stopped_row" = true ] && echo true || echo false)"
+tmux send-keys -t "$TMUX_SESSION" q
+check "q closes the panel" "$(hides "courier tree" 10 tui-stop-closed)"
 open_tui tui-home
 check "the entry is not on the home screen of a TUI with no session" \
   "$([ "$(shows "ctrl+p" 60 tui-home)" = true ] && ! grep -qF "courier " "$WORK/tui-home.txt" && echo true || echo false)"
@@ -502,114 +514,12 @@ check "and its worktree is removed" "$(for _ in $(seq 1 20); do [ ! -d "$forget_
 tmux send-keys -t "$TMUX_SESSION" q
 check "q closes the panel" "$(hides "courier tree" 10 tui-forget-closed)"
 
-echo "/courier memory lists the project's tree records; x forgets a lesson, then every record"
-project=$(api "session/$parent" | jq -r '.data.projectID // .projectID')
-record=$(for _ in $(seq 1 30); do found=$(kv get "memory/$project/$parent"); if [ -n "$found" ] && [ "$(jq -r '.finished and (.parts | length) == 2' <<<"$found")" = true ]; then echo "$found"; break; fi; sleep 1; done)
-check "the COURIER-TUI tree has a finished record with its two parts" "$([ -n "$record" ] && echo true || echo false)"
-seeded_record=$(jq -c '.lesson = {text: "Give the docs to one session", at: (now * 1000 | floor)}' <<<"$record")
-kv set "memory/$project/$parent" "$seeded_record" "memory/$project/$parent"
-record_day=$(date -d "@$(($(jq -r '.movedAt' <<<"$seeded_record") / 1000))" "+%a %b %d %Y")
-lesson_day=$(date -d "@$(($(jq -r '.lesson.at' <<<"$seeded_record") / 1000))" +%F)
-listed=$(memory_rpc records '{}')
-echo "  $(jq -c '.output | {memory, records: [.records[] | {sessionID, parts: (.parts | length), lesson: .lesson.text}]}' <<<"$listed")"
-check "the RPC lists the project's records newest first, memory on, the seeded lesson among them" \
-  "$(jq -r --arg parent "$parent" '.output.memory == true and (.output.records | length) >= 2 and (.output.records | map(.movedAt) | . == (sort | reverse)) and
-    any(.output.records[]; .sessionID == $parent and .lesson.text == "Give the docs to one session" and (.parts | length) == 2)' <<<"$listed")"
-check "forgetting a record that is not there finds nothing" "$(memory_rpc forget '{"sessionID":"ses_nowhere"}' | jq -r '.output.outcome == "none"')"
-total=$(jq -r '.output.records | length' <<<"$listed")
-index=$(jq -r --arg parent "$parent" '.output.records | map(.sessionID) | index($parent)' <<<"$listed")
+echo "/courier memory is no verb: it shows the usage and opens no view"
 open_tui tui-memory "$parent"
 check "the TUI is on the parent" "$(shows "courier 2 idle" 60 tui-memory-footer)"
 submit "/courier memory"
-check "/courier memory opens the view with every record of the project" "$(shows "Memory ($total)" 30 tui-memory-list)"
-check "the tree's row is under the heading of the day it moved on, with its parts counted and the lesson, dated on the local day, as its footer" \
-  "$(awk -v lesson="lesson ($lesson_day): \"Give the docs to one session\"" -v heading="$record_day" '/(^|[^A-Za-z])Today([^A-Za-z]|$)/ || index($0, heading) { today = NR } index($0, lesson) { if (today && today < NR) under = 1; if ($0 ~ /(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z][a-z] [0-9]+ [0-9][0-9][0-9][0-9]/) dated = 1 } END { exit !(under && !dated) }' "$WORK/tui-memory-list.txt" && grep -qF "2 parts: 2 done" "$WORK/tui-memory-list.txt" && echo true || echo false)"
-check "the footer offers x to forget and p to pin" "$(grep -qF "forget x" "$WORK/tui-memory-list.txt" && grep -qF "pin p" "$WORK/tui-memory-list.txt" && echo true || echo false)"
-for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done
-tmux send-keys -t "$TMUX_SESSION" Enter
-check "enter shows the record in full: its top session and its parts" \
-  "$([ "$(shows "Top session $parent" 30 tui-memory-record)" = true ] && grep -qF "CHILD-ASKS" "$WORK/tui-memory-record.txt" && grep -qF "Report back to your parent." "$WORK/tui-memory-record.txt" && echo true || echo false)"
-check "the record in full says it was never shown to another tree, and is not pinned" \
-  "$(grep -qF "Never shown" "$WORK/tui-memory-record.txt" && grep -qF "Not pinned" "$WORK/tui-memory-record.txt" && echo true || echo false)"
-for _ in $(seq 1 9); do tmux send-keys -t "$TMUX_SESSION" Down; done
-check "on the lesson's heading, its text is in view" "$(shows "Give the docs to one session" 10 tui-memory-lesson)"
-tmux send-keys -t "$TMUX_SESSION" x
-check "x on the lesson asks to forget the lesson alone" "$(shows "Forget lesson" 30 tui-memory-lesson-confirm)"
-tmux send-keys -t "$TMUX_SESSION" Enter
-check "once confirmed, a toast says the lesson went" "$(shows "Forgot the lesson of" 30 tui-memory-lesson-forgotten)"
-check "and the record is shown again without it" "$(shows "No lesson" 30 tui-memory-no-lesson)"
-check "the record kept its parts and lost its lesson" "$(kv get "memory/$project/$parent" | jq -r '(has("lesson") | not) and (.parts | length) == 2')"
-tmux send-keys -t "$TMUX_SESSION" Escape
-check "esc goes back from the record to the list" "$([ "$(hides "Top session $parent" 10 tui-memory-back)" = true ] && [ "$(shows "Memory ($total)" 10 tui-memory-back)" = true ] && echo true || echo false)"
-tmux send-keys -t "$TMUX_SESSION" qqq
-check "q typed in the search filters the rows, and the list stays open" \
-  "$([ "$(hides "2 parts: 2 done" 10 tui-memory-search)" = true ] && grep -qF "qqq" "$WORK/tui-memory-search.txt" && grep -qF "Memory ($total)" "$WORK/tui-memory-search.txt" && echo true || echo false)"
-tmux send-keys -t "$TMUX_SESSION" BSpace BSpace BSpace
-check "cleared, the search shows every row again" "$(shows "2 parts: 2 done" 10 tui-memory-unfiltered)"
-tmux send-keys -t "$TMUX_SESSION" Escape
-check "esc closes the list" "$(hides "Memory ($total)" 10 tui-memory-closed)"
-submit "/courier memory"
-check "the view opens again, for the pin" "$(shows "Memory ($total)" 30 tui-memory-pin-open)"
-for _ in $(seq 1 "$index"); do tmux send-keys -t "$TMUX_SESSION" Down; done
-tmux send-keys -t "$TMUX_SESSION" p
-pinned_above_days() { awk '/(^|[^A-Za-z])Pinned([^A-Za-z"]|$)/ && !/Pinned "/ { pinned = NR } pinned && NR > pinned && (/(^|[^A-Za-z])Today([^A-Za-z]|$)/ || /(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z][a-z] [0-9]+ [0-9][0-9][0-9][0-9]/) { below = 1 } END { exit !(pinned && below) }' "$1"; }
-check "p pins the tree's record: a toast says so, and the list has it under Pinned, above the day headings" \
-  "$(shows_with "Pinned \"" 15 tui-memory-pinned pinned_above_days)"
-check "the pin lies beside the record, which is not written" \
-  "$([ "$(kv get "memory/$project/$parent/pin" | jq -r '(.at | type) == "number"')" = true ] && [ "$(kv get "memory/$project/$parent" | jq -r 'has("pinned") | not')" = true ] && echo true || echo false)"
-check "the RPC lists it first, pinned" "$(memory_rpc records '{}' | jq -r --arg parent "$parent" '.output.records[0].sessionID == $parent and (.output.records[0].pinned.at | type) == "number"')"
-tmux send-keys -t "$TMUX_SESSION" p
-check "p again, the cursor still on it, unpins it" "$([ "$(shows "Unpinned \"" 15 tui-memory-unpinned)" = true ] && [ -z "$(kv get "memory/$project/$parent/pin")" ] && echo true || echo false)"
-tmux send-keys -t "$TMUX_SESSION" Escape
-check "esc closes the list once more" "$(hides "Memory (" 10 tui-memory-pin-closed)"
-seeded=$(date +%s%3N)
-for n in 1 2 3; do
-  kv set "memory/$project/ses_cursor$n" "$(jq -c --arg id "ses_cursor$n" --arg title "Cursor seed $n" --argjson at "$((seeded + (4 - n) * 1000))" \
-    '.sessionID = $id | .title = $title | .movedAt = $at | .startedAt = ($at - 60000) | del(.lesson)' <<<"$record")" "memory/$project/$parent"
-done
-total=$((total + 3))
-submit "/courier memory"
-check "the view opens again" "$(shows "Memory ($total)" 30 tui-memory-again)"
-tmux send-keys -t "$TMUX_SESSION" Down x
-check "x on the second row asks to forget it" "$(shows "of \"Cursor seed 2\"" 15 tui-memory-cursor-confirm)"
-tmux send-keys -t "$TMUX_SESSION" Enter
-left=$((total - 1))
-check "once forgotten, the list is shown without it" "$(shows "Memory ($left)" 15 tui-memory-cursor-forgotten)"
-tmux send-keys -t "$TMUX_SESSION" x
-check "the cursor is on what was the third row: x names it" "$(shows "of \"Cursor seed 3\"" 15 tui-memory-cursor)"
-tmux send-keys -t "$TMUX_SESSION" Escape
-check "kept, the list is back with every record" "$([ "$(hides "Forget record" 15 tui-memory-cursor-kept)" = true ] && [ "$(shows "Memory ($left)" 15 tui-memory-cursor-kept)" = true ] && echo true || echo false)"
-while [ "$left" -gt 0 ]; do
-  tmux send-keys -t "$TMUX_SESSION" x
-  [ "$(shows "Forget record" 15 tui-memory-confirm)" = true ] || break
-  tmux send-keys -t "$TMUX_SESSION" Enter
-  left=$((left - 1))
-  if [ "$left" -gt 0 ]; then [ "$(shows "Memory ($left)" 15 tui-memory-fewer)" = true ] || break; fi
-done
-check "x and a confirm on each row forgets the records one by one, the list counting down" "$([ "$left" = 0 ] && echo true || echo false)"
-check "the last one gone, a toast says the project has no record, and the list is closed" \
-  "$([ "$(shows "No record of a session tree" 15 tui-memory-empty)" = true ] && ! grep -qF "Memory (" "$WORK/tui-memory-empty.txt" && echo true || echo false)"
-check "and the RPC lists none" "$(memory_rpc records '{}' | jq -r '.output.records == []')"
-
-echo "with the memory option off, the view says so"
-tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
-stop_server
-jq '.plugins[0].options.memory = false' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
-mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
-git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory off"
-start_server
-rpc_ready memory_rpc records '{}'
-check "the RPC says memory is off and lists nothing" "$(memory_rpc records '{}' | jq -r '.output.memory == false and .output.records == []')"
-open_tui tui-memory-off "$parent"
-check "the TUI is back on the parent" "$(shows "courier 2 idle" 60 tui-memory-off-footer)"
-submit "/courier memory"
-check "/courier memory says memory is off" "$([ "$(shows "Memory is off" 30 tui-memory-off)" = true ] && ! grep -qF "Memory (" "$WORK/tui-memory-off.txt" && echo true || echo false)"
-tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
-stop_server
-jq 'del(.plugins[0].options.memory)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
-mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
-git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory on"
-start_server
+check "/courier memory shows the usage in a toast, and no memory view" \
+  "$([ "$(shows "/courier tree opens the session tree" 30 tui-memory-usage)" = true ] && ! grep -qF "Memory (" "$WORK/tui-memory-usage.txt" && echo true || echo false)"
 
 echo "the tree panel shows a subagent OpenCode's subagent tool started, under the session that started it, marked subagent (#438)"
 out=$(prompt "COURIER-SUBAGENT-START")
@@ -657,7 +567,7 @@ open_tui tui-installed "$parent"
 check "the TUI loads the installed package's tui entrypoint and shows the entry" "$(shows "courier 2 idle" 60 tui-installed)"
 
 if [ "$failures" != 0 ]; then
-  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-list tui-memory-record tui-memory-lesson-confirm tui-memory-lesson-forgotten tui-memory-no-lesson tui-memory-back tui-memory-search tui-memory-unfiltered tui-memory-again tui-memory-cursor-confirm tui-memory-cursor-forgotten tui-memory-cursor tui-memory-cursor-kept tui-memory-confirm tui-memory-fewer tui-memory-empty tui-memory-off tui-subagent-footer tui-subagent-panel tui-installed; do
+  for screen in tui-waiting tui-panel tui-panel-reported tui-panel-closed tui-released tui-panel-again tui-panel-followed tui-panel-home tui-panel-back tui-panel-followed-closed tui-parent-again tui-narrow-footer tui-narrow-panel tui-widened tui-stop-confirm tui-stopped tui-home tui-inbox-footer tui-inbox-list tui-inbox-answers tui-past tui-past-inbox tui-past-panel tui-form tui-form-panel tui-form-dismissed tui-forget-open tui-forget tui-forget-panel tui-forget-confirm tui-forgotten tui-forget-empty tui-top tui-top-inbox tui-top-answers tui-top-closed tui-memory-usage tui-subagent-footer tui-subagent-panel tui-installed; do
     echo "--- $screen"
     sed -n 1,40p "$WORK/$screen.txt" 2>/dev/null || true
   done

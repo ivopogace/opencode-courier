@@ -3,7 +3,6 @@ import { startedAs } from "./domain.js"
 import type { CourierPorts, KnownModel, ModelWindow, Pending, ShownForm } from "./ports.js"
 import { lastStatus, stoppedSincePrompt } from "./report.js"
 import type { Row, Tree, Wait } from "./rpc.js"
-import { standingIn } from "./status.js"
 import { childStore } from "./store.js"
 import { readTop, readTree, type Listed } from "./subtree.js"
 import { stalledAmong } from "./wake.js"
@@ -51,10 +50,9 @@ function stateOf(info: unknown, waits: number, stalled: boolean, running: boolea
 }
 async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { entry, depth, subagent, info, running, endedAt, pending, forms, report }: Listed, stalled: number | undefined): Promise<Row> {
   const { sessionID } = entry
-  const [messages, status, standing, stopped] = await Promise.all([
+  const [messages, status, stopped] = await Promise.all([
     ports.session.context({ sessionID }).catch((): Messages => []),
     lastStatus(childStore(ports.storage), sessionID).catch(() => undefined),
-    entry.group ? standingIn(ports, entry, entry.group) : undefined,
     stoppedSincePrompt(childStore(ports.storage), sessionID).catch(() => false),
   ])
   const tool = lastTool(messages)
@@ -72,7 +70,6 @@ async function row(ports: CourierPorts, windows: ReadonlyArray<ModelWindow>, { e
     ...(resumes !== undefined ? { resumes } : {}),
     ...(stopped ? { stopped } : {}),
     ...reportRow(report, status),
-    ...(entry.group && standing ? { group: { name: entry.group, standing } } : {}),
     ...startedAs(entry),
     ...(subagent ? { subagent } : {}),
     created: info?.time.created ?? entry.createdAt,

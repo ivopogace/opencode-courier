@@ -74,8 +74,7 @@ older host and branches on it. How the plugin itself answers a trap is in
   (after two continuations the turn fails as `output-limit`). The delivered message is stamped with
   the event's `created`. Only `session.inbox.enqueued` carries the item's type (`user`,
   `synthetic`, `compaction`, `move`), so the plugin remembers it until delivery. It also carries a
-  synthetic item's `payload.metadata`, which is how `notePrompt` tells a join group's release (the
-  `group` key) and a session's own check-in (`scheduled` with `from` the receiving session, and
+  synthetic item's `payload.metadata`, which is how `notePrompt` tells a session's own check-in (`scheduled` with `from` the receiving session, and
   `scheduledAt`, the time it was scheduled, to compare with its report) and a status-less message
   (only `source` and `from`, checked against the child store) from other courier messages; the `synthetic` call's returned id may arrive after the `delivered` event, so it is not
   used.
@@ -125,8 +124,7 @@ older host and branches on it. How the plugin itself answers a trap is in
   `updated > idle` holds both for an idle session renamed since and for one between two steps.
 - **`time.idle` is when the last turn ended**, stamped from `execution.succeeded`, `failed` and
   `interrupted`, but not from a shutdown (`projectIdle` in the projector). It is never cleared and
-  always moves forward, and it is in place by the time the plugin sees the turn's end. A join
-  group's release compares it with when its last member joined.
+  always moves forward, and it is in place by the time the plugin sees the turn's end.
 - **`time.busy`** (since 2.2.2) is the start of the latest execution, stamped by the projector on
   `session.execution.started` with `time.updated` left untouched; absent until a session's first
   execution. `busy` not later than `idle` is at rest since `idle`, whatever `updated` says. `busy`
@@ -188,9 +186,6 @@ and would go idle. Its name and shape may still change: a pin bump re-checks bot
   were working", `execution/restart.ts`), and the resumed execution stamps `time.busy` again. The
   plugin tells it from a real shutdown by the transcript ending on the aborted message (`endsIdle`,
   `wakeEnded`). A message steered in during the turn is then delivered at once in a turn of its own.
-  The group seal reads `time.idle`, which a decline does not stamp, so it also takes a transcript
-  ending on the aborted step, completed at or after the last join (`sealed`, `src/tree/group.ts`),
-  and the turn-end hook nudges the release on such a shutdown.
 - `permission.assert({ sessionID, action, resources, save?, metadata?, source?, agent? })`
   (`packages/core/src/permission.ts`) checks the session's rules and, on ask, creates a request in
   that session and waits. It resolves with nothing: the request's id and whether the person chose
@@ -318,7 +313,7 @@ builds, turned on by `experimental.<key>: true`, `experimental.all_flags: true` 
 
 ## Native `parentID`
 
-What a native child (`courier_spawn`'s `native`, else the `nativeChildren` option) rests on:
+What a native child (`courier_spawn` with `native: true`) rests on:
 
 - **`Session.create` takes a `location` or a `parentID`**, never both. With a parent the child takes
   its location, so an isolated child cannot have one.
@@ -361,9 +356,8 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   it from a stopped native child, as from a subagent.
   The plugin tells the model what the message is in the parent's `role` entry: `HOST_REPORTS`
   (`tree/text.ts`), a fixed second line `rolePart` adds for a session above the deepest level,
-  written by `spawn.ts` with the child's entry when `nativeChildren` is on and, when it is off, by
-  a put of the parent's entry at each `native: true` spawn (the same value after the first, so
-  nothing is announced again; the puts for one parent run one at a time, so two spawns of one step
+  written by a put of the parent's entry at each `native: true` spawn (the same value after the
+  first, so nothing is announced again; the puts for one parent run one at a time, so two spawns of one step
   cannot leave the older value). The message itself is not edited in the `context` hook: the
   child's last text in it is the only copy when a child ends without reporting. Where the role
   goes in a system part, `context.ts` adds the same line (`Role.hostReports`).
@@ -469,7 +463,7 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   changed one) or "The context under "<key>" no longer applies. Disregard it." (a removal);
   `message-updater.ts` stores it as a `system` message (`description`
   `Instructions updated: api/<key>`, the keys as stored, every key changed since the last step in
-  one message, sorted: `api/lessons, api/role, api/standing` at a root's first spawn, as
+  one message, sorted: `api/role, api/standing` at a root's first spawn, as
   `e2e/run.sh` checks; in a turn a courier message starts, the message comes before that message),
   which goes to the model at its place in the transcript, after the tool result that put the entry,
   as a **user** message: `<system-update>`, the text with `&`, `<` and `>` escaped,
@@ -499,8 +493,7 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   the courier's `courier.parentID` of a spawned child included; its `parentID` is empty. The courier
   registers the hook after its others (`tree/fork.ts`, a refusal logged): it removes the fork's
   `role` and `standing` entries and admits its own `resume: false` notice after the host's
-  ([forking a session in a tree](../reference.md#roster)). The `lessons` entry stays: it is the
-  project's, not the tree's.
+  ([forking a session in a tree](../reference.md#roster)).
 - **What a fork's first request looks like** (`projectFork` in `session/projector.ts`,
   `instruction-state.ts`, `history.ts`). The fork's baseline is seeded from the original's *current*
   entry values (`InstructionState.current`), not from the original's baseline, and the copied
@@ -514,7 +507,7 @@ entries the courier writes: [architecture.md](architecture.md#instruction-entrie
   The stale block stays in the fork's baseline until a compaction, so `context.ts` finds a role line
   there and pushes no part, and the request's system prompt and copied messages stay the original's.
   What does differ is the tool list of a fork of a leaf: with no roster entry it is a top session,
-  and `courier_spawn`, `courier_recall` and `courier_note` are not hidden from it.
+  and `courier_spawn` is not hidden from it.
 - **Reading it.** `put`, `list` and `remove` need the session to exist (`Session.NotFoundError`) but
   boot no location. The request hooks' `messages` carry each stored message's `metadata`, for
   reading only (`SessionRequestMessage`); the `context` hook does not use it. The `context` hook reads nothing of the value: the text itself only shows in
@@ -671,9 +664,7 @@ is not. What the plugin does about it: [architecture.md](architecture.md#two-ser
   means a new `select` with an empty search. `current` matches by deep equality
   (`ui/dialog-select.tsx`).
 - **A select's rows** are one line: title (cut at 61), description, and a right-aligned footer that
-  squeezes them. `large` is 88 columns, `xlarge` 116. Rows also take an undeclared `details: string[]`
-  of muted lines, which the memory view uses for lessons; a later host may drop it. A `disabled`
-  option is left out.
+  squeezes them. `large` is 88 columns, `xlarge` 116. A `disabled` option is left out.
 - **The panel belongs to one session.** `ui.panel.open` targets the route's session, and the app
   closes it when the route leaves that session (`app.tsx`). A new panel takes the keyboard. So the
   tree panel reopens itself after a route change, and hands the keyboard back with

@@ -17,7 +17,7 @@ export async function shapeContext(ports: ContextPorts, event: Shaped) {
   try {
     const { depth, entry, subagent, hostReports } = await roleOf(ports, event.sessionID)
     const leaf = subagent || (depth !== null && depth >= ports.limits.maxDepth)
-    if (leaf) for (const tool of ["courier_spawn", ...(ports.hiddenFromLeaf ?? [])]) delete event.tools[tool]
+    if (leaf) delete event.tools.courier_spawn
     if (subagent || (depth === null && !event.tools.courier_spawn)) return
     if (entry || event.system.some((part) => ROLE_LINE.test(part.text))) return
     event.system.push({ type: "text", text: rolePart(depth, ports.limits, hostReports === true) })
@@ -43,7 +43,7 @@ async function roleOf(ports: ContextPorts, sessionID: string, below: ReadonlySet
     }
   }
   const entry = depth !== null && (await hasEntry(ports, sessionID))
-  const hostReports = depth !== null && !entry && (ports.nativeChildren === true || started.some((child) => child.native))
+  const hostReports = depth !== null && !entry && started.some((child) => child.native)
   const role: Role = { depth, entry, ...(hostReports ? { hostReports: true } : {}) }
   setBounded(ports.roles, sessionID, role, ROLES_MAX)
   return role

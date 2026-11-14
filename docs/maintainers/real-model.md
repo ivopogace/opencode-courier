@@ -6,10 +6,7 @@ polling, each child reports with a status, and each report wakes the parent. It 
 Re-run it after any change to a model-facing string: `src/**/text.ts`, `src/kernel/protocol.ts`,
 `src/skill.ts` or a tool description.
 
-The tables below are one batch, measured at af27ef7 on OpenCode 2.2.6 with a self-hosted model behind
-an OpenAI-compatible endpoint and `COURIER_TIMEOUT=600`, except [Words against a task](#words-against-a-task),
-measured at e4addb9 the same way. A new batch replaces them. A scenario with no table has no result in
-this batch.
+Its results stay with the person who ran it: they go in no pull request, issue or document.
 
 ## Running it
 
@@ -42,8 +39,6 @@ free messages"): run it from your own machine, or with a paid provider's key.
 | `COURIER_SKILL` | | `deny` denies `courier-orchestrate` in `permissions`, so no session can load it. |
 | `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
-| `COURIER_NATIVE` | | `1` turns `nativeChildren` on, so every child is native unless the spawn says `native: false`. |
-| `COURIER_SEED` | | A JSON file of storage keys to set before the prompt ([seeding a record](#seeding-a-record)). |
 | `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, then for the children. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |
 
@@ -88,7 +83,7 @@ Eight checks: two children spawned; the first turn ended after spawning; no poll
 report); both children reported to the parent; both reports reached it, waking it or steered into
 its running turn, and got a reply; each carries a status and its answer; the reply holds both. The
 README's Quickstart prompt is a shorter wording with sleeps, which keep the children busy past the
-parent's first turn so that each report visibly wakes it: set `COURIER_PROMPT` to it. To check a join group, add *both in one join group named "pair"*.
+parent's first turn so that each report visibly wakes it: set `COURIER_PROMPT` to it.
 
 ## The permission relay
 
@@ -112,17 +107,13 @@ a native child the script answers the child's request directly, as OpenCode's vi
 would, and makes six checks: the parent was told with the `shown="native"` notice; it neither
 answered nor asked again; the request was settled (the parent was told so, or passed `once` on with
 `courier_answer` after the person told it to); the child reported; the reply holds it. A child is
-native with `COURIER_NATIVE=1`, or when the parent spawns it with `native: true` on its own, which
-the checker reads from the spawn or the notice.
+native when the parent spawns it with `native: true` on its own, which the checker reads from the
+spawn or the notice.
 
 `--saved` re-reads a run. What only the live run saw, OpenCode's prompt or form in the parent's
 session, is kept in `summary.json` under `observed`. A `summary.json` without it has it read from the
 transcript, a `courier_answer` proposing `once` in the parent's turn after the notice standing for
 the held prompt.
-
-| Condition | Result |
-|---|---|
-| skill listed | 3 of 3 passed, 7/7 each. |
 
 ## The question relay
 
@@ -137,11 +128,7 @@ the held prompt.
 The child is not told how to ask: the brief's line on the question tool is under test. The script
 answers with `COURIER_ANSWER` when the parent asks. Six checks: the child asked and the parent asked
 the person; it did not answer by itself; it used the child's options; it passed the answer on; the
-child reported it; the reply holds it. With `COURIER_NATIVE=1` the script answers the child's form.
-
-| Condition | Result |
-|---|---|
-| skill listed | 3 of 3 passed, 6/6 each. |
+child reported it; the reply holds it.
 
 ## Recursive orchestration
 
@@ -168,13 +155,7 @@ and when, who used a group, a check-in or had a spawn refused.
 
 `e2e/real-model-prompt-open.txt` leaves the split to the root. With it, the "two or more children"
 checks fail by design when the root keeps a part, so read the split from the transcripts. The
-scripted prompt fixes the split, so it cannot show what `courier_recall` is worth; the open prompt
-with a seeded record can.
-
-| Condition | Result |
-|---|---|
-| skill listed | 3 of 3 passed, 9/9 each, mean 31 requests (31 to 32). |
-| `COURIER_SKILL=deny` | 3 of 3 passed, 9/9 each, mean 27 requests (26 to 28). |
+scripted prompt fixes the split; the open prompt shows how the root makes one.
 
 ## A part that goes wrong
 
@@ -201,11 +182,6 @@ report or a message without a status, counted from when the leaf sent it, so a p
 report held in a group from its standing and answers before the group delivers it passes. "Session …
 reported 2 times" is expected for it.
 
-| Condition | Result |
-|---|---|
-| `recursive-fault`, skill listed | 3 of 3 passed, 13/13 each, mean 33 requests (32 to 34). |
-| `recursive-fault`, `COURIER_SKILL=deny` | 3 of 3 passed, 13/13 each, mean 31 requests (30 to 32). |
-
 ## A part with a core
 
 `COURIER_SCENARIO=recursive-staged`: the "numbers" part has a seed both halves need, so a correct
@@ -226,7 +202,7 @@ or a shell redirect; `cd numbers && echo … > seed.txt` is not seen). The check
 before the seed was written (or its session reported); the session that staged started two or more
 halves together; it reported upward once, `done`.
 
-Run it with the skill and without, several runs each, and table them. The skill says nothing about staging, so the pair shows whether staging depends on it:
+Run it with the skill and without, several runs each, and read them with the table script. The skill says nothing about staging, so the pair shows whether staging depends on it:
 
 ```bash
 run() {  # run <name> [VAR=value ...]
@@ -292,10 +268,6 @@ bun script/real-model-table.ts $(for n in 1 2 3; do echo skill=$HOME/courier-run
 A slow model needs `COURIER_TIMEOUT=600`: with steps of 20 s or more the default wait gives up while
 a sub-orchestrator's wake turn still runs.
 
-| Condition | Result |
-|---|---|
-| skill listed | 3 of 3 passed, 13/13 each, mean 34 requests (31 to 39). |
-
 ## Words against a task
 
 `COURIER_SCENARIO=recursive-conflict`: a smoke check of the `route="prompt"` envelope's wording against
@@ -333,7 +305,7 @@ Every message to the half after the envelope is quoted in the notes. Those match
 `possible countermand`. The mark is no check: a message that repeats the person's words matches the
 first pattern too.
 
-**The person's step.** A person reads the quoted messages of each run and records here how many are
+**The person's step.** A person reads the quoted messages of each run and records how many are
 countermands, messages telling the half to drop the text and do its task as given. That count, not
 the marks, is what the check is read by.
 
@@ -347,10 +319,6 @@ for n in 1 2 3 4 5; do
   env COURIER_SCENARIO=recursive-conflict E2E_WORK="$HOME/courier-runs/conflict-$n" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/conflict-$n.log"
 done
 ```
-
-| Condition | Result |
-|---|---|
-| skill listed | 3 of 5 passed, 13/13 three times, 12/13 and 5/13 once each, mean 30 requests (25 to 33). No countermand and no replaced file in the four runs that reached the conflict, so the text stays as it is. The 12/13 is the check that every session reported with a status. In the 5/13 the root started the halves itself, so the words never reached a half at depth 2. |
 
 ## A finding a session makes
 
@@ -376,8 +344,7 @@ or otherwise: a part that stays inside the project gets it through courier or no
 > one line: RESULTS \<a\> \<b\>
 
 Nothing in the prompt says to tell anyone. The brief tells the "init" session to send its parent
-what the other parts need, without a status, and to put what they need from its report in the
-report's `finding`, which reaches the parent ahead of a held report; the skill tells the root to pass it on to the parts it changes. The checker
+what the other parts need, without a status; the skill tells the root to pass it on to the parts it changes. The checker
 (`e2e/real-model-discovery.mjs`) creates `.go-parts` once the root has sent each of the other parts
 a message without a status that holds the key, or started them after it with the key in the task.
 It creates the file as well once the key can no longer come in time, so a failing run waits out no
@@ -409,9 +376,7 @@ the server's log and OpenCode's own files, with the "init" session's shell outpu
 name a part that ran `init`, touched the key's file or searched those files for the key, whose file
 then does not show the relay.
 
-A root that starts the three in one join group gets the "init" session's report only with the other
-two, after their `get` has failed: the key arrives in time only when that session sends it without a
-status first or puts it in its report's `finding`. A root that runs "init" first and starts the others after its report fails the first
+A root that runs "init" first and starts the others after its report fails the first
 check alone, and the notes call it staged.
 
 ```bash
@@ -449,23 +414,17 @@ project's tests itself in the root's checkout (`COURIER_TEST_COMMAND`; the runne
 `tests.txt`, and the totals are read from node's TAP or spec reporter) and makes ten checks: a session for the change in the first turn, which ended with no
 report in it; a review session in a later turn; the review session and anything it started changed
 nothing (no `write`, `edit` or `patch`, no shell command that commits, stages, installs, edits in
-place or redirects into a file); its report reached the root before the final reply; no polling;
+place, redirects into a file, or removes, moves, copies or creates one; the script given to
+`sh -c` or `bash -c`, or fed to a shell as a heredoc, is read too; a file under `/tmp/` does not
+count, a `>` inside a quoted string is not a redirect, and the name of a file command counts only
+where a command stands); its report reached the root before the final reply; no polling;
 every session reported with a status; the root ran the tests itself after the review's report; the
 files exist and the first holds the symbol (`COURIER_EXPECT`); the tests pass, `COURIER_TESTS` or
 more; the reply holds `REVIEWED` and that number. Its notes say, per session the root started, which
 stage it was, its agent, isolation and group; what the change made and committed; what the review
 read and ran and what it reported; what the root did after the review, itself or through sessions.
 
-## Seeding a record
-
-`COURIER_SEED` names a JSON file of storage keys, `{ "<key>": <value> }`, set with `e2e/kv.ts`
-before the parent's prompt. `<project>` in a key or value stands for the project's id. The log shows
-`seeded memory/<id>/…` before `parent prompt:`. Three seeds are checked in:
-`e2e/real-model-seed.json`, an earlier tree's record; `e2e/real-model-seed-lesson.json`, the
-same with the lesson "the count part is small; do it yourself"; and
-`e2e/real-model-seed-lesson-halves.json`, the same with "halves of a list are too small to spawn;
-do them yourself", a lesson only the "numbers" session of the recursive scenario can act on, which
-reaches it through the `lessons` entry alone, as a spawned session calls no `courier_recall`.
+## Comparing conditions
 
 A run is **finished** when it exits 0 or 1 and has a `summary.json`. Repeat a run that exits 2, or
 whose first turn did not end, under a new name. To compare conditions, keep one model and run each
@@ -477,8 +436,8 @@ run() {  # run <name> [VAR=value ...]: work directory and log under ~/courier-ru
   env COURIER_SCENARIO=recursive E2E_WORK="$HOME/courier-runs/$name" "$@" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/$name.log"
   echo "exit ${PIPESTATUS[0]}" | tee -a "$HOME/courier-runs/$name.log"
 }
-run mem-seeded-1 COURIER_SEED=$PWD/e2e/real-model-seed.json
-run open-lesson-1 COURIER_PROMPT="$(cat e2e/real-model-prompt-open.txt)" COURIER_SEED=$PWD/e2e/real-model-seed-lesson.json
+run base-1
+run open-1 COURIER_PROMPT="$(cat e2e/real-model-prompt-open.txt)"
 ```
 
 ### Reading many runs
@@ -486,7 +445,7 @@ run open-lesson-1 COURIER_PROMPT="$(cat e2e/real-model-prompt-open.txt)" COURIER
 `script/real-model-table.ts` prints one Markdown table per condition, a row per run directory:
 
 ```bash
-bun script/real-model-table.ts baseline=$HOME/courier-runs/base-1 seeded=$HOME/courier-runs/mem-seeded-1
+bun script/real-model-table.ts baseline=$HOME/courier-runs/base-1 open=$HOME/courier-runs/open-1
 bun script/real-model-table.ts $HOME/courier-runs/*   # no label: each directory is its own condition
 ```
 
@@ -508,5 +467,4 @@ after.
 This is a smoke test, not a benchmark: a few runs on one model. A
 model that passes here can still poll or forget to report on a harder task, so a `courier_later`
 check-in still pays. Which session loads the skill varies from run to run; on one-result tasks,
-models do not load it. No table reaches the five-run floor on two models. No results for: the fan-out, `permission` with
-`COURIER_PERSON=other-server`, `recursive-staged`, `discovery` and `review`.
+models do not load it.

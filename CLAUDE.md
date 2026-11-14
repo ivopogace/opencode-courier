@@ -17,11 +17,11 @@ the hub), `development.md` (commands, suites, CI), `real-model.md` and `releasin
 - `src/platform/`: the process-wide hub, the scheduler loop, OpenCode's event stream, storage helpers.
   Imports nothing outside itself.
 - The modules, each imported from outside only through its `index.ts`: `tree/` (the session tree:
-  spawn, send, reports, groups, missed wakes, the `context` hook, the tree panel), `person/`
-  (permission requests, forms, the question relay), `scheduling/` (`courier_later`) and `memory/`.
-  `person/` and `memory/` may import `tree/`; nothing else crosses. Each has `ports.ts`, a pure
+  spawn, send, reports, missed wakes, the `context` hook, the tree panel), `person/`
+  (permission requests, forms, the question relay) and `scheduling/` (`courier_later`).
+  `person/` may import `tree/`; nothing else crosses. Each has `ports.ts`, a pure
   `domain.ts`, `text.ts` (its model-facing strings, pure), `tools.ts`, and one file per use case.
-  `tree/store.ts` and `memory/store.ts` are the only files that know their storage keys.
+  `tree/store.ts` is the only file that knows its storage keys.
 - `test/`: unit tests against a fake plugin context. `imports.test.ts` enforces the import rules;
   `notices.test.ts` snapshots every `text.ts`, the skill and the tools' descriptions and schemas
   (`bun test --update-snapshots`); `links.test.ts` resolves every Markdown link.
@@ -63,11 +63,10 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
 - Docs state how things are now: no history, no "used to", "since #N" or "no longer"; that lives in
   git, PR bodies and release notes.
 - After changing a model-facing string (`src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or
-  a tool description), re-run `e2e/real-model.sh` and put its result in the PR body; the tables in
-  `real-model.md` are one batch, replaced only by a full new batch.
+  a tool description), re-run `e2e/real-model.sh`; its result is not put in a pull request, an issue or a document.
 - Keep the provider's prompt cache: a spawned session's role part goes to its `role` instruction
   entry before its first prompt, and is put again only when the session starts its first native
-  child while `nativeChildren` is off, which arrives as one instruction update and leaves the cached
+  child, which arrives as one instruction update and leaves the cached
   prefix alone; where `context.ts` adds it as a system part instead, it is the same on every
   request. So `courier_spawn` does not gate on the skill being loaded. The skill
   states the root's split rule and the split-line forms on purpose: the root has no brief, its role

@@ -179,7 +179,7 @@ test("on the pinned OpenCode, loading logs nothing about the version", async () 
   const logged = spyOn(console, "error").mockImplementation(() => {})
   try {
     const { tools } = await setUp()
-    await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
+    await tools.get("courier_tree").execute({}, { sessionID: "ses_parent" })
 
     expect(logged.mock.calls.map(([line]) => line).filter((line) => String(line).includes("built and tested against"))).toEqual([])
   } finally {
@@ -191,8 +191,7 @@ test("on another OpenCode, loading logs one line naming both versions, and tool 
   const logged = spyOn(console, "error").mockImplementation(() => {})
   try {
     const { tools } = await setUp({}, undefined, [], { name: "opencode", version: "2.0.33", channel: "beta" })
-    await tools.get("courier_tree").execute({}, { sessionID: "ses_parent" })
-    const result = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
+    const result = await tools.get("courier_tree").execute({}, { sessionID: "ses_parent" })
 
     const { plugin, opencode } = builtVersions()
     expect(logged.mock.calls.map(([line]) => line).filter((line) => !String(line).startsWith("courier watch: following "))).toEqual([
@@ -212,26 +211,21 @@ test("registers the courier tools", async () => {
   expect([...tools.keys()]).toEqual([
     "courier_spawn",
     "courier_send",
-    "courier_children",
     "courier_tree",
     "courier_stop",
     "courier_cleanup",
     "courier_answer",
     "courier_later",
     "courier_cancel",
-    "courier_recall",
-    "courier_note",
   ])
 })
 
-test("registers the courier RPCs for the TUI part, the tree's, the person's and the memory's, read from this location's storage", async () => {
+test("registers the courier RPCs for the TUI part, the tree's and the person's, read from this location's storage", async () => {
   const { rpcs } = await setUp()
 
-  expect([...rpcs.keys()]).toEqual(["courier", "courier-person", "courier-memory"])
+  expect([...rpcs.keys()]).toEqual(["courier", "courier-person"])
   expect(await rpcs.get("courier")!.handlers.summary({ sessionID: "ses_none" })).toEqual({ running: 0, waiting: 0, idle: 0, groups: [] })
   expect(await rpcs.get("courier-person")!.handlers.asks({ sessionID: "ses_none" })).toEqual({ top: "ses_none", sessions: [], permissions: [], questions: [] })
-  expect(await rpcs.get("courier-memory")!.handlers.records({})).toEqual({ memory: true, projectID: expect.any(String), records: [] })
-  expect(await rpcs.get("courier-memory")!.handlers.forget({ sessionID: "ses_none" })).toEqual({ outcome: "none" })
 })
 
 test("loads all the same when the host cannot register the RPC, and logs it", async () => {
@@ -240,7 +234,7 @@ test("loads all the same when the host cannot register the RPC, and logs it", as
   try {
     const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { rpc: undefined })
 
-    expect(tools.size).toBe(11)
+    expect(tools.size).toBe(8)
     expect(hooks.has("context")).toBe(true)
     expect(logged.filter((line) => line.startsWith("courier rpc: not registered"))).toHaveLength(1)
   } finally {
@@ -296,7 +290,7 @@ test("loads all the same on a host that refuses the fork hook, and logs it", asy
   try {
     const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { refusesHook: "fork" })
 
-    expect(tools.size).toBe(11)
+    expect(tools.size).toBe(8)
     expect(hooks.has("experimental.idle")).toBe(true)
     expect(hooks.has("fork")).toBe(false)
     expect(logged.filter((line) => line.startsWith("courier fork: not registered"))).toHaveLength(1)
@@ -311,7 +305,7 @@ test("loads all the same on a host without the experimental.idle hook, and logs 
   try {
     const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { refusesHook: "experimental.idle" })
 
-    expect(tools.size).toBe(11)
+    expect(tools.size).toBe(8)
     expect(hooks.has("context")).toBe(true)
     expect(hooks.has("experimental.idle")).toBe(false)
     expect(logged.filter((line) => line.startsWith("courier idle: not registered"))).toHaveLength(1)
@@ -336,10 +330,10 @@ test("registers them as direct tools, not code-mode ones only reachable through 
   for (const tool of tools.values()) expect(tool.options).toEqual({ codemode: false })
 })
 
-test("its context hook, with the limits from the options, hides courier_spawn, courier_recall and courier_note from a child at maxDepth", async () => {
+test("its context hook, with the limits from the options, hides courier_spawn from a child at maxDepth", async () => {
   const { tools, hooks } = await setUp({}, { maxDepth: 1 })
   await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
-  const event = { sessionID: "ses_child", tools: { courier_spawn: {}, courier_send: {}, courier_recall: {}, courier_note: {} }, system: [] as any[] }
+  const event = { sessionID: "ses_child", tools: { courier_spawn: {}, courier_send: {} }, system: [] as any[] }
 
   await hooks.get("context")!(event)
 
@@ -352,20 +346,20 @@ test("its context hook, with the limits from the options, hides courier_spawn, c
 
 test("its context hook points a session nobody spawned, with no children, to the skill", async () => {
   const { hooks } = await setUp()
-  const event = { sessionID: "ses_alone", tools: { courier_spawn: {}, courier_send: {}, courier_recall: {}, courier_note: {} }, system: [] as any[] }
+  const event = { sessionID: "ses_alone", tools: { courier_spawn: {}, courier_send: {} }, system: [] as any[] }
 
   await hooks.get("context")!(event)
 
-  expect(Object.keys(event.tools)).toEqual(["courier_spawn", "courier_send", "courier_recall", "courier_note"])
+  expect(Object.keys(event.tools)).toEqual(["courier_spawn", "courier_send"])
   expect(event.system).toEqual([{ type: "text", text: rolePart(null, DEFAULT_LIMITS) }])
 })
 
-test("its context hook gives an OpenCode subagent of a courier child no role part, courier_spawn, courier_recall or courier_note", async () => {
+test("its context hook gives an OpenCode subagent of a courier child no role part and no courier_spawn", async () => {
   const { tools, hooks, session } = await setUp()
   await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
   const get = session.get
   session.get = async (input: any) => ({ ...(await get(input)), ...(input.sessionID === "ses_sub" ? { parentID: "ses_child" } : {}) })
-  const event = { sessionID: "ses_sub", tools: { courier_spawn: {}, courier_send: {}, courier_recall: {}, courier_note: {} }, system: [] as any[] }
+  const event = { sessionID: "ses_sub", tools: { courier_spawn: {}, courier_send: {} }, system: [] as any[] }
 
   await hooks.get("context")!(event)
 
@@ -383,29 +377,59 @@ test("logs a limit option it cannot use, and keeps that limit's default", async 
   }
 })
 
-test("logs a nativeChildren option it cannot use, and keeps it off", async () => {
+test("does not read a memory option present in the options, whatever its value, and logs one line for it", async () => {
+  for (const memory of [true, false, "yes"]) {
+    const logged = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const { tools, rpcs } = await setUp({}, { memory, maxChildren: 2 })
+      const lines = logged.mock.calls.map((call) => String(call[0])).filter((line) => line.includes("memory"))
+      expect(lines).toEqual(["courier: the memory option is not read: memory was removed in 0.17.0. Remove it from the config."])
+      expect([...tools.keys()].filter((name) => name === "courier_recall" || name === "courier_note")).toEqual([])
+      expect([...rpcs.keys()]).not.toContain("courier-memory")
+    } finally {
+      logged.mockRestore()
+    }
+  }
+})
+
+test("logs no memory line without a memory option", async () => {
   const logged = spyOn(console, "error").mockImplementation(() => {})
   try {
-    const { tools, calls } = await setUp({}, { nativeChildren: "yes" })
-    expect(logged.mock.calls.map((call) => call[0])).toContain('courier: nativeChildren must be true or false, not "yes"; using false')
-    await tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_parent" })
-    expect(calls.find((call) => call.method === "session.create")!.input).not.toHaveProperty("parentID")
+    await setUp({}, { maxChildren: 2 })
+    expect(logged.mock.calls.map((call) => String(call[0])).filter((line) => line.includes("memory"))).toEqual([])
   } finally {
     logged.mockRestore()
   }
 })
 
-test("with nativeChildren in the options, courier_spawn gives a child OpenCode's parentID, unless the spawn says native: false", async () => {
-  const { tools, calls } = await setUp({}, { nativeChildren: true })
-
-  await tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_parent" })
-  expect(calls.find((call) => call.method === "session.create")!.input).toMatchObject({ parentID: "ses_parent", permissions: [{ action: "opencode_schedule_*", resource: "*", effect: "deny" }] })
-
-  await tools.get("courier_spawn").execute({ task: "t", native: false }, { sessionID: "ses_parent" })
-  expect(calls.findLast((call) => call.method === "session.create")!.input).not.toHaveProperty("parentID")
+test("does not read a nativeChildren option present in the options, whatever its value, logs one line for it, and starts a child without native: true standalone", async () => {
+  for (const nativeChildren of [true, false, "yes"]) {
+    const logged = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const { tools, calls } = await setUp({}, { nativeChildren, maxChildren: 2 })
+      const lines = logged.mock.calls.map((call) => String(call[0])).filter((line) => line.includes("nativeChildren"))
+      expect(lines).toEqual([
+        "courier: the nativeChildren option is not read: it was removed in 0.17.0. Remove it from the config; a spawn asks for a native child with native: true.",
+      ])
+      await tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_parent" })
+      expect(calls.find((call) => call.method === "session.create")!.input).not.toHaveProperty("parentID")
+    } finally {
+      logged.mockRestore()
+    }
+  }
 })
 
-test("without the option, courier_spawn with native: true gives a child OpenCode's parentID, and refuses it with isolate", async () => {
+test("logs no nativeChildren line without the option", async () => {
+  const logged = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    await setUp({}, { maxChildren: 2 })
+    expect(logged.mock.calls.map((call) => String(call[0])).filter((line) => line.includes("nativeChildren"))).toEqual([])
+  } finally {
+    logged.mockRestore()
+  }
+})
+
+test("courier_spawn with native: true gives a child OpenCode's parentID, and refuses it with isolate", async () => {
   const { tools, calls } = await setUp()
 
   const result = await tools.get("courier_spawn").execute({ task: "t", native: true }, { sessionID: "ses_parent" })
@@ -423,11 +447,13 @@ test("tool inputs decode with their schemas", async () => {
 
   const decode = (name: string, value: unknown) => Schema.decodeUnknownSync(tools.get(name).input)(value)
   expect(decode("courier_spawn", { task: "t", isolate: true })).toEqual({ task: "t", isolate: true })
-  expect(decode("courier_spawn", { task: "t", group: "reviews" })).toEqual({ task: "t", group: "reviews" })
+  expect(decode("courier_spawn", { task: "t", group: "reviews" })).toEqual({ task: "t" })
   expect(decode("courier_spawn", { task: "t", native: true })).toEqual({ task: "t", native: true })
   expect(decode("courier_spawn", { task: "t", native: false, isolate: true })).toEqual({ task: "t", native: false, isolate: true })
   expect(() => decode("courier_spawn", { task: "t", native: "yes" })).toThrow()
   expect(decode("courier_send", { sessionID: "s", message: "m" })).toEqual({ sessionID: "s", message: "m" })
+  expect(decode("courier_send", { sessionID: "s", message: "m", queue: true })).toEqual({ sessionID: "s", message: "m" })
+  expect(decode("courier_send", { sessionID: "s", message: "m", status: "done", finding: "f" })).toEqual({ sessionID: "s", message: "m", status: "done" })
   expect(() => decode("courier_send", { sessionID: "s" })).toThrow()
   const report = { sessionID: "s", message: "m", status: "done", artifacts: { branch: "b", commits: ["c"], files: ["f"], checks: [{ command: "bun test", result: "ok" }] } }
   expect(decode("courier_send", report)).toEqual(report)
@@ -461,8 +487,8 @@ test("a spawned child's question shows under pending, and courier_answer passes 
   const questions = [{ question: "Which greeting?", header: "Greeting", options: [{ label: "Hi", description: "" }] }]
   store.set("question/question_p1", { requestID: "question_p1", sessionID: "ses_child", top: "ses_parent", title: "Fix the bug", questions, askedAt: Date.now() })
 
-  const listed = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
-  expect(listed.metadata.children[0].pending).toEqual([{ type: "question", requestID: "question_p1", questions, stopped: true }])
+  const listed = await tools.get("courier_tree").execute({}, { sessionID: "ses_parent" })
+  expect(listed.metadata.sessions[0].pending).toEqual([{ type: "question", requestID: "question_p1", questions, stopped: true }])
 
   const answered = await tools
     .get("courier_answer")
@@ -562,8 +588,8 @@ test("a spawned child's permission request reaches its parent, and courier_answe
   const notice = calls.find((call) => call.method === "session.synthetic")!.input
   expect(notice.sessionID).toBe("ses_parent")
   expect(notice.text).toContain('<courier from="ses_child" asks="permission" request="per_1">')
-  const listed = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
-  expect(listed.metadata.children[0].pending).toEqual([{ type: "permission", requestID: "per_1", action: "shell", resources: ["git push"] }])
+  const listed = await tools.get("courier_tree").execute({}, { sessionID: "ses_parent" })
+  expect(listed.metadata.sessions[0].pending).toEqual([{ type: "permission", requestID: "per_1", action: "shell", resources: ["git push"] }])
 
   const declines = Object.assign(new Error(""), { _tag: "Permission.DeclinedError" })
   decline(declines)
@@ -612,20 +638,28 @@ test("courier_spawn tells the parent to end its turn rather than wait for the ch
   expect(result.content).toContain("end your turn: reply without calling more tools. That does not drop the task")
 })
 
-test("courier_children lists what courier_spawn started from the calling session, or another", async () => {
+test("courier_tree lists what courier_spawn started from the calling session, or another", async () => {
   const { tools } = await setUp()
 
   await tools.get("courier_spawn").execute({ task: "t" }, { sessionID: "ses_parent" })
 
-  const own = await tools.get("courier_children").execute({}, { sessionID: "ses_parent" })
-  expect(own.metadata.children.map((child: any) => child.sessionID)).toEqual(["ses_child"])
+  const own = await tools.get("courier_tree").execute({}, { sessionID: "ses_parent" })
+  expect(own.metadata.sessions.map((child: any) => child.sessionID)).toEqual(["ses_child"])
   expect(own.content).toContain("ses_child")
-  const other = await tools.get("courier_children").execute({ sessionID: "ses_parent" }, { sessionID: "ses_x" })
-  expect(other.metadata.children).toHaveLength(1)
-  const empty = await tools.get("courier_children").execute({ sessionID: "" }, { sessionID: "ses_parent" })
-  expect(empty.metadata.children).toHaveLength(1)
-  const none = await tools.get("courier_children").execute({}, { sessionID: "ses_x" })
-  expect(none).toEqual({ content: "No sessions started with courier_spawn.", metadata: { children: [] } })
+  const other = await tools.get("courier_tree").execute({ sessionID: "ses_parent" }, { sessionID: "ses_x" })
+  expect(other.metadata.sessions).toHaveLength(1)
+  const empty = await tools.get("courier_tree").execute({ sessionID: "" }, { sessionID: "ses_parent" })
+  expect(empty.metadata.sessions).toHaveLength(1)
+  const none = await tools.get("courier_tree").execute({}, { sessionID: "ses_x" })
+  expect(none).toEqual({ content: "No sessions started with courier_spawn.", metadata: { sessionID: "ses_x", sessions: [] } })
+})
+
+test("courier_send steers a message in, a queue a model still passes being ignored", async () => {
+  const { tools, calls } = await setUp()
+
+  await tools.get("courier_send").execute({ sessionID: "ses_parent", message: "m", queue: true }, { sessionID: "ses_child" })
+
+  expect(calls.find((call) => call.method === "session.synthetic")!.input.delivery).toBe("steer")
 })
 
 test("courier_cleanup reports the worktree of an isolated child that is already gone, and forgets it", async () => {
@@ -638,7 +672,7 @@ test("courier_cleanup reports the worktree of an isolated child that is already 
   expect(result.content).toContain("already gone")
   expect([...store.keys()].filter((key) => key.startsWith("roster"))).toEqual([])
   await expect(tools.get("courier_cleanup").execute({ sessionID: "ses_child" }, { sessionID: "ses_parent" })).rejects.toThrow(
-    "courier_cleanup failed: ses_child is not on the courier_children list of ses_parent.",
+    "courier_cleanup failed: ses_child is not a child of ses_parent: courier_cleanup takes a session you started yourself.",
   )
 })
 

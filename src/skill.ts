@@ -25,9 +25,7 @@ export const SKILL_CONTENT = [
   "",
   "- One courier_spawn per part. When they do not all fit the tree's limits at once, start the next as each report " +
     "frees a slot.",
-  "- Each report wakes you. A group name is for parts whose reports are of no use to you one at a time: it holds them " +
-    "for one wake, with every report. A finding a member puts on its report still reaches you at once, ahead of the " +
-    "held report, in an envelope marked finding=\"ahead\": pass it on as section 3 says.",
+  "- Each report wakes you.",
   "- No two parts edit the same files; isolate: true for each part that edits files in parallel with another.",
   "- Write each task so the session can do it without you, since it sees none of your conversation: what to produce " +
     "and where, the context it needs, how to check it, and what to report. Name the skills it should load for its " +
@@ -62,9 +60,7 @@ export const SKILL_CONTENT = [
   "",
   "## 6. Done",
   "",
-  "The task is done only when every part is verified and integrated. At the root, before you reply to the person: one " +
-    "courier_note if the next tree in this project should know something about running one like this; none when there " +
-    "is nothing.",
+  "The task is done only when every part is verified and integrated.",
 ].join("\n")
 
 export type SkillEditor = Parameters<Parameters<Plugin.Context["skill"]["transform"]>[0]>[0]

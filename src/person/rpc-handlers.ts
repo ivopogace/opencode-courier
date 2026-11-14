@@ -29,7 +29,6 @@ export async function asks(ports: PersonRpcPorts, sessionID: string): Promise<As
       title: entry.title,
       parentID: entry.parentID,
       depth,
-      ...(entry.group ? { group: entry.group } : {}),
     })),
     permissions: [
       ...own.map(({ request, passesOn }) => ({

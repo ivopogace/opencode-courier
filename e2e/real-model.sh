@@ -126,8 +126,8 @@ if [ -n "$BASE_URL" ]; then
     }
   }')
 fi
-jq -n --arg plugin "$ROOT/dist" --arg probe "$ROOT/e2e/probe-plugin" --arg probelog "$WORK/probe.log" --arg native "${COURIER_NATIVE:-}" --arg model "$PROVIDER/$MODEL" --argjson providers "$provider" --argjson permissions "$PERMISSIONS" '{
-  plugins: [if $native == "1" then { package: $plugin, options: { nativeChildren: true } } else $plugin end, { package: $probe, options: { log: $probelog } }],
+jq -n --arg plugin "$ROOT/dist" --arg probe "$ROOT/e2e/probe-plugin" --arg probelog "$WORK/probe.log" --arg model "$PROVIDER/$MODEL" --argjson providers "$provider" --argjson permissions "$PERMISSIONS" '{
+  plugins: [$plugin, { package: $probe, options: { log: $probelog } }],
   providers: $providers,
   model: $model,
   update: "disable",
@@ -142,7 +142,7 @@ fi
 
 SERVER_FLAGS="--log-level debug"
 start_server
-echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL${COURIER_NATIVE:+, nativeChildren on}${COURIER_SKILL:+, courier-orchestrate denied}"
+echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL${COURIER_SKILL:+, courier-orchestrate denied}"
 if [ "${COURIER_PERSON:-}" = other-server ]; then
   OTHER="http://127.0.0.1:$OTHER_PORT"
   export COURIER_OTHER_SERVER=$OTHER
@@ -151,19 +151,6 @@ if [ "${COURIER_PERSON:-}" = other-server ]; then
   for _ in $(seq 1 30); do curl -sf -u "opencode:$OPENCODE_PASSWORD" "$OTHER/api/info" >/dev/null 2>&1 && break; sleep 1; done
   curl -sf -u "opencode:$OPENCODE_PASSWORD" "$OTHER/api/info" >/dev/null || { echo "the second server did not start; see $WORK/server-b.log"; exit 1; }
   echo "a second server on the same data directory: $OTHER"
-fi
-if [ -n "${COURIER_SEED:-}" ]; then
-  probe=$(curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
-    --data "$(jq -n --arg directory "$WORK/project" '{ location: { directory: $directory } }')" "$SERVER/api/session")
-  project=$(jq -r '.data.projectID // empty' <<<"$probe")
-  [ -z "$project" ] || curl -sf -o /dev/null -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$(jq -r '.data.id' <<<"$probe")" || true
-  [ -n "$project" ] || project=$(api project | jq -r --arg dir "$WORK/project" 'first(.[] | select(.canonical == $dir) | .id) // .[0].id')
-  [ "$project" != null ] && [ -n "$project" ] || { echo "could not find the project's id to seed under"; exit 1; }
-  jq -r 'keys[]' "$COURIER_SEED" | while IFS= read -r key; do
-    XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" set "${key//<project>/$project}" \
-      "$(jq -r --arg key "$key" --arg project "$project" '.[$key] | tojson | gsub("<project>"; $project)' "$COURIER_SEED")" @courier
-    echo "seeded ${key//<project>/$project}"
-  done
 fi
 echo "parent prompt: $PROMPT"
 

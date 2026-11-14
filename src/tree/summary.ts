@@ -1,7 +1,5 @@
-import { groupStandings } from "./group.js"
 import type { CourierPorts } from "./ports.js"
 import type { Summary } from "./rpc.js"
-import { groupStore } from "./store.js"
 import { lookUp, type Looked } from "./subtree.js"
 import { stalledAmong } from "./wake.js"
 
@@ -15,7 +13,7 @@ function activity({ info, running, pending, forms, entry }: Looked, stalled: Rea
 }
 
 export async function summary(ports: CourierPorts, sessionID: string): Promise<Summary> {
-  const [looked, standings] = await Promise.all([lookUp(ports, sessionID), groupStandings(groupStore(ports.storage), sessionID)])
+  const looked = await lookUp(ports, sessionID)
   const stalled = await stalledAmong(ports, [sessionID, ...looked.map((one) => one.entry.sessionID)])
   const activities = looked.map((one) => activity(one, stalled))
   const count = (kind: Activity) => activities.filter((item) => item === kind).length
@@ -25,6 +23,6 @@ export async function summary(ports: CourierPorts, sessionID: string): Promise<S
     waiting: count("waiting"),
     idle: count("idle"),
     ...(stalls ? { stalled: stalls } : {}),
-    groups: standings.map(({ name, reported, members }) => ({ name, reported, members })),
+    groups: [],
   }
 }

@@ -42,14 +42,14 @@ and openssl. New behaviour gets a scenario there.
   what a run would do.
 - The mock model holds a child's reply back 5 s (`CHILD_DELAY_MS`), so the parent is idle when it
   lands. A scenario that does not need that sets `child_delay 1000` after its heading.
-- `native` turns `nativeChildren` on for the groups after it. A scenario that drives `opencode run`
-  and has a child still running when the root's turn ends, or one that reports to the root, spawns
-  it with `native: false`; a scenario about a native child prompts through the API (`api_prompt`)
-  ([the trap](plugin-api-notes.md#native-parentid)).
+- The suite's config sets `nativeChildren`, which the plugin logs and does not read, so every child
+  is standalone unless the mock passes `native: true`. A scenario about a native child prompts through
+  the API (`api_prompt`), not `opencode run` ([the trap](plugin-api-notes.md#native-parentid)).
 - A check that something did not happen never waits out a timeout. It first waits for an event
   ordered after the point where the unwanted thing would have happened, then checks once:
-  `end_handled` after `turn_ended` for what the courier does at a turn's end (its memory module
-  records the tree after the tree module has handled the end), a message delivered at the same tick,
+  `end_handled` after `turn_ended` for what the courier does at a turn's end (it deletes a marker
+  session the roster lists and waits for the courier to forget it, which it handles after every
+  earlier event), a message delivered at the same tick,
   a storage key the path removes last, `wait_log` for a server log line. A wait that fails after N seconds when the event never comes
   is fine.
 
@@ -72,7 +72,9 @@ uv run script/render-gif.py demo-gif docs/demo.gif             # about 1 minute
 ```
 
 `record-gif.sh` drives the TUI in `tmux`, scene by scene, on `e2e/tui.sh`'s setup, with the helpers
-of `script/demo-lib.sh`. It needs tmux and what `e2e/tui.sh` needs. A scene whose screen does not
+of `script/demo-lib.sh`. It needs tmux and what `e2e/tui.sh` needs. It sets the TUI's session
+verbosity to `medium` in `cli.json`, so the transcript shows each tool call with its arguments, not
+a count of them. A scene whose screen does not
 come ends the run, printing that screen. It keeps tmux's own screens, about twelve a second, so the
 render needs no terminal emulator: `render-gif.py` draws them with Pillow and has ffmpeg encode the
 GIF; it needs ffmpeg, uv and `fc-match`. The scenario is `e2e/mock-model.mjs`'s

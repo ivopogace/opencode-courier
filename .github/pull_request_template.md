@@ -17,11 +17,11 @@ say so. A large, clearly AI-generated description may get the PR closed.
 
 ### How did you verify it?
 
-<!-- e.g., bun test, an e2e/run.sh scenario, e2e/tui.sh, a real-model run -->
+<!-- e.g., bun test, an e2e/run.sh scenario, e2e/tui.sh -->
 
 ### Screenshots / recordings
 
-_For a change to the terminal part (tree panel, asks inbox, memory view)._
+_For a change to the terminal part (tree panel, asks inbox)._
 
 ### Checklist
 

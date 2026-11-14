@@ -3,14 +3,12 @@ import { Schema } from "effect"
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 
-const Group = Schema.Struct({ name: Schema.String, reported: Count, members: Count })
-
 const Summary = Schema.Struct({
   running: Count,
   waiting: Count,
   idle: Count,
   stalled: Schema.optionalKey(Count),
-  groups: Schema.Array(Group),
+  groups: Schema.Array(Schema.Unknown),
 })
 
 export type Summary = typeof Summary.Type
@@ -34,7 +32,6 @@ const Row = Schema.Struct({
   report: Schema.optionalKey(
     Schema.Struct({ state: Schema.Literals(["owed", "reported", "ended"]), status: Schema.optionalKey(Schema.String), progressed: Schema.Boolean }),
   ),
-  group: Schema.optionalKey(Schema.Struct({ name: Schema.String, standing: Schema.String })),
   isolated: Schema.Boolean,
   native: Schema.optionalKey(Schema.Boolean),
   subagent: Schema.optionalKey(Schema.Boolean),

@@ -26,7 +26,8 @@ first; its "Done when" is your acceptance bar.
   test, so don't run those locally. The exception is CLAUDE.md's real-model smoke test after a
   change to a model-facing string, which CI does not run. Its default free model refuses cloud
   sessions: run it only with `COURIER_PROVIDER` and `COURIER_MODEL` set to a paid provider;
-  otherwise write in the PR body that it is owed, which is not BLOCKED. Still add the e2e checks
+  otherwise write in the PR body that it is owed, which is not BLOCKED. Never put a run's result in
+  the PR body, an issue or a document. Still add the e2e checks
   the issue's "Done when" asks for.
 - Work on branch <issue-N-slug> in small, well-described commits. Open a PR to main whose body
   says what changed, the decisions you made, how it was tested, and `Closes #<N>`. Open it ready

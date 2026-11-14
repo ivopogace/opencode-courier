@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs"
 import { isStatus } from "../kernel/protocol.js"
 import { isNotFound } from "../platform/json.js"
-import { isExpired, standingOf } from "./domain.js"
-import type { Entry, ReportNote, RosterStorage, StandingPorts } from "./ports.js"
-import { childStore, groupStore } from "./store.js"
+import { isExpired } from "./domain.js"
+import type { ReportNote, RosterStorage, StandingPorts } from "./ports.js"
+import { childStore } from "./store.js"
 import { STANDING_KEY, standingEntry, type ChildState, type StandingRow } from "./text.js"
 
 const since = (at: number | undefined, prompt: number) => at !== undefined && at >= prompt
@@ -21,19 +21,11 @@ export function stateOf(notes: { readonly [K in "prompt" | "settled" | "progress
 
 export async function standingRows(storage: RosterStorage, parentID: string, now: number): Promise<StandingRow[]> {
   const children = childStore(storage)
-  const [entries, members] = await Promise.all([children.children(parentID), groupStore(storage).ofParent(parentID).catch(() => undefined)])
-  const current = entries.filter((entry) => !isExpired(entry, now, existsSync))
+  const current = (await children.children(parentID)).filter((entry) => !isExpired(entry, now, existsSync))
   return Promise.all(
     current.map(async (entry) => {
       const notes = await children.notes(entry.sessionID, ["prompt", "settled", "progress", "told", "stopped"])
-      const member = members?.find((one) => one.group === entry.group && one.sessionID === entry.sessionID)
-      const standing = members ? standingOf(member) : "unknown"
-      return {
-        sessionID: entry.sessionID,
-        title: entry.title,
-        state: stateOf(notes),
-        ...(entry.group ? { group: { name: entry.group, standing } } : {}),
-      }
+      return { sessionID: entry.sessionID, title: entry.title, state: stateOf(notes) }
     }),
   )
 }
@@ -70,17 +62,7 @@ async function sync(ports: StandingPorts, parentID: string, entries: Entries): P
     await entries.put({ sessionID: parentID, key: STANDING_KEY, value })
     return "put"
   } catch (error) {
-    if (!isNotFound(error)) ports.log?.(`courier: the standing entry of ${parentID} could not be written, so it may be behind courier_children: ${String(error)}`)
+    if (!isNotFound(error)) ports.log?.(`courier: the standing entry of ${parentID} could not be written, so it may be behind courier_tree: ${String(error)}`)
     return "skipped"
   }
-}
-
-export async function putEntries(ports: StandingPorts, sessionID: string, given: ReadonlyArray<Entry>) {
-  const entries = ports.session?.instructions?.entry
-  if (!entries) return
-  await Promise.all(
-    given.map(({ key, value }) =>
-      entries.put({ sessionID, key, value }).catch((error: unknown) => ports.log?.(`courier_spawn: the ${key} entry of ${sessionID} could not be written: ${String(error)}`)),
-    ),
-  )
 }

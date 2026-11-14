@@ -104,8 +104,7 @@ is `latest` when it runs, once per version. To bump the pin:
    `@opencode/cli` install commands in CLAUDE.md, [development.md](development.md) and
    [real-model.md](real-model.md), the terminal part's "tested on" line in
    [reference.md](../reference.md#the-opencode-version), and CLAUDE.md's pin rule.
-   `git grep -nF '<old>'` finds them. These stay: the generated tables, real-model.md's measured
-   batch, and a line naming the version a host feature arrived in ("OpenCode X and later").
+   `git grep -nF '<old>'` finds them. These stay: the generated tables and a line naming the version a host feature arrived in ("OpenCode X and later").
 4. Update the affected traps in [plugin-api-notes.md](plugin-api-notes.md) and the version in its
    first paragraph. The traps of two servers on one data directory are checked only by
    `e2e/two-servers.sh`, which CI does not run: run it on the new version (`OPENCODE_BIN` as in

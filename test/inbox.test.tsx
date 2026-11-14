@@ -7,7 +7,7 @@ import { CHANGES as FOLLOWS } from "../src/tree/tui.js"
 
 const sessions: Asks["sessions"] = [
   { sessionID: "ses_a", title: "Fix the bug", parentID: "ses_root", depth: 1 },
-  { sessionID: "ses_b", title: "Write tests", parentID: "ses_a", depth: 2, group: "pair" },
+  { sessionID: "ses_b", title: "Write tests", parentID: "ses_a", depth: 2 },
 ]
 const bash = { sessionID: "ses_b", requestID: "per_1", action: "bash", resources: ["bun test"], save: ["bun *"] }
 const greeting = {
@@ -156,10 +156,10 @@ describe("what the inbox lists", () => {
     expect(listed.map((ask) => ask.key)).toEqual(["question question_1", "form frm_1", "permission per_1"])
   })
 
-  test("says what each ask is, where it comes from, its depth and group", () => {
+  test("says what each ask is, where it comes from, and its depth", () => {
     expect(listed.map(askTitle)).toEqual(["Question: Greeting: Which greeting?", "Form: Choose a web search provider", "Permission: bash bun test"])
     expect(pathOf(empty, "ses_b", "Root")).toBe("Root › Fix the bug › Write tests")
-    expect(listed.map(askFooter)).toEqual(["depth 1", "depth 1", "depth 2 · group pair"])
+    expect(listed.map(askFooter)).toEqual(["depth 1", "depth 1", "depth 2"])
     expect(askFooter({ ...listed[0]!, question: { ...greeting, stopped: true } } as Ask)).toBe("depth 1 · cut off, answered by message")
   })
 
@@ -191,7 +191,7 @@ describe("the inbox", () => {
     const last = fake.dialogs.at(-1)!.options
     expect(last.title).toBe("Waiting on you (2)")
     expect(last.options.map((option: any) => [option.title, option.description, option.footer])).toEqual([
-      ["Permission: bash bun test", "Root › Fix the bug › Write tests", "depth 2 · group pair"],
+      ["Permission: bash bun test", "Root › Fix the bug › Write tests", "depth 2"],
       ["Question: Greeting: Which greeting?", "Root › Fix the bug", "depth 1"],
     ])
   })
@@ -397,7 +397,7 @@ describe("the top session's own permission requests", () => {
     expect(listed.map(askFooter)).toEqual([
       "top session",
       "top session",
-      "depth 2 · group pair · the top's prompt asks",
+      "depth 2 · the top's prompt asks",
     ])
     expect(pathOf(withTop, "ses_root", "Root")).toBe("Root")
   })
@@ -435,7 +435,7 @@ describe("the top session's own permission requests", () => {
     fake.answers.push(() => undefined)
     fake.emit("permission.replied", "ses_root")
     await opening
-    expect(fake.dialogs.at(-1)!.options.options.map((option: any) => [option.title, option.footer])).toEqual([["Permission: bash bun test", "depth 2 · group pair"]])
+    expect(fake.dialogs.at(-1)!.options.options.map((option: any) => [option.title, option.footer])).toEqual([["Permission: bash bun test", "depth 2"]])
   })
 })
 

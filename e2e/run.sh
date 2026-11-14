@@ -99,16 +99,18 @@ turn_ended() {
   echo "turn_ended: session $1 did not end its turn in ${2:-30} s" >&2
 }
 end_handled() {
-  local idle project
-  idle=$(session_info "$1" | jq -r '.time.idle // empty')
-  project=$(session_info "$2" | jq -r '.projectID // empty')
-  if [ -n "$idle" ] && [ -n "$project" ]; then
+  local marker
+  marker=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id // empty')
+  if [ -n "$marker" ]; then
+    kv set "roster-by-child/$marker" '{"ancestors":["ses_handled_marker"]}' @courier
+    kv set "roster/ses_handled_marker/$marker" "{\"sessionID\":\"$marker\",\"parentID\":\"ses_handled_marker\",\"title\":\"marker\",\"directory\":\"$WORK/project\",\"isolated\":false,\"createdAt\":$(now_ms),\"reports\":\"status\"}" @courier
+    curl -s -o /dev/null -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$marker"
     for _ in $(seq 1 $((${3:-30} * 2))); do
-      [ "$(kv get "memory/$project/$2" | jq -r --argjson idle "$idle" '.movedAt >= $idle - 1' 2>/dev/null)" = true ] && return 0
+      [ -z "$(kv get "roster/ses_handled_marker/$marker")" ] && return 0
       sleep 0.5
     done
   fi
-  echo "end_handled: the courier did not handle the turn end of $1 (idle ${idle:-none}) in ${3:-30} s" >&2
+  echo "end_handled: the courier did not handle the events up to the turn end of $1 in ${3:-30} s" >&2
   return 1
 }
 wait_log() {
@@ -211,8 +213,8 @@ spawn_isolated() {
   check "the isolated child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
 }
 child_listing() {
-  prompt "COURIER-CHILDREN $1" | tool_state courier_children |
-    jq -r --arg child "$2" 'if .status != "completed" then "error" elif any(.metadata.metadata.children[]; .sessionID == $child) then "listed" else "unlisted" end'
+  prompt "COURIER-TREE-OF $1" | tool_state courier_tree |
+    jq -r --arg child "$2" 'if .status != "completed" then "error" elif any(.metadata.metadata.sessions[]; .sessionID == $child) then "listed" else "unlisted" end'
 }
 inbox() {
   curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier-person/$1?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" \
@@ -232,7 +234,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:89 reports-groups:97 reminder:18 finding:29 finding-up:16 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:11 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:1 later:20 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 memory:27 busy:77 spawn-native:15 native:39 decline-seal:17 total-refusal:23 early-report:23 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
+SUITE="reports:108 deleted:10 reminder:18 pass-on:28 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:7 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:56 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:14 native:28 total-refusal:23 early-report:25 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {
@@ -295,7 +297,7 @@ COURIER_TYPES='["form.cancelled","form.created","form.replied","location.shutdow
 cat >"$WORK/project/opencode.json" <<EOF
 {
   "plugins": [
-    { "package": "$ROOT/dist", "options": { "maxDepth": 2, "webhook": { "port": $WEBHOOK_PORT, "secretFile": "$WORK/webhook-secret" } } },
+    { "package": "$ROOT/dist", "options": { "maxDepth": 2, "memory": true, "nativeChildren": true, "webhook": { "port": $WEBHOOK_PORT, "secretFile": "$WORK/webhook-secret" } } },
     "$ROOT/e2e/search-plugin",
     { "package": "$ROOT/e2e/probe-plugin", "options": { "log": "$WORK/probe.log", "types": $COURIER_TYPES } }
   ],
@@ -347,10 +349,10 @@ run_reports() {
       "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains(" ended="))] | length == 0')"
   done
 
-  scenario "courier_children reports each child's state and last reply"
-  check "with the child's last turn and its reply" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -r --arg child "$child" '.status == "completed" and
-    (.metadata.metadata.children[] | select(.sessionID == $child) | .outcome == "succeeded" and (.lastText | contains("TOOL DONE courier_send")) and (.idle | type == "number"))')"
-  check "and lists none for an unknown session" "$(prompt "COURIER-CHILDREN ses_missing" | tool_state courier_children | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
+  scenario "courier_tree reports each child's state and last reply"
+  check "with the child's last turn and its reply" "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree | jq -r --arg child "$child" '.status == "completed" and
+    (.metadata.metadata.sessions[] | select(.sessionID == $child) | .outcome == "succeeded" and (.lastText | contains("TOOL DONE courier_send")) and (.idle | type == "number"))')"
+  check "and lists none for an unknown session" "$(prompt "COURIER-TREE-OF ses_missing" | tool_state courier_tree | jq -r '.status == "completed" and (.metadata.metadata.sessions | length == 0)')"
 
   scenario "a child runs on its parent's model, not the default one"
   out=$(bounded_run "$WORK/project" --model mock/other "COURIER-TEST")
@@ -415,6 +417,16 @@ run_reports() {
   check "and its reported turn was not told as one without a report" \
     "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 1' || echo false)"
 
+  scenario "a queue a model still passes to courier_send is dropped: the report is steered in"
+  out=$(prompt "COURIER-QUEUED")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the report woke the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  check "the child's courier_send, called with queue: true, completed as a report" \
+    "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send") | .state] | length == 1 and (.[0].status == "completed")')"
+  check "OpenCode admitted it steered, as every courier message is" \
+    "$(jq -sr --arg parent "$parent" --arg child "$child" '[.[] | select(.type == "session.inbox.enqueued" and .sessionID == $parent and .item.metadata.from == $child and .item.metadata.status == "done")] | length > 0 and all(.item.delivery == "steer")' "$WORK/probe.log")"
+
   scenario "a message without a status is progress: a child that then ends its turn is reported, and the notice says so"
   out=$(prompt "COURIER-PROGRESS")
   turn_ended=$(now_ms)
@@ -457,118 +469,36 @@ run_reports() {
   check "the child answered the person in its own session" "$([ -n "$(reply_time "$child" "CHILD ANSWERS PERSON")" ] && echo true || echo false)"
   check "and its parent was not told it ended without a report" "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 0' || echo false)"
 
+  scenario "a group a model still passes to courier_spawn, and a finding to courier_send, are dropped: each child's report reaches the parent alone, when it is sent"
+  child_delay 15000
+  out=$(prompt "COURIER-OLD-PARAMETERS")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  quick=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-QUICK") | .metadata.metadata.sessionID')
+  slow=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-SENDS-FINDING") | .metadata.metadata.sessionID')
+  check "both spawns, called with group pair, completed, their results naming no group and saying each child reports back by itself" \
+    "$([ -n "$quick" ] && [ -n "$slow" ] && tool_state courier_spawn <<<"$out" | jq -sr 'length == 2 and all(.status == "completed" and (.metadata.metadata | has("group") | not) and
+      (.output | contains("It will report back with courier_send, which starts a new turn for you.") and (contains("group") | not)))')"
+  check "the roster entries carry no group, and no group key was written" \
+    "$(for id in $quick $slow; do [ "$(kv get "roster/$parent/$id" | jq -r 'has("group") | not')" = true ] && [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
+  check "the first child's report reached the parent in a message of its own, while the second had not reported" \
+    "$([ "$(has_text "$parent" "<courier from=\"$quick\" status=\"done\">" 30)" = true ] && [ -z "$(kv get "report/$slow/settled")" ] && echo true || echo false)"
+  check "the second child's report came by itself too, once it was sent" "$(has_text "$parent" "<courier from=\"$slow\" status=\"done\">" 60)"
+  check "the parent got two messages, one report each, neither under a group's envelope nor with a finding in it" \
+    "$(api "session/$parent/message" | jq -r --arg quick "$quick" --arg slow "$slow" '[.data[] | select(.type == "synthetic") | .text] |
+      length == 2 and all((contains(" group=") or contains(" finding=") or contains("the shared API returns cents")) | not) and
+      any(. == "<courier from=\"" + $quick + "\" status=\"done\">\nCHILD DONE QUICKLY\n</courier>") and
+      any(. == "<courier from=\"" + $slow + "\" status=\"done\">\nCHILD DONE WITH FINDING\n</courier>")')"
+  check "the second child's courier_send, called with a finding, completed as a report, its result naming neither a finding nor a group" \
+    "$(api "session/$slow/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send") | .state] |
+      length == 1 and (.[0] | .status == "completed" and ((.metadata.metadata // .metadata) | .report == true and (has("finding") | not) and (has("held") | not)) and
+        (tostring | contains("Delivered to") and (contains("held with group") | not)))')"
+  check "both reports are settled with their status" \
+    "$(for id in $quick $slow; do [ "$(kv get "report/$id/settled" | jq -r '.by == "report" and .status == "done"')" = true ] || { echo false; exit; }; done; echo true)"
+  check "courier_tree lists both children without a group" "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree |
+    jq -r '.status == "completed" and (.metadata.metadata.sessions | length == 2 and all(has("group") | not))')"
 }
 
-run_reports_groups() {
-  scenario "a join group: the parent is woken once, with both reports in one message"
-  out=$(prompt "COURIER-GROUP")
-  turn_ended=$(now_ms)
-  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
-  check "two children were started in the group, and courier_spawn said their reports are held with it" \
-    "$([ "$(wc -w <<<"$members")" -eq 2 ] && tool_state courier_spawn <<<"$out" | jq -sr 'all(.metadata.metadata.group == "pair" and (.output | contains("held with group \"pair\"")))')"
-  woke=$(reply_time "$parent" "PARENT GOT GROUP" 45)
-  check "the group's reports started a new turn after the parent's had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
-  notices=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "synthetic") | .text]')
-  check "the parent got exactly one message" "$(jq -r 'length == 1' <<<"$notices")"
-  check "with both reports, each with its status and artifacts, under the group's envelope" \
-    "$(jq -r --arg members "$(tr '\n' ',' <<<"$members" | sed 's/,$//')" '.[0] | startswith("<courier from=\"") and contains("\" group=\"pair\" reports=\"2\">") and
-      contains("Group \"pair\" is complete: 2 reports of 2 members (2 done). Each report follows") and contains("[1/2] ") and contains("[2/2] ") and
-      (split("\": done\nCHILD DONE\n\nArtifacts:\n- branch: child/work") | length == 3) and
-      ((capture("from=\"(?<from>[^\"]+)\"").from | split(",") | sort) == ($members | split(",") | sort))' <<<"$notices")"
-  check "each child's courier_send result said its report was held with the group, not delivered" \
-    "$(for id in $members; do texts "$id" | grep -qF 'It is held with group "pair" and goes to' || { echo false; exit; }; done; echo true)"
-  check "each member's report is settled with its status" "$(for id in $members; do [ "$(kv get "report/$id/settled" | jq -r '.by == "report" and .status == "done"')" = true ] || { echo false; exit; }; done; echo true)"
-  check "the delivered group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
-  check "courier_children shows each child's group as released" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
-    jq -r '.status == "completed" and ([.metadata.metadata.children[].group] == [{name: "pair", report: "released"}, {name: "pair", report: "released"}])')"
-
-  scenario "a member's blocked report reaches the parent at once; the other's is held until that member reports"
-  out=$(prompt "COURIER-GROUP-BLOCKED")
-  turn_ended=$(now_ms)
-  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
-  woke=$(reply_time "$parent" "PARENT BLOCKED" 45)
-  check "the blocked report started a new turn after the parent's had ended" "$([ -n "$woke" ] && [ "$woke" -gt "$turn_ended" ] && echo true || echo false)"
-  blocked=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | capture("^<courier from=\"(?<from>ses_\\w+)\" status=\"blocked\">").from] | first // empty')
-  held=$(grep -vxF "$blocked" <<<"$members" || true)
-  check "it was the one message the parent got, with the blocked status and nothing held" \
-    "$([ -n "$blocked" ] && [ -n "$held" ] && api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] | length == 1 and (.[0] | contains("CHILD BLOCKED"))')"
-  check "the other member's done report is held with the group, and the blocked member is still out" \
-    "$(for _ in $(seq 1 30); do [ "$(kv get "group/$parent/pair/$held" | jq -r '.report.status == "done"' 2>/dev/null)" = true ] && break; sleep 1; done
-       [ "$(kv get "group/$parent/pair/$held" | jq -r '.report.status == "done"')" = true ] && [ "$(kv get "group/$parent/pair/$blocked" | jq -r 'has("report") | not')" = true ] && echo true || echo false)"
-  check "courier_children shows the group with one report held and one out" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
-    jq -r --arg held "$held" --arg blocked "$blocked" '.status == "completed" and
-      ([.metadata.metadata.children[] | select(.sessionID == $held) | .group] == [{name: "pair", report: "held"}]) and
-      ([.metadata.metadata.children[] | select(.sessionID == $blocked) | .group] == [{name: "pair", report: "out"}])')"
-  prompt_in "$parent" "COURIER-NUDGE-BLOCK $blocked" >/dev/null
-  again=$([ "$(has_text "$parent" "CHILD BLOCKED AGAIN" 45)" = true ] && api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD BLOCKED AGAIN"))] | first // ""')
-  check "blocked again, now that the other's report is held, its report brings that report, which stays held" \
-    "$(jq -rn --arg text "$again" --arg held "$held" '($text | contains("status=\"blocked\">")) and ($text | contains("Held with group \"pair\" so far, 1 report")) and
-      ($text | contains("- " + $held + " \"")) and ($text | contains(": done\nCHILD DONE\n"))' | grep -qx true &&
-      [ "$(kv get "group/$parent/pair/$held" | jq -r '.report.status == "done"')" = true ] && echo true || echo false)"
-  prompt_in "$parent" "COURIER-NUDGE $blocked" >/dev/null
-  check "answered, the blocked member reported, and the group went to the parent in one message with both reports" \
-    "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 45)" ] && notices_with "$parent" group | jq -r 'length == 1 and (.[0] |
-      contains("reports=\"2\"") and contains("CHILD DONE AFTER NUDGE") and contains("\": done\nCHILD DONE\n"))')"
-  check "and the group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
-
-  scenario "a member that ends silently, dropped with courier_cleanup, releases its group without it, and its late report comes on its own"
-  out=$(prompt "COURIER-GROUP-DROP")
-  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
-  check "the parent was told a member ended without a report" "$([ -n "$(reply_time "$parent" "PARENT TOLD SILENT" 45)" ] && echo true || echo false)"
-  silent=$(notices_with "$parent" ended | jq -r '.[0] | capture("^<courier from=\"(?<from>ses_\\w+)\"").from')
-  reported=$(grep -vxF "$silent" <<<"$members" || true)
-  check "the notice offers to drop it with courier_cleanup" "$(notices_with "$parent" ended | jq -r '.[0] | contains("drop it with courier_cleanup")')"
-  check "the other member's report is held, and nothing else reached the parent" \
-    "$([ -n "$reported" ] && [ "$(kv get "group/$parent/pair/$reported" | jq -r '.report.status')" = done ] && notices_with "$parent" group | jq -r 'length == 0')"
-  cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $silent" | tool_state courier_cleanup)
-  check "courier_cleanup forgot it, with no worktree to remove, and dropped it from the group" \
-    "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "forgotten" and .metadata.metadata.group == "pair" and (.output | contains("Dropped it from group \"pair\""))' <<<"$cleaned")"
-  check "it is off the roster, with its reverse key and report state" \
-    "$([ -z "$(kv get "roster/$parent/$silent")$(kv get "roster-by-child/$silent")$(kv get "report/$silent/prompt")" ] && echo true || echo false)"
-  check "the group reached the parent at once, in one message, with the held report and the dropped member named" \
-    "$(for _ in $(seq 1 10); do [ "$(notices_with "$parent" group | jq -r 'length')" = 1 ] && break; sleep 1; done
-       notices_with "$parent" group | jq -r --arg silent "$silent" --arg reported "$reported" 'length == 1 and (.[0] |
-         startswith("<courier from=\"" + $reported + "\" group=\"pair\" reports=\"1\">") and
-         contains("1 report of 2 members (1 done), 1 member without a report") and contains("CHILD DONE") and
-         contains("Without a report: " + $silent + " \"CHILD-SILENT\" (you dropped it with courier_cleanup)."))')"
-  check "and the group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
-  prompt_in "$parent" "COURIER-NUDGE $silent" >/dev/null
-  check "told to report after all, the dropped member's report reached the parent on its own, as a child in no group" \
-    "$(has_text "$parent" "<courier from=\"$silent\" status=\"done\">" 45)"
-  check "and no group was opened again for it" "$([ -z "$(kv get "group/$parent/pair/$silent")" ] && notices_with "$parent" group | jq -r 'length == 1')"
-
-  scenario "a group whose members report before the parent's turn has ended goes out once it has, in one message"
-  out=$(prompt "COURIER-GROUP-SPLIT")
-  turn_ended=$(now_ms)
-  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
-  first=$(head -1 <<<"$members")
-  second=$(sed -n 2p <<<"$members")
-  check "the first member reported before the second was started" \
-    "$([ -n "$second" ] && [ "$(kv get "report/$first/settled" | jq -r '.at')" -lt "$(kv get "roster/$parent/$second" | jq -r '.createdAt')" ] && echo true || echo false)"
-  woke=$(reply_time "$parent" "PARENT GOT GROUP" 45)
-  check "both had reported before the parent's turn ended" \
-    "$([ "$(kv get "report/$second/settled" | jq -r '.at')" -lt "$turn_ended" ] && echo true || echo false)"
-  ended=$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "idle") | .time.created] | min // empty')
-  check "the group's reports started a new turn within 3 s of the parent's turn ending, not at the next tick" \
-    "$([ -n "$woke" ] && [ -n "$ended" ] && [ "$woke" -gt "$ended" ] && [ $((woke - ended)) -lt 3000 ] && echo true || echo false)"
-  check "the parent got exactly one message, with both reports" \
-    "$(for _ in $(seq 1 20); do [ -z "$(kv get "group/$parent/pair/$first")$(kv get "group/$parent/pair/$second")" ] && break; sleep 0.5; done
-      [ -z "$(kv get "group/$parent/pair/$first")$(kv get "group/$parent/pair/$second")" ] && api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] |
-      length == 1 and (.[0] | contains("reports=\"2\"") and (split("CHILD DONE QUICKLY") | length == 3))' || echo false)"
-
-  scenario "a sub-orchestrator whose group reports during its turn gets it once that turn ends, and is not told of as silent"
-  out=$(prompt "COURIER-GROUP-NESTED")
-  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
-  check "the middle session reported its group's message on to the root" "$(has_text "$root" "MIDDLE GOT GROUP" 60)"
-  check "it got exactly one message, with both of its leaves' reports" "$(api "session/$middle/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] |
-    length == 1 and (.[0] | contains("reports=\"2\"") and (split("CHILD DONE QUICKLY") | length == 3))')"
-  check "and the root was not told it ended without a report" "$(turn_ended "$middle"; end_handled "$middle" "$root" && notices_with "$root" ended | jq -r 'length == 0' || echo false)"
-
+run_deleted() {
   scenario "a deleted child that owes a report is forgotten"
   out=$(prompt "COURIER-SILENT")
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
@@ -577,25 +507,16 @@ run_reports_groups() {
   check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
   check "and its report state is gone" \
     "$(for _ in $(seq 1 20); do [ -z "$(kv get "report/$child/prompt")$(kv get "report/$child/told")" ] && { echo true; exit; }; sleep 1; done; echo false)"
-  check "and so is its roster entry, so courier_children no longer lists it" \
+  check "and so is its roster entry, so courier_tree no longer lists it" \
     "$(for _ in $(seq 1 20); do [ "$(child_listing "$parent" "$child")" = unlisted ] && { echo true; exit; }; sleep 1; done; echo false)"
 
-  scenario "a deleted isolated child stays on courier_children, for courier_cleanup"
+  scenario "a deleted isolated child stays listed by courier_tree, for courier_cleanup"
   child_delay 1000
   spawn_isolated
   check "the isolated child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
-  check "it is still listed" "$(prompt_in "$parent" "COURIER-CHILDREN $parent" >/dev/null; turn_ended "$parent"
+  check "it is still listed" "$(prompt_in "$parent" "COURIER-TREE-OF $parent" >/dev/null; turn_ended "$parent"
     end_handled "$parent" "$parent" && [ "$(child_listing "$parent" "$child")" = listed ] && echo true || echo false)"
   check "and its worktree is still there for courier_cleanup" "$([ -d "$directory" ] && echo true || echo false)"
-
-  scenario "a child that ends its turn to wait for a message it scheduled is not reported, and reports once woken"
-  out=$(prompt "COURIER-WAITING")
-  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
-  check "the scheduled message woke the child, which reported" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 75)" ] && echo true || echo false)"
-  check "the child's first turn, which ended waiting, was not told" "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 0' || echo false)"
-  check "the child scheduled the message in its first turn" \
-    "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_later")] | length == 1')"
 }
 
 run_reminder() {
@@ -635,18 +556,19 @@ run_reminder() {
 }
 
 run_early_report() {
-  scenario "a child whose group completes in the turn that started it reports then, and owes nothing when the group or its own child's status-less message arrives"
+  scenario "a child whose children report in the turn that started them reports then, and owes nothing when its own child's status-less message arrives after"
   out=$(prompt "COURIER-EARLY-REPORT")
   root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
-  check "the middle session reported to the root in the turn that started its group" "$(has_text "$root" "MID DONE EARLY" 60)"
-  check "its group's message reached it after, in a turn of its own" "$([ -n "$(reply_time "$middle" "MID SAW GROUP" 60)" ] && echo true || echo false)"
+  check "the middle session reported to the root in the turn that started its children" "$(has_text "$root" "MID DONE EARLY" 60)"
   turn_ended "$middle"
+  check "each of its two children's reports reached it in that turn, in a message of its own" "$(api "session/$middle/message" | jq -r '
+    [.data[] | select(.type == "synthetic") | .text | select(contains(" status=\"done\">\nCHILD DONE QUICKLY\n</courier>"))] | length == 2')"
   check "that turn ended without a report reminder, and the middle session reported once" "$(api "session/$middle/message" | jq -r --arg root "$root" '
     ([.data[] | select(.type == "synthetic") | .text | select(contains(" reminder=\"report\""))] | length == 0) and
     ([.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send" and .state.input.sessionID == $root)] | length == 1)')"
   prompt_at=$(kv get "report/$middle/prompt" | jq -r .at)
-  check "the group's delivery was not taken for a prompt" "$(kv get "report/$middle/settled" | jq -r --argjson prompt "$prompt_at" '.at >= $prompt')"
+  check "its report came after the last of them, so it owes nothing" "$(kv get "report/$middle/settled" | jq -r --argjson prompt "$prompt_at" '.at >= $prompt')"
   grandchild=$(spawned_by "$middle")
   api_post "session/$middle/synthetic" "$(jq -nc --arg text "<courier from=\"$grandchild\">GRANDCHILD-CORRECTS</courier>" --arg from "$grandchild" \
     '{text: $text, description: ("Message from " + $from), metadata: {source: "courier", from: $from}, delivery: "steer"}')" >/dev/null
@@ -702,14 +624,14 @@ run_own_checkin() {
   turn_ended "$root"
 }
 
-run_finding() {
-  scenario "a child's finding without a status reaches its parent, which passes it on into a sibling's running turn"
+run_pass_on() {
+  scenario "a child's finding, sent without a status, reaches its parent, which passes it on into a sibling's running turn"
   out=$(prompt "COURIER-FINDING")
   turn_ended=$(now_ms)
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   finder=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-FINDS") | .metadata.metadata.sessionID')
   hearer=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-HEARS") | .metadata.metadata.sessionID')
-  check "two children were started in one group" "$([ -n "$finder" ] && [ -n "$hearer" ] && echo true || echo false)"
+  check "two children were started" "$([ -n "$finder" ] && [ -n "$hearer" ] && echo true || echo false)"
   passed=$(reply_time "$parent" "PARENT PASSED ON" 45)
   check "the finding started a new turn after the parent's had ended" "$([ -n "$passed" ] && [ "$passed" -gt "$turn_ended" ] && echo true || echo false)"
   plain=$(api "session/$parent/message" | jq -r --arg finder "$finder" '[.data[] | select(.type == "synthetic") | .text |
@@ -719,57 +641,13 @@ run_finding() {
   check "the parent passed it on to the sibling only" \
     "$([ "$(has_text "$hearer" "<courier from=\"$parent\">" 30)" = true ] && ! texts "$finder" | grep -qF "Passed on from" && echo true || echo false)"
   check "the sibling heard it in the turn it was running, and reported it" \
-    "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r 'length == 1 and (.[0] |
-      contains("reports=\"2\"") and contains("HEARD FINDING: the shared API returns cents") and contains("FINDER DONE"))')"
-  check "neither child was told as one that ended without a report" "$(notices_with "$parent" ended | jq -r 'length == 0')"
+    "$(has_text "$parent" "HEARD FINDING: the shared API returns cents" 60 >/dev/null; api "session/$parent/message" | jq -r --arg hearer "$hearer" '[.data[] | select(.type == "synthetic") | .text |
+      select(startswith("<courier from=\"" + $hearer + "\" status=\"done\">\nHEARD FINDING: the shared API returns cents"))] | length == 1')"
+  check "the finder's report reached the parent in a message of its own" \
+    "$(has_text "$parent" "FINDER DONE" 60 >/dev/null; api "session/$parent/message" | jq -r --arg finder "$finder" '[.data[] | select(.type == "synthetic") | .text |
+      select(startswith("<courier from=\"" + $finder + "\" status=\"done\">\nFINDER DONE"))] | length == 1')"
+  check "neither child was told as one that ended without a report" "$(turn_ended "$hearer"; end_handled "$hearer" "$parent" && notices_with "$parent" ended | jq -r 'length == 0' || echo false)"
 
-  scenario "a group member's finding on its report reaches the parent at once, the report held; the sibling has it before it reports"
-  out=$(prompt "COURIER-FINDING-IN-REPORT")
-  turn_ended=$(now_ms)
-  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  finder=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-FINDS-IN-REPORT") | .metadata.metadata.sessionID')
-  hearer=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-HEARS") | .metadata.metadata.sessionID')
-  check "two children were started in one group" "$([ -n "$finder" ] && [ -n "$hearer" ] && echo true || echo false)"
-  passed=$(reply_time "$parent" "PARENT PASSED ON" 45)
-  check "the finding started a new turn after the parent's had ended" "$([ -n "$passed" ] && [ "$passed" -gt "$turn_ended" ] && echo true || echo false)"
-  check "the finder's one courier_send was its report, held with the group, its finding sent ahead" \
-    "$(api "session/$finder/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send") | .state] |
-      length == 1 and (.[0] | .status == "completed" and .input.status == "done" and ((.metadata.metadata // .metadata) | .finding == "ahead" and .held.group == "finding") and
-        (tostring | contains("Its finding went to")))')"
-  check "the parent passed it on to the sibling only" \
-    "$([ "$(has_text "$hearer" "<courier from=\"$parent\">" 30)" = true ] && ! texts "$finder" | grep -qF "Passed on from" && echo true || echo false)"
-  check "the sibling heard it in the turn it was running, and reported it" \
-    "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r 'length == 1 and (.[0] |
-      contains("reports=\"2\"") and contains("HEARD FINDING: the shared API returns cents") and contains("FINDER DONE\n\nFinding for the other parts:\nFINDING: the shared API returns cents"))')"
-  check "the finding came in an envelope of its own, marked ahead, before the group's message" \
-    "$(api "session/$parent/message" | jq -r --arg finder "$finder" '[.data | sort_by(.id)[] | select(.type == "synthetic") | .text] |
-      (map(startswith("<courier from=\"" + $finder + "\" finding=\"ahead\">") and contains("held with group \"finding\"") and contains("FINDING: the shared API returns cents")) | index(true)) as $ahead |
-      (map(contains(" group=\"finding\"")) | index(true)) as $group | length == 2 and $ahead == 0 and $group == 1')"
-  check "the finder sent no progress, and neither child was told as one that ended without a report" \
-    "$([ -z "$(kv get "report/$finder/progress")" ] && notices_with "$parent" ended | jq -r 'length == 0')"
-
-  scenario "the report that completes its group sends no finding ahead: the finding comes in the group's message, under the report"
-  out=$(prompt "COURIER-FINDING-LAST")
-  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  early=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-REPORTS-FIRST") | .metadata.metadata.sessionID')
-  finder=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.input.task == "CHILD-FINDS-LAST") | .metadata.metadata.sessionID')
-  check "two children were started in one group" "$([ -n "$early" ] && [ -n "$finder" ] && echo true || echo false)"
-  check "the first member's report is held" \
-    "$(for _ in $(seq 1 30); do [ "$(kv get "group/$parent/finding/$early" | jq -r '.report.status == "done"' 2>/dev/null)" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
-  api_post "session/$finder/synthetic" "$(jq -nc --arg text "<courier from=\"$parent\">REPORT-NOW</courier>" --arg from "$parent" \
-    '{text: $text, description: ("Message from " + $from), metadata: {source: "courier", from: $from}, delivery: "steer"}')" >/dev/null
-  check "the parent got the group's message, with the finding under the finder's report" \
-    "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r 'length == 1 and (.[0] |
-      contains("reports=\"2\"") and contains("FIRST DONE") and contains("FINDER DONE\n\nFinding for the other parts:\nFINDING: the shared API returns cents"))')"
-  check "the finder's report completed the group and its result says the finding goes in the group's message" \
-    "$(api "session/$finder/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send") | .state] |
-      length == 1 and (.[0] | .status == "completed" and ((.metadata.metadata // .metadata) | .finding == "held" and .held.group == "finding" and .held.reported == 2) and
-        (tostring | contains("Its finding goes in that message, under your report")))')"
-  check "no finding went ahead: the group's message is the parent's only courier message" \
-    "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text] | length == 1 and (map(contains("finding=\"ahead\"")) | any | not)')"
-}
-
-run_finding_up() {
   scenario "a grandchild's finding reaches the root: its parent, told so by its brief, passes it up without a status"
   out=$(prompt "COURIER-RELAY-UP")
   turn_ended=$(now_ms)
@@ -848,8 +726,8 @@ run_permission() {
     check "with what it asks for and the choices" "$(jq -r --arg child "$child" '.[0] // "" |
       contains("<courier from=\"" + $child + "\" asks=\"permission\"") and contains("It asks for: shell") and
       contains("echo courier-asks") and contains("- once:") and contains("- reject:") and contains("You cannot decide this") and (contains("- always") | not)' <<<"$notice")"
-    check "courier_children shows the child waiting on it" \
-      "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -r --arg request "$request" '.status == "completed" and (.output | contains($request))')"
+    check "courier_tree shows the child waiting on it" \
+      "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree | jq -r --arg request "$request" '.status == "completed" and (.output | contains($request))')"
     choice=$([ "$mode" = isolate ] && echo reject || echo once)
     answered=$(prompt_in "$parent" "COURIER-ANSWER $choice" | tool_state courier_answer)
     check "courier_answer passed on $choice" "$(jq -r '.status == "completed" and .metadata.metadata.answered == true' <<<"$answered")"
@@ -893,14 +771,14 @@ run_depth() {
   check "two leaves tried" "$(jq -r 'length == 2' <<<"$leaves")"
   check "the root was told once that the child in between ended without a report, once its leaves had reported" \
     "$(has_text "$root" "PARENT TOLD SILENT" 60 >/dev/null; turn_ended "$middle"; end_handled "$middle" "$root" && notices_with "$root" ended | jq -r --arg middle "$middle" 'length == 1 and (.[0] | contains("<courier from=\"" + $middle + "\" ended="))' || echo false)"
-  check "every request of a leaf was named a leaf, and the courier's hook left it no courier_spawn, courier_recall or courier_note" \
+  check "every request of a leaf was named a leaf, and the courier's hook left it no courier_spawn" \
     "$(jq -sr --argjson leaves "$leaves" '[.[] | select(.type == "probe.context" and (.sessionID | IN($leaves[])))]
-      | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_recall") | not) and (.tools | index("courier_note") | not) and (.tools | index("courier_send")))' "$WORK/probe.log")"
+      | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_send")))' "$WORK/probe.log")"
   check "the model saw no courier_spawn in a leaf's tool list unless the probe put it back" \
     "$(jq -sr --argjson leaves "$leaves" '[.[] | select((.session | IN($leaves[])) and (.tools | length > 0))] | group_by(.session)
       | map(any(.tools | index("courier_spawn"))) | sort == [false, true]' "$WORK/model.log")"
-  check "the child in between is a sub-orchestrator, with courier_spawn, courier_recall and courier_note" \
-    "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")) and (.tools | index("courier_recall")) and (.tools | index("courier_note")))' "$WORK/model.log")"
+  check "the child in between is a sub-orchestrator, with courier_spawn" \
+    "$(jq -sr --arg middle "$middle" '[.[] | select(.session == $middle and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")))' "$WORK/model.log")"
   check "the root was pointed to the skill until it had started a child, then named root orchestrator" \
     "$(jq -sr --arg root "$root" '[.[] | select(.session == $root and (.tools | length > 0)) | .role] | index("root orchestrator") as $i
       | $i > 0 and (.[:$i] | all(. == "root")) and (.[$i:] | all(. == "root orchestrator"))' "$WORK/model.log")"
@@ -939,9 +817,9 @@ run_role_entry() {
   check "every request of the middle session and the leaf carried the role in the entry's block, none in a part of the hook's" \
     "$(jq -sr --arg mid "$role_mid" --arg leaf "$role_leaf" '[.[] | select((.session == $mid or .session == $leaf) and (.tools | length > 0))]
       | length >= 3 and all(.roleEntry and (.rolePart | not))' "$WORK/model.log")"
-  check "every request of the leaf named it a leaf, without courier_spawn, courier_recall or courier_note, and the hook saw the role too" \
+  check "every request of the leaf named it a leaf, without courier_spawn, and the hook saw the role too" \
     "$(jq -sr --arg leaf "$role_leaf" '[.[] | select(.session == $leaf and (.tools | length > 0))]
-      | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_recall") | not) and (.tools | index("courier_note") | not) and (.tools | index("courier_send")))' "$WORK/model.log" |
+      | length > 0 and all(.role == "leaf" and (.tools | index("courier_spawn") | not) and (.tools | index("courier_send")))' "$WORK/model.log" |
       grep -qx true && jq -sr --arg leaf "$role_leaf" '[.[] | select(.type == "probe.context" and .sessionID == $leaf)] | length > 0 and all(.role == "leaf")' "$WORK/probe.log" | grep -qx true && echo true || echo false)"
   check "the root was pointed to the skill in a part of the hook's until it had started a child, then named root orchestrator by its entry alone" \
     "$(jq -sr --arg root "$role_root" '[.[] | select(.session == $root and (.tools | length > 0))] | (map(.role) | index("root orchestrator")) as $i
@@ -998,7 +876,7 @@ run_fork() {
   echo "  OpenCode's own fork notices in the leaf's fork: $(api "session/$leaf_fork/message" | jq -r '[.data[] | select(.type == "synthetic" and (.text | startswith("<fork-notice>")))] | length')"
   check "the leaf's fork holds one courier fork notice, which names the leaf and tells it to send the leaf's parent nothing" \
     "$(notices_with "$leaf_fork" notice | jq -r --arg leaf "$fork_leaf" --arg mid "$fork_mid" 'length == 1 and (.[0] | startswith("<courier from=\"courier\" notice=\"fork\" of=\"" + $leaf + "\">") and
-      contains("Courier did not start this fork.") and contains("send session " + $mid + " nothing with courier_send") and (contains("courier_children") | not))')"
+      contains("Courier did not start this fork.") and contains("send session " + $mid + " nothing with courier_send") and (contains("courier_tree lists none") | not))')"
   check "the middle session's fork holds one, which says the brief is the middle session's and its children report to it" \
     "$(notices_with "$mid_fork" notice | jq -r --arg mid "$fork_mid" --arg root "$fork_root" 'length == 1 and (.[0] | contains(" of=\"" + $mid + "\"") and
       contains("The brief above from session " + $root + " is the assignment of session " + $mid) and contains("are the children of session " + $mid))')"
@@ -1023,63 +901,31 @@ run_fork() {
 }
 
 run_entries() {
-  scenario "the root and a sub-orchestrator carry the project's lessons in a lessons entry from their first request, which courier_note renews (#384)"
-  child_delay 1000
-  out=$(prompt "COURIER-RECALL")
-  seeder=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  project=$(session_info "$seeder" | jq -r '.projectID')
-  seeded='{"startedAt":1760000000000,"movedAt":1760000900000,"title":"Numbers and count through helpers","split":"split: 2 parts: numbers, count","finished":true,"lesson":{"text":"halves of a list are too small to spawn; do them yourself","at":1760000890000},"parts":[{"sessionID":"ses_seed_numbers","title":"Numbers","depth":1,"isolated":false,"status":"done"}]}'
-  kv set "memory/$project/ses_seed_lesson" "$seeded" "memory/$project/$seeder"
-  seeded_line='- ses_seed_lesson "Numbers and count through helpers": lesson (2025-10-09): "halves of a list are too small to spawn; do them yourself"'
-  out=$(prompt "COURIER-ROLE")
-  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  middle=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
-  check "the middle session's report woke the root" "$(has_text "$root" "ROOT WOKE" 90)"
-  leaf=$(texts "$middle" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
-  check "the middle session started a leaf" "$([ -n "$leaf" ] && echo true || echo false)"
-  check "the root and the middle session carry the seeded lesson in their lessons entry, under its line, and the leaf, which cannot split, has none" \
-    "$([[ $(entry_of "$root" lessons) == "opencode-courier lessons: "*"$seeded_line"* && $(entry_of "$middle" lessons) == "opencode-courier lessons: "*"$seeded_line"* && -z $(entry_of "$leaf" lessons) ]] && echo true || echo false)"
-  check "every request of the middle session carried the lessons block with its role's, and none of the leaf's did" \
-    "$(jq -sr --arg mid "$middle" --arg leaf "$leaf" '([.[] | select(.session == $mid and (.tools | length > 0))] | length > 0 and all(.lessonsEntry and .roleEntry)) and
-      ([.[] | select(.session == $leaf and (.tools | length > 0))] | length > 0 and all(.lessonsEntry | not))' "$WORK/model.log")"
-  echo "  instruction updates in the root's transcript: $(instruction_updates "$root")"
-  check "the root's transcript shows its entries' arrival as system messages naming the lessons, the role and the standing, all before its reply" \
-    "$(instruction_updates "$root" | jq -r 'length >= 1 and (join(" ") | contains("api/lessons") and contains("api/role") and contains("api/standing"))')"
-  line="numbers was one line; do it yourself next time"
-  noted=$(prompt_in "$root" "COURIER-NOTE $line" | tool_state courier_note)
-  check "courier_note from the root wrote the lesson" "$(jq -r '.status == "completed"' <<<"$noted")"
-  check "which renewed the lessons entry of the root and of the middle session, this tree's lesson first and the seeded one after it, and gave the leaf none" \
-    "$(for id in "$root" "$middle"; do [[ $(entry_of "$id" lessons) == "opencode-courier lessons: "*"- $root \""*"\": lesson ($(date -u +%F)): \"$line\""*"$seeded_line"* ]] || { echo false; exit; }; done; [ -z "$(entry_of "$leaf" lessons)" ] && echo true || echo false)"
-  turn_ended "$middle"
-  api_post "session/$middle/compact" '{}' >/dev/null
-  check "the middle session's compaction completed" \
-    "$(for _ in $(seq 1 60); do [ "$(api "session/$middle/message" | jq -r '[.data[] | select(.type == "compaction" and .status == "completed")] | length > 0')" = true ] && { echo true; exit; }; sleep 1; done; echo false)"
-  prompt_in "$middle" "CHILD-ROLE-AGAIN" >/dev/null
-  check "after the compaction the middle session's request carried the renewed lessons and its role in their blocks" \
-    "$([[ $(entry_of "$middle" lessons) == *"\"$line\""* ]] && jq -sr --arg mid "$middle" '[.[] | select(.session == $mid and (.tools | length > 0))] | last | .lessonsEntry and .roleEntry and (.reply.text == "LEAF AGAIN")' "$WORK/model.log")"
-
-  scenario "a parent carries the standing of the sessions it started in a standing entry, kept current, removed with its last child (#384)"
+  scenario "a parent carries the standing of the sessions it started in a standing entry, kept current, removed with its last child, and no lessons entry (#384)"
   child_delay 6000
-  out=$(prompt "COURIER-GROUP")
+  out=$(prompt "COURIER-PAIR")
   parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
   first=$(head -1 <<<"$members")
   second=$(tail -1 <<<"$members")
   standing=$(entry_of "$parent" standing)
-  check "once the spawns were done, the parent's standing listed both members working, their group waiting for them" \
-    "$([[ $standing == "opencode-courier standing: "* && $standing == *"- $first \"Report back to your parent.\": working; group \"pair\" waits for it"* && $standing == *"- $second \"Report back to your parent.\": working; group \"pair\" waits for it"* ]] && echo true || echo false)"
+  check "once the spawns were done, the parent's standing listed both children working, and nothing after the state" \
+    "$([[ $standing == "opencode-courier standing: "*"a report or a notice still reaches you as a message."* && $standing == *"- $first \"Report back to your parent.\": working"* && $standing == *"- $second \"Report back to your parent.\": working"* && $standing != *group* ]] && echo true || echo false)"
   check "the parent's reply after the spawns was asked with the standing in an update, no look needed" \
     "$(jq -sr --arg parent "$parent" '[.[] | select(.session == $parent and (.tools | length > 0))] | length >= 2 and (.[1] | .standingEntry) and (.[0] | .standingEntry | not)' "$WORK/model.log")"
-  check "the group's reports woke the parent" "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && echo true || echo false)"
-  check "then the standing read both as reported done, their group delivered" \
-    "$(for _ in $(seq 1 15); do standing=$(entry_of "$parent" standing); [[ $standing == *"- $first \"Report back to your parent.\": reported done; group \"pair\" was delivered"* && $standing == *"- $second \"Report back to your parent.\": reported done; group \"pair\" was delivered"* ]] && { echo true; exit; }; sleep 1; done; echo false)"
+  check "the reports woke the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 60)" ] && echo true || echo false)"
+  check "then the standing read both as reported done" \
+    "$(for _ in $(seq 1 15); do standing=$(entry_of "$parent" standing); [[ $standing == *"- $first \"Report back to your parent.\": reported done"* && $standing == *"- $second \"Report back to your parent.\": reported done"* && $standing != *group* ]] && { echo true; exit; }; sleep 1; done; echo false)"
   check "every announcement in the parent's transcript named the standing, and the woken request carried it" \
     "$(instruction_updates "$parent" | jq -r 'length >= 2 and all(contains("api/standing"))' | grep -qx true && jq -sr --arg parent "$parent" '[.[] | select(.session == $parent and (.tools | length > 0))] | last | .standingEntry' "$WORK/model.log")"
+  check "the parent's announcements named its role and its standing, and none named lessons" \
+    "$(instruction_updates "$parent" | jq -r '(join(" ") | contains("api/role") and contains("api/standing")) and all(contains("api/lessons") | not)')"
   cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $first" | tool_state courier_cleanup)
-  check "courier_cleanup dropped the first member, and the standing lists the second alone" \
+  check "courier_cleanup dropped the first child, and the standing lists the second alone" \
     "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "forgotten"' <<<"$cleaned" | grep -qx true && standing=$(entry_of "$parent" standing) && [[ $standing == *"- $second "* && $standing != *"- $first "* ]] && echo true || echo false)"
   prompt_in "$parent" "COURIER-CLEANUP $second" >/dev/null
   check "dropping the last one removed the standing entry" "$([ -z "$(entry_of "$parent" standing)" ] && [[ $(entry_of "$parent" role) == "opencode-courier role: root orchestrator"* ]] && echo true || echo false)"
+  check "the parent and its children were given no lessons entry" "$(for id in "$parent" "$first" "$second"; do [ -z "$(entry_of "$id" lessons)" ] || { echo false; exit; }; done; echo true)"
   child_delay 0
 }
 
@@ -1099,8 +945,8 @@ run_spawn_model() {
   check "and every request of the child asked the provider for that model with the variant's reasoning effort" \
     "$(jq -sr --arg child "$child" '[.[] | select(.session == $child)] | length > 0 and all(.options.model == "other" and .options.reasoning_effort == "high")' "$WORK/model.log")"
   check "the roster names the model, which the tree panel's row shows" "$(kv get "roster/$parent/$child" | jq -r '.model == "mock/other#high"')"
-  check "courier_children lists it with the model" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
-    jq -r --arg child "$child" '.status == "completed" and any(.metadata.metadata.children[]; .sessionID == $child and .model == "mock/other#high")')"
+  check "courier_tree lists it with the model" "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree |
+    jq -r --arg child "$child" '.status == "completed" and any(.metadata.metadata.sessions[]; .sessionID == $child and .model == "mock/other#high")')"
 
   scenario "a variant alone applies to the parent's own model"
   child_delay 1000
@@ -1130,7 +976,7 @@ run_spawn_model() {
     "$(prompt "COURIER-MODEL mock/other huge" | tool_state courier_spawn | jq -r '.status == "error" and (.error | contains("mock/other has no variant \"huge\"") and contains("Its variants are low, medium, high and default"))')"
   check "a name without a provider is refused, saying the form" \
     "$(prompt "COURIER-MODEL other -" | tool_state courier_spawn | jq -r '.status == "error" and (.error | contains("model must be provider/model"))')"
-  check "no session was started under the parent" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
+  check "no session was started under the parent" "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree | jq -r '.status == "completed" and (.metadata.metadata.sessions | length == 0)')"
 }
 
 run_answer() {
@@ -1220,7 +1066,7 @@ run_questions() {
     contains("{\"questions\":[{\"question\":\"Which greeting?\",\"header\":\"Greeting\"") and contains("Do not answer it yourself"))' <<<"$notice")"
   check "the parent asks exactly what the child asks" "$([ "$(fields_of "$parent")" = "$(fields_of "$child")" ] && echo true || echo false)"
   request=$(jq -r '.[0] | capture("request=\"(?<id>[^\"]+)\"").id' <<<"$notice")
-  check "courier_children shows the child waiting on it" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
+  check "courier_tree shows the child waiting on it" "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree |
     jq -r --arg request "$request" '.status == "completed" and (.output | contains($request) and contains("\"type\": \"question\""))')"
   check "the person answers in the parent's session" "$(answer_form "$parent" "$parent_form" '"Hi"')"
   check "the parent's question passed the answer on, without courier_answer" "$(has_text "$parent" "do not call courier_answer")"
@@ -1429,6 +1275,26 @@ run_skill() {
     "$(tool_state skill <<<"$out" | jq -r '.status == "completed" and (.output | contains("Base directory for this skill: skill://courier-orchestrate\n"))')"
   check "a read of skill://courier-orchestrate/SKILL.md, the directory it was told about, served the skill's text" \
     "$(tool_state read <<<"$out" | jq -r '.status == "completed" and (.input.path == "skill://courier-orchestrate/SKILL.md") and (.output | contains("Below the root, never start one session for the whole task"))')"
+
+  scenario "a config that still sets the memory option loads, logs one line for it, and offers no memory tool and no lessons entry"
+  check "the server log has the line for the memory option, and no line reading the option as a setting" \
+    "$(grep -qF -- "courier: the memory option is not read: memory was removed in 0.17.0. Remove it from the config." "$WORK/server.log" && ! grep -qF "memory must be true or false" "$WORK/server.log" && echo true || echo false)"
+
+  scenario "a config that still sets nativeChildren loads and logs one line for it, and its children are standalone unless a spawn passes native: true"
+  check "the server log has the line for the nativeChildren option once per load, and no line reading it as a setting" \
+    "$(line="courier: the nativeChildren option is not read: it was removed in 0.17.0. Remove it from the config; a spawn asks for a native child with native: true."
+      loads=$(grep -cF -- "courier: the memory option is not read:" "$WORK/server.log"); lines=$(grep -cF -- "$line" "$WORK/server.log")
+      [ "$lines" -ge 1 ] && [ "$lines" = "$loads" ] && ! grep -qF "nativeChildren must be true or false" "$WORK/server.log" && echo true || echo false)"
+  child_delay 1000
+  out=$(prompt "COURIER-TEST")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "a child spawned without native has no OpenCode parentID and is not recorded as native" \
+    "$([ -n "$child" ] && [ "$(session_info "$child" | jq -r '.parentID == null')" = true ] && [ "$(kv get "roster/$parent/$child" | jq -r 'has("native") | not')" = true ] && echo true || echo false)"
+  check "OpenCode lists no subagent under the parent" "$(api "session?parentID=$parent" | jq -r '.data | length == 0')"
+  check "it reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  check "no request of this run offered courier_recall or courier_note, or carried a lessons block" \
+    "$(jq -sr '[.[] | select(.tools | length > 0)] | length > 0 and all((.tools | index("courier_recall") | not) and (.tools | index("courier_note") | not) and (.lessonsEntry | not))' "$WORK/model.log")"
 }
 
 run_wake() {
@@ -1474,6 +1340,15 @@ run_later() {
   check "the cancelled message never arrived" \
     "$([ -n "$scheduled" ] && [ -z "$(kv get "later/$scheduled")" ] && [ "$(notices_with "$parent" scheduled)" = '[]' ] &&
       api "session/$parent/inbox" | jq -e '.data | length == 0' >/dev/null && echo true || echo false)"
+
+  scenario "a child that ends its turn to wait for a message it scheduled is not reported, and reports once woken"
+  out=$(prompt "COURIER-WAITING")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the scheduled message woke the child, which reported" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 75)" ] && echo true || echo false)"
+  check "the child's first turn, which ended waiting, was not told" "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 0' || echo false)"
+  check "the child scheduled the message in its first turn" \
+    "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_later")] | length == 1')"
 }
 
 run_schedules() {
@@ -1507,14 +1382,14 @@ run_schedules() {
 }
 
 run_roster() {
-  scenario "courier_children lists the sessions a parent spawned"
+  scenario "courier_tree lists the sessions a parent spawned"
   child_delay 1000
   out=$(prompt "COURIER-ROSTER")
   roster_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   spawned=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
   check "spawned two children" "$([ "$(wc -w <<<"$spawned")" -eq 2 ] && echo true || echo false)"
-  listed=$(tool_state courier_children <<<"$out" | jq -r 'select(.status == "completed") | .output')
-  check "courier_children lists both" "$(for id in $spawned; do grep -q "$id" <<<"$listed" || { echo false; exit; }; done; echo true)"
+  listed=$(tool_state courier_tree <<<"$out" | jq -r 'select(.status == "completed") | .output')
+  check "courier_tree lists both" "$(for id in $spawned; do grep -q "$id" <<<"$listed" || { echo false; exit; }; done; echo true)"
   check "the parent was woken by its children" "$([ -n "$(reply_time "$roster_parent" "PARENT WOKE")" ] && echo true || echo false)"
   check "each child is indexed under its parent" \
     "$(for id in $spawned; do [ "$(indexed_under "$id")" = "$roster_parent" ] || { echo false; exit; }; done; echo true)"
@@ -1545,8 +1420,8 @@ run_roster() {
   check "and this server holds the key now" "$(kv get scheduler/owner | jq -r '.server != "another server"')"
 
   scenario "the roster survives a restart and can be read from another session"
-  out=$(prompt "COURIER-CHILDREN $roster_parent")
-  listed=$(tool_state courier_children <<<"$out" | jq -c 'select(.status == "completed") | .metadata.metadata.children')
+  out=$(prompt "COURIER-TREE-OF $roster_parent")
+  listed=$(tool_state courier_tree <<<"$out" | jq -c 'select(.status == "completed") | .metadata.metadata.sessions')
   check "lists both children" "$(jq -r --arg ids "$spawned" '[.[].sessionID] | sort == ($ids | split("\n") | sort)' <<<"$listed")"
   check "with each child's last reply" "$(jq -r 'all((.lastText // "") | contains("TOOL DONE courier_send"))' <<<"$listed")"
   check "the entry written without a reverse key got one when the plugin loaded" \
@@ -1576,7 +1451,7 @@ run_cleanup() {
   check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
   check "its reverse key is gone too" "$([ -z "$(kv get "roster-by-child/$child")" ] && echo true || echo false)"
   check "git no longer lists the worktree" "$(git -C "$WORK/project" worktree list | grep -qF "$directory" && echo false || echo true)"
-  check "the child is off courier_children" "$([ "$(child_listing "$parent" "$child")" = unlisted ] && echo true || echo false)"
+  check "the child is off courier_tree" "$([ "$(child_listing "$parent" "$child")" = unlisted ] && echo true || echo false)"
 
   scenario "courier_cleanup keeps a worktree with uncommitted changes"
   child_delay 1000
@@ -1586,7 +1461,7 @@ run_cleanup() {
   check "courier_cleanup kept it and named the file" \
     "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "kept" and (.output | contains("notes.txt"))' <<<"$cleaned")"
   check "the file is still there" "$([ -f "$directory/notes.txt" ] && echo true || echo false)"
-  check "the child is still on courier_children" "$([ "$(child_listing "$parent" "$child")" = listed ] && echo true || echo false)"
+  check "the child is still on courier_tree" "$([ "$(child_listing "$parent" "$child")" = listed ] && echo true || echo false)"
   cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child force" | tool_state courier_cleanup)
   check "with force, courier_cleanup removed it" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
   check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
@@ -1682,8 +1557,8 @@ run_idle_stop() {
   check "the middle session woke on the notice" "$(has_text "$middle" "PARENT WOKE" 45)"
   notices=$(notices_with "$middle" ended | jq -c 'map(select(contains("ended=\"stopped\"")))')
   echo "  $notices"
-  check "it was told once, from the leaf, not to send it the answer it waited on, and that it still holds back its join group (#523)" \
-    "$(jq -r --arg leaf "$leaf" 'length == 1 and (.[0] | contains("<courier from=\"" + $leaf + "\" ended=\"stopped\">") and contains("waiting on your answer") and contains("Do not send it that answer") and contains("It still holds back its join group") and (contains("still owed you a report") | not))' <<<"$notices")"
+  check "it was told once, from the leaf, not to send it the answer it waited on, and nothing of a group (#523)" \
+    "$(jq -r --arg leaf "$leaf" 'length == 1 and (.[0] | contains("<courier from=\"" + $leaf + "\" ended=\"stopped\">") and contains("waiting on your answer") and contains("Do not send it that answer") and (contains("group") | not) and (contains("still owed you a report") | not))' <<<"$notices")"
   turn_ended "$middle"
   turn_ended "$root"
 }
@@ -1728,7 +1603,7 @@ run_failed_live() {
 }
 
 run_total_refusal() {
-  scenario "a maxTotal refusal tells a session with none of its own running that only reports held for a group can wake it (#479, #526)"
+  scenario "a maxTotal refusal tells a session with none of its own running that no report is still due to it (#479, #526)"
   stop_server
   jq '.plugins[0].options.maxTotal = 2' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
@@ -1746,8 +1621,8 @@ run_total_refusal() {
   turn_ended "$root"
   refused=$(prompt_in "$second" "COURIER-TEST" | tool_state courier_spawn)
   echo "  $(jq -c '.error' <<<"$refused")"
-  check "the second child, none of its own running, is refused at maxTotal 2 and told only reports held for a group can wake it" \
-    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself: none of the sessions you started counts, so only reports already held for a group can still wake you.")) and (.error | tostring | contains("end your turn") | not)' <<<"$refused")"
+  check "the second child, none of its own running, is refused at maxTotal 2 and told no report is still due to it" \
+    "$(jq -r '.status == "error" and (.error | tostring | contains("(maxTotal 2). Do this part yourself: none of the sessions you started counts, so no report is still due to you.")) and (.error | tostring | contains("end your turn") | not)' <<<"$refused")"
   turn_ended "$second"
   turn_ended "$root"
   refused=$(prompt_in "$root" "COURIER-TEST" | tool_state courier_spawn)
@@ -1844,25 +1719,19 @@ run_subagent() {
   check "their ends did not wake the stopped middle session again" \
     "$([ "$(finished "$middle")" = true ] && ! texts "$middle" | grep -qF "SAW SUBAGENT END" && [ "$(session_info "$middle" | jq -r '.outcome')" = interrupted ] && echo true || echo false)"
   check "no courier report state was noted for the subagents" "$([ -z "$(kv get "report/$first/stopped")" ] && [ -z "$(kv get "report/$second/settled")" ] && echo true || echo false)"
-  project=$(session_info "$root" | jq -r '.projectID')
-  record=$(record_of "$root" '[.parts[] | select(.subagent == true)] | length == 2')
-  echo "  $(jq -c '[.parts[] | {sessionID, depth, subagent, status}]' <<<"$record")"
-  check "the tree's record lists both subagents as parts under the middle session, marked subagent, with duration and cost" \
-    "$(jq -r --arg first "$first" --arg second "$second" '[.parts[] | select(.subagent == true)] | (map(.sessionID) | sort) == ([$first, $second] | sort) and
-      all(.[]; .depth == 2 and .isolated == false and (.duration | type) == "number" and (.cost | type) == "number" and (.title | length) > 0)' <<<"$record")"
 }
 
 run_subagent_role() {
-  scenario "an OpenCode subagent of a courier child gets no root role line and no courier_spawn, courier_recall or courier_note (#463)"
+  scenario "an OpenCode subagent of a courier child gets no root role line and no courier_spawn (#463)"
   out=$(prompt "COURIER-SUBAGENT-NO-ROOT")
   root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
   check "the child reported its subagent's answer to the root" "$(has_text "$root" "CHILD SAW" 60)"
   sub=$(jq -sr '[.[] | select(.reply.text? == "SUBAGENT NO ROOT DONE") | .session] | unique | .[0] // empty' "$WORK/model.log")
   check "the subagent was started by the child, through OpenCode's parentID" "$([ -n "$sub" ] && [ "$(session_info "$sub" | jq -r '.parentID')" = "$child" ] && echo true || echo false)"
-  check "every request of the subagent had no role line, no hook part, and no courier_spawn, courier_recall or courier_note, but courier_send" \
+  check "every request of the subagent had no role line, no hook part, and no courier_spawn, but courier_send" \
     "$(jq -sr --arg sub "$sub" '[.[] | select(.session == $sub and (.tools | length > 0))]
-      | length > 0 and all(.role == null and (.rolePart | not) and (.roleEntry | not) and (.tools | index("courier_spawn") | not) and (.tools | index("courier_recall") | not) and (.tools | index("courier_note") | not) and (.tools | index("courier_send")))' "$WORK/model.log" |
+      | length > 0 and all(.role == null and (.rolePart | not) and (.roleEntry | not) and (.tools | index("courier_spawn") | not) and (.tools | index("courier_send")))' "$WORK/model.log" |
       grep -qx true && jq -sr --arg sub "$sub" '[.[] | select(.type == "probe.context" and .sessionID == $sub)] | length > 0 and all(.role == null and (.tools | index("courier_spawn") | not))' "$WORK/probe.log" | grep -qx true && echo true || echo false)"
   check "the child kept its role and courier_spawn" \
     "$(jq -sr --arg child "$child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and all(.role == "sub-orchestrator" and (.tools | index("courier_spawn")))' "$WORK/model.log")"
@@ -1887,9 +1756,9 @@ run_archive() {
   check "archiving stamped its updated time with the archive's, past its last turn's end" \
     "$(session_info "$child" | jq -r '.time.archived != null and .time.updated == .time.archived and .time.updated > .time.idle')"
   check "which reads as finished, its transcript ending on its last turn's end" "$(finished "$child")"
-  listed=$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -c --arg child "$child" '.metadata.metadata.children[] | select(.sessionID == $child)')
+  listed=$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree | jq -c --arg child "$child" '.metadata.metadata.sessions[] | select(.sessionID == $child)')
   echo "  $listed"
-  check "courier_children says it was archived when it last changed, its last turn having succeeded" \
+  check "courier_tree says it was archived when it last changed, its last turn having succeeded" \
     "$(jq -r '.outcome == "succeeded" and .archived != null and .archived == .updated' <<<"$listed")"
   directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")
   row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" |
@@ -1930,9 +1799,6 @@ run_archive() {
   turn_ended "$second"
   check "and then it reads idle" \
     "$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -r --arg id "$second" '.output.rows[] | select(.sessionID == $id) | .state == "idle"')"
-  project=$(session_info "$parent" | jq -r '.projectID')
-  check "the tree's record settles as finished, the first child done, the second interrupted" \
-    "$(record_of "$parent" '.finished == true and (.parts | length == 2)' 45 | jq -r --arg child "$child" --arg second "$second" '.finished == true and any(.parts[]; .sessionID == $child and .status == "done") and any(.parts[]; .sessionID == $second and .status == "interrupted")')"
 
   scenario "a reported idle child the person renames, switches to another model or unarchives reads as idle, and no longer counts (#326)"
   check "the person unarchives the first child" "$(patch_session "$child" '{"archived":false}')"
@@ -1954,9 +1820,9 @@ run_archive() {
     "$([ "$(session_info "$third" | jq -r '.time.archived == null and .time.updated > .time.idle')" = true ] &&
       [ "$(api "session/$third/context" | jq -r '.data | last | .type')" = idle ] && echo true || echo false)"
   check "which reads as finished" "$(finished "$third")"
-  listed=$(prompt "COURIER-CHILDREN $third_parent" | tool_state courier_children | jq -c --arg child "$third" '.metadata.metadata.children[] | select(.sessionID == $child)')
+  listed=$(prompt "COURIER-TREE-OF $third_parent" | tool_state courier_tree | jq -c --arg child "$third" '.metadata.metadata.sessions[] | select(.sessionID == $child)')
   echo "  $listed"
-  check "courier_children lists it by its new title, its last turn having succeeded before the rename" \
+  check "courier_tree lists it by its new title, its last turn having succeeded before the rename" \
     "$(jq -r '.title == "Renamed by the person" and .outcome == "succeeded" and .updated > .idle and .archived == null' <<<"$listed")"
   row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$third_parent\"}}" |
     jq -c --arg id "$third" '.output.rows[] | select(.sessionID == $id) | {title, state, idle, report}')
@@ -2174,171 +2040,6 @@ run_inbox() {
     "$(turn_ended "$parent"; end_handled "$parent" "$parent" && notices_with "$parent" answered | jq -r --arg question "$question" 'length == 1 and (.[0] | contains("request=\"" + $question + "\"") and contains("was answered by the person (") and (contains("in its own session") | not))' || echo false)"
 }
 
-record_of() {
-  for _ in $(seq 1 "${3:-30}"); do
-    local found
-    found=$(kv get "memory/$project/$1")
-    if [ -n "$found" ] && [ "$(jq -r "$2" <<<"$found")" = true ]; then echo "$found"; return; fi
-    sleep 1
-  done
-  kv get "memory/$project/$1"
-}
-run_memory() {
-  scenario "a tree's record is kept per project, and courier_recall reads it back from the tree, from a new session and seeded by hand; courier_note writes its lesson"
-  out=$(prompt "COURIER-GROUP")
-  root=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  members=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
-  check "both members reported, in one message" "$([ -n "$(reply_time "$root" "PARENT GOT GROUP" 45)" ] && echo true || echo false)"
-  project=$(session_info "$root" | jq -r '.projectID')
-  check "the root's session names the project the record is keyed by" "$([ -n "$project" ] && [ "$project" != null ] && echo true || echo false)"
-  record=$(record_of "$root" '.finished == true and (.parts | length == 2) and all(.parts[]; .status == "done")')
-  check "once the turns in the tree had ended, the record lists both parts done, in their group, and the tree finished" \
-    "$(jq -r --arg a "$(head -1 <<<"$members")" --arg b "$(tail -1 <<<"$members")" '.finished == true and (.parts | map(.sessionID) == [$a, $b]) and
-      all(.parts[]; .status == "done" and .group == "pair" and .depth == 1 and .isolated == false and (.duration | type) == "number" and (.cost | type) == "number")' <<<"$record")"
-  check "with the top's title and start, its split line not stated, and no recall noted yet" \
-    "$(jq -r --argjson info "$(session_info "$root")" '.title == $info.title and .startedAt == $info.time.created and .split == "not stated" and (has("recalled") | not) and .movedAt >= .startedAt' <<<"$record")"
-  check "and nothing of the reports' bodies or artifacts" "$(jq -r 'tostring | contains("CHILD DONE") or contains("child/work") | not' <<<"$record")"
-  recalled=$(prompt_in "$root" "COURIER-RECALL" | tool_state courier_recall)
-  check "courier_recall from the root lists its own tree, marked, with both parts done" \
-    "$(jq -r --arg root "$root" '.status == "completed" and .metadata.metadata.top == $root and (.output | contains("- " + $root + " (this tree) ") and contains("2 parts: 2 done") and contains("· finished") and test(" · ran [^·]+ · last moved [^·]+ ago · ")) and
-      any(.metadata.metadata.records[]; .sessionID == $root and .finished and (.parts | length) == 2)' <<<"$recalled")"
-  check "which noted the root's call on its record" "$(record_of "$root" '.recalled.calls == 1 and (.recalled.at | type) == "number"' | jq -r '.recalled.calls == 1')"
-  out=$(prompt "COURIER-RECALL")
-  other=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  check "a new session of the project lists the same record, and its own tree without parts" \
-    "$(tool_state courier_recall <<<"$out" | jq -r --arg root "$root" --arg other "$other" '.status == "completed" and (.output | contains("- " + $root + " 20") and contains("- " + $other + " (this tree) ") and contains("no parts")) and
-      any(.metadata.metadata.records[]; .sessionID == $root and (.parts | length) == 2)' )"
-  check "the new session's own record was written by the call, with no parts and the call noted" \
-    "$(record_of "$other" '.recalled.calls == 1' | jq -r '.parts == [] and .recalled.calls == 1 and (.recalled.at | type) == "number"')"
-  check "the listing counted the root's record as shown once to the new session's tree, beside the record, and neither tree's own" \
-    "$([ "$(kv get "memory/$project/$root/reads/$other" | jq -r '.shown == 1 and .read == 0 and (.at | type) == "number"')" = true ] && [ -z "$(kv get "memory/$project/$other/reads/$other")" ] && [ -z "$(kv get "memory/$project/$root/reads/$root")" ] && [ "$(kv get "memory/$project/$root" | jq -r 'has("reads") | not')" = true ] && echo true || echo false)"
-  out=$(prompt "COURIER-RECALL $root")
-  reader=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  full=$(tool_state courier_recall <<<"$out")
-  check "with a sessionID, courier_recall gives that record in full, its reads summed over both readers with this read counted" \
-    "$(jq -r --arg root "$root" '.status == "completed" and (.output | startswith("Record of the tree under " + $root + ", in project ") and contains("\"reads\": {")) and .metadata.metadata.record.sessionID == $root and (.metadata.metadata.record.parts | length) == 2 and
-      (.metadata.metadata.record.reads | .shown == 1 and .read == 1 and (.at | type) == "number")' <<<"$full")"
-  check "which was counted as a read under the reader's top" "$(kv get "memory/$project/$root/reads/$reader" | jq -r '.shown == 0 and .read == 1')"
-  today=$(date -u +%F)
-  line="The docs part was ten lines; next time do it yourself"
-  noted=$(prompt_in "$root" "COURIER-NOTE $line" | tool_state courier_note)
-  check "courier_note from the root wrote its lesson on its own tree's record, dated today, and says so" \
-    "$(jq -r --arg root "$root" --arg today "$today" --arg line "$line" '.status == "completed" and .metadata.metadata.top == $root and .metadata.metadata.lesson.text == $line and
-      (.metadata.metadata.lesson | has("depth") | not) and (.metadata.metadata | has("replaced") | not) and
-      (.output | startswith("Noted on the record of the tree under " + $root + " as its lesson (" + $today + "): \"" + $line + "\".") and contains("AGENTS.md"))' <<<"$noted")"
-  check "the record holds it, dated, with its parts and the recall as before" \
-    "$(record_of "$root" ".lesson.text == \"$line\"" | jq -r --arg line "$line" '.lesson.text == $line and (.lesson.at | type) == "number" and (.lesson | has("depth") | not) and (.parts | length) == 2 and .recalled.calls == 1')"
-  check "a new session's courier_recall lists it after the tree's facts, dated" \
-    "$(prompt "COURIER-RECALL" | tool_state courier_recall | jq -r --arg root "$root" --arg today "$today" --arg line "$line" '.status == "completed" and
-      (.output | contains("- " + $root + " 20") and contains(" · finished · recalled · lesson (" + $today + "): \"" + $line + "\""))')"
-  long=$(printf 'y%.0s' $(seq 1 310))
-  check "a note over 300 characters is refused, naming its length and the limit, and asks for a shorter one" \
-    "$(prompt_in "$root" "COURIER-NOTE $long" | tool_state courier_note | jq -r '.status == "error" and (.error | tostring | contains("Not noted: the lesson is 310 characters, at most 300; write it shorter.") and contains("the earlier lesson, if there was one, stays"))')"
-  check "and the record still holds the earlier lesson, whole" \
-    "$(record_of "$root" ".lesson.text == \"$line\"" 3 | jq -r --arg line "$line" '.lesson.text == $line and (.lesson.at | type) == "number"')"
-  short="For three one-line shell parts, one session each paid off: the sleeps ran in parallel"
-  noted=$(prompt_in "$root" "COURIER-NOTE $short" | tool_state courier_note)
-  check "a shorter note is then written, replacing the first, which the result names" \
-    "$(jq -r --arg line "$line" --arg short "$short" '.status == "completed" and .metadata.metadata.lesson.text == $short and .metadata.metadata.replaced.text == $line and (.metadata.metadata | has("clipped") | not) and
-      (.output | contains("It replaces the lesson (") and contains($line))' <<<"$noted")"
-  check "and the record holds it" "$(record_of "$root" ".lesson.text == \"$short\"" | jq -r --arg short "$short" '.lesson.text == $short')"
-  child_delay 1000
-  out=$(prompt_in "$root" "COURIER-NOTE-BELOW")
-  middle=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
-  check "the middle session tried to note, started a leaf, and reported on what its leaf got" "$(has_text "$root" "MID GOT LEAF GOT" 60)"
-  check "the middle session's note was refused, naming its depth and the top, and pointing it to its report" \
-    "$(has_text "$root" "Not noted: this session is at depth 1 of the session tree under $root, and only that top session writes the tree's lesson" 5)"
-  check "the refusal says where the lesson goes instead" "$(has_text "$root" "Put what you learned in your report instead: the top reads it and writes the tree's lesson." 5)"
-  leaf=$(spawned_by "$middle")
-  check "the leaf, which does not see the tool, was refused when it called it anyway, naming its depth" \
-    "$(has_text "$middle" "Not noted: this session is at depth 2 of the session tree under $root" 5)"
-  check "the root's lesson stays on the record, as the root wrote it" \
-    "$(record_of "$root" '(.parts | length) == 4' | jq -r --arg short "$short" '.lesson.text == $short and (.lesson | has("depth") | not) and (.parts | length) == 4')"
-  check "which courier_recall lists as the root's, with nothing from below" \
-    "$(prompt_in "$root" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg root "$root" --arg short "$short" '.status == "completed" and (.output | contains("- " + $root + " (this tree) ") and contains("): \"" + $short + "\"") and (contains("Noted from depth 1") or contains("from depth") | not))')"
-  check "every request of the leaf went without courier_note, as without courier_recall" \
-    "$(jq -sr --arg leaf "$leaf" '[.[] | select(.type == "probe.context" and .sessionID == $leaf)] | length > 0 and all(.role == "leaf" and (.tools | index("courier_note") | not) and (.tools | index("courier_recall") | not))' "$WORK/probe.log")"
-  check "a session nobody spawned, whose tree has no record yet, is refused" \
-    "$(prompt "COURIER-NOTE Nowhere to put it" | tool_state courier_note | jq -r '.status == "error" and (.error | tostring | contains("Not noted: the tree under ") and contains(" has no record in this project to write a lesson on"))')"
-  said=$(prompt "COURIER-RECALL" | jq -r 'select(.type == "tool_use") | .sessionID' | head -1)
-  split='**split: no, because the stances are a timed sequence that only my own turns can stage and hold; considered: one child per stance (but the flashes are short), a separate orchestrator session (it would only add a hop).**'
-  prompt_in "$said" "COURIER-SAY $split" >/dev/null
-  check "a split line stated in markdown is kept on the record as written" \
-    "$(record_of "$said" '.split | startswith("**split: no, because the stances")' | jq -r --arg split "$split" '.split == $split')"
-  check "and listed without its marks, cut at the last word within 160 characters" \
-    "$(prompt_in "$said" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg said "$said" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $said + " (this tree) "))) |
-      length == 1 and (.[0] | contains("\" · split: no, because the stances are a timed sequence that only my own turns can stage and hold; considered: one child per stance (but the flashes are short), a… [57 more characters] · ") and (contains("*") | not)))')"
-  prompt_in "$said" "COURIER-TEST" >/dev/null
-  check "the top's part reported back" "$([ -n "$(reply_time "$said" "PARENT WOKE" 45)" ] && echo true || echo false)"
-  revised='split: 2 parts: its tests, its docs'
-  prompt_in "$said" "COURIER-SAY $revised" >/dev/null
-  record=$(record_of "$said" '(.revisions | length) == 1')
-  check "a second, different split line is kept as a revision beside the first, with when it was stated and after how many parts" \
-    "$(jq -r --arg split "$split" --arg revised "$revised" '.split == $split and (.revisions | length) == 1 and
-      .revisions[0].text == $revised and (.revisions[0].at | type) == "number" and .revisions[0].parts >= 1' <<<"$record")"
-  check "which the listing shows after the first, with the part count it was stated at" \
-    "$(prompt_in "$said" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg said "$said" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $said + " (this tree) "))) |
-      length == 1 and (.[0] | contains(" [57 more characters] · then, after 1 part: split: 2 parts: its tests, its docs · 1 part: 1 done")))')"
-  check "and the refresh at that turn's end, reading the same replies, appended nothing" \
-    "$(record_of "$said" ".movedAt > $(jq '.movedAt' <<<"$record")" | jq -r --argjson before "$record" '.movedAt > $before.movedAt and .revisions == $before.revisions and .split == $before.split')"
-  mentioned=$(prompt "COURIER-RECALL ses_nowhere" | jq -r 'select(.type == "tool_use") | .sessionID' | head -1)
-  mention='I decided to split: after reading the code'
-  prompt_in "$mentioned" "COURIER-SAY $mention" >/dev/null
-  check "a passing mention of a split, while no line states one, is kept as the record's split line" \
-    "$(record_of "$mentioned" ".split == \"$mention\"" | jq -r --arg mention "$mention" '.split == $mention')"
-  stated='split: 2 parts: core, docs'
-  prompt_in "$mentioned" "COURIER-SAY $stated" >/dev/null
-  check "a line stating one then replaces it, with no revisions" \
-    "$(record_of "$mentioned" ".split == \"$stated\"" | jq -r --arg stated "$stated" '.split == $stated and (has("revisions") | not)')"
-  check "which the listing shows with no later line" \
-    "$(prompt_in "$mentioned" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg mentioned "$mentioned" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $mentioned + " (this tree) "))) |
-      length == 1 and (.[0] | contains(" · split: 2 parts: core, docs · ") and (contains("then, after") | not) and (contains("after reading the code") | not)))')"
-  seeded='{"startedAt":1760000000000,"movedAt":1760000900000,"title":"Seeded by hand","split":"split: 2 parts: core, docs","finished":true,"lesson":{"text":"Give the docs to one session","at":1760000890000},"parts":[{"sessionID":"ses_seed_core","title":"Core","depth":1,"isolated":true,"group":"wave","status":"done","duration":540000,"cost":0.42,"context":0.31},{"sessionID":"ses_seed_docs","title":"Docs","depth":1,"isolated":false,"status":"partial","duration":60000,"refused":1}]}'
-  kv set "memory/$project/ses_seeded" "$seeded" "memory/$project/$root"
-  full=$(prompt "COURIER-RECALL ses_seeded" | tool_state courier_recall)
-  check "a record seeded with kv.ts, lesson included, reads back as written, with this read counted, and is listed" \
-    "$(jq -r --argjson seeded "$seeded" '.status == "completed" and (.metadata.metadata.record | del(.projectID, .sessionID, .reads)) == $seeded and .metadata.metadata.record.reads.read == 1' <<<"$full")"
-  check "in the listing, with its parts counted and its lesson dated" "$(prompt "COURIER-RECALL" | tool_state courier_recall | jq -r '.status == "completed" and (.output | contains("- ses_seeded 2025-10-09: \"Seeded by hand\" · split: 2 parts: core, docs · 2 parts: 1 done, 1 partial, 1 isolated, 1 spawn refused · ran 15 min · last moved ") and test(" · last moved [0-9]+ days ago · \\$0\\.42 · finished · lesson \\(2025-10-09\\): \"Give the docs to one session\""))')"
-  check "a record that is not there is said to be missing" \
-    "$(prompt "COURIER-RECALL ses_nowhere" | tool_state courier_recall | jq -r '.status == "completed" and .metadata.metadata.found == false and (.output | startswith("No record of a tree whose top session is ses_nowhere"))')"
-  kv set "memory/$project/ses_seeded/pin" '{"at":1760000950000}' "memory/$project/$root"
-  kv set "memory/$project/ses_unpinned" "$(jq -c '.title = "Seeded, unpinned" | del(.lesson)' <<<"$seeded")" "memory/$project/$root"
-  check "an unpinned record as old is seeded beside it, for the sweep at the next load" "$(kv get "memory/$project/ses_unpinned" | jq -r '.title == "Seeded, unpinned"')"
-  check "a pinned record is listed first and marked, and the listing says what a pin means" \
-    "$(prompt "COURIER-RECALL" | tool_state courier_recall | jq -r '.status == "completed" and (.output | split("\n") | (.[0] | contains("A record marked \"pinned\" is one the person chose to keep and listed first")) and (.[1] | startswith("- ses_seeded 2025-10-09: ") and contains(" · finished · pinned · lesson ("))) and .metadata.metadata.records[0].pinned.at == 1760000950000 and (.metadata.metadata.records[1] | has("pinned") | not)')"
-
-  scenario "a deleted isolated child's part keeps its last status and duration, and its tree still reads finished"
-  spawn_isolated
-  before=$(record_of "$parent" '.finished == true and (.parts | length == 1) and .parts[0].status == "done"')
-  check "the child's part reads done and the tree finished once it reported" \
-    "$(jq -r --arg child "$child" '.finished == true and .parts[0].sessionID == $child and .parts[0].isolated and (.parts[0].duration | type) == "number"' <<<"$before")"
-  check "the isolated child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
-  prompt_in "$parent" "COURIER-RECALL" >/dev/null
-  after=$(record_of "$parent" ".movedAt > $(jq '.movedAt' <<<"$before")")
-  check "after a refresh, the part is as last recorded, its duration unchanged, and the tree still finished" \
-    "$(jq -r --argjson before "$before" '.movedAt > $before.movedAt and .finished == true and .parts == $before.parts' <<<"$after")"
-  check "which courier_recall lists as finished, its part done" \
-    "$(prompt_in "$parent" "COURIER-RECALL" | tool_state courier_recall | jq -r --arg parent "$parent" '.status == "completed" and (.output | split("\n") | map(select(startswith("- " + $parent + " (this tree) "))) |
-      length == 1 and (.[0] | contains(" · 1 part: 1 done, 1 isolated · ") and test(" · last moved [^·]+ ago · ") and contains(" · finished") and (contains("not finished") | not)))')"
-
-  scenario "with the memory option off, courier_note is refused; on again, the lesson is still there"
-  stop_server
-  jq '.plugins[0].options.memory = false' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
-  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
-  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory off"
-  start_server
-  check "the root's note is refused, naming the option" \
-    "$(prompt_in "$root" "COURIER-NOTE Off" | tool_state courier_note | jq -r '.status == "error" and (.error | tostring | contains("Not noted: the plugin'"'"'s memory option is false"))')"
-  stop_server
-  jq 'del(.plugins[0].options.memory)' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
-  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
-  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "memory on"
-  start_server
-  check "the record kept the root's lesson meanwhile" "$(record_of "$root" ".lesson.text == \"$short\"" 5 | jq -r --arg short "$short" '.lesson.text == $short and (.lesson | has("depth") | not)')"
-  check "the sweep at load kept the pinned record, a year old, with its pin, and dropped the unpinned one as old (#285)" \
-    "$(for _ in $(seq 1 20); do [ -z "$(kv get "memory/$project/ses_unpinned")" ] && break; sleep 1; done; [ -n "$(kv get "memory/$project/ses_seeded")" ] && [ -n "$(kv get "memory/$project/ses_seeded/pin")" ] && [ -z "$(kv get "memory/$project/ses_unpinned")" ] && echo true || echo false)"
-}
-
 run_busy() {
   scenario "a reported child the person renames at rest reads idle: its busy time, when its latest execution started, is not past its idle time (#400)"
   out=$(prompt "COURIER-TEST")
@@ -2367,9 +2068,9 @@ run_busy() {
   summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -c '.output')
   echo "  $summary"
   check "and the footer counts it idle, not running" "$(jq -r '.running == 0 and .idle == 1' <<<"$summary")"
-  listed=$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -c --arg child "$child" '.metadata.metadata.children[] | select(.sessionID == $child)')
+  listed=$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree | jq -c --arg child "$child" '.metadata.metadata.sessions[] | select(.sessionID == $child)')
   echo "  $listed"
-  check "courier_children lists it by its new title, its last turn having succeeded before the rename" \
+  check "courier_tree lists it by its new title, its last turn having succeeded before the rename" \
     "$(jq -r '.title == "Renamed at rest" and .outcome == "succeeded" and .updated > .idle' <<<"$listed")"
 
   scenario "a child at rest after a plain decline, its busy time past its idle time, still reads idle by its transcript (#400)"
@@ -2445,7 +2146,7 @@ run_busy() {
 }
 
 run_spawn_native() {
-  scenario "native: true per spawn makes one child a subagent beside a standalone sibling in the same group, with nativeChildren off"
+  scenario "native: true per spawn makes one child a subagent beside a standalone sibling"
   parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
   api_prompt "$parent" "COURIER-MIXED"
   members=$(for _ in $(seq 1 45); do
@@ -2453,7 +2154,7 @@ run_spawn_native() {
     [ "$(wc -w <<<"$ids")" -eq 2 ] && { echo "$ids"; break; }
     sleep 1
   done)
-  check "two children were started in the group" "$([ "$(wc -w <<<"$members")" -eq 2 ] && echo true || echo false)"
+  check "two children were started" "$([ "$(wc -w <<<"$members")" -eq 2 ] && echo true || echo false)"
   mixed_native=$(for id in $members; do [ "$(session_info "$id" | jq -r '.parentID')" = "$parent" ] && echo "$id"; done | head -1)
   mixed_plain=$(grep -vxF "${mixed_native:-none}" <<<"$members" | head -1)
   check "one has the parent as its OpenCode parentID, with the courier's ruleset, not the parent's, and the other has none" \
@@ -2464,9 +2165,9 @@ run_spawn_native() {
   check "the parent's role entry says what OpenCode's own message at the subagent's turn end is, and neither child's does" \
     "$([[ $(role_entry_of "$parent") == "opencode-courier role: root orchestrator"*$'\n'"OpenCode's own message at a turn end:"* ]] &&
       [[ $(role_entry_of "$mixed_native")$(role_entry_of "$mixed_plain") != *"OpenCode's own message at a turn end:"* ]] && echo true || echo false)"
-  check "the roster records the subagent as native and the other not, both in the group" \
-    "$([ "$(kv get "roster/$parent/$mixed_native" | jq -r '.native == true and .isolated == false and .group == "pair"')" = true ] &&
-      [ "$(kv get "roster/$parent/$mixed_plain" | jq -r '(has("native") | not) and .isolated == false and .group == "pair"')" = true ] && echo true || echo false)"
+  check "the roster records the subagent as native and the other not, neither with a group" \
+    "$([ "$(kv get "roster/$parent/$mixed_native" | jq -r '.native == true and .isolated == false and (has("group") | not)')" = true ] &&
+      [ "$(kv get "roster/$parent/$mixed_plain" | jq -r '(has("native") | not) and .isolated == false and (has("group") | not)')" = true ] && echo true || echo false)"
   check "courier_spawn's result says which is the subagent" \
     "$(api "session/$parent/message" | jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_spawn") | .state.metadata] |
       (map(select(.sessionID == $native)) | .[0].native == true) and (map(select(.sessionID == $plain)) | .[0] | has("native") | not)')"
@@ -2477,9 +2178,9 @@ run_spawn_native() {
         (map(select(startswith("<courier from=\"" + $plain + "\""))) | length == 1 and (.[0] | (contains("shown=") | not) and contains("- once:") and contains("- reject:")))')"
   check "and asked the person nothing itself" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
   turn_ended "$parent" 30
-  check "courier_children shows the subagent as native, and its sibling not" \
-    "$(api_prompt "$parent" "COURIER-CHILDREN $parent"; for _ in $(seq 1 30); do listing=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_children") | .state] | last // empty'); [ -n "$listing" ] && [ "$(jq -r '.status' <<<"$listing")" = completed ] && break; sleep 1; done
-      jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '.status == "completed" and (.metadata.children | (map(select(.sessionID == $native)) | .[0].native == true) and (map(select(.sessionID == $plain)) | .[0] | has("native") | not))' <<<"$listing")"
+  check "courier_tree shows the subagent as native, and its sibling not" \
+    "$(api_prompt "$parent" "COURIER-TREE-OF $parent"; for _ in $(seq 1 30); do listing=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_tree") | .state] | last // empty'); [ -n "$listing" ] && [ "$(jq -r '.status' <<<"$listing")" = completed ] && break; sleep 1; done
+      jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '.status == "completed" and (.metadata.sessions | (map(select(.sessionID == $native)) | .[0].native == true) and (map(select(.sessionID == $plain)) | .[0] | has("native") | not))' <<<"$listing")"
   request=$(api "session/$mixed_native/permission" | jq -r '.data[0].id // empty')
   check "the person answers the subagent's request in OpenCode's own prompt, as the TUI's view of the parent does" \
     "$([ -n "$request" ] && [ "$(person "session/$mixed_native/permission/$request/reply" '{"decision":"once"}')" = 204 ] && echo true || echo false)"
@@ -2490,9 +2191,9 @@ run_spawn_native() {
     "$([ -n "$plain_request" ] && [ -n "$own" ] && [ "$(person "session/$parent/permission/$own/reply" '{"decision":"once"}')" = 204 ] && echo true || echo false)"
   check "courier_answer passed it on to the standalone child" \
     "$(for _ in $(seq 1 30); do s=$(answer_state "$parent"); [ "$(jq -r '.status == "completed"' <<<"$s")" = true ] && { jq -r --arg plain "$mixed_plain" '.metadata.answered == true and .input.sessionID == $plain' <<<"$s"; exit; }; sleep 1; done; echo false)"
-  check "the group delivered one message with both reports, the subagent's and its sibling's" \
-    "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" 'length == 1 and (.[0] |
-      contains("reports=\"2\"") and (split("CHILD DONE shell") | length == 3) and contains($native) and contains($plain))')"
+  check "each child's report reached the parent in a message of its own, the subagent's and its sibling's" \
+    "$(for id in "$mixed_native" "$mixed_plain"; do [ "$(has_text "$parent" "<courier from=\"$id\" status=\"done\">" 60)" = true ] || { echo false; exit; }; done
+      api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains(" status=\"done\">\nCHILD DONE shell"))] | length == 2 and all(contains(" group=") | not)')"
   check "the parent was told once that the subagent's request is settled, and asked nothing" \
     "$([ "$(notices_with "$parent" answered | jq -r --arg native "$mixed_native" 'length == 1 and (.[0] | startswith("<courier from=\"" + $native + "\"") and contains("answered=\"once\""))')" = true ] &&
       [ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
@@ -2514,15 +2215,10 @@ run_spawn_native() {
 }
 
 run_native() {
-  scenario "nativeChildren: a child started without isolate gets OpenCode's own parentID"
+  scenario "native: true starts a child with OpenCode's own parentID"
   child_delay 1000
-  stop_server
-  jq '.plugins[0].options.nativeChildren = true' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
-  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
-  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "nativeChildren"
-  start_server
   native_parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
-  api_prompt "$native_parent" "COURIER-TEST"
+  api_prompt "$native_parent" "COURIER-TEST native"
   native_child=$(spawned_by "$native_parent" 45)
   check "the parent started a child" "$([ -n "$native_child" ] && echo true || echo false)"
   info=$(session_info "$native_child")
@@ -2539,26 +2235,17 @@ run_native() {
   check "from its first spawn every request of the parent carries, once, what OpenCode's own message is, the same bytes on the request that message starts" \
     "$(for _ in $(seq 1 30); do jq -sre --arg parent "$native_parent" '[.[] | select(.session == $parent and (.tools | length > 0))] | (map(.hostReports | length > 0) | index(true)) as $i
       | $i != null and $i > 0 and (.[:$i] | all(.hostReports == [])) and (.[$i].hostReports as $first | ($first | length == 1) and (.[$i:] | all(.hostReports == $first) and any(.hostMessage)))' "$WORK/model.log" >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
-  check "the child, which can start sessions, has it in its role entry on every request, and the parent's role entry holds it" \
+  check "the parent's role entry holds it, and the child's, which started no native child of its own, does not" \
     "$([[ $(role_entry_of "$native_parent") == "opencode-courier role: root orchestrator"*$'\n'"OpenCode's own message at a turn end:"* ]] &&
-      jq -sr --arg child "$native_child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and (.[0].hostReports | length == 1) and all(.roleEntry) and (map(.hostReports) | unique | length == 1)' "$WORK/model.log" | grep -qx true && echo true || echo false)"
-  scenario "nativeChildren: an isolated child is created as before, without a parentID"
-  child_delay 1000
-  out=$(prompt "COURIER-TEST isolate")
-  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
-  check "it has no parentID and runs in its worktree" \
-    "$(session_info "$child" | jq -r '.parentID == null and (.location.directory | contains("/worktree/"))')"
-  check "the roster does not record it as native" "$(kv get "roster/$parent/$child" | jq -r 'has("native") | not')"
-  check "it reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+      jq -sr --arg child "$native_child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and all(.roleEntry) and all(.hostReports == [])' "$WORK/model.log" | grep -qx true && echo true || echo false)"
 
-  scenario "nativeChildren: a child does not run on its parent's session rules; its request is answered in OpenCode's own prompt"
+  scenario "a native child does not run on its parent's session rules; its request is answered in OpenCode's own prompt"
   rules='[{"action":"shell","resource":"echo courier-asks*","effect":"allow"}]'
   parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"},\"permissions\":$rules}" | jq -r '.data.id')
   inherited=$(api_post session "{\"parentID\":\"$parent\"}" | jq -r '.data.id')
   check "a session created under it without a ruleset would run on the parent's" \
     "$(session_info "$inherited" | jq -r --argjson rules "$rules" '.permissions == $rules')"
-  api_prompt "$parent" "COURIER-ASK"
+  api_prompt "$parent" "COURIER-ASK native"
   child=$(spawned_by "$parent" 45)
   check "the child, created with the courier's ruleset, does not" \
     "$(session_info "$child" | jq -r --arg parent "$parent" '.parentID == $parent and .permissions == [{ "action": "opencode_schedule_*", "resource": "*", "effect": "deny" }]')"
@@ -2573,9 +2260,9 @@ run_native() {
     "$(has_text "$parent" "CHILD DONE shell" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"once\""))')" = true ] &&
       [ "$(notices_with "$parent" asks | jq length)" = 1 ] && [ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
 
-  scenario "nativeChildren: a native grandchild's question is answered in OpenCode's own form, and the top session is only told"
+  scenario "a native grandchild's question is answered in OpenCode's own form, and the top session is only told"
   parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
-  api_prompt "$parent" "COURIER-QUESTION nested"
+  api_prompt "$parent" "COURIER-QUESTION nested-native"
   middle=$(spawned_by "$parent" 45)
   leaf=$(spawned_by "$middle" 45)
   leaf_form=$(form_of "$leaf" "" 60)
@@ -2596,12 +2283,7 @@ run_native() {
     "$(has_text "$parent" "PARENT SETTLED" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"elsewhere\""))')" = true ] &&
       [ "$(notices_with "$parent" asks | jq length)" = 1 ] && [ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
 
-  scenario "nativeChildren: an isolated child's question is still linked to the top session's"
-  ask_question "COURIER-QUESTION isolate"
-  check "the person answers in the parent's session" "$(answer_form "$parent" "$parent_form" '"Hi"')"
-  check "the child got it and reported back" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
-
-  scenario "nativeChildren: deleting a parent deletes its native children, and their report state goes"
+  scenario "deleting a parent deletes its native children, and their report state goes"
   check "the child's roster entry and report state are there" \
     "$([ -n "$(kv get "roster/$native_parent/$native_child")" ] && [ -n "$(kv get "report/$native_child/settled")" ] && echo true || echo false)"
   check "the parent is deleted" \
@@ -2609,38 +2291,6 @@ run_native() {
   check "and with it the child" "$([ "$(status_of "$native_child")" = 404 ] && echo true || echo false)"
   check "whose report state is gone, as for any deleted child" \
     "$(for _ in $(seq 1 20); do [ -z "$(kv get "report/$native_child/prompt")$(kv get "report/$native_child/settled")" ] && { echo true; exit; }; sleep 1; done; echo false)"
-}
-
-run_decline_seal() {
-  scenario "a group whose last member reports after a plain decline ended the parent's turn is released to the parent (#465)"
-  child_delay 15000
-  parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
-  api_prompt "$parent" "COURIER-GROUP-DECLINE"
-  member=$(for _ in $(seq 1 30); do
-    id=$(texts "$parent" | sed -n 's/.*Started session \(ses_[A-Za-z0-9]*\) in .*/\1/p' | head -1)
-    [ -n "$id" ] && { echo "$id"; break; }
-    sleep 1
-  done)
-  own=$(for _ in $(seq 1 30); do
-    id=$(api "session/$parent/permission" | jq -r '[.data[] | select(.action == "shell" and .resources == ["echo courier-asks top"]) | .id] | first // empty')
-    [ -n "$id" ] && { echo "$id"; break; }
-    sleep 1
-  done)
-  check "in one step, the parent started a member in group pair and asks the person to run a command" \
-    "$([ -n "$member" ] && [ -n "$own" ] && [ "$(kv get "group/$parent/pair/$member" | jq -r 'has("report") | not')" = true ] && echo true || echo false)"
-  check "the person declines the parent's own request, without a reason" \
-    "$([ "$(person "session/$parent/permission/$own/reply" '{"decision":"reject"}')" = 204 ] && echo true || echo false)"
-  for _ in $(seq 1 30); do [ "$(api "session/$parent/context" | jq -r '.data | last | .error.type == "aborted"')" = true ] && break; sleep 1; done
-  check "its transcript ends on the interrupted step, and it has no idle time" \
-    "$([ "$(api "session/$parent/context" | jq -r '.data | last | .type == "assistant" and .error.type == "aborted"')" = true ] &&
-      [ "$(session_info "$parent" | jq -r '.time.idle == null')" = true ] && echo true || echo false)"
-  check "the member's report is not in yet" "$([ "$(kv get "report/$member/settled" | jq -r '.by // empty')" != report ] && echo true || echo false)"
-  check "once the member reports, the group reaches the parent in one message, which starts a turn" \
-    "$([ -n "$(reply_time "$parent" "PARENT GOT GROUP" 60)" ] && notices_with "$parent" group | jq -r --arg member "$member" 'length == 1 and (.[0] |
-      startswith("<courier from=\"" + $member + "\" group=\"pair\" reports=\"1\">") and contains("CHILD DONE"))')"
-  check "and the group is gone from storage" "$([ -z "$(kv get "group/$parent/pair/$member")" ] && echo true || echo false)"
-  turn_ended "$parent"
-  check "the parent is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$parent") == 20* ]] && echo true || echo false)"
 }
 
 run_plugin_add() {
@@ -2664,8 +2314,8 @@ run_plugin_add() {
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
   log_start=$(($(wc -l <"$WORK/server.log") + 1))
   start_server
-  out=$(prompt "COURIER-CHILDREN ses_missing")
-  check "its courier_children tool runs" "$(tool_state courier_children <<<"$out" | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
+  out=$(prompt "COURIER-TREE-OF ses_missing")
+  check "its courier_tree tool runs" "$(tool_state courier_tree <<<"$out" | jq -r '.status == "completed" and (.metadata.metadata.sessions | length == 0)')"
   entrypoint=$(tail -n +"$log_start" "$WORK/server.log" |
     sed -n 's|.*msg="loading plugin" id=opencode-courier entrypoint=file://\([^ ]*/node_modules/opencode-courier/dist/index\.js\).*|\1|p' | head -1 || true)
   check "loaded from the installed package" "$([ -n "$entrypoint" ] && echo true || echo false)"

@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { memoryEvents } from "../src/memory/events.js"
-import type { MemoryState } from "../src/memory/ports.js"
 import { personEvents } from "../src/person/events.js"
 import { follow, typesOf, watchFromHub, type EventModule, type EventPorts, type EventType, type HostEvent } from "../src/platform/events.js"
 import type { Hub, Member } from "../src/platform/hub.js"
@@ -29,7 +27,6 @@ const event = (type: string, sessionID = "ses_a"): HostEvent => ({ type, data: {
 function recording(name: string, seen: string[], overrides: Partial<EventModule<EventPorts>> = {}): EventModule<EventPorts> {
   return {
     handle: async (_ports, { type }) => void seen.push(`${name} handle ${type}`),
-    after: async (_ports, { type }) => void seen.push(`${name} after ${type}`),
     followed: () => {
       seen.push(`${name} followed`)
       return () => void seen.push(`${name} first`)
@@ -41,7 +38,7 @@ function recording(name: string, seen: string[], overrides: Partial<EventModule<
 }
 
 describe("follow", () => {
-  test("runs each event through every module's handle in list order, then every module's after", async () => {
+  test("runs each event through every module's handle in list order", async () => {
     const stop = new AbortController()
     const { ports: eventPorts } = ports([[event("one"), event("two")]], stop)
     const seen: string[] = []
@@ -57,18 +54,14 @@ describe("follow", () => {
       "b first",
       "a handle one",
       "b handle one",
-      "a after one",
-      "b after one",
       "a handle two",
       "b handle two",
-      "a after two",
-      "b after two",
       "a left",
       "b left",
     ])
   })
 
-  test("a handle that throws ends the handle phase, not the after phase or the watch, and is logged", async () => {
+  test("a handle that throws ends that event's handling, not the watch, and is logged", async () => {
     const stop = new AbortController()
     const { ports: eventPorts, logged } = ports([[event("one", "ses_x"), event("two")]], stop)
     const seen: string[] = []
@@ -81,8 +74,8 @@ describe("follow", () => {
 
     await follow(eventPorts, [failing, recording("b", seen)], stop.signal, 1)
 
-    expect(seen.filter((step) => step.includes(" one"))).toEqual(["a after one", "b after one"])
-    expect(seen.filter((step) => step.includes(" two"))).toEqual(["a handle two", "b handle two", "a after two", "b after two"])
+    expect(seen.filter((step) => step.includes(" one"))).toEqual([])
+    expect(seen.filter((step) => step.includes(" two"))).toEqual(["a handle two", "b handle two"])
     expect(logged).toEqual(["courier watch: could not handle one of ses_x: Error: storage gone"])
   })
 
@@ -108,7 +101,7 @@ describe("follow", () => {
     const { ports: eventPorts, subscriptions } = ports([[event("one")], []], stop)
     const seen: string[] = []
 
-    await follow(eventPorts, [recording("a", seen, { after: undefined })], stop.signal, 1)
+    await follow(eventPorts, [recording("a", seen)], stop.signal, 1)
 
     expect(subscriptions()).toBe(2)
     expect(seen).toEqual(["a followed", "a subscribed", "a first", "a handle one", "a left", "a followed", "a subscribed", "a left"])
@@ -170,11 +163,9 @@ describe("the event types a subscription asks for", () => {
 
     await follow(eventPorts, [declaring("a", seen, ["form.created"]), declaring("b", seen, ["session.deleted"])], stop.signal, 1)
 
-    expect(seen.filter((line) => line.includes("handle") || line.includes("after"))).toEqual([
+    expect(seen.filter((line) => line.includes("handle"))).toEqual([
       "a handle form.created",
       "b handle form.created",
-      "a after form.created",
-      "b after form.created",
     ])
   })
 
@@ -185,7 +176,7 @@ describe("the event types a subscription asks for", () => {
 
     await follow(eventPorts, [declaring("a", seen, ["form.created"])], stop.signal, 1, 60_000)
 
-    expect(seen).toEqual(["a followed", "a subscribed", "a first", "a handle form.created", "a after form.created", "a left"])
+    expect(seen).toEqual(["a followed", "a subscribed", "a first", "a handle form.created", "a left"])
   })
 
   test("a module's connected hook runs, once, a while after subscribing on a stream that sends nothing, as a plugin's reports no connection", async () => {
@@ -205,7 +196,7 @@ describe("the event types a subscription asks for", () => {
 
     await follow(eventPorts, [declaring("a", seen, ["form.created"])], stop.signal, 1, 5)
 
-    expect(seen).toEqual(["a followed", "a subscribed", "a first", "event", "a handle form.created", "a after form.created", "a left"])
+    expect(seen).toEqual(["a followed", "a subscribed", "a first", "event", "a handle form.created", "a left"])
   })
 
   test("a module's connected hook does not run once its subscription has ended", async () => {
@@ -224,7 +215,7 @@ describe("the event types a subscription asks for", () => {
     const { ports: watchPorts, options } = fakePorts([[]])
     ;(watchPorts as any).log = () => stopping.abort()
     const state = fresh()
-    const modules = [treeEvents(state, waitsOn()), personEvents(state as never), memoryEvents({} as MemoryState)]
+    const modules = [treeEvents(state, waitsOn()), personEvents(state as never)]
 
     await follow(watchPorts, modules as EventModule<typeof watchPorts>[], stopping.signal, 1)
 

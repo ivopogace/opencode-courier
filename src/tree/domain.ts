@@ -1,5 +1,4 @@
 import type { Plugin } from "@opencode/plugin"
-import type { Status } from "../kernel/protocol.js"
 import { millis, obj } from "../platform/json.js"
 
 type Context = Plugin.Context
@@ -26,13 +25,19 @@ export function readLimits(options: unknown) {
   return { limits, problems }
 }
 
-export function readNativeChildren(options: unknown) {
-  const value: unknown = obj(options).nativeChildren
-  if (value === undefined || typeof value === "boolean") return { nativeChildren: value === true, problems: [] }
-  return { nativeChildren: false, problems: [`nativeChildren must be true or false, not ${JSON.stringify(value)}; using false`] }
+type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
+
+const REMOVED_OPTIONS: Readonly<Record<string, string>> = {
+  memory: "memory was removed in 0.17.0. Remove it from the config.",
+  nativeChildren: "it was removed in 0.17.0. Remove it from the config; a spawn asks for a native child with native: true.",
 }
 
-type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
+export function readRemovedOptions(options: unknown) {
+  const given = obj(options)
+  return Object.entries(REMOVED_OPTIONS)
+    .filter(([name]) => Object.hasOwn(given, name))
+    .map(([name, why]) => `the ${name} option is not read: ${why}`)
+}
 
 export type BusyTimes = Pick<Times, "updated" | "idle" | "busy">
 
@@ -152,41 +157,6 @@ export interface Artifacts {
   readonly files?: ReadonlyArray<string>
   readonly checks?: ReadonlyArray<{ readonly command: string; readonly result: string }>
 }
-
-export interface HeldReport {
-  readonly at: number
-  readonly status: Status
-  readonly message: string
-  readonly artifacts?: Artifacts
-  readonly finding?: string
-}
-
-export interface LeftMember {
-  readonly sessionID: string
-  readonly title: string
-  readonly by: "failed" | "interrupted" | "deleted" | "dropped"
-}
-
-const GROUP_NAME = /^[\w.-]{1,60}$/
-
-export const isGroupName = (value: unknown): value is string => typeof value === "string" && GROUP_NAME.test(value)
-
-export interface Member {
-  readonly title: string
-  readonly joinedAt: number
-  readonly report?: HeldReport
-  readonly left?: { readonly at: number; readonly by: LeftMember["by"] }
-}
-
-export type Standing = "held" | "out" | LeftMember["by"] | "released"
-
-export function standingOf(member: Member | undefined): Standing {
-  if (!member) return "released"
-  if (member.report) return "held"
-  return member.left?.by ?? "out"
-}
-
-export const complete = (members: ReadonlyArray<Member>) => members.every((member) => member.report || member.left)
 
 const RETRY_MAX_MS = 30 * 24 * 3_600_000
 

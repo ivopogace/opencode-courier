@@ -15,7 +15,7 @@ polling.
 
 The main case in the `/courier tree` panel: two issues, a lead per issue, two workers under each. A
 worker's finding wakes its lead as it comes, the lead passes it on, and the sibling rewrites its
-test. The leads are a join group: the orchestrator needs only both results.
+test. Each lead's report wakes the orchestrator as it comes.
 
 ## Quickstart
 
@@ -37,17 +37,21 @@ prompt again.
 
 ## Why courier
 
-OpenCode's own [`subagent` tool](https://opencode.ai/docs/agents) hands back a child's final
-answer. Use it when one result is all you need. Use courier for more:
+OpenCode's own [`subagent` tool](https://opencode.ai/docs/agents) runs a child in the background,
+wakes an idle parent when the child's turn ends, and shows the child's permission prompts in the
+top session's view. Use it when a child's final answer is all you need. Courier adds:
 
-- **Messages mid-run.** A child sends its parent a finding or a question at any time, and each
-  report wakes the parent as it comes. The parent passes a finding on to the children it affects,
-  into their running turns. A join group, its children's reports in one message, is a choice.
+- **Messages before a turn ends.** A child sends its parent a finding or a question at any time,
+  and each report wakes the parent as it comes. The parent passes a finding on to the children it
+  affects, into their running turns.
+- **Reports with a status.** A child reports `done`, `partial`, `blocked` or `failed`, with the
+  branch, commits and checks of its work.
 - **Waking an idle session.** A message or a schedule starts a new turn.
 - **Parallel edits.** `isolate: true` gives a child its own git worktree and branch to merge.
-- **Asks reach you.** A child's permission requests and questions come to you through the top
-  session. Only you approve a request, in OpenCode's own prompt.
-- **Trees.** A child may split its part again, within limits you set.
+- **Asks reach you.** A standalone child's permission requests and questions come to you through
+  the top session. Only you approve a request, in OpenCode's own prompt.
+- **Trees.** A child may split its part again, within limits you set, with no change to
+  OpenCode's config.
 
 ## How it works
 
@@ -55,13 +59,11 @@ A parent calls `courier_spawn`, gets the child's session id at once, and ends it
 or stuck, the child calls `courier_send` with a status (`done`, `partial`, `blocked` or `failed`).
 The message lands in the parent's inbox and starts a new turn if the parent is idle.
 
-Each report wakes the parent as it comes. Children started with the same `group`, a choice for a
-pure fan-in, report together, in one message; a `finding` on a member's report still reaches the
-parent at once. A child that fails (a rate or quota limit with when it
+Each report wakes the parent as it comes. A child that fails (a rate or quota limit with when it
 lifts) is reported to its parent. One about to end its turn without reporting is reminded once, in
 the same turn, and its parent is told only if it still does not report. A message that does not wake
 its session is sent once more, then shown as `stalled`. On OpenCode 2.2.0 a parent's system prompt
-carries one line per child with its state, kept current, so it need not look. Children, held reports
+carries one line per child with its state, kept current, so it need not look. Children
 and scheduled messages survive a restart. A fork of a session in a tree is told that courier did not
 start it: the brief and the children it reads of are the original's. The `courier-orchestrate` skill, listed in every session,
 tells a model when to split a task and how to check and merge the parts; how to plan and review them
@@ -110,8 +112,6 @@ Set the server options on the plugin's entry in the **global** config,
 | `maxDepth` | `5` | How deep a tree goes. Your session is depth 0. A session at `maxDepth` cannot start sessions. |
 | `maxChildren` | `5` | Live children one session may have. |
 | `maxTotal` | `30` | Live spawned sessions in one tree. |
-| `memory` | `true` | Keep a record of each session tree for later orchestrators ([memory](docs/reference.md#memory)). |
-| `nativeChildren` | `false` | The default for a spawn that does not set `native`: `true` creates non-isolated children as OpenCode subagents, for OpenCode's own view of them, at an extra parent turn per child turn ([native children](docs/reference.md#native-child-sessions)). |
 
 The terminal part reads its options only from `~/.config/opencode/cli.json`, in the same entry
 form. Its one option, `"animations": false`, keeps the tree panel still.
@@ -120,24 +120,21 @@ form. Its one option, `"animations": false`, keeps the tree panel still.
 
 | Tool | Does |
 |---|---|
-| `courier_spawn` | Starts a child session with a task and returns at once. `isolate`, `group`, `agent`, `model`, `variant`, `native`, `title`. |
+| `courier_spawn` | Starts a child session with a task and returns at once. `isolate`, `agent`, `model`, `variant`, `native`, `title`. |
 | `courier_send` | Messages a session, waking it if idle. With a `status`, it is a child's report. |
-| `courier_children` / `courier_tree` | One look at the sessions a session started, or at its whole tree. |
+| `courier_tree` | One look at the whole tree of sessions a session started, directly or through others. |
 | `courier_stop` | Stops a session below you and everything under it. |
 | `courier_cleanup` | Removes an isolated child's worktree and forgets the child. |
 | `courier_answer` | Proposes an answer to a child's permission request, or passes on your answer to its question. |
 | `courier_later` / `courier_cancel` | Schedules a message for a session, or drops one. |
-| `courier_recall` / `courier_note` | Reads what earlier trees in this project did, or writes this tree's one-line lesson. |
 
 Parameters and behaviour: [the reference](docs/reference.md#the-tools).
 
 ## In the terminal
 
-- **Footer:** `courier 1 waiting on you · 2 running · group pair 1/2`.
+- **Footer:** `courier 1 waiting on you · 2 running · 1 idle`.
 - **`/courier tree`:** a panel with the tree, the session it was opened in as its first row. `enter` opens a session, `s` stops it, `q` closes.
-- **`/courier stop <session>`:** stops a session and everything under it.
 - **`ctrl+x k`** or **`/asks`:** every ask waiting on you in the tree, answered in a dialog.
-- **`/courier memory`:** the project's tree records. `p` pins one, `x` forgets one.
 
 More: [in the terminal](docs/reference.md#in-the-terminal).
 

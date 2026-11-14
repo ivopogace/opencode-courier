@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test"
 import { forgetChild } from "../src/tree/forget.js"
-import { holdReport, joinGroup, membershipOf } from "../src/tree/group.js"
+import { cleanup } from "../src/tree/cleanup.js"
 import type { RosterStorage } from "../src/tree/ports.js"
 import { pruneExpired } from "../src/tree/roster.js"
-import { childStore, groupStore, wakeStore } from "../src/tree/store.js"
-import { memoryStore } from "../src/memory/store.js"
+import { standingRows } from "../src/tree/standing.js"
+import { childStore, wakeStore } from "../src/tree/store.js"
 
 function loggingStorage() {
   const store = new Map<string, string>()
@@ -29,10 +29,9 @@ function loggingStorage() {
   return { storage, store, writes }
 }
 
-test("the stores write a child's roster entry, reverse key, report state and group membership under the keys older copies read", async () => {
+test("the stores write a child's roster entry, reverse key and report state under the keys older copies read, and no group key", async () => {
   const { storage, store, writes } = loggingStorage()
   const children = childStore(storage)
-  const groups = groupStore(storage)
   await children.record({
     sessionID: "ses_child",
     parentID: "ses_parent",
@@ -41,10 +40,8 @@ test("the stores write a child's roster entry, reverse key, report state and gro
     isolated: false,
     createdAt: 1,
     reports: "status",
-    group: "pair",
     model: "mock/small#high",
   })
-  await joinGroup(groups, "ses_parent", "pair", "ses_child", "Child", 5)
   await children.prompted("ses_child", 10)
   await children.progressed("ses_child", 20)
   await children.settled("ses_child", "report", 30, "done")
@@ -53,12 +50,10 @@ test("the stores write a child's roster entry, reverse key, report state and gro
   await children.nudged("ses_child", 55)
   await children.nudged("ses_child", 55, "msg_n")
   await children.settled("ses_child", "failed", 60, undefined, 600_060)
-  await holdReport(groups, (await membershipOf(groups, "ses_parent", "pair", "ses_child"))!, { at: 30, status: "done", message: "all done" })
 
   expect(writes).toEqual([
-    'set roster/ses_parent/ses_child {"sessionID":"ses_child","parentID":"ses_parent","title":"Child","directory":"/repo","isolated":false,"createdAt":1,"reports":"status","group":"pair","model":"mock/small#high"}',
+    'set roster/ses_parent/ses_child {"sessionID":"ses_child","parentID":"ses_parent","title":"Child","directory":"/repo","isolated":false,"createdAt":1,"reports":"status","model":"mock/small#high"}',
     'set roster-by-child/ses_child {"ancestors":["ses_parent"]}',
-    'set group/ses_parent/pair/ses_child {"title":"Child","joinedAt":5}',
     'set report/ses_child/prompt {"at":10}',
     'set report/ses_child/progress {"at":20}',
     'set report/ses_child/settled {"at":30,"by":"report","status":"done"}',
@@ -67,7 +62,6 @@ test("the stores write a child's roster entry, reverse key, report state and gro
     'set report/ses_child/nudged {"at":55}',
     'set report/ses_child/nudged {"at":55,"inboxID":"msg_n"}',
     'set report/ses_child/settled {"at":60,"by":"failed","resumesAt":600060}',
-    'set group/ses_parent/pair/ses_child {"title":"Child","joinedAt":5,"report":{"at":30,"status":"done","message":"all done"}}',
   ])
   expect(await children.nudgeOf("ses_child")).toEqual({ at: 55, inboxID: "msg_n" })
   expect(await children.reported()).toEqual(
@@ -75,7 +69,7 @@ test("the stores write a child's roster entry, reverse key, report state and gro
   )
 
   writes.length = 0
-  expect(await forgetChild(storage, "ses_parent", "ses_child", "pair")).toEqual({ droppedFromGroup: false })
+  await forgetChild(storage, "ses_parent", "ses_child")
   expect(writes).toEqual([
     "remove roster/ses_parent/ses_child",
     "remove roster-by-child/ses_child",
@@ -86,7 +80,41 @@ test("the stores write a child's roster entry, reverse key, report state and gro
     "remove report/ses_child/stopped",
     "remove report/ses_child/nudged",
   ])
-  expect([...store.keys()]).toEqual(["group/ses_parent/pair/ses_child"])
+  expect([...store.keys()]).toEqual([])
+})
+
+test("a group/ entry in storage is not read and not removed", async () => {
+  const { storage, store, writes } = loggingStorage()
+  const reads: string[] = []
+  const watched: RosterStorage = {
+    ...storage,
+    get: async (key) => (reads.push(key), storage.get(key)),
+    scan: async (input) => (reads.push(input.prefix), storage.scan(input)),
+  }
+  const held = JSON.stringify({ title: "Child", joinedAt: 5, report: { at: 30, status: "done", message: "all done" } })
+  const out = JSON.stringify({ title: "Other", joinedAt: 6 })
+  store.set("group/ses_parent/pair/ses_child", held)
+  store.set("group/ses_parent/pair/ses_other", out)
+  const children = childStore(watched)
+  const entry = { parentID: "ses_parent", directory: "/repo", isolated: false, createdAt: Date.now(), reports: "status" as const, group: "pair" }
+  await children.record({ ...entry, sessionID: "ses_child", title: "Child" })
+  await children.record({ ...entry, sessionID: "ses_other", title: "Other" })
+  await children.record({ ...entry, sessionID: "ses_old", title: "Old", createdAt: 1 })
+  await children.prompted("ses_child", 10)
+  await children.settled("ses_child", "report", 30, "done")
+
+  expect(await standingRows(watched, "ses_parent", Date.now())).toHaveLength(2)
+  await pruneExpired(watched, Date.now(), () => false)
+  const ports = { storage: watched, worktree: { remove: async () => {} }, projectID: "prj", inspect: async () => undefined, now: Date.now }
+  expect(await cleanup(ports, "ses_parent", { sessionID: "ses_other" })).toEqual({ sessionID: "ses_other", directory: "/repo", outcome: "forgotten" })
+  await forgetChild(watched, "ses_parent", "ses_child")
+
+  expect(reads.filter((key) => key.startsWith("group"))).toEqual([])
+  expect(writes.filter((write) => write.includes(" group/"))).toEqual([])
+  expect([...store]).toEqual([
+    ["group/ses_parent/pair/ses_child", held],
+    ["group/ses_parent/pair/ses_other", out],
+  ])
 })
 
 test("a typed row is kept under typed/<sessionID>/<inboxID> and goes with the child's other rows", async () => {
@@ -140,47 +168,4 @@ test("the wake store keeps a watched message under wake/<sessionID>/<inboxID>, w
   writes.length = 0
   await wakes.remove("ses_parent", "msg_1")
   expect(writes).toEqual(["remove wake/ses_parent/msg_1"])
-})
-
-test("the memory store keeps a tree's record under memory/<projectID>/<topSessionID>, as the reference describes it, and reads back what it wrote", async () => {
-  const { storage, writes } = loggingStorage()
-  const records = memoryStore(storage)
-  const record = {
-    startedAt: 1760000000000,
-    movedAt: 1760000900000,
-    title: "Add memory to courier",
-    split: "split: 3 parts: core, e2e, docs",
-    revisions: [{ text: "split: 2 parts: e2e, docs", at: 1760000600000, parts: 1 }],
-    finished: true,
-    recalled: { at: 1760000001000, calls: 1 },
-    lesson: { text: "The docs part was ten lines; next time do it yourself.", at: 1760000890000 },
-    parts: [
-      { sessionID: "ses_core", title: "Core", depth: 1, isolated: true, group: "wave", status: "done" as const, duration: 540000, cost: 0.42, context: 0.31, refused: 1 },
-      { sessionID: "ses_docs", title: "Docs", depth: 1, isolated: false, status: "out" as const, duration: 60000 },
-    ],
-  }
-  await records.put("proj_1", "ses_top", record)
-  expect(writes).toEqual([
-    'set memory/proj_1/ses_top {"startedAt":1760000000000,"movedAt":1760000900000,"title":"Add memory to courier","split":"split: 3 parts: core, e2e, docs","revisions":[{"text":"split: 2 parts: e2e, docs","at":1760000600000,"parts":1}],"finished":true,"recalled":{"at":1760000001000,"calls":1},"lesson":{"text":"The docs part was ten lines; next time do it yourself.","at":1760000890000},"parts":[{"sessionID":"ses_core","title":"Core","depth":1,"isolated":true,"group":"wave","status":"done","duration":540000,"cost":0.42,"context":0.31,"refused":1},{"sessionID":"ses_docs","title":"Docs","depth":1,"isolated":false,"status":"out","duration":60000}]}',
-  ])
-  expect(await records.get("proj_1", "ses_top")).toEqual(record)
-  expect(await records.ofProject("proj_1")).toEqual([{ ...record, projectID: "proj_1", sessionID: "ses_top" }])
-  writes.length = 0
-  await records.pin("proj_1", "ses_top", { at: 1760001000000 })
-  await records.noteRead("proj_1", "ses_top", "ses_reader", "shown", 1760002000000)
-  await records.noteRead("proj_1", "ses_top", "ses_reader", "read", 1760003000000)
-  expect(writes).toEqual([
-    'set memory/proj_1/ses_top/pin {"at":1760001000000}',
-    'set memory/proj_1/ses_top/reads/ses_reader {"shown":1,"read":0,"at":1760002000000}',
-    'set memory/proj_1/ses_top/reads/ses_reader {"shown":1,"read":1,"at":1760003000000}',
-  ])
-  const beside = { reads: { shown: 1, read: 1, at: 1760003000000 }, pinned: { at: 1760001000000 } }
-  expect(await records.get("proj_1", "ses_top")).toEqual({ ...record, ...beside })
-  writes.length = 0
-  await records.put("proj_1", "ses_top", { ...record, ...beside })
-  expect(writes[0]).not.toContain("reads")
-  expect(writes[0]).not.toContain("pinned")
-  writes.length = 0
-  await records.remove("proj_1", "ses_top")
-  expect(writes).toEqual(["remove memory/proj_1/ses_top", "remove memory/proj_1/ses_top/pin", "remove memory/proj_1/ses_top/reads/ses_reader"])
 })

@@ -17,8 +17,132 @@ const LOOKS = new Set(["courier_children", "courier_tree"])
 const RECALL = "courier_recall"
 const SKILL = "courier-orchestrate"
 const CHANGING_TOOLS = new Set(["write", "edit", "patch", "apply_patch", "multiedit"])
-const CHANGING_SHELL =
-  /\bgit\s+(commit|add|merge|checkout|switch|reset|stash(?!\s+(?:list|show)\b)|rebase|cherry-pick|rm|mv|apply)\b|\bsed\s+-i\b|\b(npm|pnpm|yarn|bun)\s+(install|add|remove|i)\b|\b(rm|mv|cp|mkdir|touch|tee|chmod)\s|(?<![\d&<=-])>(?!\s*&|\s*\/dev\/null)/
+const CHANGING_COMMAND = /\bgit\s+(commit|add|merge|checkout|switch|reset|stash(?!\s+(?:list|show)\b)|rebase|cherry-pick|rm|mv|apply)\b|\bsed\s+-i\b|\b(npm|pnpm|yarn|bun)\s+(install|add|remove|i)\b/
+const FILE_COMMANDS = new Set(["rm", "mv", "cp", "mkdir", "touch", "tee", "chmod"])
+const SHELLS = new Set(["sh", "bash", "zsh", "dash"])
+const WRAPPERS = new Set(["sudo", "env", "command", "nice", "time", "nohup", "exec", "do", "then", "else", "{", "!"])
+const LAUNCHERS = new Set(["xargs", "-exec", "-execdir", "-ok"])
+const inTmp = (path) => path.startsWith("/tmp/") && !path.includes("/../")
+const base = (word) => word.slice(word.lastIndexOf("/") + 1)
+function commandsAt(words) {
+  let at = 0
+  while (at < words.length && (WRAPPERS.has(words[at]) || /^\w+=/.test(words[at]))) at++
+  const launcher = words.findIndex((one) => LAUNCHERS.has(one))
+  if (launcher === -1) return [at]
+  let launched = launcher + 1
+  if (words[launcher] === "xargs") while ((words[launched] ?? "").startsWith("-")) launched += /^-[InPdLsE]$/.test(words[launched]) ? 2 : 1
+  return [at, launched]
+}
+const scriptFlag = (words, at) => words.findIndex((one, index) => index > at && /^-[a-z]*c[a-z]*$/.test(one))
+function commandsOf(script) {
+  const commands = []
+  const heredocs = []
+  let current = { words: [], targets: [], quoted: [], bodies: [] }
+  let word
+  let target = false
+  const endWord = () => {
+    if (word === undefined) return
+    if (target === "count") current.targets.push(word)
+    else if (!target) current.words.push(word)
+    word = undefined
+    target = false
+  }
+  const endCommand = () => {
+    endWord()
+    target = false
+    commands.push(current)
+    current = { words: [], targets: [], quoted: [], bodies: [] }
+  }
+  for (let i = 0; i < script.length; i++) {
+    const char = script[i]
+    if (char === "\\") {
+      if (script[i + 1] !== "\n") word = (word ?? "") + (script[i + 1] ?? "")
+      i++
+    } else if (char === "'") {
+      const end = script.indexOf("'", i + 1)
+      const stop = end === -1 ? script.length : end
+      word = (word ?? "") + script.slice(i + 1, stop)
+      i = stop
+    } else if (char === '"') {
+      let text = ""
+      for (i++; i < script.length && script[i] !== '"'; i++) {
+        if (script[i] === "\\") i++
+        text += script[i] ?? ""
+      }
+      current.quoted.push(text)
+      word = (word ?? "") + text
+    } else if (char === "#" && word === undefined) {
+      while (i + 1 < script.length && script[i + 1] !== "\n") i++
+    } else if (char === "\n") {
+      endCommand()
+      for (const { tag, owner } of heredocs.splice(0)) {
+        const lines = []
+        while (i < script.length) {
+          const end = script.indexOf("\n", i + 1)
+          const stop = end === -1 ? script.length : end
+          const line = script.slice(i + 1, stop)
+          i = stop
+          if (line.trim() === tag) break
+          lines.push(line)
+        }
+        owner.bodies.push(lines.join("\n"))
+      }
+    } else if (char === "<" && /^<<-?\s*[^\s<\d]/.test(script.slice(i, i + 12))) {
+      endWord()
+      i += script[i + 2] === "-" ? 3 : 2
+      while (script[i] === " ") i++
+      let tag = ""
+      for (; i < script.length && !/[\s;&|<>()]/.test(script[i]); i++) if (!"'\"\\".includes(script[i])) tag += script[i]
+      i--
+      heredocs.push({ tag, owner: current })
+    } else if (char === "<") {
+      endWord()
+      target = "skip"
+    } else if (char === ">") {
+      const before = script[i - 1] ?? ""
+      if (before === "=" || before === "-") {
+        word = (word ?? "") + char
+        continue
+      }
+      if (/^\d+$/.test(word ?? "")) word = undefined
+      endWord()
+      if (script[i + 1] === ">") i++
+      if (script[i + 1] === "|") i++
+      if (script[i + 1] === "&") {
+        i++
+        while (/[\d-]/.test(script[i + 1] ?? "")) i++
+      } else target = /[\d&<]/.test(before) ? "skip" : "count"
+    } else if (";|&()`".includes(char)) endCommand()
+    else if (/\s/.test(char)) endWord()
+    else word = (word ?? "") + char
+  }
+  endCommand()
+  return commands
+}
+function changingShell(command) {
+  if (CHANGING_COMMAND.test(command)) return true
+  const commands = commandsOf(command)
+  const runsScripts = commands.some(({ words }) => commandsAt(words).some((at) => SHELLS.has(base(words[at] ?? "")) && scriptFlag(words, at) === -1))
+  if (runsScripts && commands.some(({ bodies }) => bodies.some(changingShell))) return true
+  return commands.some(({ words, targets, quoted }) => {
+    if (targets.some((path) => !inTmp(path) && !path.startsWith("/dev/"))) return true
+    if (quoted.some((text) => /\$\(|`/.test(text) && changingShell(text.slice(text.search(/\$\(|`/))))) return true
+    return commandsAt(words).some((at) => {
+      const name = base(words[at] ?? "")
+      const rest = words.slice(at + 1)
+      if (name === "eval") return changingShell(rest.join(" "))
+      if (SHELLS.has(name)) {
+        const flag = scriptFlag(words, at)
+        return flag !== -1 && changingShell(words[flag + 1] ?? "")
+      }
+      if (!FILE_COMMANDS.has(name)) return false
+      const paths = rest.filter((one) => !one.startsWith("-"))
+      const byLast = name === "cp" && !rest.some((one) => one === "-t" || one.startsWith("--target-directory"))
+      const written = name === "chmod" ? paths.slice(1) : byLast ? paths.slice(-1) : paths
+      return written.length === 0 || !written.every(inTmp)
+    })
+  })
+}
 const TEST_SHELL = /\b(npm|pnpm|yarn|bun)(\s+run)?\s+test\b|\bnode\s+--test\b/
 const loadsAnySkill = (part) => part.type === "tool" && part.name === "skill" && part.state.status === "completed"
 
@@ -200,7 +324,7 @@ const reviewReport = review ? deliveriesFrom(root, review.id)[0] : undefined
 const afterReview = reviewReport ? rootSpawns.filter((spawn) => spawn.index > reviewReport.index) : []
 const subtreeOf = (id) => [id, ...spawnsOf(tree.get(id)?.list ?? []).filter((child) => tree.has(child)).flatMap(subtreeOf)]
 const changes = (list) =>
-  toolsOf(list).filter((part) => part.state.status === "completed" && (CHANGING_TOOLS.has(part.name) || (part.name === "shell" && CHANGING_SHELL.test(part.state.input?.command ?? ""))))
+  toolsOf(list).filter((part) => part.state.status === "completed" && (CHANGING_TOOLS.has(part.name) || (part.name === "shell" && changingShell(part.state.input?.command ?? ""))))
 const changesBelow = (id) => subtreeOf(id).flatMap((member) => changes(tree.get(member).list).map((part) => ({ id: member, part })))
 const sleeps = (part) => part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))
 const looksIn = (turn) => toolsOf(turn).filter((part) => LOOKS.has(part.name) || part.name === RECALL || sleeps(part)).length

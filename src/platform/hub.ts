@@ -44,7 +44,6 @@ export interface Scheduler {
   running?: Tick
   ticking?: Member
   tick?: () => Promise<void>
-  nudged?: boolean
 }
 
 export interface Timers {
@@ -116,7 +115,6 @@ export interface Opened {
   readonly hub: Hub
   readonly join: (member: Member) => () => Promise<void>
   readonly track: (member: Member, work: Promise<unknown>) => void
-  readonly nudge: () => void
 }
 
 export function sharedState<T>(name: string, create: () => T, registry: Registry = globalThis as Registry): T {
@@ -195,7 +193,6 @@ export function open(registry: Registry, jobs: readonly TickJob[], timers: Timer
   const tick = async () => {
     const scheduler = hub.scheduler
     if (underWay()) return
-    scheduler.nudged = false
     const owner = hub.members.values().next().value
     if (!owner) return
     let since: number
@@ -229,14 +226,6 @@ export function open(registry: Registry, jobs: readonly TickJob[], timers: Timer
     if (scheduler.timer === undefined)
       await release(owner.later).catch((error: unknown) => tell(`courier_later scheduler: owner key not released: ${String(error)}`))
     end()
-    if (scheduler.nudged && scheduler.timer !== undefined) void scheduler.tick?.()
-  }
-
-  const nudge = () => {
-    const scheduler = hub.scheduler
-    if (scheduler.timer === undefined) return
-    scheduler.nudged = true
-    if (!busy().busy) void (scheduler.tick ?? tick)()
   }
 
   const watch = (leaving?: Member) => {
@@ -302,7 +291,6 @@ export function open(registry: Registry, jobs: readonly TickJob[], timers: Timer
     hub,
     join,
     track,
-    nudge,
   }
 }
 

@@ -37,17 +37,22 @@ prompt again.
 
 ## Why courier
 
-OpenCode's own [`subagent` tool](https://opencode.ai/docs/agents) hands back a child's final
-answer. Use it when one result is all you need. Use courier for more:
+OpenCode's own [`subagent` tool](https://opencode.ai/docs/agents) runs a child in the background,
+wakes an idle parent when the child's turn ends, and shows the child's permission prompts in the
+top session's view. Use it when a child's final answer is all you need. Courier adds:
 
-- **Messages mid-run.** A child sends its parent a finding or a question at any time, and each
-  report wakes the parent as it comes. The parent passes a finding on to the children it affects,
-  into their running turns. A join group, its children's reports in one message, is a choice.
+- **Messages before a turn ends.** A child sends its parent a finding or a question at any time,
+  and each report wakes the parent as it comes. The parent passes a finding on to the children it
+  affects, into their running turns. A join group, its children's reports in one message, is a
+  choice.
+- **Reports with a status.** A child reports `done`, `partial`, `blocked` or `failed`, with the
+  branch, commits and checks of its work.
 - **Waking an idle session.** A message or a schedule starts a new turn.
 - **Parallel edits.** `isolate: true` gives a child its own git worktree and branch to merge.
-- **Asks reach you.** A child's permission requests and questions come to you through the top
-  session. Only you approve a request, in OpenCode's own prompt.
-- **Trees.** A child may split its part again, within limits you set.
+- **Asks reach you.** A standalone child's permission requests and questions come to you through
+  the top session. Only you approve a request, in OpenCode's own prompt.
+- **Trees.** A child may split its part again, within limits you set, with no change to
+  OpenCode's config.
 
 ## How it works
 
@@ -110,7 +115,6 @@ Set the server options on the plugin's entry in the **global** config,
 | `maxDepth` | `5` | How deep a tree goes. Your session is depth 0. A session at `maxDepth` cannot start sessions. |
 | `maxChildren` | `5` | Live children one session may have. |
 | `maxTotal` | `30` | Live spawned sessions in one tree. |
-| `nativeChildren` | `false` | The default for a spawn that does not set `native`: `true` creates non-isolated children as OpenCode subagents, for OpenCode's own view of them, at an extra parent turn per child turn ([native children](docs/reference.md#native-child-sessions)). |
 
 The terminal part reads its options only from `~/.config/opencode/cli.json`, in the same entry
 form. Its one option, `"animations": false`, keeps the tree panel still.
@@ -121,7 +125,7 @@ form. Its one option, `"animations": false`, keeps the tree panel still.
 |---|---|
 | `courier_spawn` | Starts a child session with a task and returns at once. `isolate`, `group`, `agent`, `model`, `variant`, `native`, `title`. |
 | `courier_send` | Messages a session, waking it if idle. With a `status`, it is a child's report. |
-| `courier_children` / `courier_tree` | One look at the sessions a session started, or at its whole tree. |
+| `courier_tree` | One look at the whole tree of sessions a session started, directly or through others. |
 | `courier_stop` | Stops a session below you and everything under it. |
 | `courier_cleanup` | Removes an isolated child's worktree and forgets the child. |
 | `courier_answer` | Proposes an answer to a child's permission request, or passes on your answer to its question. |
@@ -133,7 +137,6 @@ Parameters and behaviour: [the reference](docs/reference.md#the-tools).
 
 - **Footer:** `courier 1 waiting on you · 2 running · group pair 1/2`.
 - **`/courier tree`:** a panel with the tree, the session it was opened in as its first row. `enter` opens a session, `s` stops it, `q` closes.
-- **`/courier stop <session>`:** stops a session and everything under it.
 - **`ctrl+x k`** or **`/asks`:** every ask waiting on you in the tree, answered in a dialog.
 
 More: [in the terminal](docs/reference.md#in-the-terminal).

@@ -105,12 +105,11 @@ The host facts behind this are in [plugin-api-notes.md](plugin-api-notes.md#the-
 The courier writes two [keyed session instructions](plugin-api-notes.md#keyed-session-instructions):
 
 - `role`: a spawned session's role part (`spawn.ts`, before the first prompt, so it is in the
-  baseline and moves no cached prefix). It ends with the line about OpenCode's own message at a
-  [native child's turn end](plugin-api-notes.md#native-parentid) when `nativeChildren` is on. With
-  the option off, `spawn.ts` puts a parent's entry again, with the line, at its first `native: true`
-  spawn: that put comes after the parent's first prompt, so it leaves the baseline and the cached
-  prefix alone and reaches the model as one instruction update, as a root's entry does at its first
-  spawn.
+  baseline and moves no cached prefix). At a parent's first `native: true` spawn, `spawn.ts` puts
+  its entry again, ending with the line about OpenCode's own message at a
+  [native child's turn end](plugin-api-notes.md#native-parentid): that put comes after the
+  parent's first prompt, so it leaves the baseline and the cached prefix alone and reaches the model
+  as one instruction update, as a root's entry does at its first spawn.
 - `standing`: a parent's children (`tree/standing.ts`, from the tools and events that move a child,
   removed with the last child).
 

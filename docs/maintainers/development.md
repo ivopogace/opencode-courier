@@ -42,10 +42,9 @@ and openssl. New behaviour gets a scenario there.
   what a run would do.
 - The mock model holds a child's reply back 5 s (`CHILD_DELAY_MS`), so the parent is idle when it
   lands. A scenario that does not need that sets `child_delay 1000` after its heading.
-- `native` turns `nativeChildren` on for the groups after it. A scenario that drives `opencode run`
-  and has a child still running when the root's turn ends, or one that reports to the root, spawns
-  it with `native: false`; a scenario about a native child prompts through the API (`api_prompt`)
-  ([the trap](plugin-api-notes.md#native-parentid)).
+- The suite's config sets `nativeChildren`, which the plugin logs and does not read, so every child
+  is standalone unless the mock passes `native: true`. A scenario about a native child prompts through
+  the API (`api_prompt`), not `opencode run` ([the trap](plugin-api-notes.md#native-parentid)).
 - A check that something did not happen never waits out a timeout. It first waits for an event
   ordered after the point where the unwanted thing would have happened, then checks once:
   `end_handled` after `turn_ended` for what the courier does at a turn's end (it deletes a marker

@@ -318,7 +318,7 @@ builds, turned on by `experimental.<key>: true`, `experimental.all_flags: true` 
 
 ## Native `parentID`
 
-What a native child (`courier_spawn`'s `native`, else the `nativeChildren` option) rests on:
+What a native child (`courier_spawn` with `native: true`) rests on:
 
 - **`Session.create` takes a `location` or a `parentID`**, never both. With a parent the child takes
   its location, so an isolated child cannot have one.
@@ -361,9 +361,8 @@ What a native child (`courier_spawn`'s `native`, else the `nativeChildren` optio
   it from a stopped native child, as from a subagent.
   The plugin tells the model what the message is in the parent's `role` entry: `HOST_REPORTS`
   (`tree/text.ts`), a fixed second line `rolePart` adds for a session above the deepest level,
-  written by `spawn.ts` with the child's entry when `nativeChildren` is on and, when it is off, by
-  a put of the parent's entry at each `native: true` spawn (the same value after the first, so
-  nothing is announced again; the puts for one parent run one at a time, so two spawns of one step
+  written by a put of the parent's entry at each `native: true` spawn (the same value after the
+  first, so nothing is announced again; the puts for one parent run one at a time, so two spawns of one step
   cannot leave the older value). The message itself is not edited in the `context` hook: the
   child's last text in it is the only copy when a child ends without reporting. Where the role
   goes in a system part, `context.ts` adds the same line (`Role.hostReports`).

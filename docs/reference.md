@@ -556,10 +556,10 @@ person:
 At 14:32 UTC this text arrived in session ses_count ("count the lines"), a session under yours,
 over the prompt route: courier did not send it and cannot tell who did, whether the person, a
 client, a session above it through OpenCode's subagent tool, or a shell with the server's password.
-Courier passes it on as written. ses_count has the text and acts on it. Where the text changes
-other parts of the job, send it to the sessions you started that those parts are under, and only to
-them: ses_count already has the text, and every session between it and you and every session above
-you already has this envelope.
+Courier passes it on as written. ses_count has the text and acts on it. It decides what the text
+means for its part. Where the text changes other parts of the job, send it to the sessions you
+started that those parts are under, and only to them: ses_count already has the text, and every
+session between it and you and every session above you already has this envelope.
 
 every file this job writes must hold its number followed by a space and the word checked
 </courier>

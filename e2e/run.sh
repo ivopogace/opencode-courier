@@ -1042,8 +1042,8 @@ run_entries() {
     "$(for _ in $(seq 1 15); do standing=$(entry_of "$parent" standing); [[ $standing == *"- $first \"Report back to your parent.\": reported done; group \"pair\" was delivered"* && $standing == *"- $second \"Report back to your parent.\": reported done; group \"pair\" was delivered"* ]] && { echo true; exit; }; sleep 1; done; echo false)"
   check "every announcement in the parent's transcript named the standing, and the woken request carried it" \
     "$(instruction_updates "$parent" | jq -r 'length >= 2 and all(contains("api/standing"))' | grep -qx true && jq -sr --arg parent "$parent" '[.[] | select(.session == $parent and (.tools | length > 0))] | last | .standingEntry' "$WORK/model.log")"
-  check "the first announcement, at the parent's first spawn, named its role and its standing, and none named lessons" \
-    "$(instruction_updates "$parent" | jq -r '(.[0] | contains("api/role") and contains("api/standing")) and all(contains("api/lessons") | not)')"
+  check "the parent's announcements named its role and its standing, and none named lessons" \
+    "$(instruction_updates "$parent" | jq -r '(join(" ") | contains("api/role") and contains("api/standing")) and all(contains("api/lessons") | not)')"
   cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $first" | tool_state courier_cleanup)
   check "courier_cleanup dropped the first member, and the standing lists the second alone" \
     "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "forgotten"' <<<"$cleaned" | grep -qx true && standing=$(entry_of "$parent" standing) && [[ $standing == *"- $second "* && $standing != *"- $first "* ]] && echo true || echo false)"

@@ -63,8 +63,7 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
 - Docs state how things are now: no history, no "used to", "since #N" or "no longer"; that lives in
   git, PR bodies and release notes.
 - After changing a model-facing string (`src/**/text.ts`, `src/kernel/protocol.ts`, `src/skill.ts` or
-  a tool description), re-run `e2e/real-model.sh` and put its result in the PR body; the tables in
-  `real-model.md` are one batch, replaced only by a full new batch.
+  a tool description), re-run `e2e/real-model.sh`; its result is not put in a pull request, an issue or a document.
 - Keep the provider's prompt cache: a spawned session's role part goes to its `role` instruction
   entry before its first prompt, and is put again only when the session starts its first native
   child while `nativeChildren` is off, which arrives as one instruction update and leaves the cached

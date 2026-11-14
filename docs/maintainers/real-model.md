@@ -6,10 +6,7 @@ polling, each child reports with a status, and each report wakes the parent. It 
 Re-run it after any change to a model-facing string: `src/**/text.ts`, `src/kernel/protocol.ts`,
 `src/skill.ts` or a tool description.
 
-The tables below are one batch, measured at af27ef7 on OpenCode 2.2.6 with a self-hosted model behind
-an OpenAI-compatible endpoint and `COURIER_TIMEOUT=600`, except [Words against a task](#words-against-a-task),
-measured at e4addb9 the same way. A new batch replaces them. A scenario with no table has no result in
-this batch.
+Its results stay with the person who ran it: they go in no pull request, issue or document.
 
 ## Running it
 
@@ -119,10 +116,6 @@ session, is kept in `summary.json` under `observed`. A `summary.json` without it
 transcript, a `courier_answer` proposing `once` in the parent's turn after the notice standing for
 the held prompt.
 
-| Condition | Result |
-|---|---|
-| skill listed | 3 of 3 passed, 7/7 each. |
-
 ## The question relay
 
 `COURIER_SCENARIO=question`. The parent is asked:
@@ -137,10 +130,6 @@ The child is not told how to ask: the brief's line on the question tool is under
 answers with `COURIER_ANSWER` when the parent asks. Six checks: the child asked and the parent asked
 the person; it did not answer by itself; it used the child's options; it passed the answer on; the
 child reported it; the reply holds it. With `COURIER_NATIVE=1` the script answers the child's form.
-
-| Condition | Result |
-|---|---|
-| skill listed | 3 of 3 passed, 6/6 each. |
 
 ## Recursive orchestration
 
@@ -169,11 +158,6 @@ and when, who used a group, a check-in or had a spawn refused.
 checks fail by design when the root keeps a part, so read the split from the transcripts. The
 scripted prompt fixes the split; the open prompt shows how the root makes one.
 
-| Condition | Result |
-|---|---|
-| skill listed | 3 of 3 passed, 9/9 each, mean 31 requests (31 to 32). |
-| `COURIER_SKILL=deny` | 3 of 3 passed, 9/9 each, mean 27 requests (26 to 28). |
-
 ## A part that goes wrong
 
 `COURIER_SCENARIO=recursive-fault`: the recursive job with one half told to report `partial` first,
@@ -199,11 +183,6 @@ report or a message without a status, counted from when the leaf sent it, so a p
 report held in a group from its standing and answers before the group delivers it passes. "Session …
 reported 2 times" is expected for it.
 
-| Condition | Result |
-|---|---|
-| `recursive-fault`, skill listed | 3 of 3 passed, 13/13 each, mean 33 requests (32 to 34). |
-| `recursive-fault`, `COURIER_SKILL=deny` | 3 of 3 passed, 13/13 each, mean 31 requests (30 to 32). |
-
 ## A part with a core
 
 `COURIER_SCENARIO=recursive-staged`: the "numbers" part has a seed both halves need, so a correct
@@ -224,7 +203,7 @@ or a shell redirect; `cd numbers && echo … > seed.txt` is not seen). The check
 before the seed was written (or its session reported); the session that staged started two or more
 halves together; it reported upward once, `done`.
 
-Run it with the skill and without, several runs each, and table them. The skill says nothing about staging, so the pair shows whether staging depends on it:
+Run it with the skill and without, several runs each, and read them with the table script. The skill says nothing about staging, so the pair shows whether staging depends on it:
 
 ```bash
 run() {  # run <name> [VAR=value ...]
@@ -290,10 +269,6 @@ bun script/real-model-table.ts $(for n in 1 2 3; do echo skill=$HOME/courier-run
 A slow model needs `COURIER_TIMEOUT=600`: with steps of 20 s or more the default wait gives up while
 a sub-orchestrator's wake turn still runs.
 
-| Condition | Result |
-|---|---|
-| skill listed | 3 of 3 passed, 13/13 each, mean 34 requests (31 to 39). |
-
 ## Words against a task
 
 `COURIER_SCENARIO=recursive-conflict`: a smoke check of the `route="prompt"` envelope's wording against
@@ -331,7 +306,7 @@ Every message to the half after the envelope is quoted in the notes. Those match
 `possible countermand`. The mark is no check: a message that repeats the person's words matches the
 first pattern too.
 
-**The person's step.** A person reads the quoted messages of each run and records here how many are
+**The person's step.** A person reads the quoted messages of each run and records how many are
 countermands, messages telling the half to drop the text and do its task as given. That count, not
 the marks, is what the check is read by.
 
@@ -345,10 +320,6 @@ for n in 1 2 3 4 5; do
   env COURIER_SCENARIO=recursive-conflict E2E_WORK="$HOME/courier-runs/conflict-$n" e2e/real-model.sh 2>&1 | tee "$HOME/courier-runs/conflict-$n.log"
 done
 ```
-
-| Condition | Result |
-|---|---|
-| skill listed | 3 of 5 passed, 13/13 three times, 12/13 and 5/13 once each, mean 30 requests (25 to 33). No countermand and no replaced file in the four runs that reached the conflict, so the text stays as it is. The 12/13 is the check that every session reported with a status. In the 5/13 the root started the halves itself, so the words never reached a half at depth 2. |
 
 ## A finding a session makes
 
@@ -497,5 +468,4 @@ after.
 This is a smoke test, not a benchmark: a few runs on one model. A
 model that passes here can still poll or forget to report on a harder task, so a `courier_later`
 check-in still pays. Which session loads the skill varies from run to run; on one-result tasks,
-models do not load it. No table reaches the five-run floor on two models. No results for: the fan-out, `permission` with
-`COURIER_PERSON=other-server`, `recursive-staged`, `discovery` and `review`.
+models do not load it.

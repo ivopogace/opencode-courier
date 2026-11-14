@@ -75,7 +75,7 @@ older than its prompt. A note to `prompt`, `settled`, `progress` or `told` keeps
 times, since both hub subscriptions note every event; `stopped` and `nudged` are overwritten. A
 failed `courier_send` or silent-end notice undoes its own note if the key still holds it.
 `pruneExpired` reads `report/` before the roster at load, so a child spawned during the sweep is
-never taken for an orphan. A held report outlives its member's roster entry.
+never taken for an orphan.
 
 ## Missed wakes and session state
 

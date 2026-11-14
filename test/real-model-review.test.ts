@@ -25,7 +25,7 @@ const send = (sessionID: string, message: string, status?: string) => tool("cour
 const shell = (command: string) => tool("shell", { command })
 const report = (from: string, status: string, text: string): Message => ({ type: "synthetic", text: `<courier from="${from}" status="${status}">\n${text}\n</courier>`, time: { created: tick() } })
 
-type Variant = "clean" | "fixed" | "review-edits" | "review-redirects" | "review-stashes" | "review-reads-stash" | "review-compares" | "review-scratch" | "review-copies-in" | "review-apostrophe" | "review-inner-script" | "review-searches" | "review-fed-script" |"review-heredoc" | "no-review" | "root-skips-tests" | "root-polls"
+type Variant = "clean" | "fixed" | "review-edits" | "review-redirects" | "review-stashes" | "review-reads-stash" | "review-compares" | "review-scratch" | "review-copies-in" | "review-apostrophe" | "review-inner-script" | "review-searches" | "review-fed-script" |"review-heredoc" | "no-review" | "root-skips-tests" | "root-polls" | "root-removed-tools"
 
 function transcripts(variant: Variant): Record<string, Message[]> {
   const impl = [user("make the change"), step("tool-calls", tool("skill", { id: "test-driven-development" }), tool("write", { path: "lib/words.js" }), tool("edit", { path: "test/words.test.js" }), shell("npm test"), shell("git commit -am slugify"), send("ses_root", "Added slugify with three tests; npm test passes 5.", "done")), step("stop", say("Reported.")), idle()]
@@ -50,7 +50,7 @@ function transcripts(variant: Variant): Record<string, Message[]> {
   const finding = variant === "fixed" ? "One finding: slugify keeps a trailing hyphen for input ending in two punctuation marks." : "No findings: the change meets the job."
   const reviewer = [user("review the change"), step("tool-calls", ...reviewerTools, send("ses_root", finding, "done")), step("stop", say("Reported.")), idle()]
   const fixer = [user("fix the finding"), step("tool-calls", tool("edit", { path: "lib/words.js" }), shell("npm test"), send("ses_root", "Fixed the trailing hyphen; 5 tests pass.", "done")), step("stop", say("Reported.")), idle()]
-  const root: Message[] = [user("the job"), step("tool-calls", tool("skill", { id: "courier-orchestrate" }), tool("courier_recall", {}), spawn("ses_impl", { agent: "implementer", title: "the change" }), ...(variant === "root-polls" ? [tool("courier_children", {})] : [])), step("stop", say("split: 1 part: the change, then its review.")), idle()]
+  const root: Message[] = [user("the job"), step("tool-calls", tool("skill", { id: "courier-orchestrate" }), ...(variant === "root-removed-tools" ? [tool("courier_recall", {})] : []), spawn("ses_impl", { agent: "implementer", title: "the change" }), ...(variant === "root-polls" ? [tool("courier_tree", {})] : []), ...(variant === "root-removed-tools" ? [tool("courier_children", {}), tool("courier_recall", {})] : [])), step("stop", say("split: 1 part: the change, then its review.")), idle()]
   root.push(report("ses_impl", "done", "Added slugify with three tests; npm test passes 5."))
   if (variant === "no-review") {
     root.push(step("tool-calls", shell("npm test")), step("stop", say("REVIEWED 5")), idle())
@@ -182,7 +182,13 @@ describe("the review checker", () => {
 
   test("a look right after spawning is polling", () => {
     const run = check("root-polls")
-    expect(run.failed).toEqual(["no orchestrator polled (courier_children, courier_tree, sleep)"])
+    expect(run.failed).toEqual(["no orchestrator polled (courier_tree, sleep)"])
+  })
+
+  test("courier_recall and courier_children are tools the checker does not know: no look, before or after the spawn, and no note", () => {
+    const run = check("root-removed-tools")
+    expect(run.failed).toEqual([])
+    expect(run.notes.some((note) => /courier_recall|courier_children/.test(note))).toBe(false)
   })
 
   test("failing tests, or fewer than asked, fail the tests check and the reply check", () => {

@@ -7,7 +7,6 @@ import {
   childOf,
   delivered,
   ended,
-  groupOf,
   hasRun,
   countIdOf,
   isCount,
@@ -55,8 +54,7 @@ const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
 const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
 const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 5)
-const LOOKS = new Set(["courier_children", "courier_tree"])
-const RECALL = "courier_recall"
+const LOOK = "courier_tree"
 const SKILL = "courier-orchestrate"
 const loadsAnySkill = (part) => part.type === "tool" && part.name === "skill" && part.state.status === "completed"
 
@@ -109,7 +107,7 @@ function turnsOf(list) {
 const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ?? "")
 const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
 const deliveriesFrom = (list, child) =>
-  list.flatMap((message, index) => (reportersOf(message).includes(child) && statusOf(message, child) ? [{ index, message }] : []))
+  list.flatMap((message, index) => (reportersOf(message).includes(child) && statusOf(message) ? [{ index, message }] : []))
 const sentBefore = (one, other) => one.index < other.index || (one.index === other.index && one.place < other.place)
 const created = []
 function go(file, why) {
@@ -234,30 +232,21 @@ const sleepsBeforeSpawn = (list) => {
 const lookedBeforeSpawn = (list) => {
   const tools = toolsOf(list)
   const firstSpawn = tools.findIndex(childOf)
-  return new Set(tools.slice(0, firstSpawn === -1 ? tools.length : firstSpawn).filter((part) => LOOKS.has(part.name)))
+  return new Set(tools.slice(0, firstSpawn === -1 ? tools.length : firstSpawn).filter((part) => part.name === LOOK))
 }
-const looksIn = (turn, exempt = new Set()) =>
-  toolsOf(turn).filter((part) => (LOOKS.has(part.name) && !exempt.has(part)) || part.name === RECALL || (sleeps(part) && !exempt.has(part))).length
-const allowedRecall = (id, turn) => {
-  if (id !== rootID) return 0
-  const tools = toolsOf(turn)
-  const firstSpawn = tools.findIndex(childOf)
-  const recalls = tools.flatMap((part, index) => (part.name === RECALL ? [index] : []))
-  return recalls.length === 1 && (firstSpawn === -1 || recalls[0] < firstSpawn) ? 1 : 0
-}
+const looksIn = (turn, exempt = new Set()) => toolsOf(turn).filter((part) => (part.name === LOOK || sleeps(part)) && !exempt.has(part)).length
 const segmentsOf = (turn) =>
   turn.reduce((segments, message, index) => {
     if (index > 0 && sendersOf(message).length) segments.push([])
     segments.at(-1).push(message)
     return segments
   }, [[]])
-const polledIn = (id, list) => {
-  const turns = turnsOf(list)
-  const [opening = [], ...woken] = turns.flatMap(segmentsOf)
+const polledIn = (list) => {
+  const [opening = [], ...woken] = turnsOf(list).flatMap(segmentsOf)
   const exempt = new Set([...sleepsBeforeSpawn(list), ...lookedBeforeSpawn(list)])
-  return looksIn(opening, exempt) - allowedRecall(id, turns[0] ?? []) > 0 || woken.some((segment) => looksIn(segment, exempt) > 1)
+  return looksIn(opening, exempt) > 0 || woken.some((segment) => looksIn(segment, exempt) > 1)
 }
-const pollers = orchestrators.filter(([id, entry]) => polledIn(id, entry.list)).map(([id]) => id)
+const pollers = orchestrators.filter(([, entry]) => polledIn(entry.list)).map(([id]) => id)
 const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length
 const batchIn = (list) => (staged ? turnsOf(list) : turnsOf(list).slice(0, 1)).some((turn) => spawnsIn(turn) >= 2)
 const own = (part) => !part.name.startsWith("courier_") && part.name !== "skill"
@@ -293,7 +282,7 @@ const fileText = (file) => {
 }
 const fileTexts = files.map(fileText)
 const fileExpected = expected.map((value) => (finding ? `${value}${SUFFIX}` : value))
-const deliveriesOf = (id) => deliveriesFrom(tree.get(tree.get(id).parentID).list, id).map((delivery) => ({ ...delivery, status: statusOf(delivery.message, id) }))
+const deliveriesOf = (id) => deliveriesFrom(tree.get(tree.get(id).parentID).list, id).map((delivery) => ({ ...delivery, status: statusOf(delivery.message) }))
 const faulty = spawned.filter(([id, entry]) => entry.parentID !== rootID && (deliveriesOf(id)[0]?.status ?? "done") !== "done")
 const handling = faulty.map(([id, entry]) => {
   const parent = tree.get(entry.parentID)
@@ -414,7 +403,7 @@ const checks = [
     "the root ended its first turn after spawning, without waiting for the reports (one steered into it while it ran is delivered)",
     spawnsIn(first) > 0 && ended(first.at(-1)) && !failed(first.at(-1)),
   ],
-  ["no orchestrator polled (courier_children, courier_tree, sleep)", pollers.length === 0],
+  ["no orchestrator polled (courier_tree, sleep)", pollers.length === 0],
   [
     "at least one child spawned at least two of its own in one turn, and no sub-orchestrator started exactly one in all without work of its own first",
     subOrchestrators.some(([, entry]) => batchIn(entry.list)) && subOrchestrators.every(([, entry]) => notOneInAll(entry.list)),
@@ -440,28 +429,14 @@ for (const [id, entry] of tree) {
   if (loads.length) notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} loaded the skill(s): ${loads.join(", ")}`)
 }
 if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.name === "skill"))) notes.push("no session loaded a skill")
-for (const [id, entry] of tree) {
-  const turns = turnsOf(entry.list)
-  const calls = turns.flatMap((turn, number) => {
-    const tools = toolsOf(turn)
-    const firstSpawn = tools.findIndex(childOf)
-    return tools.flatMap((part, index) => (part.name === RECALL ? [{ turn: number + 1, beforeSplit: firstSpawn === -1 || index < firstSpawn, status: part.state.status }] : []))
-  })
-  if (!calls.length) continue
-  const first = calls[0]
-  const when = first.turn === 1 ? (first.beforeSplit ? "in its first turn, before its split" : "in its first turn, after its first spawn") : `in turn ${first.turn}`
-  notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} called courier_recall ${calls.length} time(s), the first ${when}${calls.some((call) => call.status === "error") ? ", with an error" : ""}`)
-}
-if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.name === RECALL))) notes.push("no session called courier_recall")
 const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()
 for (const [id, entry] of tree) {
   const decision = splitLineOf((turnsOf(entry.list)[0] ?? []).filter((message) => message.type === "assistant").map(textOf).join("\n"))
   if (decision) notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} stated: ${decision.slice(0, 320)}`)
 }
 for (const [id, entry] of orchestrators) {
-  const groups = [...new Set(toolsOf(entry.list).filter((part) => childOf(part) && part.state.input?.group).map((part) => part.state.input.group))]
   const isolated = toolsOf(entry.list).filter((part) => childOf(part) && part.state.input?.isolate).length
-  notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} started ${spawnsOf(entry.list).length} session(s)${groups.length ? ` in group(s) ${groups.join(", ")}` : ", in no group"}${isolated ? `, ${isolated} isolated` : ""}`)
+  notes.push(`${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`} started ${spawnsOf(entry.list).length} session(s)${isolated ? `, ${isolated} isolated` : ""}`)
   const checkIns = toolsOf(entry.list).filter((part) => part.name === "courier_later" && part.state.status === "completed").length
   const cancelled = toolsOf(entry.list).filter((part) => part.name === "courier_cancel" && part.state.status === "completed").length
   if (checkIns) notes.push(`${id === rootID ? "the root" : `session ${id}`} scheduled ${checkIns} courier_later check-in(s) and cancelled ${cancelled}`)
@@ -540,7 +515,7 @@ if (early) notes.push(`${early} report(s) reached the root while its first turn 
 if (pollers.length) notes.push(`polled: ${pollers.map((id) => (id === rootID ? "the root" : id)).join(", ")}`)
 for (const [id, entry] of spawned) {
   const report = reportOf(id)
-  if (report) notes.push(`report from ${id} (depth ${entry.depth})${groupOf(report.message) ? ` in group "${groupOf(report.message)}"` : ""}: status ${statusOf(report.message, id)}`)
+  if (report) notes.push(`report from ${id} (depth ${entry.depth}): status ${statusOf(report.message)}`)
   const sends = reportsTo(entry.list, entry.parentID).length
   if (sends > 1) notes.push(`session ${id} reported ${sends} times`)
 }

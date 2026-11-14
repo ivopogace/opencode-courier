@@ -25,12 +25,8 @@ export function childOf(part) {
   return metadata.sessionID ?? metadata.metadata?.sessionID ?? contentText(part.state).match(/Started session (ses_\w+)/)?.[1]
 }
 export const spawnsOf = (list) => toolsOf(list).map(childOf).filter(Boolean)
-export const sendersOf = (message) => (message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.[1].split(",") ?? []) : [])
-export const groupOf = (message) => message.text?.match(/^<courier from="[^"]*" group="([^"]+)"/)?.[1]
-export const statusOf = (message, from) =>
-  groupOf(message)
-    ? message.text.match(new RegExp(`^\\[\\d+/\\d+\\] ${from} ".*": (\\w+)$`, "m"))?.[1]
-    : message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
+export const sendersOf = (message) => (message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.slice(1) ?? []) : [])
+export const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 export const sendsTo = (list, to) =>
   list.flatMap((message, index) =>
     message.type !== "assistant"
@@ -42,7 +38,7 @@ export const sendsTo = (list, to) =>
         ),
   )
 export const reportsTo = (list, parentID) => sendsTo(list, parentID).filter((send) => send.status)
-export const delivered = (list, from, after = -1) => list.findIndex((message, index) => index > after && sendersOf(message).includes(from) && !groupOf(message) && !statusOf(message, from))
+export const delivered = (list, from, after = -1) => list.findIndex((message, index) => index > after && sendersOf(message).includes(from) && !statusOf(message))
 export const plainAfter = (list, to, after) => sendsTo(list, to).find((send) => send.index > after && !send.status)
 const carriedInSpawn = (list, child, after) =>
   list.some(

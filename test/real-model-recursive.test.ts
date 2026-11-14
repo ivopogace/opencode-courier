@@ -19,20 +19,12 @@ const step = (finish: "tool-calls" | "stop", ...content: unknown[]): Message => 
 }
 const say = (text: string) => ({ type: "text", text })
 const tool = (name: string, input: unknown, metadata: unknown = {}) => ({ type: "tool", name, state: { status: "completed", input, metadata, content: [] } })
-const spawn = (sessionID: string, group: string) => tool("courier_spawn", { task: `the ${sessionID} part`, group }, { sessionID })
+const spawn = (sessionID: string) => tool("courier_spawn", { task: `the ${sessionID} part` }, { sessionID })
 const send = (sessionID: string, message: string, status?: string) => tool("courier_send", { sessionID, message, ...(status ? { status } : {}) })
 const loadSkill = () => tool("skill", { id: "courier-orchestrate" })
 const write = (path: string) => tool("write", { path })
 const report = (from: string, status: string, text: string) => synthetic(`<courier from="${from}" status="${status}">\n${text}\n</courier>`)
-const released = (group: string, reports: ReadonlyArray<readonly [string, string]>) =>
-  synthetic(
-    [
-      `<courier from="${reports.map(([id]) => id).join(",")}" group="${group}">`,
-      `Group "${group}" is complete: ${reports.length} reports of ${reports.length} members. Each report follows, with its status.`,
-      ...reports.flatMap(([id, status], index) => ["", `[${index + 1}/${reports.length}] ${id} "${id}": ${status}`, `${id} ${status}`]),
-      "</courier>",
-    ].join("\n"),
-  )
+const reported = (reports: ReadonlyArray<readonly [string, string]>) => reports.map(([id, status]) => report(id, status, `${id} ${status}`))
 
 type Variant = "handled" | "reports-early" | "does-it-itself" | "no-fault"
 
@@ -44,8 +36,8 @@ function transcripts(variant: Variant): Record<string, Message[]> {
   const nudged = variant === "handled" || variant === "reports-early"
   if (nudged)
     b.push(synthetic('<courier from="ses_num">\nFinish: write numbers/b.txt and report done.\n</courier>'), step("tool-calls", write("numbers/b.txt"), send("ses_num", "Wrote numbers/b.txt.", "done")), step("stop", say("Done.")), idle())
-  const num = [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves")), step("stop", say("split: 2 halves")), idle()]
-  num.push(released("halves", [["ses_a", "done"], ["ses_b", variant === "no-fault" ? "done" : "partial"]]))
+  const num = [user("numbers"), step("tool-calls", spawn("ses_a"), spawn("ses_b")), step("stop", say("split: 2 halves")), idle()]
+  num.push(...reported([["ses_a", "done"], ["ses_b", variant === "no-fault" ? "done" : "partial"]]))
   const upward: Array<"partial" | "done"> = []
   if (variant === "handled") num.push(step("tool-calls", send("ses_b", "Finish: write numbers/b.txt and report done.")), step("stop", say("Waiting for b.")), idle())
   if (variant === "reports-early") {
@@ -60,8 +52,8 @@ function transcripts(variant: Variant): Record<string, Message[]> {
     num.push(report("ses_b", "done", "Wrote numbers/b.txt."), step("tool-calls", tool("read", { path: "numbers/b.txt" }), send("ses_root", "391 and 1024", "done")), step("stop", say("Reported.")), idle())
     upward.push("done")
   }
-  const root = [user("the job"), step("tool-calls", loadSkill(), spawn("ses_num", "parts"), spawn("ses_count", "parts")), step("stop", say("split: 2 parts | numbers, count")), idle()]
-  root.push(released("parts", [["ses_num", upward[0]!], ["ses_count", "done"]]))
+  const root = [user("the job"), step("tool-calls", loadSkill(), spawn("ses_num"), spawn("ses_count")), step("stop", say("split: 2 parts | numbers, count")), idle()]
+  root.push(...reported([["ses_num", upward[0]!], ["ses_count", "done"]]))
   for (const status of upward.slice(1)) root.push(report("ses_num", status, "391 and 1024"))
   root.push(step("tool-calls", tool("read", { path: "numbers/a.txt" })), step("stop", say("RESULTS 391 1024 42")), idle())
   return { ses_root: root, ses_num: num, ses_a: a, ses_b: b, ses_count: count }
@@ -155,9 +147,9 @@ describe("the recursive checker with --fault", () => {
   })
 
   const FINISH = "Finish: write numbers/b.txt and report done."
-  function nudgedBeforeTheGroup(opening: "partial" | "progress", nudgeFirst = false): Run {
+  function nudgedBeforeTheReport(opening: "partial" | "progress", nudgeFirst = false): Run {
     const { ses_root, ses_a, ses_count } = transcripts("handled")
-    const num = [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves"))]
+    const num = [user("numbers"), step("tool-calls", spawn("ses_a"), spawn("ses_b"))]
     if (nudgeFirst) num.push(step("tool-calls", send("ses_b", FINISH)))
     const progress = opening === "progress" ? [send("ses_num", "1024; no file written yet")] : []
     const b = [user("half b"), step("tool-calls", tool("shell", { command: "echo 1024" }), ...progress, send("ses_num", "1024; writing numbers/b.txt is left", "partial")), step("stop", say("Reported.")), idle()]
@@ -165,24 +157,24 @@ describe("the recursive checker with --fault", () => {
     if (!nudgeFirst) num.push(step("tool-calls", send("ses_b", FINISH)))
     num.push(step("stop", say("Told b to finish.")), idle())
     b.push(synthetic(`<courier from="ses_num">\n${FINISH}\n</courier>`), step("tool-calls", write("numbers/b.txt"), send("ses_num", "Wrote numbers/b.txt.", "done")), step("stop", say("Done.")), idle())
-    num.push(released("halves", [["ses_a", "done"], ["ses_b", "partial"]]), step("stop", say("b was told already.")), idle())
+    num.push(...reported([["ses_a", "done"], ["ses_b", "partial"]]), step("stop", say("b was told already.")), idle())
     num.push(report("ses_b", "done", "Wrote numbers/b.txt."), step("tool-calls", tool("read", { path: "numbers/b.txt" }), send("ses_root", "391 and 1024", "done")), step("stop", say("Reported.")), idle())
     return { tree: { ses_root: ses_root!, ses_a: ses_a!, ses_count: ses_count!, ses_num: num, ses_b: b }, files: FILES }
   }
 
-  test("a message to the leaf after its partial report was sent, before its group brought the report, passes every check", () => {
-    const run = check(nudgedBeforeTheGroup("partial"), ["--fault"])
+  test("a message to the leaf after its partial report was sent, before the report reached its parent, passes every check", () => {
+    const run = check(nudgedBeforeTheReport("partial"), ["--fault"])
     expect(run.failed).toEqual([])
     expect(run.notes.some((note) => note.endsWith(`and messaged it: ${FINISH}`))).toBe(true)
   })
 
   test("a message to the leaf after its progress message without a status, before its partial report, passes every check", () => {
-    const run = check(nudgedBeforeTheGroup("progress"), ["--fault"])
+    const run = check(nudgedBeforeTheReport("progress"), ["--fault"])
     expect(run.failed).toEqual([])
   })
 
   test("a message to the leaf before it sent anything does not count", () => {
-    const run = check(nudgedBeforeTheGroup("partial", true), ["--fault"])
+    const run = check(nudgedBeforeTheReport("partial", true), ["--fault"])
     expect(run.failed).toEqual([
       "its parent messaged it with courier_send after its first message that was not done, and before reporting upward",
       "it then reported done",
@@ -198,15 +190,6 @@ test("without --fault the recursive checker makes its nine checks only", () => {
     expect(Object.keys(run.checks)).toHaveLength(9)
     expect(run.notes.some((note) => note.startsWith("fault:"))).toBe(false)
   }
-})
-
-test("a report in a group notice counts whatever quotes the child's title holds", () => {
-  const tree = transcripts("no-fault")
-  const quoted = (text: string) => text.replace('"ses_num"', '"Part "numbers". Your part is two halves"').replace('"ses_count"', '"Part "count". Do exactly this:"')
-  tree.ses_root = tree.ses_root!.map((message) => (message.type === "synthetic" && /group="parts"/.test(String(message.text)) ? synthetic(quoted(String(message.text))) : message))
-  const run = check({ tree, files: FILES })
-  expect(run.failed).toEqual([])
-  expect(run.checks["every spawned session reported to its parent, with a status"]).toBe(true)
 })
 
 test("a re-read with --saved keeps the fault checks of a run made with --fault, which summary.json records", () => {
@@ -225,8 +208,8 @@ const syntheticAt = (second: number, text: string): Message => ({ type: "synthet
 const idleAt = (second: number): Message => ({ type: "idle", time: { created: at(second) } })
 const stepAt = (from: number, to: number, finish: "tool-calls" | "stop", ...content: unknown[]): Message => ({ type: "assistant", finish, content, time: { created: at(from), completed: at(to) } })
 const reportAt = (second: number, from: string, status: string) => ({ ...report(from, status, `${from} ${status}`), time: { created: at(second) } })
-const releasedAt = (second: number, group: string, reports: ReadonlyArray<readonly [string, string]>) => ({ ...released(group, reports), time: { created: at(second) } })
-const spawnOf = (sessionID: string, group?: string) => tool("courier_spawn", { task: `the ${sessionID} part`, ...(group ? { group } : {}) }, { sessionID })
+const reportedAt = (second: number, reports: ReadonlyArray<readonly [string, string]>) => reports.map(([id, status], index) => reportAt(second + index / 10, id, status))
+const spawnOf = (sessionID: string) => tool("courier_spawn", { task: `the ${sessionID} part` }, { sessionID })
 const refusedSkill = () => ({ type: "tool", name: "skill", state: { status: "error", input: { id: "courier-orchestrate" }, error: "Unable to load skill courier-orchestrate" } })
 const SEED = "sleep 20; echo $((7 * 61))"
 const DENY = { permissions: [{ action: "*", resource: "*", effect: "allow" }, { action: "skill", resource: "courier-orchestrate", effect: "deny" }] }
@@ -258,14 +241,14 @@ function numbersOf(staging: Staging): Message[] {
     return [
       opened,
       stepAt(4, 30, "tool-calls", timed(loadSkill(), 4, 5), timed(tool("shell", { command: SEED }), 5, 25), timed(write("numbers/seed.txt"), 25, 26)),
-      stepAt(30, 33, "tool-calls", timed(spawnOf("ses_a", "halves"), 30, 31), timed(spawnOf("ses_b", "halves"), 31, 32)),
+      stepAt(30, 33, "tool-calls", timed(spawnOf("ses_a"), 30, 31), timed(spawnOf("ses_b"), 31, 32)),
       stepAt(33, 34, "stop", say("split: the seed myself, then 2 halves")),
       idleAt(34),
     ]
   if (staging === "half-before-seed")
     return [
       opened,
-      stepAt(4, 30, "tool-calls", timed(tool("shell", { command: `${SEED} > numbers/seed.txt` }), 4, 24), timed(spawnOf("ses_a", "halves"), 4.5, 5), timed(spawnOf("ses_b", "halves"), 5, 5.5)),
+      stepAt(4, 30, "tool-calls", timed(tool("shell", { command: `${SEED} > numbers/seed.txt` }), 4, 24), timed(spawnOf("ses_a"), 4.5, 5), timed(spawnOf("ses_b"), 5, 5.5)),
       stepAt(30, 31, "stop", say("split: 2 halves")),
       idleAt(31),
     ]
@@ -287,7 +270,7 @@ function numbersOf(staging: Staging): Message[] {
     return [
       ...first,
       syntheticAt(35, '<courier from="ses_num" scheduled="2026-10-21T10:00:35.000Z">\nCheck on the seed.\n</courier>'),
-      stepAt(36, 40, "tool-calls", timed(tool("read", { path: "numbers/seed.txt" }), 36, 37), timed(spawnOf("ses_a", "halves"), 37, 38), timed(spawnOf("ses_b", "halves"), 38, 39)),
+      stepAt(36, 40, "tool-calls", timed(tool("read", { path: "numbers/seed.txt" }), 36, 37), timed(spawnOf("ses_a"), 37, 38), timed(spawnOf("ses_b"), 38, 39)),
       stepAt(40, 41, "stop", say("Halves started.")),
       idleAt(41),
       reportAt(46, "ses_core", "done"),
@@ -297,7 +280,7 @@ function numbersOf(staging: Staging): Message[] {
   return [
     ...first,
     reportAt(30, "ses_core", "done"),
-    stepAt(31, 34, "tool-calls", timed(spawnOf("ses_a", "halves"), 31, 32), timed(spawnOf("ses_b", "halves"), 32, 33)),
+    stepAt(31, 34, "tool-calls", timed(spawnOf("ses_a"), 31, 32), timed(spawnOf("ses_b"), 32, 33)),
     stepAt(34, 35, "stop", say("split: 2 halves")),
     idleAt(35),
   ]
@@ -309,10 +292,10 @@ function stagedRun(staging: Staging): Run {
   const tree: Record<string, Message[]> = {
     ses_root: [
       userAt(0, "the job"),
-      stepAt(1, 3, "tool-calls", timed(denied ? refusedSkill() : loadSkill(), 1, 2), timed(spawnOf("ses_num", "parts"), 2, 2.5), timed(spawnOf("ses_count", "parts"), 2.5, 3)),
+      stepAt(1, 3, "tool-calls", timed(denied ? refusedSkill() : loadSkill(), 1, 2), timed(spawnOf("ses_num"), 2, 2.5), timed(spawnOf("ses_count"), 2.5, 3)),
       stepAt(3, 4, "stop", say("split: 2 parts | numbers, count")),
       idleAt(4),
-      releasedAt(200, "parts", [["ses_num", upward], ["ses_count", "done"]]),
+      ...reportedAt(200, [["ses_num", upward], ["ses_count", "done"]]),
       stepAt(201, 202, "tool-calls", timed(tool("read", { path: "numbers/seed.txt" }), 201, 202)),
       stepAt(202, 203, "stop", say("RESULTS 427 7259 1427 42")),
       idleAt(204),
@@ -330,7 +313,7 @@ function stagedRun(staging: Staging): Run {
     tree.ses_num!.push(reportAt(31, "ses_core", "done"), stepAt(32, 34, "tool-calls", timed(send("ses_root", "427 7259 1427", "done"), 32, 34)), stepAt(34, 35, "stop", say("Reported.")), idleAt(35))
   else {
     tree.ses_num!.push(
-      releasedAt(60, "halves", [["ses_a", "done"], ["ses_b", "done"]]),
+      ...reportedAt(60, [["ses_a", "done"], ["ses_b", "done"]]),
       stepAt(61, 63, "tool-calls", timed(tool("read", { path: "numbers/a.txt" }), 61, 62), timed(send("ses_root", "427 7259 1427", upward), 62, 63)),
       stepAt(63, 64, "stop", say("Reported.")),
       idleAt(64),
@@ -408,7 +391,7 @@ describe("the recursive checker with --staged", () => {
 })
 
 test("without --staged the recursive checks keep their rules on a staged tree: a sleep before the split is a look, a first turn of one spawn no batch", () => {
-  expect(check(stagedRun("itself")).failed).toEqual(["no orchestrator polled (courier_children, courier_tree, sleep)"])
+  expect(check(stagedRun("itself")).failed).toEqual(["no orchestrator polled (courier_tree, sleep)"])
   const denied = check(stagedRun("skill-denied"))
   expect(Object.keys(denied.checks)).toHaveLength(9)
   expect(denied.failed).toEqual([BATCH])
@@ -449,10 +432,10 @@ function findingRun(variant: Finding): Run {
     idle(),
   ]
   const early = variant === "in-spawn" || variant === "spawn-silent"
-  const halfTask = (sessionID: string) => tool("courier_spawn", { task: variant === "in-spawn" ? `the half. ${FINDING}` : "the half", group: "halves" }, { sessionID })
+  const halfTask = (sessionID: string) => tool("courier_spawn", { task: variant === "in-spawn" ? `the half. ${FINDING}` : "the half" }, { sessionID })
   const num = early
     ? [user("numbers"), synthetic(`<courier from="ses_root">\n${FINDING}\n</courier>`), step("tool-calls", halfTask("ses_a"), halfTask("ses_b")), step("stop", say("split: 2 halves")), idle()]
-    : [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves")), step("stop", say("split: 2 halves")), idle()]
+    : [user("numbers"), step("tool-calls", spawn("ses_a"), spawn("ses_b")), step("stop", say("split: 2 halves")), idle()]
   if (!silent && !early)
     num.push(
       synthetic(`<courier from="ses_root">\n${FINDING}\n</courier>`),
@@ -460,12 +443,12 @@ function findingRun(variant: Finding): Run {
       step("stop", say("Passed on.")),
       idle(),
     )
-  num.push(released("halves", [["ses_a", "done"], ["ses_b", "done"]]), step("tool-calls", send("ses_root", "391 checked and 1024 checked", "done")), step("stop", say("Reported.")), idle())
-  const root = [user("the job"), step("tool-calls", loadSkill(), spawn("ses_num", "parts"), spawn("ses_count", "parts")), step("stop", say("split: 2 parts | numbers, count")), idle()]
+  num.push(...reported([["ses_a", "done"], ["ses_b", "done"]]), step("tool-calls", send("ses_root", "391 checked and 1024 checked", "done")), step("stop", say("Reported.")), idle())
+  const root = [user("the job"), step("tool-calls", loadSkill(), spawn("ses_num"), spawn("ses_count")), step("stop", say("split: 2 parts | numbers, count")), idle()]
   root.push(typed("ses_count"))
   if (silent) root.push(step("stop", say("Noted.")), idle())
   else root.push(step("tool-calls", send("ses_num", FINDING)), step("stop", say("Passed on.")), idle())
-  root.push(released("parts", [["ses_num", "done"], ["ses_count", "done"]]), step("tool-calls", tool("read", { path: "numbers/a.txt" })), step("stop", say("RESULTS 391 1024 42")), idle())
+  root.push(...reported([["ses_num", "done"], ["ses_count", "done"]]), step("tool-calls", tool("read", { path: "numbers/a.txt" })), step("stop", say("RESULTS 391 1024 42")), idle())
   const told = variant === "passed" || variant === "not-down"
   const files = Object.fromEntries(Object.entries(FILES).map(([file, value]) => [file, `${value} checked`]))
   return { tree: { ses_root: root, ses_num: num, ses_a: half("a", "391", told), ses_b: half("b", "1024", variant === "passed"), ses_count: count }, files, expect: Object.values(FILES).join(" ") }
@@ -548,17 +531,17 @@ describe("the recursive checker with --finding", () => {
   })
 })
 
-const POLL = "no orchestrator polled (courier_children, courier_tree, sleep)"
+const POLL = "no orchestrator polled (courier_tree, sleep)"
 
 function loneSpawnRun(before: unknown[]): Run {
   const tree = transcripts("no-fault")
   const c1 = [user("the count"), step("tool-calls", tool("shell", { command: "echo 42" }), write("count/total.txt"), send("ses_count", "42", "done")), step("stop", say("Reported.")), idle()]
   const count = [
     user("count"),
-    step("tool-calls", ...before, spawn("ses_c1", "stage")),
+    step("tool-calls", ...before, spawn("ses_c1")),
     step("stop", say("split: 1 stage")),
     idle(),
-    released("stage", [["ses_c1", "done"]]),
+    ...reported([["ses_c1", "done"]]),
     step("tool-calls", send("ses_root", "42", "done")),
     step("stop", say("Reported.")),
     idle(),
@@ -566,47 +549,45 @@ function loneSpawnRun(before: unknown[]): Run {
   return { tree: { ...tree, ses_count: count, ses_c1: c1 }, files: FILES }
 }
 
-function recallRun(where: "root" | "sub" | "root-twice"): Run {
+function removedToolsRun(): Run {
   const tree = transcripts("no-fault")
-  const recall = tool("courier_recall", {})
-  const content = (tree[where === "sub" ? "ses_num" : "ses_root"]![1] as { content: unknown[] }).content
-  content.splice(where === "sub" ? 0 : 1, 0, recall, ...(where === "root-twice" ? [recall] : []))
+  const rootSpawns = tree.ses_root![1] as { content: unknown[] }
+  const numSpawns = tree.ses_num![1] as { content: unknown[] }
+  rootSpawns.content.splice(1, 0, tool("courier_recall", {}), tool("courier_recall", {}))
+  numSpawns.content.push(tool("courier_children", {}), tool("courier_recall", {}))
   return { tree, files: FILES }
 }
 
-describe("the recursive checker on lone spawns and recalls", () => {
+describe("the recursive checker on lone spawns", () => {
   test("a sub-orchestrator that starts exactly one session with no work of its own first is a hop", () => {
     expect(check(loneSpawnRun([])).failed).toEqual([BATCH])
   })
   test("one that did work of its own first started a stage, which passes", () => {
     const run = check(loneSpawnRun([tool("read", { path: "count/plan.md" })]))
     expect(run.failed).toEqual([])
-    expect(run.notes).toContain("session ses_count (depth 1) started 1 session(s) in group(s) stage")
+    expect(run.notes).toContain("session ses_count (depth 1) started 1 session(s)")
   })
   test("a skill load is not work of its own", () => {
     expect(check(loneSpawnRun([loadSkill()])).failed).toEqual([BATCH])
   })
-  test("the root's one courier_recall before its split is allowed, and noted", () => {
-    const run = check(recallRun("root"))
-    expect(run.failed).toEqual([])
-    expect(run.notes).toContain("the root called courier_recall 1 time(s), the first in its first turn, before its split")
-  })
-  test("a second recall at the root, or one in a sub-orchestrator, is a look", () => {
-    expect(check(recallRun("root-twice")).failed).toEqual([POLL])
-    expect(check(recallRun("sub")).failed).toEqual([POLL])
-  })
 })
 
-function steeredRun(look: "none" | "after" | "before" | "before-spawn"): Run {
+test("courier_recall and courier_children are tools the checker does not know: two recalls at the root, or both right after a sub-orchestrator's spawns, are no look and leave no note", () => {
+  const run = check(removedToolsRun())
+  expect(run.failed).toEqual([])
+  expect(run.notes.some((note) => /courier_recall|courier_children/.test(note))).toBe(false)
+})
+
+function steeredRun(where: "none" | "after" | "before" | "before-spawn"): Run {
   const tree = transcripts("no-fault")
-  const children = tool("courier_children", {})
+  const look = tool("courier_tree", {})
   tree.ses_root = [
     user("the job"),
-    ...(look === "before-spawn" ? [step("tool-calls", tool("courier_recall", {}), tool("read", { path: "numbers/a.txt" }), children)] : []),
-    step("tool-calls", spawn("ses_num", ""), spawn("ses_count", "")),
-    ...(look === "before" ? [step("tool-calls", children)] : []),
+    ...(where === "before-spawn" ? [step("tool-calls", tool("read", { path: "numbers/a.txt" }), look)] : []),
+    step("tool-calls", spawn("ses_num"), spawn("ses_count")),
+    ...(where === "before" ? [step("tool-calls", look)] : []),
     report("ses_count", "done", "42"),
-    ...(look === "after" ? [step("tool-calls", children)] : []),
+    ...(where === "after" ? [step("tool-calls", look)] : []),
     step("stop", say("split: 2 parts | numbers, count. count is in.")),
     idle(),
     report("ses_num", "done", "391 and 1024"),
@@ -631,10 +612,10 @@ describe("the recursive checker and a report steered into the root's first turn"
     expect(check(steeredRun("before-spawn")).failed).toEqual([])
   })
   test("a look before a sub-orchestrator's first spawn is no poll, one after it and before any report is", () => {
-    expect(check(loneSpawnRun([tool("read", { path: "count/plan.md" }), tool("courier_children", {})])).failed).toEqual([])
+    expect(check(loneSpawnRun([tool("read", { path: "count/plan.md" }), tool("courier_tree", {})])).failed).toEqual([])
     const run = loneSpawnRun([tool("read", { path: "count/plan.md" })])
     const count = run.tree.ses_count as { content?: unknown[] }[]
-    count[1]!.content!.push(tool("courier_children", {}))
+    count[1]!.content!.push(tool("courier_tree", {}))
     expect(check(run).failed).toEqual([POLL])
   })
 })
@@ -644,31 +625,31 @@ const UPWARD = "each sub-orchestrator reported upward once, after its own childr
 function earlyRun(order: "after-children" | "before-children" | "twice"): Run {
   const tree = transcripts("no-fault")
   const half = (file: string, value: string) => [user(file), step("tool-calls", write(file), send("ses_num", value, "done")), step("stop", say("Reported.")), idle()]
-  const num = [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves"))]
+  const num = [user("numbers"), step("tool-calls", spawn("ses_a"), spawn("ses_b"))]
   const upward = () => step("tool-calls", tool("read", { path: "numbers/a.txt" }), tool("read", { path: "numbers/b.txt" }), send("ses_root", "391 and 1024", "done"))
   if (order === "before-children") num.push(upward())
   tree.ses_a = half("numbers/a.txt", "391")
   tree.ses_b = half("numbers/b.txt", "1024")
   if (order !== "before-children") num.push(upward())
-  num.push(step("stop", say("Reported.")), idle(), released("halves", [["ses_a", "done"], ["ses_b", "done"]]))
+  num.push(step("stop", say("Reported.")), idle(), ...reported([["ses_a", "done"], ["ses_b", "done"]]))
   num.push(...(order === "twice" ? [step("tool-calls", send("ses_root", "Confirming: 391 and 1024", "done")), step("stop", say("Reported again."))] : [step("stop", say("Already reported."))]), idle())
   tree.ses_num = num
-  const root = [user("the job"), step("tool-calls", spawn("ses_num", "parts"), spawn("ses_count", "parts")), step("stop", say("split: 2 parts | numbers, count")), idle()]
-  root.push(released("parts", [["ses_num", "done"], ["ses_count", "done"]]))
+  const root = [user("the job"), step("tool-calls", spawn("ses_num"), spawn("ses_count")), step("stop", say("split: 2 parts | numbers, count")), idle()]
+  root.push(...reported([["ses_num", "done"], ["ses_count", "done"]]))
   if (order === "twice") root.push(report("ses_num", "done", "Confirming: 391 and 1024"))
   root.push(step("tool-calls", tool("read", { path: "numbers/a.txt" })), step("stop", say("RESULTS 391 1024 42")), idle())
   tree.ses_root = root
   return { tree, files: FILES }
 }
 
-describe("the recursive checker and a sub-orchestrator that reports in the turn that started its group", () => {
-  test("it passes once its children's reports were sent, though the group was still held", () => {
+describe("the recursive checker and a sub-orchestrator that reports in the turn that started its children", () => {
+  test("it passes once its children's reports were sent, though they reached it only after its own", () => {
     expect(check(earlyRun("after-children")).failed).toEqual([])
   })
   test("a report upward before its children had reported fails", () => {
     expect(check(earlyRun("before-children")).failed).toEqual([UPWARD])
   })
-  test("a second report upward after the group arrives fails", () => {
+  test("a second report upward after the children's reports arrive fails", () => {
     expect(check(earlyRun("twice")).failed).toEqual([UPWARD])
   })
 })
@@ -737,8 +718,8 @@ type Stall = "root-silent" | "root-answering" | "root-passed" | "one-half" | "pa
 
 function stalled(variant: Stall) {
   const count = [user("count: run `echo $((99 - 57))`, write it to count/total.txt"), step("tool-calls", write("count/total.txt"), send("ses_root", "42 checked", "done")), step("stop", say("Reported.")), idle()]
-  const root = [user("the job"), step("tool-calls", spawn("ses_num", ""), spawn("ses_count", "")), step("stop", say("split: 2 parts")), idle(), typed("ses_count")]
-  const num = [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves")), step("stop", say("split: 2 halves")), idle()]
+  const root = [user("the job"), step("tool-calls", spawn("ses_num"), spawn("ses_count")), step("stop", say("split: 2 parts")), idle(), typed("ses_count")]
+  const num = [user("numbers"), step("tool-calls", spawn("ses_a"), spawn("ses_b")), step("stop", say("split: 2 halves")), idle()]
   if (variant === "root-silent") root.push(step("stop", say("Noted.")), idle())
   if (variant !== "root-silent" && variant !== "root-answering") root.push(step("tool-calls", send("ses_num", FINDING)), step("stop", say("Passed on.")), idle())
   if (variant === "one-half" || variant === "part-answering" || variant === "each-half") num.push(fromRoot())
@@ -781,8 +762,8 @@ describe("the recursive checker's release of a wait the finding can no longer en
 
   test("a sub-orchestrator between the part's session and the halves, in its turn on the finding, releases nothing", () => {
     const tree = stalled("one-half")
-    const mid = [user("the halves"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves")), step("stop", say("split: 2 halves")), idle(), synthetic(`<courier from="ses_num">\n${FINDING}\n</courier>`)]
-    tree.get("ses_num")!.list = [user("numbers"), step("tool-calls", spawn("ses_mid", "")), step("stop", say("One stage.")), idle(), fromRoot(), step("tool-calls", send("ses_mid", FINDING)), step("stop", say("Passed on.")), idle()]
+    const mid = [user("the halves"), step("tool-calls", spawn("ses_a"), spawn("ses_b")), step("stop", say("split: 2 halves")), idle(), synthetic(`<courier from="ses_num">\n${FINDING}\n</courier>`)]
+    tree.get("ses_num")!.list = [user("numbers"), step("tool-calls", spawn("ses_mid")), step("stop", say("One stage.")), idle(), fromRoot(), step("tool-calls", send("ses_mid", FINDING)), step("stop", say("Passed on.")), idle()]
     tree.set("ses_mid", { parentID: "ses_num", depth: 2, list: mid })
     for (const id of ["ses_a", "ses_b"]) Object.assign(tree.get(id)!, { parentID: "ses_mid", depth: 3 })
     expect(releaseOf(tree, "ses_root", AFTER_TOLD)).toBeUndefined()
@@ -809,7 +790,7 @@ describe("the recursive checker's release of a wait the finding can no longer en
 
   test("a root that passed the finding to sessions that sit in the wait themselves releases them", () => {
     const count = stalled("root-silent").get("ses_count")!.list
-    const root = [user("the job"), step("tool-calls", spawn("ses_a", ""), spawn("ses_b", ""), spawn("ses_count", "")), step("stop", say("split: 3 parts")), idle(), typed("ses_count")]
+    const root = [user("the job"), step("tool-calls", spawn("ses_a"), spawn("ses_b"), spawn("ses_count")), step("stop", say("split: 3 parts")), idle(), typed("ses_count")]
     root.push(step("tool-calls", send("ses_a", FINDING), send("ses_b", FINDING)), step("stop", say("Passed on.")), idle())
     const tree = treeOf({ ses_root: root, ses_a: [user("half a"), inWait(".go-halves")], ses_b: [user("half b"), inWait(".go-halves"), fromRoot()], ses_count: count }, FLAT)
     expect(releaseOf(tree, "ses_root", AFTER_TOLD)).toEqual({ file: ".go-halves", why: `the root passed the finding on to a session that sits in the wait itself${QUIET}` })
@@ -821,10 +802,10 @@ describe("the recursive checker's release of a wait the finding can no longer en
     const untold: ReleaseState = { finding: true, conflict: false, told: false, created: [] }
     const tree = stalled("root-silent")
     tree.delete("ses_count")
-    tree.get("ses_root")!.list = [user("the job"), step("tool-calls", spawn("ses_num", "")), inWait(".go-count")]
+    tree.get("ses_root")!.list = [user("the job"), step("tool-calls", spawn("ses_num")), inWait(".go-count")]
     expect(releaseOf(tree, "ses_root", untold)).toEqual({ file: ".go-count", why: `no "count" session at depth 1 is in a turn to take the person's message${QUIET}` })
     expect(releaseOf(tree, "ses_root", { ...untold, created: [".go-count"] })).toBeUndefined()
-    tree.get("ses_root")!.list = [user("the job"), step("tool-calls", spawn("ses_num", ""), write("count/total.txt")), step("stop", say("Waiting for the halves.")), idle()]
+    tree.get("ses_root")!.list = [user("the job"), step("tool-calls", spawn("ses_num"), write("count/total.txt")), step("stop", say("Waiting for the halves.")), idle()]
     expect(releaseOf(tree, "ses_root", { ...untold, created: [".go-count"] })).toEqual({
       file: ".go-halves",
       why: `the person's message was never written, for want of a "count" session at depth 1 in a turn to take it${QUIET}`,
@@ -834,10 +815,10 @@ describe("the recursive checker's release of a wait the finding can no longer en
   test("with --conflict, halves the root started itself have no half at depth 2 to write to, and are released", () => {
     const state: ReleaseState = { finding: false, conflict: true, told: false, created: [".go-count"] }
     const count = stalled("root-silent").get("ses_count")!.list
-    const root = [user("the job"), step("tool-calls", spawn("ses_a", ""), spawn("ses_b", ""), spawn("ses_count", "")), step("stop", say("split: 3 parts")), idle()]
+    const root = [user("the job"), step("tool-calls", spawn("ses_a"), spawn("ses_b"), spawn("ses_count")), step("stop", say("split: 3 parts")), idle()]
     const tree = treeOf({ ses_root: root, ses_a: [user("half: write numbers/a.txt"), inWait(".go-halves")], ses_b: [user("half: write numbers/b.txt"), inWait(".go-halves")], ses_count: count }, FLAT)
     expect(releaseOf(tree, "ses_root", state)).toEqual({ file: ".go-halves", why: `no half for numbers/b.txt at depth 2 is in a turn to take the person's message${QUIET}` })
-    tree.get("ses_root")!.list = [user("the job"), step("tool-calls", spawn("ses_a", ""), spawn("ses_b", "")), inWait(".go-count")]
+    tree.get("ses_root")!.list = [user("the job"), step("tool-calls", spawn("ses_a"), spawn("ses_b")), inWait(".go-count")]
     tree.delete("ses_count")
     expect(releaseOf(tree, "ses_root", { ...state, created: [] })).toEqual({ file: ".go-count", why: `no session at depth 1 has run the "count" part${QUIET}` })
   })
@@ -894,12 +875,12 @@ function conflictRun(variant: Conflict): Run {
     step("stop", say("Reported.")),
     idle(),
   ]
-  const num = [user("numbers"), step("tool-calls", spawn("ses_a", "halves"), spawn("ses_b", "halves")), step("stop", say("split: 2 halves")), idle(), ...(variant === "no-envelope" ? [] : [typedConflict()])]
+  const num = [user("numbers"), step("tool-calls", spawn("ses_a"), spawn("ses_b")), step("stop", say("split: 2 halves")), idle(), ...(variant === "no-envelope" ? [] : [typedConflict()])]
   if (variant === "countermand") num.push(step("tool-calls", send("ses_b", "Write numbers/b.txt as your task says.")), step("stop", say("Told it.")), idle())
-  num.push(released("halves", [["ses_a", "done"], ["ses_b", "done"]]))
+  num.push(...reported([["ses_a", "done"], ["ses_b", "done"]]))
   num.push(step("tool-calls", ...(variant === "replaced" ? [write("numbers/b.txt")] : []), send("ses_root", "391 and 1024; b.txt left out", "done")), step("stop", say("Reported.")), idle())
-  const root = [user("the job"), step("tool-calls", loadSkill(), spawn("ses_num", "parts"), spawn("ses_count", "parts")), step("stop", say("split: 2 parts | numbers, count")), idle(), ...(variant === "no-envelope" ? [] : [typedConflict()])]
-  root.push(step("stop", say("Noted.")), idle(), released("parts", [["ses_num", "done"], ["ses_count", "done"]]))
+  const root = [user("the job"), step("tool-calls", loadSkill(), spawn("ses_num"), spawn("ses_count")), step("stop", say("split: 2 parts | numbers, count")), idle(), ...(variant === "no-envelope" ? [] : [typedConflict()])]
+  root.push(step("stop", say("Noted.")), idle(), ...reported([["ses_num", "done"], ["ses_count", "done"]]))
   root.push(step("stop", say(variant === "silent-reply" ? "RESULTS 391 42" : "RESULTS 391 42. numbers/b.txt was left: the person told that session not to write it.")), idle())
   const files = { "numbers/a.txt": "391", "count/total.txt": "42", ...(variant === "replaced" ? { "numbers/b.txt": "1024" } : {}) }
   return { tree: { ses_root: root, ses_num: num, ses_a: a, ses_b: b, ses_count: count }, files, expect: "391 42" }

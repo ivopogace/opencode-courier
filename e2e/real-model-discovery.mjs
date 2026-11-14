@@ -11,8 +11,7 @@ const expected = (process.env.COURIER_EXPECT ?? "").split(/\s+/).filter(Boolean)
 const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
 const KEY = /\bkey-[0-9a-f]{8}\b/
 const GO = ".go-parts"
-const LOOKS = new Set(["courier_children", "courier_tree"])
-const RECALL = "courier_recall"
+const LOOK = "courier_tree"
 const SKILL = "courier-orchestrate"
 
 async function messages(sessionID) {
@@ -82,55 +81,39 @@ function childOf(part) {
   return metadata.sessionID ?? metadata.metadata?.sessionID ?? contentText(part.state).match(/Started session (ses_\w+)/)?.[1]
 }
 const spawnsOf = (list) => toolsOf(list).map(childOf).filter(Boolean)
-const sendersOf = (message) => (message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.[1].split(",") ?? []) : [])
-const groupOf = (message) => message.text?.match(/^<courier from="[^"]*" group="([^"]+)"/)?.[1]
+const sendersOf = (message) => (message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.slice(1) ?? []) : [])
 const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ?? "")
-const statusOf = (message, from) =>
-  groupOf(message)
-    ? message.text.match(new RegExp(`^\\[\\d+/\\d+\\] ${from} ".*": (\\w+)$`, "m"))?.[1]
-    : message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
+const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
 const deliveriesFrom = (list, child) =>
-  list.flatMap((message, index) => (reportersOf(message).includes(child) && statusOf(message, child) ? [{ index, message }] : []))
+  list.flatMap((message, index) => (reportersOf(message).includes(child) && statusOf(message) ? [{ index, message }] : []))
 const sendsTo = (list, to) =>
   list.flatMap((message, index) =>
     message.type !== "assistant"
       ? []
       : message.content.flatMap((part, place) =>
           part.type === "tool" && part.name === "courier_send" && part.state.status === "completed" && part.state.input?.sessionID === to
-            ? [{ index, place, status: part.state.input.status, message: part.state.input.message ?? "", finding: part.state.input.finding ?? "" }]
+            ? [{ index, place, status: part.state.input.status, message: part.state.input.message ?? "" }]
             : [],
         ),
   )
 const reportsTo = (list, parentID) => sendsTo(list, parentID).filter((send) => send.status)
-const wordsOf = (send) => [send.message, send.finding].join(" ")
-const aheadOf = (message) => message.type === "synthetic" && /^<courier from="ses_\w+" finding="ahead">/.test(message.text)
 const plainFrom = (list, from, after, key) =>
-  list.findIndex((message, index) => index > after && sendersOf(message).includes(from) && !groupOf(message) && !statusOf(message, from) && message.text.includes(key))
+  list.findIndex((message, index) => index > after && sendersOf(message).includes(from) && !statusOf(message) && message.text.includes(key))
 const plainAfter = (list, to, after, key) => sendsTo(list, to).find((send) => send.index > after && !send.status && send.message.includes(key))
 const spawnedAfter = (list, child, after, key) =>
   list.some((message, index) => index > after && message.type === "assistant" && message.content.some((part) => childOf(part) === child && (part.state.input?.task ?? "").includes(key)))
 const toldAfter = (list, child, after, key) => plainAfter(list, child, after, key) ?? (spawnedAfter(list, child, after, key) ? { spawned: true } : undefined)
-const sectionOf = (message, from) => {
-  if (!groupOf(message)) return message.text
-  const lines = message.text.split("\n")
-  const header = /^\[\d+\/\d+\] (ses_\w+) "/
-  const start = lines.findIndex((line) => line.match(header)?.[1] === from)
-  const end = lines.findIndex((line, index) => index > start && header.test(line))
-  return start === -1 ? "" : lines.slice(start + 1, end === -1 ? lines.length : end).join("\n")
-}
-const foundIn = (list, from) => list.findIndex((message) => reportersOf(message).includes(from) && KEY.test(sectionOf(message, from)))
-const keyAt = (list, from, index) => (index === -1 ? undefined : sectionOf(list[index], from).match(KEY)[0])
+const foundIn = (list, from) => list.findIndex((message) => reportersOf(message).includes(from) && KEY.test(message.text))
+const keyAt = (list, index) => (index === -1 ? undefined : list[index].text.match(KEY)[0])
 const arrivalOf = (root, init, initID) => {
   const told = foundIn(root, initID)
-  const key = sendsTo(init, rootID).map((send) => wordsOf(send).match(KEY)?.[0]).find(Boolean) ?? keyAt(root, initID, told)
-  const seen = (message) => message.type === "assistant" && message.content.some((part) => part.type === "tool" && LOOKS.has(part.name) && JSON.stringify(part.state).includes(key))
+  const key = sendsTo(init, rootID).map((send) => send.message.match(KEY)?.[0]).find(Boolean) ?? keyAt(root, told)
+  const seen = (message) => message.type === "assistant" && message.content.some((part) => part.type === "tool" && part.name === LOOK && JSON.stringify(part.state).includes(key))
   const looked = key === undefined ? -1 : root.findIndex(seen)
-  const heldPart = (text) => (text.includes("\nHeld with group ") ? text.slice(text.indexOf("\nHeld with group ")) : "")
-  const carried = key === undefined ? -1 : root.findIndex((message) => message.type === "synthetic" && /^<courier from="ses_\w+" status="blocked">/.test(message.text) && !sendersOf(message).includes(initID) && heldPart(message.text).includes(key))
-  const first = Math.min(...[told, looked, carried].filter((index) => index !== -1), Infinity)
+  const first = Math.min(...[told, looked].filter((index) => index !== -1), Infinity)
   if (first === Infinity) return { foundAt: -1, key }
-  return { foundAt: first, key, looked: looked === first, carried: carried === first }
+  return { foundAt: first, key, looked: looked === first }
 }
 
 async function readTree() {
@@ -227,14 +210,8 @@ const spawnsIn = (turn) => toolsOf(turn).filter(childOf).length
 const sleeps = (part) => part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))
 const rootTools = toolsOf(root)
 const firstRootSpawn = rootTools.findIndex(childOf)
-const lookedBeforeSpawn = new Set(rootTools.slice(0, firstRootSpawn === -1 ? rootTools.length : firstRootSpawn).filter((part) => LOOKS.has(part.name)))
-const looksIn = (turn) => toolsOf(turn).filter((part) => (LOOKS.has(part.name) && !lookedBeforeSpawn.has(part)) || part.name === RECALL || sleeps(part)).length
-const allowedRecall = (turn) => {
-  const tools = toolsOf(turn)
-  const firstSpawn = tools.findIndex(childOf)
-  const recalls = tools.flatMap((part, index) => (part.name === RECALL ? [index] : []))
-  return recalls.length === 1 && (firstSpawn === -1 || recalls[0] < firstSpawn) ? 1 : 0
-}
+const lookedBeforeSpawn = new Set(rootTools.slice(0, firstRootSpawn === -1 ? rootTools.length : firstRootSpawn).filter((part) => part.name === LOOK))
+const looksIn = (turn) => toolsOf(turn).filter((part) => (part.name === LOOK && !lookedBeforeSpawn.has(part)) || sleeps(part)).length
 const segmentsOf = (turn) =>
   turn.reduce((segments, message, index) => {
     if (index > 0 && sendersOf(message).length) segments.push([])
@@ -242,7 +219,7 @@ const segmentsOf = (turn) =>
     return segments
   }, [[]])
 const [opening = [], ...woken] = turns.flatMap(segmentsOf)
-const polled = looksIn(opening) - allowedRecall(first) > 0 || woken.some((segment) => looksIn(segment) > 1)
+const polled = looksIn(opening) > 0 || woken.some((segment) => looksIn(segment) > 1)
 const finalText = textOf(root.findLast((message) => message.type === "assistant" && textOf(message).trim()) ?? {})
 const fileText = (file) => {
   try {
@@ -253,8 +230,8 @@ const fileText = (file) => {
 }
 const fileTexts = files.map(fileText)
 
-const { foundAt, key, looked, carried } = initID ? arrivalOf(root, init, initID) : { foundAt: -1 }
-const foundSend = sendsTo(init, rootID).find((send) => KEY.test(wordsOf(send)))
+const { foundAt, key, looked } = initID ? arrivalOf(root, init, initID) : { foundAt: -1 }
+const foundSend = sendsTo(init, rootID).find((send) => KEY.test(send.message))
 const onward = consumers.map(([id, entry]) => {
   const told = foundAt === -1 ? undefined : toldAfter(root, id, foundAt, key)
   const reached = told?.spawned ? 0 : told ? plainFrom(entry.list, rootID, 0, key) : -1
@@ -271,7 +248,7 @@ const checks = [
     "the root ended its first turn after spawning, without waiting for the reports (one steered into it while it ran is delivered)",
     spawnsIn(first) > 0 && ended(first.at(-1)) && !failed(first.at(-1)),
   ],
-  ["the root did not poll (courier_children, courier_tree, sleep)", !polled],
+  ["the root did not poll (courier_tree, sleep)", !polled],
   ["every spawned session reported to its parent, with a status", spawned.length > 0 && spawned.every(([id, entry]) => deliveriesFrom(tree.get(entry.parentID).list, id).length > 0)],
   ['what the "init" session found, the key that get needs, reached the root from that session', foundAt !== -1],
   ["the root passed the key on to each of the other parts, without a status, once it had arrived", onward.length >= 2 && onward.every((one) => one.told)],
@@ -288,25 +265,20 @@ for (const [id, entry] of tree) {
   if (loads.length) notes.push(`${who(id)} loaded the skill(s): ${loads.join(", ")}`)
 }
 if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.name === "skill"))) notes.push("no session loaded a skill")
-const recalls = toolsOf(root).filter((part) => part.name === RECALL).length
-notes.push(recalls ? `the root called courier_recall ${recalls} time(s)` : "no session called courier_recall")
 const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()
 const decision = splitLineOf(first.filter((message) => message.type === "assistant").map(textOf).join("\n"))
 if (decision) notes.push(`the root stated: ${decision.slice(0, 320)}`)
-for (const [id, entry] of [...tree].filter(([, entry]) => spawnsOf(entry.list).length > 0)) {
-  const groups = [...new Set(toolsOf(entry.list).filter((part) => childOf(part) && part.state.input?.group).map((part) => part.state.input.group))]
-  notes.push(`${who(id)} started ${spawnsOf(entry.list).length} session(s)${groups.length ? ` in group(s) ${groups.join(", ")}` : ", in no group"}`)
-}
+for (const [id, entry] of [...tree].filter(([, entry]) => spawnsOf(entry.list).length > 0)) notes.push(`${who(id)} started ${spawnsOf(entry.list).length} session(s)`)
 const load = rootTools.findIndex((part) => loadsAnySkill(part) && part.state.input?.id === SKILL)
 notes.push(`the root orchestrated ${load === -1 ? `without ${SKILL} loaded` : load < rootTools.findIndex(childOf) ? `with ${SKILL} loaded before its first spawn` : `with ${SKILL} loaded only after its first spawn`}`)
 if (polled) notes.push("polled: the root")
 if (!initID) notes.push('discovery: no session at depth 1 has the task for the "init" part')
 else if (!foundSend) notes.push(`discovery: the "init" session sent the root no key; its sends: ${short(sendsTo(init, rootID).map((send) => send.message), 240)}`)
-else notes.push(`discovery: the "init" session sent it ${foundSend.status ? `in its report, status ${foundSend.status}` : "without a status, before its report"}: ${short(KEY.test(foundSend.message) ? foundSend.message : foundSend.finding, 200)}`)
+else notes.push(`discovery: the "init" session sent it ${foundSend.status ? `in its report, status ${foundSend.status}` : "without a status, before its report"}: ${short(foundSend.message, 200)}`)
 if (initID && foundAt !== -1) {
   const arrival = root[foundAt]
   const running = consumers.filter(([, entry]) => reportsTo(entry.list, rootID).every((send) => entry.list[send.index].time.created > arrival.time.created)).length
-  notes.push(`discovery: it reached the root ${carried ? "with another part's blocked report, among the reports its group held" : looked ? "through its own look with courier_children or courier_tree, the report still held" : aheadOf(arrival) ? "in its report's finding, delivered ahead of the held report" : groupOf(arrival) ? `in the reports of group "${groupOf(arrival)}"` : "in a message of its own"}, with ${running} of ${consumers.length} other parts yet to report`)
+  notes.push(`discovery: it reached the root ${looked ? "through its own look with courier_tree, before the init session's message did" : "in a message of its own"}, with ${running} of ${consumers.length} other parts yet to report`)
 }
 for (const one of onward) {
   if (one.told?.spawned) notes.push(`discovery: the root started ${one.id} only after the finding had arrived: staged, nothing to pass on mid-run`)
@@ -315,36 +287,15 @@ for (const one of onward) {
   const own = toolsOf(one.entry.list).filter((part) => part.name === "shell" && /api\.sh init\b|\.api-key|share\/opencode|server\.log|probe\.log|key-\[/.test(part.state.input?.command ?? ""))
   if (own.length) notes.push(`discovery: ${one.id} ran init, touched the key's file or searched outside the project for the key, ${own.length} call(s): what it wrote does not show the relay`)
 }
-const initGroup = initID ? rootTools.find((part) => childOf(part) === initID)?.state.input?.group : undefined
-const initReports = reportsTo(init, rootID)
-const allReports = spawned.flatMap(([, entry]) => reportsTo(entry.list, entry.parentID))
-const groupAt = initGroup ? root.findIndex((message) => groupOf(message) === initGroup && sendersOf(message).includes(initID)) : -1
-const finding = {
-  initGroup: initGroup ?? null,
-  filled: initReports.some((send) => send.finding.trim()),
-  filledWithKey: initReports.some((send) => KEY.test(send.finding)),
-  reportsWithFinding: allReports.filter((send) => send.finding.trim()).length,
-  reports: allReports.length,
-  keyReachedRoot: foundAt !== -1,
-  keyBeforeGroup: initGroup ? foundAt !== -1 && (groupAt === -1 || foundAt < groupAt) : null,
-  partsInTime: onward.filter((one) => one.inTime).length,
-  parts: onward.length,
-  aheads: root.filter(aheadOf).length,
-  rootTurns: turns.length,
-}
-const filledHow = finding.filledWithKey ? "put a finding on its report, with the key" : finding.filled ? "put a finding on its report, without the key" : "put no finding on its report"
-if (initID) notes.push(`finding: the "init" session ${filledHow}; ${finding.reportsWithFinding} of ${finding.reports} reports in the tree carried one`)
-const arrived = !finding.keyReachedRoot ? "did not reach the root" : !initGroup ? "reached the root, with no group to wait for" : finding.keyBeforeGroup ? "reached the root before the group was complete" : "reached the root only once the group was complete"
-if (initID) notes.push(`finding: the "init" session was started ${initGroup ? `in group "${initGroup}"` : "in no group"}; the key ${arrived}`)
-notes.push(`finding: ${finding.partsInTime} of ${finding.parts} other parts had the key before they reported`)
-notes.push(`finding: ${finding.aheads} finding(s) reached the root ahead of a held report; the root took ${finding.rootTurns} turn(s)`)
+const finding = { keyReachedRoot: foundAt !== -1, partsInTime: onward.filter((one) => one.inTime).length, parts: onward.length, rootTurns: turns.length }
+notes.push(`finding: ${finding.partsInTime} of ${finding.parts} other parts had the key before they reported; the root took ${finding.rootTurns} turn(s)`)
 if (startedTwice) notes.push("discovery: the root started a part a second time")
 if (stopped) notes.push(`discovery: the root stopped ${stopped} session(s)`)
 const touched = [...tree].filter(([, entry]) => toolsOf(entry.list).some((part) => part.name === "shell" && /(touch|>|rm)\s[^|;&]*\.go-parts/.test(part.state.input?.command ?? ""))).map(([id]) => id)
 if (touched.length) notes.push(`discovery: ${touched.map(who).join(", ")} created or removed ${GO}`)
 for (const [id, entry] of spawned) {
   const report = deliveriesFrom(tree.get(entry.parentID).list, id)[0]
-  if (report) notes.push(`report from ${id} (depth ${entry.depth})${groupOf(report.message) ? ` in group "${groupOf(report.message)}"` : ""}: status ${statusOf(report.message, id)}`)
+  if (report) notes.push(`report from ${id} (depth ${entry.depth}): status ${statusOf(report.message)}`)
 }
 if (files.length) notes.push(`files: ${files.map((file, index) => `${file}=${fileTexts[index] ?? "(missing)"}`).join(", ")}`)
 

@@ -13,8 +13,7 @@ const files = (process.env.COURIER_FILES ?? "").split(/\s+/).filter(Boolean)
 const minTests = Number(process.env.COURIER_TESTS ?? 1)
 const testCommand = (process.env.COURIER_TEST_COMMAND ?? "npm test").split(/\s+/).filter(Boolean)
 const maxDepth = Number(process.env.COURIER_MAX_DEPTH ?? 5)
-const LOOKS = new Set(["courier_children", "courier_tree"])
-const RECALL = "courier_recall"
+const LOOK = "courier_tree"
 const SKILL = "courier-orchestrate"
 const CHANGING_TOOLS = new Set(["write", "edit", "patch", "apply_patch", "multiedit"])
 const CHANGING_COMMAND = /\bgit\s+(commit|add|merge|checkout|switch|reset|stash(?!\s+(?:list|show)\b)|rebase|cherry-pick|rm|mv|apply)\b|\bsed\s+-i\b|\b(npm|pnpm|yarn|bun)\s+(install|add|remove|i)\b/
@@ -214,16 +213,12 @@ const spawnPartsOf = (list) => {
       : message.content.flatMap((part) => (childOf(part) ? [{ id: childOf(part), index, turn: turns.findIndex((turn) => turn.includes(message)) + 1, input: part.state.input ?? {} }] : [])),
   )
 }
-const sendersOf = (message) => (message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.[1].split(",") ?? []) : [])
-const groupOf = (message) => message.text?.match(/^<courier from="[^"]*" group="([^"]+)"/)?.[1]
+const sendersOf = (message) => (message.type === "synthetic" ? (message.text.match(/^<courier from="([^"]+)"/)?.slice(1) ?? []) : [])
 const scheduled = (message) => /^<courier [^>]*scheduled="/.test(message.text ?? "")
-const statusOf = (message, from) =>
-  groupOf(message)
-    ? message.text.match(new RegExp(`^\\[\\d+/\\d+\\] ${from} ".*": (\\w+)$`, "m"))?.[1]
-    : message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
+const statusOf = (message) => message.text.match(/^<courier from="ses_\w+" status="(\w+)">/)?.[1]
 const reportersOf = (message) => (scheduled(message) ? [] : sendersOf(message))
 const deliveriesFrom = (list, child) =>
-  list.flatMap((message, index) => (reportersOf(message).includes(child) && statusOf(message, child) ? [{ index, message }] : []))
+  list.flatMap((message, index) => (reportersOf(message).includes(child) && statusOf(message) ? [{ index, message }] : []))
 const sendsTo = (list, to) =>
   toolsOf(list).flatMap((part) =>
     part.name === "courier_send" && part.state.status === "completed" && part.state.input?.sessionID === to ? [{ status: part.state.input.status, message: part.state.input.message }] : [],
@@ -327,19 +322,12 @@ const changes = (list) =>
   toolsOf(list).filter((part) => part.state.status === "completed" && (CHANGING_TOOLS.has(part.name) || (part.name === "shell" && changingShell(part.state.input?.command ?? ""))))
 const changesBelow = (id) => subtreeOf(id).flatMap((member) => changes(tree.get(member).list).map((part) => ({ id: member, part })))
 const sleeps = (part) => part.name === "shell" && /\bsleep\b/.test(JSON.stringify(part.state.input))
-const looksIn = (turn) => toolsOf(turn).filter((part) => LOOKS.has(part.name) || part.name === RECALL || sleeps(part)).length
-const allowedRecall = (id, turn) => {
-  if (id !== rootID) return 0
-  const tools = toolsOf(turn)
-  const firstSpawn = tools.findIndex(childOf)
-  const recalls = tools.flatMap((part, index) => (part.name === RECALL ? [index] : []))
-  return recalls.length === 1 && (firstSpawn === -1 || recalls[0] < firstSpawn) ? 1 : 0
-}
-const polledIn = (id, list) => {
+const looksIn = (turn) => toolsOf(turn).filter((part) => part.name === LOOK || sleeps(part)).length
+const polledIn = (list) => {
   const [firstTurn = [], ...later] = turnsOf(list)
-  return looksIn(firstTurn) - allowedRecall(id, firstTurn) > 0 || later.some((turn) => looksIn(turn) > 1)
+  return looksIn(firstTurn) > 0 || later.some((turn) => looksIn(turn) > 1)
 }
-const pollers = orchestrators.filter(([id, entry]) => polledIn(id, entry.list)).map(([id]) => id)
+const pollers = orchestrators.filter(([, entry]) => polledIn(entry.list)).map(([id]) => id)
 const finalIndex = root.findLastIndex((message) => message.type === "assistant" && textOf(message).trim())
 const finalText = finalIndex === -1 ? "" : textOf(root[finalIndex])
 const reportOf = (id) => deliveriesFrom(tree.get(tree.get(id).parentID).list, id)[0]
@@ -361,7 +349,7 @@ const checks = [
   ["once the change was reported, the root started a review session, in a later turn", review !== undefined && review.turn > 1],
   ["the review session changed nothing: no file tool, no shell command that writes, commits or installs, and nothing it started did either", review !== undefined && changesBelow(review.id).length === 0],
   ["the review session reported to the root with a status, before the root's final reply", reviewReport !== undefined && finalIndex > reviewReport.index],
-  ["no orchestrator polled (courier_children, courier_tree, sleep)", pollers.length === 0],
+  ["no orchestrator polled (courier_tree, sleep)", pollers.length === 0],
   ["every spawned session reported to its parent, with a status", spawned.length > 0 && spawned.every(([id]) => reportOf(id) !== undefined)],
   ["the root ran the project's tests itself, after the review had reported", reviewReport !== undefined && rootTestRuns.some((index) => index > reviewReport.index)],
   [`the files are there and ${files[0] ?? "the first"} holds ${symbol || "the symbol"}`, files.length > 0 && files.every((file) => existsSync(join(project, file))) && symbol !== "" && (fileText(files[0]) ?? "").includes(symbol)],
@@ -372,8 +360,8 @@ const checks = [
 const notes = []
 const stageOf = (spawn) => (changers.includes(spawn) ? "the change" : spawn === review ? "the review" : afterReview.includes(spawn) ? "after the review" : "between the change and the review")
 for (const spawn of rootSpawns) {
-  const { agent, isolate, native, group, model, variant, title } = spawn.input
-  const how = [agent ? `agent ${agent}` : "the default agent", isolate ? "isolated" : "", native ? "native" : "", group ? `group "${group}"` : "", model ? `model ${model}${variant ? `#${variant}` : ""}` : ""].filter(Boolean).join(", ")
+  const { agent, isolate, native, model, variant, title } = spawn.input
+  const how = [agent ? `agent ${agent}` : "the default agent", isolate ? "isolated" : "", native ? "native" : "", model ? `model ${model}${variant ? `#${variant}` : ""}` : ""].filter(Boolean).join(", ")
   notes.push(`the root started ${spawn.id} in turn ${spawn.turn} for ${stageOf(spawn)}: ${how}${title ? `, titled "${title}"` : ""}`)
 }
 for (const [id, entry] of tree) {
@@ -381,10 +369,6 @@ for (const [id, entry] of tree) {
   if (loads.length) notes.push(`${who(id)} loaded the skill(s): ${loads.join(", ")}`)
 }
 if (![...tree.values()].some((entry) => toolsOf(entry.list).some((part) => part.name === "skill"))) notes.push("no session loaded a skill")
-for (const [id, entry] of tree) {
-  const recalls = toolsOf(entry.list).filter((part) => part.name === RECALL).length
-  if (recalls) notes.push(`${who(id)} called courier_recall ${recalls} time(s)`)
-}
 const splitLineOf = (text) => (text.match(/^\s*(?:[*_#>`-]+\s*)*split:.*$/im) ?? text.match(/^.*\bsplit:.*$/im))?.[0].trim()
 for (const [id, entry] of tree) {
   const decision = splitLineOf((turnsOf(entry.list)[0] ?? []).filter((message) => message.type === "assistant").map(textOf).join("\n"))
@@ -401,7 +385,7 @@ for (const spawn of changers) {
   const list = tree.get(spawn.id).list
   const commits = toolsOf(list).filter((part) => part.name === "shell" && /\bgit\s+commit\b/.test(part.state.input?.command ?? "")).length
   const edits = changes(list).length
-  notes.push(`the change: ${spawn.id} made ${edits} changing call(s)${commits ? ` and committed ${commits} time(s)` : ""}${spawn.input.isolate ? ", in its own worktree" : ""}; its report: ${reportOf(spawn.id) ? `status ${statusOf(reportOf(spawn.id).message, spawn.id)}` : "none"}`)
+  notes.push(`the change: ${spawn.id} made ${edits} changing call(s)${commits ? ` and committed ${commits} time(s)` : ""}${spawn.input.isolate ? ", in its own worktree" : ""}; its report: ${reportOf(spawn.id) ? `status ${statusOf(reportOf(spawn.id).message)}` : "none"}`)
 }
 const merges = toolsOf(root).filter((part) => part.name === "shell" && /\bgit\s+merge\b/.test(part.state.input?.command ?? "")).length
 if (merges) notes.push(`the root merged with git merge ${merges} time(s)`)
@@ -412,7 +396,7 @@ if (review) {
   const changed = changesBelow(review.id)
   notes.push(`the review: ${review.id} made ${reads} read call(s) and ${shells.length} shell call(s)${shells.length ? ` (${shells.slice(0, 3).join("; ")})` : ""}${spawnsOf(list).length ? `, and started ${spawnsOf(list).length} session(s)` : ""}`)
   if (changed.length) notes.push(`the review changed the checkout: ${changed.slice(0, 3).map(({ id, part }) => `${id} ${part.name}(${short(part.state.input, 80)})`).join("; ")}`)
-  if (reviewReport) notes.push(`the review's report, status ${statusOf(reviewReport.message, review.id)}: ${short(reviewReport.message.text.replace(/\s+/g, " "), 300)}`)
+  if (reviewReport) notes.push(`the review's report, status ${statusOf(reviewReport.message)}: ${short(reviewReport.message.text.replace(/\s+/g, " "), 300)}`)
 }
 if (reviewReport) {
   const own = root.slice(reviewReport.index + 1).flatMap((message) => (message.type === "assistant" ? changes([message]) : []))
@@ -423,7 +407,7 @@ if (reviewReport) {
 if (pollers.length) notes.push(`polled: ${pollers.map((id) => (id === rootID ? "the root" : id)).join(", ")}`)
 for (const [id, entry] of spawned) {
   const report = reportOf(id)
-  if (report) notes.push(`report from ${id} (depth ${entry.depth})${groupOf(report.message) ? ` in group "${groupOf(report.message)}"` : ""}: status ${statusOf(report.message, id)}`)
+  if (report) notes.push(`report from ${id} (depth ${entry.depth}): status ${statusOf(report.message)}`)
   const sends = reportsTo(entry.list, entry.parentID).length
   if (sends > 1) notes.push(`session ${id} reported ${sends} times`)
 }

@@ -9,16 +9,15 @@ const fixture = (name: string) => join(import.meta.dir, "fixtures", "real-model"
 describe("real-model-table", () => {
   test("reads a passing run's summary and timeline", () => {
     const run = parseRun(fixture("pass-a"))
-    expect(run).toMatchObject({ name: "pass-a", verdict: "pass", passed: 2, total: 2, recalls: 2, polled: 0, requests: 26, seconds: 52 })
+    expect(run).toMatchObject({ name: "pass-a", verdict: "pass", passed: 2, total: 2, polled: 0, requests: 26, seconds: 52 })
     expect([...run.skillLoads]).toEqual([[0, 1], [1, 1]])
-    expect(run.groups).toEqual(["parts", "numbers-halves"])
     expect(run.rootSplit).toBe("split: 2 parts | numbers, count")
     expect(run.subSplits).toEqual(["split: 2 halves"])
   })
 
-  test("reads a failing run with no skill, no group and two polled sessions", () => {
+  test("reads a failing run with no skill and two polled sessions", () => {
     const run = parseRun(fixture("fail-b"))
-    expect(run).toMatchObject({ verdict: "fail", passed: 1, total: 3, recalls: 0, polled: 2, groups: [], seconds: undefined, rootSplit: undefined, subSplits: [] })
+    expect(run).toMatchObject({ verdict: "fail", passed: 1, total: 3, polled: 2, seconds: undefined, rootSplit: undefined, subSplits: [] })
     expect(run.skillLoads.size).toBe(0)
   })
 
@@ -32,8 +31,8 @@ describe("real-model-table", () => {
     expect(out.match(/^### /gm)).toHaveLength(2)
     expect(out).toContain("### base\n")
     expect(out).toContain("### pass-a\n")
-    expect(out).toContain("| pass-a | pass | 2/2 | d0: 1, d1: 1 | 2 | 2 (parts, numbers-halves) | 0 | 26 | 100 | 50 | 52 s | split: 2 parts \\| numbers, count | split: 2 halves |")
-    expect(out).toContain("| fail-b | fail | 1/3 | none | 0 | 0 | 2 | 18 | - | - | - |")
+    expect(out).toContain("| pass-a | pass | 2/2 | d0: 1, d1: 1 | 0 | 26 | 100 | 50 | 52 s | split: 2 parts \\| numbers, count | split: 2 halves |")
+    expect(out).toContain("| fail-b | fail | 1/3 | none | 2 | 18 | - | - | - |")
     expect(out).toContain("3 run(s), 2 finished, 1 pass; mean score 1.5/2.5, 1.0 polled session(s), 22.0 requests, 100.0 cache reads/request, 50.0 uncached input tokens/request.")
   })
 
@@ -73,11 +72,27 @@ test("unlabelled directories with one basename stay conditions of their own, nam
   expect(out).toContain(`### ${join(root, "a", "1")}\n`)
 })
 
-test("a recall is counted from a note about a session, not from a model's text quoted in another note", () => {
+test("a skill load is counted from a note about a session, not from a model's text quoted in another note", () => {
   const dir = mkdtempSync(join(tmpdir(), "rmt-"))
-  const notes = ["the root called courier_recall 1 time(s), the first in its first turn, before its split", "fault: its parent ses_num had not loaded courier-orchestrate when the partial report reached it, and messaged it: I called courier_recall 5 times"]
+  const notes = ["the root loaded the skill(s): courier-orchestrate", "fault: its parent ses_num had not loaded courier-orchestrate when the partial report reached it, and messaged it: the root loaded the skill(s): a, b"]
   writeFileSync(join(dir, "summary.json"), JSON.stringify({ verdict: "pass", checks: { a: true }, notes, usage: { requests: 1 } }))
-  expect(parseRun(dir).recalls).toBe(1)
+  expect([...parseRun(dir).skillLoads]).toEqual([[0, 1]])
+})
+
+test("an older summary's recall and group notes are skipped, and its started notes still name the sub-orchestrators", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rmt-"))
+  const notes = [
+    "the root called courier_recall 1 time(s), the first in its first turn, before its split",
+    "session ses_num (depth 1) stated: split: 2 halves",
+    "the root started 2 session(s) in group(s) parts",
+    "session ses_num (depth 1) started 2 session(s), in no group",
+  ]
+  writeFileSync(join(dir, "summary.json"), JSON.stringify({ verdict: "pass", checks: { a: true }, notes, usage: { requests: 1 } }))
+  const run = parseRun(dir)
+  expect(run).not.toHaveProperty("recalls")
+  expect(run).not.toHaveProperty("groups")
+  expect(run.subSplits).toEqual(["split: 2 halves"])
+  expect(tables([dir])).toContain("| Run | Verdict | Score | Skill loads | Polled |")
 })
 
 test("a label with no directory, or a summary.json that is not one, is skipped", () => {
@@ -91,9 +106,8 @@ test("the checker still writes the notes the parser reads", () => {
   const who = '${id === rootID ? "the root" : `session ${id} (depth ${entry.depth})`}'
   for (const note of [
     "notes.push(`" + who + " loaded the skill(s): ${loads.join(\", \")}`)",
-    "notes.push(`" + who + " called courier_recall ${calls.length} time(s), the first ${when}",
     "notes.push(`" + who + " stated: ${decision.slice(0, 320)}`)",
-    "notes.push(`" + who + " started ${spawnsOf(entry.list).length} session(s)${groups.length ? ` in group(s) ${groups.join(\", \")}` : \", in no group\"}",
+    "notes.push(`" + who + " started ${spawnsOf(entry.list).length} session(s)",
     'notes.push(`polled: ${pollers.map((id) => (id === rootID ? "the root" : id)).join(", ")}`)',
     "checks: Object.fromEntries(checks)",
   ])

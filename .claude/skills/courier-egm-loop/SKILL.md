@@ -65,8 +65,8 @@ with the reason, so later rounds don't raise it again.
 6. **Close the review PR** with a comment that lists the issues filed and the PRs that fixed
    them; it was a reference, never for merging.
 7. **Real-model check.** When a fix PR's body says CLAUDE.md's `e2e/real-model.sh` run is owed,
-   run it once and put its result in that PR's body (edit it if merged). The tables in `docs/maintainers/real-model.md` stay: only a full new batch
-   replaces them, and this step runs none. Run it where the owner runs
+   run it once. Its result is not put in a pull request, an issue or a document: the roster keeps
+   only whether it passed. Run it where the owner runs
    real models (a memory or the roster names it); ask only if nothing does. A failed check is a
    finding of the next round.
 8. Tell the owner in three lines: the round, what was found and fixed, and what's next. Then

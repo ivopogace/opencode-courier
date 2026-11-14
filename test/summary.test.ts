@@ -205,7 +205,7 @@ describe("summary", () => {
     expect(await summary(ports, "ses_root")).toEqual({ running: 0, waiting: 1, idle: 2, groups: [] })
   })
 
-  test("leaves out an entry past retention, as courier_children does", async () => {
+  test("leaves out an entry past retention, as courier_tree does", async () => {
     const { ports } = fakePorts({ ses_old: { updated: 5 }, ses_new: { updated: 5 } })
     ;(ports as any).now = () => RETENTION_MS + 1_000
     await childStore(ports.storage).record({ ...entry("ses_old", "ses_root"), createdAt: 999 })

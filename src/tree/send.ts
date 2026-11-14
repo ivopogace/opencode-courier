@@ -11,7 +11,6 @@ export interface SendInput {
   readonly message: string
   readonly status?: Status
   readonly artifacts?: Artifacts
-  readonly queue?: boolean
   readonly finding?: string
 }
 
@@ -54,7 +53,7 @@ async function deliver(ports: CourierPorts, from: string, input: SendInput, stat
     text,
     description,
     metadata: { source: "courier", from, ...(status ? { status } : {}) },
-    delivery: input.queue ? "queue" : "steer",
+    delivery: "steer",
   })
   await noteSent(ports, { sessionID: input.sessionID, inboxID: delivered.id, text, description }).catch(() => undefined)
   if (noted?.member && status === "blocked") await unholdForBlocked(groupStore(ports.storage), noted.member).catch(() => undefined)

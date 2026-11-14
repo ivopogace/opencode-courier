@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { spawn } from "../src/tree/spawn.js"
 import { send } from "../src/tree/send.js"
-import { listChildren, status } from "../src/tree/status.js"
+import { described, status } from "../src/tree/status.js"
 import type { CourierPorts } from "../src/tree/ports.js"
 import { DEFAULT_LIMITS } from "../src/tree/domain.js"
 import { describeFailure, envelope } from "../src/kernel/protocol.js"
@@ -123,18 +123,7 @@ describe("spawn", () => {
     const STANDALONE = { title: "Fix the bug", permissions: CHILD_RULES, metadata: { courier: { parentID: "ses_parent" } } }
     const created = (calls: Call[]) => calls.find((call) => call.method === "session.create")!.input
 
-    test("with the nativeChildren option, a child without isolate or native gets OpenCode's parentID and the child rules, not its parent's, and is recorded and reported as native", async () => {
-      const { ports, calls, store } = fakePorts()
-      ;(ports as any).nativeChildren = true
-
-      const child = await spawn(ports, "ses_parent", { task: "Fix the bug" })
-
-      expect(created(calls)).toEqual(AS_SUBAGENT)
-      expect(child).toEqual({ sessionID: "ses_child", directory: "/repo", native: true })
-      expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({ isolated: false, native: true })
-    })
-
-    test("without the option, a child without native is standalone: no parentID, nothing recorded", async () => {
+    test("a child without native is standalone: no parentID, nothing recorded", async () => {
       const { ports, calls, store } = fakePorts()
 
       const child = await spawn(ports, "ses_parent", { task: "Fix the bug" })
@@ -144,7 +133,7 @@ describe("spawn", () => {
       expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("native")
     })
 
-    test("native: true makes the child a subagent whatever the option says", async () => {
+    test("native: true makes the child a subagent", async () => {
       const { ports, calls, store } = fakePorts()
 
       const child = await spawn(ports, "ses_parent", { task: "Fix the bug", native: true })
@@ -154,9 +143,8 @@ describe("spawn", () => {
       expect(store.get(rosterKey("ses_parent", "ses_child"))).toMatchObject({ isolated: false, native: true })
     })
 
-    test("native: false keeps the child standalone whatever the option says", async () => {
+    test("native: false keeps the child standalone", async () => {
       const { ports, calls, store } = fakePorts()
-      ;(ports as any).nativeChildren = true
 
       const child = await spawn(ports, "ses_parent", { task: "Fix the bug", native: false })
 
@@ -165,20 +153,21 @@ describe("spawn", () => {
       expect(store.get(rosterKey("ses_parent", "ses_child"))).not.toHaveProperty("native")
     })
 
-    test("a null native, as some models send an optional field left out, leaves it to the option", async () => {
-      const on = fakePorts()
-      ;(on.ports as any).nativeChildren = true
-      await spawn(on.ports, "ses_parent", { task: "Fix the bug", native: null as unknown as undefined })
-      expect(created(on.calls)).toEqual(AS_SUBAGENT)
-
-      const off = fakePorts()
-      await spawn(off.ports, "ses_parent", { task: "Fix the bug", native: null as unknown as undefined })
-      expect(created(off.calls)).toEqual(STANDALONE)
+    test("a null native, as some models send an optional field left out, is a standalone child", async () => {
+      const { ports, calls } = fakePorts()
+      await spawn(ports, "ses_parent", { task: "Fix the bug", native: null as unknown as undefined })
+      expect(created(calls)).toEqual(STANDALONE)
     })
 
-    test("with the option on, an isolated child is created as before: its worktree's location, no parentID", async () => {
-      const { ports, calls, store } = fakePorts()
+    test("a nativeChildren field left on the ports makes no child native", async () => {
+      const { ports, calls } = fakePorts()
       ;(ports as any).nativeChildren = true
+      await spawn(ports, "ses_parent", { task: "Fix the bug" })
+      expect(created(calls)).toEqual(STANDALONE)
+    })
+
+    test("an isolated child is created in its worktree's location, with no parentID", async () => {
+      const { ports, calls, store } = fakePorts()
 
       const child = await spawn(ports, "ses_parent", { task: "t", isolate: true })
 
@@ -764,12 +753,12 @@ describe("send", () => {
     expect(calls[0]!.input).not.toHaveProperty("resume")
   })
 
-  test("queues when asked", async () => {
+  test("steers a message in even when a model still passes queue", async () => {
     const { ports, calls } = fakePorts()
 
-    await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", queue: true })
+    await send(ports, "ses_child", { sessionID: "ses_parent", message: "m", queue: true } as never)
 
-    expect(calls[0]!.input.delivery).toBe("queue")
+    expect(calls[0]!.input.delivery).toBe("steer")
   })
 
   const spawned = { sessionID: "ses_child", parentID: "ses_parent", title: "t", directory: "/repo", isolated: false, createdAt: 1, reports: "status" as const }
@@ -1291,8 +1280,8 @@ describe("status", () => {
   })
 })
 
-describe("listChildren", () => {
-  test("lists each child with its status and roster fields, or the error looking it up gave", async () => {
+describe("described", () => {
+  test("gives each child its status and roster fields, or the error looking it up gave", async () => {
     const { ports } = fakePorts({ messages: [{ type: "assistant", content: [{ type: "text", text: "Done" }] }] })
     const get = ports.session.get
     ;(ports.session as any).get = async (input: { sessionID: string }) => {
@@ -1303,7 +1292,8 @@ describe("listChildren", () => {
     await childStore(ports.storage).record({ sessionID: "ses_gone", parentID: "ses_parent", title: "Gone", directory: "/wt", isolated: true, createdAt: 950 })
     await childStore(ports.storage).record({ sessionID: "ses_else", parentID: "ses_other", title: "Else", directory: "/repo", isolated: false, createdAt: 900 })
 
-    expect(await listChildren(ports, "ses_parent")).toStrictEqual([
+    const entries = await childStore(ports.storage).children("ses_parent")
+    expect(await Promise.all(entries.map((entry) => described(ports, entry)))).toStrictEqual([
       {
         sessionID: "ses_child",
         title: "Fix the bug",
@@ -1326,12 +1316,6 @@ describe("listChildren", () => {
     ])
   })
 
-  test("is empty for a session that started none", async () => {
-    const { ports } = fakePorts()
-
-    expect(await listChildren(ports, "ses_parent")).toEqual([])
-  })
-
   test("names each child's group and its standing there: held, out, failed, deleted, released or unknown", async () => {
     const { ports } = fakePorts()
     ;(ports.session as any).get = async (input: { sessionID: string }) => ({ id: input.sessionID, time: { created: 1, updated: 2 } })
@@ -1351,7 +1335,8 @@ describe("listChildren", () => {
     }
     await childStore(ports.storage).record({ ...spawned, sessionID: "ses_plain", group: undefined })
 
-    const listed = await listChildren(ports, "ses_parent")
+    const entries = await childStore(ports.storage).children("ses_parent")
+    const listed = await Promise.all(entries.map((entry) => described(ports, entry)))
 
     expect(listed.map((child) => [child.sessionID, (child as any).group])).toEqual([
       ["ses_held", { name: "pair", report: "held" }],
@@ -1374,6 +1359,6 @@ describe("describeFailure", () => {
   test("falls back to the tag and session of an OpenCode error with an empty message", () => {
     const error = Object.assign(new Error(""), { _tag: "Session.NotFoundError", sessionID: "ses_x" })
 
-    expect(describeFailure("courier_children", error).message).toBe("courier_children failed: Session.NotFoundError ses_x")
+    expect(describeFailure("courier_tree", error).message).toBe("courier_tree failed: Session.NotFoundError ses_x")
   })
 })

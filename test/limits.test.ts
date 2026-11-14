@@ -4,7 +4,7 @@ import { send } from "../src/tree/send.js"
 import { spawn } from "../src/tree/spawn.js"
 import { admit, liveBelow } from "../src/tree/limits.js"
 import { shapeContext } from "../src/tree/context.js"
-import { busy, DEFAULT_LIMITS, endedAt, endsIdle, nativeRootOf, readLimits, readNativeChildren, readRemovedOptions, turnEnd, type RosterEntry } from "../src/tree/domain.js"
+import { busy, DEFAULT_LIMITS, endedAt, endsIdle, nativeRootOf, readLimits, readRemovedOptions, turnEnd, type RosterEntry } from "../src/tree/domain.js"
 import { runs, turnOf } from "../src/tree/running.js"
 import type { ContextPorts, CourierPorts, LimitPorts, Role, SpawnGate } from "../src/tree/ports.js"
 import { ROOT_SPLIT_LINE, SKILL_ID } from "../src/kernel/protocol.js"
@@ -86,9 +86,16 @@ describe("readRemovedOptions", () => {
     for (const memory of [true, false, null, "on", 0, {}]) expect(readRemovedOptions({ memory, maxDepth: 2 })).toEqual([problem])
   })
 
+  test("has one problem for a nativeChildren option present in the options, whatever its value, saying how to ask for a native child", () => {
+    const problem =
+      "the nativeChildren option is not read: it was removed in 0.17.0. Remove it from the config; a spawn asks for a native child with native: true."
+    for (const nativeChildren of [true, false, null, "yes"]) expect(readRemovedOptions({ nativeChildren, maxChildren: 5 })).toEqual([problem])
+    expect(readRemovedOptions({ memory: true, nativeChildren: true })).toHaveLength(2)
+  })
+
   test("has none when no removed option is present", () => {
     expect(readRemovedOptions(undefined)).toEqual([])
-    expect(readRemovedOptions({ maxDepth: 2, nativeChildren: true })).toEqual([])
+    expect(readRemovedOptions({ maxDepth: 2, maxChildren: 3 })).toEqual([])
     expect(readRemovedOptions("memory")).toEqual([])
   })
 })
@@ -111,22 +118,6 @@ describe("readLimits", () => {
       'maxChildren must be a positive integer, not "4"; using 5',
       "maxTotal must be a positive integer, not 2.5; using 30",
     ])
-  })
-})
-
-describe("readNativeChildren", () => {
-  test("is off unless the option is true", () => {
-    expect(readNativeChildren(undefined)).toEqual({ nativeChildren: false, problems: [] })
-    expect(readNativeChildren({ maxDepth: 2 })).toEqual({ nativeChildren: false, problems: [] })
-    expect(readNativeChildren({ nativeChildren: false })).toEqual({ nativeChildren: false, problems: [] })
-    expect(readNativeChildren({ nativeChildren: true })).toEqual({ nativeChildren: true, problems: [] })
-  })
-
-  test("keeps it off for a value that is not a boolean, and names it", () => {
-    expect(readNativeChildren({ nativeChildren: "yes" })).toEqual({
-      nativeChildren: false,
-      problems: ['nativeChildren must be true or false, not "yes"; using false'],
-    })
   })
 })
 
@@ -962,34 +953,18 @@ describe("spawn", () => {
   describe("what OpenCode's own message at a native child's turn end is (#604)", () => {
     const rolePuts = (calls: string[], sessionID: string) => calls.filter((call) => call.startsWith(`put ${sessionID} ${ROLE_KEY}: `))
 
-    test("with nativeChildren on, a child that can start sessions and the root get the text in their role entry, a leaf does not", async () => {
-      const limits = { ...DEFAULT_LIMITS, maxDepth: 2 }
+    test("a nativeChildren field left on the ports puts the text in no entry", async () => {
       const entries = new Map<string, Map<string, unknown>>()
-      const { courier, calls } = spawnPorts(limits, entries)
+      const { courier } = spawnPorts(DEFAULT_LIMITS, entries)
       ;(courier as any).nativeChildren = true
 
       await spawn(courier, "ses_root", { task: "t" })
       await spawn(courier, "ses_new1", { task: "u" })
 
-      expect(entries.get("ses_root")?.get(ROLE_KEY)).toBe(rolePart(0, limits, true))
-      expect(entries.get("ses_new1")?.get(ROLE_KEY)).toBe(rolePart(1, limits, true))
-      expect(entries.get("ses_new2")?.get(ROLE_KEY)).toBe(rolePart(2, limits))
-      expect(String(entries.get("ses_new2")?.get(ROLE_KEY))).not.toContain(HOST_REPORTS)
-      expect(rolePuts(calls, "ses_root")).toHaveLength(1)
-      expect(new Set(rolePuts(calls, "ses_new1"))).toEqual(new Set([`put ses_new1 ${ROLE_KEY}: ${rolePart(1, limits, true)}`]))
+      for (const sessionID of ["ses_root", "ses_new1", "ses_new2"]) expect(String(entries.get(sessionID)?.get(ROLE_KEY))).not.toContain(HOST_REPORTS)
     })
 
-    test("with it on, a child spawned with native: false or isolate still tells its parent, which can start a native one", async () => {
-      const entries = new Map<string, Map<string, unknown>>()
-      const { courier } = spawnPorts(DEFAULT_LIMITS, entries)
-      ;(courier as any).nativeChildren = true
-
-      await spawn(courier, "ses_root", { task: "t", native: false })
-
-      expect(entries.get("ses_root")?.get(ROLE_KEY)).toBe(rolePart(0, DEFAULT_LIMITS, true))
-    })
-
-    test("with it off and no native child, nobody gets the text", async () => {
+    test("with no native child, nobody gets the text", async () => {
       const entries = new Map<string, Map<string, unknown>>()
       const { courier } = spawnPorts(DEFAULT_LIMITS, entries)
 
@@ -999,7 +974,7 @@ describe("spawn", () => {
       for (const sessionID of ["ses_root", "ses_new1", "ses_new2"]) expect(String(entries.get(sessionID)?.get(ROLE_KEY))).not.toContain(HOST_REPORTS)
     })
 
-    test("with it off, native: true at the root's first spawn puts the text in the root's entry, and the child's has none", async () => {
+    test("native: true at the root's first spawn puts the text in the root's entry, and the child's has none", async () => {
       const entries = new Map<string, Map<string, unknown>>()
       const { courier, calls } = spawnPorts(DEFAULT_LIMITS, entries)
 
@@ -1009,7 +984,7 @@ describe("spawn", () => {
       expect(entries.get("ses_new1")?.get(ROLE_KEY)).toBe(rolePart(1, DEFAULT_LIMITS))
     })
 
-    test("with it off, a session's first native child renews its role entry with the text, and every later spawn carries the same bytes", async () => {
+    test("a session's first native child renews its role entry with the text, and every later spawn carries the same bytes", async () => {
       const entries = new Map<string, Map<string, unknown>>()
       const { courier, calls, roles } = spawnPorts(DEFAULT_LIMITS, entries)
       const told = `put ses_root ${ROLE_KEY}: ${rolePart(0, DEFAULT_LIMITS, true)}`
@@ -1028,7 +1003,7 @@ describe("spawn", () => {
       expect(entries.get("ses_root")?.get(ROLE_KEY)).toBe(rolePart(0, DEFAULT_LIMITS, true))
     })
 
-    test("with it off, a native and a plain child started in one step leave the text in the root's entry, whichever is named first", async () => {
+    test("a native and a plain child started in one step leave the text in the root's entry, whichever is named first", async () => {
       for (const order of [[true, false], [false, true]]) {
         const entries = new Map<string, Map<string, unknown>>()
         const { courier } = spawnPorts(DEFAULT_LIMITS, entries)
@@ -1039,7 +1014,7 @@ describe("spawn", () => {
       }
     })
 
-    test("with it off, a sub-orchestrator's native child renews the sub-orchestrator's entry at its own depth", async () => {
+    test("a sub-orchestrator's native child renews the sub-orchestrator's entry at its own depth", async () => {
       const entries = new Map<string, Map<string, unknown>>()
       const { courier, calls, roles, child } = spawnPorts(DEFAULT_LIMITS, entries)
       await child("ses_root", "ses_a")
@@ -1082,7 +1057,7 @@ describe("spawn", () => {
     expect(logged).toEqual([
       "courier_spawn: the role entry of ses_new1 could not be written, so its role goes in a system part: Error: no such route",
       "courier_spawn: the role entry of ses_root could not be written, so its role goes in a system part: Error: no such route",
-      "courier: the standing entry of ses_root could not be written, so it may be behind courier_children: Error: no such route",
+      "courier: the standing entry of ses_root could not be written, so it may be behind courier_tree: Error: no such route",
     ])
     expect(roles.has("ses_root")).toBe(false)
   })
@@ -1206,24 +1181,19 @@ describe("the context hook", () => {
       expect((await shape("ses_root")).system.at(-1)?.text).toBe(rolePart(0, DEFAULT_LIMITS))
     })
 
-    test("carries it with nativeChildren on for a session that can start one, not for a leaf, the native child itself or a session outside a tree", async () => {
-      const limits = { ...DEFAULT_LIMITS, maxDepth: 2 }
-      const { ports, child } = contextPorts(limits)
+    test("leaves it out for a session with no native child, a nativeChildren field on the ports or not", async () => {
+      const { ports, child } = contextPorts()
       await chainTo(child, 2)
       const shape = async (sessionID: string) => {
         const event = { sessionID, tools: tools() as Record<string, unknown>, system: [{ type: "text" as const, text: "base" }] }
-        await shapeContext({ ...ports, nativeChildren: true }, event)
+        await shapeContext({ ...ports, nativeChildren: true } as typeof ports, event)
         return event.system.at(-1)!.text
       }
 
-      for (const _ of [1, 2]) expect(await shape("ses_root")).toBe(rolePart(0, limits, true))
-      expect(await shape("ses_d1")).toBe(rolePart(1, limits, true))
-      expect(await shape("ses_d2")).toBe(rolePart(2, limits))
-      expect(await shape("ses_d2")).not.toContain(HOST_REPORTS)
-      expect(await shape("ses_alone")).toBe(rolePart(null, limits))
+      for (const [sessionID, depth] of [["ses_root", 0], ["ses_d1", 1], ["ses_d2", 2]] as const) expect(await shape(sessionID)).toBe(rolePart(depth, DEFAULT_LIMITS))
     })
 
-    test("leaves it out with nativeChildren off and no native child", async () => {
+    test("leaves it out for a session with no native child", async () => {
       const { shape, child } = contextPorts()
       await chainTo(child, 2)
 

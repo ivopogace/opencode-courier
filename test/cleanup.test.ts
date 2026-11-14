@@ -192,7 +192,7 @@ describe("cleanup", () => {
     await childStore(ports.storage).record(child())
 
     await expect(cleanup(ports, "ses_other", { sessionID: "ses_child" })).rejects.toThrow(
-      "ses_child is not on the courier_children list of ses_other.",
+      "ses_child is not a child of ses_other: courier_cleanup takes a session you started yourself.",
     )
   })
 

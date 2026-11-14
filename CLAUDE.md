@@ -66,7 +66,7 @@ OPENCODE_BIN=<scratch>/oc/node_modules/.bin/opencode e2e/tui.sh         # the TU
   a tool description), re-run `e2e/real-model.sh`; its result is not put in a pull request, an issue or a document.
 - Keep the provider's prompt cache: a spawned session's role part goes to its `role` instruction
   entry before its first prompt, and is put again only when the session starts its first native
-  child while `nativeChildren` is off, which arrives as one instruction update and leaves the cached
+  child, which arrives as one instruction update and leaves the cached
   prefix alone; where `context.ts` adds it as a system part instead, it is the same on every
   request. So `courier_spawn` does not gate on the skill being loaded. The skill
   states the root's split rule and the split-line forms on purpose: the root has no brief, its role

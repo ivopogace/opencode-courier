@@ -890,7 +890,7 @@ describe("the tree panel", () => {
     await app.waitForFrame((frame) => frame.includes("▸   Gone"))
     fake.command("x")!.run()
     await settle()
-    expect(fake.state.confirms.at(-1)?.message).toBe('Forget "Gone" (ses_gone)? It leaves this tree and courier_children.')
+    expect(fake.state.confirms.at(-1)?.message).toBe('Forget "Gone" (ses_gone)? It leaves this tree.')
     expect(fake.state.toasts.at(-1)).toMatchObject({ message: "ses_x is not above ses_gone", variant: "error" })
   })
 })
@@ -1196,30 +1196,22 @@ describe("the /courier command", () => {
     expect(fake.state.toasts.at(-1)).toMatchObject({ message: "Open a session first", variant: "warning" })
   })
 
-  test("/courier stop <session> stops it as the open session after a confirm that names it and those under it", async () => {
-    const fake = fakeContext(async () => empty)
-    fake.state.tree = async () => ({ rows: [row("ses_mid", { title: "Mid" }), row("ses_leaf", { parentID: "ses_mid", depth: 2 })] })
-    fake.state.stop = async () => ({ stopped: [{ sessionID: "ses_mid", title: "Mid", outcome: "idle" }], cancelled: 2 })
-    await tui.setup(fake.context)
-
-    await fake.command("courier.command")!.run("stop ses_mid")
-    expect(fake.state.confirms.at(-1)?.message).toStartWith('Stop "Mid" (ses_mid) and the 1 session under it?')
-    expect(fake.calls).toContainEqual(["stop", { sessionID: "ses_mid", by: "ses_parent" }, { location: { directory: "/workspace" } }])
-    expect(fake.state.toasts.at(-1)?.message).toBe("Stopped 1 session: 0 interrupted, 2 scheduled messages cancelled")
-  })
-
-  test("/courier stop with no session lets the person pick one of the tree, and stops nothing if they pick none", async () => {
+  test("/courier stop, with a session or without, shows the usage and stops nothing", async () => {
     const fake = fakeContext(async () => empty)
     fake.state.tree = async () => ({ rows: [row("ses_a", { title: "A" })] })
     await tui.setup(fake.context)
 
-    await fake.command("courier.command")!.run("stop")
-    expect(fake.state.selects.at(-1)?.options).toEqual([{ title: "A", value: "ses_a", description: "ses_a · idle · owes a report" }])
+    for (const input of ["stop ses_a", "stop"]) {
+      await fake.command("courier.command")!.run(input)
+      expect(fake.state.toasts.at(-1)).toMatchObject({ message: USAGE, variant: "warning" })
+    }
+    expect(fake.state.selects).toEqual([])
     expect(fake.state.confirms).toEqual([])
+    expect(fake.calls.filter((call: any) => call[0] === "stop")).toEqual([])
+  })
 
-    fake.state.select = "ses_a"
-    await fake.command("courier.command")!.run("stop")
-    expect(fake.calls).toContainEqual(["stop", { sessionID: "ses_a", by: "ses_parent" }, { location: { directory: "/workspace" } }])
+  test("the usage names /courier tree only", () => {
+    expect(USAGE).toBe("/courier tree opens the session tree")
   })
 
   test("an unknown verb shows the usage", async () => {
@@ -1396,22 +1388,6 @@ describe("an ask sounds once (#176)", () => {
     expect(fake.state.notified.filter((n: any) => n.notification)).toEqual([
       { title: "Parent › Kid", message: "Permission: shell echo hi", notification: { when: "blurred" }, sound: false },
     ])
-  })
-})
-
-describe("/courier stop with nothing to pick (#181)", () => {
-  test("/courier stop with nothing to pick, or a tree it cannot read, says so instead of an empty picker", async () => {
-    const fake = fakeContext(async () => empty)
-    fake.state.tree = async () => ({ rows: [] })
-    await tui.setup(fake.context)
-    await fake.command("courier.command")!.run("stop")
-    expect(fake.state.selects).toEqual([])
-    expect(fake.state.toasts.at(-1)?.message).toContain("No session")
-
-    fake.state.tree = async () => Promise.reject({ type: "rpc.unavailable", message: "closing" })
-    await fake.command("courier.command")!.run("stop")
-    expect(fake.state.selects).toEqual([])
-    expect(fake.state.toasts.at(-1)).toMatchObject({ message: "closing", variant: "error" })
   })
 })
 

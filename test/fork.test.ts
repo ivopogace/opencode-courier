@@ -73,7 +73,7 @@ describe("the fork hook", () => {
     ])
     expect(sent[0].text).toStartWith('<courier from="courier" notice="fork" of="ses_orig">\nCourier did not start this fork.')
     expect(sent[0].text).toContain("send session ses_parent nothing with courier_send unless the person asks")
-    expect(sent[0].text).not.toContain("courier_children")
+    expect(sent[0].text).not.toContain("courier_tree lists none")
     expect([...store]).toEqual(before)
     expect(logged).toEqual([])
   })

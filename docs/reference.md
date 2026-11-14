@@ -80,7 +80,6 @@ directory.
 | `maxDepth` | `5` | The deepest a spawned session may be. Your session is depth 0. |
 | `maxChildren` | `5` | Live children one session may have. |
 | `maxTotal` | `30` | Live spawned sessions in one tree; the top is not counted. |
-| `nativeChildren` | `false` | The default for a child started without `native`: `true` creates non-isolated children as OpenCode subagents ([native child sessions](#native-child-sessions)). |
 
 The limits are positive integers. A value that is not valid keeps the default, and the server log
 says so. A change applies once OpenCode loads the plugin again. The `webhook` option of releases up
@@ -89,6 +88,10 @@ releases up to 0.16.4 is not read, whatever its value, and each load logs one li
 `courier: the memory option is not read: memory was removed in 0.17.0. Remove it from the config.`
 The tree records those releases stored stay in storage, unread, and a session they gave a `lessons`
 entry keeps it, though the tool it names is gone.
+The `nativeChildren` option of releases up to 0.16.4 is not read either, whatever its value, and each
+load logs one line for it:
+`courier: the nativeChildren option is not read: it was removed in 0.17.0. Remove it from the config; a spawn asks for a native child with native: true.`
+A child is [native](#native-child-sessions) only when its spawn passes `native: true`.
 
 The terminal part gets no options from `opencode.json`. It reads them from its own config,
 `~/.config/opencode/cli.json`:
@@ -116,9 +119,8 @@ for a git elsewhere.
 | Tool | Parameters | Does |
 |---|---|---|
 | `courier_spawn` | `task`, `title?`, `agent?`, `model?`, `variant?`, `isolate?`, `native?`, `group?` | Creates a session, sends it the task and a brief, and returns at once. `model` and `variant` choose [what it runs on](#the-model-a-child-runs-on). `isolate: true` gives it its own [worktree](#worktrees). `native` says whether it is an OpenCode subagent ([native child sessions](#native-child-sessions)). With a `group`, its report is held with the [group's](#join-groups). Refused past the [limits](#session-trees-and-their-limits). |
-| `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `finding?`, `queue?` | Delivers a message, signed with the sender's id, waking the session if idle. A running turn reads it at its next step, after the tool call in progress returns, and nothing is cut short; `queue: true` holds it until the turn ends. From a child to its parent, a `status` makes it the child's [report](#a-childs-report), and a `finding` on it reaches the parent at once even when the report is held. |
-| `courier_children` | `sessionID?` | One look at the sessions this one (or `sessionID`) started, each with its last turn's outcome, how long it has been idle, when it was archived, its last reply, the requests and questions it waits on (`pending`), its directory, whether it is isolated, `native: true` when it is a [subagent](#native-child-sessions), when it started, its [group](#join-groups) and its [model](#the-model-a-child-runs-on) when that is not the parent's. |
-| `courier_tree` | `sessionID?` | The [whole tree](#seeing-and-stopping-a-subtree) under a session. |
+| `courier_send` | `sessionID`, `message`, `status?`, `artifacts?`, `finding?` | Delivers a message, signed with the sender's id, waking the session if idle. A running turn reads it at its next step, after the tool call in progress returns, and nothing is cut short. From a child to its parent, a `status` makes it the child's [report](#a-childs-report), and a `finding` on it reaches the parent at once even when the report is held. |
+| `courier_tree` | `sessionID?` | One look at the [whole tree](#seeing-and-stopping-a-subtree) under this session (or `sessionID`): every session started from it, directly or through others. |
 | `courier_stop` | `sessionID`, `cleanup?` | [Stops](#seeing-and-stopping-a-subtree) a session below this one and everything under it. |
 | `courier_cleanup` | `sessionID`, `force?` | Removes an isolated child's [worktree](#worktrees) and forgets the child. |
 | `courier_answer` | `sessionID`, `requestID`, `reply?`, `message?`, `answers?` | Proposes `once` or `reject` for a [permission request](#a-child-that-asks-for-permission), or passes on your answers to a [question](#a-child-that-asks-a-question). |
@@ -141,7 +143,7 @@ Both are checked against the models OpenCode lists for the location: a model it 
 a variant the model has not, is refused with a tool error naming what is listed, and nothing is
 started. When the listing cannot be read, the choice goes through unchecked, and OpenCode fails the
 child's first turn, which is [reported](#a-child-that-fails). A child on another model than its
-parent's is named with it, as `provider/model#variant`, in the spawn's result, in `courier_children`
+parent's is named with it, as `provider/model#variant`, in the spawn's result, in `courier_tree`
 and in the [tree panel](#the-tree-panel)'s row. `courier_spawn`'s description says a child runs on the
 parent's model unless the parent names one fit for the task.
 
@@ -217,7 +219,7 @@ The root may also hand a heavy task whole to one session, to keep its own contex
 split-line form in backticks, so its own semicolon and comma read as part of the form; the plugin
 reads the line with or without them.
 
-**The standing.** A parent carries what `courier_children` shows in a `standing` entry: one line per
+**The standing.** A parent carries the state of its children in a `standing` entry: one line per
 session it started, oldest first, with its state (`started`, `working`, `sent progress`, `reported
 done`, `ended its turn without a report`, `its turn failed`, `its turn was interrupted`, `stopped`)
 and, for a [group](#join-groups) member, its group's standing (its report held with the group, the
@@ -225,12 +227,12 @@ group waiting for it, the member out of it and why, or the group delivered). The
 when a child is started, reports or sends progress, is held with or released from its group, fails,
 ends its turn silently, is interrupted, deleted, stopped or forgotten, only when its text changed,
 and removes it once the parent has no children left; so each change is at most one update message at
-the parent's next step, and the parent needs no `courier_children` call to see where its children
+the parent's next step, and the parent needs no `courier_tree` call to see where its children
 stand. It lists at most 10 children and counts older ones. A held report's body is not in it: the
 group's release delivers the reports as one message, and the entry carries state, not content.
 
 On an older OpenCode neither entry is written, nor where a put fails (logged); the standing is
-still in `courier_children`.
+still in `courier_tree`.
 
 ## The courier-orchestrate skill
 
@@ -399,7 +401,7 @@ with `courier_cleanup { sessionID }`: with the parent's turn ended, the held rep
 An isolated member whose worktree holds unsaved work is kept, and stays in the group, until you
 commit that work to a branch and call again, or call with `force: true`.
 
-`courier_children` shows each member's `group: { name, report }`, with `report` one of `held`,
+`courier_tree` shows each member's `group: { name, report }`, with `report` one of `held`,
 `out`, `failed`, `interrupted`, `deleted`, `released` (the group was delivered) or `unknown`; the
 parent's [`standing` entry](#session-trees-and-their-limits) says the same in words. Held
 reports survive a restart. A group's message does not overtake the notice of a member's failed turn, unless a scheduler tick
@@ -500,7 +502,7 @@ it) is settled: the top session gets a short message marked `answered="<reply>"`
 inbox for the next turn and wakes nothing. A rejection in OpenCode rejects the session's other
 pending requests too; the message then says the child may have stopped and `courier_send` restarts
 it. A `courier_answer` after that passes nothing on, and a prompt already open in the top session
-passes nothing on when allowed. `courier_children` lists pending requests under `pending`.
+passes nothing on when allowed. `courier_tree` lists pending requests under `pending`.
 
 ## A child that shows a form
 
@@ -539,7 +541,11 @@ still ask with `courier_send`.
 
 **`courier_tree`** lists the sessions under a session, depth first, at most `maxTotal`: the live
 ones first, then the newest. Past that it says how many it left out (`truncated`). Each entry has
-what `courier_children` shows, plus `parentID`, `depth` and `report`: `{ owes, progressed, ended }`,
+its title, its last turn's outcome, how long it has been idle, when it was archived, its last reply
+(`lastText`), the requests and questions it waits on (`pending`), its directory, whether it is
+isolated, `native: true` when it is a [subagent](#native-child-sessions), when it started, its
+[group](#join-groups) and its [model](#the-model-a-child-runs-on) when that is not the parent's,
+plus `parentID`, `depth` and `report`: `{ owes, progressed, ended }`,
 each `true` or `false`, and the `status` of its last report when there is one.
 [OpenCode's subagents](#opencodes-subagents) in the tree are listed too, marked `subagent: true`,
 without `report`. Anyone can read any tree.
@@ -639,9 +645,7 @@ an envelope the plugin wrote binds a receiver, as far as its text says.
 
 **Other ways to reach the tree.** `courier_send` without a `status` is an ordinary message, not a
 report. It is delivered as `steer`: a running turn reads it at its next step, once the tool call in
-progress has returned, and nothing running is cut short. `queue: true` holds it until the turn ends,
-for a message that must not be read before then. It wakes the
-target if it is idle. It has no target restriction, so a parent that got a finding can pass it on to
+progress has returned, and nothing running is cut short. It wakes the target if it is idle. It has no target restriction, so a parent that got a finding can pass it on to
 its other children, which steers their running turns. A `status` belongs on a report upward: on a
 message to a session below the sender it is dropped, the message goes without it, and the result says
 so.
@@ -655,7 +659,7 @@ same.
 
 ## Roster
 
-`courier_spawn` records each child under its parent, so `courier_children` finds them after a
+`courier_spawn` records each child under its parent, so `courier_tree` finds them after a
 compaction or restart. A child deleted in OpenCode is forgotten at once, unless it is isolated or
 has children of its own. Other entries are dropped 14 days after the child started, except isolated
 children whose worktree is still there.
@@ -663,7 +667,7 @@ children whose worktree is still there.
 **Forking a session in a tree.** A fork (OpenCode's `/fork`, `POST /api/session/:id/fork`) copies a
 session's transcript, its instruction entries and its metadata, so a fork of a child reads the
 child's brief and a fork of a parent reads of children it never started. The roster holds no entry
-for a fork: it is a top session, `courier_children` lists nothing in it, the children the original
+for a fork: it is a top session, `courier_tree` lists nothing in it, the children the original
 started report to the original, and held reports and passed-on requests go there too. On OpenCode
 2.3.0 courier tells the fork so, through the `session.fork` hook, when the original was started by
 courier, has children in the roster, or holds a `role` or `standing` entry. It removes the fork's
@@ -675,7 +679,7 @@ OpenCode's own `<fork-notice>`, that waits for the fork's first prompt and wakes
 <courier from="courier" notice="fork" of="ses_count">
 Courier did not start this fork. What courier gave session ses_count stays with it:
 - The brief above from session ses_top is the assignment of session ses_count, which reports on it: here it is background. You report to no one: send session ses_top nothing with courier_send unless the person asks.
-- The sessions started above with courier_spawn are the children of session ses_count: their reports, the ones still pending too, and what they ask go there, never here. courier_children lists none of them here: do not wait for them, and do not combine or send their reports as yours.
+- The sessions started above with courier_spawn are the children of session ses_count: their reports, the ones still pending too, and what they ask go there, never here. courier_tree lists none of them here: do not wait for them, and do not combine or send their reports as yours.
 - Here you are the top session of a tree of your own, with no sessions started: the role and standing courier gave above are not yours.
 </courier>
 ```
@@ -706,7 +710,7 @@ the spawn fails and starts nothing; start it without `isolate`.
 Nothing removes a worktree on its own. When the parent has what it needs, it calls
 `courier_cleanup { sessionID }`. The worktree is kept, and the result says why, when it holds
 uncommitted changes (untracked files included, ignored ones not), or commits on no branch, tag or
-remote, and the child is not dropped: it stays on `courier_children` and counts toward the limits.
+remote, and the child is not dropped: `courier_tree` still lists it and it counts toward the limits.
 Commit what you want to keep to a branch and call again, or call with `force: true` to discard it. A
 child without `isolate` has no worktree: `courier_cleanup` only forgets it. `courier_cleanup` never
 deletes a session. Call it after the child has reported.
@@ -756,43 +760,40 @@ Once the reports are in, `/goal resume` picks a paused goal up again.
 
 A native child is created with OpenCode's own `parentID`, so OpenCode treats it as the parent's
 subagent. The parent chooses per spawn with `courier_spawn`'s `native`: `true` makes that child a
-subagent, `false` keeps it a standalone session, and unset leaves it to the `nativeChildren` option,
-which is off by default and, with `"nativeChildren": true`, makes every child started without
-`isolate` a subagent. A tree may mix both kinds, in one group too. Leave it off, with `native:
-false` when the option is on, for a part the person may want to open or that should outlive the
-parent (see below). Use native children only with OpenCode's TUI or the paired app, which show their prompts;
+subagent; unset or `false` keeps it a standalone session. A tree may mix both kinds, in one group
+too. Leave it unset for a part the person may want to open or that should outlive the parent (see
+below). Use native children only with OpenCode's TUI or the paired app, which show their prompts;
 `native`'s own description says so to the model. What changes for a native child:
 
 - **Asks are answered in OpenCode's view.** A native child's permission requests, questions and
   forms show in the TUI's view, and the paired app's request dock, of its nearest ancestor that is
   not itself a native child. When that is the top session, the top session's model is only told (a
   notice marked `shown="native"`) and told again once it is settled. Under a standalone child (an
-  isolated one, or one spawned with `native: false`) they are relayed as without the option. With a
-  bare API client nothing shows the prompts: `courier_answer` is the fallback, and
-  `courier_children` lists them under `pending`.
+  isolated one, or one spawned without `native: true`) they are relayed as a standalone child's are.
+  With a bare API client nothing shows the prompts: `courier_answer` is the fallback, and
+  `courier_tree` lists them under `pending`.
 - **OpenCode reports each turn's end too.** When a native child's turn ends, OpenCode sends its
   parent a `<subagent sessionID="…" state="…">` message of its own with the child's last reply,
   and that wakes the parent; nothing turns it off. The courier's reports and notices come as
-  without the option, and OpenCode's message does not make a parent started with `courier_spawn`
+  for a standalone child, and OpenCode's message does not make a parent started with `courier_spawn`
   owe a report again. The cost is an extra parent turn per child turn, at every native level above
   it: the turn OpenCode's message starts in a parent that is a native child too ends with a message
   to its own parent, up to the first session that is not a native child. A [join
   group](#join-groups) with native members wakes the parent at each of their turn ends, since
   OpenCode's messages are not held. So native children are worth it for OpenCode's own view of
   the children (the TUI or the paired app), not for fewer turns.
-- **The parent's model is told what that message is.** The [role](#session-trees-and-their-limits) of a session that has,
-  or can start, a native child ends with one fixed line: OpenCode's `<subagent>` message about a
+- **The parent's model is told what that message is.** The [role](#session-trees-and-their-limits) of a session that has
+  started a native child ends with one fixed line: OpenCode's `<subagent>` message about a
   session started with `courier_spawn` is the host's note that its turn ended, not its report; the
   report, or the courier's notice that it ended without one, is what counts; the message needs no
-  reply; a group's reports come together. With `nativeChildren` on, every session that can start
-  sessions has the line from its first spawn (a root) or its first request (a child); with it off,
-  a session gets it when it starts its first child with `native: true`, as one update of its role.
-  A leaf, and a session with no native child while the option is off, do not have it. The line
+  reply; a group's reports come together. A session gets the line when it starts its first child
+  with `native: true`, as one update of its role. A leaf, and a session with no native child, do
+  not have it. The line
   leaves the `<subagent>` message of a subagent started with OpenCode's own tool, and of a child
   removed with `courier_cleanup`, as that session's result.
 - **Deleting a session deletes its native children.**
 - **The child gets the courier's own ruleset** (OpenCode's schedule tools denied, [Scheduled
-  messages](#scheduled-messages)), not its parent's session rules, as without the option.
+  messages](#scheduled-messages)), not its parent's session rules, as a standalone child does.
 - **Providers see a subagent.** Requests carry the parent's id for cache routing. GitHub Copilot
   meters subagents differently; not tested on Copilot.
 - **A native child leaves the TUI's session lists.** Reach it from the parent's subagent tab.
@@ -801,11 +802,11 @@ parent (see below). Use native children only with OpenCode's TUI or the paired a
   cancels their questions and forms. `opencode run` also waits for native children before it exits,
   and looks again only when a turn of its own session ends: when a native child's turn ends after
   the last turn of the session the run prompted, the run does not exit by itself.
-- **The roster, `courier_children`, `courier_tree` and the [tree panel](#the-tree-panel)** mark it:
+- **The roster, `courier_tree` and the [tree panel](#the-tree-panel)** mark it:
   `native: true` in the listings, `native` in the panel's row.
 
 An isolated child cannot be native: `native: true` with `isolate: true` is refused, and nothing is
-started; with the option on, an isolated child is a standalone session. A tree with isolated children
+started. A tree with isolated children
 shows in OpenCode as several trees, split at each isolated child; `courier_tree` shows the whole.
 
 ## OpenCode's subagents
@@ -865,7 +866,8 @@ to ten times in all, and shows once the plugin answers.
 ### The tree panel
 
 `/courier tree` (or *Courier session tree* in the palette) opens a panel beside the session, with
-that session as its first row and the tree under it. It is fullscreen under 108 columns.
+that session as its first row and the tree under it. It is fullscreen under 108 columns. `/courier`
+with any other word shows its usage in a toast.
 
 ```
  █▀██▀██  courier tree  [█████░░░░░] 1/2 reported
@@ -900,8 +902,8 @@ Keys: `↑`/`k` and `↓`/`j` move, `enter` or a click opens the session, `s` st
 `<leader>right` move the keyboard between the session and the panel. The panel follows you to other
 sessions and hides where there is no tree.
 
-**Stopping.** `s`, or `/courier stop <session>` (`/courier stop` alone lists the tree to pick from),
-asks you to confirm, then stops as `courier_stop` would from the open session.
+**Stopping.** `s` asks you to confirm, then stops the selected session as `courier_stop` would from
+the open session.
 
 **Forgetting.** `x` on a `gone` row (deleted in OpenCode, kept for its worktree or its children)
 forgets it as `courier_cleanup` would, never with `force`, after a confirm. The server refuses a
@@ -948,7 +950,7 @@ share the plugin's storage but not its memory:
 - A child's permission request, failure or silent end is told once, by the server running it.
   Whether a child owes a report compares both servers' clocks, so run them on one machine.
 - `courier_answer` passes an answer on only from the server where the child waits, and
-  `courier_children` lists only that server's requests.
+  `courier_tree` lists only that server's requests.
 
 Where you can, run one server per data directory, or point a second one at another
 (`XDG_DATA_HOME`).

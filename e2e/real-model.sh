@@ -126,8 +126,8 @@ if [ -n "$BASE_URL" ]; then
     }
   }')
 fi
-jq -n --arg plugin "$ROOT/dist" --arg probe "$ROOT/e2e/probe-plugin" --arg probelog "$WORK/probe.log" --arg native "${COURIER_NATIVE:-}" --arg model "$PROVIDER/$MODEL" --argjson providers "$provider" --argjson permissions "$PERMISSIONS" '{
-  plugins: [if $native == "1" then { package: $plugin, options: { nativeChildren: true } } else $plugin end, { package: $probe, options: { log: $probelog } }],
+jq -n --arg plugin "$ROOT/dist" --arg probe "$ROOT/e2e/probe-plugin" --arg probelog "$WORK/probe.log" --arg model "$PROVIDER/$MODEL" --argjson providers "$provider" --argjson permissions "$PERMISSIONS" '{
+  plugins: [$plugin, { package: $probe, options: { log: $probelog } }],
   providers: $providers,
   model: $model,
   update: "disable",
@@ -142,7 +142,7 @@ fi
 
 SERVER_FLAGS="--log-level debug"
 start_server
-echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL${COURIER_NATIVE:+, nativeChildren on}${COURIER_SKILL:+, courier-orchestrate denied}"
+echo "OpenCode $("$OPENCODE" --version) on $SERVER, model $PROVIDER/$MODEL${COURIER_SKILL:+, courier-orchestrate denied}"
 if [ "${COURIER_PERSON:-}" = other-server ]; then
   OTHER="http://127.0.0.1:$OTHER_PORT"
   export COURIER_OTHER_SERVER=$OTHER

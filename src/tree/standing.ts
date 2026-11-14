@@ -70,7 +70,7 @@ async function sync(ports: StandingPorts, parentID: string, entries: Entries): P
     await entries.put({ sessionID: parentID, key: STANDING_KEY, value })
     return "put"
   } catch (error) {
-    if (!isNotFound(error)) ports.log?.(`courier: the standing entry of ${parentID} could not be written, so it may be behind courier_children: ${String(error)}`)
+    if (!isNotFound(error)) ports.log?.(`courier: the standing entry of ${parentID} could not be written, so it may be behind courier_tree: ${String(error)}`)
     return "skipped"
   }
 }

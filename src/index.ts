@@ -38,7 +38,6 @@ import {
   onIdle,
   pruneExpired,
   readLimits,
-  readNativeChildren,
   readRemovedOptions,
   registerTreeRpc,
   shapeContext,
@@ -96,12 +95,10 @@ export const courier = () => Plugin.define({
       log,
     }
     const { limits, problems } = readLimits(ctx.options)
-    const { nativeChildren, problems: nativeProblems } = readNativeChildren(ctx.options)
-    for (const problem of [...problems, ...nativeProblems, ...readRemovedOptions(ctx.options)]) log(`courier: ${problem}`)
+    for (const problem of [...problems, ...readRemovedOptions(ctx.options)]) log(`courier: ${problem}`)
     const roles = new Map<string, Role>()
     const ports: CourierPorts = {
       limits,
-      nativeChildren,
       gate,
       roles,
       nudge,
@@ -157,7 +154,7 @@ export const courier = () => Plugin.define({
       .then(() => registerPersonRpc(ctx.rpc, { questions: questionPorts, permissions }))
       .catch((error: unknown) => log(`courier rpc: not registered, the TUI part shows nothing and cannot stop: ${String(error)}`))
     const instructions = (ctx.session as Partial<typeof ctx.session>).instructions
-    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, session: ctx.session, limits, nativeChildren, roles, instructions, log }, event))
+    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, session: ctx.session, limits, roles, instructions, log }, event))
 
     const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
     const leaveRelay = joinRelay(questionPorts)

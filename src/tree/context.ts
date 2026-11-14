@@ -43,7 +43,7 @@ async function roleOf(ports: ContextPorts, sessionID: string, below: ReadonlySet
     }
   }
   const entry = depth !== null && (await hasEntry(ports, sessionID))
-  const hostReports = depth !== null && !entry && (ports.nativeChildren === true || started.some((child) => child.native))
+  const hostReports = depth !== null && !entry && started.some((child) => child.native)
   const role: Role = { depth, entry, ...(hostReports ? { hostReports: true } : {}) }
   setBounded(ports.roles, sessionID, role, ROLES_MAX)
   return role

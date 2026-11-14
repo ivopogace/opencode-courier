@@ -109,7 +109,7 @@ function decide(body) {
     const roster = messages.some((message) => message.role === "user" && textOf(message.content).includes("COURIER-ROSTER"))
     if (call?.function?.name === "courier_spawn" && roster) {
       const spawned = messages.flatMap((message) => message.tool_calls ?? []).filter((item) => item.function?.name === "courier_spawn")
-      return spawned.length < 2 ? spawnChild(false) : { tool: "courier_children", args: {} }
+      return spawned.length < 2 ? spawnChild(false) : { tool: "courier_tree", args: {} }
     }
     const first = textOf(messages.find((message) => message.role === "user")?.content)
     const startedByNest = first.match(/You were started by session (ses_\w+)/)
@@ -211,16 +211,18 @@ function decide(body) {
       delayed: true,
     }
   }
-  if (parent && recent.includes("CHILD-IDLE-STOP-MID")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT", native: false } }
-  if (parent && recent.includes("CHILD-BLOCKED-STOP-MID")) return { tool: "courier_spawn", args: { task: "CHILD-BLOCKS", native: false } }
+  if (parent && recent.includes("CHILD-IDLE-STOP-MID")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT" } }
+  if (parent && recent.includes("CHILD-BLOCKED-STOP-MID")) return { tool: "courier_spawn", args: { task: "CHILD-BLOCKS" } }
   if (parent && recent.includes("CHILD-SILENT")) return { text: "CHILD SILENT REPLY", delayed: true }
   if (parent && recent.includes("CHILD-BLOCKS")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD BLOCKED", status: "blocked" } }
   if (parent && recent.includes("CHILD-EARLY-MID"))
-    return { calls: [0, 1].map(() => ({ tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair", native: false } })) }
+    return { calls: [0, 1].map(() => ({ tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } })) }
   if (parent && recent.includes("CHILD-GROUPS"))
     return { calls: [0, 1].map(() => ({ tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } })) }
   if (parent && recent.includes("CHILD-QUICK"))
     return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE QUICKLY", status: "done" }, quick: true }
+  if (parent && recent.includes("CHILD-SENDS-QUEUED"))
+    return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE QUEUED", status: "done", queue: true } }
   if (parent && recent.includes("CHILD-PROGRESSES")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD HALFWAY" } }
   if (parent && recent.includes("CHILD-ROLLING-FIRST"))
     return { tool: "courier_send", args: { sessionID: parent[1], message: "ROLLING FIRST DONE", status: "done" } }
@@ -236,6 +238,7 @@ function decide(body) {
   if (parent && recent.includes("CHILD-SUBTREE-MID")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-LEAF" } }
   if (parent && recent.includes("CHILD-SUBTREE-LEAF")) return { text: "LEAF HOLDING", hold: true }
   if (parent && recent.includes("CHILD-MID-BREAKS")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-LEAF" } }
+  if (parent && recent.includes("CHILD-NESTS-NATIVE")) return { tool: "courier_spawn", args: { task: "CHILD-QUESTION", native: true } }
   if (parent && recent.includes("CHILD-NESTS")) return { tool: "courier_spawn", args: { task: "CHILD-QUESTION" } }
   const answered = recent.match(/<courier from="ses_\w+" answers="question_[\w-]+"( dismissed="true")?>/)
   const startedBy = textOf(messages.find((message) => message.role === "user")?.content).match(/You were started by session (ses_\w+)/)
@@ -285,7 +288,7 @@ function decide(body) {
     return { tool: "courier_answer", args: { sessionID, requestID, reply: answer[1], ...(answer[2] ? { message: answer[2] } : {}) } }
   }
   if (/<courier from="ses_\w+" (answered|settled)=/.test(recent) && !/<courier from="ses_\w+" status="/.test(recent)) return { text: "PARENT SETTLED" }
-  if (!startedBy && recent.includes("ROLLING FIRST DONE")) return { tool: "courier_spawn", args: { task: "CHILD-ROLLING-NEXT", native: false } }
+  if (!startedBy && recent.includes("ROLLING FIRST DONE")) return { tool: "courier_spawn", args: { task: "CHILD-ROLLING-NEXT" } }
   if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
   if (/<courier from="[^"]*" group="/.test(recent) && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-EARLY-MID"))
     return { text: "MID SAW GROUP" }
@@ -306,21 +309,21 @@ function decide(body) {
   if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
   if (recent.includes("COURIER-MID-BREAKS")) return { tool: "courier_spawn", args: { task: "CHILD-MID-BREAKS" } }
   if (recent.includes("COURIER-SUBTREE-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBTREE-MID" } }
-  if (recent.includes("COURIER-IDLE-STOP")) return { tool: "courier_spawn", args: { task: "CHILD-IDLE-STOP-MID", native: false } }
-  if (recent.includes("COURIER-BLOCKED-STOP")) return { tool: "courier_spawn", args: { task: "CHILD-BLOCKED-STOP-MID", native: false } }
+  if (recent.includes("COURIER-IDLE-STOP")) return { tool: "courier_spawn", args: { task: "CHILD-IDLE-STOP-MID" } }
+  if (recent.includes("COURIER-BLOCKED-STOP")) return { tool: "courier_spawn", args: { task: "CHILD-BLOCKED-STOP-MID" } }
   if (recent.includes("COURIER-SUBAGENT-START")) return { tool: "courier_spawn", args: { task: "CHILD-SUBAGENT-MID" } }
   if (recent.includes("COURIER-SUBAGENT-NO-ROOT")) return { tool: "courier_spawn", args: { task: "CHILD-SUBAGENT-NO-ROOT" } }
   if (recent.includes("COURIER-STALL")) return { tool: "courier_spawn", args: { task: "CHILD-STALL-MID" } }
   if (recent.includes("COURIER-SUBTREE-TREE")) return { tool: "courier_tree", args: {} }
   const stopping = recent.match(/COURIER-SUBTREE-STOP (ses_\w+)/)
   if (stopping) return { tool: "courier_stop", args: { sessionID: stopping[1] } }
-  const children = recent.match(/COURIER-CHILDREN (ses_\w+)/)
-  if (children) return { tool: "courier_children", args: { sessionID: children[1] } }
+  const listing = recent.match(/COURIER-TREE-OF (ses_\w+)/)
+  if (listing) return { tool: "courier_tree", args: { sessionID: listing[1] } }
   if (recent.includes("COURIER-ROSTER")) return spawnChild(false)
-  if (recent.includes("COURIER-SPAWN-BLOCKS")) return { tool: "courier_spawn", args: { task: "CHILD-BLOCKS", native: false } }
-  if (recent.includes("COURIER-ROLLING")) return { tool: "courier_spawn", args: { task: "CHILD-ROLLING-FIRST", native: false } }
-  if (recent.includes("COURIER-OWN-CHECKIN")) return { tool: "courier_spawn", args: { task: "CHILD-CHECKIN-MID", native: false } }
-  if (recent.includes("COURIER-EARLY-REPORT")) return { tool: "courier_spawn", args: { task: "CHILD-EARLY-MID", native: false } }
+  if (recent.includes("COURIER-SPAWN-BLOCKS")) return { tool: "courier_spawn", args: { task: "CHILD-BLOCKS" } }
+  if (recent.includes("COURIER-ROLLING")) return { tool: "courier_spawn", args: { task: "CHILD-ROLLING-FIRST" } }
+  if (recent.includes("COURIER-OWN-CHECKIN")) return { tool: "courier_spawn", args: { task: "CHILD-CHECKIN-MID" } }
+  if (recent.includes("COURIER-EARLY-REPORT")) return { tool: "courier_spawn", args: { task: "CHILD-EARLY-MID" } }
   if (recent.includes("COURIER-GROUP-NESTED")) return { tool: "courier_spawn", args: { task: "CHILD-GROUPS" } }
   if (recent.includes("COURIER-GROUP-SPLIT")) return { tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } }
   if (recent.includes("COURIER-GROUP-DROP"))
@@ -366,29 +369,31 @@ function decide(body) {
   if (recent.includes("COURIER-LIMIT")) return { tool: "courier_spawn", args: { task: "CHILD-LIMITED" } }
   if (recent.includes("COURIER-SILENT-HEEDS")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT CHILD-HEEDS" } }
   if (recent.includes("COURIER-SILENT")) return { tool: "courier_spawn", args: { task: "CHILD-SILENT" } }
+  if (recent.includes("COURIER-QUEUED")) return { tool: "courier_spawn", args: { task: "CHILD-SENDS-QUEUED" } }
   if (recent.includes("COURIER-PROGRESS")) return { tool: "courier_spawn", args: { task: "CHILD-PROGRESSES" } }
   if (recent.includes("COURIER-WAITING")) return { tool: "courier_spawn", args: { task: "CHILD-WAITS" } }
-  const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL|-REWORD|-BOTH|-WAIT)?(?: (isolate|nested))?/)
+  const questions = recent.match(/COURIER-QUESTION(-MULTI|-RELABEL|-REWORD|-BOTH|-WAIT)?(?: (isolate|nested-native|nested))?/)
   if (questions)
     return {
       tool: "courier_spawn",
       args: {
-        task: questions[2] === "nested" ? "CHILD-NESTS" : `CHILD-QUESTION${questions[1] === "-BOTH" || questions[1] === "-WAIT" ? "" : (questions[1] ?? "")}`,
+        task: questions[2] === "nested-native" ? "CHILD-NESTS-NATIVE" : questions[2] === "nested" ? "CHILD-NESTS" : `CHILD-QUESTION${questions[1] === "-BOTH" || questions[1] === "-WAIT" ? "" : (questions[1] ?? "")}`,
         isolate: questions[2] === "isolate",
+        ...(questions[2] === "nested-native" ? { native: true } : {}),
       },
     }
   if (recent.includes("COURIER-PROBE")) return { tool: "courier_spawn", args: { task: "CHILD-PROBES", isolate: true } }
   if (recent.includes("COURIER-SEARCH")) return { tool: "courier_spawn", args: { task: "CHILD-SEARCHES" } }
-  const ask = recent.match(/COURIER-ASK(?: (isolate))?/)
-  if (ask) return { tool: "courier_spawn", args: { task: "CHILD-ASKS", isolate: ask[1] === "isolate" } }
+  const ask = recent.match(/COURIER-ASK(?: (isolate|native))?/)
+  if (ask) return { tool: "courier_spawn", args: { task: "CHILD-ASKS", isolate: ask[1] === "isolate", ...(ask[1] === "native" ? { native: true } : {}) } }
   const chosen = recent.match(/COURIER-MODEL ([\w./-]+) ([\w-]+)/)
   if (chosen)
     return {
       tool: "courier_spawn",
       args: { task: "Report back to your parent.", ...(chosen[1] === "-" ? {} : { model: chosen[1] }), ...(chosen[2] === "-" ? {} : { variant: chosen[2] }) },
     }
-  const spawn = recent.match(/COURIER-TEST(?: (isolate))?/)
-  if (spawn) return spawnChild(spawn[1] === "isolate")
+  const spawn = recent.match(/COURIER-TEST(?: (isolate|native))?/)
+  if (spawn) return spawn[1] === "native" ? { tool: "courier_spawn", args: { task: "Report back to your parent.", native: true } } : spawnChild(spawn[1] === "isolate")
   return { text: "ok" }
 }
 
@@ -450,7 +455,7 @@ function relayPersonWords(messages, lastAssistant) {
     return { text: replies.filter(Boolean).join(" ") || "RELAYER WAITS" }
   }
   if (!first.includes("COURIER-RELAY-PERSON")) return undefined
-  if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-RELAYS-PERSON", native: false } }
+  if (lastAssistant === -1) return { tool: "courier_spawn", args: { task: "CHILD-RELAYS-PERSON" } }
   if (call?.function?.name === "courier_spawn") return { text: "ROOT SPAWNED" }
   const replies = [TYPED_ENVELOPE.test(recent) && "ROOT HEARD TYPED", /<courier from="ses_\w+" status="done">/.test(recent) && "ROOT GOT REPORT"]
   return { text: replies.filter(Boolean).join(" ") || "ROOT WOKE" }

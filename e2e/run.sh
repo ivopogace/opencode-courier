@@ -213,8 +213,8 @@ spawn_isolated() {
   check "the isolated child reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE")" ] && echo true || echo false)"
 }
 child_listing() {
-  prompt "COURIER-CHILDREN $1" | tool_state courier_children |
-    jq -r --arg child "$2" 'if .status != "completed" then "error" elif any(.metadata.metadata.children[]; .sessionID == $child) then "listed" else "unlisted" end'
+  prompt "COURIER-TREE-OF $1" | tool_state courier_tree |
+    jq -r --arg child "$2" 'if .status != "completed" then "error" elif any(.metadata.metadata.sessions[]; .sessionID == $child) then "listed" else "unlisted" end'
 }
 inbox() {
   curl -s -u "opencode:$OPENCODE_PASSWORD" -X POST "$SERVER/api/rpc/courier-person/$1?directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")" \
@@ -234,7 +234,7 @@ spawned_by() {
   done
 }
 status_of() { curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" "$SERVER/api/session/$1"; }
-SUITE="reports:89 reports-groups:97 reminder:18 finding:29 finding-up:16 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:6 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:1 later:20 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:15 native:39 decline-seal:17 total-refusal:23 early-report:23 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
+SUITE="reports:95 reports-groups:97 reminder:18 finding:29 finding-up:16 person-message:7 permission:36 depth:4 role-entry:6 fork:10 entries:6 spawn-model:4 answer:35 search:11 questions:63 questions-more:73 restart-question:12 probe:20 skill:8 later:20 schedules:4 wake:50 roster:35 webhook:0 cleanup:5 dirty-root:2 subtree:1 failed-live:11 subagent:2 subagent-role:6 archive:127 nest:6 stall:84 inbox:36 busy:77 spawn-native:15 native:28 decline-seal:17 total-refusal:23 early-report:23 own-checkin:41 idle-stop:23 rolling-slot:33 person-up:12 plugin-add:16"
 BOUND="restart-question roster"
 
 shard_groups() {
@@ -297,7 +297,7 @@ COURIER_TYPES='["form.cancelled","form.created","form.replied","location.shutdow
 cat >"$WORK/project/opencode.json" <<EOF
 {
   "plugins": [
-    { "package": "$ROOT/dist", "options": { "maxDepth": 2, "memory": true, "webhook": { "port": $WEBHOOK_PORT, "secretFile": "$WORK/webhook-secret" } } },
+    { "package": "$ROOT/dist", "options": { "maxDepth": 2, "memory": true, "nativeChildren": true, "webhook": { "port": $WEBHOOK_PORT, "secretFile": "$WORK/webhook-secret" } } },
     "$ROOT/e2e/search-plugin",
     { "package": "$ROOT/e2e/probe-plugin", "options": { "log": "$WORK/probe.log", "types": $COURIER_TYPES } }
   ],
@@ -349,10 +349,10 @@ run_reports() {
       "$(api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains(" ended="))] | length == 0')"
   done
 
-  scenario "courier_children reports each child's state and last reply"
-  check "with the child's last turn and its reply" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -r --arg child "$child" '.status == "completed" and
-    (.metadata.metadata.children[] | select(.sessionID == $child) | .outcome == "succeeded" and (.lastText | contains("TOOL DONE courier_send")) and (.idle | type == "number"))')"
-  check "and lists none for an unknown session" "$(prompt "COURIER-CHILDREN ses_missing" | tool_state courier_children | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
+  scenario "courier_tree reports each child's state and last reply"
+  check "with the child's last turn and its reply" "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree | jq -r --arg child "$child" '.status == "completed" and
+    (.metadata.metadata.sessions[] | select(.sessionID == $child) | .outcome == "succeeded" and (.lastText | contains("TOOL DONE courier_send")) and (.idle | type == "number"))')"
+  check "and lists none for an unknown session" "$(prompt "COURIER-TREE-OF ses_missing" | tool_state courier_tree | jq -r '.status == "completed" and (.metadata.metadata.sessions | length == 0)')"
 
   scenario "a child runs on its parent's model, not the default one"
   out=$(bounded_run "$WORK/project" --model mock/other "COURIER-TEST")
@@ -416,6 +416,16 @@ run_reports() {
   check "which settled its report" "$(kv get "report/$child/settled" | jq -r '.by == "report"')"
   check "and its reported turn was not told as one without a report" \
     "$(turn_ended "$child"; end_handled "$child" "$parent" && notices_with "$parent" ended | jq -r 'length == 1' || echo false)"
+
+  scenario "a queue a model still passes to courier_send is dropped: the report is steered in"
+  out=$(prompt "COURIER-QUEUED")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "the report woke the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+  check "the child's courier_send, called with queue: true, completed as a report" \
+    "$(api "session/$child/message" | jq -r '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_send") | .state] | length == 1 and (.[0].status == "completed")')"
+  check "OpenCode admitted it steered, as every courier message is" \
+    "$(jq -sr --arg parent "$parent" --arg child "$child" '[.[] | select(.type == "session.inbox.enqueued" and .sessionID == $parent and .item.metadata.from == $child and .item.metadata.status == "done")] | length > 0 and all(.item.delivery == "steer")' "$WORK/probe.log")"
 
   scenario "a message without a status is progress: a child that then ends its turn is reported, and the notice says so"
   out=$(prompt "COURIER-PROGRESS")
@@ -482,8 +492,8 @@ run_reports_groups() {
     "$(for id in $members; do texts "$id" | grep -qF 'It is held with group "pair" and goes to' || { echo false; exit; }; done; echo true)"
   check "each member's report is settled with its status" "$(for id in $members; do [ "$(kv get "report/$id/settled" | jq -r '.by == "report" and .status == "done"')" = true ] || { echo false; exit; }; done; echo true)"
   check "the delivered group is gone from storage" "$(for id in $members; do [ -z "$(kv get "group/$parent/pair/$id")" ] || { echo false; exit; }; done; echo true)"
-  check "courier_children shows each child's group as released" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
-    jq -r '.status == "completed" and ([.metadata.metadata.children[].group] == [{name: "pair", report: "released"}, {name: "pair", report: "released"}])')"
+  check "courier_tree shows each child's group as released" "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree |
+    jq -r '.status == "completed" and ([.metadata.metadata.sessions[].group] == [{name: "pair", report: "released"}, {name: "pair", report: "released"}])')"
 
   scenario "a member's blocked report reaches the parent at once; the other's is held until that member reports"
   out=$(prompt "COURIER-GROUP-BLOCKED")
@@ -499,10 +509,10 @@ run_reports_groups() {
   check "the other member's done report is held with the group, and the blocked member is still out" \
     "$(for _ in $(seq 1 30); do [ "$(kv get "group/$parent/pair/$held" | jq -r '.report.status == "done"' 2>/dev/null)" = true ] && break; sleep 1; done
        [ "$(kv get "group/$parent/pair/$held" | jq -r '.report.status == "done"')" = true ] && [ "$(kv get "group/$parent/pair/$blocked" | jq -r 'has("report") | not')" = true ] && echo true || echo false)"
-  check "courier_children shows the group with one report held and one out" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
+  check "courier_tree shows the group with one report held and one out" "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree |
     jq -r --arg held "$held" --arg blocked "$blocked" '.status == "completed" and
-      ([.metadata.metadata.children[] | select(.sessionID == $held) | .group] == [{name: "pair", report: "held"}]) and
-      ([.metadata.metadata.children[] | select(.sessionID == $blocked) | .group] == [{name: "pair", report: "out"}])')"
+      ([.metadata.metadata.sessions[] | select(.sessionID == $held) | .group] == [{name: "pair", report: "held"}]) and
+      ([.metadata.metadata.sessions[] | select(.sessionID == $blocked) | .group] == [{name: "pair", report: "out"}])')"
   prompt_in "$parent" "COURIER-NUDGE-BLOCK $blocked" >/dev/null
   again=$([ "$(has_text "$parent" "CHILD BLOCKED AGAIN" 45)" = true ] && api "session/$parent/message" | jq -r '[.data[] | select(.type == "synthetic") | .text | select(contains("CHILD BLOCKED AGAIN"))] | first // ""')
   check "blocked again, now that the other's report is held, its report brings that report, which stays held" \
@@ -579,14 +589,14 @@ run_reports_groups() {
   check "the child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
   check "and its report state is gone" \
     "$(for _ in $(seq 1 20); do [ -z "$(kv get "report/$child/prompt")$(kv get "report/$child/told")" ] && { echo true; exit; }; sleep 1; done; echo false)"
-  check "and so is its roster entry, so courier_children no longer lists it" \
+  check "and so is its roster entry, so courier_tree no longer lists it" \
     "$(for _ in $(seq 1 20); do [ "$(child_listing "$parent" "$child")" = unlisted ] && { echo true; exit; }; sleep 1; done; echo false)"
 
-  scenario "a deleted isolated child stays on courier_children, for courier_cleanup"
+  scenario "a deleted isolated child stays listed by courier_tree, for courier_cleanup"
   child_delay 1000
   spawn_isolated
   check "the isolated child is deleted" "$([[ $(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$child") == 20* ]] && echo true || echo false)"
-  check "it is still listed" "$(prompt_in "$parent" "COURIER-CHILDREN $parent" >/dev/null; turn_ended "$parent"
+  check "it is still listed" "$(prompt_in "$parent" "COURIER-TREE-OF $parent" >/dev/null; turn_ended "$parent"
     end_handled "$parent" "$parent" && [ "$(child_listing "$parent" "$child")" = listed ] && echo true || echo false)"
   check "and its worktree is still there for courier_cleanup" "$([ -d "$directory" ] && echo true || echo false)"
 
@@ -850,8 +860,8 @@ run_permission() {
     check "with what it asks for and the choices" "$(jq -r --arg child "$child" '.[0] // "" |
       contains("<courier from=\"" + $child + "\" asks=\"permission\"") and contains("It asks for: shell") and
       contains("echo courier-asks") and contains("- once:") and contains("- reject:") and contains("You cannot decide this") and (contains("- always") | not)' <<<"$notice")"
-    check "courier_children shows the child waiting on it" \
-      "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -r --arg request "$request" '.status == "completed" and (.output | contains($request))')"
+    check "courier_tree shows the child waiting on it" \
+      "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree | jq -r --arg request "$request" '.status == "completed" and (.output | contains($request))')"
     choice=$([ "$mode" = isolate ] && echo reject || echo once)
     answered=$(prompt_in "$parent" "COURIER-ANSWER $choice" | tool_state courier_answer)
     check "courier_answer passed on $choice" "$(jq -r '.status == "completed" and .metadata.metadata.answered == true' <<<"$answered")"
@@ -1000,7 +1010,7 @@ run_fork() {
   echo "  OpenCode's own fork notices in the leaf's fork: $(api "session/$leaf_fork/message" | jq -r '[.data[] | select(.type == "synthetic" and (.text | startswith("<fork-notice>")))] | length')"
   check "the leaf's fork holds one courier fork notice, which names the leaf and tells it to send the leaf's parent nothing" \
     "$(notices_with "$leaf_fork" notice | jq -r --arg leaf "$fork_leaf" --arg mid "$fork_mid" 'length == 1 and (.[0] | startswith("<courier from=\"courier\" notice=\"fork\" of=\"" + $leaf + "\">") and
-      contains("Courier did not start this fork.") and contains("send session " + $mid + " nothing with courier_send") and (contains("courier_children") | not))')"
+      contains("Courier did not start this fork.") and contains("send session " + $mid + " nothing with courier_send") and (contains("courier_tree lists none") | not))')"
   check "the middle session's fork holds one, which says the brief is the middle session's and its children report to it" \
     "$(notices_with "$mid_fork" notice | jq -r --arg mid "$fork_mid" --arg root "$fork_root" 'length == 1 and (.[0] | contains(" of=\"" + $mid + "\"") and
       contains("The brief above from session " + $root + " is the assignment of session " + $mid) and contains("are the children of session " + $mid))')"
@@ -1069,8 +1079,8 @@ run_spawn_model() {
   check "and every request of the child asked the provider for that model with the variant's reasoning effort" \
     "$(jq -sr --arg child "$child" '[.[] | select(.session == $child)] | length > 0 and all(.options.model == "other" and .options.reasoning_effort == "high")' "$WORK/model.log")"
   check "the roster names the model, which the tree panel's row shows" "$(kv get "roster/$parent/$child" | jq -r '.model == "mock/other#high"')"
-  check "courier_children lists it with the model" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
-    jq -r --arg child "$child" '.status == "completed" and any(.metadata.metadata.children[]; .sessionID == $child and .model == "mock/other#high")')"
+  check "courier_tree lists it with the model" "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree |
+    jq -r --arg child "$child" '.status == "completed" and any(.metadata.metadata.sessions[]; .sessionID == $child and .model == "mock/other#high")')"
 
   scenario "a variant alone applies to the parent's own model"
   child_delay 1000
@@ -1100,7 +1110,7 @@ run_spawn_model() {
     "$(prompt "COURIER-MODEL mock/other huge" | tool_state courier_spawn | jq -r '.status == "error" and (.error | contains("mock/other has no variant \"huge\"") and contains("Its variants are low, medium, high and default"))')"
   check "a name without a provider is refused, saying the form" \
     "$(prompt "COURIER-MODEL other -" | tool_state courier_spawn | jq -r '.status == "error" and (.error | contains("model must be provider/model"))')"
-  check "no session was started under the parent" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
+  check "no session was started under the parent" "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree | jq -r '.status == "completed" and (.metadata.metadata.sessions | length == 0)')"
 }
 
 run_answer() {
@@ -1190,7 +1200,7 @@ run_questions() {
     contains("{\"questions\":[{\"question\":\"Which greeting?\",\"header\":\"Greeting\"") and contains("Do not answer it yourself"))' <<<"$notice")"
   check "the parent asks exactly what the child asks" "$([ "$(fields_of "$parent")" = "$(fields_of "$child")" ] && echo true || echo false)"
   request=$(jq -r '.[0] | capture("request=\"(?<id>[^\"]+)\"").id' <<<"$notice")
-  check "courier_children shows the child waiting on it" "$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children |
+  check "courier_tree shows the child waiting on it" "$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree |
     jq -r --arg request "$request" '.status == "completed" and (.output | contains($request) and contains("\"type\": \"question\""))')"
   check "the person answers in the parent's session" "$(answer_form "$parent" "$parent_form" '"Hi"')"
   check "the parent's question passed the answer on, without courier_answer" "$(has_text "$parent" "do not call courier_answer")"
@@ -1403,6 +1413,20 @@ run_skill() {
   scenario "a config that still sets the memory option loads, logs one line for it, and offers no memory tool and no lessons entry"
   check "the server log has the line for the memory option, and no line reading the option as a setting" \
     "$(grep -qF -- "courier: the memory option is not read: memory was removed in 0.17.0. Remove it from the config." "$WORK/server.log" && ! grep -qF "memory must be true or false" "$WORK/server.log" && echo true || echo false)"
+
+  scenario "a config that still sets nativeChildren loads and logs one line for it, and its children are standalone unless a spawn passes native: true"
+  check "the server log has the line for the nativeChildren option once per load, and no line reading it as a setting" \
+    "$(line="courier: the nativeChildren option is not read: it was removed in 0.17.0. Remove it from the config; a spawn asks for a native child with native: true."
+      loads=$(grep -cF -- "courier: the memory option is not read:" "$WORK/server.log"); lines=$(grep -cF -- "$line" "$WORK/server.log")
+      [ "$lines" -ge 1 ] && [ "$lines" = "$loads" ] && ! grep -qF "nativeChildren must be true or false" "$WORK/server.log" && echo true || echo false)"
+  child_delay 1000
+  out=$(prompt "COURIER-TEST")
+  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
+  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
+  check "a child spawned without native has no OpenCode parentID and is not recorded as native" \
+    "$([ -n "$child" ] && [ "$(session_info "$child" | jq -r '.parentID == null')" = true ] && [ "$(kv get "roster/$parent/$child" | jq -r 'has("native") | not')" = true ] && echo true || echo false)"
+  check "OpenCode lists no subagent under the parent" "$(api "session?parentID=$parent" | jq -r '.data | length == 0')"
+  check "it reported back, waking the parent" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
   check "no request of this run offered courier_recall or courier_note, or carried a lessons block" \
     "$(jq -sr '[.[] | select(.tools | length > 0)] | length > 0 and all((.tools | index("courier_recall") | not) and (.tools | index("courier_note") | not) and (.lessonsEntry | not))' "$WORK/model.log")"
 }
@@ -1483,14 +1507,14 @@ run_schedules() {
 }
 
 run_roster() {
-  scenario "courier_children lists the sessions a parent spawned"
+  scenario "courier_tree lists the sessions a parent spawned"
   child_delay 1000
   out=$(prompt "COURIER-ROSTER")
   roster_parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
   spawned=$(tool_state courier_spawn <<<"$out" | jq -r 'select(.status == "completed") | .metadata.metadata.sessionID')
   check "spawned two children" "$([ "$(wc -w <<<"$spawned")" -eq 2 ] && echo true || echo false)"
-  listed=$(tool_state courier_children <<<"$out" | jq -r 'select(.status == "completed") | .output')
-  check "courier_children lists both" "$(for id in $spawned; do grep -q "$id" <<<"$listed" || { echo false; exit; }; done; echo true)"
+  listed=$(tool_state courier_tree <<<"$out" | jq -r 'select(.status == "completed") | .output')
+  check "courier_tree lists both" "$(for id in $spawned; do grep -q "$id" <<<"$listed" || { echo false; exit; }; done; echo true)"
   check "the parent was woken by its children" "$([ -n "$(reply_time "$roster_parent" "PARENT WOKE")" ] && echo true || echo false)"
   check "each child is indexed under its parent" \
     "$(for id in $spawned; do [ "$(indexed_under "$id")" = "$roster_parent" ] || { echo false; exit; }; done; echo true)"
@@ -1521,8 +1545,8 @@ run_roster() {
   check "and this server holds the key now" "$(kv get scheduler/owner | jq -r '.server != "another server"')"
 
   scenario "the roster survives a restart and can be read from another session"
-  out=$(prompt "COURIER-CHILDREN $roster_parent")
-  listed=$(tool_state courier_children <<<"$out" | jq -c 'select(.status == "completed") | .metadata.metadata.children')
+  out=$(prompt "COURIER-TREE-OF $roster_parent")
+  listed=$(tool_state courier_tree <<<"$out" | jq -c 'select(.status == "completed") | .metadata.metadata.sessions')
   check "lists both children" "$(jq -r --arg ids "$spawned" '[.[].sessionID] | sort == ($ids | split("\n") | sort)' <<<"$listed")"
   check "with each child's last reply" "$(jq -r 'all((.lastText // "") | contains("TOOL DONE courier_send"))' <<<"$listed")"
   check "the entry written without a reverse key got one when the plugin loaded" \
@@ -1552,7 +1576,7 @@ run_cleanup() {
   check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
   check "its reverse key is gone too" "$([ -z "$(kv get "roster-by-child/$child")" ] && echo true || echo false)"
   check "git no longer lists the worktree" "$(git -C "$WORK/project" worktree list | grep -qF "$directory" && echo false || echo true)"
-  check "the child is off courier_children" "$([ "$(child_listing "$parent" "$child")" = unlisted ] && echo true || echo false)"
+  check "the child is off courier_tree" "$([ "$(child_listing "$parent" "$child")" = unlisted ] && echo true || echo false)"
 
   scenario "courier_cleanup keeps a worktree with uncommitted changes"
   child_delay 1000
@@ -1562,7 +1586,7 @@ run_cleanup() {
   check "courier_cleanup kept it and named the file" \
     "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "kept" and (.output | contains("notes.txt"))' <<<"$cleaned")"
   check "the file is still there" "$([ -f "$directory/notes.txt" ] && echo true || echo false)"
-  check "the child is still on courier_children" "$([ "$(child_listing "$parent" "$child")" = listed ] && echo true || echo false)"
+  check "the child is still on courier_tree" "$([ "$(child_listing "$parent" "$child")" = listed ] && echo true || echo false)"
   cleaned=$(prompt_in "$parent" "COURIER-CLEANUP $child force" | tool_state courier_cleanup)
   check "with force, courier_cleanup removed it" "$(jq -r '.status == "completed" and .metadata.metadata.outcome == "removed"' <<<"$cleaned")"
   check "the worktree directory is gone" "$([ ! -e "$directory" ] && echo true || echo false)"
@@ -1857,9 +1881,9 @@ run_archive() {
   check "archiving stamped its updated time with the archive's, past its last turn's end" \
     "$(session_info "$child" | jq -r '.time.archived != null and .time.updated == .time.archived and .time.updated > .time.idle')"
   check "which reads as finished, its transcript ending on its last turn's end" "$(finished "$child")"
-  listed=$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -c --arg child "$child" '.metadata.metadata.children[] | select(.sessionID == $child)')
+  listed=$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree | jq -c --arg child "$child" '.metadata.metadata.sessions[] | select(.sessionID == $child)')
   echo "  $listed"
-  check "courier_children says it was archived when it last changed, its last turn having succeeded" \
+  check "courier_tree says it was archived when it last changed, its last turn having succeeded" \
     "$(jq -r '.outcome == "succeeded" and .archived != null and .archived == .updated' <<<"$listed")"
   directory=$(node -p 'encodeURIComponent(process.argv[1])' "$WORK/project")
   row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" |
@@ -1921,9 +1945,9 @@ run_archive() {
     "$([ "$(session_info "$third" | jq -r '.time.archived == null and .time.updated > .time.idle')" = true ] &&
       [ "$(api "session/$third/context" | jq -r '.data | last | .type')" = idle ] && echo true || echo false)"
   check "which reads as finished" "$(finished "$third")"
-  listed=$(prompt "COURIER-CHILDREN $third_parent" | tool_state courier_children | jq -c --arg child "$third" '.metadata.metadata.children[] | select(.sessionID == $child)')
+  listed=$(prompt "COURIER-TREE-OF $third_parent" | tool_state courier_tree | jq -c --arg child "$third" '.metadata.metadata.sessions[] | select(.sessionID == $child)')
   echo "  $listed"
-  check "courier_children lists it by its new title, its last turn having succeeded before the rename" \
+  check "courier_tree lists it by its new title, its last turn having succeeded before the rename" \
     "$(jq -r '.title == "Renamed by the person" and .outcome == "succeeded" and .updated > .idle and .archived == null' <<<"$listed")"
   row=$(api_post "rpc/courier/tree?directory=$directory" "{\"input\":{\"sessionID\":\"$third_parent\"}}" |
     jq -c --arg id "$third" '.output.rows[] | select(.sessionID == $id) | {title, state, idle, report}')
@@ -2169,9 +2193,9 @@ run_busy() {
   summary=$(api_post "rpc/courier/summary?directory=$directory" "{\"input\":{\"sessionID\":\"$parent\"}}" | jq -c '.output')
   echo "  $summary"
   check "and the footer counts it idle, not running" "$(jq -r '.running == 0 and .idle == 1' <<<"$summary")"
-  listed=$(prompt "COURIER-CHILDREN $parent" | tool_state courier_children | jq -c --arg child "$child" '.metadata.metadata.children[] | select(.sessionID == $child)')
+  listed=$(prompt "COURIER-TREE-OF $parent" | tool_state courier_tree | jq -c --arg child "$child" '.metadata.metadata.sessions[] | select(.sessionID == $child)')
   echo "  $listed"
-  check "courier_children lists it by its new title, its last turn having succeeded before the rename" \
+  check "courier_tree lists it by its new title, its last turn having succeeded before the rename" \
     "$(jq -r '.title == "Renamed at rest" and .outcome == "succeeded" and .updated > .idle' <<<"$listed")"
 
   scenario "a child at rest after a plain decline, its busy time past its idle time, still reads idle by its transcript (#400)"
@@ -2247,7 +2271,7 @@ run_busy() {
 }
 
 run_spawn_native() {
-  scenario "native: true per spawn makes one child a subagent beside a standalone sibling in the same group, with nativeChildren off"
+  scenario "native: true per spawn makes one child a subagent beside a standalone sibling in the same group"
   parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
   api_prompt "$parent" "COURIER-MIXED"
   members=$(for _ in $(seq 1 45); do
@@ -2279,9 +2303,9 @@ run_spawn_native() {
         (map(select(startswith("<courier from=\"" + $plain + "\""))) | length == 1 and (.[0] | (contains("shown=") | not) and contains("- once:") and contains("- reject:")))')"
   check "and asked the person nothing itself" "$([ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
   turn_ended "$parent" 30
-  check "courier_children shows the subagent as native, and its sibling not" \
-    "$(api_prompt "$parent" "COURIER-CHILDREN $parent"; for _ in $(seq 1 30); do listing=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_children") | .state] | last // empty'); [ -n "$listing" ] && [ "$(jq -r '.status' <<<"$listing")" = completed ] && break; sleep 1; done
-      jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '.status == "completed" and (.metadata.children | (map(select(.sessionID == $native)) | .[0].native == true) and (map(select(.sessionID == $plain)) | .[0] | has("native") | not))' <<<"$listing")"
+  check "courier_tree shows the subagent as native, and its sibling not" \
+    "$(api_prompt "$parent" "COURIER-TREE-OF $parent"; for _ in $(seq 1 30); do listing=$(api "session/$parent/message" | jq -c '[.data[] | select(.type == "assistant") | .content[]? | select(.type == "tool" and .name == "courier_tree") | .state] | last // empty'); [ -n "$listing" ] && [ "$(jq -r '.status' <<<"$listing")" = completed ] && break; sleep 1; done
+      jq -r --arg native "$mixed_native" --arg plain "$mixed_plain" '.status == "completed" and (.metadata.sessions | (map(select(.sessionID == $native)) | .[0].native == true) and (map(select(.sessionID == $plain)) | .[0] | has("native") | not))' <<<"$listing")"
   request=$(api "session/$mixed_native/permission" | jq -r '.data[0].id // empty')
   check "the person answers the subagent's request in OpenCode's own prompt, as the TUI's view of the parent does" \
     "$([ -n "$request" ] && [ "$(person "session/$mixed_native/permission/$request/reply" '{"decision":"once"}')" = 204 ] && echo true || echo false)"
@@ -2316,15 +2340,10 @@ run_spawn_native() {
 }
 
 run_native() {
-  scenario "nativeChildren: a child started without isolate gets OpenCode's own parentID"
+  scenario "native: true starts a child with OpenCode's own parentID"
   child_delay 1000
-  stop_server
-  jq '.plugins[0].options.nativeChildren = true' "$WORK/project/opencode.json" >"$WORK/project/opencode.json.new"
-  mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
-  git -C "$WORK/project" -c user.email=e2e@example.com -c user.name=e2e commit -qam "nativeChildren"
-  start_server
   native_parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
-  api_prompt "$native_parent" "COURIER-TEST"
+  api_prompt "$native_parent" "COURIER-TEST native"
   native_child=$(spawned_by "$native_parent" 45)
   check "the parent started a child" "$([ -n "$native_child" ] && echo true || echo false)"
   info=$(session_info "$native_child")
@@ -2341,26 +2360,17 @@ run_native() {
   check "from its first spawn every request of the parent carries, once, what OpenCode's own message is, the same bytes on the request that message starts" \
     "$(for _ in $(seq 1 30); do jq -sre --arg parent "$native_parent" '[.[] | select(.session == $parent and (.tools | length > 0))] | (map(.hostReports | length > 0) | index(true)) as $i
       | $i != null and $i > 0 and (.[:$i] | all(.hostReports == [])) and (.[$i].hostReports as $first | ($first | length == 1) and (.[$i:] | all(.hostReports == $first) and any(.hostMessage)))' "$WORK/model.log" >/dev/null && { echo true; exit; }; sleep 1; done; echo false)"
-  check "the child, which can start sessions, has it in its role entry on every request, and the parent's role entry holds it" \
+  check "the parent's role entry holds it, and the child's, which started no native child of its own, does not" \
     "$([[ $(role_entry_of "$native_parent") == "opencode-courier role: root orchestrator"*$'\n'"OpenCode's own message at a turn end:"* ]] &&
-      jq -sr --arg child "$native_child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and (.[0].hostReports | length == 1) and all(.roleEntry) and (map(.hostReports) | unique | length == 1)' "$WORK/model.log" | grep -qx true && echo true || echo false)"
-  scenario "nativeChildren: an isolated child is created as before, without a parentID"
-  child_delay 1000
-  out=$(prompt "COURIER-TEST isolate")
-  parent=$(jq -r 'select(.type == "tool_use") | .sessionID' <<<"$out" | head -1)
-  child=$(tool_state courier_spawn <<<"$out" | jq -r '.metadata.metadata.sessionID')
-  check "it has no parentID and runs in its worktree" \
-    "$(session_info "$child" | jq -r '.parentID == null and (.location.directory | contains("/worktree/"))')"
-  check "the roster does not record it as native" "$(kv get "roster/$parent/$child" | jq -r 'has("native") | not')"
-  check "it reported back" "$([ -n "$(reply_time "$parent" "PARENT WOKE" 45)" ] && echo true || echo false)"
+      jq -sr --arg child "$native_child" '[.[] | select(.session == $child and (.tools | length > 0))] | length > 0 and all(.roleEntry) and all(.hostReports == [])' "$WORK/model.log" | grep -qx true && echo true || echo false)"
 
-  scenario "nativeChildren: a child does not run on its parent's session rules; its request is answered in OpenCode's own prompt"
+  scenario "a native child does not run on its parent's session rules; its request is answered in OpenCode's own prompt"
   rules='[{"action":"shell","resource":"echo courier-asks*","effect":"allow"}]'
   parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"},\"permissions\":$rules}" | jq -r '.data.id')
   inherited=$(api_post session "{\"parentID\":\"$parent\"}" | jq -r '.data.id')
   check "a session created under it without a ruleset would run on the parent's" \
     "$(session_info "$inherited" | jq -r --argjson rules "$rules" '.permissions == $rules')"
-  api_prompt "$parent" "COURIER-ASK"
+  api_prompt "$parent" "COURIER-ASK native"
   child=$(spawned_by "$parent" 45)
   check "the child, created with the courier's ruleset, does not" \
     "$(session_info "$child" | jq -r --arg parent "$parent" '.parentID == $parent and .permissions == [{ "action": "opencode_schedule_*", "resource": "*", "effect": "deny" }]')"
@@ -2375,9 +2385,9 @@ run_native() {
     "$(has_text "$parent" "CHILD DONE shell" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"once\""))')" = true ] &&
       [ "$(notices_with "$parent" asks | jq length)" = 1 ] && [ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
 
-  scenario "nativeChildren: a native grandchild's question is answered in OpenCode's own form, and the top session is only told"
+  scenario "a native grandchild's question is answered in OpenCode's own form, and the top session is only told"
   parent=$(api_post session "{\"location\":{\"directory\":\"$WORK/project\"}}" | jq -r '.data.id')
-  api_prompt "$parent" "COURIER-QUESTION nested"
+  api_prompt "$parent" "COURIER-QUESTION nested-native"
   middle=$(spawned_by "$parent" 45)
   leaf=$(spawned_by "$middle" 45)
   leaf_form=$(form_of "$leaf" "" 60)
@@ -2398,12 +2408,7 @@ run_native() {
     "$(has_text "$parent" "PARENT SETTLED" 45 >/dev/null; [ "$(notices_with "$parent" answered | jq -r 'length == 1 and (.[0] | contains("answered=\"elsewhere\""))')" = true ] &&
       [ "$(notices_with "$parent" asks | jq length)" = 1 ] && [ "$(forms_of "$parent")" = 0 ] && echo true || echo false)"
 
-  scenario "nativeChildren: an isolated child's question is still linked to the top session's"
-  ask_question "COURIER-QUESTION isolate"
-  check "the person answers in the parent's session" "$(answer_form "$parent" "$parent_form" '"Hi"')"
-  check "the child got it and reported back" "$(has_text "$parent" 'CHILD GOT [["Hi"]]' 45)"
-
-  scenario "nativeChildren: deleting a parent deletes its native children, and their report state goes"
+  scenario "deleting a parent deletes its native children, and their report state goes"
   check "the child's roster entry and report state are there" \
     "$([ -n "$(kv get "roster/$native_parent/$native_child")" ] && [ -n "$(kv get "report/$native_child/settled")" ] && echo true || echo false)"
   check "the parent is deleted" \
@@ -2466,8 +2471,8 @@ run_plugin_add() {
   mv "$WORK/project/opencode.json.new" "$WORK/project/opencode.json"
   log_start=$(($(wc -l <"$WORK/server.log") + 1))
   start_server
-  out=$(prompt "COURIER-CHILDREN ses_missing")
-  check "its courier_children tool runs" "$(tool_state courier_children <<<"$out" | jq -r '.status == "completed" and (.metadata.metadata.children | length == 0)')"
+  out=$(prompt "COURIER-TREE-OF ses_missing")
+  check "its courier_tree tool runs" "$(tool_state courier_tree <<<"$out" | jq -r '.status == "completed" and (.metadata.metadata.sessions | length == 0)')"
   entrypoint=$(tail -n +"$log_start" "$WORK/server.log" |
     sed -n 's|.*msg="loading plugin" id=opencode-courier entrypoint=file://\([^ ]*/node_modules/opencode-courier/dist/index\.js\).*|\1|p' | head -1 || true)
   check "loaded from the installed package" "$([ -n "$entrypoint" ] && echo true || echo false)"

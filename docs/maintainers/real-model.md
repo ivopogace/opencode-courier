@@ -39,7 +39,6 @@ free messages"): run it from your own machine, or with a paid provider's key.
 | `COURIER_SKILL` | | `deny` denies `courier-orchestrate` in `permissions`, so no session can load it. |
 | `COURIER_PERSON` | | `other-server`, with `permission`: the person answers through a second server. |
 | `COURIER_ANSWER` | `Hi` | With `question`: the option the person picks. |
-| `COURIER_NATIVE` | | `1` turns `nativeChildren` on, so every child is native unless the spawn says `native: false`. |
 | `COURIER_TIMEOUT` | `300` | Seconds to wait for the parent's first turn, then for the children. |
 | `E2E_WORK` | a new temp dir | Where the transcripts and logs go. |
 
@@ -108,8 +107,8 @@ a native child the script answers the child's request directly, as OpenCode's vi
 would, and makes six checks: the parent was told with the `shown="native"` notice; it neither
 answered nor asked again; the request was settled (the parent was told so, or passed `once` on with
 `courier_answer` after the person told it to); the child reported; the reply holds it. A child is
-native with `COURIER_NATIVE=1`, or when the parent spawns it with `native: true` on its own, which
-the checker reads from the spawn or the notice.
+native when the parent spawns it with `native: true` on its own, which the checker reads from the
+spawn or the notice.
 
 `--saved` re-reads a run. What only the live run saw, OpenCode's prompt or form in the parent's
 session, is kept in `summary.json` under `observed`. A `summary.json` without it has it read from the
@@ -129,7 +128,7 @@ the held prompt.
 The child is not told how to ask: the brief's line on the question tool is under test. The script
 answers with `COURIER_ANSWER` when the parent asks. Six checks: the child asked and the parent asked
 the person; it did not answer by itself; it used the child's options; it passed the answer on; the
-child reported it; the reply holds it. With `COURIER_NATIVE=1` the script answers the child's form.
+child reported it; the reply holds it.
 
 ## Recursive orchestration
 

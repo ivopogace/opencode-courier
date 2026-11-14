@@ -2,17 +2,12 @@ import type { Plugin } from "@opencode/plugin"
 import { describeFailure } from "../kernel/protocol.js"
 import { standingOf, startedAs } from "./domain.js"
 import type { CourierPorts, RosterEntry } from "./ports.js"
-import { current } from "./roster.js"
 import { groupStore } from "./store.js"
 
 type Context = Plugin.Context
 
 export interface StatusInput {
   readonly sessionID: string
-}
-
-export interface ChildrenInput {
-  readonly sessionID?: string
 }
 
 export async function status(ports: CourierPorts, input: StatusInput) {
@@ -40,11 +35,6 @@ export function lastReply(messages: Awaited<ReturnType<Context["session"]["conte
   return last?.type === "assistant"
     ? last.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
     : undefined
-}
-
-export async function listChildren(ports: CourierPorts, parentID: string) {
-  const entries = await current(ports.storage, parentID, ports.now())
-  return Promise.all(entries.map((entry) => described(ports, entry)))
 }
 
 export async function described(ports: CourierPorts, entry: RosterEntry) {

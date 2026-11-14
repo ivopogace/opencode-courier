@@ -5,10 +5,9 @@ import { cleanup } from "./cleanup.js"
 import type { CleanupPorts, CourierPorts, StopPorts } from "./ports.js"
 import { send } from "./send.js"
 import { spawn } from "./spawn.js"
-import { listChildren } from "./status.js"
 import { stop } from "./stop.js"
 import { tree } from "./subtree.js"
-import { childrenText, cleanupText, sendText, spawnText, stopText, treeText } from "./text.js"
+import { cleanupText, sendText, spawnText, stopText, treeText } from "./text.js"
 
 export const SpawnInput = Schema.Struct({
   task: Schema.String.annotate({ description: "What the new session should do. It is told who started it and how to report back." }),
@@ -42,9 +41,8 @@ export const SpawnInput = Schema.Struct({
         "true starts the session as your OpenCode subagent: it leaves OpenCode's session lists for your subagent tab, the " +
         "person answers its permission requests and questions in the view of the nearest session above it that is not a " +
         "subagent, usually the top one (only OpenCode's TUI or paired app shows them; under opencode run without --auto " +
-        "or a bare API client they are rejected or wait unseen), and deleting your session deletes it. false starts a standalone session, whatever the " +
-        "plugin's nativeChildren option says; unset, that option decides. Refused with isolate: true, as a subagent runs in " +
-        "its parent's directory.",
+        "or a bare API client they are rejected or wait unseen), and deleting your session deletes it. Unset or false starts a " +
+        "standalone session. Refused with isolate: true, as a subagent runs in its parent's directory.",
     }),
   ),
   group: Schema.optional(
@@ -93,21 +91,6 @@ export const SendInput = Schema.Struct({
         "nothing in the report matters to another part.",
     }),
   ),
-  queue: Schema.optional(
-    Schema.Boolean.annotate({
-      description:
-        "Hold the message until the target's current turn has ended, so a working target reads it only after that turn. " +
-        "Without queue the message is steered in: the target reads it at its next step, after the tool call it is " +
-        "running (a wait or a sleep included) has returned; nothing is cut short or interrupted. Use queue only for a " +
-        "message that must not be read before that turn ends.",
-    }),
-  ),
-})
-
-export const ChildrenInput = Schema.Struct({
-  sessionID: Schema.optional(
-    Schema.String.annotate({ description: "The session whose children to list; defaults to this one." }),
-  ),
 })
 
 export const TreeInput = Schema.Struct({
@@ -150,7 +133,7 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
       "back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report " +
       "instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). " +
       "Each report wakes you as it comes; a group name is for sessions whose reports are of no use to you one at a " +
-      "time, and wakes you once, with all of them. DO NOT poll it or call courier_children in a " +
+      "time, and wakes you once, with all of them. DO NOT poll it or call courier_tree in a " +
       "loop: once you have started the sessions you need, end your turn by replying without calling more tools; each " +
       "report, or each group's reports, starts a new turn in which you carry on. For a long task or batch, also " +
       "courier_later one check-in for yourself for the ungrouped sessions, and one per group, in case the reports never " +
@@ -184,25 +167,11 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
   })
 
   tools.add({
-    name: "courier_children",
-    options: { codemode: false },
-    description:
-      "List the sessions this one started with courier_spawn, with each one's state and last reply, and for one " +
-      "started in a group, its group and whether its report is held, still out, or released, e.g. after a " +
-      "compaction or restart. For a one-off look, e.g. on a scheduled check-in, not for waiting: sessions you started report back on their own.",
-    input: ChildrenInput,
-    execute: async (input, context) => {
-      const listed = await listChildren(ports.courier, input.sessionID || context.sessionID).catch(rethrow("courier_children"))
-      return { content: childrenText(listed), metadata: { children: listed } }
-    },
-  })
-
-  tools.add({
     name: "courier_tree",
     options: { codemode: false },
     description:
       "List the whole tree of sessions under this one (or under sessionID): every session started with courier_spawn " +
-      "from it, directly or through others, each with its depth, what courier_children shows, and whether it still " +
+      "from it, directly or through others, each with its depth, title, state and last reply, and whether it still " +
       "owes a report, sent progress, or ended without one, and the subagents OpenCode's subagent tool started in it, " +
       "marked subagent: true, which owe no report. For a one-off look, not for waiting. A long tree lists at most " +
       "maxTotal sessions, the live ones first, then the newest, and says how many older ones are left out.",
@@ -234,10 +203,10 @@ export function addTreeTools(tools: ToolEditor, ports: TreeToolPorts) {
     options: { codemode: false },
     description:
       "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, " +
-      "and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and " +
+      "and drop it from your children. A worktree with uncommitted changes or commits on no branch is kept and " +
       "the result lists them, the session staying listed; commit what you want to a branch and call again, or pass " +
       "force: true to discard it. A session without isolate has no worktree and is only dropped from " +
-      "courier_children. Once dropped, one in a join group that has not " +
+      "your children. Once dropped, one in a join group that has not " +
       "reported is dropped from it, so the group's other reports reach you without it; use this for a member you no " +
       "longer need a report from. It never deletes the session itself, nor the sessions it started.",
     input: CleanupInput,

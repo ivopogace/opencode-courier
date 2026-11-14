@@ -10,7 +10,6 @@ const timeout = Number(process.env.COURIER_TIMEOUT ?? 300) * 1000
 const expected = (process.env.COURIER_EXPECT ?? "").trim()
 const ANSWER = "Allow it once."
 const other = process.env.COURIER_OTHER_SERVER
-const NATIVE = process.env.COURIER_NATIVE === "1"
 
 async function api(path, init = {}, base = server) {
   const response = await fetch(`${base}/api/${path}`, {
@@ -148,7 +147,7 @@ const askedFirst = kept
   ? kept.askedFirst
   : Boolean(told) && !told.prompt && !answeredItself && (told.form !== undefined || (ended(last) && !last.error && textOf(last).trim() !== ""))
 const noticeText = kept ? (kept.noticeText ?? "") : told ? told.list[told.notice].text : ""
-const native = kept ? kept.native : NATIVE || noticeText.includes('shown="native"') || nativeSpawn(told?.list ?? [])
+const native = kept ? kept.native : noticeText.includes('shown="native"') || nativeSpawn(told?.list ?? [])
 let how = "did not ask"
 let personAt = Infinity
 const childIDOf = (text) => text.match(/<courier from="(ses_\w+)"/)?.[1]
@@ -319,7 +318,7 @@ const checks = native
       ["the parent's final reply holds it", expected !== "" && finalText.includes(expected)],
     ]
 const notes = [`the parent ${how}`]
-if (native && !NATIVE) notes.push("the parent made its child native itself (courier_spawn with native: true, or a notice with shown=\"native\"), so the native path's checks apply")
+if (native) notes.push("the parent made its child native itself (courier_spawn with native: true, or a notice with shown=\"native\"), so the native path's checks apply")
 if (report) notes.push(`the child's report carried ${statusOf(report) ? `status ${statusOf(report)}` : "no status"}`)
 if (other) notes.push(`after courier_answer on the other server, the parent said: ${short(elsewhereSaid, 600)}`)
 const asChecked = (other ? notPending : passedOn).length

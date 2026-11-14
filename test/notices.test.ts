@@ -120,11 +120,14 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("Planning the parts, staging a tightly coupled core and reviewing the merge are not in this skill: if a skill for them is listed to you, load it too.")
     expect(skill.SKILL_DESCRIPTION).toContain("2 or more independent, substantial parts touching separate files or areas")
     expect(tree.rolePart(null, limits)).toContain("Before a task with 2 or more independent, substantial parts touching separate files or areas")
-    for (const removed of ["courier_recall", "courier_note", "lessons"]) {
+    for (const removed of ["courier_recall", "courier_note", "lessons", "courier_children", "nativeChildren"]) {
       expect(tree.rolePart(null, limits)).not.toContain(removed)
       expect(tree.rolePart(0, limits)).not.toContain(removed)
       expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).not.toContain(removed)
       expect(registered.map((tool) => tool.description).join("\n")).not.toContain(removed)
+      expect(skill.SKILL_CONTENT).not.toContain(removed)
+      expect(tree.standingEntry([])).not.toContain(removed)
+      expect(tree.forkNotice("ses_orig", "ses_parent", true)).not.toContain(removed)
     }
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(kernel.SPLIT_LINE)
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
@@ -144,7 +147,7 @@ describe("envelope and child brief", () => {
     expect(tree.rolePart(null, limits)).toContain(kernel.SKILL_ID)
     expect(tree.rolePart(1, limits)).toContain(`load the ${kernel.SKILL_ID} skill`)
     expect(tree.rolePart(3, limits)).not.toContain(kernel.SKILL_ID)
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Do not poll with courier_children, courier_tree or sleep")
+    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain("Do not poll with courier_tree or sleep")
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("poll")
   })
   test("refusals", () => {
@@ -240,10 +243,6 @@ describe("tool results", () => {
     expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 1, members: 3 }, finding: "ahead" })).toMatchSnapshot()
     expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 2, members: 3 }, finding: "unsent" })).toMatchSnapshot()
     expect(tree.sendText("ses_parent", { report: true, status: "done", held: { group: "reviews", reported: 3, members: 3 }, finding: "held" })).toMatchSnapshot()
-  })
-  test("childrenText", () => {
-    expect(tree.childrenText([])).toMatchSnapshot()
-    expect(tree.childrenText([{ sessionID: "ses_child", isolated: false }])).toMatchSnapshot()
   })
   test("treeText", () => {
     expect(tree.treeText({ sessions: [] })).toMatchSnapshot()

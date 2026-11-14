@@ -68,7 +68,7 @@ function splitRule(parentID: string, depth: number, limits: Limits) {
       "One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.",
     `- Say which in one line of your reply: ${SPLIT_LINE}.`,
     "- If you split, you orchestrate: start the parts, then end your turn while they work. Do not poll with " +
-      "courier_children, courier_tree or sleep: each report wakes you. A group name is for parts whose reports are of no " +
+      "courier_tree or sleep: each report wakes you. A group name is for parts whose reports are of no " +
       "use to you one at a time: it holds them for one wake. Check and integrate each part yourself when it reports " +
       `(never hand that checking to another session), and once every part has reported, send ${parentID} one combined report.`,
   ]
@@ -181,13 +181,13 @@ export function standingEntry(rows: ReadonlyArray<StandingRow>) {
   const older = rows.length - shown.length
   return [
     `${STANDING_PREFIX} the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need ` +
-      "not look with courier_children or courier_tree; a report, a group's reports or a notice still reach you as a message.",
+      "not look with courier_tree; a report, a group's reports or a notice still reach you as a message.",
     ...shown.map((row) => {
       const title = defuseBlock(row.title.replace(/\s+/g, " ").trim())
       const group = row.group ? `; ${groupWords(row.group.name, row.group.standing)}` : ""
       return `- ${row.sessionID} "${clipText(title, TITLE_MAX)}": ${stateWords(row.state)}${group}`
     }),
-    ...(older ? [`${count(older, "older session")} not listed; courier_children lists them.`] : []),
+    ...(older ? [`${count(older, "older session")} not listed; courier_tree lists them.`] : []),
   ].join("\n")
 }
 
@@ -294,7 +294,7 @@ export function spawnText(child: {
     (child.uncommitted
       ? " Your working tree has uncommitted changes, which it does not see: commit them and tell it, or send them to it, if it needs them."
       : "") +
-    (child.rosterError ? ` It is not on your courier_children list: ${child.rosterError}` : "") +
+    (child.rosterError ? ` It is not among your children: ${child.rosterError}` : "") +
     (child.groupError ? ` It is in no group, so its report comes on its own: ${child.groupError}` : "")
   const asks = child.belowTop
     ? " Its permission requests and questions go to the top session of the tree, not to you, so a child slow to report may be waiting on the person."
@@ -341,9 +341,6 @@ export function sendText(sessionID: string, sent: Pick<Sent, "status" | "report"
   return `Delivered to ${sessionID}.`
 }
 
-export const childrenText = (listed: ReadonlyArray<unknown>) =>
-  listed.length ? JSON.stringify(listed, null, 2) : "No sessions started with courier_spawn."
-
 const keptLine = (result: Extract<CleanupResult, { readonly outcome: "kept" }>) =>
   `Kept the worktree ${result.directory} of ${result.sessionID}: it has ${result.reason}.`
 
@@ -352,8 +349,8 @@ export function cleanupText(result: CleanupResult) {
     return `${keptLine(result)} ${result.sessionID} is not dropped yet: commit what you want to keep to a branch, then call courier_cleanup again, or call it now with force: true to discard it. Either call drops ${result.sessionID}.`
   const done = {
     removed: `Removed the worktree ${result.directory} of ${result.sessionID}.`,
-    gone: `The worktree ${result.directory} of ${result.sessionID} was already gone; dropped it from courier_children.`,
-    forgotten: `${result.sessionID} ran in ${result.directory}, with no worktree of its own to remove; dropped it from courier_children.`,
+    gone: `The worktree ${result.directory} of ${result.sessionID} was already gone; dropped it from your children.`,
+    forgotten: `${result.sessionID} ran in ${result.directory}, with no worktree of its own to remove; dropped it from your children.`,
   }[result.outcome]
   if (!result.group) return done
   return `${done} Dropped it from group "${result.group}" without a report: the group's other reports reach you once they are in and your turn has ended, the message naming it, and a report it sends after all comes on its own.`
@@ -527,7 +524,7 @@ export function forkNotice(originalID: string | undefined, parentID: string | un
     ...(parent
       ? [
           `- The sessions started above with courier_spawn are the children of ${original}: their reports, the ones still pending too, and what they ask go there, never here. ` +
-            "courier_children lists none of them here: do not wait for them, and do not combine or send their reports as yours.",
+            "courier_tree lists none of them here: do not wait for them, and do not combine or send their reports as yours.",
         ]
       : []),
     "- Here you are the top session of a tree of your own, with no sessions started: the role and standing courier gave above are not yours.",

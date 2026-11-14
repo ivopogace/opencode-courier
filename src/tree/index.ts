@@ -1,6 +1,6 @@
 export { dirtyOf, headOf, inspectWorktree } from "./cleanup.js"
 export { shapeContext } from "./context.js"
-export { lineageIn, nativeRootOf, readLimits, readNativeChildren, readRemovedOptions } from "./domain.js"
+export { lineageIn, nativeRootOf, readLimits, readRemovedOptions } from "./domain.js"
 export { treeEvents, waitsOn } from "./events.js"
 export { onFork } from "./fork.js"
 export { deliverReleased } from "./group.js"

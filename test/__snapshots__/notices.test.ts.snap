@@ -15,12 +15,6 @@ exports[`tools are the nine courier tools, each a direct tool 1`] = `
     },
   ],
   [
-    "courier_children",
-    {
-      "codemode": false,
-    },
-  ],
-  [
     "courier_tree",
     {
       "codemode": false,
@@ -61,7 +55,7 @@ exports[`tools are the nine courier tools, each a direct tool 1`] = `
 
 exports[`tools courier_spawn 1`] = `
 {
-  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Each report wakes you as it comes; a group name is for sessions whose reports are of no use to you one at a time, and wakes you once, with all of them. DO NOT poll it or call courier_children in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself for the ungrouped sessions, and one per group, in case the reports never come, and courier_cancel each when its last report arrives: a report does not cancel it.",
+  "description": "Start a new OpenCode session on a task and return immediately. It runs on your model, unless you name a model or a variant (reasoning effort) fit for the task. The session reports back with courier_send, which wakes this session, and you are told if its turn fails or ends without a report instead, or it waits for a permission or asks a question (at the top of the tree; below it they go to the top). Each report wakes you as it comes; a group name is for sessions whose reports are of no use to you one at a time, and wakes you once, with all of them. DO NOT poll it or call courier_tree in a loop: once you have started the sessions you need, end your turn by replying without calling more tools; each report, or each group's reports, starts a new turn in which you carry on. For a long task or batch, also courier_later one check-in for yourself for the ungrouped sessions, and one per group, in case the reports never come, and courier_cancel each when its last report arrives: a report does not cancel it.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -112,7 +106,7 @@ exports[`tools courier_spawn 1`] = `
       "native": {
         "anyOf": [
           {
-            "description": "true starts the session as your OpenCode subagent: it leaves OpenCode's session lists for your subagent tab, the person answers its permission requests and questions in the view of the nearest session above it that is not a subagent, usually the top one (only OpenCode's TUI or paired app shows them; under opencode run without --auto or a bare API client they are rejected or wait unseen), and deleting your session deletes it. false starts a standalone session, whatever the plugin's nativeChildren option says; unset, that option decides. Refused with isolate: true, as a subagent runs in its parent's directory.",
+            "description": "true starts the session as your OpenCode subagent: it leaves OpenCode's session lists for your subagent tab, the person answers its permission requests and questions in the view of the nearest session above it that is not a subagent, usually the top one (only OpenCode's TUI or paired app shows them; under opencode run without --auto or a bare API client they are rejected or wait unseen), and deleting your session deletes it. Unset or false starts a standalone session. Refused with isolate: true, as a subagent runs in its parent's directory.",
             "type": "boolean",
           },
           {
@@ -258,17 +252,6 @@ exports[`tools courier_send 1`] = `
         "description": "The message text.",
         "type": "string",
       },
-      "queue": {
-        "anyOf": [
-          {
-            "description": "Hold the message until the target's current turn has ended, so a working target reads it only after that turn. Without queue the message is steered in: the target reads it at its next step, after the tool call it is running (a wait or a sleep included) has returned; nothing is cut short or interrupted. Use queue only for a message that must not be read before that turn ends.",
-            "type": "boolean",
-          },
-          {
-            "type": "null",
-          },
-        ],
-      },
       "sessionID": {
         "description": "The session to deliver to.",
         "type": "string",
@@ -300,32 +283,9 @@ exports[`tools courier_send 1`] = `
 }
 `;
 
-exports[`tools courier_children 1`] = `
-{
-  "description": "List the sessions this one started with courier_spawn, with each one's state and last reply, and for one started in a group, its group and whether its report is held, still out, or released, e.g. after a compaction or restart. For a one-off look, e.g. on a scheduled check-in, not for waiting: sessions you started report back on their own.",
-  "input": {
-    "additionalProperties": false,
-    "properties": {
-      "sessionID": {
-        "anyOf": [
-          {
-            "description": "The session whose children to list; defaults to this one.",
-            "type": "string",
-          },
-          {
-            "type": "null",
-          },
-        ],
-      },
-    },
-    "type": "object",
-  },
-}
-`;
-
 exports[`tools courier_tree 1`] = `
 {
-  "description": "List the whole tree of sessions under this one (or under sessionID): every session started with courier_spawn from it, directly or through others, each with its depth, what courier_children shows, and whether it still owes a report, sent progress, or ended without one, and the subagents OpenCode's subagent tool started in it, marked subagent: true, which owe no report. For a one-off look, not for waiting. A long tree lists at most maxTotal sessions, the live ones first, then the newest, and says how many older ones are left out.",
+  "description": "List the whole tree of sessions under this one (or under sessionID): every session started with courier_spawn from it, directly or through others, each with its depth, title, state and last reply, and whether it still owes a report, sent progress, or ended without one, and the subagents OpenCode's subagent tool started in it, marked subagent: true, which owe no report. For a one-off look, not for waiting. A long tree lists at most maxTotal sessions, the live ones first, then the newest, and says how many older ones are left out.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -378,7 +338,7 @@ exports[`tools courier_stop 1`] = `
 
 exports[`tools courier_cleanup 1`] = `
 {
-  "description": "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, and drop it from courier_children. A worktree with uncommitted changes or commits on no branch is kept and the result lists them, the session staying listed; commit what you want to a branch and call again, or pass force: true to discard it. A session without isolate has no worktree and is only dropped from courier_children. Once dropped, one in a join group that has not reported is dropped from it, so the group's other reports reach you without it; use this for a member you no longer need a report from. It never deletes the session itself, nor the sessions it started.",
+  "description": "Remove the git worktree of a session you started with isolate: true, once you have what you need from it, and drop it from your children. A worktree with uncommitted changes or commits on no branch is kept and the result lists them, the session staying listed; commit what you want to a branch and call again, or pass force: true to discard it. A session without isolate has no worktree and is only dropped from your children. Once dropped, one in a join group that has not reported is dropped from it, so the group's other reports reach you without it; use this for a member you no longer need a report from. It never deletes the session itself, nor the sessions it started.",
   "input": {
     "additionalProperties": false,
     "properties": {
@@ -583,7 +543,7 @@ You are at depth 1 of a session tree that goes at most 3 deep. Split your task o
 - Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
 - Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.
 - Say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part).
-- If you split, you orchestrate: start the parts, then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: each report wakes you. A group name is for parts whose reports are of no use to you one at a time: it holds them for one wake. Check and integrate each part yourself when it reports (never hand that checking to another session), and once every part has reported, send ses_parent one combined report.
+- If you split, you orchestrate: start the parts, then end your turn while they work. Do not poll with courier_tree or sleep: each report wakes you. A group name is for parts whose reports are of no use to you one at a time: it holds them for one wake. Check and integrate each part yourself when it reports (never hand that checking to another session), and once every part has reported, send ses_parent one combined report.
 
 Task:
 Fix the bug
@@ -626,7 +586,7 @@ You are at depth 1 of a session tree that goes at most 3 deep. Split your task o
 - Split it when it has 2 or more independent parts, each substantial and touching separate files or areas: start one session per part with courier_spawn, at most 5 of yours running at once and 20 in the whole tree.
 - Do it yourself when it is small, sequential or tightly coupled. Never start exactly one session for the whole task. One session for one stage is a part, not the whole: a core you stage before the rest, when 2 or more parts follow it; a review of the parts once you have merged them; the fixing of what a review found once you have verified it. One session alone, with nothing of the task done before it by you or by 2 or more parts, and fewer than 2 parts after it, is the whole task.
 - Say which in one line of your reply: \`split: no, because …; considered: <the parts you weighed>\` or \`split: <n> parts: …\` (one phrase per part).
-- If you split, you orchestrate: start the parts, then end your turn while they work. Do not poll with courier_children, courier_tree or sleep: each report wakes you. A group name is for parts whose reports are of no use to you one at a time: it holds them for one wake. Check and integrate each part yourself when it reports (never hand that checking to another session), and once every part has reported, send ses_parent one combined report.
+- If you split, you orchestrate: start the parts, then end your turn while they work. Do not poll with courier_tree or sleep: each report wakes you. A group name is for parts whose reports are of no use to you one at a time: it holds them for one wake. Check and integrate each part yourself when it reports (never hand that checking to another session), and once every part has reported, send ses_parent one combined report.
 
 Task:
 Fix the bug"
@@ -813,7 +773,7 @@ Artifacts:
 
 exports[`tool results spawnText 1`] = `"Started session ses_child in /repo. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
-exports[`tool results spawnText 2`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is not on your courier_children list: roster failed: disk full"`;
+exports[`tool results spawnText 2`] = `"Started session ses_child in /wt. It will report back with courier_send, which starts a new turn for you. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive. It is not among your children: roster failed: disk full"`;
 
 exports[`tool results spawnText 3`] = `"Started session ses_child in /repo. Its report is held with group "reviews": once every session you started in that group has reported and your turn has ended, you get their reports in one message, which starts a new turn for you; a blocked report, a report's finding, a failed turn or an end without a report still reaches you at once, and so does a question or a permission request. Once you have started every session you need, end your turn: reply without calling more tools. That does not drop the task; you carry on with it when the reports arrive."`;
 
@@ -852,17 +812,6 @@ exports[`tool results sendText 10`] = `"Recorded as your report, status done. It
 exports[`tool results sendText 11`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once every member of the group has reported (2 of 3 have). Nothing more is needed from you for it. Its finding could not be delivered ahead of it: send the finding to ses_parent now with courier_send without a status. If nothing else is left to do now, end your turn by replying without calling more tools."`;
 
 exports[`tool results sendText 12`] = `"Recorded as your report, status done. It is held with group "reviews" and goes to ses_parent in one message with the group's other reports, once ses_parent's turn has ended, yours being the last. Its finding goes in that message, under your report: with no other member left to report, nothing was sent ahead of it. If nothing else is left to do now, end your turn by replying without calling more tools."`;
-
-exports[`tool results childrenText 1`] = `"No sessions started with courier_spawn."`;
-
-exports[`tool results childrenText 2`] = `
-"[
-  {
-    "sessionID": "ses_child",
-    "isolated": false
-  }
-]"
-`;
 
 exports[`tool results treeText 1`] = `"No sessions started with courier_spawn."`;
 
@@ -952,13 +901,13 @@ It was not running: it had sent you status blocked and was waiting on your answe
 
 exports[`tool results cleanupText 1`] = `"Removed the worktree /wt of ses_child."`;
 
-exports[`tool results cleanupText 2`] = `"The worktree /wt of ses_child was already gone; dropped it from courier_children."`;
+exports[`tool results cleanupText 2`] = `"The worktree /wt of ses_child was already gone; dropped it from your children."`;
 
 exports[`tool results cleanupText 3`] = `"Kept the worktree /wt of ses_child: it has 1 uncommitted change (a.ts). ses_child is not dropped yet: commit what you want to keep to a branch, then call courier_cleanup again, or call it now with force: true to discard it. Either call drops ses_child."`;
 
-exports[`tool results cleanupText 4`] = `"ses_child ran in /repo, with no worktree of its own to remove; dropped it from courier_children."`;
+exports[`tool results cleanupText 4`] = `"ses_child ran in /repo, with no worktree of its own to remove; dropped it from your children."`;
 
-exports[`tool results cleanupText 5`] = `"ses_child ran in /repo, with no worktree of its own to remove; dropped it from courier_children. Dropped it from group "reviews" without a report: the group's other reports reach you once they are in and your turn has ended, the message naming it, and a report it sends after all comes on its own."`;
+exports[`tool results cleanupText 5`] = `"ses_child ran in /repo, with no worktree of its own to remove; dropped it from your children. Dropped it from group "reviews" without a report: the group's other reports reach you once they are in and your turn has ended, the message naming it, and a report it sends after all comes on its own."`;
 
 exports[`tool results keepReason 1`] = `"1 uncommitted change (a.ts)"`;
 
@@ -1057,21 +1006,21 @@ Courier did not start this fork. What courier gave session ses_orig stays with i
 
 exports[`turn failures forkNotice 2`] = `
 "Courier did not start this fork. What courier gave session ses_orig stays with it:
-- The sessions started above with courier_spawn are the children of session ses_orig: their reports, the ones still pending too, and what they ask go there, never here. courier_children lists none of them here: do not wait for them, and do not combine or send their reports as yours.
+- The sessions started above with courier_spawn are the children of session ses_orig: their reports, the ones still pending too, and what they ask go there, never here. courier_tree lists none of them here: do not wait for them, and do not combine or send their reports as yours.
 - Here you are the top session of a tree of your own, with no sessions started: the role and standing courier gave above are not yours."
 `;
 
 exports[`turn failures forkNotice 3`] = `
 "Courier did not start this fork. What courier gave session ses_orig stays with it:
 - The brief above from session ses_parent is the assignment of session ses_orig, which reports on it: here it is background. You report to no one: send session ses_parent nothing with courier_send unless the person asks.
-- The sessions started above with courier_spawn are the children of session ses_orig: their reports, the ones still pending too, and what they ask go there, never here. courier_children lists none of them here: do not wait for them, and do not combine or send their reports as yours.
+- The sessions started above with courier_spawn are the children of session ses_orig: their reports, the ones still pending too, and what they ask go there, never here. courier_tree lists none of them here: do not wait for them, and do not combine or send their reports as yours.
 - Here you are the top session of a tree of your own, with no sessions started: the role and standing courier gave above are not yours."
 `;
 
 exports[`turn failures forkNotice 4`] = `
 "Courier did not start this fork. What courier gave the original session stays with it:
 - The brief above from session ses_parent is the assignment of the original session, which reports on it: here it is background. You report to no one: send session ses_parent nothing with courier_send unless the person asks.
-- The sessions started above with courier_spawn are the children of the original session: their reports, the ones still pending too, and what they ask go there, never here. courier_children lists none of them here: do not wait for them, and do not combine or send their reports as yours.
+- The sessions started above with courier_spawn are the children of the original session: their reports, the ones still pending too, and what they ask go there, never here. courier_tree lists none of them here: do not wait for them, and do not combine or send their reports as yours.
 - Here you are the top session of a tree of your own, with no sessions started: the role and standing courier gave above are not yours."
 `;
 
@@ -1568,7 +1517,7 @@ exports[`clipping clipWords 3`] = `"abc… [7 more characters]"`;
 exports[`clipping clipWords 4`] = `"a bcde… [5 more characters]"`;
 
 exports[`the session instruction entries (#384) standingEntry 1`] = `
-"opencode-courier standing: the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need not look with courier_children or courier_tree; a report, a group's reports or a notice still reach you as a message.
+"opencode-courier standing: the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need not look with courier_tree; a report, a group's reports or a notice still reach you as a message.
 - ses_core "Core: the memory record": reported done; its report is held with group "wave"
 - ses_e2e "E2E scenario": working, sent progress; group "wave" waits for it
 - ses_docs "Docs": ended its turn without a report
@@ -1577,6 +1526,6 @@ exports[`the session instruction entries (#384) standingEntry 1`] = `
 `;
 
 exports[`the session instruction entries (#384) standingEntry 2`] = `
-"opencode-courier standing: the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need not look with courier_children or courier_tree; a report, a group's reports or a notice still reach you as a message.
+"opencode-courier standing: the sessions you started with courier_spawn, each with its state, kept current as it changes, so you need not look with courier_tree; a report, a group's reports or a notice still reach you as a message.
 - ses_one "One": started"
 `;

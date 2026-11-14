@@ -88,7 +88,7 @@ async function create(ports: CourierPorts, parentID: string, input: SpawnInput) 
     : undefined
   const base = worktree ? await ports.head(worktree) : undefined
   const title = input.title ?? titleOf(input.task)
-  const native = (input.native ?? ports.nativeChildren === true) && !worktree
+  const native = input.native === true && !worktree
   const child = await ports.session
     .create({
       title,
@@ -183,7 +183,7 @@ function nameBoth(ports: CourierPorts, child: RosterEntry, depth: number) {
 
 async function nameEach(ports: CourierPorts, child: RosterEntry, depth: number) {
   const { parentID } = child
-  await nameRole(ports, child.sessionID, depth, ports.nativeChildren === true)
+  await nameRole(ports, child.sessionID, depth, false)
   const rootNamed = ports.roles.get(parentID)?.entry === true
   const fresh = depth === 1 && !rootNamed
   const renamed = fresh || child.native ? await nameRole(ports, parentID, depth - 1, await hostReportsReach(ports, child)) : false
@@ -192,7 +192,7 @@ async function nameEach(ports: CourierPorts, child: RosterEntry, depth: number) 
 }
 
 async function hostReportsReach(ports: CourierPorts, child: RosterEntry) {
-  if (ports.nativeChildren === true || child.native) return true
+  if (child.native) return true
   const started = await childStore(ports.storage).children(child.parentID).catch(() => [])
   return started.some((entry) => entry.native)
 }

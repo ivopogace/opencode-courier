@@ -509,7 +509,7 @@ async function confirmForget(
 ) {
   const what = target.isolated
     ? "Its worktree is removed unless it has uncommitted changes or commits found nowhere else."
-    : "It leaves this tree and courier_children."
+    : "It leaves this tree."
   const confirmed = await ctx.ui.dialog.confirm({
     title: "Forget session",
     message: `Forget "${oneLine(target.title)}" (${target.sessionID})? ${what}`,
@@ -870,7 +870,7 @@ function TreePanel(props: {
   )
 }
 
-export const USAGE = "/courier tree opens the session tree; /courier stop [session] stops a session and those under it"
+export const USAGE = "/courier tree opens the session tree"
 
 export function addTreePanel(ctx: Context) {
   const { courier, location } = courierOf(ctx)
@@ -956,28 +956,6 @@ export function addTreePanel(ctx: Context) {
     following = before
     ctx.ui.toast.show({ title: "courier", message: "Open a session first", variant: "warning" })
   }
-  const stopUnder = async (target: string) => {
-    const route = ctx.ui.router.current()
-    if (route.type !== "session") return ctx.ui.toast.show({ title: "courier", message: "Open a session first", variant: "warning" })
-    const read = await courier.tree({ sessionID: route.sessionID }, { location: location(route.sessionID) }).then(
-      (tree) => ({ rows: tree.rows }),
-      (error: unknown) => ({ rows: [] as Row[], error }),
-    )
-    const rows = read.rows
-    const spawned = rows.filter((row) => !row.subagent)
-    if (!target && "error" in read) return ctx.ui.toast.show({ title: "courier stop", message: reason(read.error), variant: "error" })
-    if (!target && !spawned.length)
-      return ctx.ui.toast.show({ title: "courier stop", message: "No session started with courier_spawn under this one.", variant: "warning" })
-    const sessionID =
-      target ||
-      (await ctx.ui.dialog.select({
-        title: "Stop which session?",
-        options: spawned.map((row) => ({ title: row.title, value: row.sessionID, description: `${row.sessionID} · ${statusLine(row)}` })),
-      }))
-    if (!sessionID) return
-    const row = rows.find((one) => one.sessionID === sessionID)
-    await confirmStop(ctx, courier, location, route.sessionID, { sessionID, title: row?.title ?? sessionID, under: row ? reach(rows, sessionID) - 1 : 0 })
-  }
   ctx.keymap.layer(() => ({
     mode: "global",
     commands: [
@@ -988,9 +966,8 @@ export function addTreePanel(ctx: Context) {
         group: "Courier",
         slash: { name: "courier", arguments: true },
         run: async (input) => {
-          const [verb = "tree", target = ""] = (input ?? "").trim().split(/\s+/).filter(Boolean)
+          const [verb = "tree"] = (input ?? "").trim().split(/\s+/).filter(Boolean)
           if (verb === "tree") return openPanel()
-          if (verb === "stop") return stopUnder(target)
           ctx.ui.toast.show({ title: "courier", message: USAGE, variant: "warning" })
         },
       },

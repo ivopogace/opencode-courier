@@ -16,7 +16,7 @@ export const MAX_LISTED = 50
 
 export async function cleanup(ports: CleanupPorts, parentID: string, input: CleanupInput): Promise<CleanupResult> {
   const entry = await childStore(ports.storage).entry(parentID, input.sessionID)
-  if (!entry) throw new Error(`${input.sessionID} is not on the courier_children list of ${parentID}.`)
+  if (!entry) throw new Error(`${input.sessionID} is not a child of ${parentID}: courier_cleanup takes a session you started yourself.`)
   const { directory } = entry
   const forget = async () => {
     const group = await forgetDropped(ports, entry)

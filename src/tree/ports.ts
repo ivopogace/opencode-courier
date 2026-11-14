@@ -144,7 +144,6 @@ export interface CourierPorts {
   readonly models: () => Promise<ReadonlyArray<KnownModel>>
   readonly defaultModel: () => Promise<ModelRef | undefined>
   readonly limits: Limits
-  readonly nativeChildren?: boolean
   readonly gate: SpawnGate
   readonly roles: Map<string, Role>
   readonly nudge: () => void
@@ -279,7 +278,6 @@ export type Waits = (ports: Pick<WatchPorts, "storage" | "permissions">, session
 export interface ContextPorts {
   readonly storage: RosterStorage
   readonly limits: Limits
-  readonly nativeChildren?: boolean
   readonly roles: Map<string, Role>
   readonly session: Pick<Context["session"], "get">
   readonly instructions?: Context["session"]["instructions"]

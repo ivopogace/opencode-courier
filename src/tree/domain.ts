@@ -26,16 +26,11 @@ export function readLimits(options: unknown) {
   return { limits, problems }
 }
 
-export function readNativeChildren(options: unknown) {
-  const value: unknown = obj(options).nativeChildren
-  if (value === undefined || typeof value === "boolean") return { nativeChildren: value === true, problems: [] }
-  return { nativeChildren: false, problems: [`nativeChildren must be true or false, not ${JSON.stringify(value)}; using false`] }
-}
-
 type Times = Awaited<ReturnType<Context["session"]["get"]>>["time"]
 
 const REMOVED_OPTIONS: Readonly<Record<string, string>> = {
   memory: "memory was removed in 0.17.0. Remove it from the config.",
+  nativeChildren: "it was removed in 0.17.0. Remove it from the config; a spawn asks for a native child with native: true.",
 }
 
 export function readRemovedOptions(options: unknown) {

@@ -87,9 +87,9 @@ describe("standingEntry", () => {
     expect(text.split("\n")).toHaveLength(STANDING_MAX + 2)
     expect(text).toContain(`- ses_3 "part 3"`)
     expect(text).not.toContain(`- ses_2 "part 2"`)
-    expect(text).toEndWith("3 older sessions not listed; courier_children lists them.")
+    expect(text).toEndWith("3 older sessions not listed; courier_tree lists them.")
     expect(standingEntry(rows(STANDING_MAX))).not.toContain("not listed")
-    expect(standingEntry(rows(STANDING_MAX + 1))).toEndWith("1 older session not listed; courier_children lists them.")
+    expect(standingEntry(rows(STANDING_MAX + 1))).toEndWith("1 older session not listed; courier_tree lists them.")
   })
 
   test("stays well under a few KiB at its longest", () => {
@@ -164,8 +164,8 @@ describe("standingRows and syncStanding", () => {
     instructions.entry.list = async () => Promise.reject(new Error("db locked"))
     expect(await syncStanding(ports, "ses_parent")).toBe("skipped")
     expect(logged).toEqual([
-      "courier: the standing entry of ses_parent could not be written, so it may be behind courier_children: Error: no such route",
-      "courier: the standing entry of ses_parent could not be written, so it may be behind courier_children: Error: db locked",
+      "courier: the standing entry of ses_parent could not be written, so it may be behind courier_tree: Error: no such route",
+      "courier: the standing entry of ses_parent could not be written, so it may be behind courier_tree: Error: db locked",
     ])
   })
 })

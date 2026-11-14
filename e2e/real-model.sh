@@ -152,19 +152,6 @@ if [ "${COURIER_PERSON:-}" = other-server ]; then
   curl -sf -u "opencode:$OPENCODE_PASSWORD" "$OTHER/api/info" >/dev/null || { echo "the second server did not start; see $WORK/server-b.log"; exit 1; }
   echo "a second server on the same data directory: $OTHER"
 fi
-if [ -n "${COURIER_SEED:-}" ]; then
-  probe=$(curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' \
-    --data "$(jq -n --arg directory "$WORK/project" '{ location: { directory: $directory } }')" "$SERVER/api/session")
-  project=$(jq -r '.data.projectID // empty' <<<"$probe")
-  [ -z "$project" ] || curl -sf -o /dev/null -u "opencode:$OPENCODE_PASSWORD" -X DELETE "$SERVER/api/session/$(jq -r '.data.id' <<<"$probe")" || true
-  [ -n "$project" ] || project=$(api project | jq -r --arg dir "$WORK/project" 'first(.[] | select(.canonical == $dir) | .id) // .[0].id')
-  [ "$project" != null ] && [ -n "$project" ] || { echo "could not find the project's id to seed under"; exit 1; }
-  jq -r 'keys[]' "$COURIER_SEED" | while IFS= read -r key; do
-    XDG_DATA_HOME=$XDG_DATA_HOME bun "$ROOT/e2e/kv.ts" set "${key//<project>/$project}" \
-      "$(jq -r --arg key "$key" --arg project "$project" '.[$key] | tojson | gsub("<project>"; $project)' "$COURIER_SEED")" @courier
-    echo "seeded ${key//<project>/$project}"
-  done
-fi
 echo "parent prompt: $PROMPT"
 
 post() { curl -sf -u "opencode:$OPENCODE_PASSWORD" -X POST -H 'content-type: application/json' --data "$2" "$SERVER/api/$1"; }

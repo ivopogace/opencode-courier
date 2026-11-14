@@ -152,12 +152,6 @@ function decide(body) {
       if (call?.function?.name === "courier_later") return { tool: "courier_send", args: { sessionID: startedBy[1], message: "MID DONE BEFORE CHECK-IN", status: "done" } }
       if (call?.function?.name === "courier_send") return { text: "MID REPORTED" }
     }
-    if (startedBy && first.includes("CHILD-NOTES-MID")) {
-      if (call?.function?.name === "courier_note") return { tool: "courier_spawn", args: { task: "CHILD-NOTES-LEAF CHILD-FORCES" } }
-      if (call?.function?.name === "courier_spawn") return { text: "MID SPAWNED LEAF" }
-    }
-    if (startedBy && first.includes("CHILD-NOTES-LEAF") && call?.function?.name === "courier_note")
-      return { tool: "courier_send", args: { sessionID: startedBy[1], message: `LEAF GOT ${result}`, status: "done" } }
     if (call?.function?.name === "courier_spawn" && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-LEAF"))
       return { tool: "courier_send", args: { sessionID: startedBy[1], message: `LEAF GOT ${result}`, status: "done" } }
     if ((call?.function?.name === "shell" || call?.function?.name === "websearch") && startedBy)
@@ -225,8 +219,6 @@ function decide(body) {
     return { calls: [0, 1].map(() => ({ tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair", native: false } })) }
   if (parent && recent.includes("CHILD-GROUPS"))
     return { calls: [0, 1].map(() => ({ tool: "courier_spawn", args: { task: "CHILD-QUICK", group: "pair" } })) }
-  if (parent && recent.includes("CHILD-NOTES-MID")) return { tool: "courier_note", args: { text: "Noted from depth 1" } }
-  if (parent && recent.includes("CHILD-NOTES-LEAF")) return { tool: "courier_note", args: { text: "Noted from a leaf" } }
   if (parent && recent.includes("CHILD-QUICK"))
     return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD DONE QUICKLY", status: "done" }, quick: true }
   if (parent && recent.includes("CHILD-PROGRESSES")) return { tool: "courier_send", args: { sessionID: parent[1], message: "CHILD HALFWAY" } }
@@ -295,11 +287,6 @@ function decide(body) {
   if (/<courier from="ses_\w+" (answered|settled)=/.test(recent) && !/<courier from="ses_\w+" status="/.test(recent)) return { text: "PARENT SETTLED" }
   if (!startedBy && recent.includes("ROLLING FIRST DONE")) return { tool: "courier_spawn", args: { task: "CHILD-ROLLING-NEXT", native: false } }
   if (/<courier from="ses_\w+" ended="without-report">/.test(recent)) return { text: "PARENT TOLD SILENT" }
-  if (startedBy && /<courier from="ses_\w+" status="done">/.test(recent) && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-NOTES-MID")) {
-    const noteID = messages.flatMap((message) => message.tool_calls ?? []).find((item) => item.function?.name === "courier_note")?.id
-    const noted = textOf(messages.find((message) => message.role === "tool" && message.tool_call_id === noteID)?.content)
-    return { tool: "courier_send", args: { sessionID: startedBy[1], message: `MID NOTE ${noted.replace(/\s+/g, " ")} MID GOT ${recent.match(/LEAF GOT [^\n]*/)?.[0] ?? "nothing"}`, status: "done" } }
-  }
   if (/<courier from="[^"]*" group="/.test(recent) && startedBy && textOf(messages.find((message) => message.role === "user")?.content).includes("CHILD-EARLY-MID"))
     return { text: "MID SAW GROUP" }
   if (/<courier from="[^"]*" group="/.test(recent) && startedBy)
@@ -315,11 +302,6 @@ function decide(body) {
     return { tool: "courier_later", args: { message: "CHECK-IN", delayMinutes: later[1] === "-STRING" ? later[2] : Number(later[2]) } }
   if (recent.includes('<skill_content name="courier-orchestrate">')) return { text: "SKILL SEEN" }
   if (recent.includes("COURIER-SKILL")) return { tool: "skill", args: { id: "courier-orchestrate" } }
-  if (recent.includes("COURIER-NOTE-BELOW")) return { tool: "courier_spawn", args: { task: "CHILD-NOTES-MID" } }
-  const noting = recent.match(/COURIER-NOTE ([^"\n]+)/)
-  if (noting) return { tool: "courier_note", args: { text: noting[1] } }
-  const recallOf = recent.match(/COURIER-RECALL(?: (ses_\w+))?/)
-  if (recallOf) return { tool: "courier_recall", args: recallOf[1] ? { sessionID: recallOf[1] } : {} }
   const clean = recent.match(/COURIER-CLEANUP (ses_\w+)( force)?/)
   if (clean) return { tool: "courier_cleanup", args: { sessionID: clean[1], ...(clean[2] ? { force: true } : {}) } }
   if (recent.includes("COURIER-MID-BREAKS")) return { tool: "courier_spawn", args: { task: "CHILD-MID-BREAKS" } }
@@ -636,7 +618,6 @@ function statusDown(messages, lastAssistant) {
 function roleEntry(messages, lastAssistant) {
   const recent = messages.slice(lastAssistant + 1).map((message) => textOf(message.content)).join("\n")
   if (recent.includes("CHILD-ROLE-AGAIN")) return { text: "LEAF AGAIN" }
-  if (recent.includes("COURIER-NOTE ")) return undefined
   const first = textOf(messages.find((message) => message.role === "user")?.content)
   const last = messages.at(-1)
   const briefedBy = first.match(/You were started by session (ses_\w+)/)

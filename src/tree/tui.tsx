@@ -872,11 +872,7 @@ function TreePanel(props: {
 
 export const USAGE = "/courier tree opens the session tree; /courier stop [session] stops a session and those under it"
 
-export type Verb = { readonly run: () => void; readonly usage: string }
-
-export const usageWith = (verbs: Readonly<Record<string, Verb>>) => [USAGE, ...Object.values(verbs).map((verb) => verb.usage)].join("; ")
-
-export function addTreePanel(ctx: Context, verbs: Readonly<Record<string, Verb>> = {}) {
+export function addTreePanel(ctx: Context) {
   const { courier, location } = courierOf(ctx)
   const animations = animationsOn(ctx.options)
   const [changed, stopListening] = changes(ctx, PANEL_CHANGES, PANEL_SETTLE_MS)
@@ -988,16 +984,14 @@ export function addTreePanel(ctx: Context, verbs: Readonly<Record<string, Verb>>
       {
         id: "courier.command",
         title: "Courier",
-        description: usageWith(verbs),
+        description: USAGE,
         group: "Courier",
         slash: { name: "courier", arguments: true },
         run: async (input) => {
           const [verb = "tree", target = ""] = (input ?? "").trim().split(/\s+/).filter(Boolean)
           if (verb === "tree") return openPanel()
           if (verb === "stop") return stopUnder(target)
-          const further = Object.hasOwn(verbs, verb) ? verbs[verb] : undefined
-          if (further) return further.run()
-          ctx.ui.toast.show({ title: "courier", message: usageWith(verbs), variant: "warning" })
+          ctx.ui.toast.show({ title: "courier", message: USAGE, variant: "warning" })
         },
       },
       { id: "courier.tree", title: "Courier session tree", group: "Courier", palette: true, run: openPanel },

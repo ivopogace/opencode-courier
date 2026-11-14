@@ -1,9 +1,7 @@
 import { existsSync } from "node:fs"
-import { isStatus, type Status } from "../kernel/protocol.js"
 import { isExpired as expiredBy, type Exists } from "./domain.js"
 import { forgetChild, forgetReports } from "./forget.js"
 import type { ReportKeys, RosterEntry, RosterStorage } from "./ports.js"
-import { stoppedSincePrompt } from "./report.js"
 import { childStore } from "./store.js"
 
 export { RETENTION_MS, type Exists } from "./domain.js"
@@ -14,37 +12,6 @@ export async function allEntries(storage: RosterStorage) {
 
 export async function lineage(storage: RosterStorage, sessionID: string) {
   return childStore(storage).lineage(sessionID)
-}
-
-export async function indexedLineage(storage: RosterStorage, sessionID: string) {
-  return childStore(storage).indexedLineage(sessionID)
-}
-
-export async function childrenOf(storage: RosterStorage, parentID: string) {
-  return childStore(storage).children(parentID)
-}
-
-export interface ReportState {
-  readonly known: boolean
-  readonly owes: boolean
-  readonly ended?: "failed" | "interrupted"
-  readonly status?: Status
-  readonly stopped: boolean
-}
-
-export async function reportState(storage: RosterStorage, sessionID: string): Promise<ReportState> {
-  const children = childStore(storage)
-  const [{ prompt, settled }, stopped] = await Promise.all([children.notes(sessionID, ["prompt", "settled"]), stoppedSincePrompt(children, sessionID)])
-  const known = prompt.at !== undefined
-  const done = known && settled.at !== undefined && settled.at >= prompt.at!
-  const by = settled.by
-  return {
-    known,
-    owes: known && !done,
-    ...(done && (by === "failed" || by === "interrupted") ? { ended: by } : {}),
-    ...(isStatus(settled.status) ? { status: settled.status } : {}),
-    stopped,
-  }
 }
 
 export async function answeringTop(storage: RosterStorage, sessionID: string, callerID: string, what: string) {

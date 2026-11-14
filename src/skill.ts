@@ -62,9 +62,7 @@ export const SKILL_CONTENT = [
   "",
   "## 6. Done",
   "",
-  "The task is done only when every part is verified and integrated. At the root, before you reply to the person: one " +
-    "courier_note if the next tree in this project should know something about running one like this; none when there " +
-    "is nothing.",
+  "The task is done only when every part is verified and integrated.",
 ].join("\n")
 
 export type SkillEditor = Parameters<Parameters<Plugin.Context["skill"]["transform"]>[0]>[0]

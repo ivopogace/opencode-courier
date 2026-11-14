@@ -219,19 +219,15 @@ test("registers the courier tools", async () => {
     "courier_answer",
     "courier_later",
     "courier_cancel",
-    "courier_recall",
-    "courier_note",
   ])
 })
 
-test("registers the courier RPCs for the TUI part, the tree's, the person's and the memory's, read from this location's storage", async () => {
+test("registers the courier RPCs for the TUI part, the tree's and the person's, read from this location's storage", async () => {
   const { rpcs } = await setUp()
 
-  expect([...rpcs.keys()]).toEqual(["courier", "courier-person", "courier-memory"])
+  expect([...rpcs.keys()]).toEqual(["courier", "courier-person"])
   expect(await rpcs.get("courier")!.handlers.summary({ sessionID: "ses_none" })).toEqual({ running: 0, waiting: 0, idle: 0, groups: [] })
   expect(await rpcs.get("courier-person")!.handlers.asks({ sessionID: "ses_none" })).toEqual({ top: "ses_none", sessions: [], permissions: [], questions: [] })
-  expect(await rpcs.get("courier-memory")!.handlers.records({})).toEqual({ memory: true, projectID: expect.any(String), records: [] })
-  expect(await rpcs.get("courier-memory")!.handlers.forget({ sessionID: "ses_none" })).toEqual({ outcome: "none" })
 })
 
 test("loads all the same when the host cannot register the RPC, and logs it", async () => {
@@ -240,7 +236,7 @@ test("loads all the same when the host cannot register the RPC, and logs it", as
   try {
     const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { rpc: undefined })
 
-    expect(tools.size).toBe(11)
+    expect(tools.size).toBe(9)
     expect(hooks.has("context")).toBe(true)
     expect(logged.filter((line) => line.startsWith("courier rpc: not registered"))).toHaveLength(1)
   } finally {
@@ -296,7 +292,7 @@ test("loads all the same on a host that refuses the fork hook, and logs it", asy
   try {
     const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { refusesHook: "fork" })
 
-    expect(tools.size).toBe(11)
+    expect(tools.size).toBe(9)
     expect(hooks.has("experimental.idle")).toBe(true)
     expect(hooks.has("fork")).toBe(false)
     expect(logged.filter((line) => line.startsWith("courier fork: not registered"))).toHaveLength(1)
@@ -311,7 +307,7 @@ test("loads all the same on a host without the experimental.idle hook, and logs 
   try {
     const { tools, hooks } = await setUp({}, undefined, [], pinned, Promise.resolve(), { refusesHook: "experimental.idle" })
 
-    expect(tools.size).toBe(11)
+    expect(tools.size).toBe(9)
     expect(hooks.has("context")).toBe(true)
     expect(hooks.has("experimental.idle")).toBe(false)
     expect(logged.filter((line) => line.startsWith("courier idle: not registered"))).toHaveLength(1)
@@ -336,10 +332,10 @@ test("registers them as direct tools, not code-mode ones only reachable through 
   for (const tool of tools.values()) expect(tool.options).toEqual({ codemode: false })
 })
 
-test("its context hook, with the limits from the options, hides courier_spawn, courier_recall and courier_note from a child at maxDepth", async () => {
+test("its context hook, with the limits from the options, hides courier_spawn from a child at maxDepth", async () => {
   const { tools, hooks } = await setUp({}, { maxDepth: 1 })
   await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
-  const event = { sessionID: "ses_child", tools: { courier_spawn: {}, courier_send: {}, courier_recall: {}, courier_note: {} }, system: [] as any[] }
+  const event = { sessionID: "ses_child", tools: { courier_spawn: {}, courier_send: {} }, system: [] as any[] }
 
   await hooks.get("context")!(event)
 
@@ -352,20 +348,20 @@ test("its context hook, with the limits from the options, hides courier_spawn, c
 
 test("its context hook points a session nobody spawned, with no children, to the skill", async () => {
   const { hooks } = await setUp()
-  const event = { sessionID: "ses_alone", tools: { courier_spawn: {}, courier_send: {}, courier_recall: {}, courier_note: {} }, system: [] as any[] }
+  const event = { sessionID: "ses_alone", tools: { courier_spawn: {}, courier_send: {} }, system: [] as any[] }
 
   await hooks.get("context")!(event)
 
-  expect(Object.keys(event.tools)).toEqual(["courier_spawn", "courier_send", "courier_recall", "courier_note"])
+  expect(Object.keys(event.tools)).toEqual(["courier_spawn", "courier_send"])
   expect(event.system).toEqual([{ type: "text", text: rolePart(null, DEFAULT_LIMITS) }])
 })
 
-test("its context hook gives an OpenCode subagent of a courier child no role part, courier_spawn, courier_recall or courier_note", async () => {
+test("its context hook gives an OpenCode subagent of a courier child no role part and no courier_spawn", async () => {
   const { tools, hooks, session } = await setUp()
   await tools.get("courier_spawn").execute({ task: "Fix the bug" }, { sessionID: "ses_parent" })
   const get = session.get
   session.get = async (input: any) => ({ ...(await get(input)), ...(input.sessionID === "ses_sub" ? { parentID: "ses_child" } : {}) })
-  const event = { sessionID: "ses_sub", tools: { courier_spawn: {}, courier_send: {}, courier_recall: {}, courier_note: {} }, system: [] as any[] }
+  const event = { sessionID: "ses_sub", tools: { courier_spawn: {}, courier_send: {} }, system: [] as any[] }
 
   await hooks.get("context")!(event)
 
@@ -378,6 +374,31 @@ test("logs a limit option it cannot use, and keeps that limit's default", async 
   try {
     await setUp({}, { maxChildren: -1 })
     expect(logged.mock.calls.map((call) => call[0])).toContain("courier: maxChildren must be a positive integer, not -1; using 5")
+  } finally {
+    logged.mockRestore()
+  }
+})
+
+test("does not read a memory option present in the options, whatever its value, and logs one line for it", async () => {
+  for (const memory of [true, false, "yes"]) {
+    const logged = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const { tools, rpcs } = await setUp({}, { memory, maxChildren: 2 })
+      const lines = logged.mock.calls.map((call) => String(call[0])).filter((line) => line.includes("memory"))
+      expect(lines).toEqual(["courier: the memory option is not read: memory was removed in 0.17.0. Remove it from the config."])
+      expect([...tools.keys()].filter((name) => name === "courier_recall" || name === "courier_note")).toEqual([])
+      expect([...rpcs.keys()]).not.toContain("courier-memory")
+    } finally {
+      logged.mockRestore()
+    }
+  }
+})
+
+test("logs no memory line without a memory option", async () => {
+  const logged = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    await setUp({}, { maxChildren: 2 })
+    expect(logged.mock.calls.map((call) => String(call[0])).filter((line) => line.includes("memory"))).toEqual([])
   } finally {
     logged.mockRestore()
   }

@@ -26,7 +26,6 @@ import {
   type PersonState,
   type QuestionPorts,
 } from "./person/index.js"
-import { addMemoryTools, lessonsOf, memoryEvents, NOTE_TOOL, readMemory, RECALL_TOOL, registerMemoryRpc, sweepRecords, type MemoryPorts, type MemoryState } from "./memory/index.js"
 import { addSkill } from "./skill.js"
 import {
   addTreeTools,
@@ -40,6 +39,7 @@ import {
   pruneExpired,
   readLimits,
   readNativeChildren,
+  readRemovedOptions,
   registerTreeRpc,
   shapeContext,
   treeEvents,
@@ -58,8 +58,6 @@ const inbox = sharedState("inbox", () => new Map<string, string>())
 
 const shown = sharedState<FormsShown>("formsShown", () => new Map())
 
-const memoryState = sharedState<MemoryState>("memory", () => ({ windows: new Map(), off: new Set(), tops: new Set(), seen: new Set() }))
-
 const jobs: TickJob[] = [
   dueJob,
   (owner, claimed) => deliverReleased(owner.later as LaterPorts, claimed),
@@ -76,7 +74,7 @@ const personState: PersonState = { ...watched, forms: hub.forms, shown }
 
 const outside = waitsOn(asksPermission, asksQuestion, isScheduled)
 
-const eventModules = [treeEvents(watchState, outside), personEvents(personState), memoryEvents(memoryState)]
+const eventModules = [treeEvents(watchState, outside), personEvents(personState)]
 
 export const courier = () => Plugin.define({
   id: "courier",
@@ -99,10 +97,8 @@ export const courier = () => Plugin.define({
     }
     const { limits, problems } = readLimits(ctx.options)
     const { nativeChildren, problems: nativeProblems } = readNativeChildren(ctx.options)
-    const { memory, problems: memoryProblems } = readMemory(ctx.options)
-    for (const problem of [...problems, ...nativeProblems, ...memoryProblems]) log(`courier: ${problem}`)
+    for (const problem of [...problems, ...nativeProblems, ...readRemovedOptions(ctx.options)]) log(`courier: ${problem}`)
     const roles = new Map<string, Role>()
-    const memoryPorts: MemoryPorts = { storage: ctx.storage, session: ctx.session, now: Date.now, log, projectID: ctx.location.project.id, memory, maxDepth: limits.maxDepth }
     const ports: CourierPorts = {
       limits,
       nativeChildren,
@@ -110,7 +106,6 @@ export const courier = () => Plugin.define({
       roles,
       nudge,
       log,
-      entries: () => lessonsOf(memoryPorts),
       session: ctx.session,
       agent: ctx.agent,
       worktree: ctx.worktree,
@@ -155,24 +150,16 @@ export const courier = () => Plugin.define({
       addTreeTools(tools, { courier: ports, cleanup: cleanupPorts, stop: stopPorts })
       addPersonTools(tools, { answer: answerPorts, questions: questionPorts, waiting: watched.waiting })
       addSchedulingTools(tools, later)
-      addMemoryTools(tools, { memory: memoryPorts, state: memoryState })
     })
     await ctx.skill.transform(addSkill)
     await Promise.resolve()
       .then(() => registerTreeRpc(ctx.rpc, stopPorts))
       .then(() => registerPersonRpc(ctx.rpc, { questions: questionPorts, permissions }))
-      .then(() => registerMemoryRpc(ctx.rpc, memoryPorts))
       .catch((error: unknown) => log(`courier rpc: not registered, the TUI part shows nothing and cannot stop: ${String(error)}`))
     const instructions = (ctx.session as Partial<typeof ctx.session>).instructions
-    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, session: ctx.session, limits, nativeChildren, roles, instructions, hiddenFromLeaf: [RECALL_TOOL, NOTE_TOOL], log }, event))
+    await ctx.session.hook("context", (event) => shapeContext({ storage: ctx.storage, session: ctx.session, limits, nativeChildren, roles, instructions, log }, event))
 
     const pruned = pruneExpired(ctx.storage, Date.now()).catch((error: unknown) => log(`courier roster prune: ${String(error)}`))
-    const swept = sweepRecords(ctx.storage, Date.now()).catch((error: unknown) => log(`courier memory sweep: ${String(error)}`))
-    const windowed = ports
-      .models()
-      .then((models) => models.forEach(({ providerID, id, context }) => memoryState.windows.set(`${providerID}/${id}`, { providerID, id, context })))
-      .catch((error: unknown) => log(`courier memory: cannot list the models' context windows: ${String(error)}`))
-    if (!memory) memoryState.off.add(ctx.location.directory)
     const leaveRelay = joinRelay(questionPorts)
     const noticed = noticeCutOff(questionPorts).catch((error: unknown) =>
       questionPorts.log(`courier question: stored questions: ${String(error)}`),
@@ -206,11 +193,8 @@ export const courier = () => Plugin.define({
     const leaveHub = join(member)
     track(member, pruned)
     track(member, noticed)
-    track(member, swept)
-    track(member, windowed)
     return async () => {
       const leftHub = leaveHub()
-      if (!memory) memoryState.off.delete(ctx.location.directory)
       leaveRelay()
       await leftHub
     }

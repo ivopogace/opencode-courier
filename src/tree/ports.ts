@@ -122,13 +122,6 @@ export type Instructions = Partial<Pick<Context["session"], "instructions">>
 
 export type Lister = Partial<Pick<Context["session"], "list">>
 
-export interface Entry {
-  readonly key: string
-  readonly value: string
-}
-
-export type Entries = () => Promise<ReadonlyArray<Entry>>
-
 export interface StandingPorts {
   readonly storage: RosterStorage
   readonly now: () => number
@@ -138,7 +131,6 @@ export interface StandingPorts {
 
 export interface CourierPorts {
   readonly session: Pick<Context["session"], "create" | "prompt" | "synthetic" | "get" | "context" | "interrupt"> & Instructions & Lister
-  readonly entries?: Entries
   readonly agent: Pick<Context["agent"], "get">
   readonly worktree: Pick<Context["worktree"], "create" | "remove">
   readonly projectID: string
@@ -291,6 +283,5 @@ export interface ContextPorts {
   readonly roles: Map<string, Role>
   readonly session: Pick<Context["session"], "get">
   readonly instructions?: Context["session"]["instructions"]
-  readonly hiddenFromLeaf?: ReadonlyArray<string>
   readonly log: (message: string) => void
 }

@@ -6,21 +6,18 @@ import * as skill from "../src/skill.js"
 import * as tree from "../src/tree/text.js"
 import * as person from "../src/person/text.js"
 import * as scheduling from "../src/scheduling/text.js"
-import * as memory from "../src/memory/text.js"
 import { addTreeTools } from "../src/tree/index.js"
 import { addPersonTools } from "../src/person/index.js"
 import { addSchedulingTools } from "../src/scheduling/index.js"
-import { addMemoryTools } from "../src/memory/index.js"
 
 const registered: any[] = []
 const editor = { add: (tool: unknown) => registered.push(tool) } as unknown as ToolEditor
 addTreeTools(editor, {} as never)
 addPersonTools(editor, {} as never)
 addSchedulingTools(editor, {} as never)
-addMemoryTools(editor, {} as never)
 
 describe("tools", () => {
-  test("are the eleven courier tools, each a direct tool", () => {
+  test("are the nine courier tools, each a direct tool", () => {
     expect(registered.map((tool) => [tool.name, tool.options])).toMatchSnapshot()
   })
 
@@ -110,14 +107,12 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("At the root, a permission request or question from below arrives with its own instructions: follow them, and never answer for the person")
     expect(skill.SKILL_CONTENT).toContain("Open the files and run the project's checks yourself")
     expect(skill.SKILL_CONTENT).toContain("The task is done only when every part is verified and integrated")
-    expect(skill.SKILL_CONTENT).toContain(`one ${memory.NOTE_TOOL} if the next tree in this project should know something`)
-    for (const cut of ["courier_answer", "relayed nowhere", "native", "model and variant", "courier_recall", "delivers", "failed turn does not", "names your depth", "permission rule"])
+    for (const cut of ["courier_answer", "relayed nowhere", "native", "model and variant", "courier_recall", "courier_note", "delivers", "failed turn does not", "names your depth", "permission rule"])
       expect(skill.SKILL_CONTENT).not.toContain(cut)
     expect(skill.SKILL_DESCRIPTION).toContain("Load it when you decide whether to split")
     expect(skill.SKILL_DESCRIPTION).not.toContain("before you split")
     expect(skill.SKILL_CONTENT).not.toContain("bun run <script>")
     expect(skill.SKILL_CONTENT).toContain("Name the skills it should load for its part, from those listed to you")
-    expect(registered.find((tool) => tool.name === memory.RECALL_TOOL).description).toContain("a session another session started reads none")
     expect(skill.SKILL_CONTENT).not.toContain("about splitting work here")
     for (const policy of ["When the core is coupled", "review stage", "scout", "reviewer", "verifier", "implementor", "count 6 live sessions", "bun run", "node_modules", "pull request"])
       expect(skill.SKILL_CONTENT).not.toContain(policy)
@@ -125,10 +120,12 @@ describe("envelope and child brief", () => {
     expect(skill.SKILL_CONTENT).toContain("Planning the parts, staging a tightly coupled core and reviewing the merge are not in this skill: if a skill for them is listed to you, load it too.")
     expect(skill.SKILL_DESCRIPTION).toContain("2 or more independent, substantial parts touching separate files or areas")
     expect(tree.rolePart(null, limits)).toContain("Before a task with 2 or more independent, substantial parts touching separate files or areas")
-    expect(memory.NOTE_EMPTY).toContain("with the job it comes from and the reason")
-    expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).not.toContain(memory.NOTE_TOOL)
-    expect(tree.rolePart(0, limits)).not.toContain(memory.NOTE_TOOL)
-    expect(tree.rolePart(null, limits)).toContain(`call ${memory.RECALL_TOOL} once`)
+    for (const removed of ["courier_recall", "courier_note", "lessons"]) {
+      expect(tree.rolePart(null, limits)).not.toContain(removed)
+      expect(tree.rolePart(0, limits)).not.toContain(removed)
+      expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).not.toContain(removed)
+      expect(registered.map((tool) => tool.description).join("\n")).not.toContain(removed)
+    }
     expect(tree.childBrief("ses_parent", "Fix the bug", 1, limits)).toContain(kernel.SPLIT_LINE)
     expect(tree.childBrief("ses_parent", "Fix the bug", 3, limits)).not.toContain("split:")
     expect(tree.rolePart(null, limits)).toContain(kernel.ROOT_SPLIT_LINE)
@@ -525,82 +522,7 @@ describe("clipping", () => {
   })
 })
 
-describe("memory", () => {
-  const NOW = Date.UTC(2026, 9, 3, 9, 45)
-  const record = (sessionID: string, more: object = {}) => ({
-    projectID: "proj_1",
-    sessionID,
-    startedAt: Date.UTC(2026, 9, 3, 9),
-    movedAt: Date.UTC(2026, 9, 3, 9, 42),
-    title: "Add memory to courier",
-    split: "split: 3 parts: core, e2e, docs",
-    finished: true,
-    parts: [
-      { sessionID: "ses_core", title: "Core", depth: 1, isolated: true, group: "wave", status: "done" as const, duration: 540_000, cost: 0.42, context: 0.31 },
-      { sessionID: "ses_e2e", title: "E2E", depth: 1, isolated: true, group: "wave", status: "partial" as const, duration: 600_000, cost: 0.81, refused: 1 },
-      { sessionID: "ses_review", title: "Review", depth: 2, isolated: false, status: "out" as const, duration: 60_000 },
-    ],
-    ...more,
-  })
-  test("RECALL_OFF", () => expect(memory.RECALL_OFF).toMatchSnapshot())
-  test("recallListText", () => {
-    expect(memory.recallListText([record("ses_now", { parts: [], finished: false, recalled: { at: 1, calls: 1 } }), record("ses_old")], "ses_now", NOW)).toMatchSnapshot()
-    expect(memory.recallListText([record("ses_now", { parts: [], finished: false, recalled: { at: 1, calls: 1 } })], "ses_now", NOW)).toMatchSnapshot()
-    expect(memory.recallListText([record("ses_part", { recalled: { calls: 2 } })], "ses_other", NOW)).toMatchSnapshot()
-    expect(memory.recordLine(record("ses_long", { title: "x".repeat(80), split: "split: " + "y".repeat(200), parts: [] }), "ses_other", NOW)).toMatchSnapshot()
-    const markdown = "- **split: 3 parts: the core of the memory record, its end-to-end scenario in the live suite, and the reference's Memory section, each in a session of its own.**"
-    expect(memory.recordLine(record("ses_md", { split: markdown, parts: [] }), "ses_other", NOW)).toMatchSnapshot()
-  })
-  test("recordLine with a gone part", () => {
-    const gone = { sessionID: "ses_goner", title: "Goner", depth: 1, isolated: true, status: "gone" as const, duration: 30_000 }
-    expect(memory.recordLine(record("ses_old", { parts: [...record("ses_old").parts.slice(0, 2), gone] }), "ses_other", NOW)).toMatchSnapshot()
-  })
-  test("recordLine with a revised split line", () => {
-    const revisions = [
-      { text: "split: 2 parts: core, e2e", at: Date.UTC(2026, 9, 3, 9, 10), parts: 0 },
-      { text: "**split: 2 parts: its tests, its docs**", at: Date.UTC(2026, 9, 3, 9, 30), parts: 1 },
-    ]
-    expect(memory.recordLine(record("ses_staged", { split: "split: 1 part: the core", revisions }), "ses_other", NOW)).toMatchSnapshot()
-    const long = [{ text: "split: " + "y".repeat(200), at: Date.UTC(2026, 9, 3, 9, 30), parts: 2 }]
-    expect(memory.recordLine(record("ses_long", { revisions: long, parts: [] }), "ses_other", NOW)).toMatchSnapshot()
-  })
-  test("recallRecordText", () => expect(memory.recallRecordText(record("ses_old"))).toMatchSnapshot())
-  test("recallRecordText with revisions", () =>
-    expect(memory.recallRecordText(record("ses_staged", { split: "split: 1 part: the core", revisions: [{ text: "split: 2 parts: its tests, its docs", at: Date.UTC(2026, 9, 3, 9, 30), parts: 1 }] }))).toMatchSnapshot())
-  test("recallMissingText", () => expect(memory.recallMissingText("ses_none")).toMatchSnapshot())
-  const lesson = { text: "The docs part was ten lines; next time do it yourself.", at: Date.UTC(2026, 9, 3, 9, 40) }
-  test("recordLine with a lesson", () => {
-    expect(memory.recordLine(record("ses_old", { lesson }), "ses_other", NOW)).toMatchSnapshot()
-    expect(memory.recordLine(record("ses_old", { lesson: { ...lesson, depth: 2 } }), "ses_other", NOW)).toMatchSnapshot()
-  })
-  test("recordLine and recallListText with a pinned record", () => {
-    const pinned = record("ses_pinned", { pinned: { at: Date.UTC(2026, 9, 3, 9, 44) }, reads: { shown: 7, read: 1, at: Date.UTC(2026, 9, 3, 9, 44) }, lesson })
-    expect(memory.recordLine(pinned, "ses_other", NOW)).toMatchSnapshot()
-    expect(memory.recallListText([pinned, record("ses_now", { parts: [], finished: false, recalled: { at: 1, calls: 1 } }), record("ses_old")], "ses_now", NOW)).toMatchSnapshot()
-    expect(memory.recallRecordText(pinned)).toMatchSnapshot()
-  })
-  test("noteText", () => {
-    expect(memory.noteText("ses_top", lesson, undefined)).toMatchSnapshot()
-    expect(memory.noteText("ses_top", { text: "x".repeat(300), at: lesson.at, depth: 1 }, lesson)).toMatchSnapshot()
-  })
-  test("NOTE_OFF", () => expect(memory.NOTE_OFF).toMatchSnapshot())
-  test("noteBelowRefusal", () => expect(memory.noteBelowRefusal(1, "ses_top")).toMatchSnapshot())
-  test("NOTE_EMPTY", () => expect(memory.NOTE_EMPTY).toMatchSnapshot())
-  test("noteLongRefusal", () => expect(memory.noteLongRefusal(312)).toMatchSnapshot())
-  test("noteUnrecordedRefusal", () => expect(memory.noteUnrecordedRefusal("ses_top")).toMatchSnapshot())
-})
-
 describe("the session instruction entries (#384)", () => {
-  const record = (sessionID: string) => ({
-    projectID: "proj_1",
-    sessionID,
-    startedAt: Date.UTC(2026, 9, 3, 9),
-    movedAt: Date.UTC(2026, 9, 3, 9, 42),
-    title: "Add memory to courier",
-    split: "split: 3 parts: core, e2e, docs",
-    finished: true,
-    parts: [],
-  })
   test("standingEntry", () => {
     expect(tree.STANDING_KEY).toBe("standing")
     expect(
@@ -613,17 +535,5 @@ describe("the session instruction entries (#384)", () => {
       ]),
     ).toMatchSnapshot()
     expect(tree.standingEntry([{ sessionID: "ses_one", title: "One", state: { kind: "started" } }])).toMatchSnapshot()
-  })
-  test("lessonsEntry", () => {
-    expect(memory.LESSONS_KEY).toBe("lessons")
-    const at = Date.UTC(2026, 9, 3, 9, 40)
-    expect(
-      memory.lessonsEntry([
-        { ...record("ses_pinned"), pinned: { at }, lesson: { text: "The docs part was ten lines; next time do it yourself.", at } },
-        { ...record("ses_old"), title: "Split the lexer from the parser", lesson: { text: "The lexer and the parser collided in one file; give them to one session.", at, depth: 1 } },
-        record("ses_none"),
-      ]),
-    ).toMatchSnapshot()
-    expect(memory.lessonsEntry([record("ses_none")])).toBeUndefined()
   })
 })

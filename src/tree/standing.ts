@@ -2,7 +2,7 @@ import { existsSync } from "node:fs"
 import { isStatus } from "../kernel/protocol.js"
 import { isNotFound } from "../platform/json.js"
 import { isExpired, standingOf } from "./domain.js"
-import type { Entry, ReportNote, RosterStorage, StandingPorts } from "./ports.js"
+import type { ReportNote, RosterStorage, StandingPorts } from "./ports.js"
 import { childStore, groupStore } from "./store.js"
 import { STANDING_KEY, standingEntry, type ChildState, type StandingRow } from "./text.js"
 
@@ -73,14 +73,4 @@ async function sync(ports: StandingPorts, parentID: string, entries: Entries): P
     if (!isNotFound(error)) ports.log?.(`courier: the standing entry of ${parentID} could not be written, so it may be behind courier_children: ${String(error)}`)
     return "skipped"
   }
-}
-
-export async function putEntries(ports: StandingPorts, sessionID: string, given: ReadonlyArray<Entry>) {
-  const entries = ports.session?.instructions?.entry
-  if (!entries) return
-  await Promise.all(
-    given.map(({ key, value }) =>
-      entries.put({ sessionID, key, value }).catch((error: unknown) => ports.log?.(`courier_spawn: the ${key} entry of ${sessionID} could not be written: ${String(error)}`)),
-    ),
-  )
 }

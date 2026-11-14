@@ -398,8 +398,8 @@ export function typedNotice(sessionID: string, title: string | undefined, at: nu
   return [
     `At ${clock(at, now)} this text arrived in session ${sessionID}${named}, a session under yours, over the prompt route: courier did ` +
       "not send it and cannot tell who did, whether the person, a client, a session above it through OpenCode's subagent tool, or a shell " +
-      `with the server's password. Courier passes it on as written. ${sessionID} has the text and acts on it. Where the text changes ` +
-      `other parts of the job, send it to the sessions you started that those parts are under, and only to them: ${sessionID} already has ` +
+      `with the server's password. Courier passes it on as written. ${sessionID} has the text and acts on it. It decides what the text means for its part. Where the text ` +
+      `changes other parts of the job, send it to the sessions you started that those parts are under, and only to them: ${sessionID} already has ` +
       "the text, and every session between it and you and every session above you already has this envelope.",
     "",
     text,
